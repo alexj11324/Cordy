@@ -5,11 +5,11 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Gauge } from "lucide-react";
 import type { RuntimeModelServiceTier } from "@patchbay/core/types";
 import { runtimeModelsOptions } from "@patchbay/core/runtimes";
+import { PickerItem, PropertyPicker } from "../../../issues/components/pickers";
 import {
-  PickerItem,
-  PropertyPicker,
-} from "../../../issues/components/pickers";
-import { SettingsRow } from "../../../settings/components/settings-layout";
+  SettingsCard,
+  SettingsRow,
+} from "../../../settings/components/settings-layout";
 import { useT } from "../../../i18n";
 import { findModelCapabilityEntry } from "./model-capability";
 
@@ -22,15 +22,19 @@ import { findModelCapabilityEntry } from "./model-capability";
 export function ServiceTierSettingField({
   label,
   runtimeId,
+  workspaceId,
   runtimeOnline,
   provider,
   model,
   value,
   canEdit,
   onChange,
+  standalone = false,
 }: {
   label: ReactNode;
+  standalone?: boolean;
   runtimeId: string | null;
+  workspaceId?: string;
   runtimeOnline: boolean;
   provider: string;
   model: string;
@@ -39,19 +43,18 @@ export function ServiceTierSettingField({
   onChange: (next: string) => Promise<void> | void;
 }) {
   const modelsQuery = useQuery(
-    runtimeModelsOptions(runtimeOnline ? runtimeId : null),
+    runtimeModelsOptions(runtimeOnline ? runtimeId : null, workspaceId),
   );
   const models = modelsQuery.data?.models ?? [];
   const entry = findModelCapabilityEntry(models, model, provider);
   const tiers = entry?.service_tiers ?? [];
   const supportsExplicitStandard = models.some(
-    (candidate) =>
-      candidate.supports_explicit_standard_service_tier === true,
+    (candidate) => candidate.supports_explicit_standard_service_tier === true,
   );
 
   if (tiers.length === 0 && !supportsExplicitStandard && !value) return null;
 
-  return (
+  const field = (
     <SettingsRow label={label} size="select-wide">
       <ServiceTierPicker
         value={value}
@@ -62,6 +65,7 @@ export function ServiceTierSettingField({
       />
     </SettingsRow>
   );
+  return standalone ? <SettingsCard>{field}</SettingsCard> : field;
 }
 
 function ServiceTierPicker({
@@ -81,14 +85,12 @@ function ServiceTierPicker({
   const [open, setOpen] = useState(false);
   const availableTiers = supportsExplicitStandard
     ? [
-          {
-            id: "default",
-            name: t(($) => $.pickers.service_tier_standard),
-            description: t(
-              ($) => $.pickers.service_tier_standard_description,
-            ),
-          },
-          ...tiers.filter((tier) => tier.id !== "default"),
+        {
+          id: "default",
+          name: t(($) => $.pickers.service_tier_standard),
+          description: t(($) => $.pickers.service_tier_standard_description),
+        },
+        ...tiers.filter((tier) => tier.id !== "default"),
       ]
     : tiers;
   const selected = value
@@ -150,9 +152,7 @@ function ServiceTierPicker({
           onClick={() => void select(tier.id)}
         >
           <span className="block min-w-0 flex-1 text-left">
-            <span className="truncate text-label font-medium">
-              {tier.name}
-            </span>
+            <span className="truncate text-label font-medium">{tier.name}</span>
             {tier.description ? (
               <span className="mt-0.5 block text-micro leading-snug text-muted-foreground">
                 {tier.description}

@@ -1,8 +1,9 @@
 "use client";
 
+import { useEffect } from "react";
+import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
 import type { AgentRuntime } from "@patchbay/core/types";
 import { ModelDropdown } from "../../agents/components/model-dropdown";
-import { RuntimePicker } from "../../agents/components/runtime-picker";
 import { CompactRuntimeRow } from "./compact-runtime-row";
 
 export interface PatrickRuntimeSelection {
@@ -43,6 +44,25 @@ export function PatrickRuntimeChoice({
   disabled?: boolean;
   layout?: "dropdown" | "list";
 }) {
+  const usableRuntimes = runtimes.filter((runtime) =>
+    isRuntimeUsableForUser(runtime, currentUserId),
+  );
+  useEffect(() => {
+    if (value.runtimeId || disabled || runtimesLoading) return;
+    const candidate = runtimes.find(
+      (runtime) =>
+        runtime.status === "online" &&
+        isRuntimeUsableForUser(runtime, currentUserId),
+    );
+    if (candidate) onChange({ runtimeId: candidate.id, model: "" });
+  }, [
+    value.runtimeId,
+    disabled,
+    runtimesLoading,
+    runtimes,
+    currentUserId,
+    onChange,
+  ]);
   const selected = runtimes.find((rt) => rt.id === value.runtimeId) ?? null;
 
   const selectRuntime = (runtimeId: string) => {
@@ -60,7 +80,7 @@ export function PatrickRuntimeChoice({
         // Capped at ~4 rows so the install commands above stay reachable when
         // a member has many machines registered.
         <div className="flex max-h-[240px] flex-col gap-2 overflow-y-auto">
-          {runtimes.map((rt) => (
+          {usableRuntimes.map((rt) => (
             <CompactRuntimeRow
               key={rt.id}
               runtime={rt}
@@ -70,23 +90,18 @@ export function PatrickRuntimeChoice({
             />
           ))}
         </div>
-      ) : (
-        <RuntimePicker
-          runtimes={runtimes}
-          runtimesLoading={runtimesLoading}
-          members={[]}
-          currentUserId={currentUserId}
-          selectedRuntimeId={value.runtimeId}
-          onSelect={selectRuntime}
-          disabled={disabled}
-        />
-      )}
+      ) : null}
       <ModelDropdown
+        inline
+        allowEffort={false}
+        provider={selected?.provider}
+        runtimes={usableRuntimes}
+        onSelection={({ runtimeId, model }) => onChange({ runtimeId, model })}
         runtimeId={value.runtimeId || null}
         runtimeOnline={selected?.status === "online"}
         value={value.model}
         onChange={(model) => onChange({ ...value, model })}
-        disabled={!value.runtimeId || disabled}
+        disabled={runtimesLoading || disabled}
       />
     </div>
   );

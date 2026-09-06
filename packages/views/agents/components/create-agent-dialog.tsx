@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Globe, Lock, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ModelDropdown } from "./model-dropdown";
-import { RuntimePicker } from "./runtime-picker";
 import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
 import { InstructionsEditor } from "./instructions-editor";
 import { SkillMultiSelect } from "./skill-multi-select";
@@ -140,6 +139,7 @@ export function CreateAgentDialog({
       target_id: tgt.target_id as string,
     }));
 
+  const [thinkingLevel, setThinkingLevel] = useState(template?.thinking_level ?? "");
   const [model, setModel] = useState(template?.model ?? "");
   const [instructions, setInstructions] = useState(template?.instructions ?? "");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(template?.avatar_url ?? null);
@@ -164,6 +164,16 @@ export function CreateAgentDialog({
   });
 
   const selectedRuntime = runtimes.find((d) => d.id === selectedRuntimeId) ?? null;
+  useEffect(() => {
+    if (selectedRuntimeId || runtimesLoading) return;
+    const candidate = runtimes.find((runtime) =>
+      runtime.status === "online" && isRuntimeUsableForUser(runtime, currentUserId),
+    );
+    if (!candidate) return;
+    setSelectedRuntimeId(candidate.id);
+    setModel("");
+    setThinkingLevel("");
+  }, [selectedRuntimeId, runtimesLoading, runtimes, currentUserId]);
   // Defense-in-depth: even if a locked runtime somehow ends up selected
   // (e.g. duplicate of an agent whose template runtime is now locked, and
   // the workspace has no usable fallback), gate Create on it so we don't
@@ -226,6 +236,7 @@ export function CreateAgentDialog({
         description: description.trim(),
         runtime_id: selectedRuntime.id,
         model: model.trim() || undefined,
+        thinking_level: thinkingLevel.trim() || undefined,
         instructions: trimmedInstructions || undefined,
         avatar_url: avatarUrl ?? undefined,
         skill_ids: [...selectedSkillIds],
@@ -418,26 +429,27 @@ export function CreateAgentDialog({
               </div>
             )}
 
-            <RuntimePicker
-              runtimes={runtimes}
-              runtimesLoading={runtimesLoading}
-              members={members}
-              currentUserId={currentUserId}
-              selectedRuntimeId={selectedRuntimeId}
-              onSelect={(id) => {
-                // Models are per-runtime; a value picked for the old runtime
-                // may not exist on the new one, so drop it on runtime change.
-                if (id !== selectedRuntimeId) setModel("");
-                setSelectedRuntimeId(id);
-              }}
-            />
 
             <ModelDropdown
+              inline
               runtimeId={selectedRuntime?.id ?? null}
               runtimeOnline={selectedRuntime?.status === "online"}
               value={model}
-              onChange={setModel}
-              disabled={!selectedRuntime}
+              onChange={(model) => {
+                setModel(model);
+                setThinkingLevel("");
+              }}
+              thinkingLevel={thinkingLevel}
+              provider={selectedRuntime?.provider}
+              runtimes={runtimes.filter((runtime) =>
+                isRuntimeUsableForUser(runtime, currentUserId),
+              )}
+              onSelection={({ runtimeId, model, thinkingLevel }) => {
+                setSelectedRuntimeId(runtimeId);
+                setModel(model);
+                setThinkingLevel(thinkingLevel);
+              }}
+              disabled={runtimesLoading || creating}
             />
 
             {/* --- Optional sections (instructions / skills) ---

@@ -2,11 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type {
-  Agent,
-  AgentRuntime,
-  MemberWithUser,
-} from "@patchbay/core/types";
+import type { Agent, AgentRuntime, MemberWithUser } from "@patchbay/core/types";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
   AGENT_MAX_CONCURRENT_TASKS_MAX,
@@ -34,8 +30,6 @@ import {
   buildModelChangeUpdate,
   type ModelCatalog,
 } from "./inspector/model-change-cleanup";
-import { RuntimePicker } from "./inspector/runtime-picker";
-import { ThinkingSettingField } from "./inspector/thinking-prop-row";
 import { ServiceTierSettingField } from "./inspector/service-tier-setting-field";
 
 interface InspectorProps {
@@ -66,7 +60,6 @@ export function AgentDetailInspector({
   agent,
   runtime,
   runtimes,
-  members,
   currentUserId,
   canEdit,
   onUpdate,
@@ -127,7 +120,7 @@ export function AgentDetailInspector({
   // costs no extra request. `null` = not authoritative (offline runtime, still
   // loading, or discovery failed) and must not trigger any clearing.
   const modelsQuery = useQuery(
-    runtimeModelsOptions(canDiscoverRuntimeModels ? agent.runtime_id : null),
+    runtimeModelsOptions(canDiscoverRuntimeModels ? agent.runtime_id : null, runtime?.workspace_id),
   );
   const modelCatalog = useMemo<ModelCatalog>(
     () =>
@@ -149,7 +142,13 @@ export function AgentDetailInspector({
           catalog: modelCatalog,
         }),
       ),
-    [agent.service_tier, agent.thinking_level, modelCatalog, runtime?.provider, update],
+    [
+      agent.service_tier,
+      agent.thinking_level,
+      modelCatalog,
+      runtime?.provider,
+      update,
+    ],
   );
 
   return (
@@ -185,10 +184,7 @@ export function AgentDetailInspector({
             </div>
           </SettingsRow>
 
-          <SettingsRow
-            label={t(($) => $.inspector.name_label)}
-            size="text"
-          >
+          <SettingsRow label={t(($) => $.inspector.name_label)} size="text">
             <div>
               <Input
                 type="text"
@@ -241,68 +237,49 @@ export function AgentDetailInspector({
         title={t(($) => $.inspector.section_execution)}
         description={t(($) => $.inspector.section_execution_hint)}
       >
-        <SettingsCard>
-          <SettingsRow
-            label={t(($) => $.inspector.prop_runtime)}
-            size="select-wide"
-          >
-            <RuntimePicker
-              variant="field"
-              showLabel={false}
-              value={agent.runtime_id}
-              runtimes={runtimes}
-              members={members}
-              currentUserId={currentUserId}
-              canEdit={canEdit}
-              // Model, thinking level, and service tier are runtime/model
-              // native. Clear them together so the new runtime resolves its
-              // own defaults instead of inheriting incompatible tokens.
-              onChange={(id) =>
-                update({
-                  runtime_id: id,
-                  model: "",
-                  thinking_level: "",
-                  service_tier: "",
-                })
-              }
-            />
-          </SettingsRow>
-          <SettingsRow
-            label={t(($) => $.inspector.prop_model)}
-            size="select-wide"
-          >
-            <ModelPicker
-              variant="field"
-              showLabel={false}
-              runtimeId={agent.runtime_id}
-              runtimeOnline={canDiscoverRuntimeModels}
-              value={agent.model ?? ""}
-              canEdit={canEdit}
-              onChange={handleModelChange}
-            />
-          </SettingsRow>
-          <ThinkingSettingField
-            label={t(($) => $.inspector.prop_thinking)}
+        <div className="space-y-3">
+          <ModelPicker
+            inline
+            variant="field"
+            showLabel={false}
             runtimeId={agent.runtime_id}
             runtimeOnline={canDiscoverRuntimeModels}
-            provider={runtime?.provider ?? ""}
-            model={agent.model ?? ""}
-            value={agent.thinking_level ?? ""}
+            value={agent.model ?? ""}
             canEdit={canEdit}
-            onChange={(thinkingLevel) =>
-              update({ thinking_level: thinkingLevel })
+            provider={runtime?.provider}
+            thinkingLevel={agent.thinking_level ?? ""}
+            runtimes={runtimes.filter((item) =>
+              isRuntimeUsableForUser(item, currentUserId),
+            )}
+            onSelection={({ runtimeId, model, thinkingLevel, catalog }) =>
+              update({
+                ...(runtimeId === agent.runtime_id
+                  ? buildModelChangeUpdate({
+                      provider: runtime?.provider ?? "",
+                      model,
+                      thinkingLevel,
+                      serviceTier: agent.service_tier ?? "",
+                      catalog,
+                    })
+                  : { runtime_id: runtimeId, model, service_tier: "" }),
+                thinking_level: thinkingLevel,
+              })
             }
+            onChange={handleModelChange}
           />
-          <ServiceTierSettingField
-            label={t(($) => $.inspector.prop_speed)}
-            runtimeId={agent.runtime_id}
-            runtimeOnline={canDiscoverRuntimeModels}
-            provider={runtime?.provider ?? ""}
-            model={agent.model ?? ""}
-            value={agent.service_tier ?? ""}
-            canEdit={canEdit}
-            onChange={(serviceTier) => update({ service_tier: serviceTier })}
-          />
+            <ServiceTierSettingField
+              standalone
+              label={t(($) => $.inspector.prop_speed)}
+              runtimeId={agent.runtime_id}
+              workspaceId={runtime?.workspace_id}
+              runtimeOnline={canDiscoverRuntimeModels}
+              provider={runtime?.provider ?? ""}
+              model={agent.model ?? ""}
+              value={agent.service_tier ?? ""}
+              canEdit={canEdit}
+              onChange={(serviceTier) => update({ service_tier: serviceTier })}
+            />
+        <SettingsCard>
           <SettingsRow
             label={t(($) => $.inspector.prop_concurrency)}
             size="select-wide"
@@ -314,6 +291,7 @@ export function AgentDetailInspector({
             />
           </SettingsRow>
         </SettingsCard>
+        </div>
       </SettingsSection>
     </div>
   );

@@ -133,16 +133,10 @@ describe("AgentExecutionOverrides", () => {
     );
   });
 
-  it("offers the exact model's thinking levels", async () => {
-    const { onChange } = renderOverrides();
-
-    await screen.findByText("Thinking");
-    fireEvent.click(screen.getByRole("button", { name: /thinking/i }));
-    fireEvent.click(await screen.findByText("High"));
-
-    expect(onChange).toHaveBeenCalledWith(
-      expect.objectContaining({ thinkingLevel: "high" }),
-    );
+  it("keeps thinking in the model selector instead of duplicating its control", async () => {
+    renderOverrides();
+    await screen.findByText("Speed");
+    expect(screen.queryByText("Thinking")).toBeNull();
   });
 
   it("hides both fields when the model advertises neither capability", async () => {

@@ -947,5 +947,18 @@
   "actions": {
     "selected_other": "{{count}} 件選択中",
     "clear_selection": "選択を解除"
+  },
+  "model_selector": {
+    "providers": "プロバイダー",
+    "favorites": "お気に入り",
+    "effort": "思考の強度",
+    "favorite": "{{value}} をお気に入りに追加",
+    "unfavorite": "{{value}} をお気に入りから削除",
+    "favorites_empty": "モデルと思考の強度に星を付けて保存します。",
+    "favorite_unavailable": "このお気に入りは利用できません。オンラインのプロバイダーと対応モデル・思考の強度を選択してください。",
+    "no_effort": "このモデルには思考の強度の選択肢がありません。",
+    "choose_model": "モデルを選択",
+    "effort_inherited": "この画面ではモデルのみを変更します。思考の強度は既存のエージェントまたはランタイム設定に従います。",
+    "refresh": "モデルを更新"
   }
 }

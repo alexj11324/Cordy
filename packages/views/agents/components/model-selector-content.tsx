@@ -1,0 +1,647 @@
+"use client";
+
+// Provider rail and favorites presentation adapted from T3 Code (MIT).
+// See third-party/t3code.md and third-party/t3code-LICENSE.
+import { useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  Check,
+  ChevronRight,
+  Loader2,
+  RefreshCw,
+  Search,
+  Star,
+} from "lucide-react";
+import { runtimeModelsOptions } from "@patchbay/core/runtimes";
+import {
+  modelFavoriteKey,
+  useModelFavoritesStore,
+  type ModelFavorite,
+} from "@patchbay/core/agents/stores";
+import type { RuntimeDevice, RuntimeModel } from "@patchbay/core/types";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { cn } from "@patchbay/ui/lib/utils";
+import { ProviderLogo } from "../../runtimes/components/provider-logo";
+import { useT } from "../../i18n";
+import {
+  groupModelSelectorOptions,
+  nativeEffortLabel,
+} from "./model-selector-options";
+import { findModelCapabilityEntry } from "./inspector/model-capability";
+
+export type ModelSelectorRuntime = Pick<
+  RuntimeDevice,
+  "id" | "provider" | "name" | "status"
+> &
+  Partial<Pick<RuntimeDevice, "workspace_id">>;
+export type ModelSelection = ModelFavorite & { catalog: RuntimeModel[] | null };
+
+export function ModelSelectorContent({
+  runtimes,
+  runtimeId,
+  model,
+  thinkingLevel,
+  onSelect,
+  allowEffort = true,
+  className,
+  autoFocus = true,
+  preferFavorites = true,
+}: {
+  runtimes: ModelSelectorRuntime[];
+  runtimeId: string;
+  model: string;
+  thinkingLevel: string;
+  onSelect: (selection: ModelSelection) => Promise<void> | void;
+  allowEffort?: boolean;
+  className?: string;
+  autoFocus?: boolean;
+  preferFavorites?: boolean;
+}) {
+  const { t } = useT("agents");
+  const favorites = useModelFavoritesStore((state) => state.favorites);
+  const toggle = useModelFavoritesStore((state) => state.toggle);
+  const availableFavorites = favorites.filter(
+    (favorite) =>
+      runtimes.some((runtime) => runtime.id === favorite.runtimeId) &&
+      (allowEffort || favorite.thinkingLevel === thinkingLevel),
+  );
+  const initialRuntimeId = runtimes.some((item) => item.id === runtimeId)
+    ? runtimeId
+    : (runtimes[0]?.id ?? "");
+  const [section, setSection] = useState(() =>
+    preferFavorites && availableFavorites.length
+      ? "favorites"
+      : initialRuntimeId,
+  );
+  const [browsingRuntimeId, setBrowsingRuntimeId] = useState(initialRuntimeId);
+  const [browsingModel, setBrowsingModel] = useState(
+    initialRuntimeId === runtimeId ? model : "",
+  );
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [refreshAnimating, setRefreshAnimating] = useState(false);
+  const busy = useRef(false);
+  const queryClient = useQueryClient();
+  const runtime = runtimes.find((item) => item.id === browsingRuntimeId);
+  const modelsQuery = useQuery(
+    runtimeModelsOptions(
+      runtime?.status === "online" ? runtime.id : null,
+      runtime?.workspace_id,
+    ),
+  );
+  const models = modelsQuery.data?.models ?? [];
+  const supported = modelsQuery.data?.supported !== false;
+  const entry = findModelCapabilityEntry(
+    models,
+    browsingModel,
+    runtime?.provider ?? "",
+  );
+  const levels = entry?.thinking?.supported_levels ?? [];
+  const needle = search.trim().toLowerCase();
+  const matches = (item: RuntimeModel) =>
+    `${item.label} ${item.id} ${item.provider ?? ""}`
+      .toLowerCase()
+      .includes(needle);
+  const modelOptions = groupModelSelectorOptions(
+    models,
+    runtime?.provider ?? "",
+  );
+  const filtered = modelOptions.filter(
+    (option) => matches(option) || option.variants?.some(matches),
+  );
+  const browsingOption = modelOptions.find(
+    (option) =>
+      option.id === browsingModel ||
+      option.variants?.some((variant) => variant.id === browsingModel),
+  );
+  const canCreate =
+    needle.length > 0 &&
+    !models.some(
+      (item) => item.id === search.trim() || item.label === search.trim(),
+    );
+  const catalog = modelsQuery.isSuccess ? models : null;
+  const currentChoice = (effort: string): ModelFavorite => ({
+    runtimeId: browsingRuntimeId,
+    model: browsingModel,
+    thinkingLevel: effort,
+  });
+  const isFavorite = (choice: ModelFavorite) =>
+    favorites.some(
+      (item) => modelFavoriteKey(item) === modelFavoriteKey(choice),
+    );
+
+  async function select(choice: ModelFavorite, fromFavorite = false) {
+    if (busy.current) return;
+    busy.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      let selectedCatalog = catalog;
+      if (fromFavorite) {
+        const target = runtimes.find((item) => item.id === choice.runtimeId);
+        if (target?.status !== "online")
+          throw new Error(t(($) => $.model_selector.favorite_unavailable));
+        const result = await queryClient.fetchQuery(
+          runtimeModelsOptions(target.id, target.workspace_id),
+        );
+        selectedCatalog = result.models;
+        const selectedEntry = findModelCapabilityEntry(
+          result.models,
+          choice.model,
+          target.provider,
+        );
+        if (
+          !result.supported ||
+          !selectedEntry ||
+          (choice.thinkingLevel &&
+            !selectedEntry.thinking?.supported_levels.some(
+              (level) => level.value === choice.thinkingLevel,
+            ))
+        ) {
+          throw new Error(t(($) => $.model_selector.favorite_unavailable));
+        }
+      }
+      await onSelect({
+        runtimeId: choice.runtimeId,
+        model: choice.model,
+        thinkingLevel: choice.thinkingLevel,
+        catalog: selectedCatalog,
+      });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      busy.current = false;
+      setSaving(false);
+    }
+  }
+
+  const star = (choice: ModelFavorite, label: string) => (
+    <button
+      type="button"
+      aria-label={t(
+        ($) =>
+          isFavorite(choice)
+            ? $.model_selector.unfavorite
+            : $.model_selector.favorite,
+        { value: label },
+      )}
+      aria-pressed={isFavorite(choice)}
+      onClick={() => {
+        const option = modelOptions.find(
+          (item) =>
+            item.id === choice.model ||
+            item.variants?.some((variant) => variant.id === choice.model),
+        );
+        const variant = option?.variants?.find(
+          (item) => item.id === choice.model,
+        );
+        toggle({
+          ...choice,
+          modelLabel: option?.label ?? choice.modelLabel,
+          thinkingLabel: variant
+            ? nativeEffortLabel(variant)
+            : (option?.thinking?.supported_levels.find(
+                (level) => level.value === choice.thinkingLevel,
+              )?.label ?? choice.thinkingLabel),
+        });
+      }}
+      className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <Star
+        className={cn(
+          "size-3.5",
+          isFavorite(choice) && "fill-current text-foreground",
+        )}
+        aria-hidden
+      />
+    </button>
+  );
+  const rowClass =
+    "flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2.5 text-left text-caption hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  const showRuntime = (id: string) => {
+    setSection(id);
+    setBrowsingRuntimeId(id);
+    setBrowsingModel(id === runtimeId ? model : "");
+    setSearch("");
+    setError("");
+  };
+
+  if (runtimes.length === 0) {
+    return (
+      <p
+        role="status"
+        className="px-3 py-8 text-center text-caption text-muted-foreground"
+      >
+        {t(($) => $.pickers.runtime_empty)}
+      </p>
+    );
+  }
+
+  return (
+    <div
+      data-model-selector
+      className={cn(
+        "flex h-80 max-h-[min(70vh,var(--available-height,28rem))] min-h-0",
+        className,
+      )}
+      aria-busy={saving}
+    >
+      <nav
+        aria-label={t(($) => $.model_selector.providers)}
+        className="w-11 shrink-0 overflow-y-auto border-r border-border/60 bg-muted/30 p-1"
+      >
+        <button
+          type="button"
+          aria-label={t(($) => $.model_selector.favorites)}
+          aria-pressed={section === "favorites"}
+          className={cn(
+            "relative mb-1 flex size-9 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+            section === "favorites" &&
+              "bg-accent text-accent-foreground ring-1 ring-inset ring-border",
+          )}
+          onClick={() => {
+            setSection("favorites");
+            setSearch("");
+            setError("");
+          }}
+        >
+          <Star className="size-5 fill-current" aria-hidden />
+        </button>
+        <div className="mb-1 border-b border-border/70" />
+        {runtimes.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            title={`${item.name} · ${item.provider}`}
+            aria-label={`${item.name} · ${item.provider}`}
+            aria-pressed={section === item.id}
+            onClick={() => showRuntime(item.id)}
+            className={cn(
+              "relative mb-1 flex size-9 items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+              section === item.id &&
+                "bg-accent text-accent-foreground ring-1 ring-inset ring-border",
+            )}
+          >
+            <ProviderLogo provider={item.provider} className="size-5" />
+            {section === item.id && (
+              <span className="pointer-events-none absolute -right-1 top-1/2 h-5 w-0.75 -translate-y-1/2 rounded-l-full bg-primary" />
+            )}
+          </button>
+        ))}
+      </nav>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 px-3">
+          <Search
+            className="size-4 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            autoFocus={autoFocus}
+            aria-label={t(($) => $.pickers.model_search_placeholder)}
+            placeholder={t(($) => $.pickers.model_search_placeholder)}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            className="h-8 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+          />
+          <button
+            type="button"
+            aria-label={t(($) => $.model_selector.refresh)}
+            title={t(($) => $.model_selector.refresh)}
+            disabled={
+              runtime?.status !== "online" || modelsQuery.isFetching || saving
+            }
+            aria-busy={modelsQuery.isFetching}
+            onClick={() => {
+              setRefreshAnimating(true);
+              void modelsQuery.refetch();
+            }}
+            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          >
+            <RefreshCw
+              aria-hidden
+              className={cn(
+                "size-3.5",
+                (modelsQuery.isFetching || refreshAnimating) &&
+                  "animate-spin motion-reduce:animate-none",
+              )}
+              onAnimationIteration={() => {
+                if (!modelsQuery.isFetching) setRefreshAnimating(false);
+              }}
+            />
+          </button>
+        </div>
+        {error && (
+          <p
+            role="alert"
+            className="shrink-0 px-3 py-2 text-caption text-destructive"
+          >
+            {error}
+          </p>
+        )}
+        {section === "favorites" ? (
+          <div
+            className="min-h-0 flex-1 overflow-y-auto p-1.5"
+            aria-label={t(($) => $.model_selector.favorites)}
+          >
+            {availableFavorites
+              .filter((favorite) =>
+                `${favorite.model} ${favorite.modelLabel ?? ""} ${favorite.thinkingLevel} ${favorite.thinkingLabel ?? ""} ${runtimes.find((item) => item.id === favorite.runtimeId)?.name}`
+                  .toLowerCase()
+                  .includes(needle),
+              )
+              .map((favorite) => {
+                const owner = runtimes.find(
+                  (item) => item.id === favorite.runtimeId,
+                )!;
+                const favoriteEntry = findModelCapabilityEntry(
+                  favorite.runtimeId === browsingRuntimeId
+                    ? models
+                    : (queryClient.getQueryData<{ models: RuntimeModel[] }>(
+                        runtimeModelsOptions(favorite.runtimeId).queryKey,
+                      )?.models ?? []),
+                  favorite.model,
+                  owner.provider,
+                );
+                const favoriteEffort =
+                  favoriteEntry?.thinking?.supported_levels.find(
+                    (level) => level.value === favorite.thinkingLevel,
+                  )?.label ??
+                  favorite.thinkingLabel ??
+                  favorite.thinkingLevel;
+                const selected =
+                  modelFavoriteKey(favorite) ===
+                  modelFavoriteKey({ runtimeId, model, thinkingLevel });
+                const label = `${favorite.modelLabel ?? favoriteEntry?.label ?? favorite.model} (${favoriteEffort || t(($) => $.pickers.thinking_default)})`;
+                return (
+                  <div
+                    key={modelFavoriteKey(favorite)}
+                    className={cn(
+                      "flex items-center rounded-md hover:bg-accent/50",
+                      selected &&
+                        "bg-accent text-accent-foreground ring-1 ring-inset ring-border",
+                    )}
+                  >
+                    <button
+                      type="button"
+                      disabled={saving}
+                      aria-pressed={selected}
+                      onClick={() => void select(favorite, true)}
+                      className={rowClass}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">
+                          {label}
+                        </span>
+                        <span className="mt-1 flex items-center gap-1.5 text-micro text-muted-foreground">
+                          <ProviderLogo
+                            provider={owner.provider}
+                            className="size-3"
+                          />
+                          {owner.name}
+                        </span>
+                      </span>
+                      {selected && (
+                        <Check aria-hidden className="size-4 shrink-0" />
+                      )}
+                    </button>
+                    {star(favorite, label)}
+                  </div>
+                );
+              })}
+            {availableFavorites.length === 0 && (
+              <p className="px-3 py-8 text-center text-caption text-muted-foreground">
+                {t(($) => $.model_selector.favorites_empty)}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="flex min-h-0 flex-1">
+            <div
+              className="min-w-0 flex-1 overflow-y-auto p-1.5"
+              aria-label={t(($) => $.model_dropdown.label)}
+            >
+              <p className="px-2 py-1 text-micro text-muted-foreground">
+                {runtime?.name}
+              </p>
+              {modelsQuery.isLoading && (
+                <p
+                  role="status"
+                  className="flex items-center gap-2 px-2 py-5 text-caption text-muted-foreground"
+                >
+                  <Loader2 className="size-4 animate-spin" />
+                  {t(($) => $.pickers.model_discovering)}
+                </p>
+              )}
+              {modelsQuery.isError && (
+                <div className="px-2 py-3 text-caption text-muted-foreground">
+                  <p>{t(($) => $.model_dropdown.discovery_failed)}</p>
+                  <p className="mt-1 break-words">
+                    {modelsQuery.error.message}
+                  </p>
+                  <p className="mt-2">
+                    {t(($) => $.pickers.model_discovery_failed_hint)}
+                  </p>
+                </div>
+              )}
+              {!supported ? (
+                <p className="px-2 py-3 text-caption text-muted-foreground">
+                  {t(($) => $.pickers.model_managed_by_runtime)}
+                </p>
+              ) : (
+                <>
+                  {filtered.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      disabled={saving}
+                      aria-pressed={browsingOption?.id === item.id}
+                      onClick={() => {
+                        setBrowsingModel(item.id);
+                        if (!allowEffort && !item.variants)
+                          void select({
+                            runtimeId: browsingRuntimeId,
+                            model: item.id,
+                            thinkingLevel: "",
+                          });
+                      }}
+                      className={cn(
+                        rowClass,
+                        "w-full",
+                        browsingOption?.id === item.id &&
+                          "bg-accent text-accent-foreground ring-1 ring-inset ring-border",
+                      )}
+                    >
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">
+                          {item.label}
+                        </span>
+                        <span className="mt-0.5 block truncate text-micro text-muted-foreground">
+                          {item.variants
+                            ? item.id.replace(/-(high|medium|low)$/, "")
+                            : item.id}
+                        </span>
+                      </span>
+                      {browsingOption?.id === item.id ? (
+                        <Check aria-hidden className="size-4 shrink-0" />
+                      ) : (
+                        <ChevronRight
+                          aria-hidden
+                          className="size-3.5 shrink-0 text-muted-foreground"
+                        />
+                      )}
+                    </button>
+                  ))}
+                  {canCreate && (
+                    <button
+                      type="button"
+                      disabled={saving}
+                      className={cn(rowClass, "w-full text-primary")}
+                      onClick={() =>
+                        void select({
+                          runtimeId: browsingRuntimeId,
+                          model: search.trim(),
+                          thinkingLevel: "",
+                        })
+                      }
+                    >
+                      {t(($) => $.pickers.model_custom_use, {
+                        value: search.trim(),
+                      })}
+                    </button>
+                  )}
+                  {!modelsQuery.isLoading &&
+                    !modelsQuery.isError &&
+                    filtered.length === 0 &&
+                    !canCreate && (
+                      <p className="px-2 py-5 text-caption text-muted-foreground">
+                        {t(($) => $.pickers.model_empty_with_dot)}
+                      </p>
+                    )}
+                </>
+              )}
+              <button
+                type="button"
+                disabled={saving}
+                aria-pressed={browsingRuntimeId === runtimeId && !model}
+                className={cn(
+                  rowClass,
+                  "mt-1 w-full border-t border-border text-muted-foreground",
+                  browsingRuntimeId === runtimeId &&
+                    !model &&
+                    "bg-accent text-accent-foreground ring-1 ring-inset ring-border",
+                )}
+                onClick={() =>
+                  void select({
+                    runtimeId: browsingRuntimeId,
+                    model: "",
+                    thinkingLevel: "",
+                  })
+                }
+              >
+                <span className="min-w-0 flex-1">
+                  {t(($) => $.pickers.model_default)}
+                </span>
+                {browsingRuntimeId === runtimeId && !model && (
+                  <Check aria-hidden className="size-4 shrink-0" />
+                )}
+              </button>
+            </div>
+            <div
+              aria-label={t(($) => $.model_selector.effort)}
+              className="w-36 shrink-0 overflow-y-auto border-l border-border/60 p-1.5 sm:w-44"
+            >
+              <p className="px-2 py-1 text-micro text-muted-foreground">
+                {t(($) => $.model_selector.effort)}
+              </p>
+              {!allowEffort && !browsingOption?.variants ? (
+                <div className="px-2 py-5 text-caption text-muted-foreground">
+                  <p>{thinkingLevel || t(($) => $.pickers.thinking_default)}</p>
+                  <p className="mt-2">
+                    {t(($) => $.model_selector.effort_inherited)}
+                  </p>
+                </div>
+              ) : browsingModel && supported ? (
+                <>
+                  {(browsingOption?.variants
+                    ? browsingOption.variants.map((variant) => ({
+                        value: "",
+                        label: nativeEffortLabel(variant),
+                        model: variant.id,
+                      }))
+                    : [
+                        {
+                          value: "",
+                          label: t(($) => $.pickers.thinking_default),
+                          model: browsingModel,
+                        },
+                        ...(allowEffort
+                          ? levels.map((level) => ({
+                              ...level,
+                              model: browsingModel,
+                            }))
+                          : []),
+                      ]
+                  ).map((level) => {
+                    const choice = {
+                      ...currentChoice(level.value),
+                      model: level.model,
+                    };
+                    return (
+                      <div
+                        key={`${level.model}:${level.value}`}
+                        className={cn(
+                          "flex items-center rounded-md",
+                          browsingRuntimeId === runtimeId &&
+                            level.model === model &&
+                            thinkingLevel === level.value &&
+                            "bg-accent text-accent-foreground font-medium ring-1 ring-inset ring-border",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          disabled={saving}
+                          className={rowClass}
+                          aria-pressed={
+                            browsingRuntimeId === runtimeId &&
+                            level.model === model &&
+                            thinkingLevel === level.value
+                          }
+                          title={level.label}
+                          onClick={() => void select(choice)}
+                        >
+                          <span className="min-w-0 flex-1 break-words">
+                            {level.label}
+                          </span>
+                          {browsingRuntimeId === runtimeId &&
+                            level.model === model &&
+                            thinkingLevel === level.value && (
+                              <Check aria-hidden className="size-4 shrink-0" />
+                            )}
+                        </button>
+                        {entry &&
+                          star(
+                            choice,
+                            `${browsingOption?.label ?? entry.label} (${level.label})`,
+                          )}
+                      </div>
+                    );
+                  })}
+                  {!levels.length && !browsingOption?.variants && (
+                    <p className="px-2 py-3 text-micro text-muted-foreground">
+                      {t(($) => $.model_selector.no_effort)}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="px-2 py-5 text-caption text-muted-foreground">
+                  {t(($) => $.model_selector.choose_model)}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

@@ -969,5 +969,18 @@
     "selected_one": "{{count}} selected",
     "selected_other": "{{count}} selected",
     "clear_selection": "Clear selection"
+  },
+  "model_selector": {
+    "providers": "Providers",
+    "favorites": "Favorites",
+    "effort": "Thinking effort",
+    "favorite": "Favorite {{value}}",
+    "unfavorite": "Unfavorite {{value}}",
+    "favorites_empty": "Star a model and effort to keep it here.",
+    "favorite_unavailable": "This favorite is unavailable. Choose an online provider and a supported model and effort.",
+    "no_effort": "This model has no advertised effort options.",
+    "choose_model": "Choose a model",
+    "effort_inherited": "This entry changes the model only. Thinking effort follows the existing agent or runtime settings.",
+    "refresh": "Refresh models"
   }
 }

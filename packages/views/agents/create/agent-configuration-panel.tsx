@@ -8,6 +8,7 @@ import {
   type AgentDraft,
   type AgentPermissionScope,
 } from "@patchbay/core/agents";
+import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
 import { useConfigStore } from "@patchbay/core/config";
 import type { MemberWithUser, RuntimeDevice } from "@patchbay/core/types";
 import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
@@ -23,9 +24,8 @@ import {
 } from "../../settings/components/settings-layout";
 import { CharCounter } from "../components/char-counter";
 import { ServiceTierSettingField } from "../components/inspector/service-tier-setting-field";
-import { ThinkingSettingField } from "../components/inspector/thinking-prop-row";
+import type { ModelSelection } from "../components/model-selector-content";
 import { ModelDropdown } from "../components/model-dropdown";
-import { RuntimePicker } from "../components/runtime-picker";
 import { SkillMultiSelect } from "../components/skill-multi-select";
 import { ConversationStartersEditor } from "../components/conversation-starters-editor";
 
@@ -45,7 +45,7 @@ export function AgentConfigurationPanel({
   nameError,
   onNameChange,
   compact = false,
-  onRuntimeSelect,
+  onModelSelection,
   runtimeSwitchPending = false,
   runtimeSwitchInFlight = false,
 }: {
@@ -61,7 +61,7 @@ export function AgentConfigurationPanel({
   /** Builder sessions rebind the server-side carrier instead of only editing
    *  the draft. Absent for the plain create flows, where the draft is the only
    *  state that exists. */
-  onRuntimeSelect?: (runtimeId: string) => void;
+  onModelSelection?: (selection: ModelSelection) => Promise<void>;
   /** A builder reply is in flight, so the server would refuse the rebind. */
   runtimeSwitchPending?: boolean;
   /** A rebind request is in flight. */
@@ -79,17 +79,6 @@ export function AgentConfigurationPanel({
     (member) => member.user_id !== currentUserId,
   );
   const runtimeLocked = runtimeSwitchPending || runtimeSwitchInFlight;
-  const handleRuntimeSelect = (id: string) => {
-    if (id === draft.runtimeId) return;
-    if (onRuntimeSelect) {
-      onRuntimeSelect(id);
-      return;
-    }
-    // Model is per-runtime; clear it — and the per-model thinking / speed
-    // overrides — on runtime change so the new runtime resolves its own
-    // defaults instead of stale values.
-    onChange(applyDraftRuntimeChange(draft, id));
-  };
 
   return (
     <div className={cn("space-y-8", compact && "space-y-6")}>
@@ -196,51 +185,48 @@ export function AgentConfigurationPanel({
         title={t(($) => $.creation_studio.sections.execution)}
         description={t(($) => $.creation_studio.sections.execution_hint)}
       >
-        <SettingsCard>
-          <div
-            className={cn("grid gap-4 px-4 py-4", !compact && "sm:grid-cols-2")}
-          >
-            <div className="min-w-0">
-              <RuntimePicker
-                runtimes={runtimes}
-                runtimesLoading={runtimesLoading}
-                members={members}
-                currentUserId={currentUserId}
-                selectedRuntimeId={draft.runtimeId}
-                onSelect={handleRuntimeSelect}
-                disabled={runtimeLocked}
-              />
-              {/* A silently greyed-out picker is the worst version of this: the
-                  user reaches for it exactly when the current runtime has gone
-                  wrong, so say what unblocks it instead of just refusing. */}
-              {runtimeSwitchPending && (
-                <p className="mt-1.5 text-caption text-muted-foreground">
-                  {t(($) => $.creation_studio.builder.switch_runtime_pending)}
-                </p>
-              )}
-            </div>
-            <ModelDropdown
-              runtimeId={selectedRuntime?.id ?? null}
-              runtimeOnline={selectedRuntime?.status === "online"}
-              value={draft.model}
-              onChange={(value) => onChange(applyDraftModelChange(draft, value))}
-              // A successful switch clears the model, so an edit made while the
-              // rebind is in flight would be silently discarded.
-              disabled={!selectedRuntime || runtimeSwitchInFlight}
-            />
-          </div>
-          {/* Both fields fail closed: they render only when the exact selected
-              model's live catalog advertises the capability (or a value is
-              already set and needs clearing), so an offline runtime, a failed
-              discovery or an empty model shows nothing instead of an input
-              that cannot be honoured. */}
+        <div className="space-y-3">
+          <ModelDropdown
+            inline
+            runtimeId={selectedRuntime?.id ?? null}
+            runtimeOnline={selectedRuntime?.status === "online"}
+            value={draft.model}
+            thinkingLevel={draft.thinkingLevel}
+            provider={selectedRuntime?.provider}
+            runtimes={runtimes.filter((runtime) =>
+              isRuntimeUsableForUser(runtime, currentUserId),
+            )}
+            onSelection={(selection) => {
+              if (onModelSelection) return onModelSelection(selection);
+              const { runtimeId, model, thinkingLevel } = selection;
+              return onChange({
+                ...applyDraftModelChange(
+                  runtimeId === draft.runtimeId
+                    ? draft
+                    : applyDraftRuntimeChange(draft, runtimeId),
+                  model,
+                ),
+                thinkingLevel,
+              });
+            }}
+            onChange={(value) => onChange(applyDraftModelChange(draft, value))}
+            // A successful switch clears the model, so an edit made while the
+            // rebind is in flight would be silently discarded.
+            disabled={runtimesLoading || runtimeLocked}
+          />
+          {runtimeSwitchPending && (
+            <p className="mt-2 text-caption text-muted-foreground">
+              {t(($) => $.creation_studio.builder.switch_runtime_pending)}
+            </p>
+          )}
+          {/* Only advertised speed controls are shown. */}
           <AgentExecutionOverrides
             draft={draft}
             runtime={selectedRuntime}
             disabled={runtimeLocked}
             onChange={onChange}
           />
-        </SettingsCard>
+        </div>
       </SettingsSection>
 
       <SettingsSection
@@ -403,19 +389,11 @@ export function AgentExecutionOverrides({
   const runtimeOnline = runtime?.status === "online";
   return (
     <>
-      <ThinkingSettingField
-        label={t(($) => $.creation_studio.thinking_label)}
-        runtimeId={runtime?.id ?? null}
-        runtimeOnline={runtimeOnline}
-        provider={runtime?.provider ?? ""}
-        model={draft.model}
-        value={draft.thinkingLevel}
-        canEdit={!disabled}
-        onChange={(thinkingLevel) => onChange({ ...draft, thinkingLevel })}
-      />
       <ServiceTierSettingField
+        standalone
         label={t(($) => $.creation_studio.speed_label)}
         runtimeId={runtime?.id ?? null}
+        workspaceId={runtime?.workspace_id}
         runtimeOnline={runtimeOnline}
         provider={runtime?.provider ?? ""}
         model={draft.model}

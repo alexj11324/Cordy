@@ -31,7 +31,10 @@ vi.mock("@patchbay/core/hooks", () => ({
 // ModelDropdown talks to the api; the create dialog only needs it as a
 // stand-in here, so swap it out.
 vi.mock("./model-dropdown", () => ({
-  ModelDropdown: () => null,
+  ModelDropdown: (props: import("./model-dropdown").ModelDropdownProps) => <div>
+    <span className="truncate">{props.runtimes?.find((runtime) => runtime.id === props.runtimeId)?.name}</span>
+    {props.runtimes?.map((runtime) => <button key={runtime.id} type="button" onClick={() => void props.onSelection?.({ runtimeId: runtime.id, model: "", thinkingLevel: "", catalog: [] })}>{runtime.name}</button>)}
+  </div>,
 }));
 
 // Provider logos don't matter for these assertions but they pull in SVGs.
@@ -163,7 +166,7 @@ describe("CreateAgentDialog runtime visibility gate", () => {
     document.body.innerHTML = "";
   });
 
-  it("disables another member's private runtime in the picker", () => {
+  it("omits another member's private runtime from the selector", () => {
     const mine = makeRuntime({ id: "rt-mine", name: "My Runtime", owner_id: ME, visibility: "private" });
     const othersPrivate = makeRuntime({
       id: "rt-others-private",
@@ -173,19 +176,8 @@ describe("CreateAgentDialog runtime visibility gate", () => {
     });
     renderDialog([mine, othersPrivate]);
 
-    // Flip to "All" so other-owned runtimes show.
-    fireEvent.click(screen.getByText("All"));
-    // Open the picker.
-    fireEvent.click(
-      screen.getByText("My Runtime", { selector: "span.truncate" }),
-    );
 
-    const disabledRow = screen
-      .getByText("Others Private")
-      .closest("button") as HTMLButtonElement;
-    expect(disabledRow).not.toBeNull();
-    expect(disabledRow.disabled).toBe(true);
-    expect(disabledRow.title).toMatch(/Private runtime/i);
+    expect(screen.queryByText("Others Private")).toBeNull();
   });
 
   it("lets a plain member pick another member's public runtime", () => {
@@ -198,10 +190,6 @@ describe("CreateAgentDialog runtime visibility gate", () => {
     });
     renderDialog([mine, othersPublic]);
 
-    fireEvent.click(screen.getByText("All"));
-    fireEvent.click(
-      screen.getByText("My Runtime", { selector: "span.truncate" }),
-    );
 
     const publicRow = screen
       .getByText("Others Public")

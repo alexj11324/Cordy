@@ -947,5 +947,18 @@
   "actions": {
     "selected_other": "已选 {{count}} 项",
     "clear_selection": "清除选择"
+  },
+  "model_selector": {
+    "providers": "提供商",
+    "favorites": "收藏",
+    "effort": "思考强度",
+    "favorite": "收藏 {{value}}",
+    "unfavorite": "取消收藏 {{value}}",
+    "favorites_empty": "为模型和思考强度加星标，即可收藏到这里。",
+    "favorite_unavailable": "此收藏当前不可用。请选择在线提供商及其支持的模型和思考强度。",
+    "no_effort": "此模型未提供可选思考强度。",
+    "choose_model": "请选择模型",
+    "effort_inherited": "此入口仅覆盖模型，思考强度沿用智能体或运行时设置。",
+    "refresh": "刷新模型"
   }
 }

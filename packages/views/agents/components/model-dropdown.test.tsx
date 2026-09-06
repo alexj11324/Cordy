@@ -43,7 +43,9 @@ vi.mock("@patchbay/core/runtimes", () => ({
 // Bumped per test so React Query cannot serve a previous case's cached result.
 let discoveryKey = 0;
 
-function renderDropdown() {
+function renderDropdown(
+  props: Partial<React.ComponentProps<typeof ModelDropdown>> = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -56,6 +58,7 @@ function renderDropdown() {
           runtimeOnline
           value=""
           onChange={onChange}
+          {...props}
         />
       </QueryClientProvider>
     </I18nProvider>,
@@ -72,6 +75,27 @@ function openDropdown(container: HTMLElement) {
 }
 
 describe("ModelDropdown", () => {
+  it("embeds all three columns without a trigger and saves model plus effort together", async () => {
+    const onSelection = vi.fn();
+    const { container, onChange } = renderDropdown({
+      inline: true,
+      onSelection,
+    });
+    expect(container.querySelector('[data-slot="popover-trigger"]')).toBeNull();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^GPT-5.6 Terra/ }),
+    );
+    expect(onSelection).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Follow CLI config" }));
+    expect(onSelection).toHaveBeenCalledWith({
+      runtimeId: "rt-codex",
+      model: "gpt-5.6-terra",
+      thinkingLevel: "",
+      catalog: CODEX_MODELS.models,
+    });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /^GPT-5.6 Terra/ })).toBeTruthy();
+  });
   afterEach(() => {
     cleanup();
     discovery = async () => CODEX_MODELS;
@@ -110,7 +134,9 @@ describe("ModelDropdown", () => {
 
     expect(await screen.findByText(reason)).toBeTruthy();
     // And the picker says so up front, rather than looking like an empty catalog.
-    expect(screen.getByText(enAgents.model_dropdown.discovery_failed)).toBeTruthy();
+    expect(
+      screen.getByText(enAgents.model_dropdown.discovery_failed),
+    ).toBeTruthy();
     expect(
       screen.queryByText(enAgents.pickers.model_empty_with_dot),
     ).toBeNull();
