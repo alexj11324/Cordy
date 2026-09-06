@@ -123,6 +123,7 @@ export function AutomationToolsSection({
               <Button
                 size="sm"
                 className="h-7 px-2.5"
+                nativeButton={false}
                 render={
                   <AppLink href={settingsPathForTriggerProvider(wsPaths.settings(), "slack")} />
                 }

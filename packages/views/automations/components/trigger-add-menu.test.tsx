@@ -27,4 +27,31 @@ describe("TriggerAddMenu", () => {
       screen.getByRole("menuitem", { name: "Pull request opened" }),
     ).toBeInTheDocument();
   });
+
+  it("selecting a GitHub event calls onPickPreset with the catalog id", async () => {
+    const user = userEvent.setup();
+    const onPickPreset = vi.fn();
+
+    renderWithI18n(
+      <TriggerAddMenu
+        canWrite
+        onPickSchedule={vi.fn()}
+        onPickPreset={onPickPreset}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Add Trigger" }));
+    const github = await screen.findByRole("menuitem", { name: "GitHub" });
+    await act(async () => {
+      github.focus();
+    });
+    await user.keyboard("{ArrowRight}");
+    await user.click(screen.getByRole("menuitem", { name: "Draft opened" }));
+
+    expect(onPickPreset).toHaveBeenCalledWith(expect.objectContaining({
+      id: "github.draft.opened",
+      kind: "webhook",
+      provider: "github",
+    }));
+  });
 });

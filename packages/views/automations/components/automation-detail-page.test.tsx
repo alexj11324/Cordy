@@ -1,9 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderWithI18n } from "../../test/i18n";
 
-const mockUpdateAutomation = vi.hoisted(() => vi.fn());
+const mocks = vi.hoisted(() => ({
+  updateAutomation: vi.fn(),
+  createTrigger: vi.fn(async () => ({ id: "trg-new" })),
+  updateTrigger: vi.fn(),
+  deleteTrigger: vi.fn(async () => {}),
+  triggerNow: vi.fn(async () => ({ status: "running" })),
+}));
 
 vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
 
@@ -152,12 +159,12 @@ vi.mock("@patchbay/core/automations/queries", () => ({
 }));
 
 vi.mock("@patchbay/core/automations/mutations", () => ({
-  useUpdateAutomation: () => ({ mutate: mockUpdateAutomation, mutateAsync: mockUpdateAutomation }),
+  useUpdateAutomation: () => ({ mutate: mocks.updateAutomation, mutateAsync: mocks.updateAutomation }),
   useDeleteAutomation: () => ({ mutateAsync: vi.fn() }),
-  useTriggerAutomation: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useCreateAutomationTrigger: () => ({ mutateAsync: vi.fn() }),
-  useUpdateAutomationTrigger: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
-  useDeleteAutomationTrigger: () => ({ mutateAsync: vi.fn() }),
+  useTriggerAutomation: () => ({ mutateAsync: mocks.triggerNow, isPending: false }),
+  useCreateAutomationTrigger: () => ({ mutateAsync: mocks.createTrigger }),
+  useUpdateAutomationTrigger: () => ({ mutate: mocks.updateTrigger, mutateAsync: mocks.updateTrigger }),
+  useDeleteAutomationTrigger: () => ({ mutateAsync: mocks.deleteTrigger }),
   useRotateAutomationTriggerWebhookToken: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
@@ -218,7 +225,11 @@ function renderPage() {
 
 describe("AutomationDetailPage settings layout", () => {
   beforeEach(() => {
-    mockUpdateAutomation.mockReset();
+    mocks.updateAutomation.mockReset();
+    mocks.createTrigger.mockClear();
+    mocks.updateTrigger.mockClear();
+    mocks.deleteTrigger.mockClear();
+    mocks.triggerNow.mockClear();
   });
 
   it("puts the title in the document body instead of a properties grid", async () => {
@@ -280,5 +291,50 @@ describe("AutomationDetailPage settings layout", () => {
     expect(tools).toHaveTextContent("Requires connection");
     expect(tools).toHaveTextContent("Add MCP");
     expect(screen.getByText(/triggers require additional authentication/)).toBeInTheDocument();
+  });
+
+  it("wires Connect, status, time, and GitHub presets to real writes", async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    expect(await screen.findByTestId("automation-settings-title")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Run now" })).toBeDisabled();
+
+    const connectHrefs = screen.getAllByRole("link", { name: /Connect/ }).map((node) => node.getAttribute("href"));
+    expect(connectHrefs).toEqual(expect.arrayContaining([
+      "/acme/settings?tab=github",
+      "/acme/settings?tab=integrations",
+    ]));
+
+    await user.click(screen.getByRole("switch", { name: "Activate automation" }));
+    expect(mocks.updateAutomation).toHaveBeenCalledWith({ id: "auto-1", status: "active" });
+
+    await user.click(screen.getByRole("combobox", { name: "Time" }));
+    await user.click(await screen.findByRole("option", { name: "08:00" }));
+    expect(mocks.updateTrigger).toHaveBeenCalledWith(expect.objectContaining({
+      automationId: "auto-1",
+      triggerId: "trg-1",
+      cron_expression: expect.stringMatching(/0 8 \* \* \*/),
+    }));
+
+    await user.click(screen.getByRole("button", { name: "Add Trigger" }));
+    const github = await screen.findByRole("menuitem", { name: "GitHub" });
+    github.focus();
+    await user.keyboard("{ArrowRight}");
+    await user.click(await screen.findByRole("menuitem", { name: "Draft opened" }));
+    expect(mocks.createTrigger).toHaveBeenCalledWith({
+      automationId: "auto-1",
+      kind: "webhook",
+      preset: "github.draft.opened",
+    });
+
+    await user.click(screen.getByRole("button", { name: "Manage" }));
+    const memoriesSwitch = screen.getAllByRole("switch").at(-1);
+    expect(memoriesSwitch).toBeTruthy();
+    await user.click(memoriesSwitch!);
+    expect(mocks.updateAutomation.mock.calls.some((call) => {
+      const payload = call[0] as { id?: string; tools?: { memories?: { enabled?: boolean } } };
+      return payload.id === "auto-1" && payload.tools?.memories?.enabled === true;
+    })).toBe(true);
   });
 });
