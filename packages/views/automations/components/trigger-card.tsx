@@ -285,6 +285,8 @@ export function TriggerCard({
                 value={config.channel ?? ""}
                 onChange={(channel) => setConfig((prev) => ({ ...prev, channel }))}
                 onBlur={flushPendingConfig}
+                // Slack channel IDs are technical values, not translatable copy.
+                // eslint-disable-next-line no-restricted-syntax
                 placeholder="C123…"
               />
               <ConfigField
