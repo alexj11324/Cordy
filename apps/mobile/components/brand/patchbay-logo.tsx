@@ -1,12 +1,12 @@
 /**
- * Patchbay routing mark. Keep this geometry in sync with
- * docs/assets/brand/patchbay/mark-color.svg.
+ * Orvilo brand mark. Keep this geometry in sync with
+ * docs/assets/brand/orvilo/mark.svg.
  *
  * react-native-svg does not resolve CSS `currentColor`, so callers must pass
  * `color` explicitly. For theme-aware usage, pair with `useColorScheme` +
  * `THEME` token from `@/lib/theme`.
  */
-import Svg, { Circle, G, Path } from "react-native-svg";
+import Svg, { Path } from "react-native-svg";
 import { THEME } from "@/lib/theme";
 import { useColorScheme } from "@/lib/use-color-scheme";
 
@@ -22,25 +22,8 @@ export function PatchbayLogo({ size = 48, color }: PatchbayLogoProps) {
 
   return (
     <Svg width={size} height={size} viewBox="0 0 128 128">
-      <G fill="none" stroke={resolvedColor} strokeWidth={8}>
-        <Circle cx={64} cy={28} r={10} />
-        <Circle cx={100} cy={28} r={10} />
-        <Circle cx={28} cy={64} r={10} />
-        <Circle cx={100} cy={64} r={10} />
-        <Circle cx={28} cy={100} r={10} />
-        <Circle cx={64} cy={100} r={10} />
-      </G>
-      <G
-        fill="none"
-        stroke="#B6F000"
-        strokeWidth={8}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <Circle cx={28} cy={28} r={10} />
-        <Path d="M28 38C28 46 34 50 42 50H50C60 50 64 54 64 64V72C64 82 68 86 78 86H82C92 86 96 90 96 100" />
-        <Circle cx={100} cy={100} r={10} />
-      </G>
+      <Path fill={resolvedColor} d="M47 39C48 26 56 20 68 20H85C100 20 108 28 108 43V64C108 79 99 87 86 87H67C79 79 85 70 85 59C85 47 77 39 64 39Z" />
+      <Path fill={resolvedColor} d="M81 89C80 102 72 108 60 108H43C28 108 20 100 20 85V64C20 49 29 41 42 41H61C49 49 43 58 43 69C43 81 51 89 64 89Z" />
     </Svg>
   );
 }

@@ -76,6 +76,26 @@ PATCHBAY_DEV_VERIFICATION_CODE=888888
 公開インスタンスで固定認証コードを有効にしないでください。プロダクションの組み合わせは `APP_ENV=production` と空の `PATCHBAY_DEV_VERIFICATION_CODE` です。
 </Callout>
 
+## 開発環境でログイン画面を省く
+
+固定コードでも、コードの発行とフォーム入力は必要です。どちらも省くには:
+
+```dotenv
+APP_ENV=development
+PATCHBAY_DEV_LOGIN=1
+```
+
+このときバックエンドは `/auth/dev-login` を提供します:
+
+- `GET /auth/dev-login?email=dev@localhost&redirect=/dev/issues` はセッション Cookie を設定して Web アプリへリダイレクトします。URL を開くこと自体がログインです。
+- `POST /auth/dev-login` にボディ `{"email":"dev@localhost"}` を送ると、`verify-code` と同じ `{ token, user }` が返ります。curl やスクリプト向けです。
+
+`email` の既定値は `PATCHBAY_DEV_EMAIL`（次に `dev@localhost`）、`redirect` は同一オリジンのパスのみ、`onboarding=keep` を渡さない限りオンボーディングは完了扱いになります。このリポジトリでは `make dev-login` が URL、ベアラートークン、開くワークスペースを表示します。
+
+<Callout type="warning">
+公開インスタンスでは `PATCHBAY_DEV_LOGIN` を絶対に設定しないでください。メールアドレスを知っている人は誰でもコードなしでそのユーザーとしてログインできます。`APP_ENV=production` では無視され、この変数が `1` のときにしかルートは登録されません。
+</Callout>
+
 ## Google ログイン
 
 1. [Google Cloud Console](https://console.cloud.google.com/) で OAuth 2.0 client を作成します。

@@ -65,7 +65,11 @@ test("desktop opens the Accounts login surface directly", () => {
 
 test("Accounts login uses the custom shadcn form instead of Clerk's card", () => {
   const page = read("apps/auth-broker/app/login/page.tsx");
-  const form = read("apps/auth-broker/components/accounts-login-form.tsx");
+  const brokerForm = read("apps/auth-broker/components/accounts-login-form.tsx");
+  const webForm = read("apps/web/components/accounts-login-form.tsx");
+  const form = read("packages/auth-ui/login-form.tsx");
+  assert.match(brokerForm, /@patchbay\/auth-ui\/login-form/u);
+  assert.match(webForm, /@patchbay\/auth-ui\/login-form/u);
   assert.match(read("apps/auth-broker/app/page.tsx"), /redirect\("\/login"\)/u);
   assert.doesNotMatch(page, /<SignIn\b/u);
   assert.match(form, /signIn\.emailCode\.sendCode/u);

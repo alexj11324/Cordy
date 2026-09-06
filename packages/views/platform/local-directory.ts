@@ -36,9 +36,13 @@ export type ValidateLocalDirectoryResult = {
    * treat `undefined` as "unknown" rather than "not a repo".
    */
   is_git_repo?: boolean;
+  has_commits?: boolean;
+  remotes?: Array<{ name: string; url: string }>;
 };
 
 interface DesktopLocalDirectoryAPI {
+  cloneProjectRepository?: (url: string) => Promise<{ ok: boolean; path?: string; basename?: string; reason?: string }>;
+  confirmProjectRepository?: (path: string, urls: string[]) => Promise<boolean>;
   pickDirectory?: (defaultPath?: string) => Promise<PickDirectoryResult>;
   pickDirectories?: (defaultPath?: string) => Promise<PickDirectoriesResult>;
   validateLocalDirectory?: (
@@ -83,4 +87,14 @@ export async function pickDirectories(
   const api = readDesktopAPI();
   if (!api?.pickDirectories) return { ok: false, reason: "unsupported" };
   return api.pickDirectories(defaultPath);
+}
+
+export async function cloneProjectRepository(url: string) {
+  const api = readDesktopAPI();
+  if (!api?.cloneProjectRepository) return { ok: false, reason: "unsupported" };
+  return api.cloneProjectRepository(url);
+}
+export async function confirmProjectRepository(path: string, urls: string[]) {
+  if (!urls.length) return true;
+  return (await readDesktopAPI()?.confirmProjectRepository?.(path, urls)) ?? false;
 }

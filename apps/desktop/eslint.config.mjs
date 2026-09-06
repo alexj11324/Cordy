@@ -3,7 +3,12 @@ import reactConfig from "@patchbay/eslint-config/react";
 
 export default [
   ...reactConfig,
-  { ignores: ["out/", "dist/"] },
+  {
+    // electron-vite briefly creates this timestamped bundled config while a
+    // build runs. Turbo runs build and lint concurrently, so ESLint must not
+    // enumerate a file that electron-vite can delete before ESLint reads it.
+    ignores: ["out/", "dist/", "electron.vite.config.*.mjs"],
+  },
   {
     files: ["scripts/**/*.{mjs,js}"],
     languageOptions: {

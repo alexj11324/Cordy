@@ -2092,3 +2092,25 @@ func TestIsolatedPrepareKeepsTheReadOnlyBranchDrop(t *testing.T) {
 		t.Error("a turn that changed nothing left its branch behind")
 	}
 }
+
+func TestLocalWorktreeCommittedBaselinePreservesDirtySource(t *testing.T) {
+	repo := newTestRepo(t)
+	writeFile(t, filepath.Join(repo, "tracked.txt"), "unfinished\n")
+	writeFile(t, filepath.Join(repo, "scratch.txt"), "private draft\n")
+	wt, err := PrepareLocalWorktree(LocalWorktreeParams{LocalPath: repo, EnvRoot: t.TempDir(), AgentName: "test", TaskID: "committed-baseline", CommittedOnly: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer wt.Discard(nil)
+	got, err := os.ReadFile(filepath.Join(wt.Path, "tracked.txt"))
+	if err != nil || string(got) != "original\n" {
+		t.Fatalf("task baseline = %q, %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(wt.Path, "scratch.txt")); !os.IsNotExist(err) {
+		t.Fatalf("untracked draft copied: %v", err)
+	}
+	source, _ := os.ReadFile(filepath.Join(repo, "tracked.txt"))
+	if string(source) != "unfinished\n" {
+		t.Fatalf("source modified: %q", source)
+	}
+}

@@ -40,12 +40,11 @@ var (
 // Reason; falls back to ReasonAgentUnknown when no rule matches and for
 // empty input.
 //
-// The rule order mirrors the SQL CASE expression in MUL-1949
-// (db-boy's offline backfill query). The SQL is the source of truth:
-// when the two diverge, this Go classifier is wrong and should be
-// updated to match. Keeping them in lock-step is required so that
-// in-flight rows and historically backfilled rows share the same
-// taxonomy.
+// The initial rule order came from MUL-1949's one-off offline SQL backfill.
+// That historical SQL is not maintained in this repository. Classify and its
+// fixtures are the current shared classifier for server/daemon callers; future
+// historical reclassification should reuse these rules instead of maintaining
+// an independent CASE expression. New matches do not rewrite stored rows.
 //
 // Matching is case-insensitive substring against the lowercased input.
 // More-specific rules come before more-generic ones (e.g.
@@ -94,7 +93,8 @@ func Classify(rawError string) Reason {
 	//    "missing API key" partly overlaps with "invalid api key"
 	//    wording but is structurally a config error, not an auth
 	//    rejection.
-	case strings.Contains(lower, "missing environment variable"),
+	case strings.Contains(lower, "missing api key"),
+		strings.Contains(lower, "missing environment variable"),
 		strings.Contains(lower, "missing") && strings.Contains(lower, "api_key"),
 		strings.Contains(lower, "api key") && strings.Contains(lower, "required"),
 		strings.Contains(lower, providerUnconfiguredPhrase),
@@ -142,8 +142,10 @@ func Classify(rawError string) Reason {
 	case httpCapacityCodeRe.MatchString(lower),
 		containsAny(lower,
 			"rate limit",
+			"rate_limit_error",
 			"overloaded",
 			"no capacity available",
+			"selected model is at capacity",
 		):
 		return ReasonAgentProviderCapacityOrRateLimit
 
@@ -197,7 +199,7 @@ func Classify(rawError string) Reason {
 	//    retry (BHD-135). isPiProviderNetworkError matches only the exact bare
 	//    messages and the stable Pi/OMP exit composite, rather than treating
 	//    the same broad substrings from local tools or MCP servers as retryable.
-	//    Mirror these Pi message shapes into the MUL-1949 offline backfill SQL.
+	//    Future historical reclassification must use these Pi message shapes too.
 	case isPiProviderNetworkError(lower),
 		containsAny(lower,
 			"stream disconnected",
@@ -330,7 +332,7 @@ func ProviderUnconfigured(errText string) bool {
 // Each is an unambiguous witness on its own, which is what lets
 // NormalizeDaemonReason reuse them to upgrade an older daemon's catchall
 // server-side. Matched against pre-lowercased text.
-// Mirror these substrings into the MUL-1949 offline backfill SQL.
+// Future historical reclassification must use these substrings too.
 //
 // terminal_reason=prompt_too_long joins them for GH #6402: it is the structured
 // enum value Claude Code puts on the result frame when the turn ended because

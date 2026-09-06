@@ -651,7 +651,7 @@ async function mintPat(jwt: string): Promise<string> {
       Authorization: `Bearer ${jwt}`,
     },
     // Omit expires_in_days → server treats as null → non-expiring PAT.
-    body: JSON.stringify({ name: "Patchbay Desktop" }),
+    body: JSON.stringify({ name: "Orvilo Desktop" }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -927,7 +927,7 @@ async function probeLocalRuntimes(): Promise<LocalRuntimeProbe> {
 // Env passed to every CLI child so the daemon process knows it was spawned
 // by the Desktop app. The server uses this to mark runtimes as managed and
 // hide CLI self-update UI. Computed lazily so it picks up the PATH fix
-// applied by fix-path in main/index.ts — as a top-level const it would
+// applied in main/index.ts — as a top-level const it would
 // snapshot process.env at import time, before that block runs.
 function desktopSpawnEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };

@@ -99,6 +99,27 @@ func TestDesktopLocalCompletionMintsPurposeBoundCode(t *testing.T) {
 	}
 }
 
+func TestDesktopGoogleCompletionPreservesWorktreeCallbackProtocol(t *testing.T) {
+	h := &Handler{Queries: testHandler.Queries, cfg: Config{AllowSignup: true}, ClerkAuth: clerkVerifierFunc(func(context.Context, string, time.Time) (ClerkIdentity, error) {
+		return ClerkIdentity{Email: handlerTestEmail}, nil
+	})}
+	req := identityAttempt(t, h)
+	if _, err := testPool.Exec(t.Context(), "UPDATE desktop_auth_handoff SET callback_protocol='patchbay-canary-5718c47b86bf9ece' WHERE state=$1", req.State); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.Queries.RegisterDesktopGoogleAttempt(t.Context(), db.RegisterDesktopGoogleAttemptParams{State: req.State, CodeChallenge: desktopHandoffCodeChallenge(req.CodeVerifier)}); err != nil {
+		t.Fatal(err)
+	}
+	request := testutil.JSONRequest(http.MethodPost, "/api/desktop-google/complete", desktopGoogleAttemptRequest{State: req.State, CodeChallenge: desktopHandoffCodeChallenge(req.CodeVerifier), Local: true})
+	request.Header.Set(authContractHeader, authContractVersion)
+	request.Header.Set("Authorization", "Bearer fixture-token")
+	var response map[string]string
+	testutil.Call(t, h.CompleteDesktopGoogleAttempt, request).Want(200).JSON(&response)
+	if response["callback_protocol"] != "patchbay-canary-5718c47b86bf9ece" {
+		t.Fatalf("callback_protocol = %q, want worktree scheme", response["callback_protocol"])
+	}
+}
+
 func TestLocalDesktopRequiresInitiationAndConsumesOnce(t *testing.T) {
 	calls := 0
 	h := &Handler{Queries: testHandler.Queries, TxStarter: testPool, cfg: Config{AllowSignup: true}, redeemDesktopIdentity: func(ctx context.Context, req desktopAuthHandoffRedeemRequest) (ClerkIdentity, error) {

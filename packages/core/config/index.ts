@@ -33,6 +33,10 @@ interface ConfigState {
   // predate this signal are caught by the same net — indistinguishable from
   // here, and only one of the two answers is safe to guess.
   localWorktreeSupported: boolean;
+  // Whether the server and daemon can honor the committed HEAD baseline for a
+  // worktree resource. Defaults to false so older deployments use legacy
+  // worktree semantics rather than silently dropping the field.
+  localWorktreeCommittedBaseSupported: boolean;
   // Whether this server persists conversation_starters on agent create/update.
   // Older handlers accepted the unknown field and returned success while
   // dropping it, so absent must fail closed.
@@ -53,6 +57,7 @@ interface ConfigState {
   setFeatureFlags: (flags?: Record<string, boolean>) => void;
   setServerVersion: (version?: string) => void;
   setLocalWorktreeSupported: (supported?: boolean) => void;
+  setLocalWorktreeCommittedBaseSupported: (supported?: boolean) => void;
   setAgentConversationStartersSupported: (supported?: boolean) => void;
   setMessagingConfig: (config?: MessagingCapabilities) => void;
 }
@@ -69,6 +74,7 @@ export const configStore = createStore<ConfigState>((set) => ({
   featureFlags: {},
   serverVersion: "",
   localWorktreeSupported: false,
+  localWorktreeCommittedBaseSupported: false,
   agentConversationStartersSupported: false,
   messaging: null,
   setCdnConfig: ({ cdnDomain, cdnSigned = false }) => set({ cdnDomain, cdnSigned }),
@@ -84,6 +90,8 @@ export const configStore = createStore<ConfigState>((set) => ({
   setServerVersion: (version = "") => set({ serverVersion: version }),
   setLocalWorktreeSupported: (supported = false) =>
     set({ localWorktreeSupported: supported === true }),
+  setLocalWorktreeCommittedBaseSupported: (supported = false) =>
+    set({ localWorktreeCommittedBaseSupported: supported === true }),
   setAgentConversationStartersSupported: (supported = false) =>
     set({ agentConversationStartersSupported: supported === true }),
   setMessagingConfig: (messaging) => set({ messaging: messaging ?? null }),

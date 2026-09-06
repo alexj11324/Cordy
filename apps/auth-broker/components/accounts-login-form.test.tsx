@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
     status: "needs_first_factor" as string,
   },
   signUp: {
+    status: null as string | null,
+    verifications: { externalAccount: { status: null as string | null } },
+    reset: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
   },
@@ -70,12 +73,22 @@ beforeEach(() => {
   mocks.signIn.finalize.mockReset().mockResolvedValue({ error: null });
   mocks.signIn.reset.mockReset();
   mocks.signIn.status = "needs_first_factor";
+  mocks.signUp.status = null;
+  mocks.signUp.verifications.externalAccount.status = null;
+  mocks.signUp.reset.mockReset();
   mocks.signUp.create.mockReset();
   mocks.signUp.update.mockReset();
   mocks.setActive.mockReset().mockResolvedValue(undefined);
 });
 
 describe("AccountsLoginForm", () => {
+  it("resumes verified OAuth signup requirements instead of starting another email flow", () => {
+    mocks.signUp.status = "missing_requirements";
+    mocks.signUp.verifications.externalAccount.status = "verified";
+    render(<AccountsLoginForm returnUrl="https://patchbay.aspectlylabs.com/login" />);
+    expect(screen.getByRole("heading", { name: "Complete your account" })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("name@example.com")).not.toBeInTheDocument();
+  });
   it("keeps the standalone product return target on the Google broker route", () => {
     expect(
       buildGoogleLoginUrl(

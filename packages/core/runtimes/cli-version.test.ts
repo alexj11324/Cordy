@@ -7,6 +7,7 @@ import {
   MIN_CHAT_PROJECT_CONTEXT_CLI_VERSION,
   MIN_HANDOFF_CLI_VERSION,
   runtimeAdvertisesLocalWorktree,
+  runtimeAdvertisesLocalWorktreeCommittedBase,
 } from "./cli-version";
 
 describe("checkQuickCreateCliVersion", () => {
@@ -179,5 +180,40 @@ describe("runtimeAdvertisesLocalWorktree", () => {
     expect(runtimeAdvertisesLocalWorktree(other, "d1")).toBe(false);
     expect(runtimeAdvertisesLocalWorktree([], "d1")).toBe(false);
     expect(runtimeAdvertisesLocalWorktree(other, null)).toBe(false);
+  });
+});
+
+describe("runtimeAdvertisesLocalWorktreeCommittedBase", () => {
+  const row = (metadata: unknown, last_seen_at = "2026-08-13T00:00:00Z") => ({
+    daemon_id: "d1",
+    last_seen_at,
+    metadata,
+  });
+
+  it("requires the distinct committed-baseline capability", () => {
+    expect(
+      runtimeAdvertisesLocalWorktreeCommittedBase(
+        [row({ capabilities: ["local-worktree-v1"] })],
+        "d1",
+      ),
+    ).toBe(false);
+    expect(
+      runtimeAdvertisesLocalWorktreeCommittedBase(
+        [row({ capabilities: ["local-worktree-v1", "local-worktree-committed-base-v1"] })],
+        "d1",
+      ),
+    ).toBe(true);
+  });
+
+  it("uses the newest row when a daemon downgrades", () => {
+    expect(
+      runtimeAdvertisesLocalWorktreeCommittedBase(
+        [
+          row({ capabilities: ["local-worktree-committed-base-v1"] }, "2026-08-01T00:00:00Z"),
+          row({ capabilities: ["local-worktree-v1"] }, "2026-08-13T00:00:00Z"),
+        ],
+        "d1",
+      ),
+    ).toBe(false);
   });
 });

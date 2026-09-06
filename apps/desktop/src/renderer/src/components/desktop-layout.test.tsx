@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { act, render } from "@testing-library/react";
+import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import { useSidebar } from "@patchbay/ui/components/ui/sidebar";
@@ -166,4 +167,23 @@ describe("DesktopShell sidebar trigger", () => {
     expect(browser).not.toHaveAttribute("data-native-vibrancy");
     expect(browser).toHaveClass("bg-app-shell");
   });
+});
+
+it("hides the mounted dashboard while glass Settings owns the window", () => {
+  const { container, getByTestId } = renderShell();
+  const dashboard = container.querySelector('[data-slot="desktop-dashboard"]')!;
+  const content = getByTestId("page-content");
+
+  act(() => useWindowOverlayStore.getState().open({
+    type: "settings",
+    path: "/acme/settings",
+  }));
+  expect(dashboard).toHaveAttribute("inert");
+  expect(dashboard).toHaveClass("invisible");
+  expect(content).toBeInTheDocument();
+
+  act(() => useWindowOverlayStore.getState().close());
+  expect(dashboard).not.toHaveAttribute("inert");
+  expect(dashboard).not.toHaveClass("invisible");
+  expect(getByTestId("page-content")).toBe(content);
 });

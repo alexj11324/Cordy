@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -23,6 +24,9 @@ type cursorBackend struct {
 }
 
 func (b *cursorBackend) Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error) {
+	if err := validateStreamRecoveryOptions(opts); err != nil {
+		return nil, err
+	}
 	execName := b.cfg.ExecutablePath
 	if execName == "" {
 		execName = "cursor-agent"
@@ -105,6 +109,7 @@ func (b *cursorBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		finalStatus := "completed"
 		var finalError string
 		var protocolError string
+		var recoveryError string
 		resultSeen := false
 		resultIsError := false
 		resultBytes := 0
@@ -159,10 +164,18 @@ func (b *cursorBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				sessionID = sid
 			}
 
+			needsIdentity := evt.Type == "assistant" || evt.Type == "thinking" || evt.Type == "user" || evt.Type == "tool_call" ||
+				evt.Type == "tool_use" || evt.Type == "tool_result" || evt.Type == "text" ||
+				(evt.Type == "system" && evt.Subtype == "init") || (evt.Type == "result" && !evt.IsError && evt.Subtype != "error")
+			if recoveryError = streamRecoverySessionError(opts, sessionID, needsIdentity); recoveryError != "" {
+				cancel()
+				break
+			}
+
 			switch evt.Type {
 			case "system":
 				if evt.Subtype == "init" {
-					trySend(msgCh, Message{Type: MessageStatus, Status: "running"})
+					trySend(msgCh, Message{Type: MessageStatus, Status: "running", SessionID: sessionID})
 				}
 				if evt.Subtype == "error" {
 					errMsg := cursorErrorText(&evt)
@@ -264,6 +277,9 @@ func (b *cursorBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				// Current Cursor Agent versions can emit the terminal result
 				// event but keep a worker process alive. Treat result as the
 				// protocol boundary so the daemon can report completion.
+				// Signal synchronously: os/exec may skip its cancellation hook if
+				// the leader exits first, leaving an owned worker alive.
+				signalProcessGroup(cmd, syscall.SIGKILL)
 				cancel()
 
 			case "error":
@@ -332,6 +348,7 @@ func (b *cursorBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		}
 
 		exitErr := cmd.Wait()
+		cleanupConfirmed := cmd.ProcessState != nil && waitProcessGroupGone(cmd, 5*time.Second)
 		releaseProcessGroup(cmd)
 		duration := time.Since(startTime)
 
@@ -438,13 +455,20 @@ func (b *cursorBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 			finalOutput = ""
 		}
 
+		if recoveryError != "" {
+			finalStatus, finalOutput, finalError = "failed", "", recoveryError
+			sessionID = ""
+		}
+
 		resCh <- Result{
-			Status:     finalStatus,
-			Output:     finalOutput,
-			Error:      finalError,
-			DurationMs: duration.Milliseconds(),
-			SessionID:  sessionID,
-			Usage:      resultUsage,
+			Status:             finalStatus,
+			Output:             finalOutput,
+			Error:              finalError,
+			DurationMs:         duration.Milliseconds(),
+			SessionID:          sessionID,
+			Usage:              resultUsage,
+			UsageCumulative:    hasResultUsage,
+			RecoveryResumeSafe: cleanupConfirmed && writeErr == nil && (scanErr == nil || resultSeen) && recoveryError == "" && sessionID != "" && ((resultSeen && resultIsError) || protocolError != ""),
 		}
 	}()
 

@@ -18,7 +18,7 @@
     "last_run_empty": "--",
     "empty": {
       "title": "No automations yet",
-      "hint": "Schedule recurring tasks for your AI agents. Pick a template or start from scratch."
+      "hint": "Set up scheduled or webhook-driven tasks for your agents. Pick a template, or start from scratch."
     },
     "scope_all": "All",
     "no_matches": "No automations match",
@@ -40,30 +40,135 @@
     "days_ago": "{{count}}d ago",
     "months_ago": "{{count}}mo ago"
   },
+  "template_categories": {
+    "popular": "Popular",
+    "code_review": "Code Review",
+    "security": "Security",
+    "incidents_triage": "Incidents & Triage",
+    "data_research": "Data & Research",
+    "environment": "Environment"
+  },
+  "template_flow": {
+    "trigger": {
+      "scheduled": "Scheduled",
+      "pr_opened": "PR opened",
+      "pr_pushed": "PR pushed",
+      "pr_review_comment": "PR review comment",
+      "new_message_in_channel": "New message in channel",
+      "workflow_run_completed": "Workflow run completed",
+      "checks_completed": "Checks completed",
+      "incident_triggered": "Incident triggered",
+      "sentry_issue_event": "Any issue event",
+      "issue_created": "Issue created"
+    },
+    "action": {
+      "send_slack": "Send Slack",
+      "pr_comment": "PR Comment",
+      "request_reviewers": "Request Reviewers",
+      "granola": "Granola",
+      "databricks_sql": "Databricks SQL",
+      "notion": "Notion",
+      "stripe": "Stripe",
+      "slack": "Slack",
+      "datadog": "Datadog"
+    }
+  },
   "templates": {
-    "daily_news": {
-      "title": "Daily news digest",
-      "summary": "Search and summarize today's news for the team"
+    "find_critical_bugs": {
+      "title": "Find critical bugs",
+      "summary": "Analyze recent commits for high-severity correctness bugs and submit safe fixes"
     },
-    "pr_review": {
-      "title": "PR review reminder",
-      "summary": "Flag stale pull requests that need review"
+    "scan_codebase_vulnerabilities": {
+      "title": "Scan codebase for vulnerabilities",
+      "summary": "Review the full repository on a schedule and alert on validated high-impact security issues"
     },
-    "bug_triage": {
-      "title": "Bug triage",
-      "summary": "Assess and prioritize new bug reports"
+    "generate_docs": {
+      "title": "Generate docs",
+      "summary": "Create and update developer documentation for recently changed or under-documented code"
     },
-    "weekly_progress": {
-      "title": "Weekly progress report",
-      "summary": "Compile a weekly summary of team progress"
+    "add_test_coverage": {
+      "title": "Add test coverage",
+      "summary": "Review recent changes and add tests for high-risk logic that lacks adequate coverage"
     },
-    "dependency_audit": {
-      "title": "Dependency audit",
-      "summary": "Scan for security vulnerabilities and outdated packages"
+    "find_vulnerabilities": {
+      "title": "Find vulnerabilities",
+      "summary": "Review pull requests for exploitable security issues and flag only validated findings before merge"
     },
-    "documentation_check": {
-      "title": "Documentation check",
-      "summary": "Review recent changes for documentation gaps"
+    "assign_pr_reviewers": {
+      "title": "Assign PR reviewers",
+      "summary": "Assign reviewers based on code changes and auto-approve low-risk PRs"
+    },
+    "autofix_pr_review_comments": {
+      "title": "Autofix PR review comments",
+      "summary": "Take a first pass at addressing inline review comments on PR diffs"
+    },
+    "monitor_engineering_invariants": {
+      "title": "Monitor engineering invariants",
+      "summary": "Re-check critical repository invariants on a schedule and alert only when a rule regresses"
+    },
+    "remediate_dependency_vulnerabilities": {
+      "title": "Remediate dependency vulnerabilities",
+      "summary": "Triage dependency-vulnerability tickets from Linear and open upgrade PRs when the fix is safe"
+    },
+    "fix_bugs_reported_in_slack": {
+      "title": "Fix bugs reported in Slack",
+      "summary": "Monitor a Slack channel for bug reports, investigate the codebase, and fix with a PR"
+    },
+    "triage_failed_github_actions": {
+      "title": "Triage failed GitHub Actions",
+      "summary": "Investigate failed or cancelled workflow runs and report findings in Slack"
+    },
+    "fix_ci_failures": {
+      "title": "Fix CI failures",
+      "summary": "Detect CI failures on main and automatically open PRs"
+    },
+    "investigate_pagerduty_incidents": {
+      "title": "Investigate PagerDuty incidents",
+      "summary": "Investigate incidents using Datadog and code context"
+    },
+    "investigate_sentry_issues": {
+      "title": "Investigate Sentry issues",
+      "summary": "Investigate errors from Sentry, identify root causes, and propose fixes"
+    },
+    "investigate_top_datadog_errors": {
+      "title": "Investigate top Datadog errors",
+      "summary": "Investigate recurring production errors from Datadog, identify root causes, and propose fixes"
+    },
+    "triage_linear_issues": {
+      "title": "Triage Linear issues",
+      "summary": "Triage new issues by investigating bugs, planning feature requests, and opening PRs for easy fixes"
+    },
+    "summarize_changes_daily": {
+      "title": "Summarize changes daily",
+      "summary": "Post a daily digest summarizing notable repository changes and risks from the previous day"
+    },
+    "customer_health_monitoring": {
+      "title": "Customer Health Monitoring Agent",
+      "summary": "Find at-risk customers using usage analytics, call notes, Slack escalations, and Linear blockers"
+    },
+    "product_analytics": {
+      "title": "Product Analytics Agent",
+      "summary": "Weekly product usage, activation, retention, and feature adoption digest from Databricks"
+    },
+    "product_faq": {
+      "title": "Product FAQ Agent",
+      "summary": "Answer product questions in a dedicated Slack channel using Slack, Notion, Linear, and GitHub context"
+    },
+    "product_finance": {
+      "title": "Product Finance Agent",
+      "summary": "Analyze Stripe revenue, churn signals, and product pricing opportunities"
+    },
+    "slack_digest": {
+      "title": "Slack Digest Agent",
+      "summary": "Summarize important DMs, mentions, and the user's top active Slack channels"
+    },
+    "investigate_environment_setup_failures": {
+      "title": "Investigate environment setup failures",
+      "summary": "Analyze recent cloud agent runs to root-cause environment setup failures from setup logs, transcripts, and related issues"
+    },
+    "monitor_environment_build_health": {
+      "title": "Monitor environment build health",
+      "summary": "Health check of your cloud environment's builds with root cause analysis for failed builds"
     }
   },
   "detail": {
@@ -247,7 +352,7 @@
     "type_webhook": "Webhook",
     "label_field": "Label (optional)",
     "label_placeholder": "e.g. Weekday morning",
-    "webhook_help": "Patchbay will generate a webhook URL after you save. POST any JSON to it to fire this automation.",
+    "webhook_help": "Orvilo will generate a webhook URL after you save. POST any JSON to it to fire this automation.",
     "submit": "Add trigger",
     "submitting": "Adding...",
     "toast_added_schedule": "Schedule trigger added",
@@ -301,7 +406,7 @@
     "trigger_kind_schedule": "Schedule",
     "trigger_kind_webhook": "Webhook",
     "section_webhook": "Webhook",
-    "webhook_help_create": "Patchbay will generate a webhook URL after this automation is created. POST any JSON to that URL to fire it.",
+    "webhook_help_create": "Orvilo will generate a webhook URL after this automation is created. POST any JSON to that URL to fire it.",
     "webhook_help_edit": "This automation is fired by webhook. Manage the URL (copy / rotate) on the automation's detail page.",
     "webhook_created_title": "Webhook automation ready",
     "webhook_created_description": "POST any JSON to the URL below and the automation will fire. Copy it now — you can also find and rotate it on the automation's detail page.",

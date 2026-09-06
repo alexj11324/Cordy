@@ -108,6 +108,13 @@ beforeEach(() => {
 });
 
 describe("IssueAgentActivityIndicator", () => {
+  it.each(["running", "queued"] as const)("exposes the %s task marker used by the shared card border", (status) => {
+    mockState.snapshot = [makeTask({ status })];
+    const { container } = render(<IssueAgentActivityIndicator issueId="issue-1" hoverCard={false} />);
+    expect(container.querySelector(`[data-issue-agent-activity="${status}"]`)).not.toBeNull();
+    expect(container.querySelector(".animate-chat-text-shimmer") !== null).toBe(status === "running");
+  });
+
   it("wraps the badge in a hover card by default", () => {
     render(<IssueAgentActivityIndicator issueId="issue-1" />);
 

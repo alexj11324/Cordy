@@ -39,6 +39,9 @@ type claudeBackend struct {
 }
 
 func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOptions) (*Session, error) {
+	if err := validateStreamRecoveryOptions(opts); err != nil {
+		return nil, err
+	}
 	execPath := b.cfg.ExecutablePath
 	if execPath == "" {
 		execPath = "claude"
@@ -169,6 +172,10 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		resultIsError := false
 		terminalReasonError := ""
 		var sessionID string
+		var recoveryError string
+		var terminalCleanupDone chan struct{}
+		var resultErrors []string
+		var assistantErrorCode, providerErrorCode, blockingAssistantErrorCode string
 		sawAsyncLaunch := false
 		usage := make(map[string]TokenUsage)
 		eventCount := 0
@@ -223,9 +230,25 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				continue
 			}
 			eventCount++
+			if msg.SessionID != "" && msg.ParentToolUseID == nil {
+				sessionID = msg.SessionID
+			}
+			needsIdentity := msg.Type == "assistant" || msg.Type == "user" || msg.Type == "control_request" ||
+				(msg.Type == "system" && msg.Subtype == "init") || (msg.Type == "result" && !msg.IsError)
+			if recoveryError = streamRecoverySessionError(opts, sessionID, needsIdentity); recoveryError != "" {
+				cancel()
+				break
+			}
 
 			switch msg.Type {
 			case "assistant":
+				if msg.ParentToolUseID == nil {
+					assistantErrorCode = msg.ErrorCode
+					switch msg.ErrorCode {
+					case "billing_error", "authentication_failed", "oauth_org_not_allowed", "account_on_hold":
+						blockingAssistantErrorCode = msg.ErrorCode
+					}
+				}
 				assistantEventCount++
 				turn := b.handleAssistant(msg, msgCh, usage)
 				toolUseCount += turn.toolUses
@@ -238,20 +261,48 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 					sawAsyncLaunch = true
 				}
 			case "system":
-				if msg.SessionID != "" {
-					sessionID = msg.SessionID
-				}
 				trySend(msgCh, Message{Type: MessageStatus, Status: "running", SessionID: sessionID})
 			case "result":
 				sawResult = true
+				resultErrors = msg.Errors
 				finalResultText = msg.ResultText
 				resultIsError = msg.IsError
-				terminalReasonError = claudeTerminalReasonFailure(msg.TerminalReason, msg.ResultText)
-				sessionID = msg.SessionID
+				providerErrorCode = assistantErrorCode
+				if msg.IsError && len(msg.Errors) > 0 {
+					finalResultText = strings.Join(msg.Errors, "\n")
+					// The array may contain only HTTP 429; retain the assistant's
+					// typed cause. Final quota/auth diagnostics override it below.
+				}
+				if msg.IsError && msg.Subtype != "" && msg.Subtype != "success" && msg.Subtype != "error_during_execution" {
+					providerErrorCode = msg.Subtype
+					if msg.Subtype == "error_max_budget_usd" {
+						providerErrorCode = "billing_error"
+					}
+					if finalResultText == "" {
+						finalResultText = msg.Subtype
+					}
+				}
+				terminalReasonError = claudeTerminalReasonFailure(msg.TerminalReason, finalResultText)
+				if terminalReasonError != "" {
+					providerErrorCode = msg.TerminalReason
+				}
 				if resultUsage := claudeResultUsage(msg, opts.Model); len(resultUsage) > 0 {
 					usage = resultUsage
 				}
 				closeStdin()
+				if msg.IsError && terminalCleanupDone == nil {
+					// A failed turn is terminal even if MCP workers outlive the
+					// CLI. Preserve graceful shutdown, then bound stubborn workers.
+					terminalCleanupDone = make(chan struct{})
+					signalProcessGroup(cmd, syscall.SIGTERM)
+					go func() {
+						defer close(terminalCleanupDone)
+						if !waitProcessGroupGone(cmd, claudeTerminateGrace()) {
+							signalProcessGroup(cmd, syscall.SIGKILL)
+						}
+						_ = stdout.Close()
+					}()
+				}
 			case "log":
 				if msg.Log != nil {
 					trySend(msgCh, Message{
@@ -276,6 +327,10 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 
 		// Wait for process exit, then release the cancellation handler.
 		exitErr := cmd.Wait()
+		if terminalCleanupDone != nil {
+			<-terminalCleanupDone
+		}
+		cleanupConfirmed := cmd.ProcessState != nil && waitProcessGroupGone(cmd, claudeTerminateGrace())
 		close(procDone)
 		// The leader is reaped; drop ownership. On Windows that closes the Job
 		// Object, which kills anything still inside it — precisely what should
@@ -349,14 +404,48 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 			)
 		}
 
+		// CC's broad rate_limit error can also accompany subscription exhaustion.
+		// Explicit terminal quota/auth diagnostics must never become an endless retry.
+		if providerErrorCode == "" || providerErrorCode == "rate_limit" || providerErrorCode == "overloaded" {
+			finalReason := taskfailure.Classify(finalError)
+			for i := len(resultErrors) - 1; i >= 0; i-- {
+				reason := taskfailure.Classify(resultErrors[i])
+				if reason != taskfailure.ReasonAgentUnknown && reason != taskfailure.ReasonAgentProviderCapacityOrRateLimit {
+					finalReason = reason
+					break
+				}
+			}
+			switch finalReason {
+			case taskfailure.ReasonAgentProviderQuotaLimit:
+				providerErrorCode = "billing_error"
+			case taskfailure.ReasonAgentProviderAuthOrAccess:
+				providerErrorCode = "authentication_failed"
+			case taskfailure.ReasonAgentProviderCapacityOrRateLimit, taskfailure.ReasonAgentUnknown:
+				// Generic diagnostics can retain the structured temporary cause.
+			default:
+				providerErrorCode = finalReason.String() // preserve the final classified cause independently of earlier array text
+			}
+		}
+
+		if finalStatus == "failed" && blockingAssistantErrorCode != "" {
+			providerErrorCode = blockingAssistantErrorCode
+			finalError = fmt.Sprintf("%s (provider reported %s during this turn)", finalError, blockingAssistantErrorCode)
+		}
+		if recoveryError != "" {
+			finalStatus, finalOutput, finalError = "failed", "", recoveryError
+			reportedSessionID = ""
+		}
+
 		resCh <- Result{
-			Status:         finalStatus,
-			Output:         finalOutput,
-			Error:          finalError,
-			DurationMs:     duration.Milliseconds(),
-			SessionID:      reportedSessionID,
-			Usage:          usage,
-			ResumeRejected: resumeRejected,
+			Status:             finalStatus,
+			Output:             finalOutput,
+			Error:              finalError,
+			ProviderErrorCode:  providerErrorCode,
+			DurationMs:         duration.Milliseconds(),
+			SessionID:          reportedSessionID,
+			Usage:              usage,
+			ResumeRejected:     resumeRejected,
+			RecoveryResumeSafe: cleanupConfirmed && (scanErr == nil || (terminalCleanupDone != nil && errors.Is(scanErr, os.ErrClosed))) && writeErr == nil && completionGuardError == "" && terminalReasonError == "" && recoveryError == "" && sessionID != "" && sawResult && resultIsError,
 		}
 	}()
 
@@ -537,11 +626,15 @@ func claudeMapHasAsyncLaunchStatus(value map[string]any) bool {
 // ── Claude SDK JSON types ──
 
 type claudeSDKMessage struct {
-	Type      string          `json:"type"`
-	Message   json.RawMessage `json:"message,omitempty"`
-	Subtype   string          `json:"subtype,omitempty"`
-	SessionID string          `json:"session_id,omitempty"`
-	Model     string          `json:"model,omitempty"`
+	Type string `json:"type"`
+	// Claude Agent SDK SDKAssistantMessage / SDKResultError fields.
+	ErrorCode       string          `json:"error,omitempty"`
+	Errors          []string        `json:"errors,omitempty"`
+	ParentToolUseID *string         `json:"parent_tool_use_id,omitempty"`
+	Message         json.RawMessage `json:"message,omitempty"`
+	Subtype         string          `json:"subtype,omitempty"`
+	SessionID       string          `json:"session_id,omitempty"`
+	Model           string          `json:"model,omitempty"`
 
 	// result fields
 	ResultText string `json:"result,omitempty"`

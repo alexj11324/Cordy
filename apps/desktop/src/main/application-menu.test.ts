@@ -152,3 +152,10 @@ describe("application menu Check for Updates", () => {
     expect(ctx.setApplicationMenu).toHaveBeenCalledTimes(1);
   });
 });
+
+
+it.each(["darwin", "win32", "linux"] as const)("omits update actions when this build has no update feed (%s)", (platform) => {
+  const template = buildApplicationMenuTemplate(undefined, platform);
+  const all = template.flatMap(item => [item, ...(Array.isArray(item.submenu) ? item.submenu : [])]);
+  expect(all.some(item => item.id === CHECK_FOR_UPDATES_MENU_ID)).toBe(false);
+});

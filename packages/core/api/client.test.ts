@@ -17,6 +17,30 @@ describe("ApiClient desktop handoff", () => {
     expect(await new ApiClient("https://selfhost.example.test").completeDesktopAuthHandoff(state, "challenge")).toEqual(handoff);
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://selfhost.example.test/api/desktop-handoff/complete");
   });
+  it("accepts a worktree-specific callback protocol from completion", async () => {
+    const state = "s".repeat(43);
+    const handoff = {
+      state,
+      code: `pbd_${"c".repeat(43)}`,
+      callback_protocol: "patchbay-canary-5718c47b86bf9ece",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(handoff))));
+    expect(await new ApiClient("https://selfhost.example.test").completeDesktopAuthHandoff(state, "challenge")).toEqual(handoff);
+  });
+  it("registers the Desktop-owned callback protocol at initiate", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ registered: true })));
+    vi.stubGlobal("fetch", fetchMock);
+    await new ApiClient("https://selfhost.example.test").initiateDesktopAuthHandoff(
+      "s".repeat(43),
+      "c".repeat(43),
+      "patchbay-canary-5718c47b86bf9ece",
+    );
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body)).toEqual({
+      state: "s".repeat(43),
+      code_challenge: "c".repeat(43),
+      callback_protocol: "patchbay-canary-5718c47b86bf9ece",
+    });
+  });
   it.each([{}, { code: "invalid" }, { code: `pbl_${"c".repeat(43)}`, state: "s".repeat(43), callback_protocol: "patchbay" }])("rejects malformed completion: %j", async (payload) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))));
     await expect(new ApiClient("https://selfhost.example.test").completeDesktopAuthHandoff("s".repeat(43), "challenge")).rejects.toThrow("Invalid desktop handoff response");

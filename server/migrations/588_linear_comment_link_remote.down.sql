@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY uq_linear_comment_link_remote;

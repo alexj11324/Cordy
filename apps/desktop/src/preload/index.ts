@@ -79,8 +79,21 @@ function fetchRuntimeConfig(): RuntimeConfigResult {
   return { ok: false, error: { message: "Runtime config unavailable" } };
 }
 
+function fetchCallbackProtocol(): string {
+  try {
+    const protocol = ipcRenderer.sendSync("auth:callback-protocol");
+    if (typeof protocol === "string" && protocol.length > 0) return protocol;
+  } catch {
+    // fall through
+  }
+  // Never let an IPC/bootstrap failure turn a development login into a claim
+  // on the production app's protocol. Renderers treat empty as unavailable.
+  return "";
+}
+
 const appInfo = fetchAppInfo();
 const runtimeConfig = fetchRuntimeConfig();
+const callbackProtocol = fetchCallbackProtocol();
 const windowContext = readDesktopWindowContext(process.argv);
 
 // Read the OS-preferred locale that main injected via additionalArguments.
@@ -113,6 +126,7 @@ function subscribeToMainRendererChannel<T>(
 }
 
 const desktopAPI = {
+  host: "electron" as const,
   /** App version + normalized OS. Read once at preload time so the renderer
    *  can use it synchronously when initializing the API client. */
   appInfo,
@@ -130,6 +144,8 @@ const desktopAPI = {
       ipcRenderer.removeListener("locale:system-changed", handler);
     };
   },
+  /** OS-level URL scheme this process registered for auth/invite callbacks. */
+  callbackProtocol,
   /** Validated runtime endpoint config, or a blocking config error. */
   runtimeConfig,
   /** Main-process-owned local Guest session. */
@@ -286,6 +302,9 @@ const desktopAPI = {
   pickDirectories: (defaultPath?: string) =>
     ipcRenderer.invoke("local-directory:pick-many", defaultPath),
   /** Validate that a path is an existing readable+writable directory. */
+  cloneProjectRepository: (url: string) => ipcRenderer.invoke("local-directory:clone", url),
+  confirmProjectRepository: (path: string, urls: string[]) => ipcRenderer.invoke("local-directory:confirm-repository", path, urls),
+
   validateLocalDirectory: (path: string) =>
     ipcRenderer.invoke("local-directory:validate", path),
   /** Listen for Cmd/Ctrl+W tab-close requests from the main process.

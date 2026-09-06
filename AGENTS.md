@@ -3,8 +3,9 @@
 This file provides guidance to AI agents when working with code in this repository.
 
 > **Single source of truth:** This file is the entry point for repository agent
-> rules. Read **CLAUDE.md** at the project root for the expanded architecture,
-> coding, testing, and release requirements referenced by this file.
+> rules. Consult **CLAUDE.md** when a task needs expanded architecture, coding,
+> testing, or release guidance; ordinary localized edits do not require reading
+> it end to end.
 > Use `Makefile`, `package.json`, and `pnpm-workspace.yaml` as the
 > source of truth for the full command list.
 
@@ -52,7 +53,14 @@ pnpm typecheck        # TypeScript check
 pnpm test             # TS unit tests (Vitest)
 make test             # Go tests
 make check            # Full verification pipeline
+make dev-login        # Sign in to the local app with no login page
 ```
+
+`make dev-login` prints a URL that installs the session cookie and lands on this
+environment's issues page, plus a bearer token for `curl` — use it instead of
+requesting a verification code when you need to check a change in the running
+app. It works because `make up` writes `PATCHBAY_DEV_LOGIN=1` into the env file;
+the endpoint is not registered when `APP_ENV=production`.
 
 See CLAUDE.md for the expanded rules and common commands incorporated by this
 entry point.

@@ -117,7 +117,6 @@ type NavKey =
   | "issues"
   | "taskGraph"
   | "projects"
-  | "workProducts"
   | "automations"
   | "agents"
   | "teams"
@@ -136,7 +135,6 @@ type NavLabelKey =
   | "issues"
   | "task_graph"
   | "projects"
-  | "work_products"
   | "automations"
   | "agents"
   | "teams"
@@ -159,7 +157,6 @@ const workspaceNav: { key: NavKey; labelKey: NavLabelKey }[] = [
   { key: "issues", labelKey: "issues" },
   { key: "taskGraph", labelKey: "task_graph" },
   { key: "projects", labelKey: "projects" },
-  { key: "workProducts", labelKey: "work_products" },
   { key: "automations", labelKey: "automations" },
   { key: "agents", labelKey: "agents" },
   { key: "teams", labelKey: "teams" },
@@ -639,7 +636,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                         )}
                       </span>
                       <span className="flex-1 truncate font-medium">
-                        {workspace?.name ?? "Patchbay"}
+                        {workspace?.name ?? "Orvilo"}
                       </span>
                       <ChevronDown className="size-3 text-sidebar-icon-secondary" />
                     </SidebarMenuButton>

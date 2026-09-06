@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { api } from "@patchbay/core/api";
 import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
 import { Button } from "@patchbay/ui/components/ui/button";
@@ -6,11 +6,16 @@ import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
 import { loopbackSessionApiUrl } from "../../../shared/runtime-config";
-import { createDesktopLoginUrl } from "./login-handoff";
+import {
+  createDesktopLoginUrl,
+  cancelDesktopLogin,
+  createHostedDesktopHandoffInitiate,
+} from "./login-handoff";
 
 function requireRuntimeConfig(): {
   accountsUrl: string;
   sessionApiUrl?: string;
+  callbackProtocol: string;
 } {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
   if (!runtimeConfig.ok) {
@@ -18,9 +23,16 @@ function requireRuntimeConfig(): {
       "Invariant violated: DesktopLoginPage rendered before App accepted runtime config",
     );
   }
+  const callbackProtocol = window.desktopAPI.callbackProtocol;
+  if (!callbackProtocol) {
+    throw new Error(
+      "Invariant violated: Desktop login is missing its callback protocol",
+    );
+  }
   return {
     accountsUrl: runtimeConfig.config.accountsUrl,
     sessionApiUrl: loopbackSessionApiUrl(runtimeConfig.config.apiUrl),
+    callbackProtocol,
   };
 }
 
@@ -28,17 +40,20 @@ function requireRuntimeConfig(): {
  * Desktop owns only the native handoff boundary. All Clerk UI lives on the
  * Accounts origin so browser auth, cookies, and recovery stay in one place.
  */
-export function DesktopLoginPage({ handoffFailed = false, onRestart }: {
+export function DesktopLoginPage({ handoffFailed = false, onRestart, onBack }: {
   handoffFailed?: boolean;
+  onBack?: () => Promise<void>;
   onRestart?: () => void;
 }) {
-  const { accountsUrl, sessionApiUrl } = requireRuntimeConfig();
+  const { accountsUrl, sessionApiUrl, callbackProtocol } = requireRuntimeConfig();
   const { t } = useT("auth");
   const [opening, setOpening] = useState(false);
+  const cancelled = useRef(false);
   const [error, setError] = useState(false);
 
   const openSignIn = async () => {
     if (opening) return;
+    cancelled.current = false;
     setOpening(true);
     setError(false);
     onRestart?.();
@@ -46,9 +61,25 @@ export function DesktopLoginPage({ handoffFailed = false, onRestart }: {
       const url = await createDesktopLoginUrl(
         accountsUrl,
         (state, codeChallenge) =>
-          api.initiateDesktopAuthHandoff(state, codeChallenge),
-        { sessionApiUrl, locale: document.documentElement.lang },
+          api.initiateDesktopAuthHandoff(
+            state,
+            codeChallenge,
+            callbackProtocol,
+          ),
+        {
+          sessionApiUrl,
+          locale: document.documentElement.lang,
+          callbackProtocol,
+          initiateHosted: createHostedDesktopHandoffInitiate(
+            accountsUrl,
+            sessionApiUrl ?? "",
+          ),
+        },
       );
+      if (cancelled.current) {
+        cancelDesktopLogin(new URL(url).searchParams.get("state") ?? undefined);
+        return;
+      }
       await window.desktopAPI.openExternal(url);
     } catch {
       setError(true);
@@ -83,6 +114,11 @@ export function DesktopLoginPage({ handoffFailed = false, onRestart }: {
               ? t(($) => $.desktop.entry.browser_opening)
               : t(($) => $.desktop.entry.browser_button)}
           </Button>
+          {onBack && (
+            <Button type="button" variant="ghost" className="mt-3 rounded-full text-zinc-300" onClick={() => { cancelled.current = true; cancelDesktopLogin(); void onBack(); }}>
+              {t(($) => $.desktop.entry.back_button)}
+            </Button>
+          )}
           {(error || handoffFailed) && (
             <Alert
               variant="destructive"

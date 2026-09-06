@@ -54,25 +54,25 @@ export const localeLabels: Record<Lang, string> = {
 // this dict only carries TSX-rendered chrome above the MDX body.
 export const homeCopy = {
   en: {
-    eyebrow: "Patchbay Docs",
+    eyebrow: "Orvilo Docs",
     titleLead: "Humans and agents,",
     titleAccent: "in one place.",
     byline: ["Getting started", "Updated July 2026", "2 min read"],
   },
   zh: {
-    eyebrow: "Patchbay 文档",
-    titleLead: "Patchbay 是人类与 AI 智能体",
+    eyebrow: "Orvilo 文档",
+    titleLead: "Orvilo 是人类与 AI 智能体",
     titleAccent: "共同工作的地方。",
     byline: ["开始使用", "2026 年 7 月更新", "阅读约 2 分钟"],
   },
   ko: {
-    eyebrow: "Patchbay 문서",
+    eyebrow: "Orvilo 문서",
     titleLead: "사람과 에이전트,",
     titleAccent: "한곳에서.",
     byline: ["시작하기", "2026년 7월 업데이트", "약 2분 분량"],
   },
   ja: {
-    eyebrow: "Patchbay ドキュメント",
+    eyebrow: "Orvilo ドキュメント",
     titleLead: "人とエージェントが、",
     titleAccent: "一つの場所に。",
     byline: ["はじめに", "2026年7月更新", "約2分で読めます"],

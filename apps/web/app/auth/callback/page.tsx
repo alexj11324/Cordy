@@ -134,9 +134,9 @@ function CallbackContent() {
       <div className="flex min-h-screen items-center justify-center">
         <Card className="w-full max-w-sm">
           <CardHeader className="text-center">
-            <CardTitle className="text-display-sm">Opening Patchbay</CardTitle>
+            <CardTitle className="text-display-sm">Opening Orvilo</CardTitle>
             <CardDescription>
-              You should see a prompt to open the Patchbay desktop app. If
+              You should see a prompt to open the Orvilo desktop app. If
               nothing happens, click the button below.
             </CardDescription>
           </CardHeader>
@@ -150,7 +150,7 @@ function CallbackContent() {
                 );
               }}
             >
-              Open Patchbay Desktop
+              Open Orvilo Desktop
             </Button>
           </CardContent>
         </Card>

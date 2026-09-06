@@ -26,7 +26,7 @@ export type RouteIconName =
   | "ListTodo"
   | "Network"
   | "FolderKanban"
-  | "Zap"
+  | "AlarmClock"
   | "Bot"
   | "Users"
   | "Hash"
@@ -101,7 +101,7 @@ export const WORKSPACE_PAGES: Record<WorkspacePageKey, WorkspacePage> = {
   taskGraph: { segment: "task-graph", icon: "Network", navKey: "task_graph" },
   projects: { segment: "projects", icon: "FolderKanban", navKey: "projects" },
   workProducts: { segment: "work-products", icon: "FileText", navKey: "work_products" },
-  automations: { segment: "automations", icon: "Zap", navKey: "automations" },
+  automations: { segment: "automations", icon: "AlarmClock", navKey: "automations" },
   agents: { segment: "agents", icon: "Bot", navKey: "agents" },
   teams: { segment: "teams", icon: "Users", navKey: "teams" },
   channels: { segment: "channels", icon: "Hash", navKey: "channels" },

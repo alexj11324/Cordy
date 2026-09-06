@@ -1473,7 +1473,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 	// WebSocket
 	mc := &membershipChecker{queries: queries}
-	pr := &patResolver{queries: queries, cache: patCache}
+	pr := &opaqueTokenResolver{queries: queries, cache: patCache}
 	slugResolver := realtime.SlugResolver(func(ctx context.Context, slug string) (string, error) {
 		ws, err := queries.GetWorkspaceBySlug(ctx, slug)
 		if err != nil {
@@ -1537,6 +1537,19 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// broker flows; the Web login page uses email send-code and does not expose
 	// this endpoint as its primary sign-in path.
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
+	// Development sign-in. Registered only when PATCHBAY_DEV_LOGIN=1 and
+	// APP_ENV is non-production, so an ordinary deployment does not serve the
+	// path at all — see server/internal/handler/dev_login.go. It gets its own
+	// limiter rather than authRL: this endpoint exists to escape login
+	// throttling, and one `make dev-login` already spends two requests (the
+	// POST for the token, the GET when the printed URL is opened), so the
+	// 5/min auth budget would 429 the third run of the very workflow it is
+	// for. There is no credential to brute-force here — the endpoint is a
+	// deliberate bypass — so the limit only stops accidental hammering.
+	if handler.DevLoginEnabled() {
+		devLoginRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_DEV_LOGIN", 60), time.Minute, trustedProxies)
+		r.With(devLoginRL).HandleFunc("/auth/dev-login", h.DevLogin)
+	}
 	r.With(authRL).Post("/auth/guest", h.CreateGuestAuth)
 	r.With(desktopHandoffRL).Post("/api/desktop-identity/redeem", h.RedeemDesktopLocalIdentity)
 	r.With(desktopHandoffRL).Post("/api/desktop-handoff/initiate", h.InitiateDesktopAuthHandoff)
@@ -2675,16 +2688,31 @@ func (mc *membershipChecker) IsMember(ctx context.Context, userID, workspaceID s
 	return err == nil
 }
 
-// patResolver implements realtime.PATResolver using database queries.
+// opaqueTokenResolver implements realtime.OpaqueTokenResolver using database queries.
 // patCache is shared with the Auth and DaemonAuth middlewares so a token
 // revoke through any path invalidates the cache for all of them. Nil
 // cache is supported and degrades to direct DB lookups.
-type patResolver struct {
+type opaqueTokenResolver struct {
 	queries *db.Queries
 	cache   *auth.PATCache
 }
 
-func (pr *patResolver) ResolveToken(ctx context.Context, token string) (string, bool) {
+func (pr *opaqueTokenResolver) ResolveToken(ctx context.Context, token string) (string, bool) {
+	if strings.HasPrefix(token, auth.GuestTokenPrefix) {
+		if pr.queries == nil {
+			return "", false
+		}
+		user, err := auth.ResolveGuestUser(ctx, pr.queries, token)
+		if err != nil {
+			return "", false
+		}
+		uid := util.UUIDToString(user.ID)
+		if auth.IsTemporarilyDisabledUser(uid, user.Email) {
+			return "", false
+		}
+		return uid, true
+	}
+
 	hash := auth.HashToken(token)
 
 	if userID, ok := pr.cache.Get(ctx, hash); ok {

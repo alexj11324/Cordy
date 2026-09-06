@@ -317,6 +317,12 @@ describe("Settings IntegrationsTab", () => {
     expect(composioQuery?.enabled).toBe(true);
   });
 
+  it("shows Linear by default when the server has not supplied a release flag", () => {
+    configStore.getState().setFeatureFlags({});
+    renderTab();
+    expect(screen.getByTestId("integration-channel-card-linear")).toBeInTheDocument();
+  });
+
   it("shows Linear only when its installation feature is enabled", () => {
     renderTab();
     expect(screen.queryByTestId("integration-channel-card-linear")).toBeNull();

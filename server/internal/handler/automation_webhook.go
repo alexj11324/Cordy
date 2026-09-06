@@ -111,7 +111,8 @@ type WebhookRequest struct {
 // Inference order:
 //
 //	X-GitHub-Event (combined with body.action when present),
-//	X-Gitlab-Event, X-Event-Type, body.event, body.type, body.action.
+//	X-Gitlab-Event, X-Event-Type, provider-specific shapes
+//	(Sentry / Linear / Slack / PagerDuty), body.event, body.type, body.action.
 func normalizeWebhookPayload(body []byte, headers http.Header) (WebhookEnvelope, error) {
 	body = stripBOM(body)
 	if len(body) == 0 {
@@ -174,11 +175,11 @@ func normalizeWebhookPayload(body []byte, headers http.Header) (WebhookEnvelope,
 
 // inferEvent returns a best-effort event identifier from headers and body.
 func inferEvent(headers http.Header, body any) string {
+	obj, _ := body.(map[string]any)
+
 	if gh := headers.Get("X-GitHub-Event"); gh != "" {
-		if obj, ok := body.(map[string]any); ok {
-			if action, ok := obj["action"].(string); ok && action != "" {
-				return "github." + gh + "." + action
-			}
+		if action, ok := obj["action"].(string); ok && action != "" {
+			return "github." + gh + "." + action
 		}
 		return "github." + gh
 	}
@@ -188,7 +189,14 @@ func inferEvent(headers http.Header, body any) string {
 	if xe := headers.Get("X-Event-Type"); xe != "" {
 		return xe
 	}
-	if obj, ok := body.(map[string]any); ok {
+	// Providers whose discriminator is not a top-level string field must be
+	// read before the generic body fallbacks below, which would otherwise
+	// latch onto the wrong key (Slack's `type` is the envelope kind
+	// `event_callback`, Sentry's only top-level string is the verb).
+	if e := inferProviderEvent(headers, obj); e != "" {
+		return e
+	}
+	if obj != nil {
 		if e, ok := obj["event"].(string); ok && e != "" {
 			return e
 		}
@@ -200,6 +208,88 @@ func inferEvent(headers http.Header, body any) string {
 		}
 	}
 	return "webhook.received"
+}
+
+// inferProviderEvent recognises the delivery shapes of providers that do not
+// announce their event in a top-level string, and returns an identifier in the
+// same `<provider>.<name>[.<action>]` form as the GitHub branch above so
+// splitWebhookEvent and the trigger event filters can treat them alike.
+// Returns "" when the payload is not recognisably one of them, leaving the
+// generic body fallbacks in charge.
+func inferProviderEvent(headers http.Header, obj map[string]any) string {
+	// Sentry names the resource in a header and puts the verb (created,
+	// resolved, triggered, …) in the top-level `action`.
+	//
+	//	Sentry-Hook-Resource: error   {"action":"created","data":{...}}
+	if res := headers.Get("Sentry-Hook-Resource"); strings.TrimSpace(res) != "" {
+		return joinEventParts("sentry", strings.ToLower(strings.TrimSpace(res)), payloadString(obj, "action"))
+	}
+	// Linear sends the model name in a header and mirrors it in `type`:
+	//
+	//	Linear-Event: Issue          {"type":"Issue","action":"create",...}
+	if evt := headers.Get("Linear-Event"); strings.TrimSpace(evt) != "" {
+		return joinEventParts("linear", strings.ToLower(strings.TrimSpace(evt)), payloadString(obj, "action"))
+	}
+	if obj == nil {
+		return ""
+	}
+	// Same Linear payload without the header. `type` alone is too generic to
+	// claim, so require the rest of Linear's envelope: one of its three
+	// actions plus the `data` object it always carries.
+	if t := payloadString(obj, "type"); t != "" && isLinearAction(payloadString(obj, "action")) {
+		if _, ok := obj["data"]; ok {
+			return joinEventParts("linear", strings.ToLower(t), payloadString(obj, "action"))
+		}
+	}
+	// Slack Events API nests the real event one level down:
+	//
+	//	{"type":"event_callback","event":{"type":"message","subtype":"..."}}
+	if payloadString(obj, "type") == "event_callback" {
+		if inner, ok := obj["event"].(map[string]any); ok {
+			return joinEventParts("slack", payloadString(inner, "type"), payloadString(inner, "subtype"))
+		}
+	}
+	// PagerDuty V3 nests a dotted discriminator, e.g. `incident.triggered`,
+	// which already carries the name/action split this function returns.
+	if inner, ok := obj["event"].(map[string]any); ok {
+		if et := payloadString(inner, "event_type"); et != "" {
+			return "pagerduty." + et
+		}
+	}
+	return ""
+}
+
+// isLinearAction reports whether a is one of the three verbs Linear puts in
+// the `action` field of every webhook it sends.
+func isLinearAction(a string) bool {
+	switch a {
+	case "create", "update", "remove":
+		return true
+	}
+	return false
+}
+
+// joinEventParts assembles a `<provider>.<name>[.<action>]` identifier, or ""
+// when there is no name to key a filter on.
+func joinEventParts(provider, name, action string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return ""
+	}
+	if action = strings.TrimSpace(action); action != "" {
+		return provider + "." + name + "." + action
+	}
+	return provider + "." + name
+}
+
+// payloadString returns obj[key] when it holds a string, and "" otherwise —
+// including for a nil map, so callers can probe a non-object body safely.
+func payloadString(obj map[string]any, key string) string {
+	if obj == nil {
+		return ""
+	}
+	v, _ := obj[key].(string)
+	return v
 }
 
 // stripBOM removes a leading UTF-8 byte-order-mark, which some clients
@@ -293,6 +383,8 @@ func selectedHeadersJSON(headers http.Header) []byte {
 	add("X-GitHub-Delivery")
 	add("X-Gitlab-Event")
 	add("X-Event-Type")
+	add("Linear-Event")
+	add("Sentry-Hook-Resource")
 	add("Idempotency-Key")
 	if v := headers.Get("X-Hub-Signature-256"); v != "" {
 		out["x-hub-signature-256-present"] = true
@@ -745,7 +837,8 @@ func splitWebhookEvent(event string) (provider, name, action string) {
 
 func isKnownProvider(prefix string) bool {
 	switch prefix {
-	case "github", "gitlab", "bitbucket", "gitea":
+	case "github", "gitlab", "bitbucket", "gitea",
+		"linear", "slack", "pagerduty", "sentry":
 		return true
 	}
 	return false

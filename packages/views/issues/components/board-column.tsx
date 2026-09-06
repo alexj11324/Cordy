@@ -18,7 +18,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
 } from "@patchbay/ui/components/ui/dropdown-menu";
-import { STATUS_CONFIG } from "@patchbay/core/issues/config";
 import { useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
 import { useViewBaseline } from "../surface/view-baseline-context";
 import { StatusHeading } from "./status-heading";
@@ -39,20 +38,26 @@ import type { IssueCreateDefaults } from "../surface/types";
 // inaccurate indicator is worse than showing none.
 
 export const BOARD_COL_WIDTH = 280;
-export const BOARD_CARD_WIDTH = BOARD_COL_WIDTH - 16 - 8; // col(280) - col p-2(16) - droppable p-1(8)
+export const BOARD_CARD_WIDTH = BOARD_COL_WIDTH - 8; // col(280) - droppable p-1(8)
 
-// Board cards are ~90-140px tall, so ~10 fill a column viewport — unlike the
-// generic VIRTUOSO_SEED_COUNT (30, sized for 36px list rows). The seed mounts
-// synchronously per column on every surface remount, so oversizing it
-// multiplies straight into tab-switch cost (columns × seed × per-card mount).
+// Board cards are ~60-90px tall after the compact Linear-style layout, so
+// ~10 still fill a column viewport — unlike the generic VIRTUOSO_SEED_COUNT
+// (30, sized for 36px list rows). The seed mounts synchronously per column
+// on every surface remount, so oversizing it multiplies straight into
+// tab-switch cost (columns × seed × per-card mount).
 const BOARD_SEED_COUNT = 10;
 
-// Median card height (incl. the 8px pt-2 gap) for pre-measurement scroll
+// Median card height (incl. the 6px pt-1.5 gap) for pre-measurement scroll
 // sizing only: the seed's trailing spacer and Virtuoso's defaultItemHeight
 // share it so total scroll height — and the scrollbar thumb — stays steady
 // across the seed → Virtuoso handoff instead of jumping when the unseeded
 // rows suddenly get spaced out. Real measurements refine it afterwards.
-const BOARD_CARD_ESTIMATED_HEIGHT = 110;
+const BOARD_CARD_ESTIMATED_HEIGHT = 72;
+
+const COLUMN_HEADER_ACTIONS_CLASS =
+  "flex items-center gap-0.5 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/col:opacity-100 [@media(hover:hover)]:group-focus-within/col:opacity-100 [@media(hover:hover)]:has-[[data-popup-open]]:opacity-100 [@media(hover:hover)]:has-[[data-open]]:opacity-100";
+
+const COLUMN_ICON_BUTTON_CLASS = "rounded-full text-muted-foreground";
 
 // Columns at or below this render every card plainly — no Virtuoso, no seed
 // handoff, no estimated heights. Scroll height is then always browser-measured
@@ -119,7 +124,6 @@ export const BoardColumn = memo(function BoardColumn({
   sortLabel?: string | null;
 }) {
   const status = group.status;
-  const cfg = status ? STATUS_CONFIG[status] : null;
   const { setNodeRef, isOver } = useDroppable({ id: group.id });
   const viewStoreApi = useViewStoreApi();
   // A status fixed by the open saved view cannot be hidden from the board —
@@ -170,10 +174,10 @@ export const BoardColumn = memo(function BoardColumn({
 
   const computeItemKey = (_index: number, issue: Issue) => issue.id;
   const itemContent = (index: number, issue: Issue) => (
-    // pt-2 on every card but the first reproduces the previous `space-y-2`
-    // gap; padding (not margin) is inside Virtuoso's measured item box so its
+    // pt-1.5 on every card but the first is the Linear-style 6px stack gap;
+    // padding (not margin) is inside Virtuoso's measured item box so its
     // height math stays correct.
-    <div className={index === 0 ? undefined : "pt-2"}>
+    <div className={index === 0 ? undefined : "pt-1.5"}>
       <DraggableBoardCard
         issue={issue}
         childProgress={childProgressMap?.get(issue.id)}
@@ -186,12 +190,14 @@ export const BoardColumn = memo(function BoardColumn({
   );
 
   return (
-    <div style={{ width: BOARD_COL_WIDTH }} className={`flex shrink-0 flex-col rounded-xl ${cfg?.columnBg ?? "bg-muted/40"} p-2`}>
-      <div className="mb-2 flex items-center justify-between px-1.5">
+    <div style={{ width: BOARD_COL_WIDTH }} className="group/col flex shrink-0 flex-col">
+      <div className="mb-1.5 flex items-center justify-between px-1">
         <BoardGroupHeading group={group} count={totalCount ?? issueIds.length} />
 
-        {/* Right: add + menu */}
-        <div className="flex items-center gap-1">
+        {/* Right: add + menu. Hidden until hover/focus on pointer devices
+            (Linear); always visible on coarse pointers so touch users can
+            still reach them. */}
+        <div className={COLUMN_HEADER_ACTIONS_CLASS}>
           {/* Column-header popups mount lazily: a board/swimlane renders one
               header per column and almost none of these menus/tooltips are
               ever opened — eagerly mounting them dominated surface mount
@@ -200,7 +206,7 @@ export const BoardColumn = memo(function BoardColumn({
             <DeferredPopup
               ariaHasPopup="menu"
               triggerRender={
-                <Button variant="ghost" size="icon-sm" className="rounded-full text-muted-foreground">
+                <Button variant="ghost" size="icon-sm" className={COLUMN_ICON_BUTTON_CLASS}>
                   <MoreHorizontal className="size-3.5" />
                 </Button>
               }
@@ -209,7 +215,7 @@ export const BoardColumn = memo(function BoardColumn({
                 <DropdownMenu open={open} onOpenChange={onOpenChange}>
                   <DropdownMenuTrigger
                     render={
-                      <Button variant="ghost" size="icon-sm" className="rounded-full text-muted-foreground">
+                      <Button variant="ghost" size="icon-sm" className={COLUMN_ICON_BUTTON_CLASS}>
                         <MoreHorizontal className="size-3.5" />
                       </Button>
                     }
@@ -235,7 +241,7 @@ export const BoardColumn = memo(function BoardColumn({
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  className="rounded-full text-muted-foreground"
+                  className={COLUMN_ICON_BUTTON_CLASS}
                   onClick={() => {
                     const data = {
                       ...(group.createData ?? {}),
@@ -251,7 +257,7 @@ export const BoardColumn = memo(function BoardColumn({
           )}
         </div>
       </div>
-      <div className="relative min-h-[200px] flex-1 rounded-lg">
+      <div className="relative min-h-[200px] flex-1">
         {isOver && sortLabel && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/40">
             <span className="rounded-md bg-popover px-2.5 py-1 text-caption font-medium text-popover-foreground shadow-sm border border-border">
@@ -265,7 +271,7 @@ export const BoardColumn = memo(function BoardColumn({
           // (MUL-4741): the group id is the stable memento key, so every
           // column's offset survives tab switches/reloads independently.
           data-tab-scroll-root={scrollMementoKey}
-          className={`absolute inset-0 overflow-y-auto rounded-lg p-1 transition-colors ${
+          className={`absolute inset-0 overflow-y-auto p-1 transition-colors ${
             isOver && sortLabel
               ? "ring-2 ring-brand/25 bg-accent/15"
               : isOver
@@ -320,14 +326,7 @@ export const BoardColumn = memo(function BoardColumn({
               )}
             </SortableContext>
           ) : (
-            <>
-              {issueIds.length === 0 && (
-                <p className="py-8 text-center text-caption text-muted-foreground">
-                  {t(($) => $.board.empty_column)}
-                </p>
-              )}
-              {footer}
-            </>
+            footer
           )}
         </div>
       </div>

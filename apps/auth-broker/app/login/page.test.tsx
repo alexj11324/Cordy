@@ -46,14 +46,14 @@ vi.mock("@/lib/broker-client", () => ({
 vi.mock("@/lib/auth-messages", () => ({
   useAuthMessages: () => ({
     preparing: "Preparing sign-in…",
-    brand: "Patchbay",
-    quote: "Patchbay quote",
+    brand: "Orvilo",
+    quote: "Orvilo quote",
     login: "Login",
     desktopFailed: "The desktop sign-in could not be completed.",
-    desktopRestart: "Return to Patchbay and start sign-in again.",
-    opening: "Opening Patchbay…",
+    desktopRestart: "Return to Orvilo and start sign-in again.",
+    opening: "Opening Orvilo…",
     finishing: "Finishing sign-in…",
-    open: "Open Patchbay",
+    open: "Open Orvilo",
   }),
 }));
 
@@ -90,7 +90,7 @@ describe("Accounts desktop login", () => {
       "data-return-url",
       `/login?platform=desktop&state=${STATE}&code_challenge=${CHALLENGE}`,
     );
-    expect(screen.queryByText("Opening Patchbay…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Opening Orvilo…")).not.toBeInTheDocument();
     await waitFor(() =>
       expect(mocks.register).toHaveBeenCalledWith({
         state: STATE,
@@ -106,7 +106,7 @@ describe("Accounts desktop login", () => {
 
     expect(screen.queryByTestId("accounts-login-form")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Preparing sign-in");
-    expect(screen.queryByText("Opening Patchbay…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Opening Orvilo…")).not.toBeInTheDocument();
   });
 
   it("renders the custom form for a direct Accounts login without a Desktop binding", async () => {
@@ -154,7 +154,7 @@ describe("Accounts desktop login", () => {
     await waitFor(() => expect(mocks.complete).toHaveBeenCalledWith("clerk-session-token", {
       state: STATE, code_challenge: CHALLENGE, local: true,
     }));
-    const link = await screen.findByRole("link", { name: "Open Patchbay" });
+    const link = await screen.findByRole("link", { name: "Open Orvilo" });
     expect(link.getAttribute("href")).toContain("patchbay://auth/callback?code=pbl_");
     expect(document.querySelector("form")).toBeNull();
     expect(document.querySelector('input[name="session"]')).toBeNull();
@@ -191,7 +191,7 @@ describe("Accounts desktop login", () => {
     expect(await screen.findByRole("alert")).toBeInTheDocument();
     expect(mocks.signOut).not.toHaveBeenCalled();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    expect(screen.getByRole("alert")).toHaveTextContent("Return to Patchbay");
+    expect(screen.getByRole("alert")).toHaveTextContent("Return to Orvilo");
     expect(screen.queryByTestId("accounts-login-form")).not.toBeInTheDocument();
   });
 
@@ -207,13 +207,13 @@ describe("Accounts desktop login", () => {
     render(<Page />);
 
     expect(
-      await screen.findByRole("link", { name: "Open Patchbay" }),
+      await screen.findByRole("link", { name: "Open Orvilo" }),
     ).toHaveAttribute(
       "href",
       `patchbay://auth/callback?code=pbd_${"c".repeat(43)}&state=${STATE}`,
     );
     expect(screen.getByText("Finishing sign-in…")).toBeInTheDocument();
-    expect(screen.queryByText("Opening Patchbay…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Opening Orvilo…")).not.toBeInTheDocument();
   });
 });
 

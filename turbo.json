@@ -30,6 +30,10 @@
     // two depend on generates it once, and its output is cached like any
     // other. Packages without an `mdx` script are unaffected: turbo skips a
     // dependency no package implements.
+    //
+    // `next build` in apps/docs still runs fumadocs-mdx internally, so that
+    // package serializes `build` behind `typecheck` (apps/docs/turbo.json)
+    // to keep tsc off the regenerating directory.
     "mdx": {
       "outputs": [".source/**"]
     },

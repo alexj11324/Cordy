@@ -1697,3 +1697,20 @@ func TestProjectResourceLegacyRenameSkipsWorktreeGate(t *testing.T) {
 		t.Fatalf("switching to in_place needs no capability: %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestLocalDirectoryRefCommittedBaseline(t *testing.T) {
+	ref, err := validateLocalDirectoryRef(json.RawMessage(`{"local_path":"/work/project","daemon_id":"local","execution_mode":"worktree","worktree_base":"head"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded localDirectoryRef
+	if err := json.Unmarshal(ref, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded.WorktreeBase != "head" {
+		t.Fatalf("baseline dropped: %s", ref)
+	}
+	if _, err := validateLocalDirectoryRef(json.RawMessage(`{"local_path":"/work/project","daemon_id":"local","execution_mode":"worktree","worktree_base":"unknown"}`)); err == nil {
+		t.Fatal("unknown baseline accepted")
+	}
+}

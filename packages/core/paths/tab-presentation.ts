@@ -173,7 +173,7 @@ export function resolveTabPresentation(
       };
     case "automation":
       return {
-        visual: { kind: "icon", icon: "Zap" },
+        visual: { kind: "icon", icon: WORKSPACE_PAGES.automations.icon },
         title: textOr(data.automation?.title, "automation"),
       };
     case "actor":

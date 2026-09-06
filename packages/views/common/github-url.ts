@@ -24,6 +24,43 @@ export function githubShortLabel(url: string): string {
   return url;
 }
 
+/**
+ * Stable repository identity for duplicate checks across Git transports.
+ * Supports the same URL forms the server accepts: http(s), ssh://, git://,
+ * and scp-like `[user@]host:path` remotes. Hosts are normalized to lower case;
+ * repository paths retain their casing so identity matching follows the
+ * existing workspace repository contract.
+ */
+export function repositoryIdentity(rawURL: string): string | null {
+  const value = rawURL.trim();
+  if (!value) return null;
+
+  let host = "";
+  let path = "";
+  if (!value.includes("://")) {
+    const scpLike = value.match(/^(?:[^@\s/]+@)?([^:\s/]+):(.+)$/);
+    if (scpLike) {
+      host = scpLike[1] ?? "";
+      path = scpLike[2] ?? "";
+    }
+  }
+  if (!host) {
+    try {
+      const parsed = new URL(value);
+      host = parsed.hostname;
+      path = parsed.pathname;
+    } catch {
+      return null;
+    }
+  }
+
+  const normalizedPath = path
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\.git$/i, "");
+  if (!host || !normalizedPath) return null;
+  return `${host.toLowerCase()}/${normalizedPath}`;
+}
+
 // Middle-truncate a string to at most maxLen characters, preserving both the
 // leading and trailing portions. The trailing portion is what distinguishes
 // repos that share a long common prefix (e.g. customer-alpha vs customer-beta).

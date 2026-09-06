@@ -975,13 +975,14 @@ export class ApiClient {
   async initiateDesktopAuthHandoff(
     state: string,
     codeChallenge: string,
+    callbackProtocol: string,
   ): Promise<{ registered: boolean }> {
     return this.fetch("/api/desktop-handoff/initiate", {
       method: "POST",
       body: JSON.stringify({
         state,
         code_challenge: codeChallenge,
-        callback_protocol: "patchbay",
+        callback_protocol: callbackProtocol,
       }),
     });
   }
