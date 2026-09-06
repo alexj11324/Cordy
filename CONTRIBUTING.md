@@ -534,7 +534,7 @@ Nothing in this flow touches the system-installed `patchbay` or the default
 | Workspaces dir | `~/patchbay_workspaces/` | `~/patchbay_workspaces_dev-<slug>-<offset>/` |
 | Database | remote / production | local: `patchbay_<slug>_<offset>` |
 | Registry | — | `~/.patchbay/dev/envs/<name>/` |
-| Desktop profile | `desktop-api.patchbay.ai` | `desktop-localhost-<port>` |
+| Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-localhost-<port>` |
 
 Multiple environments run simultaneously without conflict; `make list` shows
 all of them.

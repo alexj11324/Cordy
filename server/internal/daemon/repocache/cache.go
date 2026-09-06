@@ -1836,7 +1836,7 @@ case "$COMMIT_SOURCE" in
   merge|squash) exit 0 ;;
 esac
 
-` + gate + `TRAILER="Co-authored-by: patchbay-agent <github@patchbay.ai>"
+` + gate + `TRAILER="Co-authored-by: patchbay-agent <github@aspectlylabs.com>"
 
 # Don't add if already present.
 if grep -qF "$TRAILER" "$COMMIT_MSG_FILE"; then
