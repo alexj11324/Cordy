@@ -282,37 +282,39 @@ export function TriggerCard({
         <div className="flex min-w-0 flex-1 items-center gap-1.5">
           <p className="shrink-0 text-body">{primaryTitle}</p>
           {dailyTime && scheduleConfig && (
-            <Select
-              items={timeItems}
-              value={dailyTime}
-              disabled={!canWrite}
-              onValueChange={(time) => {
-                if (!canWrite || !time || time === dailyTime) return;
-                updateTrigger.mutate({
-                  automationId,
-                  triggerId: trigger.id,
-                  cron_expression: toCron({
-                    ...scheduleConfig,
-                    time: { kind: "at", time },
-                  }),
-                });
-              }}
-            >
-              <SelectTrigger
-                size="sm"
-                aria-label={t(($) => $.settings.schedule_time_aria)}
-                className="h-6 min-w-0 gap-1 rounded-md border-0 bg-muted px-1.5 py-0 text-body shadow-none dark:bg-muted [&_svg]:size-3"
+            <div className="inline-flex h-6 shrink-0 items-center rounded-md bg-muted px-1.5">
+              <Select
+                items={timeItems}
+                value={dailyTime}
+                disabled={!canWrite}
+                onValueChange={(time) => {
+                  if (!canWrite || !time || time === dailyTime) return;
+                  updateTrigger.mutate({
+                    automationId,
+                    triggerId: trigger.id,
+                    cron_expression: toCron({
+                      ...scheduleConfig,
+                      time: { kind: "at", time },
+                    }),
+                  });
+                }}
               >
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="start" className="max-h-64 min-w-24">
-                {timeItems.map((item) => (
-                  <SelectItem key={item.value} value={item.value}>
-                    {item.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+                <SelectTrigger
+                  size="sm"
+                  aria-label={t(($) => $.settings.schedule_time_aria)}
+                  className="h-6 min-w-0 gap-0.5 border-0 bg-transparent p-0 text-body shadow-none ring-0 dark:bg-transparent [&_svg]:size-3"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start" className="max-h-64 min-w-24">
+                  {timeItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           )}
           {tzShort ? (
             <span className="shrink-0 text-body text-muted-foreground">{tzShort}</span>

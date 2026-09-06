@@ -704,7 +704,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                       : t(($) => $.detail.status_inactive)}
                   </span>
                 </div>
-                <span aria-hidden className="hidden h-3 w-px bg-border sm:block" />
+                <span aria-hidden className="h-3.5 w-px shrink-0 bg-border" />
                 <ProjectPicker
                   projectId={automation.project_id ?? null}
                   disabled={!canWrite}
@@ -738,7 +738,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                     </button>
                   }
                 />
-                <span aria-hidden className="hidden h-3 w-px bg-border sm:block" />
+                <span aria-hidden className="h-3.5 w-px shrink-0 bg-border" />
                 <span className="text-caption text-muted-foreground">
                   {t(($) => $.detail.created_by_line, {
                     name: getActorName(automation.created_by_type, automation.created_by_id),
