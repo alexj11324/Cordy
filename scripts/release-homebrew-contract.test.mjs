@@ -21,6 +21,10 @@ test("release publishes the CLI as a cask in the dedicated Homebrew tap", async 
   assert.match(config, /^\s+directory: Casks$/mu);
   assert.match(config, /^\s+binaries:\n\s+- patchbay$/mu);
   assert.match(config, /^\s+skip_upload: true$/mu);
+  assert.match(
+    config,
+    /^release:\n(?:\s+#.*\n)*\s+use_existing_draft: true$/mu,
+  );
 
   assert.match(
     workflow,
@@ -47,6 +51,12 @@ test("release publishes the CLI as a cask in the dedicated Homebrew tap", async 
     /needs\.verify\.outputs\.is_stable == 'true'/u,
   );
   assert.match(workflow, /path: dist\/homebrew\/Casks\/patchbay\.rb/u);
+  assert.match(workflow, /Verify GoReleaser reused the staged draft/u);
+  assert.match(
+    workflow,
+    /gh api --paginate --slurp "repos\/\$GITHUB_REPOSITORY\/releases\?per_page=100"/u,
+  );
+  assert.match(workflow, /\[ "\$release_count" -ne 1 \]/u);
   const stageCask = workflow.match(
     /- name: Stage stable Homebrew cask[\s\S]*?(?=\n      - name:)/u,
   )?.[0];
