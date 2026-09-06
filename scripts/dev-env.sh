@@ -480,6 +480,37 @@ launch_detached() {
 
 health_json() { curl -sf --max-time 3 "http://localhost:${BACKEND_PORT}/health" 2>/dev/null; }
 
+# DEV_EMAIL is initialized from the ambient environment before any env file is
+# read, so a PATCHBAY_DEV_EMAIL that lives only in .env / .env.worktree is not
+# visible yet at that point. Every consumer runs after load_env_file, so they
+# must resolve the address here rather than trust the startup default — sending
+# the stale default would sign the app in as a different user than the one
+# `make seed-dev` then looks for.
+dev_email() {
+  printf '%s' "${PATCHBAY_DEV_EMAIL:-$DEV_EMAIL}"
+}
+
+# POST /auth/dev-login once, printing the body with the HTTP status on its own
+# last line. Both callers need to tell a 404 (the endpoint is not served by this
+# backend) from a 200 without spending a second request, so the request lives
+# here rather than being written twice.
+dev_login_request() {
+  local server=$1 email=$2 onboarding=${3:-}
+  local payload="{\"email\":\"$(json_escape "$email")\""
+  [ -z "$onboarding" ] || payload="$payload,\"onboarding\":\"$(json_escape "$onboarding")\""
+  payload="$payload}"
+  curl -sS --max-time 10 -o - -w '\n%{http_code}' -X POST "$server/auth/dev-login" \
+    -H 'Content-Type: application/json' -d "$payload"
+}
+
+# Desktop is where onboarding has to be exercised now that it is the client
+# changes are verified on, and its sign-in is minted by this script rather than
+# typed into a URL — so the browser's `?onboarding=keep` escape hatch needs an
+# equivalent here.
+dev_login_onboarding_mode() {
+  [ "${PATCHBAY_DEV_KEEP_ONBOARDING:-}" = 1 ] && printf 'keep' || true
+}
+
 json_field() {
   node -e '
     let payload;
@@ -641,11 +672,11 @@ ensure_credentials() {
   fi
 
   curl -sf -X POST "$server/auth/send-code" -H 'Content-Type: application/json' \
-    -d "{\"email\":\"${DEV_EMAIL}\"}" >/dev/null \
+    -d "{\"email\":\"$(dev_email)\"}" >/dev/null \
     || die "send-code failed. Is PATCHBAY_DEV_VERIFICATION_CODE set and APP_ENV non-production?"
 
   verify="$(curl -sS -X POST "$server/auth/verify-code" -H 'Content-Type: application/json' \
-    -d "{\"email\":\"${DEV_EMAIL}\",\"code\":\"${code}\"}")"
+    -d "{\"email\":\"$(dev_email)\",\"code\":\"${code}\"}")"
   jwt="$(json_field "$verify" token || true)"
   [ -n "$jwt" ] || die "verify-code failed: $verify
 Do not retry immediately — repeated attempts lock the code. Wait ~40s and re-run."
@@ -680,7 +711,7 @@ Do not retry immediately — repeated attempts lock the code. Wait ~40s and re-r
 
   write_profile_config "$config" "$pat" "$ws"
   WORKSPACE_ID="$ws"
-  ok "Logged in as $DEV_EMAIL and wrote profile $PROFILE"
+  ok "Logged in as $(dev_email) and wrote profile $PROFILE"
 }
 
 # The CLI refuses `daemon start` anywhere under a daemon-task marker, so a task
@@ -733,10 +764,29 @@ start_daemon() {
 
 start_desktop() {
   local waited=0 listener stable_listener
+
+  # Minting happens before the reuse guard on purpose. A desktop started before
+  # this environment could mint tokens — or before this feature existed — is
+  # running without one, and reusing it would report success while leaving the
+  # app on the login screen. With the token in hand the guard can tell the two
+  # states apart and relaunch only the renderer that is missing it.
+  #
+  # Desktop authenticates with a bearer token in renderer storage, so the cookie
+  # `make dev-login` sets in a browser does nothing for it. Best-effort: a
+  # backend without PATCHBAY_DEV_LOGIN=1 simply gets no token and shows the
+  # login page.
+  local desktop_email desktop_login desktop_login_status desktop_token=""
+  desktop_email="$(dev_email)"
+  desktop_login="$(dev_login_request "http://localhost:${BACKEND_PORT}" "$desktop_email" "$(dev_login_onboarding_mode)" 2>/dev/null || true)"
+  desktop_login_status="${desktop_login##*$'\n'}"
+  if [ "$desktop_login_status" = 200 ]; then
+    desktop_token="$(json_field "${desktop_login%$'\n'*}" token || true)"
+  fi
+
   if component_pid desktop >/dev/null \
     && curl -sf --max-time 10 "http://localhost:${DESKTOP_RENDERER_PORT}" >/dev/null 2>&1 \
     && listener_belongs_to_component desktop "$DESKTOP_RENDERER_PORT" \
-    && desktop_env_matches; then
+    && desktop_env_matches "$desktop_token"; then
       ok "desktop already running (pid $(component_pid desktop), renderer :$DESKTOP_RENDERER_PORT)"
       return 0
   fi
@@ -757,6 +807,16 @@ VITE_API_URL=http://localhost:${BACKEND_PORT}
 VITE_WS_URL=ws://localhost:${BACKEND_PORT}/ws
 VITE_ACCOUNTS_URL=https://accounts.aspectlylabs.com
 EOF
+  if [ -n "$desktop_token" ]; then
+    printf 'VITE_DEV_LOGIN_TOKEN=%s\n' "$desktop_token" >> "$DESKTOP_ENV_FILE"
+    # Signed in with no workspace lands on the create-workspace flow, which is
+    # not the state someone verifying a change wants to start from.
+    local desktop_slug
+    desktop_slug="$(dev_workspace_slug "http://localhost:${BACKEND_PORT}" "$desktop_token" "$desktop_email" 2>/dev/null || true)"
+    info "Desktop will start signed in as $desktop_email${desktop_slug:+ in workspace $desktop_slug} (dev token in $(basename "$DESKTOP_ENV_FILE"))."
+  else
+    warn "Could not mint a desktop dev token; Electron will show the login page. Is PATCHBAY_DEV_LOGIN=1 in $ENV_FILE and the backend restarted?"
+  fi
   launch_detached desktop env \
     DESKTOP_RENDERER_PORT="$DESKTOP_RENDERER_PORT" DESKTOP_APP_SUFFIX="$DESKTOP_APP_SUFFIX" \
     make -C "$REPO_ROOT" -s desktop-dev ENV_FILE="$ENV_FILE"
@@ -791,11 +851,17 @@ EOF
   die "desktop renderer never became ready on :$DESKTOP_RENDERER_PORT. Log: $(log_file desktop)"
 }
 
+# With a token argument, a renderer whose env file carries no dev token counts
+# as stale: it is running, but signed out. The value is deliberately not
+# compared — every mint returns a fresh JWT, so comparing values would relaunch
+# Electron on every `make up`.
 desktop_env_matches() {
+  local require_token=${1:-}
   [ -f "$DESKTOP_ENV_FILE" ] \
     && grep -Fqx "# Managed by scripts/dev-env.sh for environment ${NAME}." "$DESKTOP_ENV_FILE" \
     && grep -Fqx "VITE_API_URL=http://localhost:${BACKEND_PORT}" "$DESKTOP_ENV_FILE" \
-    && grep -Fqx "VITE_WS_URL=ws://localhost:${BACKEND_PORT}/ws" "$DESKTOP_ENV_FILE"
+    && grep -Fqx "VITE_WS_URL=ws://localhost:${BACKEND_PORT}/ws" "$DESKTOP_ENV_FILE" \
+    && { [ -z "$require_token" ] || grep -q '^VITE_DEV_LOGIN_TOKEN=.' "$DESKTOP_ENV_FILE"; }
 }
 
 stop_component() {
@@ -1007,7 +1073,7 @@ ${C_GREEN}✓ Environment ready.${C_OFF}
 
   ${entrypoint}
   Sign in     ${C_BOLD}make dev-login${C_OFF}  (no login page; prints a session URL + bearer token)
-              or ${DEV_EMAIL} with code ${PATCHBAY_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT} on the login page
+              or $(dev_email) with code ${PATCHBAY_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT} on the login page
   Backend     http://localhost:${BACKEND_PORT}   (GET /health reports pid + commit + started_at)
   Commit      $(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
   Environment ${NAME}$( [ "${TTL_HOURS:-0}" != 0 ] && printf ' (expires %s)' "$EXPIRES_AT" )
@@ -1541,16 +1607,13 @@ cmd_login() {
 
   resolve_env_for_read "$name"
   load_env_file "$ENV_FILE" "$DIR"
-  email="${email:-${PATCHBAY_DEV_EMAIL:-$DEV_EMAIL}}"
+  email="${email:-$(dev_email)}"
 
   local server="http://localhost:${BACKEND_PORT}"
   health_json >/dev/null || die "No backend answering on $server. Run 'make up' first."
 
   local status body response
-  # -w splits the status onto its own last line so a 404 (the endpoint is not
-  # served) is told apart from a 200 without a second request.
-  response="$(curl -sS --max-time 10 -o - -w '\n%{http_code}' -X POST "$server/auth/dev-login" \
-    -H 'Content-Type: application/json' -d "{\"email\":\"$(json_escape "$email")\"}")"
+  response="$(dev_login_request "$server" "$email")"
   status="${response##*$'\n'}"
   body="${response%$'\n'*}"
   case "$status" in
