@@ -217,6 +217,9 @@ describe("CallbackPage", () => {
   });
 
   it("opens a staging desktop callback instead of the production patchbay:// handler", async () => {
+    // Scheme selection is canonical in
+    // packages/views/auth/desktop-callback-redirect.test.ts. This case is the
+    // Google callback wiring that previously hardcoded patchbay://.
     const hrefSetter = vi.fn();
     const originalLocation = window.location;
     Object.defineProperty(window, "location", {
