@@ -226,10 +226,11 @@ make up C=desktop   # backend + the Electron app, already signed in
 make seed-dev       # optional: sample issues, in the dev-fixtures workspace
 ```
 
-**Changes are verified in the desktop app, not the browser.** `make up C=desktop` starts Electron
-against this checkout's backend and signs it in, so that is where you look at what you built. Add
-`make up C=api,web` (and `make dev-login` to get a signed-in browser) when the change is web-only
-platform wiring.
+**Prefer Electron for UI checks.** `make up C=desktop` starts Electron against this checkout's
+backend and signs it in. After a change merges to `main`, production Web deploys through
+`aspectlylabs-production-images` and is also a valid check. If Electron is unavailable or the
+renderer is broken, use `make up C=api,web` and `make dev-login`. Shared product pages live in
+`packages/views`; `apps/web` and `apps/desktop` stay thin routes.
 
 `make up` allocates this checkout's ports and database, so several checkouts and worktrees run
 side by side; `make status` proves what is running is yours, `make down` stops it, `make destroy`

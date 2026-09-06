@@ -5,7 +5,11 @@ description: Patchbay のローカル開発環境を構築し、テストを実�
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay は Go バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `make dev` です。現在の checkout 用に環境、データベース、migration を準備し、Web と API を起動します。
+Patchbay は Go バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `make up C=desktop` です。
+
+Web と Electron のプロダクト UI は `packages/views` を共有します。PR が `main` にマージされ CI が成功すると、本番 Web は `aspectlylabs-production-images` でデプロイされます。インストール済みのデスクトップクライアントは次の `v*` リリース（`release.yml` + electron-updater）で同じ UI を受け取ります。アプリシェルは `apps/web` と `apps/desktop` に置き、共有ページは `packages/views` に置きます。
+
+**UI 確認:** Electron を優先します（`make up C=desktop`）。Web のデプロイ後はブラウザでも確認できます。Electron が使えない、またはレンダラーが壊れている場合は Web で確認します（`make up` / `make up C=api,web` と `make dev-login`）。視覚確認を省略しないでください。
 
 ## 必要な環境
 
@@ -26,7 +30,7 @@ make up C=desktop   # 依存関係のインストール、データベース準�
 make seed-dev       # 任意: サンプル issue を dev-fixtures ワークスペースに投入
 ```
 
-変更の確認はブラウザではなくデスクトップアプリで行います。`make up C=desktop` はこの checkout のバックエンドに対して Electron を起動し、サインイン済み・ワークスペース内の状態で開きます。Web 固有のプラットフォーム配線を変更した場合にのみ、`make up C=api,web` と `make dev-login`（ブラウザにサインインさせる URL と、`curl` 用のベアラートークンを表示します）を使ってください。
+UI 確認は Electron を優先します。`make up C=desktop` はこの checkout のバックエンドに対して Electron を起動し、サインイン済み・ワークスペース内の状態で開きます。Web のデプロイ後はブラウザでも確認できます。Electron が使えない、またはレンダラーが壊れている場合は、`make up C=api,web` と `make dev-login`（ブラウザにサインインさせる URL と、`curl` 用のベアラートークンを表示します）を使ってください。
 
 デスクトップはその URL を使えません。ブラウザの Cookie ではなく保存されたベアラートークンで認証するためで、`make up C=desktop` が gitignore 済みの `apps/desktop/.env.development.local` にトークンを書き込みます。既存のセッションが常に優先されるので、テスト中のアカウントからサインアウトさせられることはありません。
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Clock, GitBranch, MessageSquare, Plus, Webhook } from "lucide-react";
+import { Clock, GitBranch, MessageSquare, Plus, Search, Webhook } from "lucide-react";
 import {
   presetsForSource,
   searchTriggerCatalog,
@@ -22,6 +22,7 @@ import {
   DropdownMenuTrigger,
 } from "@patchbay/ui/components/ui/dropdown-menu";
 import { Input } from "@patchbay/ui/components/ui/input";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../../i18n";
 
 function sourceIcon(source: AutomationTriggerSource["id"]) {
@@ -43,10 +44,13 @@ export function TriggerAddMenu({
   canWrite,
   onPickSchedule,
   onPickPreset,
+  variant = "toolbar",
 }: {
   canWrite: boolean;
   onPickSchedule: () => void;
   onPickPreset: (preset: AutomationTriggerPreset) => void;
+  /** `inset` sits as the last row inside the Triggers card. */
+  variant?: "toolbar" | "inset";
 }) {
   const { t } = useT("automations");
   const [query, setQuery] = useState("");
@@ -62,19 +66,27 @@ export function TriggerAddMenu({
     <DropdownMenu onOpenChange={(open) => { if (!open) setQuery(""); }}>
       <DropdownMenuTrigger
         render={
-          <Button size="sm" variant="outline">
-            <Plus className="h-3.5 w-3.5 mr-1" />
+          <Button
+            size="sm"
+            variant="ghost"
+            className={cn(
+              "text-muted-foreground hover:text-foreground",
+              variant === "inset" && "h-8 w-full justify-start px-2 font-normal",
+            )}
+          >
+            <Plus className="h-3.5 w-3.5" />
             {t(($) => $.settings.add_trigger)}
           </Button>
         }
       />
-      <DropdownMenuContent align="end" className="w-64">
-        <div className="px-2 pb-2">
+      <DropdownMenuContent align={variant === "inset" ? "start" : "end"} className="w-64">
+        <div className="relative px-2 pb-2">
+          <Search className="pointer-events-none absolute top-2.5 left-4 size-3.5 text-muted-foreground" />
           <Input
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t(($) => $.settings.search_triggers)}
-            className="h-8"
+            className="h-8 pl-7"
             autoFocus
           />
         </div>

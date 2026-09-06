@@ -218,9 +218,10 @@ make up C=desktop   # 后端 + Electron 桌面端，并且已经是登录状态
 make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作区
 ```
 
-**改动在桌面端验证，不在浏览器里验证。** `make up C=desktop` 会用当前 checkout 的后端把 Electron
-拉起来并自动登录，你要看的效果就在那里。只有当改动是 Web 独有的平台接线时，才用
-`make up C=api,web`（配合 `make dev-login` 拿一个已登录的浏览器）。
+**界面验收首选 Electron。** `make up C=desktop` 会用当前 checkout 的后端把 Electron
+拉起来并自动登录。合入 `main` 后生产 Web 会通过 `aspectlylabs-production-images` 部署，也可以在
+浏览器里验收。如果环境没有可用的 Electron，或桌面渲染异常，就用 `make up C=api,web`
+（配合 `make dev-login`）。产品页面放在 `packages/views`；`apps/web` 和 `apps/desktop` 只做薄路由。
 
 `make up` 会为当前 checkout 分配独立的端口和数据库，所以多个 checkout、多个 worktree 可以同时跑；
 `make status` 能证明正在跑的就是你这份，`make down` 停掉，`make destroy` 删干净。

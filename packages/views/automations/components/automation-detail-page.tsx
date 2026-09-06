@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import {
   Play, Clock, Trash2, CheckCircle2, XCircle, Loader2, Pencil,
-  Ban, ChevronDown, ChevronRight,
+  Ban, ChevronDown, ChevronRight, FolderKanban, MoreHorizontal,
   Server,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -24,7 +24,6 @@ import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import { useNavigation, AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
-import { ActorAvatar } from "../../common/actor-avatar";
 import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Switch } from "@patchbay/ui/components/ui/switch";
@@ -50,13 +49,18 @@ import { getDefaultScheduleConfig, type ScheduleConfig } from "./schedule-editor
 import { browserTimezone } from "../../common/timezone-select";
 import { toCron } from "./schedule-editor/cron-mapping";
 import { formatInTimeZone } from "../../common/format-in-time-zone";
-import { SegmentedToggle } from "../../common/segmented-toggle";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@patchbay/ui/components/ui/tabs";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@patchbay/ui/components/ui/dropdown-menu";
 import { useScheduleSubmitGate } from "./schedule-editor/validate";
 import type {
   Automation,
   AutomationExecutionMode,
   AutomationRun,
-  AutomationSubscriber,
 } from "@patchbay/core/types";
 import type { AgentTask } from "@patchbay/core/types/agent";
 import { ContentEditor, ReadonlyContent } from "../../editor";
@@ -66,6 +70,7 @@ import { runNowToastKind, runNowBlockedKey } from "./run-now-toast";
 import { WebhookPayloadPreview } from "./webhook-payload-preview";
 import { WebhookDeliveriesSection } from "./webhook-deliveries-section";
 import { ProjectIcon } from "../../projects/components/project-icon";
+import { ProjectPicker } from "../../projects/components/project-picker";
 import { useT } from "../../i18n";
 import { PageHeader } from "../../layout/page-header";
 import { ModelDropdown } from "../../agents/components/model-dropdown";
@@ -367,13 +372,13 @@ function InstructionsSection({
   };
 
   return (
-    <section className="space-y-3">
-      <h2 className="text-body font-medium text-muted-foreground uppercase tracking-wider">
+    <section className="space-y-3" data-testid="automation-instructions">
+      <h2 className="text-title-sm font-semibold text-foreground">
         {t(($) => $.settings.section_instructions)}
       </h2>
-      <div className="rounded-lg border bg-background">
+      <div className="rounded-lg border bg-muted/40">
         {canWrite ? (
-          <div className="min-h-[200px] px-4 py-3">
+          <div className="automation-instructions min-h-[200px] px-4 py-3">
             <ContentEditor
               value={automation.description ?? ""}
               placeholder={t(($) => $.dialog.description_placeholder)}
@@ -384,7 +389,7 @@ function InstructionsSection({
             />
           </div>
         ) : automation.description ? (
-          <div className="px-4 py-3">
+          <div className="automation-instructions px-4 py-3">
             <ReadonlyContent content={automation.description} />
           </div>
         ) : (
@@ -392,62 +397,21 @@ function InstructionsSection({
             {t(($) => $.dialog.description_placeholder)}
           </p>
         )}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
-          <div>
-            <p className="text-caption font-medium">{t(($) => $.settings.section_model)}</p>
-            <p className="text-caption text-muted-foreground">
-              {t(($) => $.settings.model_default)}
-            </p>
-          </div>
-          <div className="min-w-[12rem]">
-            <ModelDropdown
-              runtimeId={runtimeId}
-              runtimeOnline={Boolean(runtimeId)}
-              value={automation.model ?? ""}
-              onChange={(model) => {
-                if (!canWrite) return;
-                updateAutomation.mutate({ id: automation.id, model: model || "" });
-              }}
-              disabled={!canWrite}
-            />
-          </div>
+        <div className="flex items-center border-t border-border/60 px-3 py-2">
+          <ModelDropdown
+            compact
+            runtimeId={runtimeId}
+            runtimeOnline={Boolean(runtimeId)}
+            value={automation.model ?? ""}
+            onChange={(model) => {
+              if (!canWrite) return;
+              updateAutomation.mutate({ id: automation.id, model: model || "" });
+            }}
+            disabled={!canWrite}
+          />
         </div>
       </div>
     </section>
-  );
-}
-
-// Read-only chip row; edits flow through AutomationDialog → SubscriberMultiSelect
-// so the detail page never holds in-flight selection state.
-function SubscriberChips({
-  subscribers,
-}: {
-  subscribers: AutomationSubscriber[] | undefined;
-}) {
-  const { t } = useT("automations");
-  const { getActorName } = useActorName();
-  const members = (subscribers ?? []).filter((s) => s.user_type === "member");
-  if (members.length === 0) {
-    return (
-      <div className="mt-1 text-body text-muted-foreground">
-        {t(($) => $.detail.field_subscribers_none)}
-      </div>
-    );
-  }
-  return (
-    <div className="mt-1 flex flex-wrap gap-1.5">
-      {members.map((s) => (
-        <span
-          key={`${s.user_type}:${s.user_id}`}
-          className="inline-flex items-center gap-1 rounded-full border bg-background px-2 py-0.5 text-caption"
-        >
-          <ActorAvatar actorType="member" actorId={s.user_id} size="xs" />
-          <span className="max-w-[14rem] truncate">
-            {getActorName("member", s.user_id)}
-          </span>
-        </span>
-      ))}
-    </div>
   );
 }
 
@@ -498,29 +462,18 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
           <Skeleton className="h-4 w-32" />
         </PageHeader>
         <div className="flex-1 overflow-y-auto">
-          <div className="max-w-4xl mx-auto p-6 space-y-8">
-            <section className="space-y-4">
-              <Skeleton className="h-3 w-20" />
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <Skeleton className="h-3 w-12" />
-                  <Skeleton className="h-5 w-32" />
-                </div>
-                <div className="space-y-1">
-                  <Skeleton className="h-3 w-12" />
-                  <Skeleton className="h-5 w-24" />
-                </div>
-              </div>
+          <div className="mx-auto max-w-3xl px-6 py-8 space-y-8">
+            <section className="space-y-3">
+              <Skeleton className="h-8 w-64" />
+              <Skeleton className="h-5 w-80" />
             </section>
             <section className="space-y-3">
-              <Skeleton className="h-4 w-16" />
-              <Skeleton className="h-10 w-full rounded-md" />
+              <Skeleton className="h-5 w-20" />
+              <Skeleton className="h-24 w-full rounded-lg" />
             </section>
             <section className="space-y-3">
-              <Skeleton className="h-4 w-24" />
-              {Array.from({ length: 3 }).map((_, i) => (
-                <Skeleton key={i} className="h-10 w-full" />
-              ))}
+              <Skeleton className="h-5 w-40" />
+              <Skeleton className="h-48 w-full rounded-lg" />
             </section>
           </div>
         </div>
@@ -621,34 +574,12 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
       <BreadcrumbHeader
         segments={[{ href: wsPaths.automations(), label: t(($) => $.page.title) }]}
         leaf={
-          <>
-            <h1 className="min-w-0 truncate text-body font-medium text-foreground">{automation.title}</h1>
-            <div className="ml-1 flex items-center gap-1.5 shrink-0">
-              <Switch
-                size="sm"
-                checked={automation.status === "active"}
-                onCheckedChange={handleToggleStatus}
-                disabled={automation.status === "archived"}
-                aria-label={
-                  automation.status === "active"
-                    ? t(($) => $.detail.pause_aria)
-                    : t(($) => $.detail.activate_aria)
-                }
-              />
-              <span className={cn(
-                "text-caption font-medium hidden sm:inline",
-                automation.status === "active" ? "text-emerald-500" :
-                automation.status === "paused" ? "text-amber-500" :
-                "text-muted-foreground",
-              )}>
-                {t(($) => $.status[automation.status])}
-              </span>
-            </div>
-          </>
+          <span className="min-w-0 truncate text-body text-muted-foreground">
+            {automation.title}
+          </span>
         }
         actions={
           canWrite ? (
@@ -675,6 +606,29 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                     : t(($) => $.detail.run_now)}
                 </span>
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground"
+                      aria-label={t(($) => $.detail.more_actions)}
+                    >
+                      <MoreHorizontal />
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onClick={() => setDeleteConfirmOpen(true)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    {t(($) => $.detail.delete_button)}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </>
           ) : null
         }
@@ -697,189 +651,172 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
         </div>
       )}
 
-      <div className="flex shrink-0 items-center border-b px-6 py-2">
-        <div className="w-64">
-          <SegmentedToggle
-            value={detailTab}
-            onChange={setDetailTab}
-            options={[
-              ["settings", t(($) => $.settings.tab_settings)],
-              ["runs", t(($) => $.settings.tab_runs)],
-            ]}
-          />
+      <Tabs
+        value={detailTab}
+        onValueChange={(value) => setDetailTab(value as "settings" | "runs")}
+        className="flex min-h-0 flex-1 flex-col gap-0"
+      >
+        <div className="flex shrink-0 items-center border-b px-6">
+          <TabsList variant="line" className="gap-0 p-0 group-data-horizontal/tabs:h-10">
+            <TabsTrigger
+              value="settings"
+              className="h-full rounded-none px-2.5 text-label group-data-horizontal/tabs:after:bottom-0"
+            >
+              {t(($) => $.settings.tab_settings)}
+            </TabsTrigger>
+            <TabsTrigger
+              value="runs"
+              className="h-full rounded-none px-2.5 text-label group-data-horizontal/tabs:after:bottom-0"
+            >
+              {t(($) => $.settings.tab_runs)}
+            </TabsTrigger>
+          </TabsList>
         </div>
-      </div>
 
-      <div className="flex-1 overflow-y-auto">
-        <div className="max-w-4xl mx-auto p-6 space-y-8">
-          {detailTab === "settings" ? (
-            <>
-          {/* Properties */}
-          <section className="space-y-4">
-            <h2 className="text-body font-medium text-muted-foreground uppercase tracking-wider">
-              {t(($) => $.detail.section_properties)}
-            </h2>
-            <div className="grid grid-cols-2 gap-4 text-body">
-              <div>
-                <label className="text-caption text-muted-foreground">{t(($) => $.detail.field_agent)}</label>
-                <div className="mt-1 flex items-center gap-2">
-                  <ActorAvatar
-                    actorType={automation.executor_type}
-                    actorId={automation.executor_id}
-                    size="sm"
-                    enableHoverCard={automation.executor_type === "agent"}
-                    showStatusDot={automation.executor_type === "agent"}
+        <div className="flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-3xl px-6 py-8">
+            <TabsContent value="settings" className="mt-0 space-y-8">
+              <header className="space-y-3">
+                <h1
+                  data-testid="automation-settings-title"
+                  className="text-display-sm font-bold leading-snug tracking-tight text-foreground"
+                >
+                  {automation.title}
+                </h1>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <Switch
+                      size="sm"
+                      checked={automation.status === "active"}
+                      onCheckedChange={handleToggleStatus}
+                      disabled={automation.status === "archived" || !canWrite}
+                      aria-label={
+                        automation.status === "active"
+                          ? t(($) => $.detail.pause_aria)
+                          : t(($) => $.detail.activate_aria)
+                      }
+                    />
+                    <span className={cn(
+                      "text-caption font-medium",
+                      automation.status === "active" ? "text-emerald-500" : "text-muted-foreground",
+                    )}>
+                      {automation.status === "active"
+                        ? t(($) => $.status.active)
+                        : t(($) => $.detail.status_inactive)}
+                    </span>
+                  </div>
+                  <ProjectPicker
+                    projectId={automation.project_id ?? null}
+                    disabled={!canWrite}
+                    onUpdate={(updates) => {
+                      if (!canWrite || updates.project_id === undefined) return;
+                      updateAutomation.mutate({
+                        id: automationId,
+                        project_id: updates.project_id,
+                      });
+                    }}
+                    triggerRender={
+                      <button
+                        type="button"
+                        disabled={!canWrite}
+                        className="inline-flex h-7 max-w-[14rem] items-center gap-1 rounded-md border border-border bg-background px-2 text-caption hover:bg-accent/30 disabled:pointer-events-none disabled:opacity-50"
+                      >
+                        {projectLoading ? (
+                          <Skeleton className="h-3.5 w-20" />
+                        ) : project ? (
+                          <>
+                            <ProjectIcon project={project} size="sm" />
+                            <span className="truncate">{project.title}</span>
+                          </>
+                        ) : (
+                          <>
+                            <FolderKanban className="size-3.5 shrink-0 text-muted-foreground" />
+                            <span className="truncate text-muted-foreground">
+                              {t(($) => $.detail.no_project)}
+                            </span>
+                          </>
+                        )}
+                        <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+                      </button>
+                    }
                   />
-                  <span className="cursor-pointer">
-                    {getActorName(automation.executor_type, automation.executor_id)}
+                  <span className="text-caption text-muted-foreground">
+                    {t(($) => $.detail.created_by_line, {
+                      name: getActorName(automation.created_by_type, automation.created_by_id),
+                    })}
                   </span>
                 </div>
-              </div>
-              <div>
-                <label className="text-caption text-muted-foreground">{t(($) => $.detail.field_created_by)}</label>
-                <div className="mt-1 flex items-center gap-2">
-                  {/* Creator may be a member or an agent: the HTTP create path stamps
-                      member today, but backend logic also writes created_by_type=agent.
-                      ActorAvatar/getActorName resolve both, so never assume member. */}
-                  <ActorAvatar
-                    actorType={automation.created_by_type}
-                    actorId={automation.created_by_id}
-                    size="sm"
-                    enableHoverCard
-                    showStatusDot={automation.created_by_type === "agent"}
-                  />
-                  <span className="cursor-pointer">
-                    {getActorName(automation.created_by_type, automation.created_by_id)}
-                  </span>
-                </div>
-              </div>
-              <div>
-                <label className="text-caption text-muted-foreground">{t(($) => $.detail.field_output_mode)}</label>
-                <div className="mt-1">
-                  {t(($) => $.execution_mode[automation.execution_mode as AutomationExecutionMode])}
-                </div>
-              </div>
-              {/* Shown for BOTH output modes (MUL-6681): a run_only automation's
-                  project decides its execution environment (repository /
-                  local_directory, and therefore worktree isolation), so an
-                  operator debugging a run needs to see it here. */}
-              <div>
-                <label className="text-caption text-muted-foreground">{t(($) => $.detail.field_project)}</label>
-                <div className="mt-1 min-w-0">
-                  {!automation.project_id ? (
-                    <span className="text-muted-foreground">{t(($) => $.detail.no_project)}</span>
-                  ) : projectLoading ? (
-                    <Skeleton className="h-5 w-32" />
-                  ) : project ? (
-                    <AppLink
-                      href={wsPaths.projectDetail(project.id)}
-                      className="inline-flex max-w-full items-center gap-1.5 text-foreground hover:underline"
-                    >
-                      <ProjectIcon project={project} size="md" />
-                      <span className="truncate">{project.title}</span>
-                    </AppLink>
+              </header>
+
+              <section className="space-y-3">
+                <h2 className="text-title-sm font-semibold text-foreground">
+                  {t(($) => $.detail.section_triggers)}
+                </h2>
+                <div
+                  data-testid="automation-triggers-card"
+                  className="rounded-lg border bg-background divide-y"
+                >
+                  {triggers.length === 0 && !canWrite ? (
+                    <p className="px-4 py-6 text-center text-body text-muted-foreground">
+                      {t(($) => $.detail.no_triggers)}
+                    </p>
                   ) : (
-                    <span className="text-muted-foreground">{t(($) => $.detail.project_unavailable)}</span>
+                    triggers.map((trig) => (
+                      <TriggerCard
+                        key={trig.id}
+                        trigger={trig}
+                        automationId={automationId}
+                        canWrite={canWrite}
+                      />
+                    ))
                   )}
+                  <div className="px-2 py-1">
+                    <TriggerAddMenu
+                      canWrite={canWrite}
+                      variant="inset"
+                      onPickSchedule={() => setTriggerDialogOpen(true)}
+                      onPickPreset={handlePickPreset}
+                    />
+                  </div>
                 </div>
-              </div>
-              {automation.execution_mode === "create_issue" && (
-                <div className="col-span-2">
-                  <label className="text-caption text-muted-foreground">
-                    {t(($) => $.detail.field_subscribers)}
-                  </label>
-                  <SubscriberChips
-                    subscribers={automation.subscribers}
-                  />
-                </div>
-              )}
-            </div>
-          </section>
+              </section>
 
-          {/* Triggers */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-body font-medium text-muted-foreground uppercase tracking-wider">
-                {t(($) => $.detail.section_triggers)}
-              </h2>
-              <TriggerAddMenu
+              <InstructionsSection
+                automation={automation}
                 canWrite={canWrite}
-                onPickSchedule={() => setTriggerDialogOpen(true)}
-                onPickPreset={handlePickPreset}
+                runtimeId={runtimeId}
               />
-            </div>
-            {triggers.length === 0 ? (
-              <div className="rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
-                {t(($) => $.detail.no_triggers)}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {triggers.map((trig) => (
-                  <TriggerCard
-                    key={trig.id}
-                    trigger={trig}
-                    automationId={automationId}
-                    canWrite={canWrite}
-                  />
-                ))}
-              </div>
-            )}
-          </section>
 
-          <InstructionsSection
-            automation={automation}
-            canWrite={canWrite}
-            runtimeId={runtimeId}
-          />
+              <AutomationToolsSection automation={automation} canWrite={canWrite} />
 
-          <AutomationToolsSection automation={automation} canWrite={canWrite} />
-
-          {/* Generic webhook deliveries only — native GitHub/Slack/Linear
-              triggers have no public URL and share the platform ingress. */}
-          <WebhookDeliveriesSection
-            automationId={automationId}
-            hasWebhookTrigger={hasGenericWebhook}
-          />
-
-          {/* Danger zone */}
-          {canWrite && (
-            <section className="space-y-3 pt-4 border-t">
-              <h2 className="text-body font-medium text-destructive uppercase tracking-wider">
-                {t(($) => $.detail.section_danger)}
-              </h2>
-              <Button size="sm" variant="destructive" onClick={() => setDeleteConfirmOpen(true)}>
-                <Trash2 className="h-3.5 w-3.5 mr-1" />
-                {t(($) => $.detail.delete_button)}
-              </Button>
-            </section>
-          )}
-            </>
-          ) : (
-          <section className="space-y-3">
-            <h2 className="text-body font-medium text-muted-foreground uppercase tracking-wider">
-              {t(($) => $.detail.section_run_history)}
-            </h2>
-            {runsLoading ? (
-              <div className="space-y-1">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : runs.length === 0 ? (
-              <div className="rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
-                {t(($) => $.detail.no_runs)}
-              </div>
-            ) : (
-              <RunHistoryList
-                runs={runs}
-                agentId={automation.executor_id}
-                agentName={getActorName(automation.executor_type, automation.executor_id)}
+              <WebhookDeliveriesSection
+                automationId={automationId}
+                hasWebhookTrigger={hasGenericWebhook}
               />
-            )}
-          </section>
-          )}
+            </TabsContent>
+
+            <TabsContent value="runs" className="mt-0 space-y-3">
+              {runsLoading ? (
+                <div className="space-y-1">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Skeleton key={i} className="h-10 w-full" />
+                  ))}
+                </div>
+              ) : runs.length === 0 ? (
+                <div className="rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
+                  {t(($) => $.detail.no_runs)}
+                </div>
+              ) : (
+                <RunHistoryList
+                  runs={runs}
+                  agentId={automation.executor_id}
+                  agentName={getActorName(automation.executor_type, automation.executor_id)}
+                />
+              )}
+            </TabsContent>
+          </div>
         </div>
-      </div>
+      </Tabs>
 
       {/* Mounted only while open, like the edit dialog: otherwise a rejected
           cron leaves scheduleValid=false behind for the next open. */}

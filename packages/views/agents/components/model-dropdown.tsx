@@ -12,6 +12,7 @@ import {
 } from "@patchbay/ui/components/ui/popover";
 import { Input } from "@patchbay/ui/components/ui/input";
 import { Label } from "@patchbay/ui/components/ui/label";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../../i18n";
 
 // ModelDropdown renders a searchable, creatable model picker for an agent.
@@ -34,12 +35,16 @@ export function ModelDropdown({
   value,
   onChange,
   disabled,
+  compact = false,
 }: {
   runtimeId: string | null;
   runtimeOnline: boolean;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
+  /** Inline chip for surfaces like automation instructions. Hides the
+   *  section label and the two-line trigger. */
+  compact?: boolean;
 }) {
   const { t } = useT("agents");
   const [open, setOpen] = useState(false);
@@ -110,6 +115,13 @@ export function ModelDropdown({
         : t(($) => $.model_dropdown.runtime_offline_manual));
 
   if (!supported && !modelsQuery.isLoading) {
+    if (compact) {
+      return (
+        <span className="inline-flex h-7 items-center rounded-md border border-dashed border-border px-2 text-caption text-muted-foreground">
+          {t(($) => $.model_dropdown.managed_by_runtime_title)}
+        </span>
+      );
+    }
     return (
       <div className="flex flex-col min-w-0">
         <div className="flex h-6 items-center">
@@ -129,39 +141,46 @@ export function ModelDropdown({
   }
 
   return (
-    <div className="flex flex-col min-w-0">
-      <div className="flex h-6 items-center justify-between">
-        <Label className="text-caption text-muted-foreground">{t(($) => $.model_dropdown.label)}</Label>
-        {modelsQuery.isError && (
-          <span
-            className="text-caption text-muted-foreground"
-            title={discoveryError ?? undefined}
-          >
-            {t(($) => $.model_dropdown.discovery_failed)}
-          </span>
-        )}
-      </div>
+    <div className={cn(compact ? "inline-flex min-w-0" : "flex flex-col min-w-0")}>
+      {!compact && (
+        <div className="flex h-6 items-center justify-between">
+          <Label className="text-caption text-muted-foreground">{t(($) => $.model_dropdown.label)}</Label>
+          {modelsQuery.isError && (
+            <span
+              className="text-caption text-muted-foreground"
+              title={discoveryError ?? undefined}
+            >
+              {t(($) => $.model_dropdown.discovery_failed)}
+            </span>
+          )}
+        </div>
+      )}
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger
           disabled={disabled}
-          className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 mt-1.5 text-left text-body transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50"
+          className={cn(
+            "flex min-w-0 items-center text-left transition-colors hover:bg-muted disabled:pointer-events-none disabled:opacity-50",
+            compact
+              ? "h-7 max-w-[16rem] gap-1 rounded-md border border-border bg-background px-2 text-caption"
+              : "mt-1.5 w-full gap-3 rounded-lg border border-border bg-background px-3 py-2.5 text-body",
+          )}
         >
-          <Cpu className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <Cpu className={cn("shrink-0 text-muted-foreground", compact ? "h-3.5 w-3.5" : "h-4 w-4")} />
           <div className="min-w-0 flex-1">
             {/* Wrapped in flex to mirror RuntimePicker's trigger DOM. The
                 two pickers sit side-by-side; inline-in-flex vs block-line-
                 box height calc would otherwise leave them ~1px misaligned. */}
             <div className="flex items-center gap-2">
-              <span className="truncate font-medium">{triggerLabel}</span>
+              <span className={cn("truncate", !compact && "font-medium")}>{triggerLabel}</span>
             </div>
-            {value && (
+            {!compact && value && (
               <div className="truncate text-caption text-muted-foreground">
                 {modelLabel(models, value)}
               </div>
             )}
           </div>
           <ChevronDown
-            className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`}
+            className={`shrink-0 text-muted-foreground transition-transform ${compact ? "h-3 w-3" : "h-4 w-4"} ${open ? "rotate-180" : ""}`}
           />
         </PopoverTrigger>
         <PopoverContent

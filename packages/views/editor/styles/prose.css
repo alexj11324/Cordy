@@ -85,6 +85,20 @@
   line-height: 1.5;
 }
 
+/* Compact headings inside the automation instructions editor only.
+ * Issue descriptions keep the page-level h1/h2 scale above; a runbook that
+ * starts with `## Goal` must not look like a second page title. */
+.automation-instructions .rich-text-editor h1,
+.automation-instructions .rich-text-editor h2,
+.automation-instructions .rich-text-editor h3 {
+  font-size: var(--text-body);
+  font-weight: 600;
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
 .rich-text-editor h6 {
   font-size: var(--text-caption);
   font-weight: 600;
