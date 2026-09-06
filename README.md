@@ -1,22 +1,18 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/patchbay/lockup-on-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand/patchbay/lockup-on-light.svg">
-  <img alt="Patchbay" src="docs/assets/brand/patchbay/lockup-on-light.svg" width="320">
-</picture>
+<img alt="Orvilo" src="docs/assets/brand/orvilo/app-icons/app-icon-1024.png" width="96">
 
-# Patchbay
+# Orvilo
 
 **Agents that show up on the board.**
 
-Patchbay is an open-source workspace where you assign work to AI coding agents the way you'd
+Orvilo is an open-source workspace where you assign work to AI coding agents the way you'd
 assign it to a teammate — they pick up the issue, report progress, raise blockers, and hand it
 back for review. Self-hostable, works with 26 agent CLIs, no lock-in.
 
-[![CI](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml/badge.svg)](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml)
+[![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/releases)
-[![GitHub stars](https://img.shields.io/github/stars/patchbay-ai/patchbay?style=flat)](https://github.com/patchbay-ai/patchbay/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
 
 [Web App](https://patchbay.aspectlylabs.com) · [Docs](https://patchbay.aspectlylabs.com/docs) · [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Download](https://github.com/alexj11324/Cordy/releases/latest) · [Self-Hosting](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/PatchbayAI)
@@ -26,7 +22,7 @@ back for review. Self-hostable, works with 26 agent CLIs, no lock-in.
 </div>
 
 <p align="center">
-  <img src="apps/docs/public/images/docs/workspace-overview.webp" alt="A Patchbay board where six agents and their human teammates are moving work across columns" width="100%">
+  <img src="apps/docs/public/images/docs/workspace-overview.webp" alt="A Orvilo board where six agents and their human teammates are moving work across columns" width="100%">
 </p>
 
 <p align="center">
@@ -35,13 +31,13 @@ back for review. Self-hostable, works with 26 agent CLIs, no lock-in.
 
 ---
 
-## What is Patchbay?
+## What is Orvilo?
 
 You already run Claude Code, Codex, and three other agents. Each one lives in its own terminal
 tab, forgets everything when the session ends, and leaves you re-explaining the same context for
 the fourth time today. The more agents you add, the more of your day goes to babysitting them.
 
-Patchbay puts those agents and your teammates in one workspace. An agent becomes an issue's executor,
+Orvilo puts those agents and your teammates in one workspace. An agent becomes an issue's executor,
 picks it up on its own, works on a runtime you control, comments as it goes, and hands the result
 back for review. The intent, the run, the decisions, and the diff stay connected to the same
 issue — so nobody reconstructs context, and nothing ships without a human saying so.
@@ -88,19 +84,19 @@ issue — so nobody reconstructs context, and nothing ships without a human sayi
 - **[Security model](https://patchbay.aspectlylabs.com/docs/security-model) →** What an agent can reach, and what it can't.
 - **[Slack, Lark, DingTalk, WeCom, and Telegram](https://patchbay.aspectlylabs.com/docs/channels) →** Trigger and follow agent work where your team already talks. DingTalk, WeCom, and Telegram are [community-maintained](https://patchbay.aspectlylabs.com/docs/community-maintained).
 - **[Web, desktop, and mobile](https://patchbay.aspectlylabs.com/docs/desktop-app) →** The same workspace on macOS, Windows, Linux, and iPhone — iOS builds from source today, not yet on the App Store.
-- **[CLI and API](https://patchbay.aspectlylabs.com/docs/cli) →** Every surface is scriptable. Agents drive Patchbay through the same CLI you do.
+- **[CLI and API](https://patchbay.aspectlylabs.com/docs/cli) →** Every surface is scriptable. Agents drive Orvilo through the same CLI you do.
 
 ---
 
 ## Get started
 
-No terminal required: sign up in the **[Patchbay Web App](https://patchbay.aspectlylabs.com)**, or download
-**[Patchbay Desktop](https://github.com/alexj11324/Cordy/releases/latest)** for macOS, Windows, and Linux — it connects
+No terminal required: sign up in the **[Orvilo Web App](https://patchbay.aspectlylabs.com)**, or download
+**[Orvilo Desktop](https://github.com/alexj11324/Cordy/releases/latest)** for macOS, Windows, and Linux — it connects
 the computer it runs on as a runtime automatically.
 
 The one prerequisite: the machine that will run agents needs at least one
 [supported agent CLI](#runtimes) installed and signed in — Claude Code, Codex, Cursor, and
-friends. Patchbay drives them; it doesn't ship them.
+friends. Orvilo drives them; it doesn't ship them.
 
 <details>
 <summary><b>Self-hosting the whole thing</b></summary>
@@ -125,8 +121,8 @@ fall back to `make selfhost-build` from a checkout.
 
 ## Your first agent in five minutes
 
-**1. Sign in.** Open the [Patchbay Web App](https://patchbay.aspectlylabs.com) in the browser, or open
-[Patchbay Desktop](https://github.com/alexj11324/Cordy/releases/latest).
+**1. Sign in.** Open the [Orvilo Web App](https://patchbay.aspectlylabs.com) in the browser, or open
+[Orvilo Desktop](https://github.com/alexj11324/Cordy/releases/latest).
 
 **2. Connect a computer.** A *runtime* is any machine agents can work on — your laptop, or a
 cloud box. Desktop registers the computer it's running on automatically and detects the agent
@@ -146,7 +142,7 @@ Full walkthrough: [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quic
 
 ## Runtimes
 
-Patchbay does not ship a model. It drives the agent CLIs you already have installed and
+Orvilo does not ship a model. It drives the agent CLIs you already have installed and
 authenticated, so switching providers is a dropdown, not a migration.
 
 | Provider | CLI | Provider | CLI |
@@ -175,14 +171,14 @@ Installing and authenticating them: [Install an agent runtime](https://patchbay.
 | I want to… | Start here |
 | --- | --- |
 | Get an agent doing something today | [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Tutorial](https://patchbay.aspectlylabs.com/docs/tutorial) |
-| Understand how the pieces fit | [Core concepts](https://patchbay.aspectlylabs.com/docs/concepts) · [How Patchbay works](https://patchbay.aspectlylabs.com/docs/how-patchbay-works) |
+| Understand how the pieces fit | [Core concepts](https://patchbay.aspectlylabs.com/docs/concepts) · [How Orvilo works](https://patchbay.aspectlylabs.com/docs/how-patchbay-works) |
 | Create and configure agents | [Agents](https://patchbay.aspectlylabs.com/docs/agents) · [Create an agent](https://patchbay.aspectlylabs.com/docs/agents-create) · [Skills](https://patchbay.aspectlylabs.com/docs/skills) |
 | Get work to an agent | [Triggering agents](https://patchbay.aspectlylabs.com/docs/triggering-agents) · [Assigning issues](https://patchbay.aspectlylabs.com/docs/assigning-issues) · [Mentions](https://patchbay.aspectlylabs.com/docs/mentioning-agents) |
 | Connect my machines | [Daemon and runtimes](https://patchbay.aspectlylabs.com/docs/daemon-runtimes) · [Install an agent runtime](https://patchbay.aspectlylabs.com/docs/install-agent-runtime) |
 | Connect Git and chat tools | [GitHub](https://patchbay.aspectlylabs.com/docs/github-integration) · [Self-hosted Git](https://patchbay.aspectlylabs.com/docs/vcs-integration) · [Channels](https://patchbay.aspectlylabs.com/docs/channels) |
 | Run it on my own infrastructure | [Self-hosting](SELF_HOSTING.md) · [Security model](https://patchbay.aspectlylabs.com/docs/security-model) · [Environment variables](https://patchbay.aspectlylabs.com/docs/environment-variables) |
 | Script it | [CLI reference](https://patchbay.aspectlylabs.com/docs/cli) · [CLI and daemon guide](CLI_AND_DAEMON.md) · [Auth tokens](https://patchbay.aspectlylabs.com/docs/auth-tokens) |
-| Drive Patchbay from Codex, Claude Code, or Cursor | [Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli) |
+| Drive Orvilo from Codex, Claude Code, or Cursor | [CLI skill](https://github.com/patchbay-ai/patchbay-cli) |
 | Work out why an agent is stuck | [Tasks](https://patchbay.aspectlylabs.com/docs/tasks) · [Troubleshooting](https://patchbay.aspectlylabs.com/docs/troubleshooting) |
 
 ---
@@ -252,22 +248,11 @@ We release most weekdays, so `main` moves quickly — pull often.
 | I want to… | Read |
 | --- | --- |
 | Contribute code | [CONTRIBUTING.md](CONTRIBUTING.md) — environments, daily workflow, testing, troubleshooting |
-| Run Patchbay on my own infrastructure | [SELF_HOSTING.md](SELF_HOSTING.md), then [SELF_HOSTING_ADVANCED.md](SELF_HOSTING_ADVANCED.md) and [SELF_HOSTING_AI.md](SELF_HOSTING_AI.md) |
+| Run Orvilo on my own infrastructure | [SELF_HOSTING.md](SELF_HOSTING.md), then [SELF_HOSTING_ADVANCED.md](SELF_HOSTING_ADVANCED.md) and [SELF_HOSTING_AI.md](SELF_HOSTING_AI.md) |
 | Install and drive the CLI or daemon | [CLI_INSTALL.md](CLI_INSTALL.md), then [CLI_AND_DAEMON.md](CLI_AND_DAEMON.md) |
 | Have an AI agent work in this repo | [AGENTS.md](AGENTS.md) (entry point) and [CLAUDE.md](CLAUDE.md) (full rules) |
 | Cut a release | [.github/RELEASING.md](.github/RELEASING.md) |
-| Use Patchbay as a product | [the documentation site](https://patchbay.aspectlylabs.com/docs) |
-
----
-
-## Why "Patchbay"?
-
-The name comes from a physical patch bay: a panel where connections are visible, intentional,
-and easy to reroute without hiding the path between inputs and outputs.
-
-AI agents make it possible to move many tasks at once, but parallel work is only useful when
-goals, dependencies, ownership, and handoffs stay connected. Patchbay keeps that routing on
-one shared surface. A small team shouldn't feel small.
+| Use Orvilo as a product | [the documentation site](https://patchbay.aspectlylabs.com/docs) |
 
 ---
 

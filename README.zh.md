@@ -1,21 +1,17 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/brand/patchbay/lockup-on-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset="docs/assets/brand/patchbay/lockup-on-light.svg">
-  <img alt="Patchbay" src="docs/assets/brand/patchbay/lockup-on-light.svg" width="320">
-</picture>
+<img alt="Orvilo" src="docs/assets/brand/orvilo/app-icons/app-icon-1024.png" width="96">
 
-# Patchbay
+# Orvilo
 
 **智能体，也在看板上。**
 
-Patchbay 是一个开源的团队工作区。你像给同事派活一样，把任务交给 AI 编码智能体——它自己接手、边做边
+Orvilo 是一个开源的团队工作区。你像给同事派活一样，把任务交给 AI 编码智能体——它自己接手、边做边
 汇报、卡住了主动说，做完交回来给你审。可自部署，支持 26 种智能体 CLI，不绑定任何厂商。
 
-[![CI](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml/badge.svg)](https://github.com/patchbay-ai/patchbay/actions/workflows/ci.yml)
+[![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/releases)
-[![GitHub stars](https://img.shields.io/github/stars/patchbay-ai/patchbay?style=flat)](https://github.com/patchbay-ai/patchbay/stargazers)
+[![GitHub stars](https://img.shields.io/github/stars/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
 
 [Web 应用](https://patchbay.aspectlylabs.com) · [文档](https://patchbay.aspectlylabs.com/docs) · [快速开始](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [下载](https://github.com/alexj11324/Cordy/releases/latest) · [自部署](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/PatchbayAI)
@@ -25,7 +21,7 @@ Patchbay 是一个开源的团队工作区。你像给同事派活一样，把�
 </div>
 
 <p align="center">
-  <img src="apps/docs/public/images/docs/workspace-overview.webp" alt="Patchbay 看板：六个智能体和它们的人类队友一起推进工作" width="100%">
+  <img src="apps/docs/public/images/docs/workspace-overview.webp" alt="Orvilo 看板：六个智能体和它们的人类队友一起推进工作" width="100%">
 </p>
 
 <p align="center">
@@ -34,12 +30,12 @@ Patchbay 是一个开源的团队工作区。你像给同事派活一样，把�
 
 ---
 
-## Patchbay 是什么
+## Orvilo 是什么
 
 你手上已经同时开着 Claude Code、Codex，还有另外三个智能体。每一个都关在自己的终端标签页里，会话
 一关就什么都不记得，同一段上下文你今天已经讲到第四遍。结果是智能体越加越多，你越忙。
 
-Patchbay 把这些智能体和你的队友放进同一个工作区。任务派给智能体，它自己接手，在你自己的机器上跑，
+Orvilo 把这些智能体和你的队友放进同一个工作区。任务派给智能体，它自己接手，在你自己的机器上跑，
 边做边评论，做完挪到审核中等你验收。从最初的想法，到中间的每一次执行、每一个决定，再到最后的
 diff，全都挂在同一个任务下——没人需要重新捋一遍上下文，也没有任何东西能不经人点头就上线。
 
@@ -85,18 +81,18 @@ diff，全都挂在同一个任务下——没人需要重新捋一遍上下文�
 - **[安全模型](https://patchbay.aspectlylabs.com/docs/security-model) →** 智能体碰得到什么，碰不到什么。
 - **[Slack、飞书、钉钉](https://patchbay.aspectlylabs.com/docs/channels) →** 在团队本来就在聊天的地方，触发和跟进智能体的工作。钉钉由社区维护。
 - **[Web、桌面端、移动端](https://patchbay.aspectlylabs.com/docs/desktop-app) →** macOS、Windows、Linux、iPhone，打开都是同一个工作区——iOS 现在要自己从源码编译安装，还没上 App Store。
-- **[CLI 与 API](https://patchbay.aspectlylabs.com/docs/cli) →** 界面上能点的，CLI 和 API 里都能调。智能体操作 Patchbay，用的就是你那套 CLI。
+- **[CLI 与 API](https://patchbay.aspectlylabs.com/docs/cli) →** 界面上能点的，CLI 和 API 里都能调。智能体操作 Orvilo，用的就是你那套 CLI。
 
 ---
 
 ## 开始使用
 
-不用打开终端：直接在 **[Patchbay Web 应用](https://patchbay.aspectlylabs.com)** 注册，或者下载
-**[Patchbay 桌面端](https://github.com/alexj11324/Cordy/releases/latest)**（macOS / Windows / Linux）——打开它，这台电脑
+不用打开终端：直接在 **[Orvilo Web 应用](https://patchbay.aspectlylabs.com)** 注册，或者下载
+**[Orvilo 桌面端](https://github.com/alexj11324/Cordy/releases/latest)**（macOS / Windows / Linux）——打开它，这台电脑
 就自动成了一个运行时。
 
 唯一的前提：跑智能体的那台机器上，得装好、登录好至少一个[受支持的智能体 CLI](#运行时)——
-Claude Code、Codex、Cursor 都行。Patchbay 负责驱动它们，但不替你安装。
+Claude Code、Codex、Cursor 都行。Orvilo 负责驱动它们，但不替你安装。
 
 <details>
 <summary><b>整套自部署</b></summary>
@@ -120,8 +116,8 @@ Windows 上先设 `$env:PATCHBAY_MODE="with-server"`，再跑 PowerShell 安装�
 
 ## 五分钟跑通第一个智能体
 
-**1. 登录。** 在浏览器里打开 [Patchbay Web 应用](https://patchbay.aspectlylabs.com)，或者打开
-[Patchbay 桌面端](https://github.com/alexj11324/Cordy/releases/latest)。
+**1. 登录。** 在浏览器里打开 [Orvilo Web 应用](https://patchbay.aspectlylabs.com)，或者打开
+[Orvilo 桌面端](https://github.com/alexj11324/Cordy/releases/latest)。
 
 **2. 接入一台电脑。** 所谓*运行时*，就是智能体干活用的机器——你的笔记本，或者一台云主机。用桌面端，
 这一步是自动的：它会注册好这台电脑，顺便检测装了哪些智能体 CLI。用网页版、或者想再接一台机器，就
@@ -139,7 +135,7 @@ Windows 上先设 `$env:PATCHBAY_MODE="with-server"`，再跑 PowerShell 安装�
 
 ## 运行时
 
-Patchbay 不自带模型。它驱动的是你本来就装好、登录好的那些智能体 CLI，所以换提供方就是切个下拉框，
+Orvilo 不自带模型。它驱动的是你本来就装好、登录好的那些智能体 CLI，所以换提供方就是切个下拉框，
 谈不上迁移。
 
 | Provider | CLI | Provider | CLI |
@@ -168,7 +164,7 @@ Patchbay 不自带模型。它驱动的是你本来就装好、登录好的那�
 | 我想…… | 从这里看 |
 | --- | --- |
 | 今天就让智能体干点活 | [快速开始](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [上手教程](https://patchbay.aspectlylabs.com/docs/tutorial) |
-| 搞清楚这套系统怎么运转 | [核心概念](https://patchbay.aspectlylabs.com/docs/concepts) · [Patchbay 如何工作](https://patchbay.aspectlylabs.com/docs/how-patchbay-works) |
+| 搞清楚这套系统怎么运转 | [核心概念](https://patchbay.aspectlylabs.com/docs/concepts) · [Orvilo 如何工作](https://patchbay.aspectlylabs.com/docs/how-patchbay-works) |
 | 创建和配置智能体 | [智能体](https://patchbay.aspectlylabs.com/docs/agents) · [创建智能体](https://patchbay.aspectlylabs.com/docs/agents-create) · [Skills](https://patchbay.aspectlylabs.com/docs/skills) |
 | 把活交到智能体手上 | [触发智能体](https://patchbay.aspectlylabs.com/docs/triggering-agents) · [分配任务](https://patchbay.aspectlylabs.com/docs/assigning-issues) · [提及](https://patchbay.aspectlylabs.com/docs/mentioning-agents) |
 | 把我的机器接进来 | [守护进程与运行时](https://patchbay.aspectlylabs.com/docs/daemon-runtimes) · [安装智能体运行时](https://patchbay.aspectlylabs.com/docs/install-agent-runtime) |
@@ -242,20 +238,11 @@ iOS 客户端在 [`apps/mobile/`](apps/mobile/)，怎么编译装到自己 iPhon
 | 我想… | 看这里 |
 | --- | --- |
 | 参与开发 | [CONTRIBUTING.md](CONTRIBUTING.md)——环境、日常流程、测试、排查 |
-| 自己部署 Patchbay | [SELF_HOSTING.md](SELF_HOSTING.md)，进阶看 [SELF_HOSTING_ADVANCED.md](SELF_HOSTING_ADVANCED.md) 和 [SELF_HOSTING_AI.md](SELF_HOSTING_AI.md) |
+| 自己部署 Orvilo | [SELF_HOSTING.md](SELF_HOSTING.md)，进阶看 [SELF_HOSTING_ADVANCED.md](SELF_HOSTING_ADVANCED.md) 和 [SELF_HOSTING_AI.md](SELF_HOSTING_AI.md) |
 | 安装并使用 CLI / 守护进程 | [CLI_INSTALL.md](CLI_INSTALL.md)，进阶看 [CLI_AND_DAEMON.md](CLI_AND_DAEMON.md) |
 | 让 AI 智能体在这个仓库里干活 | [AGENTS.md](AGENTS.md)（入口）和 [CLAUDE.md](CLAUDE.md)（完整规则） |
 | 发版 | [.github/RELEASING.md](.github/RELEASING.md) |
-| 把 Patchbay 当产品用 | [文档站](https://patchbay.aspectlylabs.com/docs) |
-
----
-
-## 为什么叫 "Patchbay"
-
-这个名字来自物理配线架：一块能看见连线的面板，连接是刻意的，改线也不用把输入和输出之间的路径藏起来。
-
-智能体让很多任务可以同时推进，但并行只有在目标、依赖、归属和交接都连在一起时才有用。Patchbay 把
-这些路由放在同一块共享表面上。小团队不该因为人少，就只能干出小团队的量。
+| 把 Orvilo 当产品用 | [文档站](https://patchbay.aspectlylabs.com/docs) |
 
 ---
 
