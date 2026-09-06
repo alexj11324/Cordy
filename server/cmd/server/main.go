@@ -312,6 +312,13 @@ func main() {
 			slog.Warn("PATCHBAY_DEV_VERIFICATION_CODE is enabled. Use it only for local development or private test instances.")
 		}
 	}
+	if strings.TrimSpace(os.Getenv("PATCHBAY_DEV_LOGIN")) == "1" {
+		if strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "production") {
+			slog.Warn("PATCHBAY_DEV_LOGIN is set but ignored because APP_ENV=production.")
+		} else {
+			slog.Warn("PATCHBAY_DEV_LOGIN is enabled: GET/POST /auth/dev-login signs in as any email with no verification code. Use it only on a local machine or a private test instance.")
+		}
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {

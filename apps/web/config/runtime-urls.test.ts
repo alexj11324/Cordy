@@ -2,6 +2,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isDesktopAuthPath,
+  resolveAccountsOrigin,
   resolveBrowserApiBaseUrl,
   resolveBrowserWsUrl,
   resolveDevDocsUrl,
@@ -343,5 +345,38 @@ describe("dev-only fallbacks", () => {
 
   it("falls back to the local docs port", () => {
     expect(resolveDevDocsUrl({})).toBe("http://localhost:4000");
+  });
+});
+
+describe("resolveAccountsOrigin", () => {
+  it("stays unset when this deployment has no Accounts broker", () => {
+    expect(resolveAccountsOrigin({})).toBeUndefined();
+  });
+
+  it("accepts an explicit hosted or staging Accounts origin", () => {
+    expect(
+      resolveAccountsOrigin({
+        PATCHBAY_AUTH_BROKER_ORIGIN: "https://accounts.staging.aspectlylabs.com/",
+      }),
+    ).toBe("https://accounts.staging.aspectlylabs.com");
+  });
+
+  it("never uses localhost as the identity origin", () => {
+    expect(
+      resolveAccountsOrigin({
+        NEXT_PUBLIC_ACCOUNTS_URL: "http://localhost:3000",
+      }),
+    ).toBeUndefined();
+    expect(
+      resolveAccountsOrigin({
+        PATCHBAY_AUTH_BROKER_ORIGIN: "http://127.0.0.1:3100",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("names the product auth routes Desktop must not keep on the web app", () => {
+    expect(isDesktopAuthPath("/login")).toBe(true);
+    expect(isDesktopAuthPath("/oauth/google/callback")).toBe(true);
+    expect(isDesktopAuthPath("/issues")).toBe(false);
   });
 });

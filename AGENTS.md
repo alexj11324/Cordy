@@ -3,8 +3,9 @@
 This file provides guidance to AI agents when working with code in this repository.
 
 > **Single source of truth:** This file is the entry point for repository agent
-> rules. Read **CLAUDE.md** at the project root for the expanded architecture,
-> coding, testing, and release requirements referenced by this file.
+> rules. Consult **CLAUDE.md** when a task needs expanded architecture, coding,
+> testing, or release guidance; ordinary localized edits do not require reading
+> it end to end.
 > Use `Makefile`, `package.json`, and `pnpm-workspace.yaml` as the
 > source of truth for the full command list.
 
@@ -52,7 +53,24 @@ pnpm typecheck        # TypeScript check
 pnpm test             # TS unit tests (Vitest)
 make test             # Go tests
 make check            # Full verification pipeline
+make up C=desktop     # Backend + Electron, signed in — verify product changes here
+make dev-login        # Sign in a browser / get a bearer token for curl (web only)
+make seed-dev         # Sample content to look at, in the dev-fixtures workspace
 ```
+
+**Verify in Electron, not the browser.** `make up C=desktop` starts the desktop app against this
+environment's backend and signs it in, which is where client changes are checked. The web app is the
+secondary target, for web-only platform wiring. Say which client you verified on.
+
+`make dev-login` prints a URL that installs the session cookie and lands on this
+environment's issues page, plus a bearer token for `curl` — use it instead of
+requesting a verification code when you need to check a change in the running
+app. It works because `make up` writes `PATCHBAY_DEV_LOGIN=1` into the env file;
+the endpoint is not registered when `APP_ENV=production`.
+
+`make seed-dev` needs that user to exist, so run it after `make dev-login`. Its
+issues land in a separate `dev-fixtures` workspace, not the one a fresh sign-in
+opens — the command prints the URL to open.
 
 See CLAUDE.md for the expanded rules and common commands incorporated by this
 entry point.

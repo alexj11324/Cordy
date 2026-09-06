@@ -59,7 +59,7 @@ describe("resolveRouteIconName", () => {
   it("resolves a page path to its page icon", () => {
     expect(resolveRouteIconName("/acme/projects")).toBe("FolderKanban");
     expect(resolveRouteIconName("/acme/work-products")).toBe("FileText");
-    expect(resolveRouteIconName("/acme/automations")).toBe("Zap");
+    expect(resolveRouteIconName("/acme/automations")).toBe("AlarmClock");
     expect(resolveRouteIconName("/acme/chat")).toBe("MessageSquare");
     expect(resolveRouteIconName("/acme/teams")).toBe("Users");
     expect(resolveRouteIconName("/acme/usage")).toBe("BarChart3");

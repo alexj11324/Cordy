@@ -151,10 +151,11 @@ export type DesktopStartupMode =
 export function resolveDesktopStartupMode(
   guestResult: GuestSessionReadResult,
   hasPersistedCloudToken: boolean,
+  mainMode: LocalGuestMode = "undecided",
 ): DesktopStartupMode {
   if (!guestResult.ok) return "guest-error";
   if (guestResult.session) return "guest";
-  return hasPersistedCloudToken ? "cloud" : "entry";
+  return hasPersistedCloudToken || mainMode === "cloud" ? "cloud" : "entry";
 }
 
 export function normalizeGuestDisplayName(value: unknown): string | null {

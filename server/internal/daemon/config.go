@@ -1,13 +1,13 @@
 package daemon
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -820,14 +820,8 @@ func agentExecutablePresent(path string) bool {
 	return err == nil
 }
 
-// reresolveAgentCommand re-runs the startup resolution for a single agent
-// command name, returning the freshly resolved absolute path. It mirrors the
-// probe() order in LoadConfig: exec.LookPath (with the ~/.patchbay/hooks
-// exclusion preserved via resolveAgentExecutablePath) first, then the login
-// shell fallback for a bare command name a GUI-launched daemon can't see on
-// its own PATH. It is only called on the miss path — when a previously pinned
-// path has disappeared — so the login-shell cost is paid rarely, never on a
-// normal launch.
+// reresolveAgentCommand heals a removed executable using the same inherited
+// PATH and conventional install locations as discovery, without running code.
 func reresolveAgentCommand(cmd string) (string, bool) {
 	if cmd == "" {
 		return "", false
@@ -835,13 +829,9 @@ func reresolveAgentCommand(cmd string) (string, bool) {
 	if path, err := resolveAgentExecutablePath(cmd); err == nil {
 		return path, true
 	}
-	// A bare command name the daemon's own PATH can't see: retry via the
-	// user's login shell, exactly as the startup probe does for
-	// fnm/nvm/native-installer prefixes. Absolute/relative overrides skip
-	// this — an operator-pinned PATCHBAY_*_PATH that no longer exists should
-	// stay a hard miss rather than silently resolve a different binary.
+	// Never replace an explicit missing path with a different executable.
 	if !strings.ContainsAny(cmd, "/\\") {
-		if path, ok := resolveAgentsViaLoginShell([]string{cmd})[cmd]; ok {
+		if path, ok := resolveAgentsFromInstallPaths([]string{cmd})[cmd]; ok {
 			return path, true
 		}
 	}
@@ -921,15 +911,9 @@ func isExecutableFile(path string) bool {
 	return info.Mode()&0o111 != 0
 }
 
-// defaultAgentCommandNames lists the command names the agent probe loop tries
-// before any PATCHBAY_*_PATH override is applied. Kept in sync with the
-// `probe(...)` calls in LoadConfig — the shell-fallback resolver uses this
-// list to pre-fetch canonical paths for every known agent in a single shell
-// invocation, instead of paying the cost-per-miss.
-//
-// Built-in runtime identity commands (e.g. "omp") are appended from the
-// descriptor registry (agent.BuiltinRuntimeCommands) so adding a new fork
-// doesn't require editing this list by hand.
+// defaultAgentCommandNames is the audited inventory of built-in probe names.
+// Descriptor-provided commands are included so tests can check the inventory
+// against all probe calls without a second list of runtime identities.
 var defaultAgentCommandNames = append([]string{
 	"claude", "codex", "opencode", "codearts", "deveco", "openclaw", "hermes",
 	"pi", "cursor-agent", "copilot", "kimi", "reasonix", "dsh", "kiro-cli", "codebuddy", "agy", "qodercli", "qoderclicn", "traecli", "grok", "qwen", "qwenpaw", "mcode", "dim", "zeroclaw",
@@ -955,194 +939,52 @@ var codexDesktopAppBundlePaths = func() []string {
 	return paths
 }
 
-// loginShellResolveTimeout caps how long the daemon will wait for the user's
-// login shell to print canonical agent paths. A broken rc file should not
-// block startup — if the shell takes longer than this, we proceed without
-// shell-resolved fallbacks and the daemon falls back to the same behaviour
-// it had before this code was added.
-const loginShellResolveTimeout = 3 * time.Second
-
-// loginShellResolveWaitDelay is the hard cap that runs *after*
-// loginShellResolveTimeout has elapsed and `CommandContext` has signalled the
-// shell to exit. The context kills the shell process itself, but rc files in
-// the wild routinely background things that inherit stdout (`nvm` shims,
-// `direnv hook`, `eval $(starship init)`, plain `&`). Those survivors keep
-// the stdout pipe open and `cmd.Output()` will block on EOF for as long as
-// they live. Cmd.WaitDelay (Go 1.20+) forcibly closes the pipes and returns
-// once this delay elapses, so the total daemon-startup penalty caused by a
-// pathological rc file is bounded by `timeout + waitDelay`, not by however
-// long the user's background processes happen to run.
-const loginShellResolveWaitDelay = 2 * time.Second
-
-// supportedLoginShells limits which interpreters we will invoke via
-// `<shell> -ilc <script>`. Sticking to POSIX-compatible shells means the
-// resolver script below works unchanged. Notably absent: fish (uses
-// `command -s` and a different syntax for command substitution).
-var supportedLoginShells = map[string]struct{}{
-	"bash": {},
-	"zsh":  {},
-	"sh":   {},
-	"dash": {},
-	"ksh":  {},
+// agentInstallDirectories is a bounded list of conventional executable
+// locations. Discovery reads these paths; it never evaluates shell rc files,
+// launches version managers, or searches user project/document directories.
+var agentInstallDirectories = func() []string {
+	if runtime.GOOS == "windows" {
+		return nil
+	} // PATH/PATHEXT remains authoritative.
+	dirs := []string{"/opt/homebrew/bin", "/usr/local/bin"}
+	if home, err := os.UserHomeDir(); err == nil {
+		for _, relative := range []string{
+			".local/bin", ".bun/bin", ".volta/bin", ".npm-global/bin",
+			".local/share/pnpm", "Library/pnpm", ".claude/local", ".opencode/bin",
+		} {
+			dirs = append(dirs, filepath.Join(home, relative))
+		}
+	}
+	return dirs
 }
 
-// resolveAgentsViaLoginShell asks the user's login shell to print an absolute,
-// invocation-safe path to each name in `names`. It returns a map
-// of name → path for whatever the shell could find, and an empty map if the
-// shell is unavailable / unsupported / times out / produces no usable output.
-//
-// Why we need this:
-//
-// Daemon-style processes on macOS/Linux do not inherit the user's interactive
-// PATH. `claude --version` working in Terminal.app is no guarantee that
-// exec.LookPath("claude") will work from a binary spawned by Launchpad, the
-// Electron app, or `launchctl`. The most common offenders are fnm/nvm/volta
-// "multishell" prefix dirs (per-shell, ephemeral) and the Anthropic native
-// installer (`~/.claude/local/`) — both leave their binaries on a path that
-// only `.zshrc` knows about.
-//
-// Implementation notes:
-//
-//   - We invoke `$SHELL -ilc <script>` with both -i (interactive) and -l
-//     (login) so we pick up PATH set in either ~/.zshrc / ~/.bashrc OR
-//     ~/.zprofile / ~/.bash_profile. Real users put it in both places.
-//   - The script resolves symlinks via `cd "$dirname" && pwd -P` while the
-//     spawned shell is still alive. fnm/nvm "multishell" directories vanish
-//     on shell exit, so the canonical path must be captured before stdout is
-//     returned to Go — by then the original path is already gone.
-//   - We only trust outputs that look like an absolute path AND still pass a
-//     fresh exec.LookPath check from the daemon's vantage point. That filters
-//     out aliases (`command -v` prints the alias definition for those, not a
-//     path) and per-shell paths the shell happened not to fully canonicalise.
-//   - Agent names are restricted to the bare set in defaultAgentCommandNames
-//     (`[A-Za-z0-9._-]` only); we inline them into the script unquoted to
-//     keep the script readable. Custom PATCHBAY_*_PATH values never reach this
-//     resolver — those go through exec.LookPath directly.
-//
-// A var so tests can stub the fork without a real login shell.
-var resolveAgentsViaLoginShell = func(names []string) map[string]string {
+// resolveAgentsFromInstallPaths supplements inherited PATH with conventional
+// installer locations. Explicit executable overrides still hard-fail if absent.
+// Nonstandard installations can supply PATH or PATCHBAY_<PROVIDER>_PATH instead
+// of implicitly executing arbitrary user startup scripts during discovery.
+var resolveAgentsFromInstallPaths = func(names []string) map[string]string {
 	out := map[string]string{}
-	if len(names) == 0 {
-		return out
-	}
-	shell := strings.TrimSpace(os.Getenv("SHELL"))
-	if shell == "" {
-		return out
-	}
-	if _, ok := supportedLoginShells[filepath.Base(shell)]; !ok {
-		return out
-	}
-
-	safe := make([]string, 0, len(names))
-	for _, n := range names {
-		if isSafeAgentName(n) {
-			safe = append(safe, n)
-		}
-	}
-	if len(safe) == 0 {
-		return out
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), loginShellResolveTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, shell, "-ilc", buildLoginShellResolveScript(safe))
-	cmd.WaitDelay = loginShellResolveWaitDelay
-	raw, err := cmd.Output()
-	if err != nil {
-		return out
-	}
-
-	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
-		parts := strings.SplitN(line, "\t", 2)
-		if len(parts) != 2 {
+	for _, name := range names {
+		if !isSafeAgentName(name) {
 			continue
 		}
-		name, path := parts[0], strings.TrimSpace(parts[1])
-		if !filepath.IsAbs(path) {
-			continue
+		for _, dir := range agentInstallDirectories() {
+			if isPatchbayHooksDir(dir) {
+				continue
+			}
+			candidate := filepath.Join(dir, name)
+			resolved, err := exec.LookPath(candidate)
+			if err != nil || isInPatchbayHooksDir(canonicalExecutablePath(resolved)) {
+				continue
+			}
+			out[name] = discoveredExecutablePath(resolved)
+			break
 		}
-		// Final reality check: the path the shell gave us must still be
-		// executable from the daemon's perspective right now. fnm
-		// multishells are the motivating example — pwd -P inside the
-		// helper shell can fail to break out of the per-session bin dir,
-		// and we'd rather report "not found" than hand back a path that
-		// vanishes between detection and execution.
-		if _, err := exec.LookPath(path); err != nil {
-			continue
-		}
-		out[name] = path
 	}
 	return out
 }
 
-// buildLoginShellResolveScript returns the shell script that resolveAgentsViaLoginShell
-// runs inside `$SHELL -ilc`. The script:
-//
-//  1. iterates the provided command names,
-//  2. strips any locally-defined alias and shell function with that name so
-//     `command -v` reaches through to a real binary on PATH (see below),
-//  3. uses POSIX `command -v` to find each one on the interactive PATH,
-//  4. rejects results that are not absolute paths (defence in depth — if the
-//     unalias/unset -f pair somehow didn't take effect, `command -v` would
-//     still print the alias/function definition, and we'd rather drop it
-//     than hand back garbage),
-//  5. canonicalises the directory via `cd ... && pwd -P` so symlinked prefix
-//     dirs (fnm/nvm/volta) collapse to stable paths while the invoked command
-//     name is kept,
-//  6. if the resolved path lives in ~/.patchbay/hooks, searches the same
-//     shell-expanded PATH for the first executable outside that hooks dir,
-//  7. prints `<name>\t<canonical_path>` one entry per line for the caller.
-//
-// Why steps 2 is important — and why this PR's first revision missed #2512:
-// the motivating case has `alias claude=...` in ~/.zshrc *and* fnm's real
-// claude binary further down on PATH. With `-i` set, the alias loads, and
-// `command -v claude` returns `claude: aliased to ...` (zsh) or `alias
-// claude='...'` (bash) — neither starts with `/`, so step 4 drops them, and
-// the loop never looks at PATH again. Unaliasing inside the same shell makes
-// `command -v` fall back to the PATH search the daemon actually wants.
-// Shell functions exhibit the same shadowing in bash/zsh, hence `unset -f`.
-// Both calls are wrapped in `2>/dev/null` so the harmless "no such alias"
-// error never reaches stderr.
-//
-// All input names are vetted by isSafeAgentName before they reach this
-// function, so inlining them unquoted into the for-loop word list is safe.
-func buildLoginShellResolveScript(names []string) string {
-	var b strings.Builder
-	b.WriteString("for n in")
-	for _, n := range names {
-		b.WriteByte(' ')
-		b.WriteString(n)
-	}
-	b.WriteString("; do\n")
-	b.WriteString("  unalias \"$n\" 2>/dev/null\n")
-	b.WriteString("  unset -f \"$n\" 2>/dev/null\n")
-	b.WriteString("  p=$(command -v \"$n\" 2>/dev/null) || continue\n")
-	b.WriteString("  [ -n \"$p\" ] || continue\n")
-	b.WriteString("  case \"$p\" in /*) ;; *) continue ;; esac\n")
-	b.WriteString("  d=$(dirname \"$p\") && f=$(basename \"$p\") && c=$(cd \"$d\" 2>/dev/null && pwd -P) || continue\n")
-	b.WriteString("  hc=\"\"\n")
-	b.WriteString("  if [ -n \"${HOME:-}\" ]; then hd=\"$HOME/.patchbay/hooks\"; hc=$(cd \"$hd\" 2>/dev/null && pwd -P) || hc=\"\"; fi\n")
-	b.WriteString("  if [ -n \"$hc\" ] && [ \"$c\" = \"$hc\" ]; then\n")
-	b.WriteString("    oldIFS=$IFS; IFS=:\n")
-	b.WriteString("    for d2 in $PATH; do\n")
-	b.WriteString("      [ -n \"$d2\" ] || d2=.\n")
-	b.WriteString("      c2=$(cd \"$d2\" 2>/dev/null && pwd -P) || continue\n")
-	b.WriteString("      [ \"$c2\" = \"$hc\" ] && continue\n")
-	b.WriteString("      if [ -f \"$c2/$n\" ] && [ -x \"$c2/$n\" ]; then c=\"$c2\"; f=\"$n\"; break; fi\n")
-	b.WriteString("    done\n")
-	b.WriteString("    IFS=$oldIFS\n")
-	b.WriteString("  fi\n")
-	b.WriteString("  printf '%s\\t%s\\n' \"$n\" \"$c/$f\"\n")
-	b.WriteString("done\n")
-	return b.String()
-}
-
-// isSafeAgentName checks that `s` is a bare command name composed only of
-// characters that are safe to inline into a shell script (ASCII letters,
-// digits, dot, dash, underscore). The agent names this daemon ships with all
-// satisfy the predicate; it exists to guard against future drift, not to
-// constrain operator-supplied paths (those never reach the shell resolver).
+// isSafeAgentName limits install-path lookups to bare executable names.
 func isSafeAgentName(s string) bool {
 	if s == "" {
 		return false

@@ -13,6 +13,24 @@ It covers:
 - full-stack isolated testing (backend + frontend + daemon from source)
 - troubleshooting and destructive reset options
 
+## Day One
+
+Two commands, from a fresh clone:
+
+```bash
+make up C=desktop   # backend + the Electron app, already signed in
+make seed-dev       # optional: sample issues, in the dev-fixtures workspace
+```
+
+**Changes are verified in the desktop app, not the browser.** `make up C=desktop` starts Electron
+against this checkout's backend and signs it in, so that is where you look at what you built. Add
+`make up C=api,web` (and `make dev-login` to get a signed-in browser) when the change is web-only
+platform wiring.
+
+`make status` shows what is running and proves it belongs to this checkout, `make down` stops it
+keeping the database, and `make destroy` deletes the database, profile and slot. Everything below
+expands on those; [Environments](#environments) is the section to read first.
+
 ## Contribution Terms
 
 By submitting a contribution to Patchbay — a pull request, a patch, or any
@@ -122,6 +140,7 @@ make list                    # every environment on this machine
 make down                    # stop the processes, keep the data
 make destroy                 # stop, then drop the database and free the slot
 make gc                      # collect expired environments or ones whose checkout is gone
+make dev-login               # sign in without the login page
 ```
 
 Components are `api` (Go backend), `web` (Next.js), `daemon` (agent daemon) and
@@ -157,6 +176,30 @@ Run any command inside an environment's variables without repeating them:
 make env-exec ARGS="-- pnpm exec playwright test"
 ```
 
+### Signing in without the login page
+
+`make up` writes `PATCHBAY_DEV_LOGIN=1` into the env file, which makes the
+backend serve `/auth/dev-login`. `make dev-login` uses it and prints:
+
+- a URL that installs the session cookie and lands on this environment's issues
+  page — opening it *is* the login, so there is no code to fetch and no form to
+  fill;
+- a bearer token for `curl`, and the workspace it signed you into. The dev
+  workspace is created on the first login if it does not exist yet.
+
+```bash
+make dev-login                                        # dev@localhost
+make dev-login ARGS="--email you@example.com --open"  # another user, open the browser
+make dev-login ARGS="--path /dev/inbox"               # land somewhere else
+make dev-login ARGS=--json                            # url + token for a script
+```
+
+The endpoint exists only when `PATCHBAY_DEV_LOGIN=1` and `APP_ENV` is
+non-production; a production build does not register the route at all. Add
+`?onboarding=keep` to the URL when you want to test the onboarding flow itself.
+Backends started before this variable was in the env file need one
+`make down && make up` to pick it up.
+
 `make dev` (below) still runs backend and frontend in the foreground of your
 terminal, which is the right thing when you want Ctrl-C to stop everything.
 
@@ -167,7 +210,7 @@ terminal, which is the right thing when you want Ctrl-C to stop everything.
 From any checkout (main or worktree):
 
 ```bash
-make dev
+make up
 ```
 
 This single command:
@@ -176,10 +219,23 @@ This single command:
 - creates the appropriate env file (`.env` or `.env.worktree`) if it doesn't exist
 - checks that prerequisites (Node.js, pnpm, Go, Docker) are installed
 - installs JavaScript dependencies
-- ensures the shared PostgreSQL container is running
-- creates the application database if it does not exist
-- runs all migrations
-- starts both backend and frontend
+- allocates this checkout's ports and database name under a lock, and records them in
+  `~/.patchbay/dev/` so the environment can be listed, inspected and deleted later
+- creates the application database if it does not exist and runs all migrations
+- starts the selected components (`api,web` by default) in the background
+
+Then `make dev-login` to get into the app, and `make seed-dev` if you want sample content.
+
+#### `make dev`: backend and Electron in the foreground
+
+```bash
+make dev
+```
+
+`make dev` does the same setup but runs the backend and opens Electron in the foreground of your
+terminal, which is what you want when Ctrl-C should stop everything. It does **not** start the web
+app — use `make up C=api,web` for that — and it does not register an environment, so `make status`,
+`make list` and `make destroy` do not track it.
 
 ### Explicit Setup (advanced)
 
@@ -232,14 +288,19 @@ Use a worktree when you want isolated data and separate app ports.
 ```bash
 git worktree add ../patchbay-feature -b feat/my-change main
 cd ../patchbay-feature
-make dev
+make up
 ```
+
+`make up` detects the worktree, generates `.env.worktree`, and allocates ports and a database
+that do not collide with the main checkout.
 
 After that, day-to-day commands are:
 
 ```bash
-make dev              # start (re-runs setup if needed, idempotent)
-make stop-worktree    # stop
+make up               # start (idempotent: reuses anything already healthy)
+make dev-login        # sign in to this worktree's environment
+make status           # what is running here, with proof it is this checkout's
+make down             # stop, keeping the database
 make check-worktree   # verify
 ```
 
@@ -334,12 +395,19 @@ make start
 make stop
 make check
 make dev
+make dev-login
+make seed-dev
 make test
 make migrate-up
 make migrate-down
 ```
 
 These generic targets require a valid env file in the current directory.
+
+`make seed-dev` installs deterministic sample content — issues with a dependency graph — into a
+separate `dev-fixtures` workspace, so it never mixes with whatever you are building in your own
+workspace. It needs the developer user to exist, which `make dev-login` creates: run the two in
+that order. The seed is idempotent and preserves rows you edited after the first run.
 
 ## How Database Creation Works
 
@@ -436,7 +504,23 @@ second path-derived identity. `make destroy` removes the marked env file and
 this environment's Electron userData. Direct `pnpm dev:desktop` still uses its
 path-derived fallback when it is run outside `make up`.
 
-Log in with `dev@localhost` and `888888`.
+Desktop starts signed in: `make up C=desktop` mints a token from `/auth/dev-login` and writes it
+into the gitignored `apps/desktop/.env.development.local` as `VITE_DEV_LOGIN_TOKEN`, which the
+renderer seeds into storage at boot. It also creates the dev workspace if this environment has
+none, so Electron opens on a usable screen rather than the create-workspace flow.
+
+This is deliberately not the same mechanism as the browser: Desktop authenticates with a stored
+bearer token, so the HttpOnly cookie `make dev-login` installs does nothing for it. An existing
+session always wins — the seed only fills an empty storage, so it never logs you out of an account
+you are testing with.
+
+If the token could not be minted (a backend started before `PATCHBAY_DEV_LOGIN=1` was in the env
+file), `make up C=desktop` says so and Electron shows the login page; `make down && make up
+C=desktop` fixes it. You can always fall back to `dev@localhost` with code `888888` on that page.
+
+To exercise the onboarding flow itself — which starts from a user who has not completed it — run
+`PATCHBAY_DEV_KEEP_ONBOARDING=1 make up C=desktop`. The browser equivalent is `?onboarding=keep` on
+the URL `make dev-login` prints.
 
 ### Isolation Guarantee
 
@@ -450,7 +534,7 @@ Nothing in this flow touches the system-installed `patchbay` or the default
 | Workspaces dir | `~/patchbay_workspaces/` | `~/patchbay_workspaces_dev-<slug>-<offset>/` |
 | Database | remote / production | local: `patchbay_<slug>_<offset>` |
 | Registry | — | `~/.patchbay/dev/envs/<name>/` |
-| Desktop profile | `desktop-api.patchbay.ai` | `desktop-localhost-<port>` |
+| Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-localhost-<port>` |
 
 Multiple environments run simultaneously without conflict; `make list` shows
 all of them.
@@ -588,7 +672,8 @@ Warning:
 ### Stable Main Environment
 
 ```bash
-make dev
+make up
+make dev-login
 ```
 
 ### Feature Worktree
@@ -596,7 +681,8 @@ make dev
 ```bash
 git worktree add ../patchbay-feature -b feat/my-change main
 cd ../patchbay-feature
-make dev
+make up
+make dev-login
 ```
 
 ### Return to a Previously Configured Worktree

@@ -16,6 +16,9 @@ const mocks = vi.hoisted(() => ({
     status: "needs_first_factor" as string,
   },
   signUp: {
+    status: null as string | null,
+    verifications: { externalAccount: { status: null as string | null } },
+    reset: vi.fn(),
     create: vi.fn(),
     update: vi.fn(),
   },
@@ -35,6 +38,7 @@ vi.mock("@clerk/nextjs", () => ({
 
 vi.mock("@/lib/auth-messages", () => ({
   useAuthMessages: () => ({
+    login: "Sign in",
     createAccount: "Create an account",
     emailDescription: "Enter your email below to create your account",
     emailPlaceholder: "name@example.com",
@@ -69,12 +73,22 @@ beforeEach(() => {
   mocks.signIn.finalize.mockReset().mockResolvedValue({ error: null });
   mocks.signIn.reset.mockReset();
   mocks.signIn.status = "needs_first_factor";
+  mocks.signUp.status = null;
+  mocks.signUp.verifications.externalAccount.status = null;
+  mocks.signUp.reset.mockReset();
   mocks.signUp.create.mockReset();
   mocks.signUp.update.mockReset();
   mocks.setActive.mockReset().mockResolvedValue(undefined);
 });
 
 describe("AccountsLoginForm", () => {
+  it("resumes verified OAuth signup requirements instead of starting another email flow", () => {
+    mocks.signUp.status = "missing_requirements";
+    mocks.signUp.verifications.externalAccount.status = "verified";
+    render(<AccountsLoginForm returnUrl="https://patchbay.aspectlylabs.com/login" />);
+    expect(screen.getByRole("heading", { name: "Complete your account" })).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText("name@example.com")).not.toBeInTheDocument();
+  });
   it("keeps the standalone product return target on the Google broker route", () => {
     expect(
       buildGoogleLoginUrl(
@@ -101,7 +115,7 @@ describe("AccountsLoginForm", () => {
     render(<AccountsLoginForm returnUrl="/login" />);
 
     expect(
-      screen.getByRole("heading", { name: "Create an account" }),
+      screen.getByRole("heading", { name: "Sign in" }),
     ).toBeInTheDocument();
     expect(screen.getByPlaceholderText("name@example.com")).toBeInTheDocument();
     expect(
@@ -110,6 +124,10 @@ describe("AccountsLoginForm", () => {
     expect(
       screen.getByRole("button", { name: "Continue with Google" }),
     ).toBeInTheDocument();
+    expect(screen.getByTestId("google-mark").tagName).toBe("svg");
+    expect(
+      screen.getByRole("button", { name: "Continue with Google" }),
+    ).not.toHaveTextContent(/^G/);
     expect(screen.getByText("Or continue with")).toBeInTheDocument();
     expect(screen.getByText(/Terms of Service/)).toBeInTheDocument();
     expect(document.querySelector('[data-slot="card"]')).not.toBeInTheDocument();

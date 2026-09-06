@@ -8,23 +8,20 @@ import {
   useRef,
   useState,
 } from "react";
-import { SignIn, useAuth } from "@clerk/nextjs";
+import { useAuth } from "@clerk/nextjs";
 import { useAuthStore } from "@patchbay/core/auth";
-import { api, ApiError } from "@patchbay/core/api";
+import { api } from "@patchbay/core/api";
 import {
   redirectToCliCallback,
   redirectToDesktopApp,
   validateCliCallback,
 } from "@patchbay/views/auth";
 import { useT } from "@patchbay/views/i18n";
-import { ClerkAuthShell } from "@/components/clerk-auth-shell";
-import {
-  authRouteWithRedirect,
-  resolveSafeRedirectUrl,
-} from "@/features/auth/safe-redirect";
+import { WebAccountsLoginForm } from "@/components/accounts-login-form";
+import { AuthShell } from "@/components/auth-shell";
+import { resolveSafeRedirectUrl } from "@/features/auth/safe-redirect";
 import { useClerkSessionExchangeReady } from "@/components/clerk-auth-adapter";
 import { useWebSearchParams } from "@/platform/client-navigation";
-import { buildBrokerRoute } from "@/features/auth/broker-path";
 
 function desktopHandoffQuery(codeChallenge: string, state: string): string {
   const params = new URLSearchParams({ platform: "desktop" });
@@ -79,11 +76,20 @@ function LoginContent() {
     validCliCallback,
   ]);
 
+  useEffect(() => {
+    if (
+      isLoaded && isSignedIn && clerkSessionExchangeReady &&
+      patchbayAuthStatus === "authenticated" && !cliCallback && !desktopHandoff
+    ) {
+      window.location.replace(returnUrl);
+    }
+  }, [isLoaded, isSignedIn, clerkSessionExchangeReady, patchbayAuthStatus, cliCallback, desktopHandoff, returnUrl]);
+
   if (cliCallback && !validCliCallback) {
     return (
-      <ClerkAuthShell>
+      <AuthShell>
         <p role="alert">{t(($) => $.web.cli_authorization.invalid_callback)}</p>
-      </ClerkAuthShell>
+      </AuthShell>
     );
   }
 
@@ -108,7 +114,7 @@ function LoginContent() {
     };
 
     return (
-      <ClerkAuthShell>
+      <AuthShell>
         <div className="flex flex-col items-center gap-3">
           <p>{t(($) => $.web.cli_authorization.prompt)}</p>
           <button
@@ -120,7 +126,7 @@ function LoginContent() {
           </button>
           {error && <p role="alert">{error}</p>}
         </div>
-      </ClerkAuthShell>
+      </AuthShell>
     );
   }
 
@@ -134,22 +140,18 @@ function LoginContent() {
     );
   }
 
+  if (isSignedIn) {
+    return (
+      <AuthShell>
+        <p role="status">{t(($) => $.web.desktop_handoff.preparing)}</p>
+      </AuthShell>
+    );
+  }
+
   return (
-    <ClerkAuthShell>
-      <SignIn
-        routing="path"
-        path="/login"
-        signUpUrl={
-          desktopHandoff
-            ? `/signup?${desktopHandoffQuery(
-                desktopCodeChallenge,
-                desktopState,
-              )}`
-            : authRouteWithRedirect("/signup", returnUrl)
-        }
-        forceRedirectUrl={returnUrl}
-      />
-    </ClerkAuthShell>
+    <AuthShell>
+      <WebAccountsLoginForm returnUrl={returnUrl} />
+    </AuthShell>
   );
 }
 
@@ -162,7 +164,6 @@ function DesktopHandoff({
   state: string;
   clerkSessionExchangeReady: boolean;
 }) {
-  const { getToken } = useAuth();
   const { t } = useT("auth");
   const authStatus = useAuthStore((state) => state.status);
   const backendSessionReady =
@@ -178,36 +179,19 @@ function DesktopHandoff({
       if (!codeChallenge || !state) {
         throw new Error("Patchbay desktop handoff is missing its binding");
       }
-      const sessionToken = await getToken();
-      if (!sessionToken) throw new Error("Clerk session token unavailable");
       const { callback_protocol: callbackProtocol, code } =
-        await api.completeDesktopGoogleAttempt(
-          sessionToken,
+        await api.completeDesktopAuthHandoff(
           state,
           codeChallenge,
         );
       if (!code) throw new Error("Patchbay desktop handoff code unavailable");
       redirectToDesktopApp(code, state, callbackProtocol);
       setLoading(false);
-    } catch (error) {
-      if (
-        error instanceof ApiError &&
-        (error.status === 401 || error.status === 409)
-      ) {
-        const startPath = buildBrokerRoute(
-          window.location.pathname,
-          "/login",
-          "/oauth/google",
-        );
-        window.location.replace(
-          `${startPath}?${desktopHandoffQuery(codeChallenge, state)}`,
-        );
-        return;
-      }
+    } catch {
       setError(t(($) => $.web.desktop_handoff.prepare_failed));
       setLoading(false);
     }
-  }, [codeChallenge, getToken, state, t]);
+  }, [codeChallenge, state, t]);
 
   useEffect(() => {
     if (!backendSessionReady || automaticAttempted.current) return;
@@ -216,7 +200,7 @@ function DesktopHandoff({
   }, [backendSessionReady, openDesktopApp]);
 
   return (
-    <ClerkAuthShell>
+    <AuthShell>
       <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
         <h1 className="text-title-sm font-semibold">
           {t(($) => $.web.desktop_handoff.opening_title)}
@@ -242,6 +226,6 @@ function DesktopHandoff({
           </p>
         )}
       </div>
-    </ClerkAuthShell>
+    </AuthShell>
   );
 }

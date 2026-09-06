@@ -10,7 +10,6 @@ vi.mock("@clerk/nextjs", () => ({
   },
 }));
 
-vi.mock("@clerk/themes", () => ({ shadcn: "shadcn-theme" }));
 
 import { ClerkProvider } from "./clerk-provider";
 
@@ -25,7 +24,6 @@ describe("ClerkProvider", () => {
     expect(screen.getByTestId("content")).toBeInTheDocument();
     expect(clerkProps.current).toMatchObject({
       publishableKey: "pk_live_runtime-key",
-      appearance: { theme: "shadcn-theme" },
     });
   });
 });

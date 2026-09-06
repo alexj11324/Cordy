@@ -9,7 +9,11 @@ import {
   PATCHBAY_LOCALE_HEADER,
   resolveLocaleFromSignals,
 } from "./lib/locale-routing";
-import { runtimeRewriteDestination } from "./config/runtime-urls";
+import {
+  isDesktopAuthPath,
+  resolveAccountsOrigin,
+  runtimeRewriteDestination,
+} from "./config/runtime-urls";
 
 // Clerk public routes — no authentication required
 const clerkPublicRoutes = createRouteMatcher([
@@ -61,6 +65,16 @@ function nextWithLocale(req: NextRequest): NextResponse {
   const headers = new Headers(req.headers);
   headers.set(PATCHBAY_LOCALE_HEADER, resolveLocale(req));
   return NextResponse.next({ request: { headers } });
+}
+
+function desktopAccountsRedirect(req: NextRequest): NextResponse | null {
+  if (req.nextUrl.searchParams.get("platform") !== "desktop") return null;
+  if (!isDesktopAuthPath(req.nextUrl.pathname)) return null;
+  const accountsOrigin = resolveAccountsOrigin(process.env);
+  if (!accountsOrigin) return null;
+  const destination = new URL(req.nextUrl.pathname, accountsOrigin);
+  destination.search = req.nextUrl.search;
+  return NextResponse.redirect(destination);
 }
 
 function runtimeRewrite(req: NextRequest): NextResponse | null {
@@ -146,6 +160,9 @@ export function proxy(
   req: NextRequest,
   event?: NextFetchEvent,
 ): ReturnType<typeof clerkProxy> {
+  const desktopRedirect = desktopAccountsRedirect(req);
+  if (desktopRedirect) return desktopRedirect;
+
   const rewrite = runtimeRewrite(req);
   if (rewrite) return rewrite;
 

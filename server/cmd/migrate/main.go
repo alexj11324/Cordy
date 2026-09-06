@@ -322,6 +322,8 @@ var concurrentIndexCleanups = map[string]string{
 	"517_agent_task_execution_provenance_discovery_queue_index": "agent_task_execution_provenance_discovery_queue_idx",
 	"522_issue_category_policy_workspace_category_index":        "uq_workspace_issue_category_policy_workspace_category",
 	"530_channel_receive_state_unique_index":                    "idx_channel_receive_state_installation_type",
+	"587_linear_comment_link_local":                            "uq_linear_comment_link_local",
+	"588_linear_comment_link_remote":                           "uq_linear_comment_link_remote",
 	"532_uq_linear_connection_id":                               "uq_linear_connection_id",
 	"533_uq_linear_connection_workspace":                        "uq_linear_connection_workspace",
 	"534_uq_linear_connection_identity":                         "uq_linear_connection_identity",

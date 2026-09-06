@@ -86,7 +86,7 @@ export function buildActorNameResolver(directories: {
     // would be a lie the audit trail cannot undo. An id that no longer
     // resolves means the plugin was uninstalled — the row stays readable.
     if (type === "plugin") return pluginNames.get(id) ?? "Plugin";
-    if (type === "system") return "Patchbay";
+    if (type === "system") return "Orvilo";
     return "System";
   };
 }

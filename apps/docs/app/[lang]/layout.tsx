@@ -46,11 +46,11 @@ const sourceSerif = Source_Serif_4({
 
 export const metadata: Metadata = {
   title: {
-    template: "%s | Patchbay Docs",
-    default: "Patchbay Docs",
+    template: "%s | Orvilo Docs",
+    default: "Orvilo Docs",
   },
   description:
-    "Documentation for Patchbay — the open-source managed agents platform.",
+    "Documentation for Orvilo — the open-source managed agents platform.",
 };
 
 export function generateStaticParams() {

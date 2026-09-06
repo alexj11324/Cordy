@@ -67,6 +67,40 @@ export function resolveDocsUrl(env: RuntimeEnv): string | undefined {
   return cleanHttpUrl(env.DOCS_URL);
 }
 
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+/**
+ * Identity origin for leftover Desktop URLs on the product web.
+ * Unset on self-host so those deployments are not sent to production Accounts.
+ */
+export function resolveAccountsOrigin(env: RuntimeEnv): string | undefined {
+  const configured =
+    cleanHttpUrl(env.PATCHBAY_AUTH_BROKER_ORIGIN) ??
+    cleanHttpUrl(env.NEXT_PUBLIC_ACCOUNTS_URL);
+  if (!configured) return undefined;
+  try {
+    const url = new URL(configured);
+    if (isLoopbackHostname(url.hostname)) return undefined;
+    return configured;
+  } catch {
+    return undefined;
+  }
+}
+
+export function isDesktopAuthPath(pathname: string): boolean {
+  return (
+    pathname === "/login" ||
+    pathname === "/signup" ||
+    pathname === "/sign-in" ||
+    pathname === "/sign-up" ||
+    pathname === "/sso-callback" ||
+    pathname === "/oauth/google" ||
+    pathname === "/oauth/google/callback"
+  );
+}
+
 // Dev-only fallbacks: `next dev` runs on a developer machine, where the
 // conventional localhost backend/docs ports are safe to assume when nothing
 // is configured. Builds and the runtime proxy keep the strict resolvers so a

@@ -118,6 +118,19 @@ afterEach(() => {
 });
 
 describe("AuthInitializer recovery", () => {
+  it("distinguishes initial absence of a session from logging out", async () => {
+    const api = makeApi();
+    const { onLogout } = renderInitializer({ api, storage: makeStorage() });
+
+    await waitFor(() => {
+      expect(useAuthStore.getState().status).toBe("unauthenticated");
+    });
+    expect(api.getMe).not.toHaveBeenCalled();
+    expect(onLogout).toHaveBeenCalledExactlyOnceWith(undefined, {
+      reason: "missing-session",
+    });
+  });
+
   it("publishes the server-owned messaging setup capability", async () => {
     const messaging = {
       mode: "server_configured",

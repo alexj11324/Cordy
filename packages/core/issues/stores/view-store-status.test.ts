@@ -79,6 +79,13 @@ describe("saved view baseline", () => {
   });
 });
 
+describe("card property defaults", () => {
+  it("hides the description on board cards by default", () => {
+    const store = createStore<IssueViewState>()((set) => viewStoreSlice(set));
+    expect(store.getState().cardProperties.description).toBe(false);
+  });
+});
+
 describe("legacy assignee view-state migration", () => {
   it("normalizes every persisted view dimension to executor", () => {
     const store = createStore<IssueViewState>()((set) => viewStoreSlice(set));

@@ -130,6 +130,7 @@ import type {
 } from "../types";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 import type { CreateFeedbackResponse } from "../feedback/types";
+import { isDesktopCallbackProtocol } from "../auth/desktop-callback-protocol";
 
 /**
  * pgx's nullable values normally marshal as JSON strings/null, but older Go
@@ -1073,6 +1074,10 @@ export interface AppConfigResponse {
    * signal do validate but cannot say so, and are treated as unable: the client
    * has no way to tell them apart, and only one of the two answers is safe. */
   local_worktree_supported?: boolean;
+  /** Whether this server preserves local_directory `worktree_base=head` all the
+   * way through save, claim, and daemon execution. Absent on servers that only
+   * support the legacy dirty-snapshot worktree behavior. */
+  local_worktree_committed_base_supported?: boolean;
   /** Whether agent create/update persists `conversation_starters`. Older servers
    * silently ignored the unknown field, so absent must be treated as false. */
   agent_conversation_starters_supported?: boolean;
@@ -1336,6 +1341,7 @@ export const AppConfigSchema = z.object({
   vcs_integration_available: BooleanWithDefaultSchema(false).optional(),
   feature_flags: FeatureFlagsSchema,
   local_worktree_supported: BooleanWithDefaultSchema(false),
+  local_worktree_committed_base_supported: BooleanWithDefaultSchema(false),
   agent_conversation_starters_supported: BooleanWithDefaultSchema(false),
   server_version: OptionalStringSchema,
   messaging: MessagingCapabilitiesSchema.optional(),
@@ -1353,6 +1359,7 @@ export const EMPTY_APP_CONFIG: AppConfigResponse = {
   // Fail closed: an unreadable config must not look like a server that
   // validates execution_mode.
   local_worktree_supported: false,
+  local_worktree_committed_base_supported: false,
   // Fail closed: old servers returned success while dropping the field.
   agent_conversation_starters_supported: false,
   feature_flags: {},
@@ -4513,3 +4520,11 @@ export const EMPTY_JOIN_SHARE_LINK_RESPONSE: {
   workspace_id: "",
   workspace_slug: "",
 };
+
+export const DesktopSessionResponseSchema = z.object({ token: z.string().min(1) });
+
+export const DesktopHandoffResponseSchema = z.object({
+  callback_protocol: z.string().refine(isDesktopCallbackProtocol),
+  code: z.string().regex(/^pbd_[A-Za-z0-9_-]{43}$/),
+  state: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/),
+});

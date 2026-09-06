@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { RouterProvider } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
+import { createSafeId } from "@patchbay/core/utils";
 import { ScrollRestorationProvider } from "@patchbay/views/platform";
 import { useActiveGroup, useTabStore } from "@/stores/tab-store";
 import {
@@ -33,18 +34,11 @@ export function TabContent() {
   const generation = useTabStore((s) => s.mountGeneration);
   const qc = useQueryClient();
 
-  // Wire the Coordinator before the first host mount so the router already
-  // projects the active session's URL when RouterProvider first renders.
-  // useState's initializer is the earliest once-per-tree hook slot; the call
-  // is idempotent.
-  useState(() => {
-    initTabCoordinator();
-    return true;
-  });
-
-  useEffect(() => {
-    registerCoordinatorQueryClient(qc);
-  }, [qc]);
+  // Module state can be replaced by HMR while React preserves this host's
+  // hooks. Recheck the idempotent initializer before rendering the router;
+  // a useState initializer only wires the original module instance.
+  initTabCoordinator();
+  registerCoordinatorQueryClient(qc);
 
   // Sync document.title when switching tabs within the active workspace.
   useEffect(() => {
@@ -66,6 +60,9 @@ export function TabContent() {
 function ActiveTabHost({ tabId }: { tabId: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const router = getAppRouter();
+  // RouterProvider snapshots router.state on mount; a replacement router
+  // needs its own provider state even when the tab host survives HMR.
+  const routerKey = useMemo(() => createSafeId(), [router]);
   const scrollAdapter = useMemo(
     () => createScrollRestorationAdapter(tabId),
     [tabId],
@@ -83,7 +80,7 @@ function ActiveTabHost({ tabId }: { tabId: string }) {
   return (
     <div ref={hostRef} style={{ display: "contents" }}>
       <ScrollRestorationProvider adapter={scrollAdapter}>
-        <RouterProvider router={router} />
+        <RouterProvider key={routerKey} router={router} />
       </ScrollRestorationProvider>
     </div>
   );

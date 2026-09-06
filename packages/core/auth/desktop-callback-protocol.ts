@@ -1,8 +1,7 @@
 export const PRODUCTION_DESKTOP_CALLBACK_PROTOCOL = "patchbay";
-export const DEVELOPMENT_DESKTOP_CALLBACK_PROTOCOL = "patchbay-canary";
 
 const DEVELOPMENT_PROTOCOL_PATTERN =
-  /^patchbay-canary(?:-[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?)?$/;
+  /^patchbay-canary-[a-f0-9]{16}$/;
 
 export function isDesktopCallbackProtocol(value: string): boolean {
   return (

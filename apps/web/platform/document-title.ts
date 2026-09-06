@@ -5,7 +5,7 @@
  * `<title>` for statically known routes (root, auth), and
  * `WorkspaceDocumentTitle` sets `document.title` on workspace routes, whose
  * names only exist in the query cache. Both go through the constants here so
- * `Issues | Patchbay` and `Settings | Patchbay` can never drift into two
+ * `Issues | Orvilo` and `Settings | Orvilo` can never drift into two
  * different separators.
  *
  * Pure and React-free on purpose: the root layout is a server component and
@@ -14,10 +14,10 @@
 
 /** Root fallback — the title of a page that has nothing more specific to say. */
 export const SITE_TITLE =
-  "Patchbay — Project Management for Human + Agent Teams";
+  "Orvilo — Project Management for Human + Agent Teams";
 
 /** Appended to every page-specific title. */
-export const TITLE_SUFFIX = " | Patchbay";
+export const TITLE_SUFFIX = " | Orvilo";
 
 /** Next.js `metadata.title.template`; see apps/web/app/layout.tsx. */
 export const TITLE_TEMPLATE = `%s${TITLE_SUFFIX}`;
@@ -49,10 +49,10 @@ function clipTitle(title: string): string {
 
 /**
  * Build the full document title for a page name, e.g.
- * `MUL-123: Fix login` → `MUL-123: Fix login | Patchbay`.
+ * `MUL-123: Fix login` → `MUL-123: Fix login | Orvilo`.
  *
  * An empty or whitespace-only name falls back to {@link SITE_TITLE} rather than
- * rendering a bare ` | Patchbay`.
+ * rendering a bare ` | Orvilo`.
  */
 export function formatDocumentTitle(
   pageTitle: string | null | undefined,

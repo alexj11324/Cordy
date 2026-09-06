@@ -94,6 +94,8 @@ export type AutomationDialogProps =
       onOpenChange: (v: boolean) => void;
       initial?: Partial<AutomationInitial>;
       initialSchedule?: Pick<ScheduleConfig, "time" | "days">;
+      initialTriggerKind?: "schedule" | "webhook";
+      initialEventFilters?: WebhookEventFilter[];
     }
   | {
       mode: "edit";
@@ -200,15 +202,18 @@ export function AutomationDialog(props: AutomationDialogProps) {
   // initialized from the first existing trigger so we render the right
   // panel without surprising the user.
   const initialKind: "schedule" | "webhook" = (() => {
-    if (isCreate) return "schedule";
+    if (isCreate) return props.initialTriggerKind ?? "schedule";
     const first = props.triggers[0];
     if (first?.kind === "webhook") return "webhook";
     return "schedule";
   })();
   const [triggerKind, setTriggerKind] = useState<"schedule" | "webhook">(initialKind);
 
-  const initialEventFilters: WebhookEventFilter[] =
-    !isCreate && props.triggers[0]?.event_filters ? props.triggers[0].event_filters : [];
+  const initialEventFilters: WebhookEventFilter[] = isCreate
+    ? (props.initialEventFilters ?? [])
+    : props.triggers[0]?.event_filters
+      ? props.triggers[0].event_filters
+      : [];
   const [eventFilters, setEventFilters] = useState<WebhookEventFilter[]>(initialEventFilters);
 
   const initialCronRef = useRef(toCron(initialCfg));

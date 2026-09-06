@@ -76,8 +76,28 @@ html[lang|="ja"] {
 }
 
 /* Let the native macOS material show through only after a glass dashboard
-   mounts. Login, onboarding, and issue windows keep the normal body fill. */
-html[data-platform="desktop"]:has([data-native-vibrancy="true"]),
-html[data-platform="desktop"]:has([data-native-vibrancy="true"]) body {
+   mounts. The layout emits this marker only for native macOS windows.
+   Login and issue windows retain their body fill; onboarding overlays
+   provide their own opaque surface. */
+html:has([data-native-vibrancy="true"]),
+html:has([data-native-vibrancy="true"]) body {
   background: transparent;
+}
+
+/* Settings takes over the window. Its dashboard stays mounted but invisible,
+   so the settings glass reveals native material rather than navigation below. */
+html:has([data-native-vibrancy="true"]) [data-slot="settings-window"],
+html:has([data-native-vibrancy="true"]) [data-slot="settings-window"] [data-settings-variant="standalone"] {
+  background: transparent;
+}
+
+/* Native sidebar material already supplies blur and tint. Do not paint a
+   second darkened glass layer over it; keep the solid accessibility fallback. */
+@media not (prefers-reduced-transparency: reduce) {
+  html:has([data-native-vibrancy="true"]) [data-sidebar-glass="true"] [data-slot="sidebar-container"],
+  html:has([data-native-vibrancy="true"]) [data-slot="settings-nav"] {
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }

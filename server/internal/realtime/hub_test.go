@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -83,7 +85,7 @@ func TestAuthenticateTokenRejectsTemporarilyDisabledPATUser(t *testing.T) {
 	}
 }
 
-func TestAuthenticateTokenRejectsGuestBearer(t *testing.T) {
+func TestAuthenticateTokenRejectsGuestBearerWithoutResolver(t *testing.T) {
 	uid, errMsg := authenticateToken("pbg_"+strings.Repeat("a", 40), nil, context.Background())
 	if uid != "" {
 		t.Fatalf("guest bearer returned user ID %q", uid)
@@ -623,5 +625,121 @@ func TestReadPump_AcceptsFrameUnderReadLimit(t *testing.T) {
 	}
 	if !strings.Contains(string(raw), "pong") {
 		t.Fatalf("got %s, want a pong frame", raw)
+	}
+}
+
+func TestGuestBearerWebSocketHandshake(t *testing.T) {
+	token := "pbg_" + strings.Repeat("a", 40)
+	hub := NewHub()
+	go hub.Run()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		HandleWebSocket(hub, &mockMembershipChecker{}, staticPATResolver{token: testUserID}, nil, w, r)
+	}))
+	defer server.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"?workspace_id="+testWorkspaceID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.WriteJSON(map[string]any{"type": "auth", "payload": map[string]string{"token": token}}); err != nil {
+		t.Fatal(err)
+	}
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var frame map[string]any
+	if err := conn.ReadJSON(&frame); err != nil {
+		t.Fatal(err)
+	}
+	if frame["type"] != "auth_ack" {
+		t.Fatalf("valid Guest handshake = %v, want auth_ack", frame)
+	}
+}
+
+type deniedGuestMembership struct{}
+
+func (*deniedGuestMembership) IsMember(context.Context, string, string) bool { return false }
+func TestGuestBearerStillRequiresWorkspaceMembership(t *testing.T) {
+	token := "pbg_" + strings.Repeat("a", 40)
+	hub := NewHub()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		HandleWebSocket(hub, &deniedGuestMembership{}, staticPATResolver{token: testUserID}, nil, w, r)
+	}))
+	defer server.Close()
+	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"?workspace_id="+testWorkspaceID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if err := conn.WriteJSON(map[string]any{"type": "auth", "payload": map[string]string{"token": token}}); err != nil {
+		t.Fatal(err)
+	}
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var frame map[string]any
+	if err := conn.ReadJSON(&frame); err != nil {
+		t.Fatal(err)
+	}
+	if frame["error"] != "not a member of this workspace" {
+		t.Fatalf("cross-workspace guest accepted: %v", frame)
+	}
+}
+
+type revocableGuestResolver struct{ active atomic.Bool }
+
+func (r *revocableGuestResolver) ResolveToken(context.Context, string) (string, bool) {
+	return testUserID, r.active.Load()
+}
+func TestGuestRevocationClosesExistingConnection(t *testing.T) {
+	for _, direction := range []string{"inbound", "outbound"} {
+		t.Run(direction, func(t *testing.T) {
+			resolver := &revocableGuestResolver{}
+			resolver.active.Store(true)
+			hub := NewHub()
+			go hub.Run()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				HandleWebSocket(hub, &mockMembershipChecker{}, resolver, nil, w, r)
+			}))
+			defer server.Close()
+			conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"?workspace_id="+testWorkspaceID, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+			if err := conn.WriteJSON(map[string]any{"type": "auth", "payload": map[string]string{"token": "pbg_" + strings.Repeat("a", 40)}}); err != nil {
+				t.Fatal(err)
+			}
+			var frame map[string]any
+			if err := conn.ReadJSON(&frame); err != nil {
+				t.Fatal(err)
+			}
+			if frame["type"] != "auth_ack" {
+				t.Fatalf("handshake: %v", frame)
+			}
+			// The subscription acknowledgement is an event-driven registration barrier.
+			subscribe := map[string]any{"type": "subscribe", "payload": map[string]string{"scope": ScopeWorkspace, "id": testWorkspaceID}}
+			if err := conn.WriteJSON(subscribe); err != nil {
+				t.Fatal(err)
+			}
+			if err := conn.ReadJSON(&frame); err != nil {
+				t.Fatal(err)
+			}
+			if frame["type"] != "subscribe_ack" {
+				t.Fatalf("subscription: %v", frame)
+			}
+			resolver.active.Store(false)
+			if direction == "inbound" {
+				if err := conn.WriteJSON(subscribe); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				hub.BroadcastToWorkspace(testWorkspaceID, []byte(`{"type":"daemon:register","payload":{}}`))
+			}
+			_, data, err := conn.ReadMessage()
+			if err == nil {
+				t.Fatalf("revoked Guest received data: %s", data)
+			}
+			if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+				t.Fatal("revoked connection was not closed")
+			}
+		})
 	}
 }

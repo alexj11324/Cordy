@@ -3,7 +3,6 @@ import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import { RESOURCES } from "@patchbay/views/locales";
-import type { LocalGuestSession } from "../../../shared/local-guest";
 import { DesktopEntryPage } from "./desktop-entry";
 
 function installDesktopAPI(createGuestSession: ReturnType<typeof vi.fn>) {
@@ -15,17 +14,19 @@ function installDesktopAPI(createGuestSession: ReturnType<typeof vi.fn>) {
 
 function renderEntry({
   onSignIn = vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
-  onGuestSession = vi.fn<(session: LocalGuestSession) => void>(),
+  onGuestSession = vi.fn<() => Promise<void>>().mockResolvedValue(undefined),
+  onResetGuest,
 }: {
   onSignIn?: () => Promise<void>;
-  onGuestSession?: (session: LocalGuestSession) => void;
+  onGuestSession?: () => Promise<void>;
+  onResetGuest?: () => Promise<void>;
 } = {}) {
   return {
     onSignIn,
     onGuestSession,
     ...render(
       <I18nProvider locale="zh-Hans" resources={RESOURCES}>
-        <DesktopEntryPage onSignIn={onSignIn} onGuestSession={onGuestSession} />
+        <DesktopEntryPage onSignIn={onSignIn} onGuestSession={onGuestSession} onResetGuest={onResetGuest} />
       </I18nProvider>,
     ),
   };
@@ -42,7 +43,7 @@ describe("DesktopEntryPage", () => {
 
     expect(screen.getByTestId("desktop-entry")).toHaveClass("bg-zinc-950");
     expect(screen.getByTestId("desktop-entry-brand")).toHaveTextContent(
-      "Patchbay",
+      "Orvilo",
     );
     expect(screen.getByTestId("desktop-entry-actions")).toContainElement(
       screen.getByRole("button", { name: "登录" }),
@@ -89,44 +90,30 @@ describe("DesktopEntryPage", () => {
     finish();
   });
 
-  it("opens the localized Guest username dialog and creates a local session", async () => {
-    const createGuestSession = vi.fn().mockResolvedValue({
-      ok: true,
-      session: { displayName: "Alice" } satisfies LocalGuestSession,
-    });
-    installDesktopAPI(createGuestSession);
+  it("starts Guest without a username dialog or local-only session", async () => {
+    const oldLocalCreate = vi.fn();
+    installDesktopAPI(oldLocalCreate);
     const { onGuestSession } = renderEntry();
-
     fireEvent.click(screen.getByRole("button", { name: "Guest" }));
-    expect(await screen.findByText("请设置你的账号名")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("账号名"), {
-      target: { value: "Alice" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "以 Guest 身份继续" }));
-
-    await waitFor(() => {
-      expect(createGuestSession).toHaveBeenCalledWith("Alice");
-      expect(onGuestSession).toHaveBeenCalledWith({ displayName: "Alice" });
-    });
+    await waitFor(() => expect(onGuestSession).toHaveBeenCalledOnce());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(oldLocalCreate).not.toHaveBeenCalled();
   });
 
-  it("keeps the Guest dialog open when the main process rejects the name", async () => {
-    const createGuestSession = vi.fn().mockResolvedValue({
-      ok: false,
-      reason: "invalid_name",
-    });
-    installDesktopAPI(createGuestSession);
-    renderEntry();
-
+  it("shows Guest failure and allows another attempt", async () => {
+    const onGuestSession = vi.fn().mockRejectedValue(new Error("offline"));
+    renderEntry({ onGuestSession });
     fireEvent.click(screen.getByRole("button", { name: "Guest" }));
-    fireEvent.change(screen.getByLabelText("账号名"), {
-      target: { value: "bad\nname" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "以 Guest 身份继续" }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "请输入 1–64 个字符，且不要包含控制字符。",
-    );
-    expect(screen.getByText("请设置你的账号名")).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("无法开始 Guest 会话");
+    expect(screen.getByRole("button", { name: "Guest" })).toBeEnabled();
   });
+  it("keeps recovery for a damaged legacy marker on the regular entry page", async () => {
+    const onResetGuest = vi.fn().mockResolvedValue(undefined);
+    renderEntry({ onResetGuest });
+    fireEvent.click(screen.getByRole("button", { name: "重置 Guest 会话" }));
+    await waitFor(() => expect(onResetGuest).toHaveBeenCalledOnce());
+    expect(screen.getByRole("button", { name: "登录" })).toBeInTheDocument();
+    expect(screen.queryByText("本地工作区运行")).not.toBeInTheDocument();
+  });
+
 });

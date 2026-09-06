@@ -20,8 +20,6 @@ import (
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
-const desktopAuthCallbackProtocol = "patchbay"
-
 const (
 	desktopBrokerAuthHeader = "X-Patchbay-Desktop-Broker-Auth"
 	authContractHeader      = "X-Patchbay-Auth-Contract-Version"
@@ -29,9 +27,10 @@ const (
 )
 
 var (
-	desktopHandoffOpaquePattern = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
-	desktopHandoffCodePattern   = regexp.MustCompile(`^pbd_[A-Za-z0-9_-]{43}$`)
-	desktopBrokerSecretPattern  = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	desktopHandoffOpaquePattern    = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
+	desktopHandoffCodePattern      = regexp.MustCompile(`^pbd_[A-Za-z0-9_-]{43}$`)
+	desktopBrokerSecretPattern     = regexp.MustCompile(`^[a-f0-9]{64}$`)
+	desktopCallbackProtocolPattern = regexp.MustCompile(`^(?:patchbay|patchbay-canary-[a-f0-9]{16})$`)
 )
 
 type desktopAuthHandoffRequest struct {
@@ -41,11 +40,13 @@ type desktopAuthHandoffRequest struct {
 }
 
 type desktopAuthHandoffRedeemRequest struct {
+	State        string `json:"state,omitempty"`
 	Code         string `json:"code"`
 	CodeVerifier string `json:"code_verifier"`
 }
 
 type desktopGoogleAttemptRequest struct {
+	Local         bool   `json:"local,omitempty"`
 	State         string `json:"state"`
 	CodeChallenge string `json:"code_challenge"`
 }
@@ -112,42 +113,24 @@ func (h *Handler) RegisterDesktopGoogleAttempt(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, map[string]bool{"registered": true})
 }
 
-func (h *Handler) CompleteDesktopGoogleAttempt(w http.ResponseWriter, r *http.Request) {
-	if !requireAuthContract(w, r) {
-		return
-	}
-	var req desktopGoogleAttemptRequest
-	if !decodeDesktopGoogleAttempt(w, r, &req) || !validDesktopGoogleAttempt(req) {
-		writeError(w, http.StatusBadRequest, "invalid desktop Google OAuth binding")
-		return
-	}
-	authorization := r.Header.Get("Authorization")
-	if !strings.HasPrefix(authorization, "Bearer ") || len(authorization) > 8192 || strings.ContainsAny(authorization, "\r\n") {
-		writeError(w, http.StatusUnauthorized, "Clerk session is required")
-		return
-	}
+func (h *Handler) finishDesktopGoogleAttempt(r *http.Request, token string, req desktopGoogleAttemptRequest) (string, string, int, string) {
 	if h.ClerkAuth == nil {
-		writeError(w, http.StatusServiceUnavailable, "Clerk login is not configured")
-		return
+		return "", "", http.StatusServiceUnavailable, "Clerk login is not configured"
 	}
 	startedAt, err := h.Queries.GetDesktopGoogleAttempt(r.Context(), db.GetDesktopGoogleAttemptParams{State: req.State, CodeChallenge: req.CodeChallenge})
 	if err != nil || !startedAt.Valid {
-		writeError(w, http.StatusConflict, "fresh authentication is required")
-		return
+		return "", "", http.StatusConflict, "fresh authentication is required"
 	}
-	identity, err := h.ClerkAuth.VerifyFreshSession(r.Context(), strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer ")), startedAt.Time)
+	identity, err := h.ClerkAuth.VerifyFreshSession(r.Context(), token, startedAt.Time)
 	if err != nil {
 		if errors.Is(err, errClerkUnavailable) {
-			writeError(w, http.StatusServiceUnavailable, "Clerk login is temporarily unavailable")
-		} else {
-			writeError(w, http.StatusConflict, "fresh authentication is required")
+			return "", "", http.StatusServiceUnavailable, "Clerk login is temporarily unavailable"
 		}
-		return
+		return "", "", http.StatusConflict, "fresh authentication is required"
 	}
 	user, isNew, err := h.findOrCreateUser(r.Context(), identity.Email)
 	if err != nil {
-		writeError(w, http.StatusForbidden, "login rejected")
-		return
+		return "", "", http.StatusForbidden, "login rejected"
 	}
 	if isNew {
 		evt := analytics.Signup(uuidToString(user.ID), user.Email, "")
@@ -169,12 +152,37 @@ func (h *Handler) CompleteDesktopGoogleAttempt(w http.ResponseWriter, r *http.Re
 	}
 	code, err := generateDesktopHandoffCode()
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to create desktop auth handoff")
-		return
+		return "", "", http.StatusInternalServerError, "failed to create desktop auth handoff"
+	}
+	// Hash the complete purpose-prefixed code. Local identity grants can never
+	// be changed into production session grants by replacing their prefix.
+	if req.Local {
+		code = "pbl_" + strings.TrimPrefix(code, "pbd_")
 	}
 	protocol, err := h.Queries.CompleteDesktopAuthHandoff(r.Context(), db.CompleteDesktopAuthHandoffParams{State: req.State, UserID: user.ID, CodeHash: pgtype.Text{String: auth.HashToken(code), Valid: true}, CodeChallenge: req.CodeChallenge})
 	if err != nil {
-		writeError(w, http.StatusConflict, "desktop Google OAuth attempt was already used")
+		return "", "", http.StatusConflict, "desktop Google OAuth attempt was already used"
+	}
+	return protocol, code, 0, ""
+}
+
+func (h *Handler) CompleteDesktopGoogleAttempt(w http.ResponseWriter, r *http.Request) {
+	if !requireAuthContract(w, r) {
+		return
+	}
+	var req desktopGoogleAttemptRequest
+	if !decodeDesktopGoogleAttempt(w, r, &req) || !validDesktopGoogleAttempt(req) {
+		writeError(w, http.StatusBadRequest, "invalid desktop Google OAuth binding")
+		return
+	}
+	authorization := r.Header.Get("Authorization")
+	if !strings.HasPrefix(authorization, "Bearer ") || len(authorization) > 8192 || strings.ContainsAny(authorization, "\r\n") {
+		writeError(w, http.StatusUnauthorized, "Clerk session is required")
+		return
+	}
+	protocol, code, status, errMsg := h.finishDesktopGoogleAttempt(r, strings.TrimSpace(strings.TrimPrefix(authorization, "Bearer ")), req)
+	if errMsg != "" {
+		writeError(w, status, errMsg)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"callback_protocol": protocol, "code": code})
@@ -196,10 +204,20 @@ func generateDesktopHandoffCode() (string, error) {
 	return "pbd_" + base64.RawURLEncoding.EncodeToString(bytes), nil
 }
 
-func validateDesktopHandoffRequest(req desktopAuthHandoffRequest) bool {
-	return desktopHandoffOpaquePattern.MatchString(req.State) &&
-		desktopHandoffOpaquePattern.MatchString(req.CodeChallenge) &&
-		req.CallbackProtocol == desktopAuthCallbackProtocol
+func validateDesktopHandoffInitiate(req desktopAuthHandoffRequest) bool {
+	return validDesktopHandoffBinding(req.State, req.CodeChallenge) &&
+		desktopCallbackProtocolPattern.MatchString(req.CallbackProtocol)
+}
+
+func validateDesktopHandoffComplete(req desktopAuthHandoffRequest) bool {
+	// The browser must not choose the OS handler. Complete is bound by PKCE
+	// state + challenge; the callback scheme is the one stored at initiate.
+	return validDesktopHandoffBinding(req.State, req.CodeChallenge)
+}
+
+func validDesktopHandoffBinding(state, codeChallenge string) bool {
+	return desktopHandoffOpaquePattern.MatchString(state) &&
+		desktopHandoffOpaquePattern.MatchString(codeChallenge)
 }
 
 // requireFormalDesktopAuthActor is a handler-level backstop for the
@@ -218,7 +236,7 @@ func requireFormalDesktopAuthActor(w http.ResponseWriter, r *http.Request) bool 
 
 func (h *Handler) InitiateDesktopAuthHandoff(w http.ResponseWriter, r *http.Request) {
 	var req desktopAuthHandoffRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validateDesktopHandoffRequest(req) {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validateDesktopHandoffInitiate(req) {
 		writeError(w, http.StatusBadRequest, "invalid desktop auth handoff")
 		return
 	}
@@ -255,7 +273,7 @@ func (h *Handler) CompleteDesktopAuthHandoff(w http.ResponseWriter, r *http.Requ
 	}
 
 	var req desktopAuthHandoffRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validateDesktopHandoffRequest(req) {
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || !validateDesktopHandoffComplete(req) {
 		writeError(w, http.StatusBadRequest, "invalid desktop auth handoff")
 		return
 	}
@@ -291,10 +309,17 @@ func (h *Handler) CompleteDesktopAuthHandoff(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *Handler) RedeemDesktopAuthHandoff(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	var req desktopAuthHandoffRedeemRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil ||
-		!desktopHandoffCodePattern.MatchString(req.Code) ||
-		!desktopHandoffOpaquePattern.MatchString(req.CodeVerifier) {
+	if !decodeDesktopHandoffRedeem(w, r, &req) {
+		writeError(w, http.StatusUnauthorized, "invalid desktop auth handoff")
+		return
+	}
+	if desktopLocalIdentityCodePattern.MatchString(req.Code) {
+		h.redeemLocalDesktopSession(w, r, req)
+		return
+	}
+	if !desktopHandoffCodePattern.MatchString(req.Code) {
 		writeError(w, http.StatusUnauthorized, "invalid desktop auth handoff")
 		return
 	}

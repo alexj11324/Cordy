@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   initiateDesktopAuthHandoff: vi.fn(),
   openExternal: vi.fn(),
   createDesktopLoginUrl: vi.fn(),
+  cancelDesktopLogin: vi.fn(),
 }));
 
 vi.mock("@patchbay/core/api", () => ({
@@ -41,29 +42,36 @@ vi.mock("@patchbay/views/platform", () => ({
 
 vi.mock("./login-handoff", () => ({
   createDesktopLoginUrl: mocks.createDesktopLoginUrl,
+  cancelDesktopLogin: mocks.cancelDesktopLogin,
+  createHostedDesktopHandoffInitiate: vi.fn(() => undefined),
 }));
 
-function renderPage() {
+function renderPage(handoffFailed = false, onBack?: () => Promise<void>) {
   Object.defineProperty(window, "desktopAPI", {
     configurable: true,
     value: {
       runtimeConfig: {
         ok: true,
-        config: { accountsUrl: "https://accounts.example" },
+        config: {
+          accountsUrl: "https://accounts.example",
+          apiUrl: "https://api.aspectlylabs.com",
+        },
       },
+      callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
       openExternal: mocks.openExternal,
     },
   });
 
   return render(
     <I18nProvider locale="en" resources={RESOURCES}>
-      <DesktopLoginPage />
+      <DesktopLoginPage handoffFailed={handoffFailed} onBack={onBack} />
     </I18nProvider>,
   );
 }
 
 beforeEach(() => {
   vi.restoreAllMocks();
+  document.documentElement.lang = "en";
   mocks.createDesktopLoginUrl.mockImplementation(
     async (
       _accountsUrl: string,
@@ -103,14 +111,41 @@ describe("DesktopLoginPage", () => {
       expect(mocks.initiateDesktopAuthHandoff).toHaveBeenCalledWith(
         "state-1",
         "challenge-1",
+        "patchbay-canary-5718c47b86bf9ece",
       );
     });
     expect(mocks.createDesktopLoginUrl).toHaveBeenCalledWith(
       "https://accounts.example",
       expect.any(Function),
+      {
+        sessionApiUrl: undefined,
+        locale: "en",
+        callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+        initiateHosted: undefined,
+      },
     );
     expect(mocks.openExternal).toHaveBeenCalledWith(
       "https://accounts.example/login?state=state-1",
     );
   });
 });
+
+it("shows a terminal callback failure instead of silently waiting", () => {
+  renderPage(true);
+  expect(screen.getByRole("alert")).toHaveTextContent("Sign-in could not be completed");
+  expect(screen.getByRole("button", { name: "Open sign-in" })).toBeEnabled();
+});
+
+it("allows returning to entry while a browser URL is still being prepared", async () => {
+    let finish!: (url: string) => void;
+    mocks.createDesktopLoginUrl.mockImplementation(() => new Promise<string>(resolve => { finish = resolve; }));
+    mocks.openExternal.mockClear();
+    const onBack = vi.fn().mockResolvedValue(undefined);
+    renderPage(false, onBack);
+    fireEvent.click(screen.getByRole("button", { name: "Open sign-in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Login / Guest" }));
+    expect(onBack).toHaveBeenCalledOnce();
+    finish("https://accounts.example/login?state=cancelled");
+    await waitFor(() => expect(mocks.cancelDesktopLogin).toHaveBeenCalledWith("cancelled"));
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+  });

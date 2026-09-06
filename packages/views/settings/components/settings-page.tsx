@@ -126,6 +126,10 @@ const LEGACY_WORKSPACE_TAB_REDIRECTS: Record<string, string> = {
 const SETTINGS_TAB_TRIGGER_CLASS =
   "h-8 shrink-0 justify-start gap-2 rounded-lg px-2 hover:bg-surface-hover hover:text-foreground data-active:!bg-surface-selected data-active:!text-surface-selected-foreground data-active:hover:!bg-surface-selected data-active:hover:!text-surface-selected-foreground md:!w-full md:after:hidden";
 
+// Match the main sidebar's 36px rows, 14/20 type, 18px icons and 4px padding.
+const SETTINGS_SIDEBAR_TAB_TRIGGER_CLASS =
+  "group/settings-tab h-9 flex-none justify-start gap-2 rounded-md border-0 p-1 text-body font-normal text-sidebar-text-secondary dark:text-sidebar-text-secondary hover:text-sidebar-text-primary dark:hover:text-sidebar-text-primary hover:!bg-sidebar-item-hover data-active:!bg-sidebar-item-active data-active:!text-sidebar-item-active-foreground data-active:font-medium data-active:hover:!bg-sidebar-item-active md:!w-full md:after:hidden";
+
 const WIDE_CONTENT_TABS = new Set([
   "labels",
   "issue-statuses",
@@ -157,6 +161,13 @@ export function SettingsPage({
   navigationHeader,
 }: SettingsPageProps = {}) {
   const { t } = useT("settings");
+  const standalone = variant === "standalone";
+  const tabTriggerClassName = standalone
+    ? SETTINGS_SIDEBAR_TAB_TRIGGER_CLASS
+    : SETTINGS_TAB_TRIGGER_CLASS;
+  const tabIconClassName = standalone
+    ? "size-[18px] text-sidebar-icon-secondary group-data-active/settings-tab:text-sidebar-icon-active"
+    : "h-4 w-4";
   const workspaceName = useCurrentWorkspace()?.name;
   const navigation = useNavigation();
   const isMobile = useIsMobile();
@@ -224,7 +235,10 @@ export function SettingsPage({
           desktop (the settings overlay). */}
       <div
         data-slot="settings-nav"
-        className="flex shrink-0 flex-col overflow-x-auto p-2 text-sidebar-text-primary md:w-64 md:overflow-y-auto md:p-3"
+        className={cn(
+          "flex shrink-0 flex-col overflow-x-auto text-sidebar-text-primary md:w-64 md:overflow-y-auto",
+          standalone ? "p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "p-2 md:p-3",
+        )}
       >
         {navigationHeader ? <div>{navigationHeader}</div> : null}
         {/* This page builds its own chrome instead of a PageHeader, so it has
@@ -236,10 +250,16 @@ export function SettingsPage({
         </div>
         <TabsList
           variant="line"
-          className="flex w-max min-w-full flex-row items-center gap-0.5 p-0 md:w-full md:flex-col md:items-stretch"
+          className={cn(
+            "flex w-max min-w-full flex-row items-center gap-0.5 p-0 md:w-full md:flex-col md:items-stretch",
+            standalone && "md:gap-0",
+          )}
         >
           {/* My Account group */}
-          <span className="hidden px-2 pb-1.5 pt-3 text-caption font-semibold text-muted-foreground md:block">
+          <span className={cn(
+            "hidden text-caption text-sidebar-text-secondary md:block",
+            standalone ? "mt-3 h-6 px-1 py-1 font-medium" : "px-2 pb-1.5 pt-3 font-semibold",
+          )}>
             {t(($) => $.page.my_account)}
           </span>
           {ACCOUNT_TAB_KEYS.map((key) => {
@@ -248,9 +268,9 @@ export function SettingsPage({
               <TabsTrigger
                 key={key}
                 value={key}
-                className={SETTINGS_TAB_TRIGGER_CLASS}
+                className={tabTriggerClassName}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className={tabIconClassName} />
                 {t(($) => $.page.tabs[key])}
               </TabsTrigger>
             );
@@ -259,15 +279,18 @@ export function SettingsPage({
             <TabsTrigger
               key={tab.value}
               value={tab.value}
-              className={SETTINGS_TAB_TRIGGER_CLASS}
+              className={tabTriggerClassName}
             >
-              <tab.icon className="h-4 w-4" />
+              <tab.icon className={tabIconClassName} />
               {tab.label}
             </TabsTrigger>
           ))}
 
           {/* Workspace group */}
-          <span className="hidden truncate px-2 pb-1.5 pt-5 text-caption font-semibold text-muted-foreground md:block">
+          <span className={cn(
+            "hidden truncate text-caption text-sidebar-text-secondary md:block",
+            standalone ? "mt-4 h-6 px-1 py-1 font-medium" : "px-2 pb-1.5 pt-5 font-semibold",
+          )}>
             {workspaceName ?? t(($) => $.page.workspace_fallback)}
           </span>
           {visibleWorkspaceTabKeys.map((key) => {
@@ -276,9 +299,9 @@ export function SettingsPage({
               <TabsTrigger
                 key={key}
                 value={WORKSPACE_TAB_VALUES[key]}
-                className={SETTINGS_TAB_TRIGGER_CLASS}
+                className={tabTriggerClassName}
               >
-                <Icon className="h-4 w-4" />
+                <Icon className={tabIconClassName} />
                 {t(($) => $.page.tabs[key])}
               </TabsTrigger>
             );
@@ -286,7 +309,10 @@ export function SettingsPage({
         </TabsList>
       </div>
 
-      <div className="relative z-10 mb-2 ml-px mr-2 mt-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-surface shadow-[var(--surface-shadow)] ring-1 ring-surface-border">
+      <div className={cn(
+        "relative z-10 mb-2 ml-px mr-2 mt-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-surface",
+        !standalone && "shadow-[var(--surface-shadow)] ring-1 ring-surface-border",
+      )}>
         <div
           className="min-h-0 flex-1 overflow-y-auto px-5 pb-12 pt-6 sm:px-6"
           data-slot="settings-content-surface"

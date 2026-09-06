@@ -69,9 +69,11 @@ until the agent resolves it. `worktree` requires the path to be a git repository
 least one commit; tasks fail with an explicit error otherwise. The gate is the `local-worktree-v1` capability the
 daemon advertises — not its version string — and it is checked twice: at save time, and again against the daemon that
 claims each task, so a machine whose runtime cannot do worktrees gets its tasks cancelled rather than run in place.
-Saving `worktree` is also refused (HTTP 422, code `daemon_version_unsupported`) while the daemon on that machine does
-not advertise the capability — the fix is updating the Patchbay app there, then retrying. Pass an empty value to clear
-it back to the default.
+When the client requests the stronger committed `HEAD` baseline, the server and daemon must also advertise
+`local-worktree-committed-base-v1`; otherwise the client keeps the legacy dirty-snapshot worktree behavior and the save
+is refused if a committed baseline was explicitly requested. Saving `worktree` is refused (HTTP 422, code
+`daemon_version_unsupported`) while the daemon on that machine does not advertise the required capability — the fix is
+updating the Patchbay app there, then retrying. Pass an empty value to clear it back to the default.
 
 For `github_repo`, non-JSON `--ref` sets `resource_ref.ref`, the default checkout branch/tag/SHA for future tasks in that project. JSON `--ref '<json>'` remains the escape hatch for full payloads or resource types not covered by shortcuts.
 

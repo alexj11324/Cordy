@@ -94,7 +94,7 @@ Open http://localhost:3000 in your browser. The Docker self-host stack defaults 
 
 Changes to `ALLOW_SIGNUP`, `DISABLE_WORKSPACE_CREATION`, and `GOOGLE_CLIENT_ID` also take effect after restarting the backend / compose stack. The web UI reads all three from `/api/config` at runtime, so no web rebuild is needed. See [Advanced Configuration → Signup Controls](SELF_HOSTING_ADVANCED.md#signup-controls-optional) for the recommended sequence to lock down workspace creation.
 
-> **Warning:** do **not** set `PATCHBAY_DEV_VERIFICATION_CODE` on a publicly reachable instance — anyone who knows an email address can then log in with that fixed code.
+> **Warning:** do **not** set `PATCHBAY_DEV_VERIFICATION_CODE` or `PATCHBAY_DEV_LOGIN` on a publicly reachable instance — the first lets anyone who knows an email address log in with that fixed code, and the second (`/auth/dev-login`, a local development shortcut) lets them log in with no code at all. Both are ignored when `APP_ENV=production`.
 
 ### Step 3 — Install CLI & Start Daemon
 
@@ -302,7 +302,7 @@ The chart defaults to `APP_ENV=production` (set in `values.yaml` under `backend.
 
 `ALLOW_SIGNUP`, `DISABLE_WORKSPACE_CREATION`, and `GOOGLE_CLIENT_ID` likewise live under `backend.config.*` in `values.yaml` (as `allowSignup`, `disableWorkspaceCreation`, and `googleClientId`). After `helm upgrade`, the backend pod will roll automatically because the ConfigMap hash changes; the web UI reads all three from `/api/config` at runtime, so no web rebuild is needed.
 
-> **Warning:** do **not** set `PATCHBAY_DEV_VERIFICATION_CODE` on a publicly reachable instance — anyone who knows an email address can then log in with that fixed code.
+> **Warning:** do **not** set `PATCHBAY_DEV_VERIFICATION_CODE` or `PATCHBAY_DEV_LOGIN` on a publicly reachable instance — the first lets anyone who knows an email address log in with that fixed code, and the second (`/auth/dev-login`, a local development shortcut) lets them log in with no code at all. Both are ignored when `APP_ENV=production`.
 
 ### Step 6 — Install CLI & Start Daemon
 

@@ -43,6 +43,7 @@ func TestClient_IdentityHeaders_PostJSON(t *testing.T) {
 			// is cancelled with an upgrade prompt (MUL-5707). Pin it here so
 			// dropping it from the list can never be a silent change.
 			protocol.DaemonCapabilityLocalWorktreeV1,
+			protocol.DaemonCapabilityLocalWorktreeCommittedBaseV1,
 		} {
 			if !capabilities[want] {
 				t.Errorf("X-Client-Capabilities missing %q: %v", want, capabilities)

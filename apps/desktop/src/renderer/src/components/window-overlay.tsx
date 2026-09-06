@@ -59,6 +59,7 @@ function SettingsWindow() {
   return (
     <div
       ref={containerRef}
+      data-slot="settings-window"
       className="fixed inset-0 z-50 flex min-h-0 bg-app-shell"
     >
       <div

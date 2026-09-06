@@ -83,6 +83,11 @@ export function AuthInitializer({
         configStore
           .getState()
           .setLocalWorktreeSupported(cfg.local_worktree_supported === true);
+        configStore
+          .getState()
+          .setLocalWorktreeCommittedBaseSupported(
+            cfg.local_worktree_committed_base_supported === true,
+          );
         // Older agent handlers returned success while silently dropping this
         // additive field, so writes stay disabled unless the server declares
         // the persistence contract explicitly.
@@ -329,7 +334,7 @@ export function AuthInitializer({
       const token = storage.getItem("patchbay_token");
       if (!token) {
         settled = true;
-        void onLogout?.();
+        void onLogout?.(undefined, { reason: "missing-session" });
         useAuthStore.setState({
           user: null,
           isLoading: false,

@@ -19,8 +19,8 @@ func TestClassifyEmptyAndWhitespace(t *testing.T) {
 // TestClassifyRules walks every classifier rule with a real-world
 // sample taken from MUL-1949's db-boy production analysis (top error
 // prefixes from `agent_task_queue.error` over a 7-day window). When
-// MUL-1949's SQL grows a new rule, add a fixture here so the in-flight
-// classifier and the offline backfill stay in lock-step.
+// the classifier gains a new rule, add a fixture here to preserve its
+// current behavior for every caller.
 //
 // One test case per rule is the minimum bar; rules with notable
 // boundary conditions (e.g. the 5xx regex) get a dedicated subtest

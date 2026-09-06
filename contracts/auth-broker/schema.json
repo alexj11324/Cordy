@@ -36,7 +36,8 @@
       "properties": {
         "desktopAttemptPath": { "const": "/api/desktop-google/attempt" },
         "desktopCompletePath": { "const": "/api/desktop-google/complete" },
-        "desktopRedeemPath": { "const": "/api/desktop-handoff/redeem" }
+        "desktopRedeemPath": { "const": "/api/desktop-handoff/redeem" },
+        "desktopIdentityRedeemPath": { "const": "/api/desktop-identity/redeem" }
       }
     },
     "desktop": {

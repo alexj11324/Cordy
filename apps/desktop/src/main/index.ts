@@ -1,9 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, screen } from "electron";
 import { homedir } from "os";
+import { readFileSync } from "fs";
 import { join } from "path";
 import { pathToFileURL } from "url";
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
-import fixPath from "fix-path";
 import { setupLocalDirectory } from "./local-directory";
 import { setupLocalGuestRuntime } from "./local-guest-runtime";
 import {
@@ -48,6 +48,12 @@ import {
   windowStateFilePath,
 } from "./window-state";
 import { resolveMainWindowAppearance } from "./window-appearance";
+import {
+  isDesktopDeepLink,
+  PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
+  resolveDesktopCallbackProtocol,
+  parseDesktopPreviewIdentity,
+} from "../shared/callback-protocol";
 import {
   encodeIssueWindowArgument,
   parseIssueWindowRequest,
@@ -106,18 +112,10 @@ const BUNDLED_ICON_PATH = join(__dirname, "../../resources/icon.png").replace(
   "app.asar.unpacked",
 );
 
-// macOS/Linux GUI launches inherit a minimal PATH from launchd that omits
-// the user's shell config (~/.zshrc, Homebrew, nvm, ~/.local/bin, etc.).
-// Run the user's login shell once to recover the real PATH so the bundled
-// patchbay CLI can find agent binaries like claude/codex/opencode. Must run
-// before any child_process.spawn / execFile call in the main process —
-// ES module imports are hoisted, so this block executes before createWindow
-// or any daemon-manager spawn.
+// GUI launches have a minimal PATH. Add standard install locations without
+// running shell startup scripts: those can access protected folders (e.g.
+// Conda hooks) and block the app on a TCC prompt before a window exists.
 if (process.platform !== "win32") {
-  fixPath();
-  // Fallback: prepend common install locations in case fix-path came up
-  // short (broken shell rc, non-interactive $SHELL, missing entries). Safe
-  // to duplicate — PATH lookups short-circuit on first match.
   const fallbackPaths = [
     "/opt/homebrew/bin",
     "/usr/local/bin",
@@ -126,7 +124,14 @@ if (process.platform !== "win32") {
   process.env.PATH = `${fallbackPaths.join(":")}:${process.env.PATH ?? ""}`;
 }
 
-const PROTOCOL = "patchbay";
+const previewIdentity = app.isPackaged
+  ? parseDesktopPreviewIdentity(JSON.parse(readFileSync(join(app.getAppPath(), "package.json"), "utf8")).desktopPreview)
+  : null;
+const PROTOCOL = resolveDesktopCallbackProtocol({
+  previewIdentity,
+  packaged: !is.dev,
+  developmentProtocol: process.env.DESKTOP_CALLBACK_PROTOCOL,
+});
 const devLog = is.dev ? createBestEffortDevLog() : undefined;
 
 // Where the main process parks a freeze/crash breadcrumb until the next
@@ -185,7 +190,7 @@ async function enableCloudServices(): Promise<void> {
     if (!cloudServicesEnabled) return;
     const updaterTeardown = setupAutoUpdater(
       () => mainWindow,
-      () => cloudServicesEnabled,
+      () => cloudServicesEnabled && !previewIdentity,
     );
     const daemonTeardown = setupDaemonManager(() => mainWindow);
     cloudServicesTeardown = async () => {
@@ -274,7 +279,7 @@ function handleDeepLink(url: string): void {
     const parsed = new URL(url);
     if (parsed.protocol !== `${PROTOCOL}:`) return;
 
-    // patchbay://auth/callback?code=<one-time-code>&state=<request-state>
+    // {protocol}://auth/callback?code=<one-time-code>&state=<request-state>
     // Never accept a bearer token from a custom-protocol URL. The browser
     // completes a registered PKCE handoff and the renderer redeems this
     // single-use code over HTTPS.
@@ -646,29 +651,40 @@ const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
   ? `Patchbay Canary ${process.env.DESKTOP_APP_SUFFIX}`
   : "Patchbay Canary";
 
-if (is.dev) {
-  app.setName(DEV_APP_NAME);
-  app.setPath("userData", join(app.getPath("appData"), DEV_APP_NAME));
+if (is.dev || previewIdentity) {
+  app.setName(previewIdentity?.name ?? DEV_APP_NAME.replace("Patchbay", "Orvilo"));
+  app.setPath("userData", join(app.getPath("appData"), previewIdentity?.dataName ?? DEV_APP_NAME));
 } else {
   // Pin the production app name in code. Electron's Linux WM_CLASS is set
   // from app.getName() when the first BrowserWindow is realized; the
   // packaged ASAR's package.json `productName` already steers app.getName()
-  // to "Patchbay", but anchoring it here makes WM_CLASS ↔ StartupWMClass
+  // to "Orvilo", but anchoring it here makes WM_CLASS ↔ StartupWMClass
   // (declared in electron-builder.yml) survive a regression in
   // productName / the build pipeline. Must run before requestSingleInstanceLock().
-  app.setName("Patchbay");
+  // Keep existing sessions and settings in the pre-rebrand directory.
+  app.setPath("userData", join(app.getPath("appData"), "Patchbay"));
+  app.setName("Orvilo");
 }
 
 // --- Protocol registration -----------------------------------------------
 
-if (process.defaultApp) {
-  // In dev, register with the path to the electron binary + app path
-  app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
-    app.getAppPath(),
-  ]);
-} else {
-  app.setAsDefaultProtocolClient(PROTOCOL);
+function registerProtocolClient(protocol: string): void {
+  if (process.platform === "win32" && process.defaultApp) {
+    // Windows development needs the Electron binary plus the app path.
+    app.setAsDefaultProtocolClient(protocol, process.execPath, [
+      app.getAppPath(),
+    ]);
+    return;
+  }
+  app.setAsDefaultProtocolClient(protocol);
 }
+
+if (is.dev) {
+  // Clean up registrations created by older Canary builds that claimed the
+  // production scheme. Electron scopes removal to the current executable.
+  app.removeAsDefaultProtocolClient(PRODUCTION_DESKTOP_CALLBACK_PROTOCOL);
+}
+registerProtocolClient(PROTOCOL);
 
 // --- Single instance lock ------------------------------------------------
 
@@ -691,7 +707,9 @@ if (!gotTheLock) {
     if (window) focusMainWindow(window);
 
     // On Windows the deep link URL is the last argv entry
-    const deepLinkUrl = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
+    const deepLinkUrl = argv.find((arg) =>
+      isDesktopDeepLink(arg, PROTOCOL),
+    );
     if (deepLinkUrl) handleDeepLink(deepLinkUrl);
   });
 
@@ -699,7 +717,7 @@ if (!gotTheLock) {
   // queued because desktopInitialized remains false until runtime config and
   // IPC handlers are ready.
   const coldStartDeepLink = process.argv.find((arg) =>
-    arg.startsWith(`${PROTOCOL}://`),
+    isDesktopDeepLink(arg, PROTOCOL),
   );
   if (coldStartDeepLink) handleDeepLink(coldStartDeepLink);
 
@@ -712,7 +730,7 @@ if (!gotTheLock) {
     };
 
     runtimeConfigResult = await loadRuntimeConfig({
-      isDev: is.dev,
+      isDev: is.dev && import.meta.env.DEV,
       // electron-vite exposes VITE_* on import.meta.env for the main process;
       // keep dev URL overrides on the same source the renderer used before
       // runtime config moved endpoint resolution into main/preload.
@@ -728,7 +746,7 @@ if (!gotTheLock) {
       is.dev ? "ai.patchbay.desktop.dev" : "ai.patchbay.desktop",
     );
 
-    installApplicationMenu(async () => {
+    installApplicationMenu(previewIdentity ? undefined : async () => {
       const { runMenuUpdateCheck } = await import("./updater");
       await runMenuUpdateCheck(() => mainWindow);
     });
@@ -800,6 +818,10 @@ if (!gotTheLock) {
       const p = process.platform;
       const os = p === "darwin" ? "macos" : p === "win32" ? "windows" : p === "linux" ? "linux" : "unknown";
       event.returnValue = { version: getAppVersion(), os };
+    });
+
+    ipcMain.on("auth:callback-protocol", (event) => {
+      event.returnValue = PROTOCOL;
     });
 
     // Sync IPC: read + clear any freeze/crash breadcrumb left by a previous

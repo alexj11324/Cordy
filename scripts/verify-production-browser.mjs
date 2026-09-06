@@ -86,7 +86,7 @@ async function verifyAccountsLoginSurface(browser, sourceSha) {
     await expect(brandPanel).toBeVisible();
     await expect(page.getByTestId("patchbay-mark")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Create an account", exact: true }),
+      page.getByRole("heading", { name: "Login", exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Sign In with Email", exact: true }),
@@ -141,7 +141,7 @@ async function verifyStandaloneAccountsLoginSurface(browser, sourceSha) {
     await clerk.loaded({ page });
     await expect(page.getByTestId("accounts-auth-shell")).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Create an account", exact: true }),
+      page.getByRole("heading", { name: "Login", exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: "Continue with Google", exact: true }),
@@ -216,6 +216,13 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
       `desktop login attempt registration: ${registrationBody}`,
     );
 
+    // Prepare through the actual login page before using the synthetic ticket.
+    // This establishes the same tab-local attempt state as a human login.
+    await page.goto(`${ACCOUNTS_ORIGIN}/login?${query}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await page.getByTestId("accounts-login-form").waitFor({ state: "visible" });
+
     await page.goto(`${ACCOUNTS_ORIGIN}/oauth/google/callback?${query}`, {
       waitUntil: "domcontentloaded",
     });
@@ -253,18 +260,25 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
     const clerkPayload = await clerkExchange.json();
     assert.equal(clerkPayload?.user?.is_guest, false, "Web session is formal");
 
-    const completionPromise = page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return (
-        url.origin === ACCOUNTS_ORIGIN &&
-        url.pathname === "/v1/desktop/google/complete" &&
-        response.request().method() === "POST"
-      );
-    });
-    await page.goto(`${ACCOUNTS_ORIGIN}/login?${query}`, {
-      waitUntil: "domcontentloaded",
-    });
-    const completion = await completionPromise;
+    // The login page redirects after the exchange. Let that navigation settle
+    // before leaving Web, otherwise it can interrupt the next Accounts visit.
+    await page.waitForURL((url) =>
+      url.origin === PRODUCT_ORIGIN && url.pathname !== "/login",
+    );
+
+    const [completion] = await Promise.all([
+      page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return (
+          url.origin === ACCOUNTS_ORIGIN &&
+          url.pathname === "/v1/desktop/google/complete" &&
+          response.request().method() === "POST"
+        );
+      }),
+      page.goto(`${ACCOUNTS_ORIGIN}/login?${query}`, {
+        waitUntil: "domcontentloaded",
+      }),
+    ]);
     assert.equal(completion.status(), 200, "desktop login completion");
     const code = requireDesktopCompletion(await completion.json());
 
@@ -331,17 +345,19 @@ async function verifyAuthenticatedProduct(browser, sourceSha, auth) {
     requireBuildHeaders(login.headers(), sourceSha, "Web login");
     await expect(
       publicPage.getByRole("heading", {
-        name: "Sign in to Patchbay",
+        name: "Login",
         exact: true,
       }),
     ).toBeVisible();
-    const authShell = publicPage.getByTestId("clerk-auth-shell");
+    await expect(publicPage.getByTestId("accounts-login-form")).toBeVisible();
+    await expect(publicPage.locator(".cl-signIn-root, .cl-signUp-root")).toHaveCount(0);
+    const authShell = publicPage.getByTestId("auth-shell");
     const formPanel = authShell.locator(":scope > section");
-    const brandPanel = publicPage.getByTestId("clerk-auth-brand-panel");
-    await expect(authShell).toHaveClass(/\bbg-white\b/u);
+    const brandPanel = publicPage.getByTestId("auth-brand-panel");
+    await expect(authShell).toHaveClass(/\bbg-zinc-950\b/u);
     await expect(authShell).toHaveClass(/\bmd:grid-cols-2\b/u);
     await expect(formPanel).toBeVisible();
-    await expect(formPanel).toHaveClass(/\bbg-white\b/u);
+    await expect(formPanel).toHaveClass(/\bbg-zinc-950\b/u);
     await expect(brandPanel).toBeVisible();
     await expect(brandPanel).toHaveClass(/\bbg-zinc-950\b/u);
 
@@ -351,12 +367,12 @@ async function verifyAuthenticatedProduct(browser, sourceSha, auth) {
       brandPanel.boundingBox(),
     ]);
     assert.ok(shellBox, "split login shell must have a rendered box");
-    assert.ok(formBox, "white login form panel must have a rendered box");
+    assert.ok(formBox, "custom login form panel must have a rendered box");
     assert.ok(brandBox, "black login brand panel must have a rendered box");
     assert.ok(
       formBox.width >= shellBox.width * 0.45 &&
         brandBox.width >= shellBox.width * 0.45,
-      "login must render as white-left / black-right split panels",
+      "login must render as custom form / brand split panels",
     );
   } finally {
     await publicContext.close();

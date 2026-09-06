@@ -35,6 +35,7 @@ import {
 import { TabBar } from "./tab-bar";
 import { TabContent } from "./tab-content";
 import { WindowOverlay } from "./window-overlay";
+import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
 const TOP_BAR_HEIGHT_CLASS = "h-12";
 const WINDOW_TOOLBAR_CLEARANCE = 184;
@@ -143,8 +144,8 @@ function MainTopBar() {
   );
 }
 
-// The canvas hugs the expanded sidebar with a hairline gap. When the sidebar
-// leaves the main flow, the left margin must grow to mirror the fixed mr-2 so
+// The canvas meets the expanded sidebar without a divider or gap. When the
+// sidebar leaves the main flow, the left margin mirrors the fixed mr-2 so
 // the floating canvas sits symmetrically inside the window frame.
 function MainCanvas({ children }: { children: React.ReactNode }) {
   const { state, isCompact } = useSidebar();
@@ -152,8 +153,8 @@ function MainCanvas({ children }: { children: React.ReactNode }) {
 
   return (
     <motion.div
-      animate={{ marginLeft: sidebarHidden ? 8 : 2 }}
-      className="relative flex flex-1 min-h-0 flex-col overflow-hidden mr-2 mb-2 rounded-xl bg-page-canvas ring-1 ring-surface-border shadow-[var(--surface-shadow)]"
+      animate={{ marginLeft: sidebarHidden ? 8 : 0 }}
+      className="relative flex flex-1 min-h-0 flex-col overflow-hidden mr-2 mb-2 rounded-xl bg-page-canvas"
       initial={false}
       transition={toolbarMotion}
     >
@@ -221,6 +222,7 @@ function DesktopInboxBridge() {
 }
 
 export function DesktopShell() {
+  const settingsOpen = useWindowOverlayStore((s) => s.overlay?.type === "settings");
   useInternalLinkHandler();
   useNativeNavigationGestures();
   useNavigationInputBindings();
@@ -273,8 +275,11 @@ export function DesktopShell() {
       <WorkspaceSlugProvider slug={slug}>
         <DesktopInboxBridge />
         <div
+          data-slot="desktop-dashboard"
+          inert={settingsOpen}
           className={cn(
             "flex h-screen",
+            settingsOpen && "invisible",
             usesNativeVibrancy ? "bg-transparent" : "bg-app-shell",
           )}
         >

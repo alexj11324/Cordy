@@ -57,6 +57,7 @@ const searchParamsRef = vi.hoisted(() => ({
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: { queryKey: readonly unknown[] }) => {
+    if (options.queryKey[0] === "projects") return {data: []};
     if (options.queryKey.includes("installations")) {
       return { data: githubRef.current, ...githubQueryStateRef.current };
     }
@@ -184,135 +185,46 @@ describe("RepositoriesTab — automatic updates", () => {
     return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
   }
 
-  it("renders persisted repositories as the same shared input controls used for editing", () => {
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
-
-    const inputs = screen.getAllByRole("textbox") as HTMLInputElement[];
-    expect(inputs).toHaveLength(2);
-    expect(inputs[0]!.value).toBe("https://github.com/patchbay-ai/patchbay");
-    expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
-  });
-
-  it("updates a changed URL automatically on blur", async () => {
-    const user = setupUser();
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
-
-    const urlInput = screen.getAllByRole("textbox")[0]!;
-    await user.clear(urlInput);
-    await user.type(urlInput, "https://github.com/patchbay-ai/edited");
-    await user.tab();
-
-    await waitFor(() => {
-      expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
-        repos: [{ url: "https://github.com/patchbay-ai/edited" }],
-      });
-      expect(mockToastSuccess).toHaveBeenCalledWith("Repositories saved", {
-        id: "settings-auto-save",
-      });
-    });
-  });
-
-  it("debounces updates while the user is still typing", async () => {
-    const user = setupUser();
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
-
-    const urlInput = screen.getAllByRole("textbox")[0]!;
-    await user.type(urlInput, "-next");
+  it("shows repository names and details without URL or description inputs", () => {
+    render(<RepositoriesTab />, {wrapper: I18nWrapper});
+    expect(screen.queryAllByRole("textbox")).toHaveLength(0);
+    expect(screen.getByText("Remote address")).toBeTruthy();
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
-
-    vi.advanceTimersByTime(650);
-    await waitFor(() => expect(mockUpdateWorkspace).toHaveBeenCalledTimes(1));
   });
 
-  it("does not persist a new row until its URL is non-empty", async () => {
+  it("only adds a remote after the dialog is submitted", async () => {
     const user = setupUser();
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
-
-    await user.click(screen.getByRole("button", { name: /Add repository/ }));
-    expect(screen.getAllByRole("textbox")).toHaveLength(4);
-    vi.advanceTimersByTime(1000);
+    render(<RepositoriesTab />, {wrapper: I18nWrapper});
+    await user.click(screen.getByRole("button", {name: "Add a remote repository"}));
+    await user.type(screen.getByRole("textbox"), "git@github.com:patchbay-ai/second.git");
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
-
-    const newUrlInput = screen.getAllByRole("textbox")[2]!;
-    await user.type(newUrlInput, "git@github.com:patchbay-ai/second.git");
-    await user.tab();
-
-    await waitFor(() => {
-      expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
-        repos: [
-          { url: "https://github.com/patchbay-ai/patchbay" },
-          { url: "git@github.com:patchbay-ai/second.git" },
-        ],
-      });
-    });
+    await user.click(screen.getAllByRole("button", {name: "Add a remote repository"}).at(-1)!);
+    await waitFor(() => expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {repos: [
+      {url: "https://github.com/patchbay-ai/patchbay"}, {url: "git@github.com:patchbay-ai/second.git"},
+    ]}));
   });
 
-  it("persists deletion immediately without a separate save action", async () => {
-    const user = setupUser();
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
-
-    await user.click(screen.getByRole("button", { name: "Delete repository" }));
+  it("keeps stored descriptions without asking users to edit them", () => {
+    workspaceRef.current = {...workspaceRef.current, repos: [{url: "https://github.com/patchbay-ai/patchbay", description: "Main app"}]};
+    render(<RepositoriesTab />, {wrapper: I18nWrapper});
+    expect(screen.queryAllByRole("textbox")).toHaveLength(0);
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
-    await user.click(
-      screen.getByRole("button", { name: "Delete repository" }),
-    );
-
-    await waitFor(() => {
-      expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", { repos: [] });
-    });
-    expect(screen.getByText("No repositories yet.")).toBeTruthy();
   });
 
-  it("accepts scp-like repository shorthand", async () => {
+  it("persists confirmed removal without deleting a local checkout", async () => {
     const user = setupUser();
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
-
-    const urlInput = screen.getAllByRole("textbox")[0] as HTMLInputElement;
-    await user.clear(urlInput);
-    await user.type(urlInput, "git@github.com:patchbay-ai/patchbay.git");
-    expect(urlInput.type).toBe("text");
-    expect(urlInput.validity.valid).toBe(true);
-    await user.tab();
-
-    await waitFor(() => {
-      expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
-        repos: [{ url: "git@github.com:patchbay-ai/patchbay.git" }],
-      });
-    });
+    render(<RepositoriesTab />, {wrapper: I18nWrapper});
+    await user.click(screen.getByRole("button", {name: "Delete repository"}));
+    expect(mockUpdateWorkspace).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", {name: "Delete repository"}));
+    await waitFor(() => expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {repos: []}));
   });
 
-  it("includes the description in the automatic update payload", async () => {
-    workspaceRef.current = {
-      ...workspaceRef.current,
-      repos: [{ url: "https://github.com/patchbay-ai/patchbay", description: "Main app" }],
-    };
-    const user = setupUser();
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
-
-    const descriptionInput = screen.getAllByRole("textbox")[1] as HTMLInputElement;
-    expect(descriptionInput.value).toBe("Main app");
-    await user.clear(descriptionInput);
-    await user.type(descriptionInput, "Updated description");
-    await user.tab();
-
-    await waitFor(() => {
-      expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
-        repos: [
-          {
-            url: "https://github.com/patchbay-ai/patchbay",
-            description: "Updated description",
-          },
-        ],
-      });
-    });
-  });
-
-  it("keeps repository controls read-only for members", () => {
-    membersRef.current = [{ user_id: "user-1", role: "member" }];
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
-
-    expect(screen.getAllByRole("textbox").every((input) => input.hasAttribute("disabled"))).toBe(true);
-    expect(screen.queryByRole("button", { name: /Add repository/ })).toBeNull();
+  it("keeps workspace repository mutations unavailable to members", () => {
+    membersRef.current = [{user_id: "user-1", role: "member"}];
+    render(<RepositoriesTab />, {wrapper: I18nWrapper});
+    expect(screen.queryAllByRole("textbox")).toHaveLength(0);
+    expect(screen.queryByRole("button", {name: "Add a remote repository"})).toBeNull();
   });
 
   it("starts GitHub connection with the signed repository return target", async () => {

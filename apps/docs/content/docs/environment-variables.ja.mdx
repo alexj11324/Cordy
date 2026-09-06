@@ -23,7 +23,7 @@ PATCHBAY_PUBLIC_URL=https://api.patchbay.example.com
 さらにメールサービスを 1 つ選ぶ必要があります。選ばない場合、認証コードと招待はサーバーログに書き込まれるだけです。
 
 <Callout type="warning">
-`JWT_SECRET` は本番環境で必須です。`APP_ENV=production` の場合、値が空または既知のプレースホルダーだとバックエンドが起動を拒否します（`openssl rand -hex 32` で生成）。`PATCHBAY_DEV_VERIFICATION_CODE` も設定しないでください。
+`JWT_SECRET` は本番環境で必須です。`APP_ENV=production` の場合、値が空または既知のプレースホルダーだとバックエンドが起動を拒否します（`openssl rand -hex 32` で生成）。`PATCHBAY_DEV_VERIFICATION_CODE` と `PATCHBAY_DEV_LOGIN` も設定しないでください。
 </Callout>
 
 ## API とデータベース
@@ -108,6 +108,8 @@ Kubernetes で shutdown hold を設定する場合、`terminationGracePeriodSeco
 | `ALLOWED_EMAIL_DOMAINS` | 空 | 登録を許可するメールドメイン。カンマ区切り |
 | `DISABLE_WORKSPACE_CREATION` | `false` | すべてのユーザーのワークスペース新規作成を禁止。owner/admin の例外はありません |
 | `PATCHBAY_DEV_VERIFICATION_CODE` | 空 | 非 production 環境で使う固定 6 桁のテスト認証コード |
+| `PATCHBAY_DEV_LOGIN` | 空 | `1` にすると非 production 環境で `/auth/dev-login` を提供し、コードなしで任意のメールアドレスとしてログインできる |
+| `PATCHBAY_DEV_EMAIL` | `dev@localhost` | `/auth/dev-login` とローカル開発用フィクスチャの既定メールアドレス |
 
 allowlist の正確な判定順序は[ログインとサインアップ](/auth-setup#サインアップ制限)を参照してください。
 
@@ -154,6 +156,7 @@ allowlist の正確な判定順序は[ログインとサインアップ](/auth-s
 | `REDIS_DISABLE_CLIENT_NAME` | `false` | マネージド Redis が `CLIENT SETNAME` を禁止している場合に `true` を設定 |
 | `RATE_LIMIT_AUTH` | `5` | 認証コード送信または Google ログイン開始の、IP あたり毎分の回数 |
 | `RATE_LIMIT_AUTH_VERIFY` | `20` | 認証コード検証の、IP あたり毎分の回数 |
+| `RATE_LIMIT_DEV_LOGIN` | `60` | `/auth/dev-login` の、IP あたり毎分の回数（`PATCHBAY_DEV_LOGIN=1` のときのみ）|
 | `RATE_LIMIT_INVITATION_ACTOR_10M` | `10` | 招待者ごとの 10 分間スライディングウィンドウ内のワークスペース招待数。`0` でこの制限を無効化 |
 | `RATE_LIMIT_INVITATION_WORKSPACE_24H` | `50` | ワークスペース内の全管理者による 24 時間スライディングウィンドウ内の招待総数。`0` でこの制限を無効化 |
 | `RATE_LIMIT_INVITATION_RECIPIENT_24H` | `6` | 正規化された同一受信メールアドレスがワークスペースをまたいで 24 時間スライディングウィンドウ内に受け取れる招待数。`0` でこの制限を無効化 |

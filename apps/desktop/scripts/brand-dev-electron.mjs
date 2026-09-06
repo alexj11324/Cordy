@@ -1,79 +1,108 @@
 #!/usr/bin/env node
-// Rebrand the bundled Electron.app's Info.plist so `pnpm dev:desktop`
-// shows "Patchbay Canary" in the menu bar, Cmd+Tab switcher, and
-// Activity Monitor. On macOS these titles come from CFBundleName at
-// launch time — `app.setName()` cannot override them at runtime, so
-// patching the plist in node_modules is the only working fix.
-//
-// Idempotent: runs on every dev launch and no-ops once the plist already
-// matches. The patch is isolated to this worktree's node_modules — we
-// unlink the file before rewriting so we never mutate a pnpm-store inode
-// shared with another project.
-//
-// In a worktree, scripts/dev.mjs sets DESKTOP_APP_SUFFIX so the name becomes
-// "Patchbay Canary <suffix>" — distinguishable in Cmd+Tab and matching the app
-// name src/main/index.ts derives from the same env var.
-
+// Prepare this worktree's Electron.app before launch. macOS discovers URL
+// schemes and application identity from Info.plist, not app.setName().
+// Every development checkout declares only its path-derived callback scheme.
+// A development build must never claim production patchbay:// or another
+// checkout's callback.
+// https://www.electronjs.org/docs/latest/api/app#appsetasdefaultprotocolclientprotocol-path-args
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
 import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  callbackProtocolForPath,
+  identityHashForPath,
+} from "./worktree-dev-env.mjs";
 
-if (process.platform !== "darwin") process.exit(0);
+export function devBundleIdentity(appRoot, suffix) {
+  const hash = identityHashForPath(appRoot);
+  const bundleId = `ai.patchbay.desktop.canary.${hash}`;
+  const callbackProtocol = callbackProtocolForPath(appRoot);
+  return {
+    name: suffix ? `Orvilo Canary ${suffix}` : "Orvilo Canary",
+    bundleId,
+    callbackProtocol,
+    callbackSchemes: [callbackProtocol],
+    callbackUrlName: `${bundleId}.callback`,
+  };
+}
 
-const DESIRED_NAME = process.env.DESKTOP_APP_SUFFIX
-  ? `Patchbay Canary ${process.env.DESKTOP_APP_SUFFIX}`
-  : "Patchbay Canary";
-
-const require = createRequire(import.meta.url);
-// `require('electron')` returns the path to the executable
-// (.../Electron.app/Contents/MacOS/Electron). Walk up to Contents/Info.plist.
-const electronBin = require("electron");
-const plistPath = resolve(electronBin, "../../Info.plist");
-
-function plistGet(key) {
+function plistGet(plistPath, key) {
   try {
-    return execFileSync(
-      "/usr/libexec/PlistBuddy",
-      ["-c", `Print :${key}`, plistPath],
-      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
-    ).trim();
+    return execFileSync("/usr/libexec/PlistBuddy", ["-c", `Print :${key}`, plistPath], {
+      encoding: "utf8", stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
   } catch {
     return "";
   }
 }
 
-function plistSet(key, value) {
+function plistSet(plistPath, key, value) {
   try {
-    execFileSync("/usr/libexec/PlistBuddy", [
-      "-c",
-      `Set :${key} ${value}`,
-      plistPath,
-    ]);
+    execFileSync("/usr/libexec/PlistBuddy", ["-c", `Set :${key} ${value}`, plistPath]);
   } catch {
-    execFileSync("/usr/libexec/PlistBuddy", [
-      "-c",
-      `Add :${key} string ${value}`,
-      plistPath,
-    ]);
+    execFileSync("/usr/libexec/PlistBuddy", ["-c", `Add :${key} string ${value}`, plistPath]);
   }
 }
 
-if (
-  plistGet("CFBundleName") === DESIRED_NAME &&
-  plistGet("CFBundleDisplayName") === DESIRED_NAME
-) {
-  process.exit(0);
+function declaredCallbackSchemesMatch(plistPath, schemes) {
+  return (
+    schemes.every(
+      (scheme, index) =>
+        plistGet(plistPath, `CFBundleURLTypes:0:CFBundleURLSchemes:${index}`) === scheme,
+    ) &&
+    plistGet(plistPath, `CFBundleURLTypes:0:CFBundleURLSchemes:${schemes.length}`) === ""
+  );
 }
 
-// Break any pnpm hardlink to the global store: read, unlink, rewrite.
-// PlistBuddy would otherwise write through the hardlink and mutate the
-// shared store file (and every other project's Electron.app with it).
-const original = readFileSync(plistPath);
-unlinkSync(plistPath);
-writeFileSync(plistPath, original);
+export function configureDevPlist(plistPath, identity) {
+  if (
+    plistGet(plistPath, "CFBundleName") === identity.name &&
+    plistGet(plistPath, "CFBundleDisplayName") === identity.name &&
+    plistGet(plistPath, "CFBundleIdentifier") === identity.bundleId &&
+    plistGet(plistPath, "CFBundleURLTypes:0:CFBundleURLName") ===
+      identity.callbackUrlName &&
+    declaredCallbackSchemesMatch(plistPath, identity.callbackSchemes) &&
+    plistGet(plistPath, "NSPrincipalClass") === "AtomApplication"
+  ) return false;
 
-plistSet("CFBundleName", DESIRED_NAME);
-plistSet("CFBundleDisplayName", DESIRED_NAME);
+  // Detach the pnpm-store inode before modifying this worktree's app bundle.
+  const original = readFileSync(plistPath);
+  unlinkSync(plistPath);
+  writeFileSync(plistPath, original);
+  plistSet(plistPath, "CFBundleName", identity.name);
+  plistSet(plistPath, "CFBundleDisplayName", identity.name);
+  plistSet(plistPath, "CFBundleIdentifier", identity.bundleId);
+  plistSet(plistPath, "NSPrincipalClass", "AtomApplication");
+  if (plistGet(plistPath, "CFBundleURLTypes")) {
+    execFileSync("/usr/libexec/PlistBuddy", ["-c", "Delete :CFBundleURLTypes", plistPath]);
+  }
+  const schemeCommands = identity.callbackSchemes.map(
+    (scheme, index) =>
+      `Add :CFBundleURLTypes:0:CFBundleURLSchemes:${index} string ${scheme}`,
+  );
+  for (const command of [
+    "Add :CFBundleURLTypes array",
+    "Add :CFBundleURLTypes:0 dict",
+    `Add :CFBundleURLTypes:0:CFBundleURLName string ${identity.callbackUrlName}`,
+    "Add :CFBundleURLTypes:0:CFBundleURLSchemes array",
+    ...schemeCommands,
+  ]) execFileSync("/usr/libexec/PlistBuddy", ["-c", command, plistPath]);
+  return true;
+}
 
-console.log(`[brand-dev-electron] ${plistPath} → CFBundleName="${DESIRED_NAME}"`);
+if (process.platform === "darwin" && process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const require = createRequire(import.meta.url);
+  const electronBin = require("electron");
+  const plistPath = resolve(electronBin, "../../Info.plist");
+  const identity = devBundleIdentity(resolve(dirname(fileURLToPath(import.meta.url)), ".."), process.env.DESKTOP_APP_SUFFIX);
+  configureDevPlist(plistPath, identity);
+  // Publish the build-time declaration before Electron selects itself as the
+  // protocol handler. Each worktree has its own bundle ID and callback scheme,
+  // despite the common Electron.app filename.
+  execFileSync("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-f", resolve(plistPath, "../..")]);
+  console.log(
+    `[brand-dev-electron] ${identity.name} (${identity.bundleId}) declares ${identity.callbackProtocol}://`,
+  );
+}

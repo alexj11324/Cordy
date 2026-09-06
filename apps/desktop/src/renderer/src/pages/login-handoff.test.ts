@@ -1,6 +1,8 @@
+// @vitest-environment jsdom
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@patchbay/core/api";
-import { completeDesktopHandoff, createDesktopLoginUrl } from "./login-handoff";
+import { cancelDesktopLogin, completeDesktopHandoff, createDesktopLoginUrl, hostedDesktopHandoffApiUrl } from "./login-handoff";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
 
@@ -27,6 +29,28 @@ describe("desktop auth handoff", () => {
     localStorage.clear();
   });
 
+  it("ignores a returned browser code after the user cancels login", async () => {
+    await createDesktopLoginUrl("https://accounts.example", vi.fn().mockResolvedValue({ registered: true }));
+    const { state } = pendingHandoff();
+    cancelDesktopLogin();
+    const dependencies = { redeem: vi.fn(), login: vi.fn(), recoverPersistedToken: vi.fn() };
+    expect(await completeDesktopHandoff("old-code", state, dependencies)).toEqual({ acknowledged: true, authenticated: false });
+    expect(dependencies.redeem).not.toHaveBeenCalled();
+  });
+
+  it("does not establish a session if cancellation occurs during redemption", async () => {
+    await createDesktopLoginUrl("https://accounts.example", vi.fn().mockResolvedValue({ registered: true }));
+    const { state } = pendingHandoff();
+    let finish!: (result: { token: string }) => void;
+    const redeem = vi.fn(() => new Promise<{ token: string }>(resolve => { finish = resolve; }));
+    const login = vi.fn();
+    const pending = completeDesktopHandoff("code", state, { redeem, login, recoverPersistedToken: vi.fn() });
+    cancelDesktopLogin();
+    finish({ token: "cancelled-token" });
+    expect(await pending).toEqual({ acknowledged: true, authenticated: false });
+    expect(login).not.toHaveBeenCalled();
+  });
+
   it("registers a PKCE binding before building the browser URL", async () => {
     const initiate = vi.fn().mockResolvedValue({ registered: true });
 
@@ -41,12 +65,114 @@ describe("desktop auth handoff", () => {
     expect(parsed.searchParams.get("platform")).toBe("desktop");
     expect(parsed.searchParams.get("state")).toBe(pending.state);
     expect(parsed.searchParams.get("code_challenge")).toBeTruthy();
+    expect(parsed.searchParams.get("session_api")).toBeNull();
     expect(pending.verifier).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(pending.expiresAt).toBeGreaterThan(Date.now());
     expect(initiate).toHaveBeenCalledWith(
       pending.state,
       parsed.searchParams.get("code_challenge"),
     );
+  });
+
+  it("requests local identity without exposing the local API origin", async () => {
+    const initiate = vi.fn().mockResolvedValue({ registered: true });
+    const initiateHosted = vi.fn().mockResolvedValue({ registered: true });
+
+    const url = await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com/",
+      initiate,
+      {
+        sessionApiUrl: "http://localhost:8080/",
+        callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+        initiateHosted,
+      },
+    );
+    const parsed = new URL(url);
+
+    expect(parsed.origin).toBe("https://accounts.aspectlylabs.com");
+    expect(parsed.searchParams.get("session_api")).toBeNull();
+    expect(parsed.searchParams.get("session_mode")).toBe("local");
+    expect(initiateHosted).toHaveBeenCalledWith(
+      parsed.searchParams.get("state"),
+      parsed.searchParams.get("code_challenge"),
+      "patchbay-canary-5718c47b86bf9ece",
+    );
+  });
+
+  it("fails closed when hosted Accounts cannot bind the checkout protocol", async () => {
+    const initiateHosted = vi
+      .fn()
+      .mockRejectedValue(new Error("invalid desktop auth handoff"));
+    await expect(
+      createDesktopLoginUrl(
+        "https://accounts.aspectlylabs.com",
+        vi.fn().mockResolvedValue({ registered: true }),
+        {
+          sessionApiUrl: "http://localhost:8080",
+          callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+          initiateHosted,
+        },
+      ),
+    ).rejects.toThrow("invalid desktop auth handoff");
+    expect(initiateHosted).toHaveBeenCalledOnce();
+    expect(localStorage.getItem(PENDING_HANDOFF_KEY)).toBeNull();
+  });
+
+  it("requires the hosted binding authority for a loopback product API", async () => {
+    await expect(
+      createDesktopLoginUrl(
+        "https://accounts.aspectlylabs.com",
+        vi.fn().mockResolvedValue({ registered: true }),
+        {
+          sessionApiUrl: "http://localhost:8080",
+          callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+        },
+      ),
+    ).rejects.toThrow("Hosted desktop handoff is unavailable");
+  });
+
+  it("uses the bound checkout protocol without a shared-scheme fallback", async () => {
+    await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com",
+      vi.fn().mockResolvedValue({ registered: true }),
+      {
+        sessionApiUrl: "http://localhost:8080",
+        callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+        initiateHosted: vi.fn().mockResolvedValue({ registered: true }),
+      },
+    );
+  });
+
+  it("does not bind a worktree protocol on self-hosted Accounts", () => {
+    expect(
+      hostedDesktopHandoffApiUrl(
+        "https://accounts.example.test",
+        "http://localhost:8080",
+      ),
+    ).toBeUndefined();
+    expect(
+      hostedDesktopHandoffApiUrl(
+        "https://accounts.aspectlylabs.com",
+        "http://localhost:18105",
+      ),
+    ).toBe("https://api.aspectlylabs.com");
+  });
+
+  it("keeps explicit self-hosted Accounts on its own handoff authority", async () => {
+    const url = await createDesktopLoginUrl("https://accounts.example.test", vi.fn().mockResolvedValue({ registered: true }), { sessionApiUrl: "http://localhost:8080" });
+    expect(new URL(url).searchParams.get("session_mode")).toBeNull();
+  });
+
+  it("does not advertise a non-loopback API as the session minting origin", async () => {
+    const initiate = vi.fn().mockResolvedValue({ registered: true });
+
+    const url = await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com",
+      initiate,
+      { sessionApiUrl: "https://api.aspectlylabs.com" },
+    );
+
+    expect(new URL(url).searchParams.get("session_api")).toBeNull();
   });
 
   it("redeems once and makes a replay a no-op after clearing the verifier", async () => {
@@ -103,4 +229,9 @@ describe("desktop auth handoff", () => {
     ).resolves.toEqual({ acknowledged: true, authenticated: false });
     expect(localStorage.getItem(PENDING_HANDOFF_KEY)).toBeNull();
   });
+});
+
+it("sends Desktop's language to the Accounts first render", async () => {
+  const url = await createDesktopLoginUrl("https://accounts.aspectlylabs.com", vi.fn().mockResolvedValue({ registered: true }), { locale: "zh-Hans" });
+  expect(new URL(url).searchParams.get("locale")).toBe("zh-Hans");
 });

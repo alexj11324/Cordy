@@ -22,19 +22,21 @@ Patchbay 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `m
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git
 cd patchbay
-make dev
+make up C=desktop   # 装依赖、准备数据库、启动后端和 Electron 桌面端
+make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作区
 ```
 
-主 checkout 会使用 `.env`。文件不存在时，`make dev` 会从 `.env.example` 创建；然后启动共享 PostgreSQL、安装依赖、执行 migration，并运行 API 与 Web。
+改动在桌面端验证，不在浏览器里验证：`make up C=desktop` 会用当前 checkout 的后端把 Electron 拉起来，并且已经是登录状态、已经在一个工作区里。只有当改动是 Web 独有的平台接线时，才用 `make up C=api,web` 配合 `make dev-login`——后者会打印一个能让浏览器直接登录的链接，以及一个给 `curl` 用的 bearer token。
 
-默认地址：
+桌面端用不了那个链接：它靠存储里的 bearer token 认证，而不是浏览器的 cookie，所以 `make up C=desktop` 会单独签发一个，写进被 gitignore 的 `apps/desktop/.env.development.local`。已有的会话优先，所以它绝不会把你正在测试的账号挤下线。
 
-```text
-Web: http://localhost:3000
-API: http://localhost:8080
-```
+主 checkout 会使用 `.env`。文件不存在时，`make up` 会从 `.env.example` 创建；然后确保 PostgreSQL 可用、安装依赖、执行 migration，并运行 API 与 Web。
 
-本地固定验证码来自开发环境配置。不要把本地 `.env` 用到公网部署。
+`make up` 会在加锁的前提下为当前 checkout 分配端口和数据库名并记录下来，所以多个 checkout 和 worktree 可以同时运行，`make status` / `make down` / `make destroy` 也能精确作用到其中一个。它会打印分配到的地址。`make dev` 是另一种方式：用默认端口、跑在同一个终端的前台——它启动后端并打开 Electron，不会启动 Web 应用。
+
+`make dev-login` 能用，是因为 `make up` 会把 `PATCHBAY_DEV_LOGIN=1` 写进本地 env 文件——见[登录与注册](/auth-setup#开发环境跳过登录页)。绝不要在公网部署上启用它，也不要把本地 `.env` 用到公网部署。
+
+完整的贡献指南——环境、worktree、测试分层、排查和彻底重置——在仓库的 [CONTRIBUTING.md](https://github.com/patchbay-ai/patchbay/blob/main/CONTRIBUTING.md)。本页是简版。
 
 ## 在 worktree 中开发
 

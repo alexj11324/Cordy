@@ -86,6 +86,9 @@ make start            # start backend + frontend
 make stop             # stop app processes for this checkout
 make db-drop          # permanently drop this checkout's local database
 make remove-worktree WORKTREE=../path  # drop a linked worktree DB, then remove it
+make up C=desktop     # backend + Electron, signed in — the client changes are verified on
+make dev-login        # sign in a browser / get a bearer token for curl (web only)
+make seed-dev         # sample issues + dependency graph, in the dev-fixtures workspace
 make server           # run Go server only
 make daemon           # run local daemon
 make test             # Go tests
@@ -232,6 +235,12 @@ Rules:
 - When adding a default agent command, add it to `scripts/agent-cli-command-names.txt`; the normal Linux/macOS test entry points fail on ambient agent CLI execution.
 
 ## Verification
+
+Product behavior is verified in the **desktop app (Electron), not the browser**. `make up C=desktop`
+starts Electron against this environment's backend, already signed in and in a workspace — it mints a
+dev token into the gitignored `apps/desktop/.env.development.local`, because Desktop authenticates
+with a stored bearer token and cannot use the cookie `make dev-login` sets in a browser. Use the web
+app only when the change is web-only platform wiring (`apps/web/`), and say which client you checked.
 
 For code changes, run the narrowest useful checks while iterating, then run broader verification when risk justifies it or when asked.
 

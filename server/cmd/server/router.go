@@ -443,6 +443,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		AllowSignup:              os.Getenv("ALLOW_SIGNUP") != "false",
 		AllowedEmails:            splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
 		AllowedEmailDomains:      splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
+		HostedDesktopIdentity:    os.Getenv("PATCHBAY_HOSTED_DESKTOP_IDENTITY") == "1",
 		DesktopBrokerAuthToken:   strings.TrimSpace(os.Getenv("PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN")),
 		ClerkSecretKey:           strings.TrimSpace(os.Getenv("CLERK_SECRET_KEY")),
 		ClerkJWTKey:              strings.TrimSpace(os.Getenv("CLERK_JWT_KEY")),
@@ -1472,7 +1473,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 	// WebSocket
 	mc := &membershipChecker{queries: queries}
-	pr := &patResolver{queries: queries, cache: patCache}
+	pr := &opaqueTokenResolver{queries: queries, cache: patCache}
 	slugResolver := realtime.SlugResolver(func(ctx context.Context, slug string) (string, error) {
 		ws, err := queries.GetWorkspaceBySlug(ctx, slug)
 		if err != nil {
@@ -1536,7 +1537,21 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// broker flows; the Web login page uses email send-code and does not expose
 	// this endpoint as its primary sign-in path.
 	r.With(authRL).Post("/auth/google", h.GoogleLogin)
+	// Development sign-in. Registered only when PATCHBAY_DEV_LOGIN=1 and
+	// APP_ENV is non-production, so an ordinary deployment does not serve the
+	// path at all — see server/internal/handler/dev_login.go. It gets its own
+	// limiter rather than authRL: this endpoint exists to escape login
+	// throttling, and one `make dev-login` already spends two requests (the
+	// POST for the token, the GET when the printed URL is opened), so the
+	// 5/min auth budget would 429 the third run of the very workflow it is
+	// for. There is no credential to brute-force here — the endpoint is a
+	// deliberate bypass — so the limit only stops accidental hammering.
+	if handler.DevLoginEnabled() {
+		devLoginRL := middleware.RateLimit(rdb, envPositiveInt("RATE_LIMIT_DEV_LOGIN", 60), time.Minute, trustedProxies)
+		r.With(devLoginRL).HandleFunc("/auth/dev-login", h.DevLogin)
+	}
 	r.With(authRL).Post("/auth/guest", h.CreateGuestAuth)
+	r.With(desktopHandoffRL).Post("/api/desktop-identity/redeem", h.RedeemDesktopLocalIdentity)
 	r.With(desktopHandoffRL).Post("/api/desktop-handoff/initiate", h.InitiateDesktopAuthHandoff)
 	r.With(desktopHandoffRL).Post("/api/desktop-handoff/redeem", h.RedeemDesktopAuthHandoff)
 	r.With(handler.RequireDesktopBrokerAuth(signupConfig.DesktopBrokerAuthToken), desktopHandoffRL).Post("/api/desktop-google/attempt", h.RegisterDesktopGoogleAttempt)
@@ -2141,13 +2156,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Put("/metadata/{key}", h.SetIssueMetadataKey)
 					r.Delete("/metadata/{key}", h.DeleteIssueMetadataKey)
 					r.Put("/properties/{propertyId}", h.SetIssueProperty)
-						r.Delete("/properties/{propertyId}", h.DeleteIssueProperty)
-						r.Get("/work-products", h.ListWorkProductsForIssue)
-						r.Post("/work-products", h.AttachExistingWorkProduct)
-						r.Delete("/work-products/{workProductId}", h.DetachWorkProduct)
-						r.Get("/pull-requests", h.ListIssuePullRequests)
-						r.Post("/pull-requests", h.AttachIssuePullRequest)
-						r.Get("/dependency-graph", h.GetIssueDependencyGraph)
+					r.Delete("/properties/{propertyId}", h.DeleteIssueProperty)
+					r.Get("/work-products", h.ListWorkProductsForIssue)
+					r.Post("/work-products", h.AttachExistingWorkProduct)
+					r.Delete("/work-products/{workProductId}", h.DetachWorkProduct)
+					r.Get("/pull-requests", h.ListIssuePullRequests)
+					r.Post("/pull-requests", h.AttachIssuePullRequest)
+					r.Get("/dependency-graph", h.GetIssueDependencyGraph)
 					r.Post("/dependency-graph/apply", h.ApplyIssueDependencyGraph)
 				})
 			})
@@ -2530,16 +2545,16 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			r.Get("/api/chat/history", h.GetChatChannelHistory)
 			r.Get("/api/chat/thread", h.GetChatThread)
 
-				// Work products & provenance
-				r.Route("/api/work-products", func(r chi.Router) {
-					r.Get("/unassociated", h.ListUnassociatedWorkProducts)
-					r.Get("/", h.ListWorkProducts)
-					r.Post("/", h.CreateWorkProduct)
+			// Work products & provenance
+			r.Route("/api/work-products", func(r chi.Router) {
+				r.Get("/unassociated", h.ListUnassociatedWorkProducts)
+				r.Get("/", h.ListWorkProducts)
+				r.Post("/", h.CreateWorkProduct)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetWorkProduct)
 				})
 			})
-				r.Get("/api/tasks/{taskId}/work-products", h.ListWorkProductsForTask)
+			r.Get("/api/tasks/{taskId}/work-products", h.ListWorkProductsForTask)
 			r.Route("/api/tasks/{taskId}/provenance", func(r chi.Router) {
 				r.Get("/", h.GetProvenanceByTask)
 				r.Post("/", h.UpsertProvenance)
@@ -2673,16 +2688,31 @@ func (mc *membershipChecker) IsMember(ctx context.Context, userID, workspaceID s
 	return err == nil
 }
 
-// patResolver implements realtime.PATResolver using database queries.
+// opaqueTokenResolver implements realtime.OpaqueTokenResolver using database queries.
 // patCache is shared with the Auth and DaemonAuth middlewares so a token
 // revoke through any path invalidates the cache for all of them. Nil
 // cache is supported and degrades to direct DB lookups.
-type patResolver struct {
+type opaqueTokenResolver struct {
 	queries *db.Queries
 	cache   *auth.PATCache
 }
 
-func (pr *patResolver) ResolveToken(ctx context.Context, token string) (string, bool) {
+func (pr *opaqueTokenResolver) ResolveToken(ctx context.Context, token string) (string, bool) {
+	if strings.HasPrefix(token, auth.GuestTokenPrefix) {
+		if pr.queries == nil {
+			return "", false
+		}
+		user, err := auth.ResolveGuestUser(ctx, pr.queries, token)
+		if err != nil {
+			return "", false
+		}
+		uid := util.UUIDToString(user.ID)
+		if auth.IsTemporarilyDisabledUser(uid, user.Email) {
+			return "", false
+		}
+		return uid, true
+	}
+
 	hash := auth.HashToken(token)
 
 	if userID, ok := pr.cache.Get(ctx, hash); ok {

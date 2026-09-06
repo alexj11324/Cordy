@@ -1181,6 +1181,19 @@ describe("AppConfigSchema local_worktree_supported drift", () => {
   });
 });
 
+describe("AppConfigSchema local_worktree_committed_base_supported drift", () => {
+  it("defaults absent support to false", () => {
+    expect(AppConfigSchema.parse({}).local_worktree_committed_base_supported).toBe(false);
+  });
+
+  it("preserves an explicit true capability", () => {
+    expect(
+      AppConfigSchema.parse({ local_worktree_committed_base_supported: true })
+        .local_worktree_committed_base_supported,
+    ).toBe(true);
+  });
+});
+
 describe("AppConfigSchema agent_conversation_starters_supported drift", () => {
   it("defaults to false when the server predates the persistence contract", () => {
     expect(AppConfigSchema.parse({}).agent_conversation_starters_supported).toBe(false);

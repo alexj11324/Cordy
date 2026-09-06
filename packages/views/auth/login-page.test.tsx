@@ -118,10 +118,10 @@ describe("LoginPage", () => {
   // Email step rendering
   // -------------------------------------------------------------------------
 
-  it("renders email form with 'Sign in to Patchbay' title", () => {
+  it("renders email form with 'Sign in to Orvilo' title", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
     expect(
-      screen.getByText(/sign in to patchbay/i),
+      screen.getByText(/sign in to orvilo/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/enter your email to get a login code/i),
@@ -555,7 +555,7 @@ describe("LoginPage", () => {
     );
 
     expect(
-      screen.getByText(/sign in to patchbay/i),
+      screen.getByText(/sign in to orvilo/i),
     ).toBeInTheDocument();
   });
 
@@ -741,7 +741,7 @@ describe("LoginPage", () => {
     await user.click(screen.getByRole("button", { name: /back/i }));
 
     expect(
-      screen.getByText(/sign in to patchbay/i),
+      screen.getByText(/sign in to orvilo/i),
     ).toBeInTheDocument();
   });
 

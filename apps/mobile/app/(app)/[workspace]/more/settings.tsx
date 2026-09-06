@@ -70,7 +70,7 @@ export default function SettingsPage() {
   const onSignOut = () => {
     Alert.alert(
       "Sign out",
-      "You'll need to sign in again to use Patchbay on this device.",
+      "You'll need to sign in again to use Orvilo on this device.",
       [
         { text: "Cancel", style: "cancel" },
         {

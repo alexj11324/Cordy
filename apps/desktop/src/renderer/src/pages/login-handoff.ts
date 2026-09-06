@@ -1,4 +1,5 @@
-import { ApiError } from "@patchbay/core/api";
+import { ApiClient, ApiError } from "@patchbay/core/api";
+import { DEFAULT_RUNTIME_CONFIG, loopbackSessionApiUrl } from "../../../shared/runtime-config";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
 const PENDING_HANDOFF_TTL_MS = 10 * 60 * 1000;
@@ -79,6 +80,42 @@ function randomBase64Url(byteLength: number): string {
   return encodeBase64Url(bytes.buffer);
 }
 
+export type DesktopHandoffHostedInitiate = (
+  state: string,
+  codeChallenge: string,
+  callbackProtocol: string,
+) => Promise<{ registered: boolean }>;
+
+/** Hosted Accounts completes against production; local APIs must also bind there. */
+export function hostedDesktopHandoffApiUrl(
+  accountsUrl: string,
+  productApiUrl: string,
+): string | undefined {
+  try {
+    if (
+      new URL(accountsUrl).origin !==
+      new URL(DEFAULT_RUNTIME_CONFIG.accountsUrl).origin
+    ) {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
+  if (!loopbackSessionApiUrl(productApiUrl)) return undefined;
+  return DEFAULT_RUNTIME_CONFIG.apiUrl;
+}
+
+export function createHostedDesktopHandoffInitiate(
+  accountsUrl: string,
+  productApiUrl: string,
+): DesktopHandoffHostedInitiate | undefined {
+  const apiUrl = hostedDesktopHandoffApiUrl(accountsUrl, productApiUrl);
+  if (!apiUrl) return undefined;
+  const client = new ApiClient(apiUrl);
+  return (state, codeChallenge, callbackProtocol) =>
+    client.initiateDesktopAuthHandoff(state, codeChallenge, callbackProtocol);
+}
+
 /** Register a PKCE binding, then build the browser login URL. */
 export async function createDesktopLoginUrl(
   accountsUrl: string,
@@ -86,6 +123,12 @@ export async function createDesktopLoginUrl(
     state: string,
     codeChallenge: string,
   ) => Promise<{ registered: boolean }>,
+  options?: {
+    sessionApiUrl?: string;
+    locale?: string;
+    callbackProtocol?: string;
+    initiateHosted?: DesktopHandoffHostedInitiate;
+  },
 ): Promise<string> {
   const verifier = randomBase64Url(32);
   const digest = await crypto.subtle.digest(
@@ -98,6 +141,27 @@ export async function createDesktopLoginUrl(
   const { registered } = await initiate(state, codeChallenge);
   if (!registered) throw new Error("Desktop login handoff was rejected");
 
+  const url = new URL(`${accountsUrl.replace(/\/+$/, "")}/login`);
+  url.searchParams.set("platform", "desktop");
+  if (options?.locale) url.searchParams.set("locale", options.locale);
+  url.searchParams.set("state", state);
+  url.searchParams.set("code_challenge", codeChallenge);
+  const sessionApi = loopbackSessionApiUrl(options?.sessionApiUrl ?? "");
+  if (sessionApi && url.origin === DEFAULT_RUNTIME_CONFIG.accountsUrl) {
+    url.searchParams.set("session_mode", "local");
+    if (!options?.callbackProtocol || !options.initiateHosted) {
+      throw new Error("Hosted desktop handoff is unavailable");
+    }
+    await options.initiateHosted(
+      state,
+      codeChallenge,
+      options.callbackProtocol,
+    );
+  }
+
+  // Persist the verifier only after every authority that can complete this
+  // login has accepted the same binding. A failed hosted registration leaves
+  // no renderer state that could be mistaken for a viable handoff.
   const pendingHandoffs = readPendingHandoffs().filter(
     (entry) => entry.state !== state,
   );
@@ -105,11 +169,6 @@ export async function createDesktopLoginUrl(
     ...pendingHandoffs,
     { state, verifier, expiresAt: Date.now() + PENDING_HANDOFF_TTL_MS },
   ]);
-
-  const url = new URL(`${accountsUrl.replace(/\/+$/, "")}/login`);
-  url.searchParams.set("platform", "desktop");
-  url.searchParams.set("state", state);
-  url.searchParams.set("code_challenge", codeChallenge);
   return url.href;
 }
 
@@ -126,6 +185,11 @@ function clearDesktopHandoffVerifier(state: string): void {
   if (pending.some((entry) => entry.state === state)) {
     writePendingHandoffs(pending.filter((entry) => entry.state !== state));
   }
+}
+
+export function cancelDesktopLogin(state?: string): void {
+  if (state) { clearDesktopHandoffVerifier(state); return; }
+  localStorage.removeItem(PENDING_HANDOFF_KEY);
 }
 
 /** Redeem the one-time code and establish the native bearer session. */
@@ -152,6 +216,9 @@ export async function completeDesktopHandoff(
     throw error;
   }
 
+  if (readDesktopHandoffVerifier(state) !== verifier) {
+    return { acknowledged: true, authenticated: false };
+  }
   clearDesktopHandoffVerifier(state);
   try {
     await dependencies.login(token);
