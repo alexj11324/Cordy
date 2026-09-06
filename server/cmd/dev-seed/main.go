@@ -45,10 +45,13 @@ func run(ctx context.Context) error {
 		result.Workspace, result.WorkspaceID, result.Issues, result.GraphNodes, result.GraphEdges)
 	// The fixtures live in their own workspace, not the one a fresh sign-in
 	// lands on, so a seed that does not say where to look reads as a seed that
-	// did nothing.
+	// did nothing. Name the workspace first: the documented setup is
+	// `make up C=desktop`, which starts no Web listener, so a Web URL is the
+	// conditional extra rather than the answer.
+	fmt.Printf("They are in the %q workspace — switch to it in the app.\n", devseed.WorkspaceSlug)
 	if origin := strings.TrimRight(strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN")), "/"); origin != "" {
-		fmt.Printf("Open %s/%s/issues to see them (`make dev-login ARGS=\"--path /%s/issues\"` signs in and lands there).\n",
-			origin, devseed.WorkspaceSlug, devseed.WorkspaceSlug)
+		fmt.Printf("With Web running (`make up C=api,web`), %s/%s/issues opens it directly.\n",
+			origin, devseed.WorkspaceSlug)
 	}
 	return nil
 }

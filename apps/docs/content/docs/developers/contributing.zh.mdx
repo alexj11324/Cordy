@@ -32,7 +32,7 @@ make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作�
 
 主 checkout 会使用 `.env`。文件不存在时，`make up` 会从 `.env.example` 创建；然后确保 PostgreSQL 可用、安装依赖、执行 migration，并运行 API 与 Web。
 
-`make up` 会在加锁的前提下为当前 checkout 分配端口和数据库名并记录下来，所以多个 checkout 和 worktree 可以同时运行，`make status` / `make down` / `make destroy` 也能精确作用到其中一个。它会打印分配到的地址；如果你想用默认的 `http://localhost:3000` 和 `http://localhost:8080`、并且把所有服务跑在同一个终端的前台，那就用 `make dev`。
+`make up` 会在加锁的前提下为当前 checkout 分配端口和数据库名并记录下来，所以多个 checkout 和 worktree 可以同时运行，`make status` / `make down` / `make destroy` 也能精确作用到其中一个。它会打印分配到的地址。`make dev` 是另一种方式：用默认端口、跑在同一个终端的前台——它启动后端并打开 Electron，不会启动 Web 应用。
 
 `make dev-login` 能用，是因为 `make up` 会把 `PATCHBAY_DEV_LOGIN=1` 写进本地 env 文件——见[登录与注册](/auth-setup#开发环境跳过登录页)。绝不要在公网部署上启用它，也不要把本地 `.env` 用到公网部署。
 

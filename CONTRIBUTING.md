@@ -226,15 +226,16 @@ This single command:
 
 Then `make dev-login` to get into the app, and `make seed-dev` if you want sample content.
 
-#### `make dev`: the same thing in the foreground
+#### `make dev`: backend and Electron in the foreground
 
 ```bash
 make dev
 ```
 
-`make dev` does the same setup but runs backend and frontend in the foreground of your terminal,
-which is what you want when Ctrl-C should stop everything. It does not register an environment,
-so `make status`, `make list` and `make destroy` do not track it.
+`make dev` does the same setup but runs the backend and opens Electron in the foreground of your
+terminal, which is what you want when Ctrl-C should stop everything. It does **not** start the web
+app — use `make up C=api,web` for that — and it does not register an environment, so `make status`,
+`make list` and `make destroy` do not track it.
 
 ### Explicit Setup (advanced)
 
@@ -516,6 +517,10 @@ you are testing with.
 If the token could not be minted (a backend started before `PATCHBAY_DEV_LOGIN=1` was in the env
 file), `make up C=desktop` says so and Electron shows the login page; `make down && make up
 C=desktop` fixes it. You can always fall back to `dev@localhost` with code `888888` on that page.
+
+To exercise the onboarding flow itself — which starts from a user who has not completed it — run
+`PATCHBAY_DEV_KEEP_ONBOARDING=1 make up C=desktop`. The browser equivalent is `?onboarding=keep` on
+the URL `make dev-login` prints.
 
 ### Isolation Guarantee
 

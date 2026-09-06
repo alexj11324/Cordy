@@ -32,7 +32,7 @@ Desktop cannot use that URL: it authenticates with a stored bearer token rather 
 
 The primary checkout uses `.env`. If the file does not exist, `make up` creates it from `.env.example`, then ensures PostgreSQL, installs dependencies, runs migrations, and starts API and Web.
 
-`make up` allocates this checkout's ports and database under a lock and records them, so several checkouts and worktrees run side by side and `make status` / `make down` / `make destroy` can act on exactly one of them. It prints the addresses it allocated; `make dev` is the alternative that uses the default `http://localhost:3000` and `http://localhost:8080` and runs everything in the foreground of one terminal.
+`make up` allocates this checkout's ports and database under a lock and records them, so several checkouts and worktrees run side by side and `make status` / `make down` / `make destroy` can act on exactly one of them. It prints the addresses it allocated. `make dev` is the alternative that runs in the foreground of one terminal on the default ports — it starts the backend and opens Electron, and does not start the web app.
 
 `make dev-login` works because `make up` writes `PATCHBAY_DEV_LOGIN=1` into the local env file — see [Sign-in and signup](/auth-setup#skipping-the-login-page-in-development). Never enable it on an internet-facing deployment, and do not use a local `.env` for one either.
 

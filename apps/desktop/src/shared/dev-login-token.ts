@@ -9,7 +9,7 @@
  * into storage at boot so the app starts signed in.
  *
  * Kept as a pure function so the rules that matter — never clobber a real
- * session, never write a junk value — are testable without a renderer.
+ * session, always replace a stale seeded one — are testable without a renderer.
  */
 
 /** The subset of the Storage API this needs, so tests need no DOM. */
@@ -21,11 +21,21 @@ export interface TokenStorage {
 export const DESKTOP_TOKEN_KEY = "patchbay_token";
 
 /**
+ * Records the value this helper last seeded. It is what tells a session the
+ * developer created (by signing in through the app) apart from one this helper
+ * put there: only the latter may be replaced.
+ */
+export const DESKTOP_SEEDED_TOKEN_KEY = "patchbay_dev_seeded_token";
+
+/**
  * Seeds the development token into storage. Returns whether it wrote one.
  *
- * An existing token always wins: the seed is a starting point for a fresh
- * profile, not an override that would log a developer out of the account they
- * are actually testing with.
+ * A session the developer established always wins — the seed must never sign
+ * someone out of the account they are testing with. A previously seeded token
+ * is replaced instead of kept: it expires, and recreating the local database
+ * invalidates it, after which the API rejects it and the app would sit on the
+ * login screen until a second restart even though a fresh token was available
+ * all along.
  */
 export function seedDevLoginToken(
   storage: TokenStorage,
@@ -36,8 +46,13 @@ export function seedDevLoginToken(
   if (trimmed === "") return false;
 
   try {
-    if (storage.getItem(DESKTOP_TOKEN_KEY)) return false;
+    const stored = storage.getItem(DESKTOP_TOKEN_KEY);
+    if (stored) {
+      if (stored !== storage.getItem(DESKTOP_SEEDED_TOKEN_KEY)) return false;
+      if (stored === trimmed) return false;
+    }
     storage.setItem(DESKTOP_TOKEN_KEY, trimmed);
+    storage.setItem(DESKTOP_SEEDED_TOKEN_KEY, trimmed);
     return true;
   } catch {
     // Storage can throw when the renderer blocks site data. A dev convenience

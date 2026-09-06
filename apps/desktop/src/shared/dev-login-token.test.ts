@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import {
+  DESKTOP_SEEDED_TOKEN_KEY,
   DESKTOP_TOKEN_KEY,
   seedDevLoginToken,
   type TokenStorage,
@@ -20,16 +21,48 @@ function memoryStorage(initial?: Record<string, string>): TokenStorage & {
 }
 
 describe("seedDevLoginToken", () => {
-  it("seeds an empty storage", () => {
+  it("seeds an empty storage and records what it seeded", () => {
     const storage = memoryStorage();
     expect(seedDevLoginToken(storage, "jwt-value")).toBe(true);
     expect(storage.data[DESKTOP_TOKEN_KEY]).toBe("jwt-value");
+    expect(storage.data[DESKTOP_SEEDED_TOKEN_KEY]).toBe("jwt-value");
   });
 
-  it("never overwrites a session already in storage", () => {
+  it("never overwrites a session the developer signed in with", () => {
     const storage = memoryStorage({ [DESKTOP_TOKEN_KEY]: "real-session" });
     expect(seedDevLoginToken(storage, "jwt-value")).toBe(false);
     expect(storage.data[DESKTOP_TOKEN_KEY]).toBe("real-session");
+  });
+
+  // The stale token is the common case after the local database is recreated:
+  // the API rejects it, the app clears it, and this helper does not run again
+  // until the next boot — so keeping it would strand Electron on the login
+  // screen for a whole extra restart.
+  it("replaces a token it seeded earlier", () => {
+    const storage = memoryStorage({
+      [DESKTOP_TOKEN_KEY]: "expired-dev-token",
+      [DESKTOP_SEEDED_TOKEN_KEY]: "expired-dev-token",
+    });
+    expect(seedDevLoginToken(storage, "fresh-dev-token")).toBe(true);
+    expect(storage.data[DESKTOP_TOKEN_KEY]).toBe("fresh-dev-token");
+    expect(storage.data[DESKTOP_SEEDED_TOKEN_KEY]).toBe("fresh-dev-token");
+  });
+
+  it("keeps a real session even when one was seeded before it", () => {
+    const storage = memoryStorage({
+      [DESKTOP_TOKEN_KEY]: "signed-in-by-hand",
+      [DESKTOP_SEEDED_TOKEN_KEY]: "an-older-dev-token",
+    });
+    expect(seedDevLoginToken(storage, "fresh-dev-token")).toBe(false);
+    expect(storage.data[DESKTOP_TOKEN_KEY]).toBe("signed-in-by-hand");
+  });
+
+  it("does not rewrite storage when the same token is already seeded", () => {
+    const storage = memoryStorage({
+      [DESKTOP_TOKEN_KEY]: "jwt-value",
+      [DESKTOP_SEEDED_TOKEN_KEY]: "jwt-value",
+    });
+    expect(seedDevLoginToken(storage, "jwt-value")).toBe(false);
   });
 
   it("ignores absent, blank and non-string values", () => {

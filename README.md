@@ -237,8 +237,9 @@ platform wiring.
 
 `make up` allocates this checkout's ports and database, so several checkouts and worktrees run
 side by side; `make status` proves what is running is yours, `make down` stops it, `make destroy`
-deletes it. `make dev` is the alternative when you want everything in the foreground of one
-terminal with Ctrl-C to stop it.
+deletes it. `make dev` is the alternative when you want it in the foreground of one terminal with
+Ctrl-C to stop it: it bootstraps the checkout, starts the backend and opens Electron — it does not
+start the web app.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow, worktree support, testing, and
 troubleshooting. The iOS client lives in [`apps/mobile/`](apps/mobile/) — its

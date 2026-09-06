@@ -228,7 +228,8 @@ make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作�
 
 `make up` 会为当前 checkout 分配独立的端口和数据库，所以多个 checkout、多个 worktree 可以同时跑；
 `make status` 能证明正在跑的就是你这份，`make down` 停掉，`make destroy` 删干净。
-如果你想让所有服务跑在同一个终端的前台、用 Ctrl-C 一起停，那就用 `make dev`。
+如果你想让它跑在同一个终端的前台、用 Ctrl-C 一起停，那就用 `make dev`：它会初始化 checkout、
+启动后端并打开 Electron——它不会启动 Web 应用。
 
 完整的开发流程、worktree 支持、测试和问题排查见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 iOS 客户端在 [`apps/mobile/`](apps/mobile/)，怎么编译装到自己 iPhone 上见它的
