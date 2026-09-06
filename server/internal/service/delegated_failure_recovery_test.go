@@ -32,7 +32,7 @@ func seedDelegatedFailureFixture(t *testing.T) (*delegatedFailureFixture, *TaskS
 	pool := newResolveOriginatorPool(t)
 	ctx := context.Background()
 	workspaceID, userID, coordinatorID, issueID := seedAttributionFixture(t, pool)
-	if _, err := pool.Exec(ctx, `UPDATE issue SET status = 'in_progress' WHERE id = $1`, issueID); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE issue SET status = 'in_progress', executor_type = 'agent', executor_id = $2 WHERE id = $1`, issueID, coordinatorID); err != nil {
 		t.Fatalf("activate source issue: %v", err)
 	}
 

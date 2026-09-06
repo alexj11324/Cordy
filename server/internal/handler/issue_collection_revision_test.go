@@ -45,9 +45,9 @@ func TestIssueCollectionProjectionsIncludePositiveRevision(t *testing.T) {
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (
 			workspace_id, title, status, priority, creator_type, creator_id,
-			position, number, project_id, revision
+			position, number, project_id, revision, executor_type, executor_id
 		)
-		VALUES ($1, $2, 'in_review', 'none', 'member', $3, 1, $4, $5, 7)
+		VALUES ($1, $2, 'in_review', 'none', 'member', $3, 1, $4, $5, 7, 'agent', (SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1))
 		RETURNING id
 	`, testWorkspaceID, title, testUserID, issueNumber, projectID).Scan(&issueID); err != nil {
 		t.Fatalf("seed issue: %v", err)
