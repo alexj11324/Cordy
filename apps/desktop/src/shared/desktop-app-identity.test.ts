@@ -1,10 +1,15 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import {
+  checkoutCallbackProtocol,
   desktopChannelFromArgv,
+  identityHashForPath,
+  isDesktopCallbackProtocolForChannel,
+  protocolClientLaunchArgs,
   resolveDesktopAppIdentity,
   resolveDesktopChannel,
 } from "./desktop-app-identity";
+import { callbackProtocolForPath, identityHashForPath as scriptIdentityHashForPath } from "../../scripts/worktree-dev-env.mjs";
 
 describe("desktop channel", () => {
   it("treats packaged builds as production regardless of vite mode", () => {
@@ -33,6 +38,22 @@ describe("desktop channel", () => {
       "development",
     );
   });
+
+  it("keeps an OS-launched staging protocol handler on the staging channel", () => {
+    expect(
+      resolveDesktopChannel({
+        isDev: true,
+        mode: "development",
+        argv: ["electron", ".", "--mode", "staging"],
+      }),
+    ).toBe("staging");
+    expect(
+      resolveDesktopChannel({
+        isDev: false,
+        argv: ["--mode", "staging"],
+      }),
+    ).toBe("production");
+  });
 });
 
 describe("desktop app identity", () => {
@@ -43,6 +64,7 @@ describe("desktop app identity", () => {
       userDataDirName: "Patchbay",
       appUserModelId: "ai.patchbay.desktop",
       bundleIdPrefix: "ai.patchbay.desktop",
+      callbackProtocolPrefix: "patchbay",
       isolateUserData: false,
     });
   });
@@ -69,6 +91,16 @@ describe("desktop app identity", () => {
     expect(staging.isolateUserData).toBe(true);
     expect(canary.appUserModelId).not.toBe(staging.appUserModelId);
     expect(staging.appUserModelId).not.toBe(production.appUserModelId);
+    expect(canary.callbackProtocolPrefix).toBe("patchbay-canary");
+    expect(staging.callbackProtocolPrefix).toBe("patchbay-staging");
+    expect(production.callbackProtocolPrefix).toBe("patchbay");
+    expect(
+      new Set([
+        canary.callbackProtocolPrefix,
+        staging.callbackProtocolPrefix,
+        production.callbackProtocolPrefix,
+      ]).size,
+    ).toBe(3);
   });
 
   it("keeps worktree suffixes inside the same channel", () => {
@@ -79,11 +111,71 @@ describe("desktop app identity", () => {
     });
     expect(staging.name).toBe("Orvilo Staging feature-12");
     expect(staging.userDataDirName).toBe("Patchbay Staging feature-12");
+    expect(staging.callbackProtocolPrefix).toBe("patchbay-staging");
     const canary = resolveDesktopAppIdentity({
       isDev: true,
       suffix: "feature-12",
     });
     expect(canary.name).toBe("Orvilo Canary feature-12");
     expect(canary.userDataDirName).toBe("Patchbay Canary feature-12");
+    expect(canary.callbackProtocolPrefix).toBe("patchbay-canary");
+  });
+
+  it("rejects a callback scheme that belongs to another channel", () => {
+    expect(isDesktopCallbackProtocolForChannel("patchbay", "production")).toBe(
+      true,
+    );
+    expect(
+      isDesktopCallbackProtocolForChannel(
+        "patchbay-staging-5718c47b86bf9ece",
+        "staging",
+      ),
+    ).toBe(true);
+    expect(
+      isDesktopCallbackProtocolForChannel(
+        "patchbay-canary-5718c47b86bf9ece",
+        "development",
+      ),
+    ).toBe(true);
+    expect(isDesktopCallbackProtocolForChannel("patchbay", "staging")).toBe(
+      false,
+    );
+    expect(
+      isDesktopCallbackProtocolForChannel(
+        "patchbay-canary-5718c47b86bf9ece",
+        "staging",
+      ),
+    ).toBe(false);
+    expect(
+      isDesktopCallbackProtocolForChannel(
+        "patchbay-staging-5718c47b86bf9ece",
+        "development",
+      ),
+    ).toBe(false);
+  });
+
+  it("derives the same checkout callback scheme the pre-boot launcher registers", () => {
+    const appPath = "/worktrees/first/apps/desktop";
+    expect(identityHashForPath(appPath)).toBe(scriptIdentityHashForPath(appPath));
+    expect(checkoutCallbackProtocol("staging", appPath)).toBe(
+      callbackProtocolForPath(appPath, "staging"),
+    );
+    expect(checkoutCallbackProtocol("development", appPath)).toBe(
+      callbackProtocolForPath(appPath),
+    );
+    expect(checkoutCallbackProtocol("production", appPath)).toBe("patchbay");
+    expect(checkoutCallbackProtocol("staging", appPath)).not.toBe(
+      checkoutCallbackProtocol("development", appPath),
+    );
+  });
+
+  it("relaunches a Windows staging protocol handler with --mode staging", () => {
+    expect(protocolClientLaunchArgs("/app", "staging")).toEqual([
+      "/app",
+      "--mode",
+      "staging",
+    ]);
+    expect(protocolClientLaunchArgs("/app", "development")).toEqual(["/app"]);
+    expect(protocolClientLaunchArgs("/app", "production")).toEqual(["/app"]);
   });
 });

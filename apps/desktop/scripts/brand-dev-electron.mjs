@@ -15,9 +15,10 @@ import {
   identityHashForPath,
 } from "./worktree-dev-env.mjs";
 
-// Keep names and bundle-id prefixes aligned with
+// Keep names, bundle-id prefixes, and callback-scheme prefixes aligned with
 // apps/desktop/src/shared/desktop-app-identity.ts. This script runs before
-// Electron boots, so it cannot import that TS module.
+// Electron boots, so it cannot import that TS module. Staging must declare
+// patchbay-staging-<hash>:// and never the production patchbay:// handler.
 export function devBundleIdentity(appRoot, suffix, channel = "development") {
   const hash = identityHashForPath(appRoot);
   const staging = channel === "staging";

@@ -14,7 +14,7 @@ profile.
 | API | `http://localhost:<port>` from `make up` | `https://api.staging.aspectlylabs.com` | `https://api.aspectlylabs.com` |
 | Web | `http://localhost:<port>` | `https://staging.aspectlylabs.com` | `https://patchbay.aspectlylabs.com` |
 | Accounts | Local session or the production broker only when a loopback API is in use | `https://accounts.staging.aspectlylabs.com` | `https://accounts.aspectlylabs.com` |
-| Desktop | **Orvilo Canary** (`userData`: Patchbay Canary) | **Orvilo Staging** (`userData`: Patchbay Staging) | **Orvilo** (`userData`: Patchbay) |
+| Desktop | **Orvilo Canary** (`userData`: Patchbay Canary, callback `patchbay-canary-<hash>://`) | **Orvilo Staging** (`userData`: Patchbay Staging, callback `patchbay-staging-<hash>://`) | **Orvilo** (`userData`: Patchbay, callback `patchbay://`) |
 | Mobile | `ai.patchbay.mobile.dev` | `ai.patchbay.mobile.staging` | `ai.patchbay.mobile` |
 | CLI | worktree profile under `~/.patchbay/profiles/dev-*` | `patchbay --profile staging` | default `~/.patchbay/config.json` |
 | GitHub Environment | none | `staging` | `production` |
@@ -54,9 +54,10 @@ patchbay setup self-host --profile staging \
   --app-url https://staging.aspectlylabs.com
 ```
 
-Desktop staging uses its own app name and `userData` path, so a Canary
-session against localhost cannot leak cookies or tokens into staging, and
-staging cannot leak into the packaged production app.
+Desktop staging uses its own app name, `userData` path, and OS callback
+scheme (`patchbay-staging-<hash>://`), so a Canary session against localhost
+cannot leak cookies or tokens into staging, staging callbacks cannot open
+Canary or the packaged production app, and staging cannot leak into production.
 
 ### Public (production)
 

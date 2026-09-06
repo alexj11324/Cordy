@@ -51,6 +51,34 @@ test("client env files match the hosted staging contract and leave copilothub", 
   }
 });
 
+test("desktop callback prefixes stay distinct per hosted channel", async () => {
+  const identity = await read("apps/desktop/src/shared/desktop-app-identity.ts");
+  const { development, staging, production } = hosted.environments;
+  assert.equal(development.desktop_callback_protocol_prefix, "patchbay-canary");
+  assert.equal(staging.desktop_callback_protocol_prefix, "patchbay-staging");
+  assert.equal(production.desktop_callback_protocol_prefix, "patchbay");
+  assert.notEqual(
+    staging.desktop_callback_protocol_prefix,
+    production.desktop_callback_protocol_prefix,
+  );
+  assert.match(
+    identity,
+    /STAGING_DESKTOP_CALLBACK_PROTOCOL_PREFIX = "patchbay-staging"/u,
+  );
+  assert.match(
+    identity,
+    /DEVELOPMENT_DESKTOP_CALLBACK_PROTOCOL_PREFIX = "patchbay-canary"/u,
+  );
+  assert.match(
+    identity,
+    /PRODUCTION_DESKTOP_CALLBACK_PROTOCOL_PREFIX = "patchbay"/u,
+  );
+  assert.match(
+    await read("apps/desktop/src/main/index.ts"),
+    /channel: desktopIdentity.channel/u,
+  );
+});
+
 test("desktop default runtime stays on public production", async () => {
   const runtime = await read("apps/desktop/src/shared/runtime-config.ts");
   const { production } = hosted.environments;

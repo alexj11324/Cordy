@@ -216,4 +216,45 @@ describe("CallbackPage", () => {
     }
   });
 
+  it("opens a staging desktop callback instead of the production patchbay:// handler", async () => {
+    const hrefSetter = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      writable: true,
+      value: {
+        ...originalLocation,
+        set href(value: string) {
+          hrefSetter(value);
+        },
+      },
+    });
+
+    try {
+      mockSearchParams.set(
+        "state",
+        "platform:desktop,desktop_state:desktop-state,desktop_code_challenge:desktop-challenge",
+      );
+      mockCompleteDesktopAuthHandoff.mockResolvedValue({
+        callback_protocol: "patchbay-staging-5718c47b86bf9ece",
+        code: "staging-code",
+        state: "desktop-state",
+      });
+
+      render(<CallbackPage />);
+
+      await waitFor(() => {
+        expect(hrefSetter).toHaveBeenCalledWith(
+          "patchbay-staging-5718c47b86bf9ece://auth/callback?code=staging-code&state=desktop-state",
+        );
+      });
+      expect(hrefSetter.mock.calls[0]?.[0]).not.toContain("patchbay://");
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
 });

@@ -987,7 +987,9 @@ export class ApiClient {
     });
   }
 
-  /** Bind the authenticated browser session to the registered desktop attempt. */
+  /** Bind the authenticated browser session to the registered desktop attempt.
+   *  Complete is bound by PKCE; the OS callback scheme is the one stored at
+   *  initiate. The browser must not choose or overwrite that scheme. */
   async completeDesktopAuthHandoff(
     state: string,
     codeChallenge: string,
@@ -997,7 +999,6 @@ export class ApiClient {
       body: JSON.stringify({
         state,
         code_challenge: codeChallenge,
-        callback_protocol: "patchbay",
       }),
     });
     const handoff = parseWithFallback(raw, DesktopHandoffResponseSchema, { callback_protocol: "", code: "", state: "" }, {

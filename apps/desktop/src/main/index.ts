@@ -22,7 +22,11 @@ import { installNavigationGuard } from "./navigation-guard";
 import { createRendererWebPreferences } from "./renderer-web-preferences";
 import { getAppVersion } from "./app-version";
 import { loadRuntimeConfig } from "./runtime-config-loader";
-import { resolveDesktopAppIdentity } from "../shared/desktop-app-identity";
+import {
+  checkoutCallbackProtocol,
+  protocolClientLaunchArgs,
+  resolveDesktopAppIdentity,
+} from "../shared/desktop-app-identity";
 import type { RuntimeConfigResult } from "../shared/runtime-config";
 import {
   RENDERER_ROUTE_CONTEXT_CHANNEL,
@@ -128,10 +132,18 @@ if (process.platform !== "win32") {
 const previewIdentity = app.isPackaged
   ? parseDesktopPreviewIdentity(JSON.parse(readFileSync(join(app.getAppPath(), "package.json"), "utf8")).desktopPreview)
   : null;
+const desktopIdentity = resolveDesktopAppIdentity({
+  isDev: !app.isPackaged,
+  mode: import.meta.env.MODE,
+  argv: process.argv,
+  suffix: process.env.DESKTOP_APP_SUFFIX,
+});
 const PROTOCOL = resolveDesktopCallbackProtocol({
   previewIdentity,
-  packaged: !is.dev,
-  developmentProtocol: process.env.DESKTOP_CALLBACK_PROTOCOL,
+  channel: desktopIdentity.channel,
+  developmentProtocol:
+    process.env.DESKTOP_CALLBACK_PROTOCOL ??
+    checkoutCallbackProtocol(desktopIdentity.channel, app.getAppPath()),
 });
 const devLog = is.dev ? createBestEffortDevLog() : undefined;
 
@@ -637,21 +649,15 @@ function createIssueWindow(context: IssueWindowContext): void {
 }
 
 // --- Dev / staging / production isolation --------------------------------
-// Each hosted channel gets its own app name and userData path so the
-// single-instance lock, session cookies, and local guest state cannot leak
-// across local Canary, internal Staging, and the packaged production app.
+// Each hosted channel gets its own app name, userData path, and OS callback
+// scheme so the single-instance lock, session cookies, and auth handoff cannot
+// leak across local Canary, internal Staging, and the packaged production app.
 // Must run BEFORE requestSingleInstanceLock() because the lock location is
 // derived from the userData path. (Same approach VS Code uses for
 // Stable / Insiders coexistence.)
 //
 // DESKTOP_APP_SUFFIX lets parallel worktrees run the same channel
 // side-by-side. The suffix is appended to the app name + userData path.
-const desktopIdentity = resolveDesktopAppIdentity({
-  isDev: is.dev,
-  mode: import.meta.env.MODE,
-  suffix: process.env.DESKTOP_APP_SUFFIX,
-});
-
 // Preview builds keep their packaged identity. Hosted channels pin display
 // names (Orvilo*) separately from userData directories (Patchbay*) so
 // Canary / Staging / Production sessions cannot leak into each other, while
@@ -670,16 +676,20 @@ app.setPath(
 function registerProtocolClient(protocol: string): void {
   if (process.platform === "win32" && process.defaultApp) {
     // Windows development needs the Electron binary plus the app path.
-    app.setAsDefaultProtocolClient(protocol, process.execPath, [
-      app.getAppPath(),
-    ]);
+    // Staging also forwards --mode so an OS callback relaunch stays on the
+    // staging channel instead of becoming Canary in the same checkout.
+    app.setAsDefaultProtocolClient(
+      protocol,
+      process.execPath,
+      protocolClientLaunchArgs(app.getAppPath(), desktopIdentity.channel),
+    );
     return;
   }
   app.setAsDefaultProtocolClient(protocol);
 }
 
-if (is.dev) {
-  // Clean up registrations created by older Canary builds that claimed the
+if (!app.isPackaged) {
+  // Unpackaged Canary / Staging must never remain the OS handler for the
   // production scheme. Electron scopes removal to the current executable.
   app.removeAsDefaultProtocolClient(PRODUCTION_DESKTOP_CALLBACK_PROTOCOL);
 }

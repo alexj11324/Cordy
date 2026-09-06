@@ -10,6 +10,7 @@
       "accounts_url": "https://accounts.aspectlylabs.com",
       "desktop_channel": "development",
       "desktop_app_name": "Orvilo Canary",
+      "desktop_callback_protocol_prefix": "patchbay-canary",
       "mobile_bundle_id": "ai.patchbay.mobile.dev"
     },
     "staging": {
@@ -22,6 +23,7 @@
       "accounts_origin_url": "https://accounts-origin.staging.aspectlylabs.com",
       "desktop_channel": "staging",
       "desktop_app_name": "Orvilo Staging",
+      "desktop_callback_protocol_prefix": "patchbay-staging",
       "mobile_bundle_id": "ai.patchbay.mobile.staging",
       "cli_profile": "staging",
       "github_environment": "staging",
@@ -46,6 +48,7 @@
       "accounts_origin_url": "https://accounts-origin.aspectlylabs.com",
       "desktop_channel": "production",
       "desktop_app_name": "Orvilo",
+      "desktop_callback_protocol_prefix": "patchbay",
       "mobile_bundle_id": "ai.patchbay.mobile",
       "github_environment": "production",
       "compose_project": "cordy632",

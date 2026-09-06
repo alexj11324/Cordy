@@ -101,7 +101,8 @@ export function appSuffixForPath(path) {
 
 // The OS callback identity must not share the 1000-slot port namespace. A
 // truncated SHA-256 of the full app path stays stable for this checkout and
-// makes collisions between arbitrary worktree locations negligible.
+// makes collisions between arbitrary worktree locations negligible. Keep the
+// hash in sync with apps/desktop/src/shared/desktop-app-identity.ts.
 export function callbackProtocolForPath(appPath, channel = "development") {
   const prefix = channel === "staging" ? "patchbay-staging" : "patchbay-canary";
   return `${prefix}-${identityHashForPath(appPath)}`;

@@ -478,6 +478,7 @@ channel with its own hosted backend — see
 | Workspaces dir | `~/patchbay_workspaces/` | `~/patchbay_workspaces_staging/` | `~/patchbay_workspaces_dev-<slug>-<offset>/` |
 | Database | production | staging (`patchbay-staging` Compose project) | local: `patchbay_<slug>_<offset>` |
 | Desktop app | `Orvilo` | `Orvilo Staging` | `Orvilo Canary` |
+| Desktop callback | `patchbay://` | `patchbay-staging-<hash>://` | `patchbay-canary-<hash>://` |
 | Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-api.staging.aspectlylabs.com` | `desktop-localhost-<port>` |
 | API | `https://api.aspectlylabs.com` | `https://api.staging.aspectlylabs.com` | local backend port |
 | Registry | — | `/var/lib/patchbay-staging/` on the origin | `~/.patchbay/dev/envs/<name>/` |

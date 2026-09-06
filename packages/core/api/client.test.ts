@@ -16,6 +16,10 @@ describe("ApiClient desktop handoff", () => {
     vi.stubGlobal("fetch", fetchMock);
     expect(await new ApiClient("https://selfhost.example.test").completeDesktopAuthHandoff(state, "challenge")).toEqual(handoff);
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://selfhost.example.test/api/desktop-handoff/complete");
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      state,
+      code_challenge: "challenge",
+    });
   });
   it("accepts a worktree-specific callback protocol from completion", async () => {
     const state = "s".repeat(43);
@@ -23,6 +27,16 @@ describe("ApiClient desktop handoff", () => {
       state,
       code: `pbd_${"c".repeat(43)}`,
       callback_protocol: "patchbay-canary-5718c47b86bf9ece",
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(handoff))));
+    expect(await new ApiClient("https://selfhost.example.test").completeDesktopAuthHandoff(state, "challenge")).toEqual(handoff);
+  });
+  it("accepts a staging callback protocol from completion", async () => {
+    const state = "s".repeat(43);
+    const handoff = {
+      state,
+      code: `pbd_${"c".repeat(43)}`,
+      callback_protocol: "patchbay-staging-5718c47b86bf9ece",
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(handoff))));
     expect(await new ApiClient("https://selfhost.example.test").completeDesktopAuthHandoff(state, "challenge")).toEqual(handoff);
