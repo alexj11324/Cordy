@@ -1,34 +1,56 @@
 # PR #777 continuation handoff
 
-The current implementation and acceptance record is [the automation audit](pr-777-automation-audit.md). This replaces the initial Cursor handoff; its old restrictions against backend changes and an Instructions heading were superseded by the user's later requirements.
+The current implementation and acceptance record is [the automation audit](pr-777-automation-audit.md).
+This handoff describes the source state and evidence available before the
+final CI/runtime gate.
 
-## Delivery
+## Source and delivery
 
-- Continue the existing draft [PR #777](https://github.com/alexj11324/Cordy/pull/777), branch `cursor/cloud-agent-1788649529004-9qees`; do not amend merged PR #769.
-- Preserve the original checkout and unrelated changes. Work in an isolated checkout, commit verified changes, and push the existing PR branch. Merge requires user authorization.
-- Keep one shared Settings page in `packages/views`; Web and Electron entrypoints reuse it.
-- Preserve the automation list, capsule tabs, and product terms Run now, No project, and Edit.
-- Keep server data in React Query and use the role-based typography scale.
-- The last CI-verified pushed head is `5bd6a0442` (`CI 34128280694`). It does not cover the current dirty follow-up; do not treat that older green run as current validation.
+- PR #777 source merge and conflict resolution completed at head `530d99b6`
+  before this documentation-only update; the docs commit will be the next PR
+  head.
+- The local primary checkout was restored to clean `main` at `cdc795a3` during
+  recovery. The main branch may have advanced after that point.
+- The PR source includes the readiness gate, provider error propagation,
+  durable webhook retry, Agent picker, continuation pane, and removal of the
+  persistent trigger-auth summary (`1a71628`).
+- Runtime evidence is from Electron/API/daemon commit `ce0d1248` built with Go
+  1.26.7. It predates the final merge to `530d99b6`; no final-head runtime
+  rebuild is claimed here.
+- Cloud CI run `34143871346` was pending for head `530d99b6` when this handoff
+  was written. It is the authority for the current source; prior local focused
+  results are historical evidence, not a current green claim.
 
-## Required behavior
+## Verified behavior
 
-- GitHub, Slack, and Linear triggers use real provider identities and event-specific conditions observed in Cursor. Do not add a generic branch/label panel to PR opened.
-- An unconnected trigger row shows only its provider icon, name, `Requires connection`, `Connect`, and delete. It hides selectors, filters, and per-row enable controls until the provider is connected. The overall automation active/paused control remains.
-- Run now and every dispatch path require at least one ready trigger. A missing connection or required parameter blocks admission. Legacy persisted `enabled=false` triggers remain visible and blocking until an explicit delete/recreate; reads do not mutate them.
-- The executor control selects a real Agent and persists `executor_type`/`executor_id`; it is not a model picker.
-- Instructions have a visible heading and a compact fixed-height editor with internal scrolling. The model control remains outside that scroll area.
-- Memories are persistent named Markdown notes scoped to an automation, with real UI and task-bound CLI reads/writes. A Markdown file in a checkout alone is not cross-run memory.
-- Selected MCP services must be invoked in a real task; a saved checkbox is insufficient evidence.
-- Send to Slack uses real connected channel targets and reports delivery failures. Do not send external test messages without explicit authorization.
-- Remove the obsolete standalone transcript UI and its fallback exports. Visible execution entrypoints open the interactive Agent conversation; completed, failed, active, interrupt, and steer paths need appropriate verification.
-- Collapsing or temporarily revealing the sidebar must preserve its toggle and clear the native traffic lights.
-- The Agent conversation pane has a right-side collapse control. Reopening preserves draft text and history; keyboard resize was verified. Mouse-drag resize remains unverified. The obsolete pin control is removed.
+- GitHub, Slack, and Linear triggers use provider identities and event-specific
+  conditions observed in Cursor. An unconnected row is reduced to provider
+  icon/name, `Requires connection`, Connect, and delete.
+- Run Now and all dispatch paths require a ready trigger. The Electron modal
+  title is `请先完成触发器配置`, with its description and `返回配置` action.
+  The direct API returns HTTP 409 with code `automation_trigger_not_ready` and
+  leaves the observed run count at `6 → 6`.
+- The executor control selects a real Agent and persists `executor_type` and
+  `executor_id`. The right Agent pane collapse control preserves draft/history;
+  keyboard resize was verified and the obsolete pin control is absent.
+- Memories persist as named Markdown records scoped to an automation. Selected
+  MCP services were invoked in a real task. External OAuth completion,
+  production provider events, and outgoing Slack delivery are not claimed.
+- Antigravity post-GC, Steer, and Stop evidence is recorded in the audit. The
+  original worktree was absent after GC; the same session completed in a new
+  worktree. A Steer task was cancelled before a follow-up completed, and the
+  explicit Stop task was cancelled.
 
-## Verification
+## Evidence limits
 
-Use `make up C=api,desktop` and the generated development login. The primary target is Electron; do not substitute a browser preview. Verify UI writes with API readbacks. Use an isolated PostgreSQL test database for handler tests.
+- Current live runtime: API, Electron, and daemon on `ce0d1248`; it has not been
+  rebuilt after the source merge to `530d99b6`.
+- Mouse-drag resize was not verified.
+- The final-head visual check after removal of the persistent auth summary is
+  not claimed because the live runtime predates the final merge.
+- Cloud CI remains pending at the documented source head; do not report the PR
+  as green until that run completes.
 
-The audit records screenshots, focused test results, and real MCP/memory runs. Provider webhook and Slack HTTP fixtures establish local integration behavior; they do not prove that a production provider is configured or that a live external message was delivered. The latest dirty follow-up still needs the full handler rerun, the latest runtime continuation checks, and Antigravity post-GC/Stop/Steer verification.
-
-Before delivery, finish the independent review, the latest interactive Agent-panel runtime checks, the final focused test/typecheck/lint passes, and current PR CI. Keep the goal active until the required evidence is complete.
+Before delivery, update the PR body with the final CI/runtime state and keep the
+PR head, runtime commit, and evidence boundaries explicit. No tests were run
+for this documentation-only update.
