@@ -76,7 +76,9 @@ export function offsetForPath(path) {
   return cksum(Buffer.from(path)) % OFFSET_MODULO;
 }
 
-export function rendererPortForPath(path) {
+export function rendererPortForPath(path, channel = "development") {
+  // A disjoint 15174–16173 block has no Chromium-restricted ports.
+  if (channel === "staging") return 15174 + offsetForPath(path);
   return avoidRestrictedPort(RENDERER_PORT_BASE + offsetForPath(path));
 }
 
@@ -101,9 +103,11 @@ export function appSuffixForPath(path) {
 
 // The OS callback identity must not share the 1000-slot port namespace. A
 // truncated SHA-256 of the full app path stays stable for this checkout and
-// makes collisions between arbitrary worktree locations negligible.
-export function callbackProtocolForPath(appPath) {
-  return `patchbay-canary-${identityHashForPath(appPath)}`;
+// makes collisions between arbitrary worktree locations negligible. Keep the
+// hash in sync with apps/desktop/src/shared/desktop-app-identity.ts.
+export function callbackProtocolForPath(appPath, channel = "development") {
+  const prefix = channel === "staging" ? "patchbay-staging" : "patchbay-canary";
+  return `${prefix}-${identityHashForPath(appPath)}`;
 }
 
 // A linked git worktree has a `.git` FILE (a "gitdir:" pointer); the primary
@@ -129,21 +133,26 @@ export function applyWorktreeDevEnv(env, { root, log = false } = {}) {
   const hasPort = Boolean(env.DESKTOP_RENDERER_PORT);
   const hasSuffix = Boolean(env.DESKTOP_APP_SUFFIX);
   const linked = isLinkedWorktree(root);
+  const channel = env.PATCHBAY_DESKTOP_CHANNEL === "staging" ? "staging" : "development";
 
-  if (linked && !hasPort) {
-    env.DESKTOP_RENDERER_PORT = String(rendererPortForPath(root));
+  if (!hasPort && (linked || channel === "staging")) {
+    env.DESKTOP_RENDERER_PORT = String(
+      linked ? rendererPortForPath(root, channel) : 15173,
+    );
   }
   if (linked && !hasSuffix) env.DESKTOP_APP_SUFFIX = appSuffixForPath(root);
   // Callback ownership is not an override knob: letting ambient shell state
   // choose it can make two otherwise isolated checkouts claim one OS scheme.
   env.DESKTOP_CALLBACK_PROTOCOL = callbackProtocolForPath(
     join(root, "apps", "desktop"),
+    channel,
   );
 
   if (log) {
+    const display = channel === "staging" ? "Orvilo Staging" : "Orvilo Canary";
     const appName = env.DESKTOP_APP_SUFFIX
-      ? `Patchbay Canary ${env.DESKTOP_APP_SUFFIX}`
-      : "Patchbay Canary";
+      ? `${display} ${env.DESKTOP_APP_SUFFIX}`
+      : display;
     const renderer = env.DESKTOP_RENDERER_PORT ?? "5173";
     console.log(
       `[dev:desktop] checkout isolation → renderer port ${renderer}, ` +

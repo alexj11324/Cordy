@@ -473,3 +473,24 @@ func TestAuth_MCN_FleetUnreachableReturns503(t *testing.T) {
 		t.Fatalf("expected 503, got %d", w.Code)
 	}
 }
+
+func TestExtractToken_IgnoresProductionCookieWhenStagingNameConfigured(t *testing.T) {
+	t.Setenv("AUTH_COOKIE_NAME", "patchbay_staging_auth")
+	req := httptest.NewRequest("GET", "/api/me", nil)
+	req.AddCookie(&http.Cookie{Name: auth.AuthCookieName, Value: "production-jwt"})
+	token, fromCookie := extractToken(req)
+	if token != "" || fromCookie {
+		t.Fatalf("got token=%q fromCookie=%v; production cookie must be ignored", token, fromCookie)
+	}
+}
+
+func TestExtractToken_PrefersConfiguredCookieWhenBothArePresent(t *testing.T) {
+	t.Setenv("AUTH_COOKIE_NAME", "patchbay_staging_auth")
+	req := httptest.NewRequest("GET", "/api/me", nil)
+	req.AddCookie(&http.Cookie{Name: auth.AuthCookieName, Value: "production-jwt"})
+	req.AddCookie(&http.Cookie{Name: "patchbay_staging_auth", Value: "staging-jwt"})
+	token, fromCookie := extractToken(req)
+	if !fromCookie || token != "staging-jwt" {
+		t.Fatalf("got token=%q fromCookie=%v, want staging-jwt from cookie", token, fromCookie)
+	}
+}

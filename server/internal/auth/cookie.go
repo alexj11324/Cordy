@@ -18,10 +18,45 @@ import (
 )
 
 const (
-	AuthCookieName      = "patchbay_auth"
+	// AuthCookieName is the production HttpOnly session cookie. Staging and
+	// other sibling environments under the same parent domain must override
+	// AUTH_COOKIE_NAME; AuthCookie() is the runtime name.
+	AuthCookieName = "patchbay_auth"
+	// CSRFCookieName is the production JS-readable CSRF cookie. Runtime name
+	// is CSRFCookie(), overridden by CSRF_COOKIE_NAME.
 	CSRFCookieName      = "patchbay_csrf"
 	defaultAuthTokenTTL = 30 * 24 * time.Hour // 30 days
+	authCookieNameEnv   = "AUTH_COOKIE_NAME"
+	csrfCookieNameEnv   = "CSRF_COOKIE_NAME"
 )
+
+// AuthCookie returns the HttpOnly session cookie name. AUTH_COOKIE_NAME
+// overrides the production default so a narrower staging Domain cannot be
+// shadowed by an older same-named production cookie. Invalid values fall
+// back to AuthCookieName. Not cached: tests use t.Setenv.
+func AuthCookie() string {
+	return cookieNameFromEnv(authCookieNameEnv, AuthCookieName, "patchbay_staging_auth")
+}
+
+// CSRFCookie returns the CSRF cookie name. CSRF_COOKIE_NAME overrides the
+// production default. Invalid values fall back to CSRFCookieName.
+func CSRFCookie() string {
+	return cookieNameFromEnv(csrfCookieNameEnv, CSRFCookieName, "patchbay_staging_csrf")
+}
+
+// Only names understood by the shared browser client are supported.
+func cookieNameFromEnv(envKey, fallback, staging string) string {
+	raw := strings.TrimSpace(os.Getenv(envKey))
+	if raw == "" {
+		return fallback
+	}
+	if raw != fallback && raw != staging {
+		slog.Warn("ignoring invalid cookie name; using default",
+			"env", envKey, "value", raw, "default", fallback)
+		return fallback
+	}
+	return raw
+}
 
 var (
 	ipCookieDomainWarnOnce sync.Once
@@ -153,7 +188,7 @@ func SetAuthCookies(w http.ResponseWriter, token string) error {
 	now := time.Now()
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     AuthCookieName,
+		Name:     AuthCookie(),
 		Value:    token,
 		Path:     "/",
 		Domain:   domain,
@@ -170,7 +205,7 @@ func SetAuthCookies(w http.ResponseWriter, token string) error {
 	}
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     CSRFCookieName,
+		Name:     CSRFCookie(),
 		Value:    csrfToken,
 		Path:     "/",
 		Domain:   domain,
@@ -190,7 +225,7 @@ func ClearAuthCookies(w http.ResponseWriter) {
 	secure := isSecureCookie()
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     AuthCookieName,
+		Name:     AuthCookie(),
 		Value:    "",
 		Path:     "/",
 		Domain:   domain,
@@ -202,7 +237,7 @@ func ClearAuthCookies(w http.ResponseWriter) {
 	})
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     CSRFCookieName,
+		Name:     CSRFCookie(),
 		Value:    "",
 		Path:     "/",
 		Domain:   domain,
@@ -229,7 +264,7 @@ func ValidateCSRF(r *http.Request) bool {
 		return false
 	}
 
-	authCookie, err := r.Cookie(AuthCookieName)
+	authCookie, err := r.Cookie(AuthCookie())
 	if err != nil || authCookie.Value == "" {
 		return false
 	}

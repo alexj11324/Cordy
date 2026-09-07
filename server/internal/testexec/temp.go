@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TempDir(t testing.TB) string {
@@ -27,9 +28,28 @@ func TempDir(t testing.TB) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
+		if err := removeAllWithRetry(dir); err != nil {
 			t.Errorf("remove executable fixture: %v", err)
 		}
 	})
 	return dir
+}
+
+// removeAllWithRetry deletes dir even when Windows still holds a mapping to a
+// fixture executable that just exited. processStillRunning can already be
+// false while the image file remains undeletable for a short window.
+func removeAllWithRetry(dir string) error {
+	var err error
+	delay := 20 * time.Millisecond
+	for attempt := 0; attempt < 10; attempt++ {
+		err = os.RemoveAll(dir)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(delay)
+		if delay < 400*time.Millisecond {
+			delay *= 2
+		}
+	}
+	return err
 }

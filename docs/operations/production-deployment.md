@@ -1,5 +1,10 @@
 # Aspectlylabs production delivery
 
+The public product (`patchbay.aspectlylabs.com`) is one of three isolated
+environments. Local development and internal staging are documented in
+[environments.md](environments.md). This file is the production-only
+acceptance contract.
+
 ## Goal and acceptance
 
 Every reviewed merge to `main` must produce and deploy one coherent production

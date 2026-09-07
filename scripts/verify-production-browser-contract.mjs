@@ -4,9 +4,48 @@ const SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const HANDOFF_VALUE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/u;
 const DESKTOP_CODE_PATTERN = /^pbd_[A-Za-z0-9_-]{43}$/u;
 
-export const PRODUCT_ORIGIN = "https://patchbay.aspectlylabs.com";
-export const API_ORIGIN = "https://api.aspectlylabs.com";
-export const ACCOUNTS_ORIGIN = "https://accounts.aspectlylabs.com";
+const ORIGINS = {
+  production: {
+    product: "https://patchbay.aspectlylabs.com",
+    api: "https://api.aspectlylabs.com",
+    accounts: "https://accounts.aspectlylabs.com",
+    desktopCallbackProtocol: "patchbay",
+  },
+  staging: {
+    product: "https://staging.aspectlylabs.com",
+    api: "https://api.staging.aspectlylabs.com",
+    accounts: "https://accounts.staging.aspectlylabs.com",
+    // Fixture scheme for the headless Desktop handoff. Unpackaged Staging
+    // uses patchbay-staging-<16 hex>://; this value is allow-listed and must
+    // never fall back to the production patchbay:// handler.
+    desktopCallbackProtocol: "patchbay-staging-aaaaaaaaaaaaaaaa",
+  },
+};
+
+export function hostedBrowserOrigins(
+  env = process.env.ORVILO_VERIFY_ENV ?? "production",
+) {
+  const origins = ORIGINS[env];
+  if (!origins) {
+    throw new Error(`unsupported browser verification environment: ${env}`);
+  }
+  return {
+    env,
+    product: origins.product,
+    api: origins.api,
+    accounts: origins.accounts,
+    cookieDomain: new URL(origins.product).hostname,
+    desktopCallbackProtocol: origins.desktopCallbackProtocol,
+  };
+}
+
+const hosted = hostedBrowserOrigins();
+export const DEPLOYMENT_ENV = hosted.env;
+export const PRODUCT_ORIGIN = hosted.product;
+export const API_ORIGIN = hosted.api;
+export const ACCOUNTS_ORIGIN = hosted.accounts;
+export const PRODUCT_COOKIE_DOMAIN = hosted.cookieDomain;
+export const DESKTOP_CALLBACK_PROTOCOL = hosted.desktopCallbackProtocol;
 
 export function requiredString(value, label) {
   if (typeof value !== "string" || value.trim() === "") {
@@ -125,12 +164,15 @@ export function requireBrowserReceipt(receipt, sourceSha) {
   };
 }
 
-export function requireDesktopCompletion(payload) {
+export function requireDesktopCompletion(
+  payload,
+  expectedProtocol = DESKTOP_CALLBACK_PROTOCOL,
+) {
   if (
     !payload ||
     typeof payload !== "object" ||
     !DESKTOP_CODE_PATTERN.test(payload.code) ||
-    payload.callback_protocol !== "patchbay"
+    payload.callback_protocol !== expectedProtocol
   ) {
     throw new Error("Accounts broker returned an invalid desktop completion");
   }

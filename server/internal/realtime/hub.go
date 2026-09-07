@@ -795,7 +795,7 @@ func HandleWebSocket(hub *Hub, mc MembershipChecker, pr OpaqueTokenResolver, res
 
 	var userID string
 	var guestCredential string
-	if cookie, err := r.Cookie(auth.AuthCookieName); err == nil && cookie.Value != "" {
+	if cookie, err := r.Cookie(auth.AuthCookie()); err == nil && cookie.Value != "" {
 		uid, errMsg := authenticateToken(cookie.Value, pr, r.Context())
 		if errMsg != "" {
 			status := http.StatusUnauthorized
