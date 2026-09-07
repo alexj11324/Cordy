@@ -73,6 +73,7 @@ services:
       ORVILO_ORIGIN_AUTH_TOKEN: ${ORVILO_ORIGIN_AUTH_TOKEN:?required}
       ORVILO_API_ORIGIN: https://orvilo-staging-api.nebula-spaces.com
       ORVILO_AUTH_BROKER_ORIGIN: https://orvilo-staging-accounts.nebula-spaces.com
+      ORVILO_PRODUCT_ORIGIN: https://orvilo-staging.nebula-spaces.com
     ports: ['127.0.0.1:14301:3000']
     mem_limit: 384m
     cpus: 0.5

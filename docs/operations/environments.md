@@ -54,10 +54,12 @@ orvilo setup self-host --profile staging \
   --app-url https://staging.aspectlylabs.com
 ```
 
-Desktop staging uses its own app name, `userData` path, and OS callback
-scheme (`orvilo-staging-<hash>://`), so a Canary session against localhost
-cannot leak cookies or tokens into staging, staging callbacks cannot open
-Canary or the packaged production app, and staging cannot leak into production.
+Desktop staging uses its own app name, `userData` path, OS callback
+scheme (`orvilo-staging-<hash>://`), and renderer port, so a Canary session
+against localhost cannot leak cookies or tokens into staging, both channels
+can run from the same checkout without `EADDRINUSE`, staging callbacks cannot
+open Canary or the packaged production app, and staging cannot leak into
+production.
 
 ### Public (production)
 

@@ -5,7 +5,9 @@ export const PRODUCTION_CSRF_COOKIE_NAME = "orvilo_csrf";
  * Staging CSRF cookie. The shared production Web image cannot bake a
  * build-time name, so the client prefers this name when both cookies are
  * present. Production hosts never receive `.staging.aspectlylabs.com`
- * cookies, so this is a no-op there.
+ * cookies, so this is a no-op there. The Go server only issues this name
+ * or PRODUCTION_CSRF_COOKIE_NAME; unknown CSRF_COOKIE_NAME values fall
+ * back to the production default.
  */
 export const STAGING_CSRF_COOKIE_NAME = "orvilo_staging_csrf";
 
