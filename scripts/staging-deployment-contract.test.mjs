@@ -173,8 +173,9 @@ test("staging compose overlays never reattach production projects", () => {
   assert.doesNotMatch(productionOverride, /CSRF_COOKIE_NAME/u);
   assert.match(environmentsDoc, /orvilo_staging_auth/u);
   assert.match(environmentsDoc, /orvilo_staging_csrf/u);
-  assert.doesNotMatch(stagingOverride, /orvilo_staging_/u);
-  assert.doesNotMatch(environmentsDoc, /orvilo_staging_/u);
+  // Reject pre-cutover cookie names after the complete identity rename.
+  assert.doesNotMatch(stagingOverride, /patchbay_staging_/u);
+  assert.doesNotMatch(environmentsDoc, /patchbay_staging_/u);
   for (const key of ["ORVILO_API_ORIGIN", "ORVILO_AUTH_BROKER_ORIGIN", "ORVILO_DESKTOP_BROKER_AUTH_TOKEN", "ORVILO_ORIGIN_AUTH_TOKEN"]) {
     assert.match(stagingBroker, new RegExp(`\\n      ${key}:`));
   }
