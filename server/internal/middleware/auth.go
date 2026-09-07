@@ -371,7 +371,7 @@ func extractToken(r *http.Request) (token string, fromCookie bool) {
 		}
 	}
 
-	if cookie, err := r.Cookie(auth.AuthCookieName); err == nil && cookie.Value != "" {
+	if cookie, err := r.Cookie(auth.SessionCookieName()); err == nil && cookie.Value != "" {
 		return cookie.Value, true
 	}
 

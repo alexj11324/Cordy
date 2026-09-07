@@ -200,6 +200,14 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
   process.env.CLERK_TESTING_TOKEN = credentials.testingToken;
   await clerkSetup({ publishableKey, dotenv: false });
   await setupClerkTestingToken({ context });
+  if (DEPLOYMENT_ENV === "staging") {
+    // Simulate a prior production login: parent-domain cookies must not
+    // shadow staging authentication or CSRF tokens.
+    await context.addCookies([
+      { name: "patchbay_auth", value: "production-session-fixture", domain: ".aspectlylabs.com", path: "/", httpOnly: true, secure: true, sameSite: "Strict" },
+      { name: "patchbay_csrf", value: "production-csrf-fixture", domain: ".aspectlylabs.com", path: "/", secure: true, sameSite: "Strict" },
+    ]);
+  }
   const page = await context.newPage();
   try {
     const initiated = await context.request.post(

@@ -120,6 +120,9 @@ its Compose project, Secret Manager entry, or smoke user here.
    deployment access. `ALLOWED_EMAILS` may list individual QA addresses; the
    gateway always adds `staging-smoke@aspectlylabs.com`, while the overlay disables
    open signup and domain-wide allowlists.
+   The staging cookie domain selects distinct `orvilo_staging_auth` and
+   `orvilo_staging_csrf` names, so parent-domain production cookies cannot
+   shadow staging login, mutation, WebSocket authentication, or logout.
 5. Install the origin nginx map from `deploy/origin/nginx/aspectlylabs-origin.conf`
    (staging server blocks are in the same file, different ports). Before reloading
    nginx, install a root-owned mode-0600 snippet at

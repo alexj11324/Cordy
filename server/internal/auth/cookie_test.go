@@ -30,6 +30,31 @@ func TestIsSecureCookie(t *testing.T) {
 	}
 }
 
+func TestStagingCookieIsolation(t *testing.T) {
+	t.Setenv("COOKIE_DOMAIN", ".staging.aspectlylabs.com")
+	recorder := httptest.NewRecorder()
+	if err := SetAuthCookies(recorder, "staging-session"); err != nil {
+		t.Fatal(err)
+	}
+	cookies := recorder.Result().Cookies()
+	if len(cookies) != 2 || cookies[0].Name != "orvilo_staging_auth" || cookies[1].Name != "orvilo_staging_csrf" {
+		t.Fatalf("unexpected staging cookies: %+v", cookies)
+	}
+	request := httptest.NewRequest("POST", "/api/issues", nil)
+	request.Header.Set("Cookie", AuthCookieName+"=production-session; "+cookies[0].Name+"="+cookies[0].Value)
+	request.Header.Set("X-CSRF-Token", cookies[1].Value)
+	if !ValidateCSRF(request) {
+		t.Fatal("parent-domain production cookie shadowed the staging session")
+	}
+	recorder = httptest.NewRecorder()
+	ClearAuthCookies(recorder)
+	for _, cookie := range recorder.Result().Cookies() {
+		if cookie.Name == AuthCookieName || cookie.Name == CSRFCookieName || cookie.MaxAge != -1 {
+			t.Fatal("staging logout must only clear staging cookies")
+		}
+	}
+}
+
 func TestCookieDomain(t *testing.T) {
 	cases := []struct {
 		name string

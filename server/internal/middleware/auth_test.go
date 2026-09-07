@@ -15,6 +15,16 @@ import (
 
 const redisTestDB = 13
 
+func TestExtractStagingTokenIgnoresParentDomainCookie(t *testing.T) {
+	t.Setenv("COOKIE_DOMAIN", ".staging.aspectlylabs.com")
+	request := httptest.NewRequest("GET", "/api/me", nil)
+	request.Header.Set("Cookie", auth.AuthCookieName+"=production-session; orvilo_staging_auth=staging-session")
+	token, fromCookie := extractToken(request)
+	if token != "staging-session" || !fromCookie {
+		t.Fatal("staging selected the parent-domain production cookie")
+	}
+}
+
 // newRedisTestClient connects to REDIS_TEST_URL, uses this package's logical
 // test DB, flushes, and skips when unset — same gating pattern the rest of the
 // suite uses for Redis-backed tests, so `go test ./...` works on a stock laptop

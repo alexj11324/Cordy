@@ -29,6 +29,22 @@ var (
 	authTokenTTLCached     time.Duration
 )
 
+// Staging receives parent-domain production cookies too, so its session and
+// CSRF names must be distinct even though COOKIE_DOMAIN is narrower.
+func SessionCookieName() string {
+	if strings.TrimPrefix(cookieDomain(), ".") == "staging.aspectlylabs.com" {
+		return "orvilo_staging_auth"
+	}
+	return AuthCookieName
+}
+
+func CSRFTokenCookieName() string {
+	if strings.TrimPrefix(cookieDomain(), ".") == "staging.aspectlylabs.com" {
+		return "orvilo_staging_csrf"
+	}
+	return CSRFCookieName
+}
+
 // parseAuthTokenTTL parses a raw AUTH_TOKEN_TTL value into a duration.
 // It first tries time.ParseDuration (e.g. "8760h", "720h30m"), then falls
 // back to parsing as integer seconds. Returns the parsed duration and true
@@ -153,7 +169,7 @@ func SetAuthCookies(w http.ResponseWriter, token string) error {
 	now := time.Now()
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     AuthCookieName,
+		Name:     SessionCookieName(),
 		Value:    token,
 		Path:     "/",
 		Domain:   domain,
@@ -170,7 +186,7 @@ func SetAuthCookies(w http.ResponseWriter, token string) error {
 	}
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     CSRFCookieName,
+		Name:     CSRFTokenCookieName(),
 		Value:    csrfToken,
 		Path:     "/",
 		Domain:   domain,
@@ -190,7 +206,7 @@ func ClearAuthCookies(w http.ResponseWriter) {
 	secure := isSecureCookie()
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     AuthCookieName,
+		Name:     SessionCookieName(),
 		Value:    "",
 		Path:     "/",
 		Domain:   domain,
@@ -202,7 +218,7 @@ func ClearAuthCookies(w http.ResponseWriter) {
 	})
 
 	http.SetCookie(w, &http.Cookie{
-		Name:     CSRFCookieName,
+		Name:     CSRFTokenCookieName(),
 		Value:    "",
 		Path:     "/",
 		Domain:   domain,
@@ -229,7 +245,7 @@ func ValidateCSRF(r *http.Request) bool {
 		return false
 	}
 
-	authCookie, err := r.Cookie(AuthCookieName)
+	authCookie, err := r.Cookie(SessionCookieName())
 	if err != nil || authCookie.Value == "" {
 		return false
 	}
