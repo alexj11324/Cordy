@@ -139,9 +139,23 @@ describe("worktree-dev-env", () => {
     const root = tmpRoot("dir");
     const env = { ORVILO_DESKTOP_CHANNEL: "staging" };
     applyWorktreeDevEnv(env, { root });
+    expect(env.DESKTOP_RENDERER_PORT).toBe("15173");
     expect(env.DESKTOP_CALLBACK_PROTOCOL).toBe(
       callbackProtocolForPath(join(root, "apps", "desktop"), "staging"),
     );
+  });
+
+  it("separates linked-worktree renderer channels and preserves explicit ports", () => {
+    const root = tmpRoot("file");
+    const development = {};
+    const staging = { ORVILO_DESKTOP_CHANNEL: "staging" };
+    applyWorktreeDevEnv(development, { root });
+    applyWorktreeDevEnv(staging, { root });
+    expect(staging.DESKTOP_RENDERER_PORT).toBe(String(15174 + offsetForPath(root)));
+    expect(staging.DESKTOP_RENDERER_PORT).not.toBe(development.DESKTOP_RENDERER_PORT);
+    staging.DESKTOP_RENDERER_PORT = "9999";
+    applyWorktreeDevEnv(staging, { root });
+    expect(staging.DESKTOP_RENDERER_PORT).toBe("9999");
   });
 
   it("respects port/name overrides but keeps callback ownership path-bound", () => {

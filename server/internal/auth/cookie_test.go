@@ -158,6 +158,8 @@ func TestCookieNamesFromEnv(t *testing.T) {
 	}{
 		{"unset", "", "", AuthCookieName, CSRFCookieName},
 		{"whitespace", "  ", "\t", AuthCookieName, CSRFCookieName},
+		{"unsupported custom names", "custom_auth", "custom_csrf", AuthCookieName, CSRFCookieName},
+		{"production explicit", AuthCookieName, CSRFCookieName, AuthCookieName, CSRFCookieName},
 		{"staging", "orvilo_staging_auth", "orvilo_staging_csrf", "orvilo_staging_auth", "orvilo_staging_csrf"},
 		{"hyphen rejected", "orvilo-staging-auth", "orvilo-staging-csrf", AuthCookieName, CSRFCookieName},
 		{"semicolon rejected", "orvilo_auth;evil", "", AuthCookieName, CSRFCookieName},

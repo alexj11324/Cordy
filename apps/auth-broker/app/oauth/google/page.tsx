@@ -9,10 +9,12 @@ import { desktopAttemptStorageKey, readDesktopHandoffBinding } from "@/lib/deskt
 import { hasClerkOAuthReturn, startGoogleOAuth } from "@/lib/google-oauth";
 import { useAuthMessages } from "@/lib/auth-messages";
 import { resolveStandaloneReturnUrl } from "@/lib/redirect";
+import { useProductOrigin } from "@/components/runtime-clerk-provider";
 
 export default function Page() { return <Suspense><Content /></Suspense>; }
 
 function Content() {
+  const productOrigin = useProductOrigin();
   const params = useSearchParams();
   const binding = useMemo(() => readDesktopHandoffBinding(params), [params]);
   const desktopRequest = params.get("platform") === "desktop";
@@ -20,8 +22,9 @@ function Content() {
     if (binding) return `/login?${binding.query}`;
     return resolveStandaloneReturnUrl(
       params.get("return_url") ?? params.get("redirect_url"),
+      productOrigin,
     );
-  }, [binding, params]);
+  }, [binding, params, productOrigin]);
   const clerk = useClerk();
   const { isLoaded: clerkLoaded } = useAuth();
   const messages = useAuthMessages();

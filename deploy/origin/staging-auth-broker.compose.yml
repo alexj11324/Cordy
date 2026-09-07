@@ -7,6 +7,7 @@ services:
     ports:
       - "127.0.0.1:43101:3000"
     environment:
+      ORVILO_PRODUCT_ORIGIN: https://staging.aspectlylabs.com
       ORVILO_API_ORIGIN: ${ORVILO_API_ORIGIN:-https://api.staging.aspectlylabs.com}
       ORVILO_AUTH_BROKER_ORIGIN: ${ORVILO_AUTH_BROKER_ORIGIN:-https://accounts.staging.aspectlylabs.com}
       CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?Set CLERK_PUBLISHABLE_KEY}

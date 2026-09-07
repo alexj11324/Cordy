@@ -8,9 +8,11 @@ import { readDesktopHandoffBinding } from "@/lib/desktop-handoff";
 import { consumeGoogleOAuthNonce, googleOAuthAttemptIsReady } from "@/lib/google-oauth";
 import { useAuthMessages } from "@/lib/auth-messages";
 import { resolveStandaloneReturnUrl } from "@/lib/redirect";
+import { useProductOrigin } from "@/components/runtime-clerk-provider";
 
 export default function Page() { return <Suspense><Content /></Suspense>; }
 function Content() {
+  const productOrigin = useProductOrigin();
   const params = useSearchParams();
   const binding = useMemo(() => readDesktopHandoffBinding(params), [params]);
   const desktopRequest = params.get("platform") === "desktop";
@@ -18,8 +20,9 @@ function Content() {
     if (binding) return `/login?${binding.query}`;
     return resolveStandaloneReturnUrl(
       params.get("return_url") ?? params.get("redirect_url"),
+      productOrigin,
     );
-  }, [binding, params]);
+  }, [binding, params, productOrigin]);
   const clerk = useClerk(); const { signIn } = useSignIn(); const { signUp } = useSignUp(); const router = useRouter(); const messages = useAuthMessages(); const attempted = useRef(false); const [error, setError] = useState(false);
   useEffect(() => {
     if (desktopRequest && !binding) { setError(true); return; }

@@ -135,9 +135,15 @@ its Compose project, Secret Manager entry, or smoke user here.
    still be *presented* to the staging hostname by the browser; the overlay
    therefore pins `AUTH_COOKIE_NAME=orvilo_staging_auth` and
    `CSRF_COOKIE_NAME=orvilo_staging_csrf` so Go does not read the older
-   production JWT first. A separate Clerk application also makes those
+   production JWT first. Cookie-name overrides support only the documented
+   production and staging names; arbitrary names fall back to production
+   because the shared browser client must recognize the CSRF cookie.
+   A separate Clerk application also makes those
    production cookies unusable. Generate a staging-only
    `ORVILO_ORIGIN_AUTH_TOKEN`; do not copy the production Worker secret.
+   The broker overlay pins `ORVILO_PRODUCT_ORIGIN=https://staging.aspectlylabs.com`;
+   its server layout supplies this public runtime origin to every browser login
+   and OAuth return path, even when reusing the production-built image.
    Include every required Compose variable, including `CORS_ALLOWED_ORIGINS`,
    `CLERK_JWT_KEY`, `CLERK_ISSUER`, and the matching desktop broker credential
    in both snapshots. Bootstrap validates the selected checkout before granting

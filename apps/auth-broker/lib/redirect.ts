@@ -24,12 +24,14 @@ function relativeReturnUrl(raw: string): string | null {
   }
 }
 
-/** Keep browser returns inside the broker or the frozen Orvilo product origin. */
+/** Keep browser returns inside the broker or its server-validated product origin. */
 export function resolveAccountsReturnUrl(
   raw: string | null | undefined,
+  productOrigin: string = PRODUCT_ORIGIN,
 ): string {
+  const defaultReturnUrl = new URL("/login", productOrigin).href;
   const value = raw?.trim() ?? "";
-  if (!value) return DEFAULT_ACCOUNTS_RETURN_URL;
+  if (!value) return defaultReturnUrl;
 
   const relative = relativeReturnUrl(value);
   if (relative) return relative;
@@ -38,7 +40,7 @@ export function resolveAccountsReturnUrl(
     const url = new URL(value);
     if (
       url.protocol === "https:" &&
-      url.origin === PRODUCT_ORIGIN &&
+      url.origin === productOrigin &&
       !url.username &&
       !url.password
     ) {
@@ -48,13 +50,14 @@ export function resolveAccountsReturnUrl(
     // Invalid values use the product login destination below.
   }
 
-  return DEFAULT_ACCOUNTS_RETURN_URL;
+  return defaultReturnUrl;
 }
 
 /** Standalone broker login must leave for the product, not loop back to itself. */
 export function resolveStandaloneReturnUrl(
   raw: string | null | undefined,
+  productOrigin: string = PRODUCT_ORIGIN,
 ): string {
-  const resolved = resolveAccountsReturnUrl(raw);
-  return resolved.startsWith("/") ? DEFAULT_ACCOUNTS_RETURN_URL : resolved;
+  const resolved = resolveAccountsReturnUrl(raw, productOrigin);
+  return resolved.startsWith("/") ? new URL("/login", productOrigin).href : resolved;
 }

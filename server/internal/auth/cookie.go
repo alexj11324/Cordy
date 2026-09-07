@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,28 +30,27 @@ const (
 	csrfCookieNameEnv   = "CSRF_COOKIE_NAME"
 )
 
-var cookieNamePattern = regexp.MustCompile(`^[A-Za-z0-9_]{1,64}$`)
-
 // AuthCookie returns the HttpOnly session cookie name. AUTH_COOKIE_NAME
 // overrides the production default so a narrower staging Domain cannot be
 // shadowed by an older same-named production cookie. Invalid values fall
 // back to AuthCookieName. Not cached: tests use t.Setenv.
 func AuthCookie() string {
-	return cookieNameFromEnv(authCookieNameEnv, AuthCookieName)
+	return cookieNameFromEnv(authCookieNameEnv, AuthCookieName, "orvilo_staging_auth")
 }
 
 // CSRFCookie returns the CSRF cookie name. CSRF_COOKIE_NAME overrides the
 // production default. Invalid values fall back to CSRFCookieName.
 func CSRFCookie() string {
-	return cookieNameFromEnv(csrfCookieNameEnv, CSRFCookieName)
+	return cookieNameFromEnv(csrfCookieNameEnv, CSRFCookieName, "orvilo_staging_csrf")
 }
 
-func cookieNameFromEnv(envKey, fallback string) string {
+// Only names understood by the shared browser client are supported.
+func cookieNameFromEnv(envKey, fallback, staging string) string {
 	raw := strings.TrimSpace(os.Getenv(envKey))
 	if raw == "" {
 		return fallback
 	}
-	if !cookieNamePattern.MatchString(raw) {
+	if raw != fallback && raw != staging {
 		slog.Warn("ignoring invalid cookie name; using default",
 			"env", envKey, "value", raw, "default", fallback)
 		return fallback
