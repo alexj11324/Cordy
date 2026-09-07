@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -310,6 +311,7 @@ func (h *Handler) GetLinearCatalog(w http.ResponseWriter, r *http.Request) {
 	}
 	catalog, err := h.linearAPI().Catalog(r.Context(), token)
 	if err != nil {
+		slog.Error("linear catalog fetch failed", "workspace_id", ws, "error", err)
 		writeError(w, 502, "failed to load Linear catalog")
 		return
 	}
