@@ -1,12 +1,12 @@
 version: 2
 
-project_name: patchbay
+project_name: orvilo
 
 builds:
-  - id: patchbay
-    main: ./cmd/patchbay
+  - id: orvilo
+    main: ./cmd/orvilo
     dir: server
-    binary: patchbay
+    binary: orvilo
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -23,8 +23,8 @@ builds:
       - arm64
 
 archives:
-  # Legacy archive name kept so already-released CLIs (whose `patchbay update`
-  # looks for `patchbay_{os}_{arch}.{ext}`) can keep self-updating. Remove
+  # Legacy archive name kept so already-released CLIs (whose `orvilo update`
+  # looks for `orvilo_{os}_{arch}.{ext}`) can keep self-updating. Remove
   # once those versions are no longer in use.
   - id: legacy
     files:
@@ -71,11 +71,11 @@ release:
   use_existing_draft: true
 
 homebrew_casks:
-  - name: patchbay
+  - name: orvilo
     ids:
       - versioned
     binaries:
-      - patchbay
+      - orvilo
     repository:
       owner: alexj11324
       name: homebrew-tap
@@ -86,7 +86,7 @@ homebrew_casks:
     # generated cask only after it promotes the fully gated GitHub release.
     skip_upload: true
     homepage: "https://github.com/alexj11324/Cordy"
-    description: "Patchbay CLI — local agent runtime and management tool for the Patchbay platform"
-    # No license stanza: Patchbay ships under the Orvilo License (Apache 2.0
+    description: "Orvilo CLI — local agent runtime and management tool for the Orvilo platform"
+    # No license stanza: Orvilo ships under the Orvilo License (Apache 2.0
     # terms with additional conditions, see LICENSE), which has no SPDX
     # identifier, so declaring "Apache-2.0" here would be a false claim.
