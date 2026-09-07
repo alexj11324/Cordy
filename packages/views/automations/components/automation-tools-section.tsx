@@ -29,8 +29,12 @@ import { AutomationSlackToolRow } from "./automation-slack-tool-row";
 export function AutomationToolsSection({
   automation,
   canWrite,
+  onToolsChange,
+  saving = false,
 }: {
-  automation: Automation;
+  automation: Pick<Automation, "id" | "tools">;
+  onToolsChange?: (tools: AutomationToolsConfig) => void;
+  saving?: boolean;
   canWrite: boolean;
 }) {
   const { t } = useT("automations");
@@ -63,10 +67,11 @@ export function AutomationToolsSection({
   }, [installedSlackKey, slackCatalog, slackConnected]);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [memoriesOpen, setMemoriesOpen] = useState(false);
-  const busy = updateAutomation.isPending;
+  const busy = saving || updateAutomation.isPending;
 
   const persist = (next: AutomationToolsConfig) => {
-    if (busy) return;
+    if (busy || !canWrite) return;
+    if (onToolsChange) { onToolsChange(next); return; }
     updateAutomation.mutate(
       { id: automation.id, tools: { ...next } },
       {
@@ -93,6 +98,8 @@ export function AutomationToolsSection({
                 size="sm"
                 variant="ghost"
                 className="h-7 text-caption"
+                disabled={!automation.id || busy}
+                title={!automation.id ? t(($) => $.create_settings.memory_after_save) : undefined}
                 onClick={() => setMemoriesOpen(true)}
               >
                 {t(($) => $.settings.tools_manage)}

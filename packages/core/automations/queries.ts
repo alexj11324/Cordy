@@ -119,3 +119,15 @@ export function cronPreviewOptions(
     retry: false,
   });
 }
+
+export function workspaceAutomationRunsOptions(
+  wsId: string,
+  params: Parameters<typeof api.listWorkspaceAutomationRuns>[0],
+) {
+  return queryOptions({
+    queryKey: [...automationKeys.all(wsId), "workspace-runs", params],
+    queryFn: () => api.listWorkspaceAutomationRuns(params),
+    enabled: wsId.length > 0,
+    refetchInterval: 30_000,
+  });
+}

@@ -4824,6 +4824,16 @@ export class ApiClient {
     );
   }
 
+  async listWorkspaceAutomationRuns(params: { scope: "mine" | "team"; search?: string; statuses?: string[]; offset?: number }): Promise<{
+    runs: (AutomationRun & { automation_title: string; executor_id: string })[];
+    summary: { total: number; successful_24h: number; failed_24h: number; successful_7d: number; failed_7d: number };
+  }> {
+    const search = new URLSearchParams({ scope: params.scope, offset: String(params.offset ?? 0) });
+    if (params.search) search.set("search", params.search);
+    for (const status of params.statuses ?? []) search.append("status", status);
+    return this.fetch(`/api/automations/runs?${search}`);
+  }
+
   async listAutomationRuns(id: string, params?: { limit?: number; offset?: number }): Promise<ListAutomationRunsResponse> {
     const search = new URLSearchParams();
     if (params?.limit) search.set("limit", params.limit.toString());
