@@ -111,18 +111,25 @@ const row = {
   canManage: true,
 } as AgentListRow;
 
-function renderPanel(onClose = vi.fn()) {
+function renderPanel(onClose = vi.fn(), panelRow = row) {
   return {
     onClose,
     ...render(
       <I18nProvider locale="en" resources={TEST_RESOURCES}>
-        <AgentProfilePanel row={row} onClose={onClose} />
+        <AgentProfilePanel row={panelRow} onClose={onClose} />
       </I18nProvider>,
     ),
   };
 }
 
 describe("AgentProfilePanel", () => {
+  it("hides Edit from read-only viewers and keeps unsupported destinations as text", () => {
+    const { container } = renderPanel(vi.fn(), { ...row, canManage: false });
+    expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
+    expect(screen.getByText("Agent instructions").closest("a")).toBeNull();
+    expect(container.querySelector('a[href*="view=instructions"], a[href*="view=skills"], a[href*="view=mcp_config"], a[href*="view=work"]')).toBeNull();
+  });
+
   it("uses the Buzz-style profile hero and grouped info rows", () => {
     renderPanel();
 

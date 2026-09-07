@@ -187,6 +187,7 @@ export function AgentProfilePanel({
             {t(($) => $.profile_panel.title)}
           </h2>
           <div className="flex shrink-0 items-center gap-1">
+            {row.canManage ? (
             <Button
               className="text-body"
               nativeButton={false}
@@ -198,6 +199,7 @@ export function AgentProfilePanel({
             >
               {t(($) => $.profile_panel.edit)}
             </Button>
+            ) : null}
             <Button
               aria-label={t(($) => $.profile_panel.close)}
               onClick={onClose}
@@ -245,7 +247,6 @@ export function AgentProfilePanel({
                 <div className="space-y-5">
                   <ProfileSection title={t(($) => $.profile_panel.tab_info)}>
                     <ProfileRow
-                      href={detailWithView("instructions")}
                       icon={MessageSquare}
                       label={t(($) => $.profile_panel.agent_instructions)}
                       onClick={onClose}
@@ -374,7 +375,6 @@ export function AgentProfilePanel({
                     title={t(($) => $.profile_panel.tab_capabilities)}
                   >
                     <ProfileRow
-                      href={detailWithView("skills")}
                       icon={Wrench}
                       label={t(($) => $.tabs.skills)}
                       onClick={onClose}
@@ -382,7 +382,6 @@ export function AgentProfilePanel({
                     />
                     {hasMcp ? (
                       <ProfileRow
-                        href={detailWithView("mcp_config")}
                         icon={Settings2}
                         label={t(($) => $.tabs.mcp_config)}
                         onClick={onClose}
@@ -397,7 +396,6 @@ export function AgentProfilePanel({
                 <div className="space-y-5">
                   <ProfileSection title={t(($) => $.profile_panel.tab_work)}>
                     <ProfileRow
-                      href={detailWithView("work")}
                       icon={Activity}
                       label={t(($) => $.tabs.work)}
                       onClick={onClose}

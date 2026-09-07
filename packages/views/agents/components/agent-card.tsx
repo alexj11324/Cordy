@@ -1,10 +1,9 @@
 "use client";
 
-import { AlertCircle, Plus } from "lucide-react";
+import { AlertCircle, Check, Plus } from "lucide-react";
 import type { AgentAvailability } from "@patchbay/core/agents";
 import { isAgentRuntimeBound } from "@patchbay/core/agents";
 import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
 import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { cn } from "@patchbay/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -157,11 +156,15 @@ export function AgentCard({
             type="button"
             variant="ghost"
           >
-            <Checkbox
-              checked={selected}
-              className="pointer-events-none"
-              tabIndex={-1}
-            />
+            <span
+              aria-hidden="true"
+              className={cn(
+                "pointer-events-none flex size-4 items-center justify-center rounded-sm border",
+                selected ? "border-primary bg-primary text-primary-foreground" : "border-input",
+              )}
+            >
+              {selected ? <Check className="size-3" /> : null}
+            </span>
           </Button>
           <AgentRowActions
             agent={agent}
