@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -378,6 +379,30 @@ func TestAutomationQuotaTerminalUpdateNeedsNoTransactionStarter(t *testing.T) {
 	}
 	if updated.Status != "completed" || updated.QuotaReservationID.Valid {
 		t.Fatalf("completed off-path run = %+v", updated)
+	}
+}
+
+func TestAutomationCompletionPreservesSlackReceipts(t *testing.T) {
+	fixture := newAutomationQuotaFixture(t, entitlement.ActionOff, 1)
+	ctx := context.Background()
+	run, err := fixture.queries.CreateAutomationRun(ctx, fixture.createRunArgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.pool.Exec(ctx, `UPDATE automation_run SET result='{"output":"initial","slack_summary_deliveries":["C123"]}' WHERE id=$1`, run.ID); err != nil {
+		t.Fatal(err)
+	}
+	for _, result := range [][]byte{nil, []byte(`{"output":"later"}`)} {
+		updated, err := fixture.service.completeAutomationRun(ctx, db.UpdateAutomationRunCompletedParams{ID: run.ID, Result: result})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload struct {
+			Channels []string `json:"slack_summary_deliveries"`
+		}
+		if err := json.Unmarshal(updated.Result, &payload); err != nil || len(payload.Channels) != 1 || payload.Channels[0] != "C123" {
+			t.Fatalf("lost receipt after terminal update: %s (%v)", updated.Result, err)
+		}
 	}
 }
 
