@@ -100,17 +100,25 @@ its Compose project, Secret Manager entry, or smoke user here.
 1. Create DNS for `staging.aspectlylabs.com`, `api.staging.aspectlylabs.com`,
    `accounts.staging.aspectlylabs.com`, and
    `accounts-origin.staging.aspectlylabs.com`.
-   Before enabling those routes, provision an origin TLS certificate whose SANs
-   cover `api.staging.aspectlylabs.com` and
-   `accounts-origin.staging.aspectlylabs.com`. The existing
-   `*.aspectlylabs.com` wildcard does **not** cover these nested names.
-   Because the nginx map shares `/etc/nginx/ssl/aspectlylabs.com/origin.pem`,
-   replace it only with a certificate that also retains every existing
-   production hostname (for example, the existing SANs plus
-   `*.staging.aspectlylabs.com`). Install the matching private key root-owned
-   with mode 0600. Validate nginx configuration and TLS hostname verification
-   for each new origin before enabling traffic; keep Cloudflare Full (strict)
-   validation enabled. Do not work around a missing SAN by disabling TLS checks.
+   Install a dedicated TLS certificate at
+   `/etc/nginx/ssl/staging.aspectlylabs.com/origin.pem` and
+   `origin.key` (private key root-owned, mode 0600). The production
+   `*.aspectlylabs.com` wildcard does **not** cover nested staging origin
+   hosts such as `api.staging.aspectlylabs.com` or
+   `accounts-origin.staging.aspectlylabs.com`. Required SANs are
+   `staging.aspectlylabs.com` plus `*.staging.aspectlylabs.com`, or the
+   explicit names `staging.aspectlylabs.com`,
+   `api.staging.aspectlylabs.com`, and
+   `accounts-origin.staging.aspectlylabs.com`. Confirm before nginx reload:
+
+   ```bash
+   openssl x509 -in /etc/nginx/ssl/staging.aspectlylabs.com/origin.pem -noout -ext subjectAltName
+   ```
+
+   Do not copy or symlink `/etc/nginx/ssl/aspectlylabs.com/origin.pem`.
+   `accounts.staging.aspectlylabs.com` is terminated at Cloudflare, not this
+   origin certificate. Keep Cloudflare Full (strict) validation enabled; do
+   not work around a missing SAN by disabling TLS checks.
 2. Create a separate Clerk application. Provision
    `staging-smoke@aspectlylabs.com` in that application only.
 3. Create the GitHub Environment `staging` (selected-branch policy: `main`)
@@ -137,7 +145,9 @@ its Compose project, Secret Manager entry, or smoke user here.
    gateway always adds `staging-smoke@aspectlylabs.com`, while the overlay disables
    open signup and domain-wide allowlists.
 5. Install the origin nginx map from `deploy/origin/nginx/aspectlylabs-origin.conf`
-   (staging server blocks are in the same file, different ports). Before reloading
+   (staging server blocks are in the same file, different ports). Staging HTTPS
+   server blocks load `/etc/nginx/ssl/staging.aspectlylabs.com/origin.pem`; nginx
+   `-t` fails closed if those files are missing. Before reloading
    nginx, install a root-owned mode-0600 snippet at
    `/etc/nginx/snippets/orvilo-staging-accounts-origin-auth.conf`. It must reject
    requests unless `$http_x_patchbay_origin_auth` equals the staging-only
