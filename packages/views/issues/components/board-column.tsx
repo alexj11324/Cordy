@@ -19,6 +19,7 @@ import {
   DropdownMenuItem,
 } from "@patchbay/ui/components/ui/dropdown-menu";
 import { useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
+import { STATUS_CONFIG } from "@patchbay/core/issues/config";
 import { useViewBaseline } from "../surface/view-baseline-context";
 import { StatusHeading } from "./status-heading";
 import { DraggableBoardCard } from "./board-card";
@@ -190,7 +191,11 @@ export const BoardColumn = memo(function BoardColumn({
   );
 
   return (
-    <div style={{ width: BOARD_COL_WIDTH }} className="group/col flex shrink-0 flex-col">
+    <div
+      data-board-column={group.id}
+      style={{ width: BOARD_COL_WIDTH }}
+      className={`group/col flex shrink-0 flex-col rounded-xl ${status ? STATUS_CONFIG[status].columnBg : "bg-muted/40"}`}
+    >
       <div className="mb-1.5 flex items-center justify-between px-1">
         <BoardGroupHeading group={group} count={totalCount ?? issueIds.length} />
 

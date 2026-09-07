@@ -1,5 +1,7 @@
 "use client";
 
+import type { MoveIssueCallbacks } from "../surface/use-issue-surface-actions";
+
 import { memo, useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { ChevronRight, Plus } from "lucide-react";
 import { Accordion } from "@base-ui/react/accordion";
@@ -82,7 +84,7 @@ function ListViewImpl({
   projectMap?: Map<string, Project>;
   statusPagination: IssueStatusPagination;
   projectId?: string;
-  onMoveIssue?: (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => void;
+  onMoveIssue?: (issueId: string, updates: DragMoveUpdates, callbacks?: MoveIssueCallbacks) => void;
   onCreateIssue?: (defaults: IssueCreateDefaults) => void;
 }) {
   const listCollapsedStatuses = useViewStore(
@@ -281,7 +283,7 @@ function ListViewImpl({
             ...getMoveUpdates(finalGroup, currentIssue.position, currentIssue),
             ...getMoveAnchors(targetIds, activeId),
           },
-          beginSettle(),
+          { onSettled: beginSettle() },
         );
         return;
       }
@@ -307,7 +309,7 @@ function ListViewImpl({
           ...getMoveUpdates(finalGroup, newPosition, currentIssue),
           ...getMoveAnchors(finalIds, activeId),
         },
-        beginSettle(),
+        { onSettled: beginSettle() },
       );
     },
     [issues, groups, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, setColumns, columnsRef, isDraggingRef],
