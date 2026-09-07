@@ -1067,6 +1067,7 @@ func TestTriggerAutomationAllowsActiveDuplicateIssue(t *testing.T) {
 	var automation AutomationResponse
 	w.JSON(&automation)
 	automationID = automation.ID
+	seedValidAutomationScheduleTrigger(t, automationID)
 
 	req = newRequest("POST", "/api/automations/"+automationID+"/trigger?workspace_id="+testWorkspaceID, nil)
 	req = withURLParam(req, "id", automationID)
@@ -1125,6 +1126,7 @@ func TestScheduledAutomationAllowsActiveDuplicateIssue(t *testing.T) {
 	var automation AutomationResponse
 	w.JSON(&automation)
 	automationID = automation.ID
+	seedValidAutomationScheduleTrigger(t, automationID)
 
 	queries := db.New(testPool)
 	ap, err := queries.GetAutomation(ctx, parseUUID(automationID))
@@ -1187,6 +1189,7 @@ func TestAutomationCreatedIssueCreatorIsExecutorAgent(t *testing.T) {
 	var automation AutomationResponse
 	w.JSON(&automation)
 	automationID = automation.ID
+	seedValidAutomationScheduleTrigger(t, automationID)
 	if automation.CreatedByType != "member" || automation.CreatedByID != testUserID {
 		t.Fatalf("automation created_by = %s/%s, want member/%s", automation.CreatedByType, automation.CreatedByID, testUserID)
 	}
@@ -1276,6 +1279,7 @@ func TestAutomationCreateIssueAssociatesConfiguredProject(t *testing.T) {
 	var automation AutomationResponse
 	w.JSON(&automation)
 	automationID = automation.ID
+	seedValidAutomationScheduleTrigger(t, automationID)
 	if automation.ProjectID == nil || *automation.ProjectID != projectID {
 		t.Fatalf("automation project_id = %v, want %q", automation.ProjectID, projectID)
 	}
@@ -1349,6 +1353,7 @@ func TestAutomationDispatchUsesCurrentProjectBinding(t *testing.T) {
 	var created AutomationResponse
 	w.JSON(&created)
 	automationID = created.ID
+	seedValidAutomationScheduleTrigger(t, automationID)
 
 	queries := db.New(testPool)
 	ap, err := queries.GetAutomation(ctx, parseUUID(automationID))

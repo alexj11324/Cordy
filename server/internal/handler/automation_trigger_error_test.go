@@ -47,6 +47,7 @@ func TestTriggerAutomation_InternalFailureDoesNotEchoError(t *testing.T) {
 
 	agentID := createWebhookTestAgent(t, "MUL-6472 Trigger Agent")
 	automationID := createWebhookTestAutomation(t, agentID, "active", "run_only")
+	seedValidAutomationScheduleTrigger(t, automationID)
 
 	// A settled reservation with no run row pointing back at it. Reusing its
 	// key sends dispatch down the idempotent-reuse path, where the missing run

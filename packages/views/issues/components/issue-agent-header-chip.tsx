@@ -102,7 +102,7 @@ export const IssueAgentHeaderChip = memo(function IssueAgentHeaderChip({
       {openedTranscriptTask ? (
         <AgentThreadButton
           task={openedTranscriptTask}
-          title={t(($) => $.execution_log.transcript_tooltip)}
+          title={t(($) => $.execution_log.conversation_tooltip)}
           renderButton={false}
           open
           onOpenChange={(open) => {

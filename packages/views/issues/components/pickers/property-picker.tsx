@@ -44,6 +44,7 @@ export function PropertyPicker({
   onOpenChange,
   trigger,
   triggerRender,
+  disabled = false,
   width = "w-48",
   align = "end",
   side = "bottom",
@@ -59,6 +60,7 @@ export function PropertyPicker({
   onOpenChange: (v: boolean) => void;
   trigger: React.ReactNode;
   triggerRender?: React.ReactElement;
+  disabled?: boolean;
   width?: string;
   align?: "start" | "center" | "end";
   side?: React.ComponentProps<typeof PopoverContent>["side"];
@@ -182,6 +184,7 @@ export function PropertyPicker({
 
   const popoverTrigger = (
     <PopoverTrigger
+      disabled={disabled}
       className={triggerRender ? undefined : PICKER_TRIGGER_CLASS}
       render={triggerRender}
     >

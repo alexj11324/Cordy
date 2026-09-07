@@ -6093,6 +6093,8 @@ func providerNeedsInlineSystemPrompt(provider string) bool {
 // to --session. The transcript remains resumable when only the task workdir
 // changes, so binding it to workdir reuse discards healthy conversation history
 // and forces the model to reconstruct it through `orvilo chat history`.
+// Antigravity's --conversation id is likewise resolved from its user-home
+// transcript store, independent of the task workdir.
 //
 // A matching workdir is not sufficient on its own. Hermes keys its sessions to
 // HERMES_HOME — the per-task overlay under envRoot — not to the cwd, and the
@@ -6124,10 +6126,31 @@ func sameExistingDir(a, b string) bool {
 	return os.SameFile(ai, bi)
 }
 
+// isAgentThreadContinuation identifies the source-neutral task-level
+// conversation surface. Both fields are server-derived: the message is the
+// user turn and the root id is the validated lineage scope. Ordinary issue,
+// chat and root tasks must keep their existing best-effort resume behavior.
+func isAgentThreadContinuation(task Task) bool {
+	return strings.TrimSpace(task.AgentThreadMessage) != "" && strings.TrimSpace(task.AgentThreadRootTaskID) != ""
+}
+
+const agentThreadContinuationResumeUnavailableMessage = "Agent thread continuation is unavailable because the previous provider session could not be restored. Start a new task instead."
+
 func gateResumeToReachableSession(task *Task, taskCtx *execenv.TaskContextForEnv, provider, envWorkDir string, sessionHomeReachable bool, taskLog *slog.Logger) bool {
 	var reachable bool
 	if providerUsesPiSessionFile(provider) {
 		reachable = piSessionFilePresent(task.PriorSessionID)
+	} else if provider == "antigravity" {
+		// Antigravity's --conversation id addresses the transcript under its
+		// user-home app-data store. It is independent of the task cwd, so a GC'd
+		// workdir must not make a valid conversation look unreachable.
+		reachable = task.PriorSessionID != "" && sessionHomeReachable
+	} else if provider == "codex" && task.AgentThreadRootTaskID != "" {
+		// Source-neutral Agent continuations use a root-scoped Codex session
+		// store that survives task workdir GC. The old workdir is therefore not
+		// an ownership proof for this provider; rollout presence is checked by
+		// gateCodexResumeToRolloutPresence immediately after this gate.
+		reachable = task.PriorSessionID != "" && sessionHomeReachable
 	} else {
 		// Compare the directories, not the spelling. Reuse runs in the canonical
 		// path it validated and locked, which need not be character-identical to
@@ -6248,7 +6271,7 @@ func shouldReusePriorWorkdir(task Task, localAssignment *localDirectoryAssignmen
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] != "workdir" {
 		return "", false
 	}
-	if task.AgentID == "" || (task.IssueID == "" && task.ChatSessionID == "") {
+	if task.AgentID == "" || (task.IssueID == "" && task.ChatSessionID == "" && task.AgentThreadRootTaskID == "") {
 		return "", false
 	}
 	// Managed-env provenance is written only for non-local resumable envs, so
@@ -6266,10 +6289,12 @@ func shouldReusePriorWorkdir(task Task, localAssignment *localDirectoryAssignmen
 		return "", false
 	}
 	var marker struct {
-		ManagedBy     string `json:"managed_by"`
-		AgentID       string `json:"agent_id"`
-		IssueID       string `json:"issue_id"`
-		ChatSessionID string `json:"chat_session_id"`
+		ManagedBy             string `json:"managed_by"`
+		AgentID               string `json:"agent_id"`
+		RuntimeID             string `json:"runtime_id"`
+		IssueID               string `json:"issue_id"`
+		ChatSessionID         string `json:"chat_session_id"`
+		AgentThreadRootTaskID string `json:"agent_thread_root_task_id"`
 	}
 	if json.Unmarshal(data, &marker) != nil {
 		return "", false
@@ -6283,7 +6308,20 @@ func shouldReusePriorWorkdir(task Task, localAssignment *localDirectoryAssignmen
 		}
 		return workdir, true
 	}
-	if prov.ChatSessionID != task.ChatSessionID || marker.ChatSessionID != task.ChatSessionID {
+	if task.ChatSessionID != "" {
+		if prov.ChatSessionID != task.ChatSessionID || marker.ChatSessionID != task.ChatSessionID {
+			return "", false
+		}
+		return workdir, true
+	}
+	// Source-neutral Agent conversations have no mutable issue/chat foreign key.
+	// Their root task id is the durable scope, and the runtime fence prevents a
+	// stale path from being adopted by another provider/runtime.
+	if prov.IssueID != "" || prov.ChatSessionID != "" || marker.IssueID != "" || marker.ChatSessionID != "" ||
+		prov.AgentThreadRootTaskID != task.AgentThreadRootTaskID || marker.AgentThreadRootTaskID != task.AgentThreadRootTaskID {
+		return "", false
+	}
+	if task.RuntimeID == "" || prov.RuntimeID != task.RuntimeID || marker.RuntimeID != task.RuntimeID {
 		return "", false
 	}
 	return workdir, true
@@ -7178,13 +7216,16 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// Repos are passed as metadata only — the agent checks them out on demand
 	// via `orvilo repo checkout <url>`.
 	taskCtx := execenv.TaskContextForEnv{
-		IssueID:             task.IssueID,
-		TriggerCommentID:    task.TriggerCommentID,
-		TriggerThreadID:     task.TriggerThreadID,
-		CommentReplyTargets: commentReplyThreads(task),
-		NewCommentCount:     task.NewCommentCount,
-		NewCommentsSince:    task.NewCommentsSince,
-		PriorSessionResumed: task.PriorSessionID != "",
+		IssueID:                   task.IssueID,
+		IsAgentThreadContinuation: isAgentThreadContinuation(task),
+		RuntimeID:                 task.RuntimeID,
+		AgentThreadRootTaskID:     task.AgentThreadRootTaskID,
+		TriggerCommentID:          task.TriggerCommentID,
+		TriggerThreadID:           task.TriggerThreadID,
+		CommentReplyTargets:       commentReplyThreads(task),
+		NewCommentCount:           task.NewCommentCount,
+		NewCommentsSince:          task.NewCommentsSince,
+		PriorSessionResumed:       task.PriorSessionID != "",
 		// MUL-5305: the server sets this when a more recent Codex session was
 		// withheld (rollout missing) and PriorSessionID is an older fallback (or
 		// absent). Seed the brief's continuity disclosure from it; the local
@@ -7873,6 +7914,24 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if resumeReachable {
 		gateCodexResumeToRolloutPresence(&task, &taskCtx, provider, env.CodexHome, taskLog)
 	}
+	// A source-neutral Agent continuation is an explicit request to continue
+	// the provider conversation. Once the reachability gates have cleared its
+	// only session pointer, starting a fresh provider thread would silently
+	// turn that follow-up into an unrelated run. Persist the unavailable state
+	// through the normal terminal failure callback instead of invoking a
+	// backend at all.
+	strictContinuation := isAgentThreadContinuation(task)
+	if strictContinuation && task.PriorSessionID == "" {
+		taskLog.Warn("agent thread continuation: prior provider session unavailable; refusing fresh launch")
+		return TaskResult{
+			Status:                "blocked",
+			Comment:               agentThreadContinuationResumeUnavailableMessage,
+			WorkDir:               env.WorkDir,
+			EnvRoot:               env.RootDir,
+			FailureReason:         taskfailure.ReasonAgentUnknown.String(),
+			SessionRolloutMissing: true,
+		}, nil
+	}
 
 	// Inject runtime-specific config (meta skill) so the agent discovers .agent_context/.
 	runtimeBrief, err := execenv.InjectRuntimeConfig(env.WorkDir, provider, taskCtx)
@@ -8129,6 +8188,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		// than a flag. Empty when the prompt already carries the notice, so a turn
 		// can never pay for it twice (MUL-5722).
 		ResumeExpected:         task.PriorSessionID != "",
+		RequireResume:          strictContinuation,
 		ResumeContinuityNotice: backendResumeContinuityNotice(task),
 		ExtraArgs:              extraArgs,
 		CustomArgs:             customArgs,
@@ -8223,8 +8283,18 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// through the chat_session pointer (GH #6066).
 	var retiredSessionID string
 	defer func() { taskResult.RetiredSessionID = retiredSessionID }()
+	// A permanent resume rejection on an explicit Agent continuation cannot be
+	// repaired by a fresh thread. Mark the task's provider session unavailable
+	// while preserving the original no-fresh-session invariant. Transient busy
+	// rejections keep the session pointer for a later retry.
+	continuationSessionUnavailable := strictContinuation && result.Status == "failed" &&
+		result.ResumeRejected && !result.ResumeRejectedTransient
+	if continuationSessionUnavailable {
+		taskLog.Warn("agent thread continuation: provider permanently rejected the prior session")
+		result.SessionID = ""
+	}
 
-	if shouldRetryWithFreshSession(result, task.PriorSessionID, tools, provider) {
+	if shouldRetryTaskWithFreshSession(task, result, task.PriorSessionID, tools, provider) {
 		firstResult := result
 		firstUsage := result.Usage
 		firstTools := tools
@@ -8332,7 +8402,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// loss (PriorSessionResumeUnavailable, MUL-4424 transparency) even while
 	// resuming that older good session. No-op for non-Codex providers
 	// (env.CodexHome == "") and when there is no session.
-	var sessionRolloutMissing bool
+	sessionRolloutMissing := continuationSessionUnavailable
 	if result.SessionID != "" && !codexSessionResumable(env.CodexHome, result.SessionID, codexRolloutFlushWait) {
 		taskLog.Warn("codex session rollout not present in task CODEX_HOME; withholding resume pointer and flagging continuity gap",
 			"session_id", result.SessionID, "codex_home", env.CodexHome, "status", result.Status)
@@ -8531,6 +8601,13 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			FailureReason: failureReason,
 		}, nil
 	}
+}
+
+func shouldRetryTaskWithFreshSession(task Task, result agent.Result, priorSessionID string, tools int32, provider string) bool {
+	if isAgentThreadContinuation(task) {
+		return false
+	}
+	return shouldRetryWithFreshSession(result, priorSessionID, tools, provider)
 }
 
 // shouldRetryWithFreshSession reports whether a failed run that requested

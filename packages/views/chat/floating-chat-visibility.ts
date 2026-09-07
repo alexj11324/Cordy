@@ -7,10 +7,12 @@
  * there. The shortcut has to honour the same rule: flipping `isOpen` on a route
  * where the overlay cannot mount reads as a dead keypress, and then surprises
  * the user with a window that pops open (or vanishes) on the next navigation.
+ * An open task Agent panel also owns the corner where the launcher would sit.
  */
 export function isFloatingChatRouteSuppressed(
   pathname: string,
   chatPath: string,
+  agentThreadPath?: string,
 ): boolean {
-  return pathname === chatPath || pathname.startsWith(`${chatPath}/`);
+  return pathname === agentThreadPath || pathname === chatPath || pathname.startsWith(`${chatPath}/`);
 }

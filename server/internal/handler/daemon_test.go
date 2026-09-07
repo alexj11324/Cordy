@@ -2241,6 +2241,7 @@ func TestClaimTask_AutomationRunOnly_PopulatesWorkspaceAndProjectContext(t *test
 		"workspace_id":    testWorkspaceID,
 		"project_id":      projectID,
 		"title":           "claim workspace fixture",
+		"tools":           `{"memories":{"enabled":true}}`,
 		"executor_id":     agentID,
 		"execution_mode":  "run_only",
 		"created_by_type": "member",
@@ -2276,13 +2277,14 @@ func TestClaimTask_AutomationRunOnly_PopulatesWorkspaceAndProjectContext(t *test
 
 	var resp struct {
 		Task *struct {
-			WorkspaceID        string                `json:"workspace_id"`
-			ThreadName         string                `json:"thread_name"`
-			Repos              []RepoData            `json:"repos"`
-			ProjectID          string                `json:"project_id"`
-			ProjectTitle       string                `json:"project_title"`
-			ProjectDescription string                `json:"project_description"`
-			ProjectResources   []ProjectResourceData `json:"project_resources"`
+			WorkspaceID           string                `json:"workspace_id"`
+			ThreadName            string                `json:"thread_name"`
+			AutomationDescription string                `json:"automation_description"`
+			Repos                 []RepoData            `json:"repos"`
+			ProjectID             string                `json:"project_id"`
+			ProjectTitle          string                `json:"project_title"`
+			ProjectDescription    string                `json:"project_description"`
+			ProjectResources      []ProjectResourceData `json:"project_resources"`
 		} `json:"task"`
 	}
 	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
@@ -2299,6 +2301,9 @@ func TestClaimTask_AutomationRunOnly_PopulatesWorkspaceAndProjectContext(t *test
 	}
 	if resp.Task.ThreadName != "claim workspace fixture" {
 		t.Fatalf("automation task thread_name = %q, want automation title", resp.Task.ThreadName)
+	}
+	if !strings.Contains(resp.Task.AutomationDescription, "memory read "+automationID) {
+		t.Fatalf("run_only claim omitted memory instructions: %q", resp.Task.AutomationDescription)
 	}
 	if resp.Task.ProjectID != projectID {
 		t.Errorf("project_id = %q, want %q", resp.Task.ProjectID, projectID)

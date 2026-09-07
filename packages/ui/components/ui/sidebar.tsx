@@ -73,6 +73,8 @@ type SidebarContextProps = {
    * screens as well as phones, not phones alone.
    */
   isCompact: boolean
+  /** How this shell presents navigation below the compact breakpoint. */
+  compactBehavior: "sheet" | "collapse"
   toggleSidebar: () => void
   /**
    * The app shell keeps a `SidebarTrigger` of its own on screen, outside the
@@ -134,6 +136,7 @@ function SidebarProvider({
   onOpenChange: setOpenProp,
   hasExternalTrigger = false,
   hoverReveal = false,
+  compactBehavior = "sheet",
   glass = false,
   className,
   style,
@@ -154,10 +157,13 @@ function SidebarProvider({
   hasExternalTrigger?: boolean
   /** Enable a temporary pointer/focus reveal from the collapsed edge rail. */
   hoverReveal?: boolean
+  /** Use an overlay Sheet or keep the normal collapsible column below 1024px. */
+  compactBehavior?: "sheet" | "collapse"
   /** Enable the translucent desktop treatment. Compact sheets stay opaque. */
   glass?: boolean
 }) {
-  const isCompact = useIsCompact()
+  const belowCompactBreakpoint = useIsCompact()
+  const isCompact = compactBehavior === "sheet" && belowCompactBreakpoint
   const [openMobile, setOpenMobile] = React.useState(false)
 
   // This is the internal state of the sidebar. Hover reveal below is kept
@@ -288,6 +294,7 @@ function SidebarProvider({
       open,
       setOpen,
       isCompact,
+      compactBehavior,
       openMobile,
       setOpenMobile,
       toggleSidebar,
@@ -302,6 +309,7 @@ function SidebarProvider({
       open,
       setOpen,
       isCompact,
+      compactBehavior,
       openMobile,
       setOpenMobile,
       toggleSidebar,
@@ -345,6 +353,7 @@ function SidebarProvider({
             className
           )}
           data-sidebar-glass={glass ? "true" : undefined}
+          data-compact-behavior={compactBehavior}
           {...props}
         >
           {children}
@@ -369,13 +378,16 @@ function Sidebar({
 }) {
   const {
     isCompact,
+    compactBehavior,
     state,
     open,
     openMobile,
     setOpenMobile,
+    hoverReveal,
     revealHoverSidebar,
     hideHoverSidebar,
   } = useSidebar()
+  const isHoverRevealed = hoverReveal && !open && state === "expanded"
 
   if (collapsible === "none") {
     return (
@@ -424,12 +436,16 @@ function Sidebar({
   // frame before the hook resolved and collapsed it into a sheet.
   return (
     <div
-      className="group peer hidden text-sidebar-text-primary lg:block"
+      className={cn(
+        "group peer text-sidebar-text-primary",
+        compactBehavior === "collapse" ? "block" : "hidden lg:block"
+      )}
       data-state={state}
       data-collapsible={state === "collapsed" ? collapsible : ""}
       data-variant={variant}
       data-side={side}
       data-slot="sidebar"
+      data-hover-revealed={isHoverRevealed ? "true" : undefined}
       onPointerEnter={revealHoverSidebar}
       onPointerLeave={hideHoverSidebar}
       onFocusCapture={revealHoverSidebar}
@@ -461,7 +477,9 @@ function Sidebar({
         data-slot="sidebar-container"
         data-side={side}
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-out motion-reduce:transition-none lg:flex",
+          "fixed inset-y-0 h-svh w-(--sidebar-width) transition-[left,right,width] duration-200 ease-out motion-reduce:transition-none",
+          isHoverRevealed ? "z-20" : "z-10",
+          compactBehavior === "collapse" ? "flex" : "hidden lg:flex",
           "data-[side=left]:left-0 data-[side=left]:group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)] data-[side=right]:right-0 data-[side=right]:group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
           // Adjust the padding for floating and inset variants.
           variant === "floating" || variant === "inset"
@@ -474,7 +492,12 @@ function Sidebar({
         <div
           data-sidebar="sidebar"
           data-slot="sidebar-inner"
-          className="flex size-full flex-col bg-sidebar [[data-sidebar-glass=true]_&]:bg-transparent group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border"
+          className={cn(
+            "flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border",
+            isHoverRevealed
+              ? "rounded-r-xl bg-surface-raised shadow-[var(--floating-shadow)] ring-1 ring-surface-border"
+              : "[[data-sidebar-glass=true]_&]:bg-transparent"
+          )}
         >
           {children}
         </div>

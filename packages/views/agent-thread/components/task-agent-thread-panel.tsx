@@ -4,7 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api, ApiError, clientErrorMessage } from "@orvilo/core/api";
-import { agentThreadOptions, deriveAgentThreadTaskState, useContinueAgentThread } from "@orvilo/core/agent-thread";
+import {
+  agentThreadOptions,
+  deriveAgentThreadTaskState,
+  useContinueAgentThread,
+  useSteerAgentThread,
+} from "@orvilo/core/agent-thread";
 import { chatKeys, unionTaskMessagesBySeq } from "@orvilo/core/chat/queries";
 import { createSafeId } from "@orvilo/core/utils";
 import type { AgentAvailability } from "@orvilo/core/agents";
@@ -13,28 +18,27 @@ import { useT } from "../../i18n";
 import { buildTaskAgentThreadMessages } from "../task-agent-thread";
 import { AgentThreadSurface } from "./agent-thread-surface";
 
-export function TaskAgentThreadDialog({
+export function TaskAgentThreadPanel({
   workspaceId,
   taskId,
-  open,
-  onOpenChange,
+  onClose,
   title,
   unavailableReason,
 }: {
   workspaceId: string;
   taskId: string | null | undefined;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onClose: () => void;
   title?: ReactNode;
   unavailableReason?: ReactNode;
 }) {
   const { t } = useT("issues");
   const queryClient = useQueryClient();
   const continuation = useContinueAgentThread(workspaceId);
+  const steer = useSteerAgentThread(workspaceId, taskId ?? "");
   const pendingSendRef = useRef<{ content: string; idempotencyKey: string } | null>(null);
   const query = useQuery({
     ...agentThreadOptions(workspaceId, taskId ?? ""),
-    enabled: open && !!taskId && !!workspaceId,
+    enabled: !!taskId && !!workspaceId,
   });
   const tasks = useMemo(
     () => query.data?.thread_tasks?.length
@@ -125,6 +129,29 @@ export function TaskAgentThreadDialog({
     }
   }, [state.executingTask?.id, state.pendingTask?.task_id, t]);
 
+  const handleSteer = useCallback(async (queuedTaskId: string) => {
+    try {
+      await steer.mutateAsync(queuedTaskId);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 403) {
+        toast.error(localizedReason("agent_thread_invoke_forbidden"));
+      } else if (error instanceof ApiError && error.status === 409) {
+        const body = error.body && typeof error.body === "object"
+          ? error.body as Record<string, unknown> : undefined;
+        toast.error(
+          typeof body?.reason_code === "string" || typeof body?.reason === "string"
+            ? localizedReason(
+              typeof body?.reason_code === "string" ? body.reason_code : undefined,
+              typeof body?.reason === "string" ? body.reason : undefined,
+            )
+            : clientErrorMessage(error) || t(($) => $.agent_thread.steer_unavailable),
+        );
+      } else {
+        toast.error(clientErrorMessage(error) || t(($) => $.agent_thread.steer_failed));
+      }
+    }
+  }, [localizedReason, steer, t]);
+
   const reason = unavailableReason || (query.error
     ? clientErrorMessage(query.error) || t(($) => $.agent_thread.task_load_failed)
     : query.data && !query.data.can_continue
@@ -139,8 +166,8 @@ export function TaskAgentThreadDialog({
 
   return (
     <AgentThreadSurface
-      open={open}
-      onOpenChange={onOpenChange}
+      onClose={onClose}
+      collapseLabel={t(($) => $.agent_thread.collapse)}
       agentId={query.data?.agent.id ?? ""}
       agentName={agentName}
       title={title ?? t(($) => $.agent_thread.task_title, { name: agentName })}
@@ -154,6 +181,7 @@ export function TaskAgentThreadDialog({
       allowSubmitWhileRunning
       onSend={handleSend}
       onStop={() => void handleStop()}
+      onSendQueuedTaskNow={handleSteer}
       draftKey={taskId ? `agent-thread:${taskId}` : undefined}
       editorKey={taskId ? `agent-thread:${taskId}` : undefined}
     />

@@ -128,9 +128,12 @@ type PrepareParams struct {
 
 // TaskContextForEnv is the subset of task context used for writing context files.
 type TaskContextForEnv struct {
-	IssueID          string
-	TriggerCommentID string // comment that triggered this task (empty for on_assign)
-	TriggerThreadID  string // root comment ID for the triggering thread; falls back to TriggerCommentID when empty
+	IssueID                   string
+	IsAgentThreadContinuation bool   // follow-up task; the member message stays in the per-turn prompt
+	RuntimeID                 string // provider/runtime fence for task-level continuation provenance
+	AgentThreadRootTaskID     string // immutable server-validated root identity for task-level conversations
+	TriggerCommentID          string // comment that triggered this task (empty for on_assign)
+	TriggerThreadID           string // root comment ID for the triggering thread; falls back to TriggerCommentID when empty
 	// CommentReplyTargets is set for a comment run that coalesced comments
 	// spanning MORE THAN ONE root thread (MUL-4348). When it has >=2 entries the
 	// workflow's reply step fans out — one reply per thread — instead of the
@@ -555,13 +558,13 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	}
 
 	env := &Environment{
-		RootDir:          envRoot,
-		WorkDir:          workDir,
-		LocalDirectory:   params.LocalWorkDir != "",
-		LocalWorktree:    localWorktree,
+		RootDir:            envRoot,
+		WorkDir:            workDir,
+		LocalDirectory:     params.LocalWorkDir != "",
+		LocalWorktree:      localWorktree,
 		OrviloConfigRoot: orviloConfigRoot,
-		logger:           logger,
-		lockFile:         lockFile,
+		logger:             logger,
+		lockFile:           lockFile,
 	}
 
 	// Write context files into workdir (skills go to provider-native paths).
@@ -615,16 +618,19 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// follow-up can be claimed the instant the prior task completes — before
 	// the prior handler writes .gc_meta.json — so reuse eligibility must be
 	// provable from an artifact that exists the moment the env is created. Only
-	// managed (non-local_directory) issue and chat envs get this marker; that is
-	// exactly the set with a durable conversation scope. Non-fatal: a write failure
+	// managed (non-local_directory) issue, chat, and server-validated Agent
+	// conversation envs get this marker; that is exactly the set with a durable
+	// conversation scope. Non-fatal: a write failure
 	// only costs the next follow-up its session reuse (it falls back to a fresh
 	// session), which must never block dispatching this task.
-	if params.LocalWorkDir == "" && (params.Task.IssueID != "" || params.Task.ChatSessionID != "") {
+	if params.LocalWorkDir == "" && (params.Task.IssueID != "" || params.Task.ChatSessionID != "" || params.Task.AgentThreadRootTaskID != "") {
 		if err := WriteManagedEnvProvenance(envRoot, ManagedEnvProvenance{
-			WorkspaceID:   params.WorkspaceID,
-			IssueID:       params.Task.IssueID,
-			ChatSessionID: params.Task.ChatSessionID,
-			AgentID:       params.Task.AgentID,
+			WorkspaceID:           params.WorkspaceID,
+			RuntimeID:             params.Task.RuntimeID,
+			IssueID:               params.Task.IssueID,
+			ChatSessionID:         params.Task.ChatSessionID,
+			AgentThreadRootTaskID: params.Task.AgentThreadRootTaskID,
+			AgentID:               params.Task.AgentID,
 		}); err != nil && logger != nil {
 			logger.Warn("execenv: write managed env provenance failed (non-fatal); a follow-up may start a fresh session", "error", err)
 		}
@@ -633,7 +639,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// For Codex, set up a per-task CODEX_HOME seeded from ~/.codex/ with skills.
 	if params.Provider == "codex" {
 		codexHome := filepath.Join(envRoot, codexHomeDirName)
-		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{CodexVersion: params.CodexVersion, IsLocalDirectory: params.LocalWorkDir != "" || params.LocalWorktree != nil, SessionStoreKey: codexSessionStoreKey(params.Profile, params.Task), CodexCustomArgs: params.CodexCustomArgs}, logger); err != nil {
+		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{CodexVersion: params.CodexVersion, IsLocalDirectory: params.LocalWorkDir != "" || params.LocalWorktree != nil, SessionStoreKey: codexSessionStoreKey(params.Profile, params.Task), PersistentSessionStore: params.Task.AgentThreadRootTaskID != "", CodexCustomArgs: params.CodexCustomArgs}, logger); err != nil {
 			return nil, fmt.Errorf("execenv: prepare codex-home: %w", err)
 		}
 		if err := hydrateCodexSkills(codexHome, params.Task.AgentSkills, params.Task.DisabledRuntimeSkills, logger); err != nil {
@@ -911,7 +917,7 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 	// config (especially sandbox/network access) is up to date.
 	if params.Provider == "codex" {
 		codexHome := filepath.Join(env.RootDir, codexHomeDirName)
-		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{CodexVersion: params.CodexVersion, ResumeSessionID: params.ResumeSessionID, IsLocalDirectory: params.LocalDirectory, SessionStoreKey: codexSessionStoreKey(params.Profile, params.Task), CodexCustomArgs: params.CodexCustomArgs}, logger); err != nil {
+		if err := prepareCodexHomeWithOpts(codexHome, CodexHomeOptions{CodexVersion: params.CodexVersion, ResumeSessionID: params.ResumeSessionID, IsLocalDirectory: params.LocalDirectory, SessionStoreKey: codexSessionStoreKey(params.Profile, params.Task), PersistentSessionStore: params.Task.AgentThreadRootTaskID != "", CodexCustomArgs: params.CodexCustomArgs}, logger); err != nil {
 			logger.Warn("execenv: refresh codex-home failed", "error", err)
 		} else {
 			env.CodexHome = codexHome
@@ -1169,11 +1175,13 @@ const ManagedEnvProvenanceManagedBy = "orvilo-daemon-managed-env"
 // chat envs, so its presence is itself the "safe to reuse, not a user
 // local_directory" assertion; see shouldReusePriorWorkdir.
 type ManagedEnvProvenance struct {
-	ManagedBy     string `json:"managed_by"`
-	WorkspaceID   string `json:"workspace_id"`
-	IssueID       string `json:"issue_id,omitempty"`
-	ChatSessionID string `json:"chat_session_id,omitempty"`
-	AgentID       string `json:"agent_id"`
+	ManagedBy             string `json:"managed_by"`
+	WorkspaceID           string `json:"workspace_id"`
+	RuntimeID             string `json:"runtime_id,omitempty"`
+	IssueID               string `json:"issue_id,omitempty"`
+	ChatSessionID         string `json:"chat_session_id,omitempty"`
+	AgentThreadRootTaskID string `json:"agent_thread_root_task_id,omitempty"`
+	AgentID               string `json:"agent_id"`
 }
 
 // WriteManagedEnvProvenance persists the reuse-eligibility marker at the env

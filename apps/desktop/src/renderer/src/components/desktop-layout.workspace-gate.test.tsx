@@ -103,6 +103,9 @@ vi.mock("@orvilo/views/search", () => ({
 vi.mock("@orvilo/views/chat", () => ({
   FloatingChat: () => <div data-testid="floating-chat" />,
 }));
+vi.mock("@orvilo/views/agent-thread", () => ({
+  AgentThreadPanelLayout: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
 
 vi.mock("./tab-bar", () => ({ TabBar: () => null }));
 vi.mock("./window-overlay", () => ({ WindowOverlay: () => null }));

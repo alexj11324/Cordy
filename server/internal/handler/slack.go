@@ -106,6 +106,23 @@ func (h *Handler) ListSlackInstallations(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+func (h *Handler) GetSlackAutomationCatalog(w http.ResponseWriter, r *http.Request) {
+	if h.SlackInstall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Slack integration is not configured")
+		return
+	}
+	workspaceID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "workspace id")
+	if !ok {
+		return
+	}
+	catalog, err := h.SlackInstall.AutomationCatalog(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "failed to load Slack channel catalog")
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
+}
+
 // RegisterSlackBYORequest is the body for a bring-your-own-app install: the two
 // tokens the user pasted from their own Slack app.
 type RegisterSlackBYORequest struct {

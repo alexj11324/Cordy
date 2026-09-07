@@ -6,7 +6,7 @@ package execenv
 // flag that once gated it against a legacy verbose brief was retired in
 // MUL-4297, so this is now the only brief).
 //
-// Four kinds, mutually exclusive in practice. classifyTask documents the
+// Five kinds, mutually exclusive in practice. classifyTask documents the
 // tiebreak rule that applies if a future caller accidentally violates the
 // mutex.
 type taskKind int
@@ -32,18 +32,23 @@ const (
 	kindQuickCreate
 	// kindChat: interactive chat session, no issue.
 	kindChat
+	// kindAgentThread: a follow-up to a task without an attached issue.
+	// It answers the new member message instead of repeating a one-shot workflow.
+	kindAgentThread
 )
 
 // classifyTask maps a TaskContextForEnv to the single taskKind the slim
 // brief should be assembled for. Precedence (documented for the tiebreak
 // case, although the daemon never sets two specific-kind flags at once):
-// chat → quick-create → automation run-only → issue.
+// issue-less Agent follow-up → chat → quick-create → automation run-only → issue.
 //
 // Deliberately does not read ctx.TriggerCommentID: the classification must
 // not vary across runs of the same resumed session, or the brief's bytes
 // change and the prompt cache is lost from messages[0] onward (MUL-5377).
 func classifyTask(ctx TaskContextForEnv) taskKind {
 	switch {
+	case ctx.IsAgentThreadContinuation && ctx.IssueID == "":
+		return kindAgentThread
 	case ctx.ChatSessionID != "":
 		return kindChat
 	case ctx.QuickCreatePrompt != "":
@@ -67,7 +72,7 @@ func classifyTask(ctx TaskContextForEnv) taskKind {
 // agent into a guaranteed-failed CLI call. Note this is a kind-based
 // predicate, not a check on ctx.IssueID — kindIssue always carries an issue
 // id by construction (the daemon refuses to dispatch it otherwise), and the
-// other three kinds never do.
+// other kinds never do.
 func (k taskKind) hasIssueContext() bool {
 	return k == kindIssue
 }

@@ -1,5 +1,7 @@
 # Automations source map
 
+- `server/cmd/orvilo/cmd_automation_memory.go` registers `automation memory list/read/write/delete`; `server/internal/handler/automation_memory.go` serves `/api/automations/{id}/memories` and `/{name}`. Notes use the independent `automation_memory` table (594/595), explicit workspace teardown cleanup, and monotonic revisions to reject stale saves even across deletion and recreation. Members require automation write permission; task tokens require the same running automation and enabled memories. `AutomationToolsDispatchNotes` supplies the commands to both issue and run-only dispatch paths.
+
 - `server/cmd/orvilo/cmd_automation.go` registers `list`, `get`, `create`, `update`, `delete`, `trigger`, `runs`, `trigger-add`, `trigger-update`, `trigger-delete`, and `trigger-rotate-url`.
 - The CLI maps reads/writes to `/api/automations`, `/api/automations/{id}`, `/api/automations/{id}/trigger`, `/api/automations/{id}/runs`, and trigger subroutes. `automation get` nulls `webhook_token`, `webhook_path`, and `webhook_url` in normal JSON output and adds `has_webhook_token` plus `webhook_token_hint`; `--show-secrets` is an explicit JSON-only escape hatch that prints a credential-exposure warning to stderr.
 - `server/internal/service/automation.go` has `DispatchAutomation`, synchronous delivery-idempotent `AdmitAutomationWebhookDelivery`, and worker-side `DispatchAutomationForWebhookDelivery`; it creates `automation_run` and switches on `execution_mode`.

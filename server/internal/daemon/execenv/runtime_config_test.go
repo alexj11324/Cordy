@@ -1208,7 +1208,7 @@ func TestWriteRuntimeConfigFileReplacesMalformedHalfBlock(t *testing.T) {
 
 // Cleanup excises the marker block, preserving every byte of surrounding
 // user content. This is the local_directory invariant: a `claude` /
-// `codex` run started by the user after an Orvilo task must see the same
+// `codex` run started by the user after a Orvilo task must see the same
 // file the user wrote.
 func TestCleanupRuntimeConfigPreservesUserContent(t *testing.T) {
 	t.Parallel()
@@ -1932,6 +1932,7 @@ func TestBriefByteIdenticalAcrossRunsForEveryKind(t *testing.T) {
 		"chat":         {ChatSessionID: "chat-1", ChatChannelType: ChannelTypeSlack, AgentID: "a-1", AgentName: "Eve"},
 		"quick-create": {QuickCreatePrompt: "make an issue", AgentID: "a-1", AgentName: "Eve"},
 		"automation":   {AutomationRunID: "run-1", AutomationID: "ap-1", AgentID: "a-1", AgentName: "Eve"},
+		"agent-thread": {IsAgentThreadContinuation: true, AutomationID: "ap-1", AgentID: "a-1", AgentName: "Eve"},
 		// WeCom is the channel a real deployment flips the file-delivery
 		// verdict on. The Slack row above catches the same leak today, but only
 		// because the brief's copy is channel-agnostic; scope that copy to

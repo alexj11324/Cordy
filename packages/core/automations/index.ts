@@ -40,3 +40,12 @@ export {
   useReplayAutomationDelivery,
 } from "./mutations";
 export { buildAutomationWebhookUrl, maskAutomationWebhookUrl } from "./webhook";
+export {
+  automationMemoryKeys,
+  automationMemoryListOptions,
+  automationMemoryOptions,
+} from "./memory-queries";
+export {
+  useUpdateAutomationMemory,
+  useDeleteAutomationMemory,
+} from "./memory-mutations";

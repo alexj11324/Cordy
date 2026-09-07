@@ -303,8 +303,8 @@ const STATUS_TONE: Record<AgentTask["status"], string> = {
 // ─── Active row ────────────────────────────────────────────────────────────
 
 // One active (running / queued / dispatched / parked) task row. Running rows
-// keep status to a single live elapsed timer; transcript and stop stay available
-// as hover actions. Transcript content lazy-loads on click via TranscriptButton,
+// keep status to a single live elapsed timer; conversation and stop stay available
+// as hover actions. The interactive Agent conversation loads only when opened,
 // so the row no longer fetches task messages just to render a count.
 export function ActiveTaskRow({
   task,
@@ -337,11 +337,6 @@ export function ActiveTaskRow({
           now,
         )
       : "";
-
-  // Transcript only meaningful once messages exist — pure-queued and
-  // waiting_local_directory tasks haven't streamed any agent output yet.
-  const showTranscript =
-    task.status !== "queued" && task.status !== "deferred" && task.status !== "waiting_local_directory";
 
   const handleCancel = async () => {
     if (cancelling) return;
@@ -381,13 +376,11 @@ export function ActiveTaskRow({
         )}
       </RowStatus>
       <RowActions>
-        {showTranscript && (
-          <AgentThreadButton
-            task={task}
-            title={t(($) => $.execution_log.transcript_tooltip)}
-            onOpenChange={onTranscriptOpenChange}
-          />
-        )}
+        <AgentThreadButton
+          task={task}
+          title={t(($) => $.execution_log.conversation_tooltip)}
+          onOpenChange={onTranscriptOpenChange}
+        />
         <Tooltip>
           <TooltipTrigger
             render={
@@ -519,7 +512,7 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
         )}
       </RowStatus>
       <RowActions>
-        <AgentThreadButton task={task} title={t(($) => $.execution_log.transcript_tooltip)} />
+        <AgentThreadButton task={task} title={t(($) => $.execution_log.conversation_tooltip)} />
         {canRetry && (
           <Tooltip>
             <TooltipTrigger

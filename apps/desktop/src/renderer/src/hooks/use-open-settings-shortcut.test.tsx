@@ -27,7 +27,6 @@ function seedTabs() {
             url: "/acme/issues",
             resourceKey: "/acme/issues",
             title: "",
-            pinned: false,
             history: { stack: ["/acme/issues"], index: 0 },
             memento: { scroll: {}, view: {} },
           },

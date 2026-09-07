@@ -279,6 +279,28 @@
   background-color: transparent;
 }
 
+/* A collapsed desktop sidebar temporarily expands over the page instead of
+ * taking layout space. Native glass is correct while the sidebar is pinned,
+ * but here it lets the page's headings and controls show through navigation
+ * text. This selector deliberately outranks both the glass rules above and
+ * Electron's native-vibrancy container override while leaving pinned glass
+ * untouched. */
+[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
+  [data-slot="sidebar"][data-hover-revealed="true"]
+  [data-slot="sidebar-container"] {
+  background: var(--surface-raised);
+  border-inline-end: 1px solid var(--surface-border);
+  box-shadow: var(--floating-shadow);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
+  [data-slot="sidebar"][data-hover-revealed="true"]
+  [data-slot="sidebar-inner"] {
+  background-color: var(--surface-raised);
+}
+
 @media (prefers-reduced-transparency: reduce) {
   [data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
     [data-slot="sidebar-container"],

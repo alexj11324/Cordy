@@ -563,15 +563,81 @@ RETURNING *;
 -- locks the owners' workspace rows in the writer's own transaction and returns
 -- false once they are gone, so this statement writes no row instead of stranding
 -- a task in a workspace that has just been deleted (MUL-5999).
--- Attaches the issue a quick-create task produced back to the task row, once
--- the agent has finished and the issue exists. Guarded by `issue_id IS NULL`
--- so this never overwrites an issue id that was set at task creation (only
--- quick-create tasks land here unset). Fixes the activity row staying on
--- "Creating issue" forever after completion.
-UPDATE agent_task_queue
-SET issue_id = $2
-WHERE id = $1 AND issue_id IS NULL
-  AND lock_task_owner_rows(NULL, $2, NULL);
+-- Attaches the issue a quick-create task produced back to the root and any
+-- Agent-thread continuations already queued behind it. The bounded recursive
+-- walk accepts only server-authored continuation edges on the same Agent and
+-- runtime. Provider session ids may rotate between edges. Before assigning
+-- issue_id, queued descendants
+-- are ranked for the issue+Agent pending slot: an existing slot occupant or an
+-- already-dispatched thread task wins, otherwise one queued descendant stays
+-- pending and the rest return to deferred. A dispatched row is never silently
+-- requeued; a conflicting claimed row remains an explicit constraint failure.
+-- Deferred rows keep their due fire_at, so normal promotion advances them one
+-- at a time as the slot frees. The caller holds the Agent write fence, preventing
+-- a concurrent task insert from invalidating this snapshot.
+WITH RECURSIVE thread(id, agent_id, runtime_id, session_id, depth) AS (
+    SELECT root.id, root.agent_id, root.runtime_id, root.session_id, 0
+    FROM agent_task_queue root
+    WHERE root.id = @id AND root.issue_id IS NULL
+
+    UNION ALL
+
+    SELECT child.id, child.agent_id, child.runtime_id, child.session_id, parent.depth + 1
+    FROM thread parent
+    JOIN agent_task_queue child
+      ON child.context->>'agent_thread_parent_task_id' = parent.id::text
+    WHERE parent.depth < 100
+      AND child.issue_id IS NULL
+      AND child.chat_session_id IS NULL
+      AND child.automation_run_id IS NULL
+      AND child.agent_id = parent.agent_id
+      AND child.runtime_id = parent.runtime_id
+      AND child.trigger_evidence_kind = 'agent_thread_continuation'
+      AND child.trigger_evidence_ref_id = parent.id
+), queued_descendants AS (
+    SELECT candidate.id,
+           row_number() OVER (
+               ORDER BY
+                   candidate.priority DESC,
+                   candidate.created_at ASC,
+                   candidate.id ASC
+           ) AS queued_rank
+    FROM agent_task_queue candidate
+    JOIN thread ON thread.id = candidate.id
+    WHERE candidate.status = 'queued'
+), issue_slot AS (
+    SELECT
+        EXISTS (
+            SELECT 1
+            FROM agent_task_queue occupant
+            WHERE occupant.issue_id = @issue_id
+              AND occupant.agent_id = (SELECT agent_id FROM thread ORDER BY depth ASC LIMIT 1)
+              AND occupant.id NOT IN (SELECT id FROM thread)
+              AND (
+                  occupant.status IN ('queued', 'dispatched')
+                  OR (occupant.status = 'deferred' AND occupant.context->>'channel_issue_media_pending' = 'true')
+              )
+        )
+        OR EXISTS (
+            SELECT 1
+            FROM agent_task_queue claimed
+            JOIN thread ON thread.id = claimed.id
+            WHERE claimed.status = 'dispatched'
+        ) AS taken
+)
+UPDATE agent_task_queue task
+SET issue_id = @issue_id,
+    status = CASE
+        WHEN task.id IN (
+            SELECT queued.id
+            FROM queued_descendants queued
+            CROSS JOIN issue_slot slot
+            WHERE slot.taken OR queued.queued_rank > 1
+        ) THEN 'deferred'
+        ELSE task.status
+    END
+WHERE task.id IN (SELECT id FROM thread) AND task.issue_id IS NULL
+  AND lock_task_owner_rows(NULL, @issue_id, NULL);
 
 -- name: CreateRetryTask :one
 -- Fenced against workspace teardown: lock_task_owner_rows (migration 284)
@@ -803,6 +869,21 @@ RETURNING *;
 SELECT * FROM agent_task_queue
 WHERE id = $1;
 
+-- name: LockAgentThreadAgent :one
+-- Every continuation insert and quick-create issue link takes this exclusive
+-- Agent lock before touching task rows. The link path intentionally runs its
+-- recursive UPDATE as a later statement in the same transaction: under READ
+-- COMMITTED that gives it a fresh snapshot after any blocked continuation
+-- writer commits, so no newly inserted descendant can miss the issue link.
+-- lock_task_owner_rows preserves the workspace-before-owner lock order used by
+-- teardown before the Agent lock is upgraded to FOR UPDATE.
+SELECT agent.id
+FROM agent
+JOIN agent_task_queue task ON task.agent_id = agent.id
+WHERE task.id = @task_id
+  AND lock_task_owner_rows(agent.id, NULL, NULL)
+FOR UPDATE OF agent;
+
 -- name: LockAgentThreadTask :one
 -- Serializes continuations for one persisted provider thread. Owner rows are
 -- locked by lock_task_owner_rows before the task row to match claim ordering.
@@ -813,8 +894,9 @@ FOR UPDATE;
 
 -- name: ListAgentThreadTasks :many
 -- A task-level Agent conversation is a chain of normal task rows linked only
--- through private context. Keep resource, Agent, runtime and provider session
--- equal at every edge so a malformed child cannot cross a tenancy boundary.
+-- through private context. Keep resource, Agent and runtime equal at every
+-- edge so a malformed child cannot cross a tenancy boundary. Provider session
+-- ids may rotate as a provider resumes or recreates its native conversation.
 WITH RECURSIVE ancestors(id, depth) AS (
     SELECT @task_id::uuid, 0
     UNION ALL
@@ -827,7 +909,6 @@ WITH RECURSIVE ancestors(id, depth) AS (
       AND parent.agent_id = child_row.agent_id
       AND parent.issue_id IS NOT DISTINCT FROM child_row.issue_id
       AND parent.runtime_id = child_row.runtime_id
-      AND parent.session_id IS NOT DISTINCT FROM child_row.session_id
 ), root AS (
     SELECT id FROM ancestors ORDER BY depth DESC LIMIT 1
 ), thread(id, depth) AS (
@@ -841,7 +922,6 @@ WITH RECURSIVE ancestors(id, depth) AS (
       AND child.agent_id = parent.agent_id
       AND child.issue_id IS NOT DISTINCT FROM parent.issue_id
       AND child.runtime_id = parent.runtime_id
-      AND child.session_id IS NOT DISTINCT FROM parent.session_id
 )
 SELECT task.*
 FROM agent_task_queue task
@@ -849,23 +929,50 @@ JOIN thread ON thread.id = task.id
 ORDER BY task.created_at ASC, task.id ASC;
 
 -- name: GetAgentThreadContinuationByIdempotency :one
+WITH RECURSIVE ancestors(id, depth) AS (
+    SELECT @parent_task_id::uuid, 0
+    UNION ALL
+    SELECT parent.id, child.depth + 1
+    FROM ancestors child
+    JOIN agent_task_queue child_row ON child_row.id = child.id
+    JOIN agent_task_queue parent
+      ON parent.id::text = child_row.context->>'agent_thread_parent_task_id'
+    WHERE child.depth < 100
+      AND child_row.trigger_evidence_kind = 'agent_thread_continuation'
+      AND child_row.trigger_evidence_ref_id = parent.id
+      AND parent.agent_id = child_row.agent_id
+      AND parent.issue_id IS NOT DISTINCT FROM child_row.issue_id
+      AND parent.runtime_id = child_row.runtime_id
+), root AS (
+    SELECT id FROM ancestors ORDER BY depth DESC LIMIT 1
+), thread(id, depth) AS (
+    SELECT root.id, 0 FROM root
+    UNION ALL
+    SELECT child.id, thread.depth + 1
+    FROM agent_task_queue child
+    JOIN thread ON child.context->>'agent_thread_parent_task_id' = thread.id::text
+    JOIN agent_task_queue parent ON parent.id = thread.id
+    WHERE thread.depth < 100
+      AND child.trigger_evidence_kind = 'agent_thread_continuation'
+      AND child.trigger_evidence_ref_id = parent.id
+      AND child.agent_id = parent.agent_id
+      AND child.issue_id IS NOT DISTINCT FROM parent.issue_id
+      AND child.runtime_id = parent.runtime_id
+)
 SELECT candidate.*
 FROM agent_task_queue candidate
-JOIN agent_task_queue parent ON parent.id = @parent_task_id
+JOIN thread ON thread.id = candidate.id
 WHERE candidate.context->>'agent_thread_idempotency_key' = @idempotency_key::text
-  AND candidate.context->>'agent_thread_parent_task_id' IS NOT NULL
-  AND candidate.agent_id = parent.agent_id
-  AND candidate.issue_id IS NOT DISTINCT FROM parent.issue_id
-  AND candidate.runtime_id = parent.runtime_id
-  AND candidate.session_id IS NOT DISTINCT FROM parent.session_id
 ORDER BY candidate.created_at DESC
 LIMIT 1
 FOR UPDATE OF candidate;
 
 -- name: CreateAgentThreadContinuation :one
--- This is deliberately not a Chat task. It remains an issue task in the same
--- provider session and main execution lane; only the full user turn and
--- idempotency receipt are added to private context.
+-- This is deliberately not a Chat or Automation run task. It stays in the
+-- source task's issue/default execution lane and starts with the source's
+-- current provider session; a later provider rotation may update that id.
+-- Only the full user turn and idempotency receipt are added to private
+-- context.
 INSERT INTO agent_task_queue (
     id, agent_id, runtime_id, issue_id, status, priority,
     trigger_summary, context, session_id, work_dir,
@@ -875,9 +982,17 @@ INSERT INTO agent_task_queue (
     rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, fire_at
 )
 SELECT
-    @id, parent.agent_id, parent.runtime_id, parent.issue_id, 'deferred', parent.priority,
+    @id, parent.agent_id, parent.runtime_id, parent.issue_id, 'deferred', LEAST(parent.priority, 4),
     LEFT(@content::text, 200),
-    (COALESCE(parent.context, '{}'::jsonb)
+    ((CASE
+        -- Quick-create context drives one-shot issue creation and captured
+        -- source consumption. A conversation follow-up keeps only its
+        -- server-owned thread lineage; claim resolves workspace/project from
+        -- the validated root while terminal callbacks cannot mistake this
+        -- child for another one-shot quick-create execution.
+        WHEN parent.context->>'type' = 'quick_create' THEN '{}'::jsonb
+        ELSE COALESCE(parent.context, '{}'::jsonb)
+      END)
         - 'agent_thread_parent_task_id'
         - 'agent_thread_message'
         - 'agent_thread_idempotency_key'
@@ -895,12 +1010,33 @@ SELECT
     parent.rule_version_id, 'agent_thread_continuation', parent.id, now()
 FROM agent_task_queue parent
 WHERE parent.id = @parent_task_id
-  AND parent.issue_id IS NOT NULL
   AND parent.chat_session_id IS NULL
-  AND parent.automation_run_id IS NULL
   AND parent.session_id IS NOT NULL
-  AND parent.execution_lane_key =
-      'issue:' || parent.issue_id::text || ':agent:' || parent.agent_id::text || ':main'
+  AND (
+      (
+          parent.issue_id IS NOT NULL
+          AND parent.automation_run_id IS NULL
+          AND parent.execution_lane_key =
+              'issue:' || parent.issue_id::text || ':agent:' || parent.agent_id::text || ':main'
+      )
+      OR (
+          parent.issue_id IS NULL
+          AND parent.execution_lane_key = 'agent:' || parent.agent_id::text || ':default'
+          AND (
+              parent.automation_run_id IS NOT NULL
+              OR (
+                  parent.context->>'type' = 'quick_create'
+                  AND NULLIF(parent.context->>'workspace_id', '') IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1 FROM agent
+                      WHERE agent.id = parent.agent_id
+                        AND agent.workspace_id::text = parent.context->>'workspace_id'
+                  )
+              )
+              OR NULLIF(parent.context->>'agent_thread_parent_task_id', '') IS NOT NULL
+          )
+      )
+  )
   AND lock_task_owner_rows(parent.agent_id, parent.issue_id, parent.runtime_id)
 RETURNING *;
 

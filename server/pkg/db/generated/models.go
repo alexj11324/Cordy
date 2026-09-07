@@ -331,6 +331,15 @@ type AutomationCollaborator struct {
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 }
 
+type AutomationMemory struct {
+	AutomationID pgtype.UUID        `json:"automation_id"`
+	Name         string             `json:"name"`
+	Content      string             `json:"content"`
+	Revision     int64              `json:"revision"`
+	Deleted      bool               `json:"deleted"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+}
+
 type AutomationQuotaPeriod struct {
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
 	PeriodStart   pgtype.Timestamptz `json:"period_start"`

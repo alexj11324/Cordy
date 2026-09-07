@@ -91,14 +91,6 @@ export interface TabSession {
   resourceKey: string;
   title: string;
   /**
-   * Pinned tabs render at the left of the tab bar as icon-only, suppress the
-   * X close button, and turn any `navigation.push()` originating in them into
-   * an `openInNewTab()` so they stay parked on their original path. Pinning
-   * is invariant-preserving: pinned tabs always come before unpinned tabs in
-   * a workspace's `tabs` array; `togglePin` / `moveTab` enforce this.
-   */
-  pinned: boolean;
-  /**
    * Virtual per-tab history. The single router never uses its own history
    * (the Coordinator always navigates with replace), so back/forward are
    * session operations: move `index` and project `stack[index]` to `url`.
@@ -196,7 +188,7 @@ interface TabStore {
    * only when that order is empty.
    */
   closeTab: (tabId: string) => void;
-  /** Close every other unpinned tab in the target tab's workspace. */
+  /** Close every other tab in the target tab's workspace. */
   closeOtherTabs: (tabId: string) => void;
   /**
    * Activate a tab. Finds it across all workspaces. Sets both the owning
@@ -256,20 +248,8 @@ interface TabStore {
    * you were on (or a reseeded default if it was the last tab).
    */
   closeActiveTab: () => void;
-  /**
-   * Reorder within the active workspace's group only. Clamped so a tab can
-   * never cross the pinned / unpinned boundary — a drag that would move a
-   * pinned tab into the unpinned zone (or vice versa) is dropped at the
-   * boundary instead. This keeps the "pinned tabs first" invariant without
-   * requiring callers to know about it.
-   */
+  /** Reorder within the active workspace's group only. */
   moveTab: (fromIndex: number, toIndex: number) => void;
-  /**
-   * Flip a tab's pinned state. Pinning moves it to the end of the pinned
-   * zone; unpinning moves it to the start of the unpinned zone. Both
-   * preserve the "pinned tabs before unpinned tabs" invariant.
-   */
-  togglePin: (tabId: string) => void;
   /**
    * After the workspace list arrives/changes (login, realtime delete), drop
    * any tab group whose slug is no longer in `validSlugs`, and repoint
@@ -385,17 +365,9 @@ function makeSession(url: string, title: string): TabSession {
     url,
     resourceKey: resourceKeyForUrl(url),
     title,
-    pinned: false,
     history: { stack: [url], index: 0 },
     memento: emptyMemento(),
   };
-}
-
-/** Index of the first unpinned tab in a group (== pinned count). */
-function pinnedBoundary(tabs: TabSession[]): number {
-  let i = 0;
-  while (i < tabs.length && tabs[i].pinned) i++;
-  return i;
 }
 
 /** Default entry point for a workspace — its issues list. */
@@ -478,9 +450,7 @@ function buildCloseOtherTabsResult(
   const hit = findTabLocation(byWorkspace, tabId);
   if (!hit) return null;
   const { slug, group } = hit;
-  const closingTabs = group.tabs.filter(
-    (tab) => !tab.pinned && tab.id !== tabId,
-  );
+  const closingTabs = group.tabs.filter((tab) => tab.id !== tabId);
   if (closingTabs.length === 0) return null;
 
   const closingIds = new Set(closingTabs.map((tab) => tab.id));
@@ -598,16 +568,11 @@ export const useTabStore = create<TabStore>()(
         const tab = makeSession(clean, title);
         // Insert immediately right of the opener (the active tab) — browser
         // convention for cmd/middle/menu opens (MUL-5860) — rather than
-        // appending. The pinned-first invariant caps the left edge: a pinned
-        // opener's "right" is the start of the unpinned zone. The explicit
-        // "+" button appends instead (see addTab).
+        // appending. The explicit "+" button appends instead (see addTab).
         const activeIndex = group.tabs.findIndex(
           (t) => t.id === group.activeTabId,
         );
-        const insertAt =
-          activeIndex >= 0
-            ? Math.max(activeIndex + 1, pinnedBoundary(group.tabs))
-            : group.tabs.length;
+        const insertAt = activeIndex >= 0 ? activeIndex + 1 : group.tabs.length;
         const nextTabs = [
           ...group.tabs.slice(0, insertAt),
           tab,
@@ -887,18 +852,7 @@ export const useTabStore = create<TabStore>()(
         if (!group) return;
         if (fromIndex < 0 || fromIndex >= group.tabs.length) return;
 
-        // Clamp the drop position to within the source tab's group (pinned vs
-        // unpinned) so the "pinned tabs first" invariant survives drag-reorder.
-        // Pinned zone is [0, boundary); unpinned zone is [boundary, length).
-        const boundary = pinnedBoundary(group.tabs);
-        const source = group.tabs[fromIndex];
-        let clampedTo: number;
-        if (source.pinned) {
-          // boundary is exclusive upper bound for pinned-zone indices.
-          clampedTo = Math.max(0, Math.min(toIndex, boundary - 1));
-        } else {
-          clampedTo = Math.max(boundary, Math.min(toIndex, group.tabs.length - 1));
-        }
+        const clampedTo = Math.max(0, Math.min(toIndex, group.tabs.length - 1));
         if (clampedTo === fromIndex) return;
         set({
           byWorkspace: {
@@ -907,37 +861,6 @@ export const useTabStore = create<TabStore>()(
               ...group,
               tabs: arrayMove(group.tabs, fromIndex, clampedTo),
             },
-          },
-        });
-      },
-
-      togglePin(tabId) {
-        const { byWorkspace } = get();
-        const hit = findTabLocation(byWorkspace, tabId);
-        if (!hit) return;
-        const { slug, group, index } = hit;
-        const current = group.tabs[index];
-        const nextTab: TabSession = { ...current, pinned: !current.pinned };
-
-        // Remove from current position, then insert at the new zone boundary:
-        //   pinning   → end of pinned zone (just before first unpinned tab)
-        //   unpinning → start of unpinned zone (right after last pinned tab)
-        const withoutCurrent = [
-          ...group.tabs.slice(0, index),
-          ...group.tabs.slice(index + 1),
-        ];
-        const newBoundary = pinnedBoundary(withoutCurrent);
-        const insertAt = newBoundary;
-        const nextTabs = [
-          ...withoutCurrent.slice(0, insertAt),
-          nextTab,
-          ...withoutCurrent.slice(insertAt),
-        ];
-
-        set({
-          byWorkspace: {
-            ...byWorkspace,
-            [slug]: { ...group, tabs: nextTabs },
           },
         });
       },
@@ -1012,8 +935,9 @@ export const useTabStore = create<TabStore>()(
         if (version < 2 && state && typeof state === "object") {
           state = migrateV1ToV2(state as Partial<V1Persisted>);
         }
-        // v2 → v3: introduce `Tab.pinned`. Existing tabs default to
-        // unpinned; pin ordering invariant trivially holds (no pinned tabs).
+        // v2 → v3: keep the historical migration step so older persisted
+        // payloads still reach the current TabSession shape. Legacy pin data
+        // is intentionally discarded by the v3 → v4 conversion below.
         if (version < 3 && state && typeof state === "object") {
           state = migrateV2ToV3(state as V2Persisted);
         }
@@ -1042,7 +966,6 @@ export const useTabStore = create<TabStore>()(
                 id: t.id,
                 url: t.url,
                 title: t.title,
-                pinned: t.pinned,
                 history: t.history,
                 memento: t.memento,
               })),
@@ -1109,7 +1032,6 @@ export function mergePersistedTabs<T extends PersistedTabState>(
         url: clean,
         resourceKey: resourceKeyForUrl(clean),
         title: pTab.title,
-        pinned: pTab.pinned === true,
         history: { stack, index },
         memento:
           pTab.memento && typeof pTab.memento.scroll === "object"
@@ -1126,10 +1048,6 @@ export function mergePersistedTabs<T extends PersistedTabState>(
       });
     }
     if (tabs.length === 0) continue;
-    // Enforce the "pinned first" invariant on rehydration in case a
-    // user (or a buggy older write) persisted the pinned tabs out of
-    // order. Stable sort preserves intra-group order.
-    tabs.sort((a, b) => (a.pinned === b.pinned ? 0 : a.pinned ? -1 : 1));
     const activeTabId = tabs.some((t) => t.id === pGroup.activeTabId)
       ? pGroup.activeTabId
       : tabs[0].id;
@@ -1225,7 +1143,8 @@ interface V3PersistedTab {
   path: string;
   title: string;
   icon: string;
-  pinned: boolean;
+  /** Legacy field ignored when old state is converted. */
+  pinned?: boolean;
 }
 
 interface V3PersistedGroup {
@@ -1250,7 +1169,8 @@ interface V4PersistedTab {
    * drops it on the next write.
    */
   icon?: string;
-  pinned: boolean;
+  /** Legacy field ignored during rehydration. */
+  pinned?: boolean;
   history: { stack: string[]; index: number };
   /** `view` is absent in payloads written before the generic view-state
    *  entries existed; rehydration normalizes it to `{}`. */
@@ -1286,7 +1206,6 @@ export function migrateV3ToV4(v3: V3Persisted): V4Persisted {
         id: t.id,
         url: t.path,
         title: t.title,
-        pinned: t.pinned,
         history: { stack: [t.path], index: 0 },
         memento: emptyMemento(),
       })),
@@ -1303,7 +1222,7 @@ export function migrateV2ToV3(v2: V2Persisted): V3Persisted {
   for (const [slug, group] of Object.entries(v2.byWorkspace ?? {})) {
     byWorkspace[slug] = {
       activeTabId: group.activeTabId,
-      tabs: group.tabs.map((t) => ({ ...t, pinned: false })),
+      tabs: group.tabs.map((t) => ({ ...t })),
     };
   }
   return {

@@ -84,7 +84,20 @@ func (h *Handler) loadAgentThreadAccess(w http.ResponseWriter, r *http.Request) 
 		return agentThreadAccess{}, false
 	}
 	task, err := h.Queries.GetAgentTaskInWorkspace(r.Context(), db.GetAgentTaskInWorkspaceParams{ID: taskUUID, WorkspaceID: wsUUID})
-	if err != nil || !task.IssueID.Valid || task.ChatSessionID.Valid || task.AutomationRunID.Valid {
+	if err != nil || task.ChatSessionID.Valid {
+		writeError(w, http.StatusNotFound, "task conversation not found")
+		return agentThreadAccess{}, false
+	}
+	tasks, err := h.Queries.ListAgentThreadTasks(r.Context(), taskUUID)
+	if err != nil || len(tasks) == 0 {
+		writeError(w, http.StatusInternalServerError, "failed to load Agent thread")
+		return agentThreadAccess{}, false
+	}
+	if !service.AgentThreadRootEligible(tasks[0]) {
+		writeError(w, http.StatusNotFound, "task conversation not found")
+		return agentThreadAccess{}, false
+	}
+	if quickCreate, ok := service.AgentThreadQuickCreateContext(tasks); ok && quickCreate.WorkspaceID != workspaceID {
 		writeError(w, http.StatusNotFound, "task conversation not found")
 		return agentThreadAccess{}, false
 	}
@@ -98,15 +111,48 @@ func (h *Handler) loadAgentThreadAccess(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusForbidden, "you do not have access to this Agent thread")
 		return agentThreadAccess{}, false
 	}
-	tasks, err := h.Queries.ListAgentThreadTasks(r.Context(), taskUUID)
-	if err != nil || len(tasks) == 0 {
-		writeError(w, http.StatusInternalServerError, "failed to load Agent thread")
-		return agentThreadAccess{}, false
+	canInvoke := h.canInvokeAgent(r.Context(), agent, actorType, actorID, userID, workspaceID)
+	root := tasks[0]
+	automationRunID := task.AutomationRunID
+	if !automationRunID.Valid {
+		automationRunID, _ = service.AgentThreadAutomationRunID(tasks)
+	}
+	automationID := pgtype.UUID{}
+	automationScopeValid := true
+	if automationRunID.Valid {
+		run, runErr := h.Queries.GetAutomationRun(r.Context(), automationRunID)
+		if runErr != nil || !run.AutomationID.Valid {
+			automationScopeValid = false
+		} else {
+			automationID = run.AutomationID
+		}
+	} else if root.IssueID.Valid {
+		issue, issueErr := h.Queries.GetIssue(r.Context(), root.IssueID)
+		if issueErr != nil {
+			automationScopeValid = false
+		} else if issue.OriginType.Valid && issue.OriginType.String == "automation" {
+			if !issue.OriginID.Valid {
+				automationScopeValid = false
+			} else {
+				automationID = issue.OriginID
+			}
+		}
+	}
+	if canInvoke && !automationScopeValid {
+		canInvoke = false
+	}
+	if canInvoke && automationID.Valid {
+		automation, automationErr := h.Queries.GetAutomation(r.Context(), automationID)
+		member, memberErr := h.Queries.GetMemberByUserAndWorkspace(r.Context(), db.GetMemberByUserAndWorkspaceParams{
+			UserID: parseUUID(userID), WorkspaceID: wsUUID,
+		})
+		canInvoke = automationErr == nil && memberErr == nil &&
+			automation.WorkspaceID == wsUUID && h.memberCanWriteAutomation(r.Context(), automation, member)
 	}
 	return agentThreadAccess{
 		tasks:     tasks,
 		agent:     agent,
-		canInvoke: h.canInvokeAgent(r.Context(), agent, actorType, actorID, userID, workspaceID),
+		canInvoke: canInvoke,
 		requester: parseUUID(userID),
 	}, true
 }

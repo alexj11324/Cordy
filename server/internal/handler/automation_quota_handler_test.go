@@ -36,6 +36,7 @@ func TestAutomationQuotaManualAndWebhookEnforcement(t *testing.T) {
 
 	agentID := createWebhookTestAgent(t, "Quota Handler Agent")
 	automationID := createWebhookTestAutomation(t, agentID, "active", "run_only")
+	seedValidAutomationScheduleTrigger(t, automationID)
 
 	manual := httptest.NewRecorder()
 	manualReq := newRequest("POST", "/api/automations/"+automationID+"/trigger", nil)

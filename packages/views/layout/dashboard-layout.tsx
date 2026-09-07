@@ -9,6 +9,7 @@ import { DashboardGuard } from "./dashboard-guard";
 import { NavigationProgress } from "./navigation-progress";
 import { WorkspacePresencePrefetch } from "./workspace-presence-prefetch";
 import { GlobalShortcuts } from "./global-shortcuts";
+import { AgentThreadPanelLayout } from "../agent-thread/components/agent-thread-panel-layout";
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -40,12 +41,14 @@ export function DashboardLayout({
         <AppSidebar searchSlot={searchSlot} />
         <SidebarInset className="relative overflow-hidden">
           <NavigationProgress />
-          <div
-            className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
-            data-testid="web-route-scroll-viewport"
-          >
-            {children}
-          </div>
+          <AgentThreadPanelLayout>
+            <div
+              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain"
+              data-testid="web-route-scroll-viewport"
+            >
+              {children}
+            </div>
+          </AgentThreadPanelLayout>
           <ModalRegistry />
           <SourceBackfillModal />
           {extra}

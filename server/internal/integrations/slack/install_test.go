@@ -36,6 +36,7 @@ func mustUUID(t *testing.T, s string) pgtype.UUID {
 }
 
 type fakeInstallQueries struct {
+	installations []db.ChannelInstallation
 	// existing, when set, is the agent's current row; UpsertChannelInstallation
 	// returns it (an UPDATE) so a reconnect reuses the same row id.
 	existing *db.ChannelInstallation
@@ -146,7 +147,7 @@ func (f *fakeInstallQueries) UpsertChannelInstallationByAppID(_ context.Context,
 }
 
 func (f *fakeInstallQueries) ListChannelInstallationsByWorkspace(_ context.Context, _ db.ListChannelInstallationsByWorkspaceParams) ([]db.ChannelInstallation, error) {
-	return nil, nil
+	return f.installations, nil
 }
 
 func (f *fakeInstallQueries) GetChannelInstallationInWorkspace(_ context.Context, _ db.GetChannelInstallationInWorkspaceParams) (db.ChannelInstallation, error) {

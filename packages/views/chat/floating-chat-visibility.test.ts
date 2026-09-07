@@ -16,4 +16,10 @@ describe("floating chat route suppression", () => {
     // Another workspace's chat tab is a different route too.
     expect(isFloatingChatRouteSuppressed("/other/chat", "/acme/chat")).toBe(false);
   });
+
+  it("keeps the launcher out of an active Agent composer and restores it on other routes", () => {
+    expect(isFloatingChatRouteSuppressed("/acme/automations/one", "/acme/chat", "/acme/automations/one")).toBe(true);
+    expect(isFloatingChatRouteSuppressed("/acme/issues", "/acme/chat", "/acme/automations/one")).toBe(false);
+    expect(isFloatingChatRouteSuppressed("/acme/automations/one", "/acme/chat")).toBe(false);
+  });
 });

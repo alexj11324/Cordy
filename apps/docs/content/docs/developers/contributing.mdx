@@ -5,7 +5,11 @@ description: Set up a local Orvilo development environment, run tests, and submi
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Orvilo is a Go backend and pnpm monorepo. The simplest way to start locally is `make dev`; it prepares the environment, database, and migrations for the current checkout, then starts Web and API.
+Orvilo is a Go backend and pnpm monorepo. The simplest local start is `make up C=desktop`.
+
+Web and Electron share product UI from `packages/views`. After a PR merges to `main` and CI succeeds, production Web deploys through `aspectlylabs-production-images`. Installed desktop clients pick up the same UI on the next `v*` release (`release.yml` + electron-updater). App shells stay in `apps/web` and `apps/desktop`; shared pages belong in `packages/views`.
+
+**UI verification:** prefer Electron (`make up C=desktop`). After Web is deployed, you can also verify in the browser. If the environment cannot run Electron, or the desktop renderer is broken, verify on Web (`make up` / `make up C=api,web` and `make dev-login`). Do not skip visual checks.
 
 ## Requirements
 
@@ -20,13 +24,13 @@ Treat the root `package.json`, `server/go.mod`, and CI workflows as the source o
 ## First start
 
 ```bash
-git clone https://github.com/alexj11324/Cordy.git
-cd Cordy
+git clone https://github.com/orvilo-ai/orvilo.git
+cd orvilo
 make up C=desktop   # install deps, prepare the database, start the backend and Electron
 make seed-dev       # optional: sample issues, in the dev-fixtures workspace
 ```
 
-Changes are verified in the desktop app, not the browser: `make up C=desktop` starts Electron against this checkout's backend, already signed in and in a workspace. Use `make up C=api,web` plus `make dev-login` — which prints a URL that signs a browser in, and a bearer token for `curl` — when the change is web-only platform wiring.
+Prefer Electron for UI checks: `make up C=desktop` starts Electron against this checkout's backend, already signed in and in a workspace. After Web is deployed, you can also verify in the browser. If Electron is unavailable or the renderer is broken, use `make up C=api,web` plus `make dev-login` — which prints a URL that signs a browser in, and a bearer token for `curl`.
 
 Desktop cannot use that URL: it authenticates with a stored bearer token rather than the browser's cookie, so `make up C=desktop` mints one into the gitignored `apps/desktop/.env.development.local`. An existing session always wins, so it never signs you out of an account you are testing with.
 
@@ -36,7 +40,7 @@ The primary checkout uses `.env`. If the file does not exist, `make up` creates 
 
 `make dev-login` works because `make up` writes `ORVILO_DEV_LOGIN=1` into the local env file — see [Sign-in and signup](/auth-setup#skipping-the-login-page-in-development). Never enable it on an internet-facing deployment, and do not use a local `.env` for one either.
 
-The full contributor guide — environments, worktrees, testing layers, troubleshooting and destructive reset — is [CONTRIBUTING.md](https://github.com/alexj11324/Cordy/blob/main/CONTRIBUTING.md) in the repository. This page is the short version.
+The full contributor guide — environments, worktrees, testing layers, troubleshooting and destructive reset — is [CONTRIBUTING.md](https://github.com/orvilo-ai/orvilo/blob/main/CONTRIBUTING.md) in the repository. This page is the short version.
 
 ## Developing in a worktree
 

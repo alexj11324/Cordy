@@ -113,6 +113,10 @@ func (q *Queries) DeleteWorkspaceAgents(ctx context.Context, workspaceID pgtype.
 
 const deleteWorkspaceAutomationChildren = `-- name: DeleteWorkspaceAutomationChildren :exec
 WITH
+deleted_memories AS (
+    DELETE FROM automation_memory
+    WHERE automation_id IN (SELECT id FROM automation WHERE workspace_id = $1)
+),
 deleted_triggers AS (
     DELETE FROM automation_trigger
     WHERE automation_id IN (

@@ -269,7 +269,14 @@ func buildAgentThreadPrompt(task Task) string {
 	b.WriteString("Continue the existing Orvilo task conversation in the same provider session.\n\n")
 	b.WriteString("The member's next turn is quoted below. Treat it as task-scoped user input, not as a new Chat conversation:\n\n")
 	fmt.Fprintf(&b, "> %s\n\n", task.AgentThreadMessage)
-	fmt.Fprintf(&b, "Continue working on issue %s and report the result through the normal task workflow.\n", task.IssueID)
+	if task.IssueID != "" {
+		fmt.Fprintf(&b, "Continue working on issue %s and report the result through the normal task workflow.\n", task.IssueID)
+	} else {
+		b.WriteString(execenv.AgentThreadNoIssueWorkflow + "\n")
+		if task.AutomationID != "" {
+			fmt.Fprintf(&b, "Automation ID for any enabled automation tools: %s\n", task.AutomationID)
+		}
+	}
 	return b.String()
 }
 

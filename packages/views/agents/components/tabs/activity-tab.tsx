@@ -32,7 +32,7 @@ import { useWorkspaceId } from "@orvilo/core/hooks";
 import { useWorkspacePaths } from "@orvilo/core/paths";
 import { issueDetailOptions } from "@orvilo/core/issues/queries";
 import { AppLink } from "../../../navigation";
-import { TranscriptButton } from "../../../common/task-transcript";
+import { AgentThreadButton } from "../../../agent-thread";
 import { AttributionBadge } from "../../../issues/components/attribution-badge";
 import { taskStatusConfig } from "../../config";
 import { cancelReasonLabel, failureReasonLabel } from "./task-failure";
@@ -173,7 +173,7 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <NowSection tasks={activeTasks} issueMap={issueMap} agent={agent} />
+      <NowSection tasks={activeTasks} issueMap={issueMap} />
       {showPerformance && (
         <Last30dSection activity={activity} avgDurationMs={avgDurationMs} />
       )}
@@ -186,7 +186,6 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
           setRecentDisplayLimit((n) => n + RECENT_PAGE)
         }
         issueMap={issueMap}
-        agent={agent}
       />
     </div>
   );
@@ -285,11 +284,9 @@ function Metric({
 function NowSection({
   tasks,
   issueMap,
-  agent,
 }: {
   tasks: AgentTask[];
   issueMap: Map<string, Issue>;
-  agent: Agent;
 }) {
   const { t } = useT("agents");
   return (
@@ -308,7 +305,6 @@ function NowSection({
           tasks={tasks}
           issueMap={issueMap}
           timeMode="active"
-          agent={agent}
         />
       )}
     </Section>
@@ -391,7 +387,6 @@ function RecentWorkSection({
   loading,
   onShowMore,
   issueMap,
-  agent,
 }: {
   tasks: AgentTask[];
   totalCount: number;
@@ -399,7 +394,6 @@ function RecentWorkSection({
   loading: boolean;
   onShowMore: () => void;
   issueMap: Map<string, Issue>;
-  agent: Agent;
 }) {
   const { t } = useT("agents");
   // While the first fetch is in flight we have no counts to summarise, so
@@ -423,7 +417,6 @@ function RecentWorkSection({
             tasks={tasks}
             issueMap={issueMap}
             timeMode="completed"
-            agent={agent}
           />
           {hasMore && (
             <button
@@ -472,12 +465,10 @@ function TaskList({
   tasks,
   issueMap,
   timeMode,
-  agent,
 }: {
   tasks: AgentTask[];
   issueMap: Map<string, Issue>;
   timeMode: "active" | "completed";
-  agent: Agent;
 }) {
   return (
     <div
@@ -493,7 +484,6 @@ function TaskList({
           task={task}
           issueMap={issueMap}
           timeMode={timeMode}
-          agent={agent}
         />
       ))}
     </div>
@@ -504,12 +494,10 @@ function TaskRow({
   task,
   issueMap,
   timeMode,
-  agent,
 }: {
   task: AgentTask;
   issueMap: Map<string, Issue>;
   timeMode: "active" | "completed";
-  agent: Agent;
 }) {
   const { t } = useT("agents");
   const timeAgo = useTimeAgo();
@@ -520,9 +508,6 @@ function TaskRow({
   const hasIssue = task.issue_id !== "";
   const issue = hasIssue ? issueMap.get(task.issue_id) : undefined;
   const isRunning = task.status === "running";
-  // Queued tasks have no messages yet — hiding the transcript button avoids
-  // a guaranteed "No execution data recorded." dialog open.
-  const showTranscript = task.status !== "queued";
   // Cancel only makes sense for the three active states. Terminal rows
   // (completed / failed / cancelled) hide the button entirely.
   const showCancel =
@@ -710,7 +695,7 @@ function TaskRow({
       </div>
 
       {/* Hover-only actions. The row is intentionally non-clickable so
-          neither destination is privileged — issue detail and transcript
+          neither destination is privileged — issue detail and conversation
           are equally valid follow-ups. focus-within keeps the slot
           reachable for keyboard users. */}
       <div className="ml-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100">
@@ -726,14 +711,10 @@ function TaskRow({
             <TooltipContent>{t(($) => $.tab_body.activity.open_issue_tooltip)}</TooltipContent>
           </Tooltip>
         )}
-        {showTranscript && (
-          <TranscriptButton
-            task={task}
-            agentName={agent.name}
-            isLive={isRunning}
-            title={t(($) => $.tab_body.activity.transcript_tooltip)}
-          />
-        )}
+        <AgentThreadButton
+          task={task}
+          title={t(($) => $.tab_body.activity.conversation_tooltip)}
+        />
         {showCancel && (
           <Tooltip>
             <TooltipTrigger

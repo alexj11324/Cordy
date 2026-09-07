@@ -7,7 +7,7 @@ import {
   type RefObject,
 } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { X, Plus, Pin, PinOff, ListX, AppWindow } from "lucide-react";
+import { X, Plus, ListX, AppWindow } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -141,7 +141,7 @@ function SortableTabItem({
   /**
    * True iff this is the only tab in the workspace. Hiding X on the last
    * tab matches existing behavior and avoids the surprise of the store's
-   * last-tab reseed kicking in. Pinned tabs always hide X (RFC §3 D3c).
+   * last-tab reseed kicking in.
    */
   isOnly: boolean;
   canCloseOthers: boolean;
@@ -156,7 +156,6 @@ function SortableTabItem({
   const setActiveTab = useTabStore((s) => s.setActiveTab);
   const closeTab = useTabStore((s) => s.closeTab);
   const closeOtherTabs = useTabStore((s) => s.closeOtherTabs);
-  const togglePin = useTabStore((s) => s.togglePin);
   const updateTab = useTabStore((s) => s.updateTab);
   const issueWindowPath = parseIssueWindowPath(tab.url);
 
@@ -185,10 +184,6 @@ function SortableTabItem({
     isDragging,
   } = useSortable({ id: tab.id });
 
-  // Pin is a secondary interaction state, not an identity: a pinned tab keeps
-  // its resource visual (a project's icon, an issue's status, an actor's
-  // avatar) rather than collapsing to a Pin glyph. Pinned-ness is conveyed by
-  // position, the suppressed close button, and the hover Pin/Unpin action.
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -206,11 +201,6 @@ function SortableTabItem({
     closeTab(tab.id);
   };
 
-  const handleTogglePin = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    togglePin(tab.id);
-  };
-
   const stopDragOnAction = (e: React.PointerEvent) => {
     e.stopPropagation();
   };
@@ -223,12 +213,7 @@ function SortableTabItem({
     });
   };
 
-  // Pinned tabs keep their full title (RFC §3 D1v-ii FINAL). The only visual
-  // differences vs. unpinned tabs are the suppressed X (closing requires
-  // explicit Unpin) — the leading visual is the resource's own identity, same
-  // as an unpinned tab. Pin/Unpin is reachable via the hover action button
-  // below and the right-click menu.
-  const showCloseButton = !tab.pinned && !isOnly;
+  const showCloseButton = !isOnly;
   const [isEntering, setIsEntering] = useState(isNew && !shouldReduceMotion);
   const [showAddedHighlight, setShowAddedHighlight] = useState(isNew);
 
@@ -244,20 +229,20 @@ function SortableTabItem({
       {...attributes}
       {...listeners}
       onClick={handleClick}
-      // Browser convention: middle click closes the tab. Pinned (and sole)
-      // tabs suppress the close affordance, so middle click follows suit.
+      // Browser convention: middle click closes the tab. The sole tab
+      // suppresses the close affordance because closing it reseeds the
+      // workspace's default tab.
       onAuxClick={(e) => {
         if (e.button !== 1 || !showCloseButton) return;
         e.preventDefault();
         handleClose(e);
       }}
-      aria-label={tab.pinned ? `${title} (pinned)` : title}
+      aria-label={title}
       data-tab-active={isActive ? "true" : undefined}
       data-tab-entering={isEntering ? "true" : undefined}
-      title={tab.pinned ? `${title} (pinned)` : undefined}
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       className={cn(
-        "group relative flex size-full min-w-0 items-center gap-1.5 px-2.5 text-caption transition-colors",
+        "group relative flex size-full min-w-0 items-center gap-1.5 px-3 text-caption transition-colors",
         "select-none cursor-default",
         isActive
           ? "font-medium text-foreground"
@@ -274,16 +259,6 @@ function SortableTabItem({
         }}
       >
         {title}
-      </span>
-      <span
-        onClick={handleTogglePin}
-        onPointerDown={stopDragOnAction}
-        role="button"
-        aria-label={tab.pinned ? "Unpin tab" : "Pin tab"}
-        title={tab.pinned ? "Unpin tab" : "Pin tab"}
-        className="hidden size-3.5 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors group-hover:flex hover:bg-muted-foreground/20 hover:text-foreground"
-      >
-        {tab.pinned ? <PinOff className="size-2.5" /> : <Pin className="size-2.5" />}
       </span>
       {showCloseButton && (
         <span
@@ -305,7 +280,10 @@ function SortableTabItem({
       style={style}
       data-tab-frame
       data-tab-id={tab.id}
-      className={cn("h-9 w-40 min-w-32", isActive && "z-10")}
+      className={cn(
+        "h-10 w-fit min-w-28 max-w-48 shrink-0",
+        isActive && "z-10",
+      )}
     >
       <motion.div
         className="group/tab relative size-full"
@@ -349,23 +327,9 @@ function SortableTabItem({
                 <ContextMenuSeparator />
               </>
             )}
-            <ContextMenuItem onClick={() => togglePin(tab.id)}>
-              {tab.pinned ? (
-                <>
-                  <PinOff />
-                  Unpin tab
-                </>
-              ) : (
-                <>
-                  <Pin />
-                  Pin tab
-                </>
-              )}
-            </ContextMenuItem>
-            <ContextMenuSeparator />
             <ContextMenuItem
               variant="destructive"
-              disabled={tab.pinned || isOnly}
+              disabled={isOnly}
               onClick={() => closeTab(tab.id)}
             >
               <X />
@@ -480,7 +444,7 @@ function NewTabButton() {
       aria-label="New tab"
       title="New tab"
       style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-      className="mb-1 flex size-7 shrink-0 items-center justify-center self-end rounded-md text-faint-foreground transition-colors hover:bg-muted/50 hover:text-muted-foreground"
+      className="flex size-8 shrink-0 items-center justify-center self-center rounded-md text-faint-foreground transition-colors hover:bg-muted/50 hover:text-muted-foreground"
     >
       <Plus className="size-3.5" />
     </button>
@@ -510,9 +474,6 @@ export function TabBar() {
   const activeTabId = group?.activeTabId ?? "";
   const tabIds = tabs.map((t) => t.id);
   const tabOrder = tabIds.join("\0");
-  const tabLayoutKey = tabs
-    .map((tab) => `${tab.id}:${tab.pinned ? "pinned" : "unpinned"}`)
-    .join("\0");
   const addedTabIds = getAddedTabIds(
     previousTabsRef.current,
     activeWorkspaceSlug,
@@ -522,9 +483,6 @@ export function TabBar() {
   const newestTabId = addedTabIds.at(-1) ?? null;
   const backgroundAddedTabId =
     newestTabId && newestTabId !== activeTabId ? newestTabId : null;
-  const pinnedCount = tabs.filter((t) => t.pinned).length;
-  const unpinnedCount = tabs.length - pinnedCount;
-
   useLayoutEffect(() => {
     const currentTabIds = tabOrder ? tabOrder.split("\0") : [];
     const newlyAddedIds = getAddedTabIds(
@@ -555,7 +513,6 @@ export function TabBar() {
     activeWorkspaceSlug,
     activeTabId,
     shouldReduceMotion,
-    tabLayoutKey,
     tabOrder,
   ]);
 
@@ -575,9 +532,6 @@ export function TabBar() {
     if (!over || active.id === over.id) return;
     const from = tabs.findIndex((t) => t.id === active.id);
     const to = tabs.findIndex((t) => t.id === over.id);
-    // The store clamps the destination to within the source tab's zone
-    // (pinned vs unpinned), so this call is safe even when the user tries
-    // to drag across the boundary — the tab will land at the boundary.
     if (from !== -1 && to !== -1) moveTab(from, to);
   };
 
@@ -595,7 +549,7 @@ export function TabBar() {
           <div
             ref={tabScrollRef}
             data-tab-scroll-container
-            className="no-scrollbar flex h-full min-w-0 flex-1 items-end overflow-x-auto overflow-y-hidden overscroll-x-contain px-1"
+            className="no-scrollbar flex h-full min-w-0 flex-1 items-center overflow-x-auto overflow-y-hidden overscroll-x-contain px-1"
             style={tabFadeStyle}
           >
             <SortableContext items={tabIds} strategy={horizontalListSortingStrategy}>
@@ -607,27 +561,15 @@ export function TabBar() {
                       tab={tab}
                       isActive={tab.id === activeTabId}
                       isOnly={tabs.length === 1}
-                      canCloseOthers={tabs.some(
-                        (candidate) => candidate.id !== tab.id && !candidate.pinned,
-                      )}
+                      canCloseOthers={tabs.some((candidate) => candidate.id !== tab.id)}
                       isNew={addedTabIdSet.has(tab.id)}
                       shouldReduceMotion={shouldReduceMotion}
                       showSeparator={
                         !!previousTab &&
                         tab.id !== activeTabId &&
-                        previousTab.id !== activeTabId &&
-                        // the pinned-zone divider already separates this pair
-                        !(previousTab.pinned && !tab.pinned)
+                        previousTab.id !== activeTabId
                       }
                     />
-                    {tab.pinned &&
-                      index === pinnedCount - 1 &&
-                      unpinnedCount > 0 && (
-                        <div
-                          aria-hidden
-                          className="mx-1 mb-2.5 h-4 w-px shrink-0 self-end bg-surface-border"
-                        />
-                      )}
                   </Fragment>
                 );
               })}

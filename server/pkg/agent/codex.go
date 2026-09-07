@@ -610,8 +610,8 @@ func renderCodexMcpServersBlock(raw json.RawMessage) (string, bool, error) {
 	sb.WriteString(orviloCodexMcpBeginMarker)
 	sb.WriteString("\n")
 	for i, name := range names {
-		if !isCodexBareTomlKey(name) {
-			return "", false, fmt.Errorf("mcp server name %q must be ASCII alphanumeric / _ / - to fit Codex's bare-key requirement", name)
+		if name == "" {
+			return "", false, errors.New("mcp server name must not be empty")
 		}
 		var serverVal map[string]any
 		if err := json.Unmarshal(parsed.McpServers[name], &serverVal); err != nil {
@@ -625,7 +625,7 @@ func renderCodexMcpServersBlock(raw json.RawMessage) (string, bool, error) {
 			sb.WriteString("\n")
 		}
 		sb.WriteString("[mcp_servers.")
-		sb.WriteString(name)
+		sb.WriteString(codexTOMLKey(name))
 		sb.WriteString("]\n")
 		keys := make([]string, 0, len(serverVal))
 		for k := range serverVal {

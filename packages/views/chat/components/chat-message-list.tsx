@@ -44,7 +44,7 @@ import type {
   TaskMessagePayload,
 } from "@orvilo/core/types";
 import type { ChatTimelineItem } from "@orvilo/core/chat";
-import { buildTimeline } from "../../common/task-transcript";
+import { buildTimeline } from "../../common/task-transcript/build-timeline";
 import { OnboardingStarterCards } from "./onboarding-starter-cards";
 import { TaskStatusPill } from "./task-status-pill";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";

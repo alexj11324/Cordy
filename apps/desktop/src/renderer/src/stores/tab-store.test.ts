@@ -235,20 +235,6 @@ describe("useTabStore actions", () => {
       expect(getActiveTab(s)?.url).toBe("/acme/issues/d"); // foreground open
     });
 
-    it("a pinned opener's 'right' is the start of the unpinned zone", () => {
-      const store = useTabStore.getState();
-      store.switchWorkspace("acme"); // A
-      store.addTab("/acme/projects", "B");
-      const aId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
-      store.togglePin(aId); // [A(pinned, active), B]
-
-      store.openTab("/acme/issues/d", "D");
-      const s = useTabStore.getState();
-      expect(urls()).toEqual(["/acme/issues", "/acme/issues/d", "/acme/projects"]);
-      expect(s.byWorkspace.acme.tabs[0].pinned).toBe(true);
-      expect(s.byWorkspace.acme.tabs[1].pinned).toBe(false);
-    });
-
     it("the explicit new-tab button (addTab) still appends", () => {
       const store = useTabStore.getState();
       store.switchWorkspace("acme"); // A active
@@ -710,20 +696,18 @@ describe("commitViewState", () => {
 });
 
 describe("bulk tab closing", () => {
-  it("closes other unpinned tabs, preserves pinned tabs, and activates the target", () => {
+  it("closes every other tab and activates the target", () => {
     const store = useTabStore.getState();
     store.switchWorkspace("acme");
-    const issuesId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
     const projectsId = store.addTab("/acme/projects", "Projects");
     store.addTab("/acme/agents", "Agents");
     store.addTab("/acme/settings", "Settings");
-    store.togglePin(issuesId);
     store.setActiveTab(useTabStore.getState().byWorkspace.acme.tabs[2].id);
 
     store.closeOtherTabs(projectsId);
 
     const group = useTabStore.getState().byWorkspace.acme;
-    expect(group.tabs.map((tab) => tab.id)).toEqual([issuesId, projectsId]);
+    expect(group.tabs.map((tab) => tab.id)).toEqual([projectsId]);
     expect(group.activeTabId).toBe(projectsId);
   });
 
@@ -734,14 +718,13 @@ describe("bulk tab closing", () => {
     const projectsId = store.addTab("/acme/projects", "Projects");
     store.addTab("/acme/agents", "Agents");
     store.addTab("/acme/settings", "Settings");
-    store.togglePin(issuesId);
     store.setActiveTab(issuesId);
 
     store.closeOtherTabs(projectsId);
 
     const group = useTabStore.getState().byWorkspace.acme;
-    expect(group.tabs.map((tab) => tab.id)).toEqual([issuesId, projectsId]);
-    expect(group.activeTabId).toBe(issuesId);
+    expect(group.tabs.map((tab) => tab.id)).toEqual([projectsId]);
+    expect(group.activeTabId).toBe(projectsId);
   });
 });
 
@@ -861,7 +844,6 @@ describe("closeTab activation order (MUL-5665)", () => {
     const issuesId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
     const projectsId = store.addTab("/acme/projects", "Projects");
     const agentsId = store.addTab("/acme/agents", "Agents");
-    store.togglePin(issuesId);
     store.setActiveTab(issuesId);
     store.setActiveTab(projectsId);
     store.setActiveTab(agentsId); // recent: [projects, issues]
@@ -869,8 +851,8 @@ describe("closeTab activation order (MUL-5665)", () => {
     store.closeOtherTabs(agentsId);
 
     const group = useTabStore.getState().byWorkspace.acme;
-    expect(group.tabs.map((t) => t.id)).toEqual([issuesId, agentsId]);
-    expect(group.recentTabIds).toEqual([issuesId]); // projects is gone
+    expect(group.tabs.map((t) => t.id)).toEqual([agentsId]);
+    expect(group.recentTabIds).toEqual([]);
     expect(group.activeTabId).toBe(agentsId);
   });
 
@@ -909,119 +891,13 @@ describe("closeTab activation order (MUL-5665)", () => {
   });
 });
 
-describe("togglePin", () => {
-  it("flips a tab's pinned state", () => {
-    const store = useTabStore.getState();
-    store.switchWorkspace("acme");
-    const tabId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
-    expect(useTabStore.getState().byWorkspace.acme.tabs[0].pinned).toBe(false);
-
-    store.togglePin(tabId);
-    expect(useTabStore.getState().byWorkspace.acme.tabs[0].pinned).toBe(true);
-
-    store.togglePin(tabId);
-    expect(useTabStore.getState().byWorkspace.acme.tabs[0].pinned).toBe(false);
-  });
-
-  it("moves a newly-pinned tab to the start of the pinned zone", () => {
-    const store = useTabStore.getState();
-    store.switchWorkspace("acme"); // creates default unpinned tab at index 0
-    store.addTab("/acme/projects", "Projects");
-    store.addTab("/acme/agents", "Agents");
-    const agentsId = useTabStore.getState().byWorkspace.acme.tabs[2].id;
-
-    store.togglePin(agentsId);
-    const tabs = useTabStore.getState().byWorkspace.acme.tabs;
-    expect(tabs[0].id).toBe(agentsId);
-    expect(tabs[0].pinned).toBe(true);
-    expect(tabs[1].pinned).toBe(false);
-    expect(tabs[2].pinned).toBe(false);
-  });
-
-  it("appends a second pinned tab after the first pinned tab", () => {
-    const store = useTabStore.getState();
-    store.switchWorkspace("acme");
-    store.addTab("/acme/projects", "Projects");
-    store.addTab("/acme/agents", "Agents");
-    const projectsId = useTabStore.getState().byWorkspace.acme.tabs[1].id;
-    const agentsId = useTabStore.getState().byWorkspace.acme.tabs[2].id;
-
-    store.togglePin(agentsId);
-    store.togglePin(projectsId);
-
-    // Both pinned, in the order they were pinned (agents first, projects
-    // second), then the unpinned default tab.
-    const tabs = useTabStore.getState().byWorkspace.acme.tabs;
-    expect(tabs.map((t) => t.id)).toEqual([
-      agentsId,
-      projectsId,
-      tabs[2].id,
-    ]);
-    expect(tabs.map((t) => t.pinned)).toEqual([true, true, false]);
-  });
-
-  it("returns an unpinned tab to the start of the unpinned zone", () => {
-    const store = useTabStore.getState();
-    store.switchWorkspace("acme");
-    store.addTab("/acme/projects", "Projects");
-    const issuesId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
-    const projectsId = useTabStore.getState().byWorkspace.acme.tabs[1].id;
-
-    // Pin both, then unpin one.
-    store.togglePin(issuesId);
-    store.togglePin(projectsId);
-    store.togglePin(issuesId);
-
-    const tabs = useTabStore.getState().byWorkspace.acme.tabs;
-    expect(tabs.map((t) => t.id)).toEqual([projectsId, issuesId]);
-    expect(tabs.map((t) => t.pinned)).toEqual([true, false]);
-  });
-});
-
-describe("moveTab boundary clamp", () => {
-  it("clamps a pinned-tab move so it never crosses into the unpinned zone", () => {
-    const store = useTabStore.getState();
-    store.switchWorkspace("acme");
-    store.addTab("/acme/projects", "Projects");
-    store.addTab("/acme/agents", "Agents");
-    const issuesId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
-
-    store.togglePin(issuesId); // [issues(pinned), projects, agents]
-
-    // User tries to drag the pinned tab to index 2 (unpinned zone end).
-    store.moveTab(0, 2);
-    const tabs = useTabStore.getState().byWorkspace.acme.tabs;
-    // It should be clamped to index 0 — the only pinned slot — i.e. unchanged.
-    expect(tabs[0].id).toBe(issuesId);
-    expect(tabs.map((t) => t.pinned)).toEqual([true, false, false]);
-  });
-
-  it("clamps an unpinned-tab move so it never crosses into the pinned zone", () => {
-    const store = useTabStore.getState();
-    store.switchWorkspace("acme");
-    store.addTab("/acme/projects", "Projects");
-    store.addTab("/acme/agents", "Agents");
-    const issuesId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
-    const agentsId = useTabStore.getState().byWorkspace.acme.tabs[2].id;
-
-    store.togglePin(issuesId); // [issues(pinned), projects, agents]
-
-    // User tries to drag agents (index 2) to index 0 (pinned zone).
-    store.moveTab(2, 0);
-    const tabs = useTabStore.getState().byWorkspace.acme.tabs;
-    // Clamped to index 1 — start of the unpinned zone.
-    expect(tabs[0].id).toBe(issuesId);
-    expect(tabs[1].id).toBe(agentsId);
-    expect(tabs.map((t) => t.pinned)).toEqual([true, false, false]);
-  });
-
-  it("reorders freely within the same zone", () => {
+describe("moveTab", () => {
+  it("reorders tabs freely", () => {
     const store = useTabStore.getState();
     store.switchWorkspace("acme");
     store.addTab("/acme/projects", "Projects");
     store.addTab("/acme/agents", "Agents");
 
-    // All unpinned; move agents (2) to position 0.
     store.moveTab(2, 0);
     const tabs = useTabStore.getState().byWorkspace.acme.tabs;
     expect(tabs.map((t) => t.url)).toEqual([
@@ -1033,7 +909,7 @@ describe("moveTab boundary clamp", () => {
 });
 
 describe("migrateV2ToV3", () => {
-  it("adds pinned=false to every persisted tab", () => {
+  it("preserves the historical payload while the next migration drops pin data", () => {
     const v2 = {
       activeWorkspaceSlug: "acme",
       byWorkspace: {
@@ -1049,8 +925,8 @@ describe("migrateV2ToV3", () => {
     const v3 = migrateV2ToV3(v2);
     expect(v3.activeWorkspaceSlug).toBe("acme");
     expect(v3.byWorkspace.acme.tabs).toEqual([
-      { id: "t1", path: "/acme/issues", title: "Issues", icon: "ListTodo", pinned: false },
-      { id: "t2", path: "/acme/projects", title: "Projects", icon: "FolderKanban", pinned: false },
+      { id: "t1", path: "/acme/issues", title: "Issues", icon: "ListTodo" },
+      { id: "t2", path: "/acme/projects", title: "Projects", icon: "FolderKanban" },
     ]);
   });
 
@@ -1089,7 +965,6 @@ describe("migrateV3ToV4 (legacy view-state import, MUL-4741)", () => {
         id: "t1",
         url: "/acme/issues",
         title: "Issues",
-        pinned: true,
         history: { stack: ["/acme/issues"], index: 0 },
         memento: { scroll: {}, view: {} },
       },
@@ -1153,6 +1028,12 @@ describe("mergePersistedTabs (rehydration, MUL-4370)", () => {
     const tab = rehydrate(persistedTab("/acme/teams"));
     expect(tab).not.toHaveProperty("icon");
     expect(tab.url).toBe("/acme/teams");
+  });
+
+  it("ignores legacy persisted pin state", () => {
+    const tab = rehydrate(persistedTab("/acme/projects", { pinned: true }));
+    expect(tab).not.toHaveProperty("pinned");
+    expect(tab.url).toBe("/acme/projects");
   });
 
   // Payloads written before the generic view-state entries existed carry a

@@ -1,1 +1,1 @@
-export { slackKeys, slackInstallationsOptions } from "./queries";
+export { slackAutomationCatalogOptions, slackKeys, slackInstallationsOptions } from "./queries";

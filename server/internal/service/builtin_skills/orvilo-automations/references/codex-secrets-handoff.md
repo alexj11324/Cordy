@@ -69,5 +69,4 @@ Confirm the Linear app webhook includes:
 - Do not mint per-automation public URLs for GitHub/Slack/Linear.
 - Do not change `/api/webhooks/automations/{token}` (generic Webhook Triggered).
 - Do not add Sentry / PagerDuty / Teams as trigger sources.
-- Do not edit `apps/web/`.
 - Do not put secrets in this file, SKILL.md, docs, or PRs.

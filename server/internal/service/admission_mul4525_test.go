@@ -116,26 +116,44 @@ func TestAutomationDispatchAdmitsClickerNotCreator(t *testing.T) {
 		t.Fatalf("seed ap creator member: %v", err)
 	}
 
-	ap := db.Automation{
+	ap, err := q.CreateAutomation(ctx, db.CreateAutomationParams{
 		WorkspaceID:   util.MustParseUUID(workspaceID),
-		ExecutorID:    util.MustParseUUID(agentID),
+		Title:         "admission test automation",
 		ExecutorType:  "agent",
+		ExecutorID:    util.MustParseUUID(agentID),
 		ExecutionMode: "run_only",
 		Status:        "active",
 		CreatedByType: "member",
 		CreatedByID:   util.MustParseUUID(apCreatorID),
+	})
+	if err != nil {
+		t.Fatalf("create automation: %v", err)
+	}
+	if _, err := q.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
+		AutomationID:   ap.ID,
+		Kind:           "schedule",
+		Enabled:        true,
+		CronExpression: pgtype.Text{String: "0 * * * *", Valid: true},
+		Timezone:       pgtype.Text{String: "UTC", Valid: true},
+		NextRunAt:      pgtype.Timestamptz{Time: time.Now().UTC().Add(time.Hour), Valid: true},
+		Provider:       pgtype.Text{String: "generic", Valid: true},
+	}); err != nil {
+		t.Fatalf("create automation trigger: %v", err)
 	}
 	svc := &AutomationService{Queries: q}
 
 	// Manual dispatch by the agent owner (the clicker) is admitted.
-	if reason, _, skip := svc.shouldSkipDispatch(ctx, ap, util.MustParseUUID(ownerID)); skip {
+	if reason, _, skip, admissionErr := svc.shouldSkipDispatch(ctx, ap, util.MustParseUUID(ownerID)); skip || admissionErr != nil {
 		t.Fatalf("manual dispatch by the agent owner should be admitted, got skip: %q", reason)
 	}
 
 	// Automation (no human actor) falls back to the creator gate, which denies
 	// the admin-but-non-owner creator on a private agent — and the typed reason
 	// code is decided at that branch, not guessed from text.
-	reason, code, skip := svc.shouldSkipDispatch(ctx, ap, pgtype.UUID{})
+	reason, code, skip, admissionErr := svc.shouldSkipDispatch(ctx, ap, pgtype.UUID{})
+	if admissionErr != nil {
+		t.Fatalf("automation dispatch admission failed: %v", admissionErr)
+	}
 	if !skip {
 		t.Fatalf("automation dispatch should be blocked by the creator gate")
 	}

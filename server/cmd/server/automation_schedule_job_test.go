@@ -58,6 +58,7 @@ func setupAutomationScheduleJob(t *testing.T, cron string) (db.AutomationTrigger
 		Enabled:        true,
 		CronExpression: pgtype.Text{String: cron, Valid: true},
 		Timezone:       pgtype.Text{String: "UTC", Valid: true},
+		NextRunAt:      pgtype.Timestamptz{Time: time.Now().UTC().Add(time.Hour), Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("CreateAutomationTrigger: %v", err)

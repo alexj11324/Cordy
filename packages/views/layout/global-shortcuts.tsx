@@ -1,5 +1,7 @@
 "use client";
 
+import { useAgentThreadPanelStore } from "@orvilo/core/agent-thread";
+
 import { useEffect } from "react";
 import { useSidebar } from "@orvilo/ui/components/ui/sidebar";
 import {
@@ -78,7 +80,7 @@ export function GlobalShortcuts() {
     // swallowing it for an action that would visibly do nothing.
     const canToggleFloatingChat = () =>
       useChatStore.getState().floatingChatEnabled &&
-      !isFloatingChatRouteSuppressed(navigation.pathname, chatPath);
+      !isFloatingChatRouteSuppressed(navigation.pathname, chatPath, useAgentThreadPanelStore.getState().panel?.routePath);
 
     const handleKeyDown = (event: KeyboardEvent) => {
       // Component/editor handlers run before this document-level listener.

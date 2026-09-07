@@ -162,50 +162,6 @@ describe("push", () => {
   });
 });
 
-describe("push with pinned active tab", () => {
-  function pinActive() {
-    const store = useTabStore.getState();
-    store.togglePin(acmeGroup().activeTabId);
-  }
-
-  it("redirects push to a new foreground tab when pathname differs", () => {
-    pinActive();
-    const getAdapter = renderProvider();
-    const pinnedId = acmeGroup().activeTabId;
-
-    getAdapter().push("/acme/projects");
-
-    const group = acmeGroup();
-    const pinned = group.tabs.find((t) => t.id === pinnedId)!;
-    const projects = group.tabs.find((t) => t.url === "/acme/projects")!;
-    // The pinned tab stays parked on its url; focus follows the new tab.
-    expect(pinned.url).toBe("/acme/issues");
-    expect(group.activeTabId).toBe(projects.id);
-  });
-
-  it("allows in-tab navigation when only search/hash changes (RFC §3 D2b)", () => {
-    pinActive();
-    const getAdapter = renderProvider();
-
-    getAdapter().push("/acme/issues?filter=open");
-
-    const group = acmeGroup();
-    expect(group.tabs).toHaveLength(1); // no new tab
-    expect(group.tabs[0].url).toBe("/acme/issues?filter=open");
-  });
-
-  it("leaves cross-workspace push to the workspace switcher (not pin)", () => {
-    pinActive();
-    const getAdapter = renderProvider();
-
-    getAdapter().push("/butter/inbox");
-
-    expect(useTabStore.getState().activeWorkspaceSlug).toBe("butter");
-    // No extra tab was opened in acme by the pin interception.
-    expect(useTabStore.getState().byWorkspace.acme.tabs).toHaveLength(1);
-  });
-});
-
 describe("back", () => {
   it("moves the session's virtual history backwards", () => {
     const getAdapter = renderProvider();

@@ -468,6 +468,7 @@ type AgentTaskResponse struct {
 	ChatMessage              string                 `json:"chat_message,omitempty"`                // user message for chat tasks
 	ChatMessageAttachments   []ChatAttachmentMeta   `json:"chat_message_attachments,omitempty"`    // attachments on the user message — agent calls `orvilo attachment download <id>` per entry
 	ChatIntro                bool                   `json:"chat_intro,omitempty"`                  // legacy compatibility for historical is_agent_intro sessions; new agent creation no longer creates these chats
+	AgentThreadRootTaskID    string                 `json:"agent_thread_root_task_id,omitempty"`   // immutable server-validated root identity for task-level conversations
 	AutomationRunID          string                 `json:"automation_run_id,omitempty"`           // non-empty for automation-spawned tasks
 	AutomationID             string                 `json:"automation_id,omitempty"`               // automation that spawned this task
 	AutomationTitle          string                 `json:"automation_title,omitempty"`            // automation title used as task context

@@ -24,10 +24,12 @@ const TaskContextMarkerRelPath = ".orvilo/daemon_task_context.json"
 const TaskContextMarkerManagedBy = "orvilo-daemon-task"
 
 type taskContextMarkerFile struct {
-	ManagedBy     string `json:"managed_by"`
-	AgentID       string `json:"agent_id,omitempty"`
-	IssueID       string `json:"issue_id,omitempty"`
-	ChatSessionID string `json:"chat_session_id,omitempty"`
+	ManagedBy             string `json:"managed_by"`
+	AgentID               string `json:"agent_id,omitempty"`
+	RuntimeID             string `json:"runtime_id,omitempty"`
+	IssueID               string `json:"issue_id,omitempty"`
+	ChatSessionID         string `json:"chat_session_id,omitempty"`
+	AgentThreadRootTaskID string `json:"agent_thread_root_task_id,omitempty"`
 }
 
 // EnsureWorkspacesRootMarker writes a persistent daemon-task marker at
@@ -213,10 +215,12 @@ func writeTaskContextMarker(workDir string, ctx TaskContextForEnv, manifest *sid
 	// cleanup. If a crash leaves it behind, the CLI intentionally treats it
 	// as daemon context and fails closed instead of using a user PAT.
 	payload := taskContextMarkerFile{
-		ManagedBy:     TaskContextMarkerManagedBy,
-		AgentID:       ctx.AgentID,
-		IssueID:       ctx.IssueID,
-		ChatSessionID: ctx.ChatSessionID,
+		ManagedBy:             TaskContextMarkerManagedBy,
+		AgentID:               ctx.AgentID,
+		RuntimeID:             ctx.RuntimeID,
+		IssueID:               ctx.IssueID,
+		ChatSessionID:         ctx.ChatSessionID,
+		AgentThreadRootTaskID: ctx.AgentThreadRootTaskID,
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
@@ -1009,6 +1013,15 @@ func writeSkillFiles(skillsDir string, skills []SkillContextForEnv, manifest *si
 
 // renderIssueContext builds the markdown content for issue_context.md.
 func renderIssueContext(provider string, ctx TaskContextForEnv) string {
+	if ctx.IsAgentThreadContinuation && ctx.IssueID == "" {
+		var b strings.Builder
+		b.WriteString("# Agent conversation\n\n")
+		b.WriteString(AgentThreadNoIssueWorkflow + "\n\n")
+		if ctx.AutomationID != "" {
+			fmt.Fprintf(&b, "**Automation ID:** %s\n", ctx.AutomationID)
+		}
+		return b.String()
+	}
 	if ctx.AutomationRunID != "" {
 		return renderAutomationContext(ctx)
 	}

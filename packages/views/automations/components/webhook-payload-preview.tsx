@@ -20,8 +20,7 @@ interface WebhookPayloadPreviewProps {
  * detail. Falls back gracefully when the payload isn't an envelope —
  * showing whatever JSON is there with a generic header.
  *
- * This is intentionally read-only and decoupled from any specific dialog
- * — it gets dropped into AgentTranscriptDialog's headerSlot.
+ * This is intentionally read-only and decoupled from its eventual host.
  */
 export function WebhookPayloadPreview({
   payload,

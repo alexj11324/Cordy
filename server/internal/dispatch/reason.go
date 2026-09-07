@@ -66,6 +66,9 @@ const (
 	// ReasonIssueLimitReached means a create_issue Automation was admitted for a
 	// run, but Cloud's effective workspace issue-count limit blocked the issue.
 	ReasonIssueLimitReached ReasonCode = "issue_limit_reached"
+	// ReasonTriggerNotReady means at least one persisted trigger is missing a
+	// required event, provider connection, destination, or valid legacy state.
+	ReasonTriggerNotReady ReasonCode = "trigger_not_ready"
 	// ReasonInternalError: an unexpected server error prevented a clean decision.
 	ReasonInternalError ReasonCode = "internal_error"
 )
