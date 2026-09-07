@@ -148,7 +148,19 @@ const ROW_LABEL = "w-16 shrink-0 text-caption text-muted-foreground";
 
 /** Filter row + layout row + collapsible display defaults, all bound to the
  *  DRAFT store via the surrounding provider. */
-export function DraftDefinitionFields() {
+type SaveViewMode = Extract<ViewMode, "list" | "board" | "table" | "swimlane">;
+const DEFAULT_SAVE_VIEW_MODES: readonly SaveViewMode[] = [
+  "list",
+  "board",
+  "table",
+  "swimlane",
+];
+
+export function DraftDefinitionFields({
+  supportedViewModes = DEFAULT_SAVE_VIEW_MODES,
+}: {
+  supportedViewModes?: readonly SaveViewMode[];
+}) {
   const { t } = useT("issues");
   const wsId = useWorkspaceId();
   const viewMode = useViewStore((s) => s.viewMode);
@@ -244,7 +256,7 @@ export function DraftDefinitionFields() {
             <div className="flex items-center gap-3">
               <Label className={ROW_LABEL}>{t(($) => $.save_view.layout_label)}</Label>
               <Select
-                items={(["list", "board", "table", "swimlane"] as const).map((mode) => ({
+                items={supportedViewModes.map((mode) => ({
                   value: mode as string,
                   label: t(($) => $.view[LAYOUT_LABEL_KEY[mode]]),
                 }))}
@@ -258,7 +270,7 @@ export function DraftDefinitionFields() {
                 </SelectTrigger>
                 <SelectContent align="start">
                   <SelectGroup>
-                    {(["list", "board", "table", "swimlane"] as const).map((mode) => (
+                    {supportedViewModes.map((mode) => (
                       <SelectItem key={mode} value={mode}>
                         {t(($) => $.view[LAYOUT_LABEL_KEY[mode]])}
                       </SelectItem>
@@ -460,6 +472,7 @@ export function SaveViewDialog({
   scope,
   editView = null,
   seedFromDefinition = false,
+  supportedViewModes = DEFAULT_SAVE_VIEW_MODES,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -471,6 +484,7 @@ export function SaveViewDialog({
    *  may not have it open); in-view edits keep seeding from the live panel
    *  so the user's current additions are part of the draft. */
   seedFromDefinition?: boolean;
+  supportedViewModes?: readonly SaveViewMode[];
 }) {
   const { t } = useT("issues");
   const wsId = useWorkspaceId();
@@ -508,6 +522,9 @@ export function SaveViewDialog({
     } else {
       store.setState(snapshotState(liveStore.getState()));
     }
+    if (!supportedViewModes.includes(store.getState().viewMode as SaveViewMode)) {
+      store.getState().setViewMode(supportedViewModes[0] ?? "list");
+    }
     setDraftStore(store);
     setName(editView?.name ?? "");
     setNameError(false);
@@ -529,7 +546,7 @@ export function SaveViewDialog({
           : scope.variant,
       );
     }
-  }, [open, liveStore, editView, seedFromDefinition, scope]);
+  }, [open, liveStore, editView, seedFromDefinition, scope, supportedViewModes]);
 
   const { data: projects = [] } = useQuery({
     ...projectListOptions(wsId),
@@ -799,7 +816,7 @@ export function SaveViewDialog({
 
           {draftStore && (
             <ViewStoreProvider store={draftStore}>
-              <DraftDefinitionFields />
+            <DraftDefinitionFields supportedViewModes={supportedViewModes} />
             </ViewStoreProvider>
           )}
         </div>

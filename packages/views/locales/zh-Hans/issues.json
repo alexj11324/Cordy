@@ -193,6 +193,7 @@
     "list": "列表",
     "table": "表格",
     "gantt": "甘特图",
+    "dependency_graph": "依赖关系图",
     "swimlane": "泳道"
   },
   "table": {

@@ -196,6 +196,7 @@
     "list": "List",
     "table": "Table",
     "gantt": "Gantt",
+    "dependency_graph": "Dependency Graph",
     "swimlane": "Swimlane"
   },
   "table": {

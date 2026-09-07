@@ -13,6 +13,7 @@ import {
   FolderKanban,
   FolderMinus,
   List,
+  Network,
   Rows3,
   SignalHigh,
   SlidersHorizontal,
@@ -63,6 +64,7 @@ import {
 import { StatusIcon, PriorityIcon } from ".";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspacePaths } from "@patchbay/core/paths";
 import { memberListOptions, agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
 import { projectListOptions } from "@patchbay/core/projects/queries";
 import { labelListOptions } from "@patchbay/core/labels/queries";
@@ -116,6 +118,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components
 import { cn } from "@patchbay/ui/lib/utils";
 import { PAGE_GUTTER } from "../../layout/page-header";
 import { useT } from "../../i18n";
+import { AppLink } from "../../navigation";
 import { useStatusOptions } from "../utils/status-options";
 import { NO_PROPERTY_VALUE } from "../utils/filter";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
@@ -194,6 +197,7 @@ const DATE_FIELD_LABEL_KEY: Record<IssueDateField, "date_field_created" | "date_
 /** Feeding this to useIssueCounts hides every per-option badge (badges only
  *  render at count > 0) without touching the option lists themselves. */
 const NO_COUNT_ISSUES: Issue[] = [];
+const TASKS_SAVE_VIEW_MODES = ["list", "board", "table"] as const;
 
 function useIssueCounts(
   allIssues: Issue[],
@@ -1145,6 +1149,7 @@ export function IssuesHeader({
   scopedIssues,
   workingAgents,
   allowGantt = false,
+  allowDependencyGraph = false,
   dateFilter = null,
   onDateFilterChange,
   isRefreshing = false,
@@ -1158,6 +1163,7 @@ export function IssuesHeader({
    *  behind the agents-working chip. */
   workingAgents: WorkingAgentSummary[] | undefined;
   allowGantt?: boolean;
+  allowDependencyGraph?: boolean;
   dateFilter?: IssueDateFilter | null;
   onDateFilterChange?: (filter: IssueDateFilter | null) => void;
   isRefreshing?: boolean;
@@ -1336,6 +1342,7 @@ export function IssuesHeader({
           <IssueDisplayControls
             scopedIssues={scopedIssues}
             allowGantt={allowGantt}
+            allowDependencyGraph={allowDependencyGraph}
             dateFilter={dateFilter}
             onDateFilterChange={onDateFilterChange}
             facetCountsExact={facetCountsExact}
@@ -1378,6 +1385,9 @@ export function IssuesHeader({
         scope={dialogScope}
         editView={editTarget?.view ?? null}
         seedFromDefinition={editTarget?.fromDefinition ?? false}
+        supportedViewModes={
+          allowDependencyGraph ? TASKS_SAVE_VIEW_MODES : undefined
+        }
       />
     )}
     </>
@@ -1812,6 +1822,7 @@ export function IssueDisplayControls({
   scopedIssues,
   hideViewToggle = false,
   allowGantt = false,
+  allowDependencyGraph = false,
   dateFilter = null,
   onDateFilterChange,
   facetCountsExact = true,
@@ -1830,6 +1841,7 @@ export function IssueDisplayControls({
   // /my-issues, actor panel) ignore viewMode === "gantt" and would silently
   // fall back to List if the option were exposed there. Keep Gantt opt-in.
   allowGantt?: boolean;
+  allowDependencyGraph?: boolean;
   /**
    * Whether `scopedIssues` covers the surface's full window. Table does not
    * use loaded rows for counts; server-paged List, Board, and Swimlane follow
@@ -1841,6 +1853,7 @@ export function IssueDisplayControls({
   onTableFacetChange?: (facet: IssueTableFacetSpec | null) => void;
 }) {
   const { t } = useT("issues");
+  const paths = useWorkspacePaths();
   const [tableGroupMenuOpen, setTableGroupMenuOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const viewMode = useViewStore((s) => s.viewMode);
@@ -2382,10 +2395,12 @@ export function IssueDisplayControls({
                   <Table2 />
                   {t(($) => $.view.table)}
                 </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="swimlane">
-                  <Waves />
-                  {t(($) => $.view.swimlane)}
-                </DropdownMenuRadioItem>
+                {!allowDependencyGraph && (
+                  <DropdownMenuRadioItem value="swimlane">
+                    <Waves />
+                    {t(($) => $.view.swimlane)}
+                  </DropdownMenuRadioItem>
+                )}
                 {allowGantt && (
                   <DropdownMenuRadioItem value="gantt">
                     <ChartGantt />
@@ -2393,6 +2408,15 @@ export function IssueDisplayControls({
                   </DropdownMenuRadioItem>
                 )}
               </DropdownMenuRadioGroup>
+              {allowDependencyGraph && (
+                <DropdownMenuItem
+                  render={<AppLink href={paths.taskGraph()} />}
+                  className="pr-8"
+                >
+                  <Network />
+                  {t(($) => $.view.dependency_graph)}
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
