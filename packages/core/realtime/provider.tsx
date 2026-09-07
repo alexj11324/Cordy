@@ -123,7 +123,11 @@ export function WSProvider({
   const subscribe = useCallback(
     (event: WSEventType, handler: EventHandler) => {
       if (!wsClient) return () => {};
-      return wsClient.on(event, handler);
+      return wsClient.on(event, (payload, actorId, actorType) => {
+        if (getCurrentSlug() === wsClient.subscriptionWorkspaceSlug) {
+          handler(payload, actorId, actorType);
+        }
+      });
     },
     [wsClient],
   );
@@ -131,7 +135,9 @@ export function WSProvider({
   const onReconnectCb = useCallback(
     (callback: () => void) => {
       if (!wsClient) return () => {};
-      return wsClient.onReconnect(callback);
+      return wsClient.onReconnect(() => {
+        if (getCurrentSlug() === wsClient.subscriptionWorkspaceSlug) callback();
+      });
     },
     [wsClient],
   );
