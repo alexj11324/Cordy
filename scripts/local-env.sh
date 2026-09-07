@@ -3,11 +3,7 @@
 POSTGRES_DB="${POSTGRES_DB:-orvilo}"
 POSTGRES_USER="${POSTGRES_USER:-orvilo}"
 POSTGRES_PORT="${POSTGRES_PORT:-5432}"
-if [ -z "${DATABASE_URL:-}" ]; then
-  if [ -z "${POSTGRES_PASSWORD:-}" ]; then
-    echo "Configure the database password in the environment file before starting locally." >&2
-    return 1
-  fi
+if [ -z "${DATABASE_URL:-}" ] && [ -n "${POSTGRES_PASSWORD:-}" ]; then
   DATABASE_URL="postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable"
 fi
 

@@ -60,6 +60,10 @@ set +a
 # entrypoint. This also keeps older generated .env.worktree files usable.
 # shellcheck disable=SC1091
 . scripts/local-env.sh
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "Configure DATABASE_URL or a database password in $ENV_FILE before starting locally." >&2
+  exit 1
+fi
 
 # Prepare source-matched Go artifacts. A complete cache hit does not need Go;
 # a miss fails explicitly instead of selecting a stale release/PATH binary.
