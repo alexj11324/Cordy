@@ -21,7 +21,10 @@ import type {
   Project,
   IssueProperty,
 } from "@orvilo/core/types";
-import { useViewStore } from "@orvilo/core/issues/stores/view-store-context";
+import {
+  useViewStore,
+  useViewStoreApi,
+} from "@orvilo/core/issues/stores/view-store-context";
 import { propertyIdFromViewKey } from "@orvilo/core/issues/stores/view-store";
 import { propertyListOptions, useSetIssueProperty, useUnsetIssueProperty } from "@orvilo/core/properties";
 import { useWorkspaceId } from "@orvilo/core/hooks";
@@ -38,6 +41,7 @@ import type {
   IssueStatusPageState,
   IssueStatusPagination,
 } from "../surface/use-issue-status-branches";
+import type { MoveIssueCallbacks } from "../surface/use-issue-surface-actions";
 import type {
   IssueGroupBranches,
   IssueGroupPageState,
@@ -65,6 +69,15 @@ function isStatusGroup(
   group: BoardColumnGroup,
 ): group is BoardColumnGroup & { status: IssueStatusCategory } {
   return group.status !== undefined;
+}
+
+function makeStatusGroup(status: IssueStatusCategory): BoardColumnGroup {
+  return {
+    id: statusGroupId(status),
+    title: status,
+    status,
+    createData: { status },
+  };
 }
 
 interface ProjectColumnLabels {
@@ -155,12 +168,7 @@ function buildGroups(
   }: BuildGroupsContext,
 ): BoardColumnGroup[] {
   if (grouping === "status") {
-    return visibleStatuses.map((status) => ({
-      id: statusGroupId(status),
-      title: status,
-      status,
-      createData: { status },
-    }));
+    return visibleStatuses.map(makeStatusGroup);
   }
 
   // Select-property board: one column per option (definition order) plus a
@@ -253,6 +261,7 @@ function BoardViewImpl({
   issues,
   visibleStatuses,
   hiddenStatuses,
+  droppableHiddenStatuses,
   onMoveIssue,
   childProgressMap = EMPTY_PROGRESS_MAP,
   projectMap,
@@ -264,7 +273,9 @@ function BoardViewImpl({
   issues: Issue[];
   visibleStatuses: IssueStatusCategory[];
   hiddenStatuses: IssueStatusCategory[];
-  onMoveIssue: (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => void;
+  /** Hidden by display settings, not excluded by the view filter. */
+  droppableHiddenStatuses?: IssueStatusCategory[];
+  onMoveIssue: (issueId: string, updates: DragMoveUpdates, callbacks?: MoveIssueCallbacks) => boolean | void;
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
   /** When set, the per-column "+" pre-fills the project on the create form. */
@@ -276,6 +287,7 @@ function BoardViewImpl({
   const { t } = useT("issues");
   const storeGrouping = useViewStore((s) => s.grouping);
   const sortBy = useViewStore((s) => s.sortBy);
+  const viewStoreApi = useViewStoreApi();
   const boardWsId = useWorkspaceId();
   const { data: workspaceProperties = [] } = useQuery(propertyListOptions(boardWsId));
   const groupingPropertyId = propertyIdFromViewKey(storeGrouping);
@@ -455,13 +467,109 @@ function BoardViewImpl({
     },
     [hydratedExecutorGroups, hydratedProjectGroups, issues, visibleStatuses, grouping, getActorName, groupingProperty, projectMap, projectColumnLabels, groupPagination, t],
   );
+  // Empty status columns remain server-backed drop targets, but they do not
+  // earn a full 280px board column. Keep them in the local drag map and move
+  // them into the hidden panel until a card is placed there.
+  const emptyStatusIds = useMemo(() => {
+    if (grouping !== "status") return new Set<string>();
+    const ids = new Set<string>();
+    for (const group of groups) {
+      if (!group.status) continue;
+      const page = statusPagination?.[group.status];
+      const hasLoadedIssue = groupedIssues.some((issue) =>
+        issueMatchesGroup(issue, group),
+      );
+      if (
+        page &&
+        !page.isLoading &&
+        !page.isFetching &&
+        !page.isError &&
+        page.total === 0 &&
+        !hasLoadedIssue
+      ) {
+        ids.add(group.id);
+      }
+    }
+    return ids;
+  }, [groupedIssues, groups, grouping, statusPagination]);
+  // A dropped card can take one render to appear in the server-backed status
+  // branch. Keep an auto-hidden target expanded during that handoff so the
+  // card does not appear to disappear after a successful drop.
+  const [revealedEmptyStatuses, setRevealedEmptyStatuses] = useState<
+    Set<IssueStatusCategory>
+  >(() => new Set<IssueStatusCategory>());
+
+  const renderedGroups = useMemo(
+    () =>
+      groups.filter(
+        (group) =>
+          !emptyStatusIds.has(group.id) ||
+          (group.status !== undefined &&
+            revealedEmptyStatuses.has(group.status)),
+      ),
+    [emptyStatusIds, groups, revealedEmptyStatuses],
+  );
+  const hiddenBoardStatuses = useMemo(() => {
+    const statuses = [...hiddenStatuses];
+    const seen = new Set(statuses);
+    for (const group of groups) {
+      if (
+        group.status &&
+        emptyStatusIds.has(group.id) &&
+        !revealedEmptyStatuses.has(group.status) &&
+        !seen.has(group.status)
+      ) {
+        statuses.push(group.status);
+        seen.add(group.status);
+      }
+    }
+    return statuses.filter((status) => !revealedEmptyStatuses.has(status));
+  }, [emptyStatusIds, groups, hiddenStatuses, revealedEmptyStatuses]);
+  const hiddenDropStatusSet = useMemo(
+    () => new Set(droppableHiddenStatuses ?? hiddenStatuses),
+    [droppableHiddenStatuses, hiddenStatuses],
+  );
+  const hiddenDropStatuses = useMemo(() => {
+    const statuses = hiddenStatuses.filter((status) =>
+      hiddenDropStatusSet.has(status),
+    );
+    for (const group of groups) {
+      if (
+        group.status &&
+        emptyStatusIds.has(group.id) &&
+        !revealedEmptyStatuses.has(group.status) &&
+        !statuses.includes(group.status)
+      ) {
+        statuses.push(group.status);
+      }
+    }
+    return statuses.filter((status) => !revealedEmptyStatuses.has(status));
+  }, [
+    emptyStatusIds,
+    groups,
+    hiddenDropStatusSet,
+    hiddenStatuses,
+    revealedEmptyStatuses,
+  ]);
+  const dropGroups = useMemo(() => {
+    if (grouping !== "status") return groups;
+    const result: BoardColumnGroup[] = [...groups];
+    const seen = new Set(result.map((group) => group.id));
+    for (const status of hiddenDropStatuses) {
+      const group = makeStatusGroup(status);
+      if (seen.has(group.id)) continue;
+      result.push(group);
+      seen.add(group.id);
+    }
+    return result;
+  }, [grouping, groups, hiddenDropStatuses]);
   const groupIds = useMemo(
-    () => new Set(groups.map((group) => group.id)),
-    [groups],
+    () => new Set(dropGroups.map((group) => group.id)),
+    [dropGroups],
   );
   const groupMap = useMemo(
-    () => new Map(groups.map((group) => [group.id, group])),
-    [groups],
+    () => new Map(dropGroups.map((group) => [group.id, group])),
+    [dropGroups],
   );
   const collisionDetection = useMemo(
     () => makeKanbanCollision(groupIds),
@@ -470,6 +578,34 @@ function BoardViewImpl({
 
   // --- Drag state ---
   const [activeIssue, setActiveIssue] = useState<Issue | null>(null);
+
+  useEffect(() => {
+    setRevealedEmptyStatuses((previous) => {
+      let changed = false;
+      const next = new Set(previous);
+      for (const status of previous) {
+        if (!emptyStatusIds.has(statusGroupId(status))) {
+          next.delete(status);
+          changed = true;
+        }
+      }
+      return changed ? next : previous;
+    });
+  }, [emptyStatusIds]);
+
+  const showHiddenStatus = useCallback(
+    (status: IssueStatusCategory) => {
+      if (emptyStatusIds.has(statusGroupId(status))) {
+        setRevealedEmptyStatuses((previous) => {
+          if (previous.has(status)) return previous;
+          return new Set(previous).add(status);
+        });
+      }
+      viewStoreApi.getState().showStatus(status);
+    },
+    [emptyStatusIds, viewStoreApi],
+  );
+
   // Shared drag/settle primitive: owns the local column mirror, the
   // dragging/settling locks, the post-move animation-frame throttle, and the
   // settle callback. Shared with list-view (and swimlane) so the surfaces
@@ -484,13 +620,26 @@ function BoardViewImpl({
     recentlyMovedRef,
     settleVersion,
     beginSettle,
-  } = useDragSettle(() => buildColumns(groupedIssues, groups, grouping, groupingOptionIds));
+  } = useDragSettle(() =>
+    buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
+  );
 
   useEffect(() => {
     if (!isDraggingRef.current && !isSettlingRef.current) {
-      setColumns(buildColumns(groupedIssues, groups, grouping, groupingOptionIds));
+      setColumns(
+        buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
+      );
     }
-  }, [groupedIssues, groups, grouping, groupingOptionIds, settleVersion, setColumns, isDraggingRef, isSettlingRef]);
+  }, [
+    groupedIssues,
+    dropGroups,
+    grouping,
+    groupingOptionIds,
+    settleVersion,
+    setColumns,
+    isDraggingRef,
+    isSettlingRef,
+  ]);
 
   // --- Issue map ---
   // Frozen during drag so BoardColumn/DraggableBoardCard props stay
@@ -542,7 +691,7 @@ function BoardViewImpl({
 
         recentlyMovedRef.current = true;
         const oldIds = prev[activeCol]!.filter((id) => id !== activeId);
-        const newIds = [...prev[overCol]!];
+        const newIds = [...(prev[overCol] ?? [])];
         const overIndex = newIds.indexOf(overId);
         const insertIndex = overIndex >= 0 ? overIndex : newIds.length;
         newIds.splice(insertIndex, 0, activeId);
@@ -559,7 +708,9 @@ function BoardViewImpl({
       setActiveIssue(null);
 
       const resetColumns = () =>
-        setColumns(buildColumns(groupedIssues, groups, grouping, groupingOptionIds));
+        setColumns(
+          buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
+        );
 
       if (!over) {
         resetColumns();
@@ -604,6 +755,26 @@ function BoardViewImpl({
       }
 
       const map = issueMapRef.current;
+      const revealDroppedStatus = () => {
+        const targetStatus = finalGroup.status;
+        if (!targetStatus || !hiddenDropStatuses.includes(targetStatus)) return;
+        showHiddenStatus(targetStatus);
+      };
+      const restoreDroppedStatus = () => {
+        const targetStatus = finalGroup.status;
+        if (!targetStatus || !hiddenDropStatuses.includes(targetStatus)) return;
+        if (emptyStatusIds.has(finalGroup.id)) {
+          setRevealedEmptyStatuses((previous) => {
+            if (!previous.has(targetStatus)) return previous;
+            const next = new Set(previous);
+            next.delete(targetStatus);
+            return next;
+          });
+        } else {
+          viewStoreApi.getState().hideStatus(targetStatus);
+        }
+      };
+
 
       if (sortBy !== "position") {
         // Cross-column: only update group (status/executor), keep original position.
@@ -629,14 +800,19 @@ function BoardViewImpl({
           const fromIds = (prev[activeCol] ?? []).filter((cid) => cid !== activeId);
           return { ...prev, [activeCol]: fromIds, [overCol]: targetIds };
         });
-        onMoveIssue(
+        const committed = onMoveIssue(
           activeId,
           {
             ...getMoveUpdates(finalGroup, currentIssue.position, currentIssue),
             ...getMoveAnchors(targetIds, activeId),
           },
-          beginSettle(),
+          { onSettled: beginSettle(), onSuccess: revealDroppedStatus, onError: restoreDroppedStatus },
         );
+        if (committed === false) {
+          resetColumns();
+          return;
+        }
+        revealDroppedStatus();
         applyPropertyGroupValue(finalGroup, activeId);
         return;
       }
@@ -658,17 +834,22 @@ function BoardViewImpl({
       // success (onSuccess already patched the moved card in place), the revert
       // on error (onError restored the snapshot). Without it a failed move would
       // strand the card at the drop target, since onSettled no longer refetches.
-      onMoveIssue(
+      const committed = onMoveIssue(
         activeId,
         {
           ...getMoveUpdates(finalGroup, newPosition, currentIssue),
           ...getMoveAnchors(finalIds, activeId),
         },
-        beginSettle(),
+        { onSettled: beginSettle(), onSuccess: revealDroppedStatus, onError: restoreDroppedStatus },
       );
+      if (committed === false) {
+        resetColumns();
+        return;
+      }
+      revealDroppedStatus();
       applyPropertyGroupValue(finalGroup, activeId);
     },
-    [groupedIssues, groups, grouping, groupingOptionIds, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, columnsRef, isDraggingRef, setColumns, applyPropertyGroupValue],
+    [groupedIssues, dropGroups, grouping, groupingOptionIds, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, columnsRef, isDraggingRef, setColumns, applyPropertyGroupValue, emptyStatusIds, hiddenDropStatuses, showHiddenStatus, viewStoreApi],
   );
 
   // An aborted drag (pointercancel, window resize, tab hide, Escape) fires
@@ -678,8 +859,10 @@ function BoardViewImpl({
   const handleDragCancel = useCallback(() => {
     isDraggingRef.current = false;
     setActiveIssue(null);
-    setColumns(buildColumns(groupedIssues, groups, grouping, groupingOptionIds));
-  }, [groupedIssues, groups, grouping, groupingOptionIds, setColumns, isDraggingRef]);
+    setColumns(
+      buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
+    );
+  }, [groupedIssues, dropGroups, grouping, groupingOptionIds, setColumns, isDraggingRef]);
 
   return (
     <DndContext
@@ -714,7 +897,7 @@ function BoardViewImpl({
             </div>
           )
         ) : (
-          groups.map((group) =>
+          renderedGroups.map((group) =>
             isStatusGroup(group) ? (
               <ServerPaginatedBoardColumn
                 key={group.id}
@@ -769,10 +952,12 @@ function BoardViewImpl({
         )}
 
 
-        {grouping === "status" && hiddenStatuses.length > 0 && (
+        {grouping === "status" && hiddenBoardStatuses.length > 0 && (
           <BoardHiddenColumnsPanel
-            hiddenStatuses={hiddenStatuses}
+            hiddenStatuses={hiddenBoardStatuses}
+            droppableStatuses={hiddenDropStatuses}
             statusPagination={statusPagination}
+            onShowStatus={showHiddenStatus}
           />
         )}
       </div>
@@ -847,10 +1032,14 @@ const ServerPaginatedBoardColumn = memo(function ServerPaginatedBoardColumn({
 
 function BoardHiddenColumnsPanel({
   hiddenStatuses,
+  droppableStatuses,
   statusPagination,
+  onShowStatus,
 }: {
   hiddenStatuses: IssueStatusCategory[];
+  droppableStatuses: IssueStatusCategory[];
   statusPagination?: IssueStatusPagination;
+  onShowStatus: (status: IssueStatusCategory) => void;
 }) {
   return (
     <HiddenColumnsPanel
@@ -860,6 +1049,8 @@ function BoardHiddenColumnsPanel({
           key={status}
           status={status}
           total={statusPagination?.[status]?.total}
+          droppable={droppableStatuses.includes(status)}
+          onShow={() => onShowStatus(status)}
         />
       )}
     />

@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/orvilo-ai/orvilo/server/internal/attribution"
 	"github.com/orvilo-ai/orvilo/server/internal/events"
 	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
 	"github.com/orvilo-ai/orvilo/server/internal/util"
@@ -429,31 +430,72 @@ func (s *AgentCoordinationService) RecordReviewerReassignmentTx(ctx context.Cont
 	if err != nil {
 		return fmt.Errorf("reviewer reassignment: load source task: %w", err)
 	}
+	return s.enqueueExplicitReviewerHandoff(ctx, qtx, current, sourceTaskID, payload, "reviewer_reassigned", "reviewer_reassignment")
+}
+
+// RecordReviewEntryTx gives an explicit review transition the same durable
+// dispatch obligation as automatic completion. Human reviewers own their work
+// through the issue and notifications; agent/team reviewers also need a task.
+func (s *AgentCoordinationService) RecordReviewEntryTx(ctx context.Context, qtx *db.Queries, issue db.Issue, actorUserID pgtype.UUID, handoffNote string) error {
+	reviewerType := coordinationText(issue.ReviewerType)
+	if reviewerType == "member" {
+		return nil
+	}
+	if (reviewerType != "agent" && reviewerType != "team") || !issue.ReviewerID.Valid || s.Tasks == nil {
+		return errors.New("review entry requires a reviewer and task service")
+	}
+	agentID := issue.ReviewerID
+	if reviewerType == "team" {
+		team, err := qtx.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{ID: issue.ReviewerID, WorkspaceID: issue.WorkspaceID})
+		if err != nil {
+			return fmt.Errorf("review entry: load reviewer team: %w", err)
+		}
+		agentID = team.LeaderID
+	}
+	agent, err := qtx.GetAgentInWorkspace(ctx, db.GetAgentInWorkspaceParams{ID: agentID, WorkspaceID: issue.WorkspaceID})
+	if err != nil {
+		return fmt.Errorf("review entry: load reviewer agent: %w", err)
+	}
+	attr := s.Tasks.attributionForIssueTask(ctx, issue, pgtype.UUID{}, attribution.SourceCommentSource, actorUserID)
+	attr, err = s.Tasks.applyAttributionFallback(ctx, attr, agent)
+	if err != nil {
+		return fmt.Errorf("review entry attribution: %w", err)
+	}
+	payload := coordinationEventPayload{
+		OriginatorUserID:  util.UUIDToString(attr.UserID),
+		AccountableUserID: util.UUIDToString(attr.AccountableUserID),
+		OriginatorSource:  string(attr.Source),
+		HandoffNote:       handoffNote,
+	}
+	return s.enqueueExplicitReviewerHandoff(ctx, qtx, issue, pgtype.UUID{}, payload, "review_entered", "review_handoff")
+}
+
+func (s *AgentCoordinationService) enqueueExplicitReviewerHandoff(ctx context.Context, qtx *db.Queries, current db.Issue, sourceTaskID pgtype.UUID, payload coordinationEventPayload, outcome, evidenceKind string) error {
 	reviewerType, reviewerID := coordinationIssueOwner(current, CoordinationAssignmentReviewer)
 	if reviewerType == "" || !reviewerID.Valid {
 		return fmt.Errorf("reviewer reassignment: current reviewer is missing")
 	}
 	payload.AssignmentRole = CoordinationAssignmentReviewer
 	payload.FollowUp = boolPtr(true)
-	payload.Outcome = "reviewer_reassigned"
+	payload.Outcome = outcome
 	payload.SourceTaskID = util.UUIDToString(sourceTaskID)
 	payload.IssueRevision = int64Ptr(current.Revision)
-	payload.TriggerEvidenceKind = "reviewer_reassignment"
+	payload.TriggerEvidenceKind = evidenceKind
 	payload.TriggerEvidenceRefID = util.UUIDToString(sourceTaskID)
 	payload.ExplicitReviewer = true
-	payload.ReviewerReassignment = true
+	payload.ReviewerReassignment = outcome == "reviewer_reassigned"
 	payload.ReviewerType = reviewerType
 	payload.ReviewerID = util.UUIDToString(reviewerID)
 	ownerType := ""
 	ownerID := pgtype.UUID{}
-	if reviewerType == "agent" {
+	if reviewerType == "agent" || reviewerType == "team" {
 		ownerType = reviewerType
 		ownerID = reviewerID
 		payload.OwnerType = ownerType
 		payload.OwnerID = util.UUIDToString(ownerID)
 	}
 	return s.enqueueCoordinationEvent(ctx, qtx,
-		"reviewer_reassigned:"+util.UUIDToString(current.ID)+":"+fmt.Sprintf("%d", current.Revision),
+		outcome+":"+util.UUIDToString(current.ID)+":"+fmt.Sprintf("%d", current.Revision),
 		CoordinationEventTaskCompleted,
 		current.WorkspaceID, current.ID, sourceTaskID, payload,
 		CoordinationAssignmentReviewer, ownerType, ownerID,
@@ -757,6 +799,7 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 			}
 			candidate, err := qtx.SelectCoordinationReviewer(ctx, db.SelectCoordinationReviewerParams{
 				WorkspaceID:         issue.WorkspaceID,
+				ExplicitReviewer:    payload.ExplicitReviewer,
 				ReviewerID:          reviewerID,
 				SourceAgentID:       optionalUUID(payload.AgentID),
 				TeamID:              teamID,
@@ -794,7 +837,7 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 				"assignment_activity_published": false,
 				"candidate_agent_id":            util.UUIDToString(candidate.ID),
 				"candidate_agent_name":          candidate.Name,
-				"explicit_reviewer":             explicitReviewerType != "",
+				"explicit_reviewer":             payload.ExplicitReviewer,
 				"previous_status":               previousIssue.Status,
 				"previous_executor_type":        coordinationText(previousIssue.ExecutorType),
 				"previous_executor_id":          util.UUIDToString(previousIssue.ExecutorID),
@@ -1208,6 +1251,7 @@ func (s *AgentCoordinationService) recoverPersistedReviewerAssignment(
 	selectReviewer := func(reviewerID pgtype.UUID) (db.SelectCoordinationReviewerRow, error) {
 		return qtx.SelectCoordinationReviewer(ctx, db.SelectCoordinationReviewerParams{
 			WorkspaceID:         issue.WorkspaceID,
+			ExplicitReviewer:    explicitReviewer,
 			ReviewerID:          reviewerID,
 			SourceAgentID:       optionalUUID(payload.AgentID),
 			TeamID:              teamID,
@@ -1769,6 +1813,9 @@ func coordinationCompletionStillOwnsIssue(issue db.Issue, role string, taskConte
 		}
 		return taskContext.OwnerGeneration == nil || *taskContext.OwnerGeneration == issue.ExecutorGeneration
 	case CoordinationAssignmentReviewer:
+		if strings.TrimSpace(taskContext.OwnerType) == "team" {
+			return coordinationText(issue.ReviewerType) == "team" && sameCoordinationUUID(issue.ReviewerID, ownerID)
+		}
 		return sameCoordinationUUID(ownerID, agentID) && coordinationText(issue.ReviewerType) == "agent" && sameCoordinationUUID(issue.ReviewerID, agentID)
 	default:
 		return false
@@ -1814,7 +1861,7 @@ func coordinationIssueOwner(issue db.Issue, role string) (string, pgtype.UUID) {
 
 func coordinationOwnerMatchesIssue(issue db.Issue, role, ownerType string, ownerID pgtype.UUID, expectedGeneration *int64) bool {
 	currentType, currentID := coordinationIssueOwner(issue, role)
-	if role == CoordinationAssignmentReviewer && ownerType != "agent" {
+	if role == CoordinationAssignmentReviewer && ownerType != "agent" && ownerType != "team" {
 		return false
 	}
 	if role == CoordinationAssignmentExecutor && ownerType != "agent" && ownerType != "team" {

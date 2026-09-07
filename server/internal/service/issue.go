@@ -508,9 +508,25 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 			return IssueCreateResult{}, fmt.Errorf("create deferred channel issue task: %w", err)
 		}
 	}
+	reviewEntry := issuestatus.Effective(ctx, qtx, issue.WorkspaceID, issue.Status) == issuestatus.InReview
+	if reviewEntry && issue.ReviewerType.Valid && issue.ReviewerType.String != "member" {
+		if s.TaskService == nil || s.TaskService.Coordination == nil {
+			return IssueCreateResult{}, errors.New("review entry requires agent coordination service")
+		}
+		actorUserID := pgtype.UUID{}
+		if issue.CreatorType == "member" {
+			actorUserID = issue.CreatorID
+		}
+		if err := s.TaskService.Coordination.RecordReviewEntryTx(ctx, qtx, issue, actorUserID, ""); err != nil {
+			return IssueCreateResult{}, fmt.Errorf("record new issue review handoff: %w", err)
+		}
+	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return IssueCreateResult{}, fmt.Errorf("commit: %w", err)
+	}
+	if reviewEntry && s.TaskService != nil {
+		s.TaskService.Coordination.Wake()
 	}
 
 	attachments := s.linkAttachments(ctx, issue, p.AttachmentIDs)
@@ -771,7 +787,7 @@ func (s *IssueService) maybeEnqueueOnExecutor(ctx context.Context, issue db.Issu
 	// Backlog is the parking lot: nothing runs from it, so nothing here needs
 	// explaining either. A custom status in the backlog category parks the
 	// same way. (MUL-6243)
-	if issuestatus.Effective(ctx, s.Queries, issue.WorkspaceID, issue.Status) == "backlog" {
+	if category := issuestatus.Effective(ctx, s.Queries, issue.WorkspaceID, issue.Status); category == "backlog" || category == issuestatus.InReview {
 		return pgtype.UUID{}
 	}
 	verdict, admitted := agentExecutorVerdict(ctx, s.runtimeLookup(s.Queries), issue)
@@ -817,7 +833,7 @@ func (s *IssueService) maybeEnqueueOnExecutor(ctx context.Context, issue db.Issu
 func (s *IssueService) shouldEnqueueExecutorTaskWithQueries(ctx context.Context, q *db.Queries, issue db.Issue) bool {
 	// Resolved through q, not s.Queries: this runs inside the create
 	// transaction and must see the same snapshot as the rest of it. (MUL-6243)
-	if issuestatus.Effective(ctx, q, issue.WorkspaceID, issue.Status) == "backlog" {
+	if category := issuestatus.Effective(ctx, q, issue.WorkspaceID, issue.Status); category == "backlog" || category == issuestatus.InReview {
 		return false
 	}
 	return isAgentExecutorReadyWithQueries(ctx, s.runtimeLookup(q), issue)

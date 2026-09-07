@@ -2,15 +2,243 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/orvilo-ai/orvilo/server/internal/events"
 	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
+
+type afterIssueReadDB struct {
+	db.DBTX
+	afterRead func()
+}
+
+func (d *afterIssueReadDB) QueryRow(ctx context.Context, query string, args ...any) pgx.Row {
+	row := d.DBTX.QueryRow(ctx, query, args...)
+	if strings.HasPrefix(query, "-- name: GetIssueInWorkspace :one") && d.afterRead != nil {
+		afterRead := d.afterRead
+		d.afterRead = nil
+		return afterIssueReadRow{Row: row, afterRead: afterRead}
+	}
+	return row
+}
+
+type afterIssueReadRow struct {
+	pgx.Row
+	afterRead func()
+}
+
+func (r afterIssueReadRow) Scan(dest ...any) error {
+	if err := r.Row.Scan(dest...); err != nil {
+		return err
+	}
+	r.afterRead()
+	return nil
+}
+
+func TestIssueMetadataUpdatePreservesConcurrentReviewHandoff(t *testing.T) {
+	requireIssueCoordinationDatabase(t)
+	disableIssueRoleDefaults = true
+	t.Cleanup(func() { disableIssueRoleDefaults = false })
+	executor := dbfx.Agent(t, "metadata executor", testRuntimeID)
+	previousReviewer := dbfx.Agent(t, "old reviewer", testRuntimeID)
+	nextReviewer := dbfx.Agent(t, "new reviewer", testRuntimeID)
+	issueID := dbfx.Issue(t, "metadata review race", testutil.Cols{
+		"status": "in_progress", "executor_type": "agent", "executor_id": executor,
+		"reviewer_type": "agent", "reviewer_id": previousReviewer,
+	})
+	cleanupIssueCoordinationRows(t, issueID)
+	h := *testHandler
+	h.Queries = db.New(&afterIssueReadDB{DBTX: testPool, afterRead: func() {
+		// Commit the other request after the metadata writer reads its snapshot.
+		w := httptest.NewRecorder()
+		r := newRequest(http.MethodPut, "/api/issues/"+issueID+"?workspace_id="+testWorkspaceID, map[string]any{
+			"status": "in_review", "reviewer_type": "agent", "reviewer_id": nextReviewer,
+		})
+		testHandler.UpdateIssue(w, withURLParam(r, "id", issueID))
+		if w.Code != http.StatusOK {
+			t.Fatalf("concurrent handoff: %d %s", w.Code, w.Body.String())
+		}
+	}})
+	w := httptest.NewRecorder()
+	r := newRequest(http.MethodPut, "/api/issues/"+issueID+"?workspace_id="+testWorkspaceID, map[string]any{"priority": "high"})
+	h.UpdateIssue(w, withURLParam(r, "id", issueID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("metadata update: %d %s", w.Code, w.Body.String())
+	}
+	var reviewer, status, priority string
+	dbfx.QueryRow(t, `SELECT reviewer_id::text, status, priority FROM issue WHERE id = $1`, issueID).Scan(&reviewer, &status, &priority)
+	if reviewer != nextReviewer || status != "in_review" || priority != "high" {
+		t.Fatalf("metadata overwrote review handoff: reviewer=%s status=%s priority=%s", reviewer, status, priority)
+	}
+}
+
+func TestBatchReviewerOnlyChangeDispatchesNewReviewer(t *testing.T) {
+	requireIssueCoordinationDatabase(t)
+	executor := dbfx.Agent(t, "batch executor", testRuntimeID)
+	previousReviewer := dbfx.Agent(t, "batch old reviewer", testRuntimeID)
+	nextReviewer := dbfx.Agent(t, "batch new reviewer", testRuntimeID)
+	issueID := dbfx.Issue(t, "batch review reassignment", testutil.Cols{
+		"status": "in_review", "executor_type": "agent", "executor_id": executor,
+		"reviewer_type": "agent", "reviewer_id": previousReviewer,
+	})
+	cleanupIssueCoordinationRows(t, issueID)
+	w := httptest.NewRecorder()
+	testHandler.BatchUpdateIssues(w, newRequest(http.MethodPut, "/api/issues/batch?workspace_id="+testWorkspaceID, map[string]any{
+		"issue_ids": []string{issueID}, "updates": map[string]any{"reviewer_type": "agent", "reviewer_id": nextReviewer},
+	}))
+	if w.Code != http.StatusOK {
+		t.Fatalf("batch reviewer: %d %s", w.Code, w.Body.String())
+	}
+	var assignments int
+	dbfx.QueryRow(t, `SELECT count(*) FROM agent_coordination_assignment WHERE issue_id = $1 AND owner_id = $2`, issueID, nextReviewer).Scan(&assignments)
+	if assignments != 1 {
+		t.Fatalf("new reviewer assignments = %d; response=%s", assignments, w.Body.String())
+	}
+}
+
+func TestAutomaticReviewerStillNeedsReviewRoleBeforeDispatch(t *testing.T) {
+	requireIssueCoordinationDatabase(t)
+	executor := dbfx.Agent(t, "automatic executor", testRuntimeID)
+	reviewer := dbfx.Agent(t, "former automatic reviewer", testRuntimeID)
+	issueID := dbfx.Issue(t, "automatic reviewer lost role", testutil.Cols{
+		"status": "in_review", "executor_type": "agent", "executor_id": executor,
+		"reviewer_type": "agent", "reviewer_id": reviewer,
+	})
+	eventID := dbfx.Insert(t, "agent_coordination_outbox", testutil.Cols{
+		"event_key": "automatic-reviewer-role/" + uuid.NewString(), "workspace_id": testWorkspaceID,
+		"issue_id": issueID, "event_type": "task_completed", "status": "pending",
+		"payload": testutil.Raw(`'{"assignment_role":"reviewer","explicit_reviewer":false}'::jsonb`),
+	})
+	dbfx.Insert(t, "agent_coordination_assignment", testutil.Cols{
+		"event_id": eventID, "workspace_id": testWorkspaceID, "issue_id": issueID,
+		"role": "reviewer", "status": "assigned", "owner_type": "agent", "owner_id": reviewer,
+	})
+	dbfx.Cleanup(t, `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
+	testHandler.AgentCoordination.RunOnce(context.Background())
+	if got := taskCountFor(t, issueID, reviewer); got != 0 {
+		t.Fatalf("automatic reviewer without a review role received %d tasks", got)
+	}
+}
+
+func TestReviewCannotClearReviewerOrAssignExecutorAsReviewer(t *testing.T) {
+	requireIssueCoordinationDatabase(t)
+	disableIssueRoleDefaults = true
+	t.Cleanup(func() { disableIssueRoleDefaults = false })
+	executor := dbfx.Agent(t, "invariant executor", testRuntimeID)
+	reviewer := dbfx.Agent(t, "invariant reviewer", testRuntimeID)
+	issueID := dbfx.Issue(t, "review role invariant", testutil.Cols{
+		"status": "in_review", "executor_type": "agent", "executor_id": executor,
+		"reviewer_type": "agent", "reviewer_id": reviewer,
+	})
+	for _, body := range []map[string]any{
+		{"reviewer_type": nil, "reviewer_id": nil, "suppress_run": true},
+		{"executor_type": "agent", "executor_id": reviewer},
+	} {
+		w := httptest.NewRecorder()
+		r := newRequest(http.MethodPut, "/api/issues/"+issueID+"?workspace_id="+testWorkspaceID, body)
+		testHandler.UpdateIssue(w, withURLParam(r, "id", issueID))
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("invalid review roles accepted: %d %s", w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestReviewEntryRejectsUnknownOrPrivateReviewer(t *testing.T) {
+	requireIssueCoordinationDatabase(t)
+	disableIssueRoleDefaults = true
+	t.Cleanup(func() { disableIssueRoleDefaults = false })
+	executor := dbfx.Agent(t, "authorized executor", testRuntimeID)
+	otherOwner := dbfx.User(t, "Reviewer Owner", "reviewer-owner-"+uuid.NewString()+"@test.local")
+	privateReviewer := dbfx.Agent(t, "private reviewer", testRuntimeID, testutil.Cols{"owner_id": otherOwner, "permission_mode": "private"})
+	for _, reviewer := range []string{uuid.NewString(), privateReviewer} {
+		issueID := dbfx.Issue(t, "unauthorized review entry", testutil.Cols{
+			"status": "in_progress", "executor_type": "agent", "executor_id": executor,
+		})
+		w := httptest.NewRecorder()
+		r := newRequest(http.MethodPut, "/api/issues/"+issueID+"?workspace_id="+testWorkspaceID, map[string]any{
+			"status": "in_review", "reviewer_type": "agent", "reviewer_id": reviewer,
+		})
+		testHandler.UpdateIssue(w, withURLParam(r, "id", issueID))
+		if w.Code != http.StatusBadRequest && w.Code != http.StatusForbidden {
+			t.Fatalf("invalid reviewer accepted: %d %s", w.Code, w.Body.String())
+		}
+		var status string
+		dbfx.QueryRow(t, `SELECT status FROM issue WHERE id = $1`, issueID).Scan(&status)
+		if status != "in_progress" {
+			t.Fatalf("refused review changed status to %s", status)
+		}
+	}
+}
+
+func TestIssueReviewEntryRecordsDurableReviewerHandoff(t *testing.T) {
+	requireIssueCoordinationDatabase(t)
+	disableIssueRoleDefaults = true
+	t.Cleanup(func() { disableIssueRoleDefaults = false })
+	for _, mode := range []string{"update", "batch", "create"} {
+		t.Run(mode, func(t *testing.T) {
+			executorID := dbfx.Agent(t, "entry-executor-"+mode, testRuntimeID)
+			reviewerID := dbfx.Agent(t, "entry-reviewer-"+mode, testRuntimeID)
+			var issueID string
+			w := httptest.NewRecorder()
+			if mode == "create" {
+				testHandler.CreateIssue(w, newRequest(http.MethodPost, "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+					"title": "new review handoff", "status": "in_review",
+					"executor_type": "agent", "executor_id": executorID,
+					"reviewer_type": "agent", "reviewer_id": reviewerID,
+				}))
+				if w.Code != http.StatusCreated {
+					t.Fatalf("create review issue: %d %s", w.Code, w.Body.String())
+				}
+				var response IssueResponse
+				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+					t.Fatal(err)
+				}
+				issueID = response.ID
+				t.Cleanup(func() { deleteTestIssue(t, issueID) })
+			} else {
+				issueID = dbfx.Issue(t, "review entry "+mode, testutil.Cols{
+					"status": "in_progress", "executor_type": "agent", "executor_id": executorID,
+					"reviewer_type": "agent", "reviewer_id": reviewerID,
+				})
+				if mode == "update" {
+					r := newRequest(http.MethodPut, "/api/issues/"+issueID+"?workspace_id="+testWorkspaceID, map[string]any{"status": "in_review"})
+					testHandler.UpdateIssue(w, withURLParam(r, "id", issueID))
+				} else {
+					testHandler.BatchUpdateIssues(w, newRequest(http.MethodPut, "/api/issues/batch?workspace_id="+testWorkspaceID, map[string]any{
+						"issue_ids": []string{issueID}, "updates": map[string]any{"status": "in_review"},
+					}))
+				}
+				if w.Code != http.StatusOK {
+					t.Fatalf("enter review: %d %s", w.Code, w.Body.String())
+				}
+			}
+			cleanupIssueCoordinationRows(t, issueID)
+			dbfx.Cleanup(t, `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
+			var assignments int
+			dbfx.QueryRow(t, `SELECT count(*) FROM agent_coordination_assignment WHERE issue_id = $1 AND role = 'reviewer' AND owner_id = $2 AND status = 'assigned'`, issueID, reviewerID).Scan(&assignments)
+			if assignments != 1 {
+				t.Fatalf("reviewer dispatch obligations = %d, want 1", assignments)
+			}
+			testHandler.AgentCoordination.RunOnce(context.Background())
+			testHandler.AgentCoordination.RunOnce(context.Background())
+			if got := taskCountFor(t, issueID, reviewerID); got != 1 {
+				t.Fatalf("reviewer tasks = %d, want 1", got)
+			}
+			if got := taskCountFor(t, issueID, executorID); got != 0 {
+				t.Fatalf("implementation restarted during review: %d tasks", got)
+			}
+		})
+	}
+}
 
 func TestUpdateIssue_ReviewReturnRetiresReviewerTaskAndRecordsExecutorHandoff(t *testing.T) {
 	requireIssueCoordinationDatabase(t)

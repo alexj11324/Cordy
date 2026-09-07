@@ -40,12 +40,12 @@ func LeavesReviewForImplementation(previousCategory, nextCategory string) bool {
 	return previousCategory == issuestatus.InReview && nextCategory == issuestatus.InProgress
 }
 
-func WorkflowGate(previousCategory, nextCategory string, nextExecutor, nextReviewer *ActorRef) *WorkflowViolation {
+func WorkflowGate(_ string, nextCategory string, nextExecutor, nextReviewer *ActorRef) *WorkflowViolation {
 	if issuestatus.RequiresExecutor(nextCategory) && nextExecutor == nil {
 		v := ActiveExecutorRequired
 		return &v
 	}
-	if previousCategory != issuestatus.InReview && nextCategory == issuestatus.InReview {
+	if nextCategory == issuestatus.InReview {
 		if nextReviewer == nil || equal(nextReviewer, nextExecutor) {
 			v := ReviewHandoffRequired
 			return &v

@@ -1067,6 +1067,8 @@ WHERE a.workspace_id = $1
   AND ($3::uuid IS NULL OR a.id = $3::uuid)
   AND ($4::uuid IS NULL OR a.id <> $4::uuid)
   AND (
+      ($5::boolean AND $3::uuid IS NOT NULL)
+      OR
       EXISTS (
           SELECT 1
           FROM team_member AS tm
@@ -1077,7 +1079,7 @@ WHERE a.workspace_id = $1
           WHERE tm.member_type = 'agent'
             AND tm.member_id = a.id
             AND tm.role = 'reviewer'
-            AND ($5::uuid IS NULL OR tm.team_id = $5::uuid)
+            AND ($6::uuid IS NULL OR tm.team_id = $6::uuid)
       )
       OR EXISTS (
           SELECT 1
@@ -1093,8 +1095,8 @@ WHERE a.workspace_id = $1
       WHERE q.agent_id = a.id
         AND q.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
         AND (
-            $6::uuid IS NULL
-            OR COALESCE(q.context->>'coordination_assignment_id', '') <> $6::uuid::text
+            $7::uuid IS NULL
+            OR COALESCE(q.context->>'coordination_assignment_id', '') <> $7::uuid::text
         )
   ) + (
       SELECT count(*)
@@ -1104,8 +1106,8 @@ WHERE a.workspace_id = $1
         AND reservation.status = 'assigned'
         AND reservation.dispatched_task_id IS NULL
         AND (
-            $6::uuid IS NULL
-            OR reservation.id <> $6::uuid
+            $7::uuid IS NULL
+            OR reservation.id <> $7::uuid
         )
   ) < a.max_concurrent_tasks
 ORDER BY CASE WHEN EXISTS (
@@ -1127,6 +1129,7 @@ type SelectCoordinationReviewerParams struct {
 	RuntimeStaleSeconds float64     `json:"runtime_stale_seconds"`
 	ReviewerID          pgtype.UUID `json:"reviewer_id"`
 	SourceAgentID       pgtype.UUID `json:"source_agent_id"`
+	ExplicitReviewer    bool        `json:"explicit_reviewer"`
 	TeamID              pgtype.UUID `json:"team_id"`
 	AssignmentID        pgtype.UUID `json:"assignment_id"`
 }
@@ -1137,7 +1140,9 @@ type SelectCoordinationReviewerRow struct {
 }
 
 // Selects or locks the reviewer that may receive a coordinator handoff. A
-// non-nil reviewer_id revalidates an explicit reviewer; NULL selects the
+// explicit_reviewer revalidates a user-selected reviewer without requiring an
+// additional workspace/team default role; automatic reviewers retain that role
+// requirement even while revalidating an already selected reviewer_id. NULL selects the
 // workspace/team reviewer role using the same capacity reservation rule.
 // The assignment reservation is excluded during revalidation so the selected
 // reviewer is not counted against its own slot.
@@ -1147,6 +1152,7 @@ func (q *Queries) SelectCoordinationReviewer(ctx context.Context, arg SelectCoor
 		arg.RuntimeStaleSeconds,
 		arg.ReviewerID,
 		arg.SourceAgentID,
+		arg.ExplicitReviewer,
 		arg.TeamID,
 		arg.AssignmentID,
 	)
