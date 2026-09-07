@@ -18,7 +18,7 @@
 -- =====================
 -- lark_installation
 -- =====================
--- One row per (workspace, agent) — each Orvilo Agent owns at most one
+-- One row per (workspace, agent) — each Patchbay Agent owns at most one
 -- Lark PersonalAgent Bot. `app_secret_encrypted` is the ciphertext
 -- produced by the application-layer secretbox helper; never plaintext.
 CREATE TABLE lark_installation (
@@ -59,7 +59,7 @@ CREATE INDEX idx_lark_installation_lease ON lark_installation(ws_lease_expires_a
 -- =====================
 -- lark_user_binding
 -- =====================
--- Maps a Lark `open_id` to an Orvilo user, per-installation. open_id is
+-- Maps a Lark `open_id` to a Patchbay user, per-installation. open_id is
 -- per-app, so the same Lark user has different open_ids across different
 -- installations — the binding is therefore keyed on (installation, open_id),
 -- not open_id alone. `union_id` is captured opportunistically for future
@@ -76,7 +76,7 @@ CREATE INDEX idx_lark_installation_lease ON lark_installation(ws_lease_expires_a
 --
 --   2. The composite FK on (workspace_id, patchbay_user_id) targets
 --      member(workspace_id, user_id) with ON DELETE CASCADE, so when a
---      Orvilo user is removed from the workspace the stale Lark
+--      Patchbay user is removed from the workspace the stale Lark
 --      binding is removed in the same transaction. There is no path
 --      where lark_user_binding can outlive workspace membership.
 CREATE TABLE lark_user_binding (
@@ -111,7 +111,7 @@ CREATE INDEX idx_lark_user_binding_workspace_open
 -- =====================
 -- lark_chat_session_binding
 -- =====================
--- One Lark chat (`chat_id`) ↔ one Orvilo `chat_session`. The Lark side
+-- One Lark chat (`chat_id`) ↔ one Patchbay `chat_session`. The Lark side
 -- doesn't distinguish p2p vs group at the routing layer, but we keep
 -- `lark_chat_type` for product behavior (group sessions only ingest
 -- @-Bot / reply-Bot messages; p2p ingests everything).
@@ -218,7 +218,7 @@ CREATE INDEX idx_lark_inbound_audit_reason
 -- =====================
 -- lark_outbound_card_message
 -- =====================
--- Maps an Orvilo task (or session bootstrap "thinking…" card) to the
+-- Maps a Patchbay task (or session bootstrap "thinking…" card) to the
 -- Lark interactive card message we're patching. Per-task, not per-session
 -- — a chat_session can host many runs and a session-level field would
 -- create card aliasing bugs. `task_id` may be NULL for the initial
@@ -246,7 +246,7 @@ CREATE INDEX idx_lark_outbound_card_session
 -- lark_binding_token
 -- =====================
 -- Short-lived (≤ 15 min), single-use token for the "you're not bound yet,
--- click here" flow that links a Lark `open_id` to an Orvilo user. The
+-- click here" flow that links a Lark `open_id` to a Patchbay user. The
 -- hash (not the raw token) is stored so a DB leak doesn't grant binding
 -- capability. Replay is blocked by `consumed_at IS NOT NULL`.
 CREATE TABLE lark_binding_token (

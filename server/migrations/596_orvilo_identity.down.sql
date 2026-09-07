@@ -240,4 +240,3 @@ BEFORE DELETE ON task_usage
 FOR EACH ROW
 WHEN (current_setting('patchbay.workspace_teardown', true) IS DISTINCT FROM 'on')
 EXECUTE FUNCTION enqueue_task_usage_hourly_dirty_for_tu();
-
