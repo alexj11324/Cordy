@@ -7,7 +7,7 @@ import {
 
 describe("task graph copy", () => {
   it("covers every string in all four product locales", () => {
-    expect(TASK_GRAPH_COPY_LOCALES).toEqual(["en", "zh-Hans", "ja", "ko"]);
+    expect(TASK_GRAPH_COPY_LOCALES).toEqual(["en", "zh-Hans"]);
     for (const locale of TASK_GRAPH_COPY_LOCALES) {
       const copy = getTaskGraphCopy(locale);
       for (const [key, value] of Object.entries(copy)) {
@@ -36,9 +36,8 @@ describe("task graph copy", () => {
 
   it("normalizes regional and underscored account languages", () => {
     expect(getTaskGraphCopy("zh-CN").title).toBe("依赖图");
-    expect(getTaskGraphCopy("ja_JP").title).toBe("依存グラフ");
-    expect(getTaskGraphCopy("ko-KR").title).toBe("의존성 그래프");
-    expect(getTaskGraphCopy("  JA  ").title).toBe("依存グラフ");
+    expect(getTaskGraphCopy("  ZH-hans  ").title).toBe("依赖图");
+    expect(getTaskGraphCopy("ja_JP").title).toBe("Dependency Graph");
     expect(getTaskGraphCopy(null).title).toBe("Dependency Graph");
     expect(getTaskGraphCopy("fr").title).toBe("Dependency Graph");
   });

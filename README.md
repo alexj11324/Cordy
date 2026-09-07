@@ -1,7 +1,5 @@
 <div align="center">
 
-<img alt="Orvilo" src="docs/assets/brand/orvilo/app-icons/app-icon-1024.png" width="88">
-
 # Orvilo
 
 **Issue in. Pull request out. On hardware you own.**
@@ -9,9 +7,8 @@
 [![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/releases)
 [![GitHub stars](https://img.shields.io/github/stars/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/stargazers)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
 
-[Web App](https://patchbay.aspectlylabs.com) · [Docs](https://patchbay.aspectlylabs.com/docs) · [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Download](https://github.com/alexj11324/Cordy/releases/latest) · [Self-Hosting](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/PatchbayAI)
+[Web App](https://patchbay.aspectlylabs.com) · [Docs](https://patchbay.aspectlylabs.com/docs) · [Download](https://github.com/alexj11324/Cordy/releases/latest) · [Self-Hosting](SELF_HOSTING.md)
 
 **English | [简体中文](README.zh.md)**
 
@@ -29,10 +26,6 @@ The coordination lives on the server. The code and the credentials never leave y
 
 Nothing starts on its own. Every run traces back to an explicit trigger: you set an issue's
 executor, @-mention an agent in a comment, send it a chat message, or an automation fires.
-
-<p align="center">
-  <img src="apps/docs/public/images/docs/how-a-run-works.webp" alt="Diagram of a run: the server records the issue and schedules a task; on your computer the daemon claims it, launches the coding CLI, and streams progress back to the issue" width="100%">
-</p>
 
 1. **The issue carries the context** — description, discussion, and three independent roles:
    owner, executor, reviewer.
@@ -126,9 +119,7 @@ does not ship them, and it does not ship a model.
 Then, in four steps: **connect a computer** (Runtimes → *Add a computer*, paste the two
 commands it gives you), **create an agent** (Agents → *New agent*, or let *Build with AI*
 write the config from a description), **file an issue**, and **set that agent as its
-executor**. Full walkthrough in the
-[Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) and
-[Tutorial](https://patchbay.aspectlylabs.com/docs/tutorial).
+executor**. More detail in the [docs](https://patchbay.aspectlylabs.com/docs).
 
 <details>
 <summary><b>Self-hosting the whole stack</b></summary>
@@ -224,7 +215,6 @@ We ship most weekdays, so `main` moves fast. Pull often.
 
 | I want to… | Read |
 | --- | --- |
-| Get an agent doing something today | [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Tutorial](https://patchbay.aspectlylabs.com/docs/tutorial) |
 | Understand how the pieces fit | [Core concepts](https://patchbay.aspectlylabs.com/docs/concepts) |
 | Contribute code | [CONTRIBUTING.md](CONTRIBUTING.md) — environments, workflow, testing, troubleshooting |
 | Run it on my own infrastructure | [SELF_HOSTING.md](SELF_HOSTING.md), then [SELF_HOSTING_ADVANCED.md](SELF_HOSTING_ADVANCED.md) and [SELF_HOSTING_AI.md](SELF_HOSTING_AI.md) |
@@ -236,6 +226,6 @@ We ship most weekdays, so `main` moves fast. Pull often.
 
 ## License
 
-[Patchbay License](LICENSE) — the complete Apache License 2.0 text plus additional conditions
+[Orvilo License](LICENSE) — the complete Apache License 2.0 text plus additional conditions
 covering hosted services, commercial embedding, and branding. Self-host it, modify it, build on
 it; the exact terms are in [LICENSE](LICENSE), attribution notices in [NOTICE](NOTICE).

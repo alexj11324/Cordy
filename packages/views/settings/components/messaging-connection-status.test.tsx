@@ -6,8 +6,6 @@ import "@testing-library/jest-dom/vitest";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import enSettings from "../../locales/en/settings.json";
 import zhSettings from "../../locales/zh-Hans/settings.json";
-import jaSettings from "../../locales/ja/settings.json";
-import koSettings from "../../locales/ko/settings.json";
 import { MessagingConnectionStatus } from "./messaging-connection-status";
 
 afterEach(cleanup);
@@ -16,8 +14,6 @@ describe("MessagingConnectionStatus", () => {
   it.each([
     ["en", enSettings, "installed", "added", "Bot installed."],
     ["zh-Hans", zhSettings, "已安装", "已添加", "机器人已安装。"],
-    ["ja", jaSettings, "登録しました", "追加しました", "ボットを登録しました。"],
-    ["ko", koSettings, "설치되었어요", "추가했어요", "봇이 설치되었어요."],
   ] as const)("does not promise a live connection after installation in %s", (_, copy, installed, added, complete) => {
     expect(copy.lark.install_success).toBe(complete);
     expect(copy.slack.byo_success_toast).toContain(installed);
@@ -31,8 +27,6 @@ describe("MessagingConnectionStatus", () => {
   it.each([
     ["en", enSettings, "Authorized", "Sync enabled for 2 projects", "Experimental"],
     ["zh-Hans", zhSettings, "已授权", "已为 2 个项目启用同步", "实验性"],
-    ["ja", jaSettings, "認証済み", "2 件のプロジェクトで同期を有効化", "実験的"],
-    ["ko", koSettings, "인증됨", "프로젝트 2개에서 동기화 활성화됨", "실험적"],
   ] as const)(
     "keeps authorization, sync enablement, and experimental maturity separate in %s",
     (_, copy, authorization, enabledSync, experimental) => {

@@ -33,15 +33,15 @@ expands on those; [Environments](#environments) is the section to read first.
 
 ## Contribution Terms
 
-By submitting a contribution to Patchbay — a pull request, a patch, or any
-other work — you agree to condition 2 of the [Patchbay License](LICENSE):
+By submitting a contribution to Orvilo — a pull request, a patch, or any
+other work — you agree to condition 2 of the [Orvilo License](LICENSE):
 
-- your contribution is submitted under the Patchbay License as a whole (the
+- your contribution is submitted under the Orvilo License as a whole (the
   additional conditions in Part I together with the incorporated Apache
   License 2.0 text in Part II), not under the Apache License 2.0 alone;
 - your contributed code may be used for commercial purposes, including the
   producer's cloud business operations;
-- the producer can adjust the Patchbay License to be more strict or relaxed
+- the producer can adjust the Orvilo License to be more strict or relaxed
   as deemed necessary.
 
 See the [LICENSE](LICENSE) file for the full terms.

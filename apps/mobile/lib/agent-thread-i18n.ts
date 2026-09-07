@@ -1,9 +1,7 @@
 import en from "@/locales/en/agent-thread";
 import zhHans from "@/locales/zh-Hans/agent-thread";
-import ja from "@/locales/ja/agent-thread";
-import ko from "@/locales/ko/agent-thread";
 
-export type MobileLocale = "en" | "zh-Hans" | "ja" | "ko";
+export type MobileLocale = "en" | "zh-Hans";
 type LocalizedShape<T> = {
   [K in keyof T]: T[K] extends string
     ? string
@@ -16,8 +14,6 @@ export type AgentThreadCopy = LocalizedShape<typeof en>;
 const RESOURCES = {
   en,
   "zh-Hans": zhHans,
-  ja,
-  ko,
 } satisfies Record<MobileLocale, AgentThreadCopy>;
 
 export function getAgentThreadCopy(
@@ -31,8 +27,6 @@ export function normalizeMobileLocale(
 ): MobileLocale {
   const normalized = language?.trim().toLowerCase() ?? "";
   if (normalized === "zh-hans" || normalized.startsWith("zh")) return "zh-Hans";
-  if (normalized.startsWith("ja")) return "ja";
-  if (normalized.startsWith("ko")) return "ko";
   return "en";
 }
 

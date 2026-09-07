@@ -12,13 +12,11 @@ export {
   type PatrickContentLang,
   type PatrickOnboardingDefinition,
 } from "./patrick";
-type ContentLang = "en" | "zh" | "ko" | "ja";
+type ContentLang = "en" | "zh";
 
 const CONTENT_LANG_BY_LOCALE: Record<SupportedLocale, ContentLang> = {
   en: "en",
   "zh-Hans": "zh",
-  ko: "ko",
-  ja: "ja",
 };
 
 /**

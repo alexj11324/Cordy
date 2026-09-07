@@ -3,10 +3,8 @@
   "pages": [
     "---Get started---",
     "index",
-    "cloud-quickstart",
     "concepts",
     "how-patchbay-works",
-    "tutorial",
     "self-host-quickstart",
     "---Workspace---",
     "workspaces",

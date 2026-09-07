@@ -4,7 +4,7 @@ import { chatKeys } from "../chat/queries";
 import type { ChatSession, PatrickBootstrapResponse } from "../types";
 import { workspaceKeys } from "../workspace/queries";
 
-export type PatrickOnboardingLanguage = "en" | "zh" | "ko" | "ja";
+export type PatrickOnboardingLanguage = "en" | "zh";
 
 export interface BootstrapPatrickInput {
   /**

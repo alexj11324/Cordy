@@ -38,7 +38,7 @@ const config = {
       },
       {
         source: "/zh/getting-started/cloud-quickstart",
-        destination: "/zh/cloud-quickstart",
+        destination: "/zh",
         permanent: true,
       },
       {
@@ -48,7 +48,7 @@ const config = {
       },
       {
         source: "/zh/guides/quickstart",
-        destination: "/zh/cloud-quickstart",
+        destination: "/zh",
         permanent: true,
       },
       {
