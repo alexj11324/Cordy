@@ -53,7 +53,8 @@ type AgentThreadContinuationReceipt struct {
 }
 
 type agentThreadContext struct {
-	Message string `json:"agent_thread_message"`
+	Message      string `json:"agent_thread_message"`
+	ParentTaskID string `json:"agent_thread_parent_task_id"`
 }
 
 func AgentThreadMessage(task db.AgentTaskQueue) string {
@@ -65,6 +66,96 @@ func AgentThreadMessage(task db.AgentTaskQueue) string {
 		return ""
 	}
 	return payload.Message
+}
+
+// AgentThreadRootEligible keeps task conversations on the three product
+// surfaces that expose them: issue work, run-only Automation work, and
+// quick-create work. Ordinary Chat tasks stay in the Chat surface.
+func AgentThreadRootEligible(task db.AgentTaskQueue) bool {
+	if task.ChatSessionID.Valid {
+		return false
+	}
+	if task.IssueID.Valid || task.AutomationRunID.Valid {
+		return true
+	}
+	if len(task.Context) == 0 {
+		return false
+	}
+	var quickCreate QuickCreateContext
+	return json.Unmarshal(task.Context, &quickCreate) == nil &&
+		quickCreate.Type == QuickCreateContextType && quickCreate.WorkspaceID != ""
+}
+
+func agentThreadRootTask(tasks []db.AgentTaskQueue) (db.AgentTaskQueue, bool) {
+	if len(tasks) == 0 {
+		return db.AgentTaskQueue{}, false
+	}
+	root := tasks[0]
+	if !AgentThreadRootEligible(root) ||
+		root.TriggerEvidenceKind.String == "agent_thread_continuation" ||
+		AgentThreadMessage(root) != "" {
+		return db.AgentTaskQueue{}, false
+	}
+	seen := map[pgtype.UUID]struct{}{root.ID: {}}
+	for _, task := range tasks[1:] {
+		if task.ChatSessionID.Valid || task.AutomationRunID.Valid || task.IssueID != root.IssueID ||
+			task.AgentID != root.AgentID || task.RuntimeID != root.RuntimeID ||
+			!task.TriggerEvidenceKind.Valid || task.TriggerEvidenceKind.String != "agent_thread_continuation" {
+			return db.AgentTaskQueue{}, false
+		}
+		var payload agentThreadContext
+		if json.Unmarshal(task.Context, &payload) != nil || payload.ParentTaskID == "" {
+			return db.AgentTaskQueue{}, false
+		}
+		parentID, err := util.ParseUUID(payload.ParentTaskID)
+		if err != nil || !task.TriggerEvidenceRefID.Valid || task.TriggerEvidenceRefID != parentID {
+			return db.AgentTaskQueue{}, false
+		}
+		if _, ok := seen[parentID]; !ok {
+			return db.AgentTaskQueue{}, false
+		}
+		seen[task.ID] = struct{}{}
+	}
+	return root, true
+}
+
+// AgentThreadRootTask returns the immutable root of a validated task-level
+// conversation chain. The SQL query supplies the bounded chain; this helper
+// verifies every persisted continuation edge and its agent/runtime fences before
+// callers use the root for capability or resume state. Provider session ids are
+// intentionally allowed to rotate between edges.
+func AgentThreadRootTask(tasks []db.AgentTaskQueue) (db.AgentTaskQueue, bool) {
+	return agentThreadRootTask(tasks)
+}
+
+// AgentThreadAutomationRunID resolves the Automation root of a source-neutral
+// continuation chain returned by ListAgentThreadTasks. Every continuation edge
+// must carry both forms of server-owned lineage and stay on the root's scoped
+// Agent/runtime. Callers still load the returned run in their
+// own workspace before granting access or applying Automation settings.
+func AgentThreadAutomationRunID(tasks []db.AgentTaskQueue) (pgtype.UUID, bool) {
+	root, ok := agentThreadRootTask(tasks)
+	if !ok || !root.AutomationRunID.Valid || root.IssueID.Valid || root.ChatSessionID.Valid {
+		return pgtype.UUID{}, false
+	}
+	return root.AutomationRunID, true
+}
+
+// AgentThreadQuickCreateContext returns only the validated root's routing
+// context. Continuation rows deliberately omit the quick-create type and all
+// one-shot fields, so completion/failure callbacks cannot replay issue creation
+// or source capture; claim callers may read workspace/project from this root.
+func AgentThreadQuickCreateContext(tasks []db.AgentTaskQueue) (QuickCreateContext, bool) {
+	root, ok := agentThreadRootTask(tasks)
+	if !ok || root.IssueID.Valid || root.ChatSessionID.Valid || root.AutomationRunID.Valid {
+		return QuickCreateContext{}, false
+	}
+	var quickCreate QuickCreateContext
+	if json.Unmarshal(root.Context, &quickCreate) != nil ||
+		quickCreate.Type != QuickCreateContextType || quickCreate.WorkspaceID == "" {
+		return QuickCreateContext{}, false
+	}
+	return quickCreate, true
 }
 
 func AgentThreadAvailability(task db.AgentTaskQueue) error {
@@ -190,6 +281,14 @@ func (s *TaskService) ContinueAgentThread(ctx context.Context, parentTaskID pgty
 	defer tx.Rollback(ctx)
 	qtx := s.Queries.WithTx(tx)
 
+	// Serialize every writer for this Agent before taking task-row locks. A
+	// quick-create completion takes the same lock, then runs its recursive link
+	// as a later statement with a fresh READ COMMITTED snapshot. Whichever writer
+	// wins, the continuation therefore either inherits the linked issue or is
+	// visible to the recursive link update.
+	if _, err := qtx.LockAgentThreadAgent(ctx, parentTaskID); err != nil {
+		return AgentThreadContinuationReceipt{}, fmt.Errorf("lock agent thread agent: %w", err)
+	}
 	parent, err := qtx.LockAgentThreadTask(ctx, parentTaskID)
 	if err != nil {
 		return AgentThreadContinuationReceipt{}, fmt.Errorf("lock agent thread parent: %w", err)
@@ -209,6 +308,14 @@ func (s *TaskService) ContinueAgentThread(ctx context.Context, parentTaskID pgty
 		return AgentThreadContinuationReceipt{}, ErrAgentThreadInvokeForbidden
 	}
 
+	thread, err := qtx.ListAgentThreadTasks(ctx, parentTaskID)
+	if err != nil {
+		return AgentThreadContinuationReceipt{}, fmt.Errorf("list agent thread tasks: %w", err)
+	}
+	if _, ok := AgentThreadRootTask(thread); !ok {
+		return AgentThreadContinuationReceipt{}, fmt.Errorf("agent thread lineage is invalid")
+	}
+
 	existing, err := qtx.GetAgentThreadContinuationByIdempotency(ctx, db.GetAgentThreadContinuationByIdempotencyParams{
 		ParentTaskID:   parentTaskID,
 		IdempotencyKey: idempotencyKey,
@@ -224,11 +331,6 @@ func (s *TaskService) ContinueAgentThread(ctx context.Context, parentTaskID pgty
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
 		return AgentThreadContinuationReceipt{}, fmt.Errorf("find agent thread continuation receipt: %w", err)
-	}
-
-	thread, err := qtx.ListAgentThreadTasks(ctx, parentTaskID)
-	if err != nil {
-		return AgentThreadContinuationReceipt{}, fmt.Errorf("list agent thread tasks: %w", err)
 	}
 	if len(thread) >= maxAgentThreadDepth {
 		return AgentThreadContinuationReceipt{}, ErrAgentThreadDepthLimit
@@ -253,4 +355,31 @@ func (s *TaskService) ContinueAgentThread(ctx context.Context, parentTaskID pgty
 	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, continuation)
 	s.NotifyTaskEnqueued(ctx, continuation)
 	return AgentThreadContinuationReceipt{Task: continuation}, nil
+}
+
+// LinkAgentThreadTaskToIssue attaches the issue produced by a quick-create root
+// to the root and every continuation already queued behind it. The separate
+// Agent-lock statement is load-bearing: if a continuation writer is in flight,
+// LinkTaskToIssue must wait for it and only then take the recursive statement's
+// fresh READ COMMITTED snapshot.
+func (s *TaskService) LinkAgentThreadTaskToIssue(ctx context.Context, taskID, issueID pgtype.UUID) error {
+	if s.TxStarter == nil {
+		return fmt.Errorf("agent thread transaction unavailable")
+	}
+	tx, err := s.TxStarter.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin agent thread issue link: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	qtx := s.Queries.WithTx(tx)
+	if _, err := qtx.LockAgentThreadAgent(ctx, taskID); err != nil {
+		return fmt.Errorf("lock agent thread agent: %w", err)
+	}
+	if err := qtx.LinkTaskToIssue(ctx, db.LinkTaskToIssueParams{ID: taskID, IssueID: issueID}); err != nil {
+		return fmt.Errorf("link agent thread task to issue: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit agent thread issue link: %w", err)
+	}
+	return nil
 }

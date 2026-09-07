@@ -103,6 +103,9 @@ vi.mock("@patchbay/views/search", () => ({
   SearchTrigger: () => null,
 }));
 vi.mock("@patchbay/views/chat", () => ({ FloatingChat: () => null }));
+vi.mock("@patchbay/views/agent-thread", () => ({
+  AgentThreadPanelLayout: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
 vi.mock("./tab-bar", () => ({ TabBar: () => <div data-testid="tab-bar" /> }));
 vi.mock("./window-overlay", () => ({ WindowOverlay: () => null }));
 
@@ -197,6 +200,31 @@ describe("DesktopShell sidebar trigger", () => {
     expect(header).toHaveStyle({ paddingLeft: "184px" });
 
     expect(container.querySelectorAll("[data-slot='sidebar-trigger']")).toHaveLength(1);
+  });
+
+  it("uses the collapsible column policy instead of a compact Sheet at 963px", () => {
+    const previousWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 963,
+    });
+    const { container, getByTestId } = renderShell("macos");
+    const wrapper = container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-wrapper']",
+    )!;
+    const trigger = container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-trigger']",
+    )!;
+
+    expect(wrapper).toHaveAttribute("data-compact-behavior", "collapse");
+    fireEvent.click(trigger);
+    expect(getByTestId("page-content")).toHaveAttribute("data-sidebar-open", "false");
+    expect(document.querySelector("[role='dialog']")).not.toBeInTheDocument();
+
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: previousWidth,
+    });
   });
 
   // The macOS shell is transparent so Electron's native sidebar material can

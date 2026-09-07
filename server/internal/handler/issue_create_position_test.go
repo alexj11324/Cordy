@@ -169,6 +169,7 @@ func TestAutomationCreateIssuePositionBelowCurrentMinimum(t *testing.T) {
 		t.Fatalf("decode automation: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM automation WHERE id = $1`, automation.ID) })
+	seedValidAutomationScheduleTrigger(t, automation.ID)
 
 	queries := db.New(testPool)
 	ap, err := queries.GetAutomation(ctx, parseUUID(automation.ID))

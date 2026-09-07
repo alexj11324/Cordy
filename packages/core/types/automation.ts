@@ -67,7 +67,11 @@ export interface Automation {
   // narrower than can_write: held only by the creator and workspace
   // owners/admins, NOT by granted collaborators. Detail-endpoint-only; absent
   // on older servers (fall back to can_write).
-  can_manage_access?: boolean;
+	can_manage_access?: boolean;
+	// Detail-endpoint readiness facts. The server admission gate remains
+	// authoritative; absent fields mean an older server.
+	run_ready?: boolean;
+	run_blocked_reasons?: string[];
 }
 
 export interface WebhookEventFilter {
@@ -119,7 +123,9 @@ export interface AutomationTrigger {
   // Absent on older servers and on schedule triggers that predate presets.
   provider?: string | null;
   preset?: string | null;
-  config?: Record<string, unknown> | null;
+	config?: Record<string, unknown> | null;
+	ready?: boolean;
+	readiness_reasons?: string[];
   has_signing_secret?: boolean;
   last_fired_at: string | null;
   created_at: string;

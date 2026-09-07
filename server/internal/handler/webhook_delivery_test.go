@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
@@ -673,6 +674,63 @@ func TestNativeFanout_DispatchesMatchingTrigger(t *testing.T) {
 	}
 }
 
+func TestNativeSlackFanoutCreatesDistinctDeliveries(t *testing.T) {
+	cases := []struct {
+		preset string
+		bodies []string
+		want   int
+	}{
+		{
+			preset: "slack.channel_created",
+			bodies: []string{`{"event_id":"EvChannel","event":{"type":"channel_created","channel":{"id":"C1","name":"qa"}}}`},
+			want:   1,
+		},
+		{
+			preset: "slack.reaction",
+			bodies: []string{
+				`{"event_id":"EvOne","event":{"type":"reaction_added","user":"U1","reaction":"eyes","item":{"channel":"C1","ts":"1"}}}`,
+				`{"event_id":"EvTwo","event":{"type":"reaction_added","user":"U2","reaction":"thumbsup","item":{"channel":"C1","ts":"1"}}}`,
+			},
+			want: 2,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.preset, func(t *testing.T) {
+			agentID := dbfx.Agent(t, "Native Slack QA", testRuntimeID)
+			apID := dbfx.Insert(t, "automation", testutil.Cols{
+				"workspace_id": testWorkspaceID, "title": "Native Slack QA",
+				"executor_id": agentID, "status": "active", "execution_mode": "run_only",
+				"created_by_type": "member", "created_by_id": testUserID,
+			})
+			w := httptest.NewRecorder()
+			req := withURLParam(newRequest("POST", "/api/automations/"+apID+"/triggers", map[string]any{
+				"kind": "webhook", "preset": tc.preset,
+			}), "id", apID)
+			testHandler.CreateAutomationTrigger(w, req)
+			if w.Code != http.StatusCreated {
+				t.Fatalf("create native trigger: %d %s", w.Code, w.Body.String())
+			}
+			dbfx.Cleanup(t, "DELETE FROM automation_trigger WHERE automation_id = $1", apID)
+			dbfx.Cleanup(t, "DELETE FROM webhook_delivery WHERE automation_id = $1", apID)
+			inst := db.ChannelInstallation{WorkspaceID: parseUUID(testWorkspaceID)}
+			for _, body := range tc.bodies {
+				testHandler.HandleSlackNativeAutomation(context.Background(), inst, []byte(body))
+				// Redelivery must not add a second row for the same event.
+				testHandler.HandleSlackNativeAutomation(context.Background(), inst, []byte(body))
+			}
+			deliveries := listDeliveries(t, apID)
+			if len(deliveries) != tc.want {
+				t.Fatalf("got %d deliveries, want %d", len(deliveries), tc.want)
+			}
+			for _, delivery := range deliveries {
+				if delivery["status"] != deliveryStatusQueued || delivery["provider"] != "slack" {
+					t.Fatalf("native event did not reach the delivery queue: %+v", delivery)
+				}
+			}
+		})
+	}
+}
+
 func mustLatestQueuedDeliveryID(t *testing.T, triggerID string) string {
 	t.Helper()
 	var id string
@@ -711,8 +769,8 @@ func TestWebhookHandler_RunOnlyDedupeOnGitHubDelivery(t *testing.T) {
 	// Count automation_run rows linked to this trigger.
 	rows, err := testHandler.Queries.ListAutomationRuns(context.Background(), db.ListAutomationRunsParams{
 		AutomationID: parseUUID(apID),
-		Limit:       50,
-		Offset:      0,
+		Limit:        50,
+		Offset:       0,
 	})
 	if err != nil {
 		t.Fatalf("list runs: %v", err)
@@ -1045,7 +1103,7 @@ func TestWebhookDelivery_FailedRowDoesNotBlockDedupe(t *testing.T) {
 
 	first, err := testHandler.Queries.CreateWebhookDelivery(ctx, db.CreateWebhookDeliveryParams{
 		WorkspaceID:     parseUUID(testWorkspaceID),
-		AutomationID:     parseUUID(apID),
+		AutomationID:    parseUUID(apID),
 		TriggerID:       parseUUID(trig.ID),
 		Provider:        "github",
 		Event:           "github.pull_request",
@@ -1064,7 +1122,7 @@ func TestWebhookDelivery_FailedRowDoesNotBlockDedupe(t *testing.T) {
 	// row does not consume the slot.
 	second, err := testHandler.Queries.CreateWebhookDelivery(ctx, db.CreateWebhookDeliveryParams{
 		WorkspaceID:     parseUUID(testWorkspaceID),
-		AutomationID:     parseUUID(apID),
+		AutomationID:    parseUUID(apID),
 		TriggerID:       parseUUID(trig.ID),
 		Provider:        "github",
 		Event:           "github.pull_request",

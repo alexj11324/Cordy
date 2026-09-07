@@ -1,15 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   Play, Clock, Trash2, CheckCircle2, XCircle, Loader2, Pencil,
   Ban, ChevronDown, ChevronRight, FolderKanban, MoreHorizontal, Server, AlertTriangle,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { automationDetailOptions, automationRunsOptions, automationRunOptions } from "@patchbay/core/automations/queries";
+import { automationDetailOptions, automationRunsOptions } from "@patchbay/core/automations/queries";
 import { projectDetailOptions } from "@patchbay/core/projects/queries";
-import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
-import { isAgentRuntimeBound } from "@patchbay/core/agents";
 import type { AutomationTriggerPreset } from "@patchbay/core/automations";
 import { isNativeAutomationProvider } from "@patchbay/core/automations";
 import { githubInstallationsOptions } from "@patchbay/core/github/queries";
@@ -33,11 +31,6 @@ import { Switch } from "@patchbay/ui/components/ui/switch";
 import { cn } from "@patchbay/ui/lib/utils";
 import { toast } from "sonner";
 import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -47,10 +40,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@patchbay/ui/components/ui/alert-dialog";
-import { ScheduleEditor } from "./schedule-editor/schedule-editor";
-import { getDefaultScheduleConfig, type ScheduleConfig } from "./schedule-editor/model";
-import { browserTimezone } from "../../common/timezone-select";
-import { toCron } from "./schedule-editor/cron-mapping";
 import { formatInTimeZone } from "../../common/format-in-time-zone";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@patchbay/ui/components/ui/tabs";
 import {
@@ -59,7 +48,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@patchbay/ui/components/ui/dropdown-menu";
-import { useScheduleSubmitGate } from "./schedule-editor/validate";
 import type {
   Automation,
   AutomationExecutionMode,
@@ -67,18 +55,18 @@ import type {
 } from "@patchbay/core/types";
 import type { AgentTask } from "@patchbay/core/types/agent";
 import { ContentEditor, ReadonlyContent } from "../../editor";
-import { TranscriptButton } from "../../common/task-transcript";
+import { AgentThreadButton } from "../../agent-thread";
 import { AutomationDialog } from "./automation-dialog";
 import { runNowToastKind, runNowBlockedKey } from "./run-now-toast";
-import { WebhookPayloadPreview } from "./webhook-payload-preview";
 import { WebhookDeliveriesSection } from "./webhook-deliveries-section";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { useT } from "../../i18n";
 import { PageHeader } from "../../layout/page-header";
-import { ModelDropdown } from "../../agents/components/model-dropdown";
+import { AgentPicker } from "./pickers/agent-picker";
 import { TriggerAddMenu } from "./trigger-add-menu";
 import { TriggerCard } from "./trigger-card";
+import { TriggerScheduleDialog } from "./trigger-schedule-dialog";
 import { AutomationToolsSection } from "./automation-tools-section";
 
 // A run that already happened is an instant in the reader's day, so it reads in
@@ -98,39 +86,35 @@ const RUN_VISUAL: Record<RunStatus, { color: string; icon: typeof CheckCircle2; 
   failed: { color: "text-destructive", icon: XCircle },
 };
 
-// WebhookPayloadSlot lazy-fetches the full run (incl. trigger_payload) once
-// the parent dialog actually mounts this slot. The list endpoint omits
-// trigger_payload to keep responses small (worst case 256 KiB × N runs),
-// so the detail-on-demand fetch lives here.
-function WebhookPayloadSlot({ automationId, runId }: { automationId: string; runId: string }) {
-  const wsId = useWorkspaceId();
-  const { data, isLoading } = useQuery(
-    automationRunOptions(wsId, automationId, runId),
-  );
-  if (isLoading) {
-    return <Skeleton className="h-9 w-full" />;
-  }
-  if (!data || data.trigger_payload == null) {
-    return null;
-  }
-  return <WebhookPayloadPreview payload={data.trigger_payload} />;
+function getToolDeliveryErrors(result: unknown): string[] {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return [];
+  const errors = (result as Record<string, unknown>).tool_delivery_errors;
+  if (!Array.isArray(errors)) return [];
+  return errors.flatMap((error) => {
+    if (!error || typeof error !== "object" || Array.isArray(error)) return [];
+    const message = (error as Record<string, unknown>).message;
+    return typeof message === "string" && message.trim() !== "" ? [message] : [];
+  });
 }
 
-function RunRow({ run, agentId, agentName }: { run: AutomationRun; agentId: string; agentName: string }) {
+function RunRow({ run, agentId }: { run: AutomationRun; agentId: string }) {
   const { t, i18n } = useT("automations");
+  const wsId = useWorkspaceId();
   const wsPaths = useWorkspacePaths();
   const status = (RUN_VISUAL[run.status as RunStatus] ? (run.status as RunStatus) : "issue_created");
   const visual = RUN_VISUAL[status];
   const StatusIcon = visual.icon;
+  const deliveryErrors = getToolDeliveryErrors(run.result);
 
-  // For runs with a task_id (run_only mode), build a minimal AgentTask so
-  // TranscriptButton can lazy-load the execution transcript.
+  // Run-only executions have no issue route, so their task opens directly in
+  // the same interactive Agent conversation used by issue and Agent surfaces.
   const syntheticTask: AgentTask | null = run.task_id
     ? {
         id: run.task_id,
+        workspace_id: wsId,
         agent_id: agentId,
         runtime_id: "",
-        issue_id: "",
+        issue_id: run.issue_id ?? "",
         status:
           run.status === "running" ? "running" :
           run.status === "completed" ? "completed" :
@@ -165,43 +149,54 @@ function RunRow({ run, agentId, agentName }: { run: AutomationRun; agentId: stri
       <span className="w-32 shrink-0 text-right text-caption text-muted-foreground tabular-nums">
         {formatInTimeZone(run.triggered_at || run.created_at, undefined, i18n.language)}
       </span>
-      {syntheticTask && !run.issue_id && (
-        <TranscriptButton
-          task={syntheticTask}
-          agentName={agentName}
-          isLive={run.status === "running"}
-          title={t(($) => $.run.view_log)}
-          headerSlot={
-            run.source === "webhook" ? (
-              <WebhookPayloadSlot automationId={run.automation_id} runId={run.id} />
-            ) : undefined
-          }
-        />
-      )}
     </>
   );
 
   const rowClass = "flex items-center gap-3 px-4 py-2.5 text-body hover:bg-accent/30 transition-colors";
+  const row = (
+    <div className={rowClass}>
+      {run.issue_id ? (
+        <AppLink
+          href={wsPaths.issueDetail(run.issue_id)}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3"
+        >
+          {content}
+        </AppLink>
+      ) : content}
+      {syntheticTask && (
+        <AgentThreadButton
+          task={syntheticTask}
+          title={t(($) => $.run.view_conversation)}
+        />
+      )}
+    </div>
+  );
 
-  if (run.issue_id) {
-    return (
-      <AppLink href={wsPaths.issueDetail(run.issue_id)} className={cn(rowClass, "cursor-pointer")}>
-        {content}
-      </AppLink>
-    );
-  }
-
-  return <div className={rowClass}>{content}</div>;
+  return (
+    <div>
+      {row}
+      {deliveryErrors.length > 0 && (
+        <div
+          role="alert"
+          className="mx-4 mb-2 flex items-start gap-1.5 rounded-md bg-destructive/10 px-2.5 py-2 text-caption text-destructive"
+        >
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <span>
+            <span className="font-medium">{t(($) => $.run.delivery_failed)}:</span>{" "}
+            {deliveryErrors.join(" · ")}
+          </span>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function RunHistoryList({
   runs,
   agentId,
-  agentName,
 }: {
   runs: AutomationRun[];
   agentId: string;
-  agentName: string;
 }) {
   const visibleRuns = runs.filter((run) => run.status !== "skipped");
   const skippedRuns = runs.filter((run) => run.status === "skipped");
@@ -209,10 +204,10 @@ function RunHistoryList({
   return (
     <div className="rounded-md border overflow-hidden">
       {visibleRuns.map((run) => (
-        <RunRow key={run.id} run={run} agentId={agentId} agentName={agentName} />
+        <RunRow key={run.id} run={run} agentId={agentId} />
       ))}
       {skippedRuns.length > 0 && (
-        <SkippedRunsGroup runs={skippedRuns} agentId={agentId} agentName={agentName} />
+        <SkippedRunsGroup runs={skippedRuns} agentId={agentId} />
       )}
     </div>
   );
@@ -221,11 +216,9 @@ function RunHistoryList({
 function SkippedRunsGroup({
   runs,
   agentId,
-  agentName,
 }: {
   runs: AutomationRun[];
   agentId: string;
-  agentName: string;
 }) {
   const { t, i18n } = useT("automations");
   const [open, setOpen] = useState(false);
@@ -257,7 +250,7 @@ function SkippedRunsGroup({
       {open && (
         <div className="border-t bg-background">
           {runs.map((run) => (
-            <RunRow key={run.id} run={run} agentId={agentId} agentName={agentName} />
+            <RunRow key={run.id} run={run} agentId={agentId} />
           ))}
         </div>
       )}
@@ -265,94 +258,12 @@ function SkippedRunsGroup({
   );
 }
 
-function AddTriggerDialog({
-  open,
-  onOpenChange,
-  automationId,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  automationId: string;
-}) {
-  const { t } = useT("automations");
-  const wsId = useWorkspaceId();
-  const createTrigger = useCreateAutomationTrigger();
-  const [config, setConfig] = useState<ScheduleConfig>(() =>
-    getDefaultScheduleConfig(browserTimezone()),
-  );
-  const [submitting, setSubmitting] = useState(false);
-  const scheduleGate = useScheduleSubmitGate(wsId);
-  const canSubmit = !submitting && scheduleGate.scheduleValid;
-
-  const handleSubmit = async () => {
-    if (!canSubmit) return;
-    setSubmitting(true);
-    try {
-      if (!(await scheduleGate.ensureAccepted(config))) {
-        setSubmitting(false);
-        return;
-      }
-      const cronExpr = toCron(config);
-      if (!cronExpr.trim()) {
-        setSubmitting(false);
-        return;
-      }
-      await createTrigger.mutateAsync({
-        automationId,
-        kind: "schedule",
-        cron_expression: cronExpr,
-        timezone: config.timezone || undefined,
-      });
-      toast.success(t(($) => $.add_trigger_dialog.toast_added_schedule));
-      onOpenChange(false);
-      setConfig(getDefaultScheduleConfig(browserTimezone()));
-    } catch (err) {
-      toast.error(
-        err instanceof Error && err.message
-          ? err.message
-          : t(($) => $.add_trigger_dialog.toast_add_failed),
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm">
-        <DialogTitle>{t(($) => $.presets.scheduled)}</DialogTitle>
-        <div className="min-w-0 space-y-4 pt-2">
-          <ScheduleEditor
-            value={config}
-            onChange={(next) => {
-              scheduleGate.clearRejection();
-              setConfig(next);
-            }}
-            wsId={wsId}
-            onValidityChange={scheduleGate.onValidityChange}
-            disabled={submitting}
-          />
-          <div className="flex justify-end pt-1">
-            <Button size="sm" onClick={handleSubmit} disabled={!canSubmit}>
-              {submitting
-                ? t(($) => $.add_trigger_dialog.submitting)
-                : t(($) => $.add_trigger_dialog.submit)}
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 function InstructionsSection({
   automation,
   canWrite,
-  runtimeId,
 }: {
   automation: Automation;
   canWrite: boolean;
-  runtimeId: string | null;
 }) {
   const { t } = useT("automations");
   const updateAutomation = useUpdateAutomation();
@@ -376,9 +287,12 @@ function InstructionsSection({
 
   return (
     <section className="space-y-2" data-testid="automation-instructions">
+      <h2 className="text-caption font-medium uppercase tracking-wider text-muted-foreground">
+        {t(($) => $.settings.section_instructions)}
+      </h2>
       <div className="rounded-lg border bg-background">
+        <div className="automation-instructions h-44 overflow-y-auto overscroll-contain px-4 py-3">
         {canWrite ? (
-          <div className="automation-instructions min-h-[220px] px-4 pt-3 pb-1">
             <ContentEditor
               value={automation.description ?? ""}
               placeholder={t(($) => $.dialog.description_placeholder)}
@@ -387,27 +301,34 @@ function InstructionsSection({
               flushPendingOnUnmount
               showBubbleMenu={false}
             />
-          </div>
         ) : automation.description ? (
-          <div className="automation-instructions px-4 pt-3 pb-1">
             <ReadonlyContent content={automation.description} />
-          </div>
         ) : (
-          <p className="px-4 py-3 text-body text-muted-foreground">
+          <p className="text-label text-muted-foreground">
             {t(($) => $.dialog.description_placeholder)}
           </p>
         )}
-        <div className="flex items-center px-3 pb-2">
-          <ModelDropdown
-            compact
-            runtimeId={runtimeId}
-            runtimeOnline={Boolean(runtimeId)}
-            value={automation.model ?? ""}
-            onChange={(model) => {
+        </div>
+        <div className="flex min-w-0 items-center px-3 pb-2">
+          <AgentPicker
+            assignee={{ type: automation.executor_type, id: automation.executor_id }}
+            disabled={!canWrite || updateAutomation.isPending}
+            onChange={(next) => {
               if (!canWrite) return;
-              updateAutomation.mutate({ id: automation.id, model: model || "" });
+              updateAutomation.mutate({
+                id: automation.id,
+                executor_type: next.type,
+                executor_id: next.id,
+                // The selected Agent owns its model configuration. Empty is
+                // the established API sentinel for clearing a legacy
+                // automation-level override.
+                model: "",
+              }, {
+                onError: (error) => toast.error(
+                  error instanceof Error ? error.message : t(($) => $.dialog.toast_update_failed),
+                ),
+              });
             }}
-            disabled={!canWrite}
           />
         </div>
       </div>
@@ -422,10 +343,8 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
   const router = useNavigation();
   const { getActorName } = useActorName();
 
-  const { data, isLoading } = useQuery(automationDetailOptions(wsId, automationId));
-  const { data: runs = [], isLoading: runsLoading } = useQuery(automationRunsOptions(wsId, automationId));
-  const { data: agents = [] } = useQuery(agentListOptions(wsId));
-  const { data: teams = [] } = useQuery(teamListOptions(wsId));
+  const { data, isLoading, isError, refetch } = useQuery(automationDetailOptions(wsId, automationId));
+  const { data: runs = [], isLoading: runsLoading, isError: runsError, refetch: refetchRuns } = useQuery(automationRunsOptions(wsId, automationId));
   const updateAutomation = useUpdateAutomation();
   const deleteAutomation = useDeleteAutomation();
   const triggerAutomation = useTriggerAutomation();
@@ -444,17 +363,6 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  const executorAgentId =
-    data?.automation.executor_type === "team"
-      ? (teams.find((team) => team.id === data.automation.executor_id)?.leader_id ?? null)
-      : (data?.automation.executor_id ?? null);
-  const executorAgent = useMemo(
-    () => (executorAgentId ? agents.find((agent) => agent.id === executorAgentId) ?? null : null),
-    [agents, executorAgentId],
-  );
-  const runtimeId =
-    executorAgent && isAgentRuntimeBound(executorAgent) ? executorAgent.runtime_id : null;
 
   if (isLoading) {
     return (
@@ -486,8 +394,9 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
 
   if (!data) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground">
-        {t(($) => $.detail.not_found)}
+      <div className="flex h-full flex-col items-center justify-center gap-3 text-body text-muted-foreground">
+        <p role="status">{isError ? t(($) => $.settings.load_failed) : t(($) => $.detail.not_found)}</p>
+        {isError && <Button size="sm" variant="outline" onClick={() => void refetch()}>{t(($) => $.page.retry)}</Button>}
       </div>
     );
   }
@@ -502,6 +411,8 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
   // edit/run but cannot grant/revoke. Fall back to canWrite when the server
   // doesn't send the field (older backend).
   const canManageAccess = automation.can_manage_access ?? canWrite;
+  const runReady = automation.run_ready !== false;
+  const runBlockedReasons = automation.run_blocked_reasons ?? [];
 
   const handleRunNow = async () => {
     try {
@@ -553,7 +464,9 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
   };
 
   const handleToggleStatus = (checked: boolean) => {
-    updateAutomation.mutate({ id: automationId, status: checked ? "active" : "paused" });
+    updateAutomation.mutate({ id: automationId, status: checked ? "active" : "paused" }, {
+      onError: (error) => toast.error(error instanceof Error ? error.message : t(($) => $.dialog.toast_update_failed)),
+    });
   };
 
   const handlePickPreset = async (preset: AutomationTriggerPreset) => {
@@ -571,9 +484,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
     }
   };
 
-  const hasGenericWebhook = triggers.some(
-    (trig) => trig.kind === "webhook" && Boolean(trig.webhook_token),
-  );
+  const hasWebhookTrigger = triggers.some((trig) => trig.kind === "webhook");
   const githubConnected = (github.data?.installations.length ?? 0) > 0;
   const slackConnected = (slack.data?.installations ?? []).some(
     (row) => row.status === "installed" || row.installation_status === "installed",
@@ -608,7 +519,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                 size="sm"
                 variant="outline"
                 onClick={handleRunNow}
-                disabled={automation.status !== "active" || triggerAutomation.isPending}
+                disabled={automation.status !== "active" || !runReady || triggerAutomation.isPending}
                 className="px-2 sm:px-2.5"
                 aria-label={triggerAutomation.isPending ? t(($) => $.detail.running) : t(($) => $.detail.run_now)}
               >
@@ -668,13 +579,23 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
         </div>
       )}
 
+      {!runReady && (
+        <div className="flex shrink-0 items-start gap-2 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-caption text-amber-900 dark:text-amber-100" role="status">
+          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+          <div className="min-w-0 flex-1 space-y-1">
+            <p className="font-medium">{t(($) => $.detail.run_blocked_trigger_config)}</p>
+            {runBlockedReasons.map((reason) => <p key={reason}>{reason}</p>)}
+          </div>
+        </div>
+      )}
+
       <Tabs
         value={detailTab}
         onValueChange={(value) => setDetailTab(value as "settings" | "runs")}
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl space-y-8 px-8 py-8">
+          <div className="mx-auto max-w-3xl space-y-8 px-4 py-6 sm:px-8 sm:py-8">
             <header className="space-y-4">
               <h1
                 data-testid="automation-settings-title"
@@ -688,7 +609,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                     size="sm"
                     checked={automation.status === "active"}
                     onCheckedChange={handleToggleStatus}
-                    disabled={automation.status === "archived" || !canWrite}
+                    disabled={automation.status === "archived" || !canWrite || updateAutomation.isPending}
                     aria-label={
                       automation.status === "active"
                         ? t(($) => $.detail.pause_aria)
@@ -707,18 +628,20 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                 <span aria-hidden className="h-3.5 w-px shrink-0 bg-border" />
                 <ProjectPicker
                   projectId={automation.project_id ?? null}
-                  disabled={!canWrite}
+                  disabled={!canWrite || updateAutomation.isPending}
                   onUpdate={(updates) => {
                     if (!canWrite || updates.project_id === undefined) return;
                     updateAutomation.mutate({
                       id: automationId,
                       project_id: updates.project_id,
+                    }, {
+                      onError: (error) => toast.error(error instanceof Error ? error.message : t(($) => $.dialog.toast_update_failed)),
                     });
                   }}
                   triggerRender={
                     <button
                       type="button"
-                      disabled={!canWrite}
+                      disabled={!canWrite || updateAutomation.isPending}
                       className="inline-flex h-7 max-w-[14rem] items-center gap-1 rounded-md px-1 text-caption text-muted-foreground hover:bg-accent/30 disabled:pointer-events-none disabled:opacity-50"
                     >
                       {projectLoading ? (
@@ -766,6 +689,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                 <h2 className="text-caption font-medium uppercase tracking-wider text-muted-foreground">
                   {t(($) => $.detail.section_triggers)}
                 </h2>
+                <p className="text-caption text-muted-foreground">{t(($) => $.settings.trigger_help)}</p>
                 <div
                   data-testid="automation-triggers-card"
                   className="divide-y rounded-lg border bg-background"
@@ -804,14 +728,13 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
               <InstructionsSection
                 automation={automation}
                 canWrite={canWrite}
-                runtimeId={runtimeId}
               />
 
               <AutomationToolsSection automation={automation} canWrite={canWrite} />
 
               <WebhookDeliveriesSection
                 automationId={automationId}
-                hasWebhookTrigger={hasGenericWebhook}
+                hasWebhookTrigger={hasWebhookTrigger}
               />
             </TabsContent>
 
@@ -822,6 +745,11 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                     <Skeleton key={i} className="h-10 w-full" />
                   ))}
                 </div>
+              ) : runsError ? (
+                <div className="space-y-3 rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
+                  <p role="status">{t(($) => $.settings.runs_load_failed)}</p>
+                  <Button size="sm" variant="outline" onClick={() => void refetchRuns()}>{t(($) => $.page.retry)}</Button>
+                </div>
               ) : runs.length === 0 ? (
                 <div className="rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
                   {t(($) => $.detail.no_runs)}
@@ -830,7 +758,6 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                 <RunHistoryList
                   runs={runs}
                   agentId={automation.executor_id}
-                  agentName={getActorName(automation.executor_type, automation.executor_id)}
                 />
               )}
             </TabsContent>
@@ -841,8 +768,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
       {/* Mounted only while open, like the edit dialog: otherwise a rejected
           cron leaves scheduleValid=false behind for the next open. */}
       {triggerDialogOpen && (
-        <AddTriggerDialog
-          open={triggerDialogOpen}
+        <TriggerScheduleDialog
           onOpenChange={setTriggerDialogOpen}
           automationId={automationId}
         />

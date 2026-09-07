@@ -141,7 +141,7 @@ function SortableTabItem({
   /**
    * True iff this is the only tab in the workspace. Hiding X on the last
    * tab matches existing behavior and avoids the surprise of the store's
-   * last-tab reseed kicking in. Pinned tabs always hide X (RFC §3 D3c).
+   * last-tab reseed kicking in.
    */
   isOnly: boolean;
   canCloseOthers: boolean;

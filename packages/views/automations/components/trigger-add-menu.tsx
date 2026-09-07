@@ -3,6 +3,8 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Clock, Plus, Search, Webhook } from "lucide-react";
 import {
+  AUTOMATION_TRIGGER_PRESETS,
+  AUTOMATION_TRIGGER_SOURCES,
   presetsForSource,
   searchTriggerCatalog,
   type AutomationTriggerPreset,
@@ -58,7 +60,16 @@ export function TriggerAddMenu({
 }) {
   const { t } = useT("automations");
   const [query, setQuery] = useState("");
-  const filtered = useMemo(() => searchTriggerCatalog(query), [query]);
+  const filtered = useMemo(() => {
+    const labels: Record<string, string> = {};
+    for (const source of AUTOMATION_TRIGGER_SOURCES) {
+      labels[source.labelKey] = t(($) => $.trigger_sources[source.labelKey as keyof typeof $.trigger_sources]);
+    }
+    for (const preset of AUTOMATION_TRIGGER_PRESETS) {
+      labels[preset.labelKey] = t(($) => $.presets[preset.labelKey as keyof typeof $.presets]);
+    }
+    return searchTriggerCatalog(query, labels);
+  }, [query, t]);
   const sourceLabel = (key: string) =>
     t(($) => $.trigger_sources[key as keyof typeof $.trigger_sources]) || key;
   const presetLabel = (key: string) =>
@@ -90,10 +101,20 @@ export function TriggerAddMenu({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t(($) => $.settings.search_triggers)}
+            aria-label={t(($) => $.settings.search_triggers)}
+            onKeyDown={(event) => {
+              // Keep menu typeahead from stealing typed characters from search.
+              if (event.key.length === 1 || event.key === "Backspace") event.stopPropagation();
+            }}
             className="h-8 pl-7"
             autoFocus
           />
         </div>
+        {filtered.sources.length === 0 && (
+          <p role="status" className="px-2 py-3 text-caption text-muted-foreground">
+            {t(($) => $.settings.no_matching_triggers)}
+          </p>
+        )}
         {filtered.sources.map((source) => {
           const label = sourceLabel(source.labelKey);
           if (!source.nested) {

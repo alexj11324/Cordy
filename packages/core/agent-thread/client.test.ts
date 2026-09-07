@@ -31,4 +31,34 @@ describe("Agent thread API client", () => {
       idempotency_key: "receipt-2",
     })).rejects.toThrow("Invalid Agent thread continuation response");
   });
+
+  it("prioritizes the selected task within its Agent thread", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      task_id: "queued-task",
+      active_task_id: "running-task",
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await new ApiClient("https://api.example.test")
+      .prioritizeAgentThreadTask("opener-task", "queued-task");
+
+    expect(result).toEqual({
+      task_id: "queued-task",
+      active_task_id: "running-task",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.test/api/tasks/opener-task/agent-thread/queued-tasks/queued-task/prioritize",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("rejects a malformed Agent thread prioritize receipt", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      task_id: "queued-task",
+    }), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    await expect(new ApiClient("https://api.example.test")
+      .prioritizeAgentThreadTask("opener-task", "queued-task"))
+      .rejects.toThrow("Invalid Agent thread prioritize response");
+  });
 });

@@ -621,7 +621,7 @@
       "triggered_by": "トリガーした人",
       "open_issue_aria": "タスクを開く",
       "open_issue_tooltip": "タスクを開く",
-      "transcript_tooltip": "トランスクリプトを表示",
+      "conversation_tooltip": "会話を表示",
       "cancel_task_aria": "作業をキャンセル",
       "cancel_task_tooltip": "作業をキャンセル",
       "cancelling_tooltip": "キャンセル中...",

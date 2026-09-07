@@ -13,6 +13,39 @@ import {
 } from "./trigger-catalog";
 
 describe("automation trigger catalog", () => {
+  it("preserves GitHub repository and event-state conditions", () => {
+    expect(parseAutomationTriggerConfig({ repository: "acme/app", repositories: ["acme/app", "acme/api"],
+      author_scope: "specific", author_logins: ["octocat"], review_state: "approved",
+      thread_state: "resolved", conclusion: "success" })).toMatchObject({
+      repository: "acme/app", repositories: ["acme/app", "acme/api"],
+      author_scope: "specific", author_logins: ["octocat"], review_state: "approved",
+      thread_state: "resolved", conclusion: "success",
+    });
+  });
+
+  it("preserves identity-backed Slack and Linear conditions", () => {
+    expect(parseAutomationTriggerConfig({
+      installation_id: "installation-1",
+      channel: "C123",
+      sender_scope: "authenticated",
+      ignore_thread_replies: false,
+      keyword: "incident",
+      completion_reaction: "white_check_mark",
+      team_id: "team-1",
+      project_id: "project-1",
+      status_id: "state-1",
+    })).toMatchObject({
+      installation_id: "installation-1",
+      channel: "C123",
+      sender_scope: "authenticated",
+      ignore_thread_replies: false,
+      keyword: "incident",
+      completion_reaction: "white_check_mark",
+      team_id: "team-1",
+      project_id: "project-1",
+      status_id: "state-1",
+    });
+  });
   it("keeps webhook as a last-class source, not the default mental model", () => {
     expect(AUTOMATION_TRIGGER_SOURCES.map((source) => source.id)).toEqual([
       "scheduled",

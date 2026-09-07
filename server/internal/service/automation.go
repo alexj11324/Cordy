@@ -195,7 +195,9 @@ func (s *AutomationService) AdmitAutomationWebhookDelivery(
 
 	// Webhook admission has no member actor → automation principal (rule_owner);
 	// the per-run reason code is not surfaced to a human here, so it is dropped.
-	if reason, _, skip := s.shouldSkipDispatch(ctx, automation, pgtype.UUID{}); skip {
+	if reason, _, skip, readinessErr := s.shouldSkipDispatch(ctx, automation, pgtype.UUID{}); readinessErr != nil {
+		return nil, readinessErr
+	} else if skip {
 		run, err := s.recordSkippedRun(
 			ctx,
 			automation,
@@ -526,7 +528,9 @@ func (s *AutomationService) dispatchAutomation(
 	actorUserID pgtype.UUID,
 	idempotencyKey string,
 ) (*db.AutomationRun, dispatch.ReasonCode, error) {
-	if reason, code, skip := s.shouldSkipDispatch(ctx, automation, actorUserID); skip {
+	if reason, code, skip, readinessErr := s.shouldSkipDispatch(ctx, automation, actorUserID); readinessErr != nil {
+		return nil, dispatch.ReasonInternalError, readinessErr
+	} else if skip {
 		run, err := s.recordSkippedRun(ctx, automation, triggerID, source, payload, plannedAt, webhookDeliveryID, reason)
 		return run, code, err
 	}
@@ -1265,12 +1269,13 @@ func (s *AutomationService) failRun(ctx context.Context, runID pgtype.UUID, reas
 }
 
 // shouldSkipDispatch is the pre-flight admission check from MUL-1899.
-// Returns (reason, true) when dispatching now would only enqueue a doomed
+// Returns (reason, code, true, nil) when dispatching now would only enqueue a doomed
 // task — i.e. the assignee (or, for team automations, the team leader) is
 // gone, archived, has no runtime bound, or its runtime is not currently
-// online. Returns ("", false) on the happy path.
+// online. Returns ("", "", false, nil) on the happy path. A provider/config
+// lookup error is returned as err so durable webhook callers can retry it.
 //
-// Errors are split into two classes:
+// Assignee errors are split into two classes:
 //   - pgx.ErrNoRows / errTeamArchived (the row truly doesn't exist or is
 //     archived) → hard skip. Retrying won't change anything; piling failed
 //     runs would pollute the failure-rate auto-pause monitor.
@@ -1279,9 +1284,18 @@ func (s *AutomationService) failRun(ctx context.Context, runID pgtype.UUID, reas
 //     scheduled run. Migration 096 removed the agent FK on automation, so an
 //     agent assignee being missing is now a real condition the gate must
 //     handle (previously cascade-deleted).
-func (s *AutomationService) shouldSkipDispatch(ctx context.Context, ap db.Automation, actorUserID pgtype.UUID) (string, dispatch.ReasonCode, bool) {
+func (s *AutomationService) shouldSkipDispatch(ctx context.Context, ap db.Automation, actorUserID pgtype.UUID) (string, dispatch.ReasonCode, bool, error) {
+	readiness, err := s.CheckAutomationReadiness(ctx, ap)
+	if err != nil {
+		slog.Warn("automation admission: failed to verify trigger readiness",
+			"automation_id", util.UUIDToString(ap.ID), "error", err)
+		return "", dispatch.ReasonInternalError, false, fmt.Errorf("verify automation trigger readiness: %w", err)
+	}
+	if !readiness.Ready {
+		return strings.Join(readiness.Reasons, " "), dispatch.ReasonTriggerNotReady, true, nil
+	}
 	if !ap.ExecutorID.Valid {
-		return "automation has no assignee", dispatch.ReasonTargetUnavailable, true
+		return "automation has no assignee", dispatch.ReasonTargetUnavailable, true, nil
 	}
 	agent, teamResolved, err := s.resolveAutomationLeader(ctx, ap)
 	if err != nil {
@@ -1304,18 +1318,18 @@ func (s *AutomationService) shouldSkipDispatch(ctx context.Context, ap db.Automa
 			// should have rewritten this automation's assignee to the leader
 			// already; surfacing the case explicitly keeps the failure
 			// reason useful when something slipped past the transfer.
-			return "assignee team is archived", dispatch.ReasonTargetUnavailable, true
+			return "assignee team is archived", dispatch.ReasonTargetUnavailable, true, nil
 		case missing && teamResolved:
-			return "assignee team cannot be resolved", dispatch.ReasonTargetUnavailable, true
+			return "assignee team cannot be resolved", dispatch.ReasonTargetUnavailable, true, nil
 		case missing && !teamResolved:
 			// Agent row gone. With migration 096 the FK is gone too, so
 			// this is the new "agent was hard-deleted under us" case. Skip
 			// rather than fail-open: we know retrying will not help.
-			return "assignee agent no longer exists", dispatch.ReasonTargetUnavailable, true
+			return "assignee agent no longer exists", dispatch.ReasonTargetUnavailable, true, nil
 		}
 		// Transient DB error — fail-open so the next scheduler tick gets a
 		// chance to succeed.
-		return "", "", false
+		return "", "", false, nil
 	}
 	verdict, err := AgentReadiness(ctx, s.runtimeLookup(), agent)
 	if err != nil {
@@ -1324,7 +1338,7 @@ func (s *AutomationService) shouldSkipDispatch(ctx context.Context, ap db.Automa
 			"runtime_id", util.UUIDToString(agent.RuntimeID),
 			"error", err,
 		)
-		return "", "", false
+		return "", "", false, nil
 	}
 	if !verdict.Ready() {
 		// A merely-offline machine still gets create_issue work: the issue is
@@ -1338,7 +1352,7 @@ func (s *AutomationService) shouldSkipDispatch(ctx context.Context, ap db.Automa
 				"reason", verdict.Detail,
 			)
 		} else {
-			return formatAdmissionReason(ap, verdict.Detail), verdict.Reason, true
+			return formatAdmissionReason(ap, verdict.Detail), verdict.Reason, true, nil
 		}
 	}
 	// Invocation gate at the automation layer (MUL-3963 / MUL-4525). The
@@ -1352,11 +1366,11 @@ func (s *AutomationService) shouldSkipDispatch(ctx context.Context, ap db.Automa
 	// automations the gate runs against the resolved leader.
 	if !s.automationAdmitInvoke(ctx, ap, agent, actorUserID) {
 		if actorUserID.Valid {
-			return "you are not allowed to trigger this automation's assignee agent", dispatch.ReasonInvocationNotAllowed, true
+			return "you are not allowed to trigger this automation's assignee agent", dispatch.ReasonInvocationNotAllowed, true, nil
 		}
-		return "automation creator lacks access to private assignee agent", dispatch.ReasonInvocationNotAllowed, true
+		return "automation creator lacks access to private assignee agent", dispatch.ReasonInvocationNotAllowed, true, nil
 	}
-	return "", "", false
+	return "", "", false, nil
 }
 
 // formatAdmissionReason rewrites the generic AgentReadiness reason into the
@@ -1763,7 +1777,7 @@ func (s *AutomationService) buildIssueDescription(ap db.Automation, run db.Autom
 		b.WriteString("\n```")
 	}
 
-	if notes := automationToolsDispatchNotes(ap.Tools); notes != "" {
+	if notes := AutomationToolsDispatchNotes(util.UUIDToString(ap.ID), ap.Tools); notes != "" {
 		b.WriteString("\n\n")
 		b.WriteString(notes)
 	}

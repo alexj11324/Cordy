@@ -43,6 +43,17 @@ export interface ListSlackInstallationsResponse {
   managed_supported?: boolean;
 }
 
+export interface SlackAutomationChannel {
+  installation_id: string;
+  team_id: string;
+  id: string;
+  name: string;
+}
+
+export interface SlackAutomationCatalogResponse {
+  channels: SlackAutomationChannel[];
+}
+
 /** Request body for a bring-your-own-app (BYO) install: the two tokens the
  * admin pastes from the Slack app they created. The backend validates that both
  * belong to the same Slack app (and that the app token is live) before

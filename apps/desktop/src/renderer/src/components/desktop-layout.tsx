@@ -20,6 +20,7 @@ import {
 } from "@patchbay/views/layout";
 import { SearchCommand, SearchTrigger } from "@patchbay/views/search";
 import { FloatingChat } from "@patchbay/views/chat";
+import { AgentThreadPanelLayout } from "@patchbay/views/agent-thread";
 import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@patchbay/core/paths";
 import { workspaceListOptions } from "@patchbay/core/workspace";
 import {
@@ -297,6 +298,7 @@ export function DesktopShell() {
           <SidebarProvider
             hasExternalTrigger
             hoverReveal
+            compactBehavior="collapse"
             glass
             data-native-vibrancy={usesNativeVibrancy ? "true" : undefined}
             className={cn(
@@ -316,8 +318,10 @@ export function DesktopShell() {
                     equivalent relative/overflow-hidden content box. Desktop
                     used to have no navigation feedback at all — a click just
                     froze until the destination committed (MUL-6404). */}
-                <NavigationProgress />
-                <TabContent />
+                <AgentThreadPanelLayout>
+                  <NavigationProgress />
+                  <TabContent />
+                </AgentThreadPanelLayout>
                 {slug && <FloatingChat />}
               </MainCanvas>
             </div>

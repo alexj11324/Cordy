@@ -225,7 +225,7 @@ export function presetsForSource(source: AutomationTriggerSourceId): AutomationT
   return AUTOMATION_TRIGGER_PRESETS.filter((preset) => preset.source === source);
 }
 
-export function searchTriggerCatalog(query: string): {
+export function searchTriggerCatalog(query: string, labels: Record<string, string> = {}): {
   sources: AutomationTriggerSource[];
   presets: AutomationTriggerPreset[];
 } {
@@ -242,6 +242,8 @@ export function searchTriggerCatalog(query: string): {
       preset.labelKey.replaceAll("_", " ").includes(needle) ||
       preset.source.includes(needle) ||
       preset.provider.includes(needle)
+      || (labels[preset.labelKey]?.toLowerCase().includes(needle) ?? false)
+      || (labels[preset.source]?.toLowerCase().includes(needle) ?? false)
     );
   });
   const sourceIds = new Set(presets.map((preset) => preset.source));
@@ -261,8 +263,10 @@ export function isNativeAutomationProvider(provider: string | null | undefined):
 export type AutomationToolId = "memories" | "slack_send" | "mcp";
 
 export interface AutomationToolsConfig {
-  memories?: { enabled: boolean };
-  slack_send?: { enabled: boolean; channel?: string };
+  // `enabled` is retained only for clients that round-trip legacy payloads;
+  // row presence is the execution switch.
+  memories?: { enabled?: boolean };
+  slack_send?: { enabled?: boolean; channel?: string; installation_id?: string; channel_ids?: string[] };
   mcp_server_ids?: string[];
 }
 
@@ -274,6 +278,20 @@ export interface AutomationTriggerConfig {
   branch?: string;
   label?: string;
   on_failure?: boolean;
+  repository?: string;
+  repositories?: string[];
+  author_scope?: "anyone" | "me" | "specific";
+  author_logins?: string[];
+  review_state?: string;
+  thread_state?: string;
+  conclusion?: string;
+  installation_id?: string;
+  sender_scope?: "anyone" | "authenticated";
+  ignore_thread_replies?: boolean;
+  completion_reaction?: string;
+  team_id?: string;
+  project_id?: string;
+  status_id?: string;
 }
 
 export function parseAutomationTools(raw: unknown): AutomationToolsConfig {
@@ -282,13 +300,17 @@ export function parseAutomationTools(raw: unknown): AutomationToolsConfig {
   const tools: AutomationToolsConfig = {};
   if (value.memories && typeof value.memories === "object") {
     const memories = value.memories as { enabled?: unknown };
-    tools.memories = { enabled: memories.enabled === true };
+    tools.memories = typeof memories.enabled === "boolean" ? { enabled: memories.enabled } : {};
   }
   if (value.slack_send && typeof value.slack_send === "object") {
-    const slack = value.slack_send as { enabled?: unknown; channel?: unknown };
+    const slack = value.slack_send as { enabled?: unknown; channel?: unknown; installation_id?: unknown; channel_ids?: unknown };
     tools.slack_send = {
-      enabled: slack.enabled === true,
+      ...(typeof slack.enabled === "boolean" ? { enabled: slack.enabled } : {}),
       channel: typeof slack.channel === "string" ? slack.channel : undefined,
+      installation_id: typeof slack.installation_id === "string" ? slack.installation_id : undefined,
+      channel_ids: Array.isArray(slack.channel_ids)
+        ? slack.channel_ids.filter((id): id is string => typeof id === "string" && id.length > 0)
+        : undefined,
     };
   }
   if (Array.isArray(value.mcp_server_ids)) {
@@ -310,6 +332,28 @@ export function parseAutomationTriggerConfig(raw: unknown): AutomationTriggerCon
     branch: typeof value.branch === "string" ? value.branch : undefined,
     label: typeof value.label === "string" ? value.label : undefined,
     on_failure: typeof value.on_failure === "boolean" ? value.on_failure : undefined,
+    repository: typeof value.repository === "string" ? value.repository : undefined,
+    repositories: Array.isArray(value.repositories)
+      ? value.repositories.filter((item): item is string => typeof item === "string" && item.length > 0)
+      : undefined,
+    author_scope: value.author_scope === "anyone" || value.author_scope === "me" || value.author_scope === "specific"
+      ? value.author_scope
+      : undefined,
+    author_logins: Array.isArray(value.author_logins)
+      ? value.author_logins.filter((item): item is string => typeof item === "string" && item.length > 0)
+      : undefined,
+    review_state: typeof value.review_state === "string" ? value.review_state : undefined,
+    thread_state: typeof value.thread_state === "string" ? value.thread_state : undefined,
+    conclusion: typeof value.conclusion === "string" ? value.conclusion : undefined,
+    installation_id: typeof value.installation_id === "string" ? value.installation_id : undefined,
+    sender_scope: value.sender_scope === "anyone" || value.sender_scope === "authenticated"
+      ? value.sender_scope
+      : undefined,
+    ignore_thread_replies: typeof value.ignore_thread_replies === "boolean" ? value.ignore_thread_replies : undefined,
+    completion_reaction: typeof value.completion_reaction === "string" ? value.completion_reaction : undefined,
+    team_id: typeof value.team_id === "string" ? value.team_id : undefined,
+    project_id: typeof value.project_id === "string" ? value.project_id : undefined,
+    status_id: typeof value.status_id === "string" ? value.status_id : undefined,
   };
 }
 

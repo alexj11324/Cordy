@@ -269,7 +269,14 @@ func buildAgentThreadPrompt(task Task) string {
 	b.WriteString("Continue the existing Patchbay task conversation in the same provider session.\n\n")
 	b.WriteString("The member's next turn is quoted below. Treat it as task-scoped user input, not as a new Chat conversation:\n\n")
 	fmt.Fprintf(&b, "> %s\n\n", task.AgentThreadMessage)
-	fmt.Fprintf(&b, "Continue working on issue %s and report the result through the normal task workflow.\n", task.IssueID)
+	if task.IssueID != "" {
+		fmt.Fprintf(&b, "Continue working on issue %s and report the result through the normal task workflow.\n", task.IssueID)
+	} else {
+		b.WriteString(execenv.AgentThreadNoIssueWorkflow + "\n")
+		if task.AutomationID != "" {
+			fmt.Fprintf(&b, "Automation ID for any enabled automation tools: %s\n", task.AutomationID)
+		}
+	}
 	return b.String()
 }
 
@@ -338,7 +345,7 @@ func buildQuickCreatePrompt(task Task) string {
 			fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to the picker TEAM: pass `--executor-id %q` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected executor. Never leave the issue without an executor, and do not assign it to your own agent UUID.\n\n", task.TeamID)
 		}
 	case agentID != "":
-			fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to YOURSELF: pass `--executor-id %q` (your agent UUID). The picker agent is the expected executor because the user opened quick-create with you selected — never leave the issue without an executor. Use the UUID flag, not `--executor <name>`, so executor routing is unambiguous even when other agents share part of your name.\n\n", agentID)
+		fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to YOURSELF: pass `--executor-id %q` (your agent UUID). The picker agent is the expected executor because the user opened quick-create with you selected — never leave the issue without an executor. Use the UUID flag, not `--executor <name>`, so executor routing is unambiguous even when other agents share part of your name.\n\n", agentID)
 	case agentName != "":
 		fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to YOURSELF: pass `--executor %q`. The picker agent is the expected executor because the user opened quick-create with you selected — never leave the issue without an executor.\n\n", agentName)
 	default:

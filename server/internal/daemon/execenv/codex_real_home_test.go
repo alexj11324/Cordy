@@ -3,6 +3,7 @@ package execenv
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -124,6 +125,25 @@ func TestCodexSessionStoreKeyUsesChatSessionIDWhenIssueAbsent(t *testing.T) {
 	}
 	if keyA == keyB {
 		t.Fatalf("different chats share one Codex session-store key: %q", keyA)
+	}
+}
+
+func TestCodexSessionStoreKeyUsesAgentThreadRootWhenIssueAndChatAbsent(t *testing.T) {
+	const agentID = "agent-thread-key"
+	const rootID = "019c6e27-e55b-73d1-87d8-4e01f1f75043"
+	root := TaskContextForEnv{AgentID: agentID, AgentThreadRootTaskID: rootID}
+	child := TaskContextForEnv{AgentID: agentID, AgentThreadRootTaskID: rootID}
+	other := TaskContextForEnv{AgentID: agentID, AgentThreadRootTaskID: "019c7714-3b77-74d1-9866-e1f484aae2ab"}
+
+	key := codexSessionStoreKey("", root)
+	if key == "" || key != codexSessionStoreKey("", child) {
+		t.Fatalf("same Agent conversation produced unstable keys: %q and %q", key, codexSessionStoreKey("", child))
+	}
+	if key == codexSessionStoreKey("", other) {
+		t.Fatalf("different Agent conversation roots share one Codex session-store key: %q", key)
+	}
+	if strings.Contains(key, "chat_") {
+		t.Fatalf("Agent conversation key used the chat namespace: %q", key)
 	}
 }
 

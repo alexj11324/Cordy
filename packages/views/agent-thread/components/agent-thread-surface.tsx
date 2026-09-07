@@ -1,19 +1,14 @@
 "use client";
 
-import type { ComponentProps, ReactNode } from "react";
+import { useId, type ComponentProps, type ReactNode } from "react";
+import { PanelRightClose } from "lucide-react";
 import type { AgentAvailability } from "@patchbay/core/agents";
 import type {
   ChatMessage,
   ChatPendingTask,
   ChatQueuedTask,
 } from "@patchbay/core/types";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+import { Button } from "@patchbay/ui/components/ui/button";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ChatInput } from "../../chat/components/chat-input";
 import { ChatQueue } from "../../chat/components/chat-queue";
@@ -24,9 +19,11 @@ import {
 
 export type AgentThreadSubmit = ComponentProps<typeof ChatInput>["onSend"];
 
+const blockedAgentThreadSubmit: AgentThreadSubmit = () => false;
+
 export interface AgentThreadSurfaceProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  onClose: () => void;
+  collapseLabel: string;
   agentId: string;
   agentName: string;
   title: ReactNode;
@@ -63,8 +60,8 @@ export interface AgentThreadSurfaceProps {
  * queue controls, and terminal boundaries stay identical.
  */
 export function AgentThreadSurface({
-  open,
-  onOpenChange,
+  onClose,
+  collapseLabel,
   agentId,
   agentName,
   title,
@@ -88,18 +85,21 @@ export function AgentThreadSurface({
   draftKey,
   editorKey,
 }: AgentThreadSurfaceProps) {
-  const hasComposer = !unavailableReason && !!onSend;
-  const queueHandlersReady =
-    !!onSendQueuedTaskNow &&
-    !!onEditQueuedTask &&
-    !!onRemoveQueuedTask &&
-    !!onClearQueuedTasks;
+  const titleId = useId();
+  const canSend = !unavailableReason && !!onSend;
+  const canStop = !!pendingTask?.task_id && !!onStop;
+  const showComposer = canSend || canStop;
+  const hasQueueAction = !!onSendQueuedTaskNow || !!onEditQueuedTask ||
+    !!onRemoveQueuedTask || !!onClearQueuedTasks;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex h-[min(52rem,90svh)] w-[min(52rem,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0">
-        <DialogHeader className="shrink-0 border-b px-5 py-3.5 text-left">
-          <div className="flex items-start gap-3 pr-8">
+    <aside
+      aria-labelledby={titleId}
+      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-page-canvas"
+      data-slot="agent-thread-panel"
+    >
+        <header className="shrink-0 border-b px-4 py-3 text-left">
+          <div className="flex min-w-0 items-start gap-3">
             <ActorAvatar
               actorType="agent"
               actorId={agentId}
@@ -107,20 +107,31 @@ export function AgentThreadSurface({
               enableHoverCard
             />
             <div className="min-w-0 flex-1">
-              <DialogTitle className="truncate text-body">{title}</DialogTitle>
+              <h2 id={titleId} className="truncate text-body font-medium">{title}</h2>
               {(description || descriptionHint) && (
-                <DialogDescription className="mt-0.5 text-caption">
+                <div className="mt-0.5 min-w-0 text-caption text-muted-foreground">
                   {description && <span className="block">{description}</span>}
                   {descriptionHint && (
                     <span className="mt-0.5 block">{descriptionHint}</span>
                   )}
-                </DialogDescription>
+                </div>
               )}
             </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              className="shrink-0 text-muted-foreground"
+              aria-label={collapseLabel}
+              title={collapseLabel}
+              onClick={onClose}
+            >
+              <PanelRightClose aria-hidden="true" />
+            </Button>
           </div>
-        </DialogHeader>
+        </header>
 
-        <div className="flex min-h-0 flex-1 flex-col @container">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden @container">
           {isLoading ? (
             <ChatMessageSkeleton />
           ) : (
@@ -128,7 +139,7 @@ export function AgentThreadSurface({
               messages={messages}
               pendingTask={pendingTask}
               availability={availability}
-              quickActionsDisabled={quickActionsDisabled || !hasComposer}
+              quickActionsDisabled={quickActionsDisabled || !canSend}
             />
           )}
 
@@ -139,28 +150,27 @@ export function AgentThreadSurface({
             >
               {unavailableReason}
             </div>
-          ) : hasComposer ? (
+          ) : null}
+          {showComposer ? (
             <>
               {queueTasks.length > 0 ? (
                 <ChatQueue
                   tasks={queueTasks}
                   headStatus={pendingTask?.status}
-                  readOnly={!queueHandlersReady}
+                  readOnly={!hasQueueAction}
+                  sendNowDisabled={!canSend}
                   onSendNow={onSendQueuedTaskNow}
-                  onEdit={queueHandlersReady ? onEditQueuedTask : undefined}
-                  onRemove={
-                    queueHandlersReady ? onRemoveQueuedTask : undefined
-                  }
-                  onClear={
-                    queueHandlersReady ? onClearQueuedTasks : undefined
-                  }
+                  onEdit={onEditQueuedTask}
+                  onRemove={onRemoveQueuedTask}
+                  onClear={onClearQueuedTasks}
                 />
               ) : null}
               <ChatInput
-                onSend={onSend}
+                onSend={onSend ?? blockedAgentThreadSubmit}
                 onStop={onStop}
                 isRunning={!!pendingTask?.task_id}
-                allowSubmitWhileRunning={allowSubmitWhileRunning}
+                allowSubmitWhileRunning={allowSubmitWhileRunning && canSend}
+                disabled={!canSend}
                 agentName={agentName}
                 leftAdornment={
                   leftAdornment ?? (
@@ -179,7 +189,6 @@ export function AgentThreadSurface({
             </>
           ) : null}
         </div>
-      </DialogContent>
-    </Dialog>
+    </aside>
   );
 }

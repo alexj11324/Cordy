@@ -20,36 +20,36 @@ import (
 // (only the outbound sender decrypts it). WS lease columns are runtime state,
 // not API surface, so they are omitted too.
 type SlackInstallationResponse struct {
-	Runtime MessagingConnectionStatus `json:"runtime"`
-	ID              string `json:"id"`
-	WorkspaceID     string `json:"workspace_id"`
-	AgentID         string `json:"agent_id"`
-	TeamID          string `json:"team_id"`
-	BotUserID       string `json:"bot_user_id"`
-	InstallerUserID string `json:"installer_user_id"`
-	Status          string `json:"status"`
-	InstallationStatus string `json:"installation_status"`
-	InstalledAt     string `json:"installed_at"`
-	CreatedAt       string `json:"created_at"`
-	UpdatedAt       string `json:"updated_at"`
+	Runtime            MessagingConnectionStatus `json:"runtime"`
+	ID                 string                    `json:"id"`
+	WorkspaceID        string                    `json:"workspace_id"`
+	AgentID            string                    `json:"agent_id"`
+	TeamID             string                    `json:"team_id"`
+	BotUserID          string                    `json:"bot_user_id"`
+	InstallerUserID    string                    `json:"installer_user_id"`
+	Status             string                    `json:"status"`
+	InstallationStatus string                    `json:"installation_status"`
+	InstalledAt        string                    `json:"installed_at"`
+	CreatedAt          string                    `json:"created_at"`
+	UpdatedAt          string                    `json:"updated_at"`
 }
 
 func slackInstallationToResponse(row db.ChannelInstallation) SlackInstallationResponse {
 	info := slack.DecodePublicConfig(row.Config)
 	legacyStatus, installationStatus := messagingInstallationWireStatuses(row.Status)
 	return SlackInstallationResponse{
-		Runtime: initialConnectionStatus(row.Status),
-		ID:              uuidToString(row.ID),
-		WorkspaceID:     uuidToString(row.WorkspaceID),
-		AgentID:         uuidToString(row.AgentID),
-		TeamID:          info.TeamID,
-		BotUserID:       info.BotUserID,
-		InstallerUserID: uuidToString(row.InstallerUserID),
-		Status:          legacyStatus,
+		Runtime:            initialConnectionStatus(row.Status),
+		ID:                 uuidToString(row.ID),
+		WorkspaceID:        uuidToString(row.WorkspaceID),
+		AgentID:            uuidToString(row.AgentID),
+		TeamID:             info.TeamID,
+		BotUserID:          info.BotUserID,
+		InstallerUserID:    uuidToString(row.InstallerUserID),
+		Status:             legacyStatus,
 		InstallationStatus: installationStatus,
-		InstalledAt:     row.InstalledAt.Time.UTC().Format(time.RFC3339),
-		CreatedAt:       row.CreatedAt.Time.UTC().Format(time.RFC3339),
-		UpdatedAt:       row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+		InstalledAt:        row.InstalledAt.Time.UTC().Format(time.RFC3339),
+		CreatedAt:          row.CreatedAt.Time.UTC().Format(time.RFC3339),
+		UpdatedAt:          row.UpdatedAt.Time.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -104,6 +104,23 @@ func (h *Handler) ListSlackInstallations(w http.ResponseWriter, r *http.Request)
 		"install_supported": true,
 		"managed_supported": h.ManagedSlack != nil && h.ManagedSlack.ClientID() != "",
 	})
+}
+
+func (h *Handler) GetSlackAutomationCatalog(w http.ResponseWriter, r *http.Request) {
+	if h.SlackInstall == nil {
+		writeError(w, http.StatusServiceUnavailable, "Slack integration is not configured")
+		return
+	}
+	workspaceID, ok := parseUUIDOrBadRequest(w, chi.URLParam(r, "id"), "workspace id")
+	if !ok {
+		return
+	}
+	catalog, err := h.SlackInstall.AutomationCatalog(r.Context(), workspaceID)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "failed to load Slack channel catalog")
+		return
+	}
+	writeJSON(w, http.StatusOK, catalog)
 }
 
 // RegisterSlackBYORequest is the body for a bring-your-own-app install: the two

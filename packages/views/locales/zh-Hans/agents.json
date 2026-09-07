@@ -728,7 +728,7 @@
       "triggered_by": "触发来源",
       "open_issue_aria": "打开任务",
       "open_issue_tooltip": "打开任务",
-      "transcript_tooltip": "查看记录",
+      "conversation_tooltip": "查看对话",
       "cancel_task_aria": "取消 task",
       "cancel_task_tooltip": "取消 task",
       "cancelling_tooltip": "正在取消...",

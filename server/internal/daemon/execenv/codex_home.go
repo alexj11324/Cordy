@@ -78,12 +78,18 @@ type CodexHomeOptions struct {
 	// See prepareCodexSessionsDir (MUL-4424).
 	IsLocalDirectory bool
 	// SessionStoreKey is a stable, per-(agent, issue-or-chat) relative path that
-	// identifies this task's persistent Codex sessions store. It survives across
+	// identifies this task's persistent Codex sessions store. For a source-neutral
+	// Agent conversation it is keyed by the immutable root task id. It survives across
 	// task IDs (unlike the task-scoped envRoot the GC reclaims) so a follow-up
-	// run resumes the same thread. Empty when no stable key is available (e.g. a
-	// task with no issue), in which case sessions/ stays task-local. See
+	// run resumes the same thread. Empty when no stable key is available, in which
+	// case sessions/ stays task-local. See
 	// codexSessionStoreDir and prepareCodexSessionsDir (MUL-4424).
 	SessionStoreKey string
+	// PersistentSessionStore mounts SessionStoreKey even for a managed task whose
+	// env root is normally reusable. Agent conversation roots are GC-eligible as
+	// soon as their Automation run completes, so their provider history must live
+	// outside that root from the first turn.
+	PersistentSessionStore bool
 	// CodexCustomArgs are the effective Codex CLI args this task will launch
 	// with (daemon defaults + profile-fixed + per-agent custom_args). Only the
 	// Windows sandbox decision reads them, to honor a `-c windows.sandbox=...`
@@ -396,17 +402,23 @@ func codexSessionStoreNamespace(profile string) string {
 }
 
 // codexSessionStoreKey builds a profile-and-task key for persistent Codex
-// sessions. Issue IDs retain their existing path;
-// direct chats use a prefixed chat_session_id so the two namespaces cannot
-// collide. Returns "" when neither stable identifier is available.
+// sessions. Issue IDs retain their existing path; direct chats use a prefixed
+// chat_session_id; source-neutral Agent conversations use a prefixed immutable
+// root task id. The namespaces cannot collide. Returns "" when no stable
+// identifier is available.
 func codexSessionStoreKey(profile string, task TaskContextForEnv) string {
 	storeID := sanitizePathSegment(task.IssueID)
 	if storeID == "" {
 		chatID := sanitizePathSegment(task.ChatSessionID)
-		if chatID == "" {
-			return ""
+		if chatID != "" {
+			storeID = "chat_" + chatID
+		} else {
+			rootID := sanitizePathSegment(task.AgentThreadRootTaskID)
+			if rootID == "" {
+				return ""
+			}
+			storeID = "thread_" + rootID
 		}
-		storeID = "chat_" + chatID
 	}
 	agent := sanitizePathSegment(task.AgentID)
 	if agent == "" {
@@ -571,6 +583,16 @@ func prepareCodexSessionsDir(codexHome, sharedHome string, opts CodexHomeOptions
 	sharedSessions := filepath.Join(sharedHome, "sessions")
 	storeDir := codexSessionStoreDir(sharedHome, opts.SessionStoreKey)
 
+	// Source-neutral Agent roots are allowed to outlive their task env root, so
+	// mount their stable store on both the first turn and every fresh post-GC
+	// continuation. Existing real dirs from older daemons remain authoritative;
+	// new roots start with the durable link below.
+	if opts.PersistentSessionStore && storeDir != "" {
+		if _, err := os.Lstat(dst); os.IsNotExist(err) {
+			return linkCodexSessionsToStore(dst, storeDir, sharedSessions, opts.ResumeSessionID, logger)
+		}
+	}
+
 	// local_directory tasks have no reusable envRoot, so their history can only
 	// persist across task IDs in the per-issue store. The daemon still verifies
 	// the specific rollout is present before claiming a resume (see
@@ -677,7 +699,7 @@ func touchCodexSessionStore(storeDir string, logger *slog.Logger) {
 }
 
 // CodexSessionStorePath returns the per-conversation Codex session store on the
-// shared home, or "" when there is no stable issue or chat key. The daemon
+// shared home, or "" when there is no stable issue, chat, or Agent-root key. The daemon
 // marks this path in-use for the duration of a task so
 // PruneCodexSessionStores never reclaims a store mid-mount, closing the
 // stat→remove race the mtime refresh alone cannot (MUL-4424).

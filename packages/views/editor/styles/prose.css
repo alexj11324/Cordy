@@ -85,11 +85,14 @@
   line-height: 1.5;
 }
 
-/* Automation instructions: the first markdown heading is the visible
- * section title (Cursor-style), so h2 reads as a medium heading. Issue
- * descriptions keep the page-level h1/h2 scale above. */
+/* Automation instructions have their own section label and bounded viewport.
+ * Keep prose and Markdown headings compact without changing other editors. */
+.automation-instructions .rich-text-editor {
+  font-size: var(--text-label);
+}
+
 .automation-instructions .rich-text-editor h1 {
-  font-size: var(--text-title);
+  font-size: var(--text-body-lg);
   font-weight: 600;
   margin-top: 0.75rem;
   margin-bottom: 0.35rem;
@@ -98,7 +101,7 @@
 }
 
 .automation-instructions .rich-text-editor h2 {
-  font-size: var(--text-title-sm);
+  font-size: var(--text-body);
   font-weight: 600;
   margin-top: 0.75rem;
   margin-bottom: 0.35rem;
@@ -107,7 +110,7 @@
 }
 
 .automation-instructions .rich-text-editor h3 {
-  font-size: var(--text-body);
+  font-size: var(--text-label);
   font-weight: 600;
   margin-top: 0.75rem;
   margin-bottom: 0.25rem;

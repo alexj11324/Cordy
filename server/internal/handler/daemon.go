@@ -2049,6 +2049,24 @@ func claimResponseAgentIdentityMatches(resp AgentTaskResponse) bool {
 func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQueue, runtime db.AgentRuntime, runtimeID, runtimeWorkspaceID string) (resp AgentTaskResponse, deliveredCommentIDs []pgtype.UUID, agentSkillCount, builtinSkillCount int, failure *claimBuildFailure) {
 	// Build response with fresh agent data (name + skills + custom_env + custom_args).
 	resp = taskToResponse(*task, runtimeWorkspaceID)
+	// A direct Automation/issue/quick-create root has no continuation edge yet,
+	// so its own task id is the immutable scope used by provider session stores.
+	// Continuations replace this below with the server-validated chain root.
+	if service.AgentThreadMessage(*task) == "" && service.AgentThreadRootEligible(*task) {
+		resp.AgentThreadRootTaskID = uuidToString(task.ID)
+	}
+	// Agent-thread continuations persist the provider session/workdir copied
+	// from their parent on their own task row. Feed those values through the
+	// daemon's resume fields even when the continuation has no issue/chat FK
+	// from which the ordinary resume branches could recover them.
+	if service.AgentThreadMessage(*task) != "" {
+		if task.SessionID.Valid {
+			resp.PriorSessionID = task.SessionID.String
+		}
+		if task.WorkDir.Valid {
+			resp.PriorWorkDir = task.WorkDir.String
+		}
+	}
 	var issueNumber int32
 	// Claim-only capability: this server resolves the team-leader role on the
 	// wire (is_leader_task / team_id), so the daemon must not re-derive it
@@ -2927,6 +2945,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		if ap.Description.Valid {
 			resp.AutomationDescription = ap.Description.String
 		}
+		if notes := service.AutomationToolsDispatchNotes(resp.AutomationID, ap.Tools); notes != "" {
+			resp.AutomationDescription += "\n\n" + notes
+		}
 
 		// A run_only automation has no issue from which to inherit project
 		// context, so its configured project is hydrated here. That gives the
@@ -2948,6 +2969,97 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		projectCtx.applyTo(&resp)
 	}
 
+	// Source-neutral continuation of a run_only Automation: the child must not
+	// carry automation_run_id (otherwise its completion would overwrite the
+	// historical run), so resolve the bounded server-owned thread back to its
+	// root and restore only execution capabilities. AgentThreadMessage remains
+	// the prompt; the original Automation instructions and trigger payload are
+	// deliberately not copied onto this follow-up turn.
+	if !task.IssueID.Valid && !task.ChatSessionID.Valid && !task.AutomationRunID.Valid &&
+		service.AgentThreadMessage(*task) != "" {
+		thread, threadErr := h.Queries.ListAgentThreadTasks(r.Context(), task.ID)
+		if threadErr != nil {
+			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
+				h.rejectClaimSourceLoad(r.Context(), task, threadErr, "Agent thread", uuidToString(task.ID))
+		}
+		root, rootOK := service.AgentThreadRootTask(thread)
+		if !rootOK {
+			return resp, nil, 0, 0, h.failClaimedTaskBeforeLaunch(
+				r.Context(), task,
+				"Agent thread lineage is invalid. Start a new task instead.",
+				taskfailure.ReasonInvalidTaskIdentity,
+				"error_agent_thread_lineage", http.StatusConflict, "Agent thread lineage is invalid",
+			)
+		}
+		resp.AgentThreadRootTaskID = uuidToString(root.ID)
+		runID, isAutomationContinuation := service.AgentThreadAutomationRunID(thread)
+		if isAutomationContinuation {
+			run, runErr := h.Queries.GetAutomationRun(r.Context(), runID)
+			if runErr != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
+					h.rejectClaimSourceLoad(r.Context(), task, runErr, "automation run", uuidToString(runID))
+			}
+			ap, apErr := h.Queries.GetAutomation(r.Context(), run.AutomationID)
+			if apErr != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
+					h.rejectClaimSourceLoad(r.Context(), task, apErr, "automation", uuidToString(run.AutomationID))
+			}
+
+			resp.WorkspaceID = uuidToString(ap.WorkspaceID)
+			if failure := h.rejectClaimOnWorkspaceMismatch(r.Context(), task, resp.WorkspaceID, runtimeID, runtimeWorkspaceID, false); failure != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
+			}
+			if failure := h.applyAutomationClaimSettings(r.Context(), ap, *task, agentMCPConfig, resp.Agent, composioMCPEnabled); failure != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
+			}
+			resp.AutomationID = uuidToString(ap.ID)
+			resp.AutomationTitle = ap.Title
+			resp.ThreadName = ap.Title
+
+			projectCtx, projectErr := h.resolveClaimProjectContext(r.Context(), ap.ProjectID, ap.WorkspaceID)
+			if projectErr != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
+					h.rejectClaimSourceLoad(r.Context(), task, projectErr, "automation project", uuidToString(ap.ProjectID))
+			}
+			projectCtx.applyTo(&resp)
+		} else if quickCreate, isQuickCreateContinuation := service.AgentThreadQuickCreateContext(thread); isQuickCreateContinuation {
+			// Quick-create continuation rows omit every one-shot source field.
+			// Recover only workspace/project from the validated root so the
+			// follow-up runs in the same project without replaying issue creation,
+			// attachment delivery, or captured source consumption.
+			resp.WorkspaceID = quickCreate.WorkspaceID
+			if failure := h.rejectClaimOnWorkspaceMismatch(r.Context(), task, resp.WorkspaceID, runtimeID, runtimeWorkspaceID, true); failure != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
+			}
+			var projectID pgtype.UUID
+			if quickCreate.ProjectID != "" {
+				if parsed, err := util.ParseUUID(quickCreate.ProjectID); err == nil {
+					projectID = parsed
+				}
+			}
+			projectCtx, projectErr := h.resolveClaimProjectContext(r.Context(), projectID, parseUUID(quickCreate.WorkspaceID))
+			if projectErr != nil {
+				slog.Error("quick-create continuation claim: load project context failed; preserving task for redelivery",
+					"task_id", uuidToString(task.ID),
+					"project_id", quickCreate.ProjectID,
+					"error", projectErr)
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, &claimBuildFailure{
+					outcome: "error_project_context",
+					status:  http.StatusInternalServerError,
+					message: "failed to load project context",
+				}
+			}
+			projectCtx.applyTo(&resp)
+		} else if len(thread) > 0 && thread[0].AutomationRunID.Valid {
+			return resp, nil, 0, 0, h.failClaimedTaskBeforeLaunch(
+				r.Context(), task,
+				"Agent thread lineage is invalid. Start a new task instead.",
+				taskfailure.ReasonInvalidTaskIdentity,
+				"error_agent_thread_lineage", http.StatusConflict, "Agent thread lineage is invalid",
+			)
+		}
+	}
+
 	// Handoff note (MUL-3375) is populated by taskToResponse (the shared mapper
 	// resp came from above), so the daemon's prompt + issue_context.md render the
 	// executor-handoff branch. Empty for all other task kinds.
@@ -2959,17 +3071,20 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	if task.Context != nil && !task.IssueID.Valid && !task.ChatSessionID.Valid && !task.AutomationRunID.Valid {
 		var qc service.QuickCreateContext
 		if json.Unmarshal(task.Context, &qc) == nil && qc.Type == service.QuickCreateContextType {
+			isContinuation := service.AgentThreadMessage(*task) != ""
 			hasQuickCreate = true
-			resp.QuickCreatePrompt = qc.Prompt
-			resp.QuickCreatePriority = qc.Priority
-			resp.QuickCreateDueDate = qc.DueDate
-			resp.QuickCreateAttachmentIDs = append([]string(nil), qc.AttachmentIDs...)
+			if !isContinuation {
+				resp.QuickCreatePrompt = qc.Prompt
+				resp.QuickCreatePriority = qc.Priority
+				resp.QuickCreateDueDate = qc.DueDate
+				resp.QuickCreateAttachmentIDs = append([]string(nil), qc.AttachmentIDs...)
+			}
 			resp.ThreadName = qc.Prompt
 			resp.WorkspaceID = qc.WorkspaceID
 			if failure := h.rejectClaimOnWorkspaceMismatch(r.Context(), task, resp.WorkspaceID, runtimeID, runtimeWorkspaceID, true); failure != nil {
 				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
 			}
-			if qc.SourceContextID != "" {
+			if !isContinuation && qc.SourceContextID != "" {
 				workspaceID, workspaceErr := util.ParseUUID(qc.WorkspaceID)
 				contextID, contextIDErr := util.ParseUUID(qc.SourceContextID)
 				if workspaceErr != nil || contextIDErr != nil {
@@ -3032,7 +3147,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			// still passes `--parent <uuid>` and the server-side create
 			// will fail loud, which is a better outcome than silently
 			// dropping the sub-issue intent.
-			if qc.ParentIssueID != "" {
+			if !isContinuation && qc.ParentIssueID != "" {
 				parentExists := true
 				if parentUUID, err := util.ParseUUID(qc.ParentIssueID); err == nil {
 					if wsUUID, wsErr := util.ParseUUID(qc.WorkspaceID); wsErr == nil {
@@ -3067,7 +3182,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			// same Operating Protocol + Roster + user Instructions that
 			// issue-bound team tasks see, so the leader can decide to
 			// delegate before opening the issue.
-			if resp.Agent != nil && qc.TeamID != "" {
+			if !isContinuation && resp.Agent != nil && qc.TeamID != "" {
 				wsUUID, wsErr := util.ParseUUID(qc.WorkspaceID)
 				teamUUID, sqErr := util.ParseUUID(qc.TeamID)
 				if wsErr == nil && sqErr == nil {
@@ -3281,6 +3396,19 @@ func (h *Handler) applyAutomationClaimSettings(
 ) *claimBuildFailure {
 	if agentData == nil {
 		return nil
+	}
+	if service.AgentThreadMessage(task) != "" {
+		member, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+			UserID: task.OriginatorUserID, WorkspaceID: ap.WorkspaceID,
+		})
+		if !task.OriginatorUserID.Valid || err != nil || !h.memberCanWriteAutomation(ctx, ap, member) {
+			return h.failClaimedTaskBeforeLaunch(
+				ctx, &task,
+				"Your access to this Automation was revoked before the follow-up could start.",
+				taskfailure.ReasonInvalidTaskIdentity,
+				"error_automation_access_revoked", http.StatusForbidden, "Automation access was revoked",
+			)
+		}
 	}
 	if ap.Model.Valid && strings.TrimSpace(ap.Model.String) != "" {
 		// TaskAgentData.Model is consumed by the daemon's provider invocation;

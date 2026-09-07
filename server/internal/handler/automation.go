@@ -79,6 +79,11 @@ type AutomationResponse struct {
 	// owners/admins, NOT by granted collaborators (who can write but cannot
 	// re-grant). Nil when built without a caller in context. See MUL-3807.
 	CanManageAccess *bool `json:"can_manage_access,omitempty"`
+	// RunReady and RunBlockedReasons are detail-endpoint readiness facts. They
+	// are omitted from list/create responses and older servers; the backend
+	// admission gate remains authoritative.
+	RunReady          *bool    `json:"run_ready,omitempty"`
+	RunBlockedReasons []string `json:"run_blocked_reasons,omitempty"`
 }
 
 type AutomationQuotaUsageResponse struct {
@@ -158,9 +163,11 @@ type AutomationTriggerResponse struct {
 	// triggers; omitted when the trigger accepts all events. Serializes as
 	// a JSON array of {event, actions?} objects — never as a base64 string
 	// (which is what []byte would produce through encoding/json).
-	EventFilters []WebhookEventFilter `json:"event_filters,omitempty"`
-	Preset       *string              `json:"preset,omitempty"`
-	Config       any                  `json:"config,omitempty"`
+	EventFilters     []WebhookEventFilter `json:"event_filters,omitempty"`
+	Preset           *string              `json:"preset,omitempty"`
+	Config           any                  `json:"config,omitempty"`
+	Ready            *bool                `json:"ready,omitempty"`
+	ReadinessReasons []string             `json:"readiness_reasons,omitempty"`
 }
 
 type AutomationRunResponse struct {
@@ -572,14 +579,34 @@ func (h *Handler) GetAutomation(w http.ResponseWriter, r *http.Request) {
 		triggers = nil
 	}
 	triggerResp := make([]AutomationTriggerResponse, len(triggers))
+	var readiness service.AutomationReadiness
+	if h.AutomationService != nil {
+		if checked, checkErr := h.AutomationService.CheckAutomationReadiness(r.Context(), automation); checkErr == nil {
+			readiness = checked
+		} else {
+			readiness = service.AutomationReadiness{Ready: false, Reasons: []string{"Trigger configuration could not be verified."}}
+		}
+	}
+	readinessByTrigger := make(map[string]service.AutomationTriggerReadiness, len(readiness.Triggers))
+	for _, item := range readiness.Triggers {
+		readinessByTrigger[item.TriggerID] = item
+	}
 	for i, t := range triggers {
 		tr := h.triggerToResponse(t)
+		if item, ok := readinessByTrigger[uuidToString(t.ID)]; ok {
+			tr.Ready = &item.Ready
+			tr.ReadinessReasons = item.Reasons
+		}
 		if !canWrite {
 			tr.WebhookToken = nil
 			tr.WebhookPath = nil
 			tr.WebhookURL = nil
 		}
 		triggerResp[i] = tr
+	}
+	if h.AutomationService != nil {
+		resp.RunReady = &readiness.Ready
+		resp.RunBlockedReasons = readiness.Reasons
 	}
 
 	// Include the explicit collaborator grants so the "manage access" UI can
@@ -741,6 +768,9 @@ func (h *Handler) CreateAutomation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.validateAutomationToolsForSave(w, r, req.Tools, wsUUID) {
+		return
+	}
 
 	// Parse before insert so a malformed payload doesn't open a transaction.
 	subscribers, ok := parseAutomationSubscribers(w, req.Subscribers)
@@ -768,7 +798,7 @@ func (h *Handler) CreateAutomation(w http.ResponseWriter, r *http.Request) {
 	// Keep save-time readiness validation in the same transaction as the
 	// insert. The assignment lock serializes this path with Runtime teardown,
 	// so an active Automation cannot slip in after teardown's pause sweep.
-	if !h.validateAutomationAssigneeForSave(w, r, qtx, assigneeType, assigneeUUID, wsUUID, true) {
+	if !h.validateAutomationAssigneeForSave(w, r, qtx, assigneeType, assigneeUUID, wsUUID, true, "member", userID) {
 		return
 	}
 
@@ -988,6 +1018,9 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 		if params.Tools == nil {
 			params.Tools = []byte("{}")
 		}
+		if !h.validateAutomationToolsForSave(w, r, params.Tools, prev.WorkspaceID) {
+			return
+		}
 	}
 	// executor_type and executor_id are validated as a pair: switching
 	// between agent and team without supplying a new id would leave the
@@ -1071,7 +1104,7 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 	}
 	validateAssignee := typeSent || idSent || (req.Status != nil && *req.Status == "active")
 	if validateAssignee && !h.validateAutomationAssigneeForSave(
-		w, r, qtx, nextType, nextID, prev.WorkspaceID, nextStatus == "active",
+		w, r, qtx, nextType, nextID, prev.WorkspaceID, nextStatus == "active", prev.CreatedByType, uuidToString(prev.CreatedByID),
 	) {
 		return
 	}
@@ -1515,6 +1548,9 @@ func (h *Handler) CreateAutomationTrigger(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, "preset is required for slack and linear triggers")
 		return
 	}
+	if presetText.Valid && presetText.String == "slack.message" && len(configBytes) == 0 {
+		configBytes = []byte(`{"sender_scope":"anyone","ignore_thread_replies":true,"completion_reaction":"white_check_mark"}`)
+	}
 	if err := service.ValidateAutomationTriggerConfig(presetText.String, configBytes); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -1754,6 +1790,18 @@ func isValidAutomationAssigneeType(t string) bool {
 	}
 }
 
+// canInvokeAutomationAssignee applies the same invocation principal that the
+// automation dispatcher will use for schedule/webhook runs. The workspace
+// admin who edits an automation may see a private agent without being allowed
+// to run it; the durable owner is the automation creator, so save-time checks
+// must use that owner rather than the editor's broader view permission.
+func (h *Handler) canInvokeAutomationAssignee(ctx context.Context, agent db.Agent, principalType, principalID string, workspaceID pgtype.UUID) bool {
+	if principalType == "" {
+		principalType = "member"
+	}
+	return h.canInvokeAgent(ctx, agent, principalType, principalID, "", uuidToString(workspaceID))
+}
+
 // validateAutomationAssigneeForSave checks that the assignee (agent or team)
 // exists in the given workspace and, when requireRuntime is true, that its
 // effective Agent has a Runtime. It takes assignment locks through q so active
@@ -1771,6 +1819,7 @@ func (h *Handler) validateAutomationAssigneeForSave(
 	assigneeType string,
 	assigneeID, workspaceID pgtype.UUID,
 	requireRuntime bool,
+	principalType, principalID string,
 ) bool {
 	switch assigneeType {
 	case "agent":
@@ -1788,6 +1837,10 @@ func (h *Handler) validateAutomationAssigneeForSave(
 		}
 		if requireRuntime && !agent.RuntimeID.Valid {
 			writeError(w, http.StatusUnprocessableEntity, "assignee agent needs a runtime before this automation can be active")
+			return false
+		}
+		if !h.canInvokeAutomationAssignee(r.Context(), agent, principalType, principalID, workspaceID) {
+			writeError(w, http.StatusForbidden, "automation owner cannot invoke assignee agent")
 			return false
 		}
 		return true
@@ -1826,11 +1879,8 @@ func (h *Handler) validateAutomationAssigneeForSave(
 			writeError(w, http.StatusUnprocessableEntity, "team leader needs a runtime before this automation can be active")
 			return false
 		}
-		// Private-leader gate: the member configuring the automation must have
-		// access to the private leader, same as validateExecutorPair.
-		actorType, actorID := h.resolveActor(r, requestUserID(r), util.UUIDToString(workspaceID))
-		if !h.canInvokeAgent(r.Context(), leader, actorType, actorID, h.invokeOriginatorFromRequest(r, actorType, actorID), util.UUIDToString(workspaceID)) {
-			writeError(w, http.StatusForbidden, "cannot assign automation to team with private leader")
+		if !h.canInvokeAutomationAssignee(r.Context(), leader, principalType, principalID, workspaceID) {
+			writeError(w, http.StatusForbidden, "automation owner cannot invoke team leader")
 			return false
 		}
 		return true

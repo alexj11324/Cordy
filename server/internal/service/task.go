@@ -19,8 +19,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/analytics"
 	"github.com/patchbay-ai/patchbay/server/internal/attribution"
-	"github.com/patchbay-ai/patchbay/server/internal/chattitle"
 	"github.com/patchbay-ai/patchbay/server/internal/channelquota"
+	"github.com/patchbay-ai/patchbay/server/internal/chattitle"
 	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
 	"github.com/patchbay-ai/patchbay/server/internal/events"
 	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
@@ -1858,7 +1858,7 @@ func (s *TaskService) PrepareChatTaskEnqueue(
 		accountableUser: attr.AccountableUserID,
 		attrSource:      attrSource, attrEvidenceKind: attrEvidenceKind,
 		runtimeOverlay: s.buildRuntimeMCPOverlay(ctx, initiatorUserID, agent),
-		workspaceID: uuid.UUID(agent.WorkspaceID.Bytes),
+		workspaceID:    uuid.UUID(agent.WorkspaceID.Bytes),
 		channelAdmission: channelquota.Resolve(
 			ctx, s.Entitlements, s.ManagedMessaging, uuid.UUID(agent.WorkspaceID.Bytes),
 		),
@@ -5766,7 +5766,7 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 		case issue.ExecutorType.String == "team" && issue.ExecutorID.Valid:
 			team, err := s.Queries.GetTeam(ctx, issue.ExecutorID)
 			if err != nil {
-			return nil, fmt.Errorf("issue executor is a team but team not found")
+				return nil, fmt.Errorf("issue executor is a team but team not found")
 			}
 			agentID = team.LeaderID
 			isLeader = true
@@ -7318,6 +7318,19 @@ func (s *TaskService) ResolveTaskWorkspaceID(ctx context.Context, task db.AgentT
 			}
 		}
 	}
+	// Agent-thread continuations deliberately carry no source FK: inheriting an
+	// automation_run_id would let a follow-up completion overwrite its root run,
+	// while inheriting quick-create context would replay one-shot create side
+	// effects. Resolve the workspace through the bounded, server-owned thread
+	// lineage instead. The root has one of the normal source shapes handled by
+	// this function, so recursion terminates after one hop.
+	if AgentThreadMessage(task) != "" {
+		if thread, err := s.Queries.ListAgentThreadTasks(ctx, task.ID); err == nil {
+			if root, ok := agentThreadRootTask(thread); ok && root.ID != task.ID {
+				return s.ResolveTaskWorkspaceID(ctx, root)
+			}
+		}
+	}
 	// Quick-create tasks have no issue / chat / automation link — workspace
 	// lives in the context JSONB. Returning "" here is what blocked
 	// requireDaemonTaskAccess (404 on /start, /progress, /complete, /fail
@@ -7699,7 +7712,7 @@ func quickCreateFailureDetail(result []byte) string {
 // stamped with origin_type=quick_create + origin_id=<task_id> by the
 // daemon-injected ORVILO_QUICK_CREATE_TASK_ID env var, so this lookup is
 // deterministic — robust against the same agent creating other issues in
-	// parallel (e.g. executor task running while max_concurrent_tasks > 1
+// parallel (e.g. executor task running while max_concurrent_tasks > 1
 // permits another quick-create alongside it).
 func (s *TaskService) notifyQuickCreateCompleted(ctx context.Context, task db.AgentTaskQueue, qc QuickCreateContext, result []byte) {
 	requesterID, err := util.ParseUUID(qc.RequesterID)
@@ -7758,10 +7771,7 @@ func (s *TaskService) notifyQuickCreateCompleted(ctx context.Context, task db.Ag
 	// (kind = "direct") instead of staying on the "Creating issue" active-
 	// wording label. Best-effort: a write failure here doesn't block the
 	// inbox notification, which is the more important signal to the user.
-	if err := s.Queries.LinkTaskToIssue(ctx, db.LinkTaskToIssueParams{
-		ID:      task.ID,
-		IssueID: issue.ID,
-	}); err != nil {
+	if err := s.LinkAgentThreadTaskToIssue(ctx, task.ID, issue.ID); err != nil {
 		slog.Warn("quick-create completion: link task→issue failed",
 			"task_id", util.UUIDToString(task.ID),
 			"issue_id", util.UUIDToString(issue.ID),
