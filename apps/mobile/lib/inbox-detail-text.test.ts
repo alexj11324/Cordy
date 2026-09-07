@@ -56,7 +56,7 @@ describe("inbox detail text", () => {
       ),
     ).toBe("已请求Build Agent进行审核");
     expect(inboxDetailText(item("review_requested"), actorName, "ja-JP")).toBe(
-      "レビューを依頼しました",
+      "Review requested",
     );
   });
 
