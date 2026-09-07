@@ -6,7 +6,7 @@ on:
   pull_request:
     # The migration stack is #727 -> #728 -> #729; the upper layers target
     # migration branches, not main, and must run the same quality gates.
-    branches: [main, feat/go-mainline-orvilo, fix/go-front-align-727]
+    branches: [main, feat/go-mainline-orvilo, fix/go-front-align-727, 'codex/architecture-*']
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}

@@ -4455,24 +4455,27 @@ func startsWithAbsolutePath(s string) bool {
 // durableWorkDir is terminal delivery metadata, not a resume pointer: it is
 // populated only after the daemon confirms a disposable worktree is gone.
 func (s *TaskService) CompleteTask(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir, branchName string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string) (*db.AgentTaskQueue, error) {
-	return s.completeTask(ctx, taskID, result, sessionID, workDir, branchName, sessionRolloutMissing, retiredSessionID, durableWorkDir, nil)
+	return s.completeTask(ctx, taskID, result, sessionID, workDir, branchName, sessionRolloutMissing, retiredSessionID, durableWorkDir, nil, nil)
 }
 
 // CompleteTaskWithTerminalHook is CompleteTask plus an atomic terminal
 // side-effect. Production daemon callbacks use it to make the durable Work
 // Product discovery handoff inseparable from the completed status.
 func (s *TaskService) CompleteTaskWithTerminalHook(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir, branchName string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, hook TerminalTaskTxHook) (*db.AgentTaskQueue, error) {
-	return s.completeTask(ctx, taskID, result, sessionID, workDir, branchName, sessionRolloutMissing, retiredSessionID, durableWorkDir, hook)
+	return s.completeTask(ctx, taskID, result, sessionID, workDir, branchName, sessionRolloutMissing, retiredSessionID, durableWorkDir, hook, nil)
 }
 
-func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir, branchName string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, hook TerminalTaskTxHook) (*db.AgentTaskQueue, error) {
+func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir, branchName string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, hook TerminalTaskTxHook, report *TerminalReport) (*db.AgentTaskQueue, error) {
 	var task db.AgentTaskQueue
 	// chatAssistantMsg is the single assistant outcome row written for a chat
 	// task inside the completion transaction below. It is broadcast (chat:done)
 	// only after the transaction commits.
 	var chatAssistantMsg *db.ChatMessage
-	if err := s.runTerminalTaskTx(ctx, &task, hook, func(qtx *db.Queries) error {
+	if err := s.runTerminalTaskTx(ctx, &task, terminalReportHook(report, hook), func(qtx *db.Queries) error {
 		if err := lockChatSessionForTaskWrite(ctx, qtx, taskID); err != nil {
+			return err
+		}
+		if err := checkTerminalReport(ctx, qtx, taskID, &task, report); err != nil {
 			return err
 		}
 		t, err := qtx.CompleteAgentTask(ctx, db.CompleteAgentTaskParams{
@@ -4551,14 +4554,20 @@ func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, resu
 				return fmt.Errorf("record coordination task completion: %w", err)
 			}
 		}
+		if err := s.prepareTerminalReportComment(ctx, qtx, task, result, "", report); err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
+		if errors.Is(err, errTerminalReportReplay) {
+			return &task, nil
+		}
 		// When parallel agents race, a task may already be completed,
 		// cancelled, or failed by the time this call runs. The UPDATE
 		// … WHERE status = 'running' returns no rows in that case.
 		// Treat it as an idempotent success — same pattern as CancelTask.
 		if existing, lookupErr := s.Queries.GetAgentTask(ctx, taskID); lookupErr == nil {
-			if errors.Is(err, pgx.ErrNoRows) {
+			if report == nil && errors.Is(err, pgx.ErrNoRows) {
 				slog.Info("complete task: already finalized",
 					"task_id", util.UUIDToString(taskID),
 					"current_status", existing.Status,
@@ -4580,9 +4589,13 @@ func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, resu
 				"lookup_error", lookupErr,
 			)
 		}
+		if report != nil && errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrTerminalReportConflict
+		}
 		return nil, fmt.Errorf("complete task: %w", err)
 	}
 
+	s.publishTerminalReport(ctx, task, report)
 	slog.Info("task completed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID))
 	s.captureTaskCompleted(ctx, task)
 	if task.IssueID.Valid {
@@ -4602,7 +4615,7 @@ func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, resu
 	// tasks, TriggerCommentID threads the fallback under the original comment;
 	// for executor-triggered tasks it is NULL and the fallback is top-level.
 	// Chat tasks have no IssueID and are handled separately below.
-	if task.IssueID.Valid {
+	if report == nil && task.IssueID.Valid {
 		suppressNoActionComment, err := HasTeamLeaderNoActionEvaluationForTask(ctx, s.Queries, task)
 		if err != nil {
 			slog.Warn("checking team leader no_action evaluation failed",
@@ -4899,16 +4912,16 @@ func (s *TaskService) observeChatOutputLocalPath(task db.AgentTaskQueue, body st
 // (via classifyPoisonedError, the timeout / runtime classifier, etc.)
 // will have their value preserved untouched.
 func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, sessionID, workDir, branchName, failureReason string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string) (*db.AgentTaskQueue, error) {
-	return s.failTask(ctx, taskID, errMsg, sessionID, workDir, branchName, failureReason, sessionRolloutMissing, retiredSessionID, durableWorkDir, nil)
+	return s.failTask(ctx, taskID, errMsg, sessionID, workDir, branchName, failureReason, sessionRolloutMissing, retiredSessionID, durableWorkDir, nil, nil)
 }
 
 // FailTaskWithTerminalHook is FailTask plus an atomic terminal side-effect.
 // It has the same rollback and retry contract as CompleteTaskWithTerminalHook.
 func (s *TaskService) FailTaskWithTerminalHook(ctx context.Context, taskID pgtype.UUID, errMsg, sessionID, workDir, branchName, failureReason string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, hook TerminalTaskTxHook) (*db.AgentTaskQueue, error) {
-	return s.failTask(ctx, taskID, errMsg, sessionID, workDir, branchName, failureReason, sessionRolloutMissing, retiredSessionID, durableWorkDir, hook)
+	return s.failTask(ctx, taskID, errMsg, sessionID, workDir, branchName, failureReason, sessionRolloutMissing, retiredSessionID, durableWorkDir, hook, nil)
 }
 
-func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, sessionID, workDir, branchName, failureReason string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, hook TerminalTaskTxHook) (*db.AgentTaskQueue, error) {
+func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, sessionID, workDir, branchName, failureReason string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, hook TerminalTaskTxHook, report *TerminalReport) (*db.AgentTaskQueue, error) {
 	// Strip bytes PostgreSQL cannot store before anything else reads errMsg, so
 	// the classifier, the transaction and every downstream consumer see the one
 	// text we will actually persist (GH #7098). Kept at the service boundary
@@ -4979,8 +4992,11 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 
 	var task db.AgentTaskQueue
 	var retried *db.AgentTaskQueue
-	if err := s.runTerminalTaskTx(ctx, &task, hook, func(qtx *db.Queries) error {
+	if err := s.runTerminalTaskTx(ctx, &task, terminalReportHook(report, hook), func(qtx *db.Queries) error {
 		if err := lockChatSessionForTaskWrite(ctx, qtx, taskID); err != nil {
+			return err
+		}
+		if err := checkTerminalReport(ctx, qtx, taskID, &task, report); err != nil {
 			return err
 		}
 		t, err := qtx.FailAgentTask(ctx, db.FailAgentTaskParams{
@@ -5185,10 +5201,18 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 				return fmt.Errorf("write chat failure outcome: %w", err)
 			}
 		}
+		if retried == nil {
+			if err := s.prepareTerminalReportComment(ctx, qtx, task, nil, errMsg, report); err != nil {
+				return err
+			}
+		}
 		return nil
 	}); err != nil {
+		if errors.Is(err, errTerminalReportReplay) {
+			return &task, nil
+		}
 		if existing, lookupErr := s.Queries.GetAgentTask(ctx, taskID); lookupErr == nil {
-			if errors.Is(err, pgx.ErrNoRows) {
+			if report == nil && errors.Is(err, pgx.ErrNoRows) {
 				slog.Info("fail task: already finalized",
 					"task_id", util.UUIDToString(taskID),
 					"current_status", existing.Status,
@@ -5210,9 +5234,13 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 				"lookup_error", lookupErr,
 			)
 		}
+		if report != nil && errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrTerminalReportConflict
+		}
 		return nil, fmt.Errorf("fail task: %w", err)
 	}
 
+	s.publishTerminalReport(ctx, task, report)
 	slog.Warn("task failed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID), "error", errMsg, "failure_reason", failureReason)
 	s.captureTaskFailed(ctx, task)
 	if retried == nil && task.IssueID.Valid {
@@ -5264,7 +5292,7 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 	// daemon hiccup. Delegated failures keep this existing failed-issue comment
 	// in addition to the coordinator recovery signal, preserving visibility on
 	// both sides of a cross-issue handoff.
-	if errMsg != "" && task.IssueID.Valid && retried == nil {
+	if report == nil && errMsg != "" && task.IssueID.Valid && retried == nil {
 		s.createAgentComment(ctx, task.IssueID, task.AgentID, redact.Text(errMsg), "system", task.TriggerCommentID, task.ID)
 	}
 
@@ -7480,15 +7508,19 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 	if err != nil {
 		return
 	}
+	s.publishAgentComment(ctx, issue, created, rootComment)
+}
+
+func (s *TaskService) publishAgentComment(ctx context.Context, issue db.Issue, created db.CreateCommentRow, rootComment *db.Comment) {
 	comment := created.Comment()
-	s.CancelDeferredEscalationsForIssueAgent(ctx, issueID, agentID)
+	s.CancelDeferredEscalationsForIssueAgent(ctx, issue.ID, comment.AuthorID)
 	commentFields := commentEventFields(comment)
 	commentFields["revision"] = comment.Revision
 	s.Bus.Publish(events.Event{
 		Type:        protocol.EventCommentCreated,
 		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
 		ActorType:   "agent",
-		ActorID:     util.UUIDToString(agentID),
+		ActorID:     util.UUIDToString(comment.AuthorID),
 		Payload: map[string]any{
 			"comment":        commentFields,
 			"issue_title":    issue.Title,
@@ -7496,7 +7528,7 @@ func (s *TaskService) createAgentComment(ctx context.Context, issueID, agentID p
 			"issue_revision": created.IssueRevision,
 		},
 	})
-	s.AutoUnresolveThreadOnReply(ctx, rootComment, util.UUIDToString(issue.WorkspaceID), "agent", util.UUIDToString(agentID))
+	s.AutoUnresolveThreadOnReply(ctx, rootComment, util.UUIDToString(issue.WorkspaceID), "agent", util.UUIDToString(comment.AuthorID))
 }
 
 // AutoUnresolveThreadOnReply clears resolved_at on the thread root when a

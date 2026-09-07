@@ -4128,8 +4128,9 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req TaskCompleteRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	report, err := decodeTerminalReportRequest(r, "complete", &req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 	// Strip bytes PostgreSQL cannot store BEFORE anything reads this payload
@@ -4175,7 +4176,7 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 			ExecutionHeadBranch:   req.ExecutionHeadBranch,
 			ExecutionHeadSHA:      req.ExecutionHeadSHA,
 			ExecutionHeadState:    req.ExecutionHeadState,
-		})
+		}, report)
 		return
 	}
 
@@ -4185,13 +4186,16 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	// same commit creates and wakes can never observe the withheld pointer or a
 	// missing continuity-gap flag.
 	workspaceUUID := parseUUID(workspaceID)
-	task, err := h.TaskService.CompleteTaskWithTerminalHook(
+	task, err := h.TaskService.CompleteTaskWithTerminalReport(
 		r.Context(), parseUUID(taskID), result, req.SessionID, req.WorkDir,
 		req.BranchName, req.SessionRolloutMissing, req.RetiredSessionID,
 		req.DurableWorkDir,
-		h.workProductTerminalHook(workspaceUUID, workProductExecutionFactsFromCompleteRequest(req)),
+		h.workProductTerminalHook(workspaceUUID, workProductExecutionFactsFromCompleteRequest(req)), report,
 	)
 	if err != nil {
+		if writeTerminalReportError(w, err) {
+			return
+		}
 		// A CompleteTask error is an infrastructure failure (transaction /
 		// assistant-outcome write), not a bad request: an already-finalized
 		// callback is treated as idempotent success and returns no error. Return
@@ -4202,6 +4206,9 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// These post-commit operations are independently idempotent. Run them on
+	// receipt replay too: a prior request may have committed before reaching
+	// reconciliation or token revocation.
 	h.emitIssueExecutedOnFirstCompletion(r, task)
 
 	// MUL-4195: guarantee at-least-once processing. If a member posted a
@@ -4228,6 +4235,10 @@ func (h *Handler) CompleteTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	slog.Info("task completed", "task_id", taskID, "agent_id", uuidToString(task.AgentID))
+	if report != nil {
+		writeJSON(w, http.StatusOK, report.Ack)
+		return
+	}
 	writeJSON(w, http.StatusOK, taskToResponse(*task, workspaceID))
 }
 
@@ -4869,8 +4880,9 @@ func (h *Handler) FailTask(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req TaskFailRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body")
+	report, err := decodeTerminalReportRequest(r, "fail", &req)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
 	// TaskService.FailTask normalizes req.Error itself, but every other field
@@ -4878,7 +4890,7 @@ func (h *Handler) FailTask(w http.ResponseWriter, r *http.Request) {
 	// same transaction (GH #7098).
 	sanitizeTaskFailRequest(&req)
 
-	h.failTask(w, r, taskID, workspaceID, req)
+	h.failTask(w, r, taskID, workspaceID, req, report)
 }
 
 // failTask records a terminal failure and writes the response. Shared by the
@@ -4886,20 +4898,23 @@ func (h *Handler) FailTask(w http.ResponseWriter, r *http.Request) {
 // run re-classified at the /complete boundary lands through exactly the same
 // transaction, token revocation and runtime wake-up as one the daemon reported
 // as failed itself.
-func (h *Handler) failTask(w http.ResponseWriter, r *http.Request, taskID, workspaceID string, req TaskFailRequest) {
+func (h *Handler) failTask(w http.ResponseWriter, r *http.Request, taskID, workspaceID string, req TaskFailRequest, report *service.TerminalReport) {
 	// MUL-5305: SessionRolloutMissing is applied inside FailTask's terminal
 	// transaction — forcing session_id NULL (overriding the COALESCE that would
 	// keep a stale mid-flight pin) and flagging the row in the same commit that
 	// creates and wakes the auto-retry, so the retry can never claim the withheld
 	// pointer or miss the continuity gap.
 	workspaceUUID := parseUUID(workspaceID)
-	task, err := h.TaskService.FailTaskWithTerminalHook(
+	task, err := h.TaskService.FailTaskWithTerminalReport(
 		r.Context(), parseUUID(taskID), req.Error, req.SessionID, req.WorkDir,
 		req.BranchName, req.FailureReason, req.SessionRolloutMissing,
 		req.RetiredSessionID, req.DurableWorkDir,
-		h.workProductTerminalHook(workspaceUUID, workProductExecutionFactsFromFailRequest(req)),
+		h.workProductTerminalHook(workspaceUUID, workProductExecutionFactsFromFailRequest(req)), report,
 	)
 	if err != nil {
+		if writeTerminalReportError(w, err) {
+			return
+		}
 		// A FailTask error is an infrastructure failure (the terminal
 		// transaction that also clears the withheld session, writes the
 		// continuity-gap flag, and creates the auto-retry rolled back), not a bad
@@ -4925,6 +4940,10 @@ func (h *Handler) failTask(w http.ResponseWriter, r *http.Request, taskID, works
 	}
 
 	slog.Info("task failed", "task_id", taskID, "agent_id", uuidToString(task.AgentID), "task_error", req.Error, "failure_reason", req.FailureReason)
+	if report != nil {
+		writeJSON(w, http.StatusOK, report.Ack)
+		return
+	}
 	writeJSON(w, http.StatusOK, taskToResponse(*task, workspaceID))
 }
 
