@@ -6,6 +6,7 @@ import {
   Copy,
   ExternalLink,
   MoreHorizontal,
+  MoreVertical,
   RotateCcw,
   Square,
   Trash2,
@@ -46,6 +47,10 @@ interface AgentRowActionsProps {
   // the server is still the source of truth, this only hides UI for ops
   // the user can't perform.
   canManage: boolean;
+  /** Keep the action affordance visible on Buzz-style identity cards. */
+  alwaysVisible?: boolean;
+  /** Buzz uses a vertical ellipsis; dense table rows keep the horizontal mark. */
+  iconVariant?: "horizontal" | "vertical";
   // Destination of "Duplicate" — the manual create form, pre-populated with
   // this agent's config as a template. A href rather than a callback so the
   // menu item is a real link (modifier-click opens it in a new tab).
@@ -65,9 +70,11 @@ interface AgentRowActionsProps {
  */
 export function AgentRowActions({
   agent,
+  alwaysVisible = false,
   presence,
   canManage,
   duplicateHref,
+  iconVariant = "horizontal",
 }: AgentRowActionsProps) {
   const { t } = useT("agents");
   const { t: tCommon } = useT("common");
@@ -142,9 +149,13 @@ export function AgentRowActions({
             <button
               type="button"
               aria-label={t(($) => $.row.actions_aria)}
-              className="flex size-7 items-center justify-center rounded-md text-muted-foreground opacity-100 @2xl:opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground group-hover/row:opacity-100 data-popup-open:bg-accent data-popup-open:opacity-100 data-popup-open:text-accent-foreground"
+              className={`flex size-7 items-center justify-center rounded-md text-muted-foreground transition-opacity hover:bg-accent hover:text-accent-foreground data-popup-open:bg-accent data-popup-open:opacity-100 data-popup-open:text-accent-foreground ${alwaysVisible ? "opacity-100" : "opacity-100 @2xl:opacity-0 group-hover/row:opacity-100"}`}
             >
-              <MoreHorizontal className="size-4" />
+              {iconVariant === "vertical" ? (
+                <MoreVertical className="size-4" />
+              ) : (
+                <MoreHorizontal className="size-4" />
+              )}
             </button>
           }
         />

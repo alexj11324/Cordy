@@ -1,0 +1,48 @@
+{
+  "groups": [
+    {
+      "layers": [
+        {
+          "image-name": "upper.svg",
+          "name": "upper",
+          "glass": true,
+          "position": {
+            "scale": 0.7,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        },
+        {
+          "image-name": "lower.svg",
+          "name": "lower",
+          "glass": true,
+          "position": {
+            "scale": 0.7,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          }
+        }
+      ],
+      "name": "Foreground",
+      "specular": false,
+      "shadow": {
+        "kind": "none",
+        "opacity": 0
+      },
+      "blur-material": null
+    }
+  ],
+  "supported-platforms": {
+    "squares": "shared",
+    "circles": [
+      "watchOS"
+    ]
+  },
+  "fill": {
+    "solid": "srgb:0.20392,0.21961,0.23922,1.00000"
+  }
+}

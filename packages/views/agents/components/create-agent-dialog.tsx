@@ -5,7 +5,6 @@ import { Globe, Lock, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ModelDropdown } from "./model-dropdown";
 import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
-import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { api } from "@patchbay/core/api";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useFeatureEnabled } from "@patchbay/core/config";
@@ -39,6 +38,7 @@ import {
 } from "@patchbay/core/agents";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
+import { AgentProviderAvatar } from "./agent-provider-avatar";
 
 export function CreateAgentDialog({
   runtimes,
@@ -55,7 +55,7 @@ export function CreateAgentDialog({
   members: MemberWithUser[];
   currentUserId: string | null;
   // When provided, the dialog opens in "Duplicate" mode: the visible
-  // fields (name / avatar / runtime / visibility / model) are
+  // fields (name / runtime / visibility / model) are
   // pre-populated from this agent, and the hidden runtime-independent
   // fields (custom_args / max_concurrent_tasks) are forwarded to the
   // create call. Description, instructions, and per-agent skills are
@@ -134,7 +134,6 @@ export function CreateAgentDialog({
   const [serviceTier, setServiceTier] = useState(template?.service_tier ?? "");
   const [thinkingLevel, setThinkingLevel] = useState(template?.thinking_level ?? "");
   const [model, setModel] = useState(template?.model ?? "");
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(template?.avatar_url ?? null);
   const [creating, setCreating] = useState(false);
 
   // Duplicate-mode pre-fill: clone lands on the source agent's runtime so
@@ -236,7 +235,6 @@ export function CreateAgentDialog({
         model: model.trim() || undefined,
         thinking_level: thinkingLevel.trim() || undefined,
         service_tier: serviceTier.trim() || undefined,
-        avatar_url: avatarUrl ?? undefined,
       };
       if (accessPickerEnabled) {
         // New MUL-3963 shape: send the authoritative permission fields and
@@ -319,21 +317,12 @@ export function CreateAgentDialog({
 
         <div className="flex-1 overflow-y-auto p-5">
           <div className="space-y-4 min-w-0">
-            {/* Identity row: avatar (left) + name (right). The avatar
-                visually anchors the identity of what the user is
-                creating; pairing it with the Name field reads as
-                "this is the agent's face + name", same shape as the
-                detail-page header so the affordance is instantly
-                familiar. */}
+            {/* The runtime provider owns agent identity artwork. */}
             <div className="flex items-start gap-4">
-              <AvatarUploadControl
-                variant="agent"
-                value={avatarUrl}
+              <AgentProviderAvatar
+                provider={selectedRuntime?.provider}
                 name={name}
-                size={64}
-                onUploaded={setAvatarUrl}
-                onEmojiSelected={setAvatarUrl}
-                onClear={() => setAvatarUrl(null)}
+                size="2xl"
               />
               <div className="flex-1 min-w-0 space-y-3">
                 <div>
