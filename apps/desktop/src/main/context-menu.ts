@@ -94,7 +94,7 @@ export function installContextMenu(webContents: WebContents): void {
 // language, with English as the fallback. Kept inline because the main
 // process has no shared i18n loader (the renderer's i18next is per-window
 // and not reachable from here), and pulling one in for two strings would
-// be more rope than payload. Matches the four locales the renderer ships.
+// be more rope than payload. Matches the locales the renderer ships.
 type ContextMenuLabels = {
   openLink: string;
   copyLinkAddress: string;
@@ -108,14 +108,6 @@ const labelsByLocale: Record<string, ContextMenuLabels> = {
   "zh-Hans": {
     openLink: "在浏览器中打开链接",
     copyLinkAddress: "复制链接地址",
-  },
-  ja: {
-    openLink: "ブラウザでリンクを開く",
-    copyLinkAddress: "リンクのアドレスをコピー",
-  },
-  ko: {
-    openLink: "브라우저에서 링크 열기",
-    copyLinkAddress: "링크 주소 복사",
   },
 };
 

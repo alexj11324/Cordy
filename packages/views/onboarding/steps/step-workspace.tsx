@@ -217,7 +217,7 @@ export function StepWorkspace({
     if (!slugTouched.current) {
       // Locale decides whether Han characters are read as Chinese; see
       // nameToWorkspaceSlug.
-      applySlug(nameToWorkspaceSlug(value, locale));
+      applySlug(nameToWorkspaceSlug(value));
     }
   };
 

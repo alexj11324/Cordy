@@ -824,13 +824,7 @@ function InstallationRow({
 // prefixes (English has none), matching the convention used elsewhere in the
 // app for doc links.
 function dingtalkDocsUrl(lang: string | undefined): string {
-  const prefix = lang?.startsWith("zh")
-    ? "/zh"
-    : lang?.startsWith("ja")
-      ? "/ja"
-      : lang?.startsWith("ko")
-        ? "/ko"
-        : "";
+  const prefix = lang?.startsWith("zh") ? "/zh" : "";
   return `https://orvilo.aspectlylabs.com/docs${prefix}/dingtalk-bot-integration`;
 }
 

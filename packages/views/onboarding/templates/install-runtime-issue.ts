@@ -24,8 +24,6 @@
 export const INSTALL_RUNTIME_ISSUE_TITLE = {
   en: "Connect a runtime to start with Patrick",
   zh: "连接运行时，和 Patrick 开始",
-  ko: "runtime을 연결하고 Patrick과 시작하기",
-  ja: "runtime を接続して Patrick と始める",
 } as const;
 
 const en = `Welcome to Orvilo.
@@ -111,88 +109,4 @@ Kimi CLI 官方文档:https://moonshotai.github.io/kimi-cli/zh/guides/getting-st
 
 Patrick 会把一个真实目标转化为任务，交给合适的智能体启动执行，并在工作流需要时建议添加可复用的 specialist。`;
 
-const ko = `Orvilo에 오신 것을 환영합니다.
-
-agent가 작업을 실행하려면 먼저 runtime이 필요합니다. runtime을 설치하는 동안에도 Orvilo를 가벼운 프로젝트 관리 워크스페이스로 먼저 사용할 수 있습니다.
-
-## 먼저 Orvilo를 사용해 보기
-
-runtime이 준비되기 전에는 다음을 해볼 수 있습니다:
-
-1. 현재 작업을 위한 project를 만듭니다.
-2. 태스크 몇 개를 만들고 backlog, todo, in_progress, done 사이에서 이동해 봅니다.
-3. priority, label, comment, subscription을 추가합니다.
-4. Inbox에서 나에게 배정된 작업과 mention을 확인합니다.
-
-이렇게 프로젝트 관리 계층을 먼저 익힐 수 있습니다. runtime이 연결되면 agent가 같은 태스크에서 바로 작업을 시작합니다.
-
-## 첫 agent runtime 설치하기
-
-전체 가이드: https://orvilo.aspectlylabs.com/docs/install-agent-runtime
-
-한국어 사용자는 Codex로 시작하는 것이 가장 빠릅니다:
-
-1. Node.js가 설치되어 있는지 확인합니다.
-2. Codex를 설치합니다:
-   npm i -g @openai/codex
-3. 로그인합니다:
-   codex
-4. 터미널에서 찾을 수 있는지 확인합니다:
-   which codex
-   codex --version
-5. Orvilo가 인식할 때까지 기다립니다. 실행 중인 daemon은 몇 분마다 새로 설치된 CLI를
-   다시 확인하므로 보통 재시작이 필요하지 않습니다.
-   바로 적용하려면:
-   orvilo daemon restart
-   데스크톱 앱에서는 아무 로컬 runtime을 열고 Restart를 누르세요. 앱을 종료하고 다시 여는
-   것만으로는 충분하지 않습니다 — daemon은 백그라운드에서 계속 실행됩니다.
-6. Runtimes로 돌아가 새로고침합니다. Codex runtime이 online으로 보여야 합니다.
-7. Runtimes를 엽니다. **Patrick과 시작**을 눌러 Patrick을 만들고 안내되는 첫 채팅을 시작합니다.
-
-Codex 참고 문서: https://developers.openai.com/codex/cli
-
-Patrick이 실제 목표 하나를 태스크로 만들고 적합한 에이전트와 실행을 시작하며, 워크플로에 필요할 때 재사용 가능한 specialist를 제안합니다.`;
-
-const ja = `Orvilo へようこそ。
-
-agent が作業を実行するには、まず runtime が必要です。runtime をインストールしている間も、Orvilo を軽量なプロジェクト管理ワークスペースとして先に使うことができます。
-
-## まず Orvilo を使ってみる
-
-runtime が準備できる前に、次のことを試せます:
-
-1. いまの仕事のための project を作る。
-2. タスクをいくつか作り、backlog、todo、in_progress、done の間で動かしてみる。
-3. priority、label、comment、subscription を追加する。
-4. Inbox で自分への割り当てや mention を確認する。
-
-これでまずプロジェクト管理のレイヤーに慣れることができます。runtime を接続すると、agent が同じタスクから作業を始められます。
-
-## 最初の agent runtime をインストールする
-
-詳しいガイド: https://orvilo.aspectlylabs.com/docs/install-agent-runtime
-
-日本語ユーザーには、Codex で始めるのが最も速い経路です:
-
-1. Node.js がインストールされていることを確認します。
-2. Codex をインストールします:
-   npm i -g @openai/codex
-3. サインインします:
-   codex
-4. ターミナルから見つけられるか確認します:
-   which codex
-   codex --version
-5. Orvilo が認識するまで待ちます。動作中の daemon は数分ごとに新しくインストールされた
-   CLI を再チェックするため、通常は再起動は不要です。
-   すぐに反映したい場合:
-   orvilo daemon restart
-   デスクトップアプリではローカル runtime を開いて Restart を押してください。アプリを終了して
-   開き直すだけでは不十分です — daemon はバックグラウンドで動き続けます。
-6. Runtimes に戻って再読み込みします。Codex runtime が online と表示されるはずです。
-7. Runtimes を開き、**Patrick と始める**を選びます。Patrick が作成され、案内付きの最初のチャットが開きます。
-
-Codex のリファレンス: https://developers.openai.com/codex/cli
-
-Patrick は実際の目標を 1 つのタスクにし、適切なエージェントで実行を開始し、ワークフローに必要なときは再利用可能な specialist を提案します。`;
-
-export const INSTALL_RUNTIME_ISSUE_BODY = { en, zh, ko, ja } as const;
+export const INSTALL_RUNTIME_ISSUE_BODY = { en, zh } as const;

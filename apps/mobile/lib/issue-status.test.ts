@@ -115,16 +115,16 @@ describe("buildIssueStatusCatalog", () => {
     expect(c.colorOf("in_review")).toBeNull();
   });
 
-  it("localizes the in-review status in every supported account language", () => {
+  it("localizes in-review for Chinese and falls back for retired tags", () => {
     expect(
       buildIssueStatusCatalog(undefined, "zh-CN").labelOf("in_review"),
     ).toBe("审核中");
     expect(
       buildIssueStatusCatalog(undefined, "ja-JP").labelOf("in_review"),
-    ).toBe("レビュー中");
+    ).toBe("In Review");
     expect(
       buildIssueStatusCatalog(undefined, "ko-KR").labelOf("in_review"),
-    ).toBe("리뷰 중");
+    ).toBe("In Review");
   });
 
   it("maps a custom status to its category and name", () => {

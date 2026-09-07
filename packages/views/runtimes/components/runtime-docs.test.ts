@@ -9,8 +9,8 @@ describe("runtime docs links", () => {
   it.each([
     ["en", "https://orvilo.aspectlylabs.com/docs/daemon-runtimes"],
     ["zh-Hans", "https://orvilo.aspectlylabs.com/docs/zh/daemon-runtimes"],
-    ["ja", "https://orvilo.aspectlylabs.com/docs/ja/daemon-runtimes"],
-    ["ko", "https://orvilo.aspectlylabs.com/docs/ko/daemon-runtimes"],
+    ["ja", "https://orvilo.aspectlylabs.com/docs/daemon-runtimes"],
+    ["ko", "https://orvilo.aspectlylabs.com/docs/daemon-runtimes"],
   ])("localizes the daemon guide for %s", (language, expected) => {
     expect(daemonRuntimesDocsHref(language)).toBe(expected);
   });

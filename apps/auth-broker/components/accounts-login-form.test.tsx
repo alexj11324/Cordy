@@ -148,7 +148,7 @@ describe("AccountsLoginForm", () => {
       }),
     );
     expect(mocks.signIn.emailCode.sendCode).toHaveBeenCalledOnce();
-    expect(screen.getByLabelText("Verification code")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Verification code")).toBeInTheDocument();
   });
 
   it("activates the Clerk session after verifying the email code", async () => {

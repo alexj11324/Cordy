@@ -3,10 +3,8 @@
   "pages": [
     "---Get started---",
     "index",
-    "cloud-quickstart",
     "concepts",
     "how-orvilo-works",
-    "tutorial",
     "self-host-quickstart",
     "---Workspace---",
     "workspaces",

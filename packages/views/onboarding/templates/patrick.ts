@@ -5,8 +5,6 @@ export type PatrickContentLang = PatrickOnboardingLanguage;
 interface LocalizedText {
   en: string;
   zh: string;
-  ko: string;
-  ja: string;
 }
 
 export interface PatrickOnboardingDefinition {
@@ -27,8 +25,6 @@ export interface PatrickOnboardingDefinition {
 const PATRICK_CHAT_TITLE: LocalizedText = {
   en: "Getting started with Patrick",
   zh: "和 Patrick 开始",
-  ko: "Patrick과 시작하기",
-  ja: "Patrick と始める",
 };
 
 export function getPatrickOnboarding(

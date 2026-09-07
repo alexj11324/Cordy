@@ -59,13 +59,10 @@ import {
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
 // we sync it to the resolved locale at boot so screen readers announce the
-// right language AND the Japanese-scoped CJK font override in globals.css
-// (`html[lang|="ja"]`) can take effect.
+// right language.
 const HTML_LANG: Record<SupportedLocale, string> = {
   en: "en",
   "zh-Hans": "zh-CN",
-  ko: "ko-KR",
-  ja: "ja-JP",
 };
 
 

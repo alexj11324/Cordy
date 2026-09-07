@@ -339,13 +339,7 @@ const SLACK_BYO_VIDEO_URL = "";
 // prefixes (English has none), matching the convention used elsewhere in the
 // app for doc links (e.g. the automations webhook docs link).
 function slackDocsUrl(lang: string | undefined): string {
-  const prefix = lang?.startsWith("zh")
-    ? "/zh"
-    : lang?.startsWith("ja")
-      ? "/ja"
-      : lang?.startsWith("ko")
-        ? "/ko"
-        : "";
+  const prefix = lang?.startsWith("zh") ? "/zh" : "";
   return `https://orvilo.aspectlylabs.com/docs${prefix}/slack-bot-integration`;
 }
 

@@ -21,7 +21,10 @@ describe("mobile issue list copy", () => {
 
   it("normalizes account language tags", () => {
     expect(getIssuesCopy("zh-CN").scopes.members).toBe("成员");
-    expect(getIssuesCopy("ja_JP").retry).toBe("再試行");
-    expect(getIssuesCopy("ko-KR").scopes.agents).toBe("에이전트");
+    expect(getIssuesCopy("  ZH-hans  ").scopes.members).toBe("成员");
+    // Accounts still carrying a retired language tag read English rather than
+    // an empty screen.
+    expect(getIssuesCopy("ja_JP").retry).toBe("Retry");
+    expect(getIssuesCopy("ko-KR").scopes.agents).toBe("Agents");
   });
 });

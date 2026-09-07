@@ -6,25 +6,21 @@ describe("mobile chat copy", () => {
     expect(normalizeChatLocale("en")).toBe("en");
     expect(normalizeChatLocale("zh")).toBe("zh-Hans");
     expect(normalizeChatLocale("zh-CN")).toBe("zh-Hans");
-    expect(normalizeChatLocale("ja-JP")).toBe("ja");
-    expect(normalizeChatLocale("ko-KR")).toBe("ko");
+    expect(normalizeChatLocale("ja-JP")).toBe("en");
+    expect(normalizeChatLocale("ko-KR")).toBe("en");
     expect(normalizeChatLocale("fr")).toBe("en");
     expect(normalizeChatLocale(null)).toBe("en");
   });
 
-  it("provides the native chat entry copy in all four supported locales", () => {
+  it("provides the native chat entry copy in every supported locale", () => {
     const en = createChatCopy("en");
     const zh = createChatCopy("zh-Hans");
-    const ja = createChatCopy("ja");
-    const ko = createChatCopy("ko");
 
     expect(en.chat).toBe("Chat");
     expect(zh.chat).toBe("聊天");
-    expect(ja.chat).toBe("チャット");
-    expect(ko.chat).toBe("채팅");
-    expect(new Set([zh.chat, ja.chat, ko.chat]).size).toBe(3);
+    expect(new Set([en.chat, zh.chat]).size).toBe(2);
 
-    for (const copy of [en, zh, ja, ko]) {
+    for (const copy of [en, zh]) {
       expect(copy.fallbackStarters).toHaveLength(3);
       expect(copy.status.thinking).toBeTruthy();
       expect(copy.failure.labels["agent_error.provider_network"]).toBeTruthy();

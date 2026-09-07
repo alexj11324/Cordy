@@ -6,7 +6,6 @@ import { ImageZoom } from "fumadocs-ui/components/image-zoom";
 import type { Metadata } from "next";
 import { DocsHero } from "@/components/hero";
 import { NumberedCards, NumberedCard, NumberedSteps, Step } from "@/components/editorial";
-import { VideoEmbed } from "@/components/video-embed";
 import { CommunityLinks } from "@/components/community-links";
 import { i18n, type Lang } from "@/lib/i18n";
 import { homeCopy } from "@/lib/translations";
@@ -66,7 +65,6 @@ export default async function Page({
               NumberedCard,
               NumberedSteps,
               Step,
-              VideoEmbed,
               CommunityLinks,
             }}
           />

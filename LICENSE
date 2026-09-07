@@ -53,7 +53,7 @@ together and what must be delivered when you redistribute.
         `apps/web/`, `apps/desktop/`, `apps/mobile/`, `packages/views/`,
         and `packages/ui/` directories when running Orvilo from the raw
         source code, the frontend container image (published as
-        `ghcr.io/alexj11324/orvilo-web`) when running Orvilo with
+        `ghcr.io/patchbay-ai/patchbay-web`) when running Orvilo with
         Docker, and any compiled desktop or mobile application built from
         that code. That enumeration is illustrative rather than
         exhaustive: user interface code remains covered when it is
@@ -71,7 +71,7 @@ together and what must be delivered when you redistribute.
       patent, trademark, and attribution notices present in the source
       code and in the NOTICE file, and state in your user-facing
       documentation that the product is built on Orvilo, including a link
-      to https://github.com/alexj11324/Cordy.
+      to https://github.com/patchbay-ai/patchbay.
 
    d. Relationship between grants: A branding waiver is not a commercial
       license and does not permit any use restricted by condition (a). A
@@ -112,7 +112,7 @@ together and what must be delivered when you redistribute.
       deliver this complete file. Delivering Part II alone does not
       satisfy the Orvilo License or section 4(a) of Part II.
 
-© 2025-2026 Orvilo, Inc.
+© 2025-2026 Patchbay, Inc.
 
 ------------------------------------------------------------------------
 

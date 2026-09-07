@@ -196,11 +196,11 @@ describe("RepositoriesTab — automatic updates", () => {
     const user = setupUser();
     render(<RepositoriesTab />, {wrapper: I18nWrapper});
     await user.click(screen.getByRole("button", {name: "Add a remote repository"}));
-    await user.type(screen.getByRole("textbox"), "git@github.com:patchbay-ai/second.git");
+    await user.type(screen.getByRole("textbox"), "git@github.com:orvilo-ai/second.git");
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
     await user.click(screen.getAllByRole("button", {name: "Add a remote repository"}).at(-1)!);
     await waitFor(() => expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {repos: [
-      {url: "https://github.com/alexj11324/Cordy"}, {url: "git@github.com:patchbay-ai/second.git"},
+      {url: "https://github.com/alexj11324/Cordy"}, {url: "git@github.com:orvilo-ai/second.git"},
     ]}));
   });
 
@@ -275,7 +275,7 @@ describe("RepositoriesTab — automatic updates", () => {
 			repos: [{ url: "git@github.com:alexj11324/Cordy.git" }],
     };
     githubRef.current = {
-      installations: [{ id: "installation-row-1", account_login: "patchbay-ai" }],
+      installations: [{ id: "installation-row-1", account_login: "orvilo-ai" }],
       configured: true,
       repository_browse_configured: true,
       can_manage: true,
@@ -283,7 +283,7 @@ describe("RepositoriesTab — automatic updates", () => {
     githubRepositoriesRef.current = [
       {
         id: 1,
-        full_name: "patchbay-ai/patchbay",
+        full_name: "orvilo-ai/orvilo",
         html_url: "https://github.com/alexj11324/Cordy",
         clone_url: "https://github.com/alexj11324/Cordy.git",
         description: "Existing repository",
@@ -293,9 +293,9 @@ describe("RepositoriesTab — automatic updates", () => {
       },
       {
         id: 2,
-        full_name: "patchbay-ai/console",
-        html_url: "https://github.com/patchbay-ai/console",
-        clone_url: "https://github.com/patchbay-ai/console.git",
+        full_name: "orvilo-ai/console",
+        html_url: "https://github.com/orvilo-ai/console",
+        clone_url: "https://github.com/orvilo-ai/console.git",
         description: "Console app",
         private: true,
         archived: false,
@@ -323,7 +323,7 @@ describe("RepositoriesTab — automatic updates", () => {
         repos: [
 					{ url: "git@github.com:alexj11324/Cordy.git" },
           {
-            url: "https://github.com/patchbay-ai/console.git",
+            url: "https://github.com/orvilo-ai/console.git",
             description: "Console app",
           },
         ],
@@ -342,7 +342,7 @@ describe("RepositoriesTab — automatic updates", () => {
 
   it("opens the picker after returning from a GitHub connection", async () => {
     githubRef.current = {
-      installations: [{ id: "installation-row-1", account_login: "patchbay-ai" }],
+      installations: [{ id: "installation-row-1", account_login: "orvilo-ai" }],
       configured: true,
       repository_browse_configured: true,
       can_manage: true,

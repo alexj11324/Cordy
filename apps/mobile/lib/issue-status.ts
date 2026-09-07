@@ -81,24 +81,6 @@ const STATUS_LABELS: Record<
     blocked: "已阻塞",
     cancelled: "已取消",
   },
-  ja: {
-    backlog: "バックログ",
-    todo: "未着手",
-    in_progress: "進行中",
-    in_review: "レビュー中",
-    done: "完了",
-    blocked: "ブロック中",
-    cancelled: "キャンセル",
-  },
-  ko: {
-    backlog: "백로그",
-    todo: "할 일",
-    in_progress: "진행 중",
-    in_review: "리뷰 중",
-    done: "완료",
-    blocked: "차단됨",
-    cancelled: "취소됨",
-  },
 };
 
 /** English compatibility map for pure callers that do not hold an account locale. */
