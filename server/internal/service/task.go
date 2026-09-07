@@ -6826,21 +6826,25 @@ func (s *TaskService) publishAgentStatus(agent db.Agent) {
 	})
 }
 
-// LoadAgentSkills loads an agent's skills with their files for task execution.
+// LoadAgentSkills loads a workspace's library skills with their files for
+// task execution. Every agent in the workspace receives this set at claim
+// time; there is no per-agent agent_skill join. Authorization is the
+// workspace_id match on the skill row.
 //
 // A read failure is REPORTED, never swallowed into a shorter skill set. Both
-// reads are all-or-nothing for the agent's entire skill set — the file load
-// covers every skill in one query — so a swallowed error does not degrade the
-// payload, it silently replaces it: every skill loses its supporting files, or
-// the agent loses every skill. Nothing downstream can tell that apart from an
-// agent that genuinely has none, because the bundle hash is computed over
-// whatever did load, so the daemon's own validation passes and the agent
-// starts on rules it is missing. Callers must settle the failure (preserve the
-// claim for redelivery, or 5xx the resolve) instead of dispatching that.
-func (s *TaskService) LoadAgentSkills(ctx context.Context, agentID pgtype.UUID) ([]AgentSkillData, error) {
-	skills, err := s.Queries.ListAgentSkills(ctx, agentID)
+// reads are all-or-nothing for the workspace's entire skill set — the file
+// load covers every skill in one query — so a swallowed error does not
+// degrade the payload, it silently replaces it: every skill loses its
+// supporting files, or the agent loses every skill. Nothing downstream can
+// tell that apart from a workspace that genuinely has none, because the
+// bundle hash is computed over whatever did load, so the daemon's own
+// validation passes and the agent starts on rules it is missing. Callers
+// must settle the failure (preserve the claim for redelivery, or 5xx the
+// resolve) instead of dispatching that.
+func (s *TaskService) LoadAgentSkills(ctx context.Context, workspaceID pgtype.UUID) ([]AgentSkillData, error) {
+	skills, err := s.Queries.ListSkillsByWorkspace(ctx, workspaceID)
 	if err != nil {
-		return nil, fmt.Errorf("list agent skills: %w", err)
+		return nil, fmt.Errorf("list workspace skills: %w", err)
 	}
 	if len(skills) == 0 {
 		return nil, nil
@@ -6883,13 +6887,13 @@ func (s *TaskService) skillsWithFiles(ctx context.Context, skills []db.Skill) ([
 	return result, nil
 }
 
-// LoadAgentSkillBundles returns every skill visible to an agent, including
+// LoadAgentSkillBundles returns every skill visible in a workspace, including
 // built-ins, with stable bundle hashes and lightweight refs for slim claims.
 // It fails closed on a workspace-skill read error for the reason in
 // LoadAgentSkills: a bundle set built from a partial read is indistinguishable
 // from a correct one.
-func (s *TaskService) LoadAgentSkillBundles(ctx context.Context, agentID pgtype.UUID) ([]AgentSkillData, []AgentSkillRefData, error) {
-	skills, err := s.LoadAgentSkills(ctx, agentID)
+func (s *TaskService) LoadAgentSkillBundles(ctx context.Context, workspaceID pgtype.UUID) ([]AgentSkillData, []AgentSkillRefData, error) {
+	skills, err := s.LoadAgentSkills(ctx, workspaceID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -6916,18 +6920,18 @@ type AgentSkillBundleRef struct {
 }
 
 // LoadRequestedAgentSkillBundles returns bundles for EXACTLY the refs given,
-// keyed by AgentSkillBundleKey. A ref the agent cannot see is simply absent
-// from the map — the junction predicate in ListAgentSkillsByIDs is the
-// authorization, so "no row" and "not allowed" are the same answer and the
-// caller reports both as not-found.
+// keyed by AgentSkillBundleKey. Authorization is the workspace_id match on
+// the skill row, not an agent_skill join: a skill from another workspace is
+// absent and the caller reports 404. A skill that lives in THIS workspace
+// resolves even if it was never bound to the claiming agent.
 //
 // This exists because the daemon resolves one skill per request (GH #4505, so
 // each download gets its own size-scaled deadline and caches independently).
-// Serving those out of the agent's full bundle set made the server redo the
-// whole agent on every request: N requests, each reading and hashing all N
-// skills to return one. Loading only what was asked for makes that linear,
-// which is why the resolve path must not reuse LoadAgentSkillBundles.
-func (s *TaskService) LoadRequestedAgentSkillBundles(ctx context.Context, agentID pgtype.UUID, refs []AgentSkillBundleRef) (map[string]AgentSkillData, error) {
+// Serving those out of the workspace's full bundle set made the server redo
+// the whole library on every request: N requests, each reading and hashing
+// all N skills to return one. Loading only what was asked for makes that
+// linear, which is why the resolve path must not reuse LoadAgentSkillBundles.
+func (s *TaskService) LoadRequestedAgentSkillBundles(ctx context.Context, workspaceID pgtype.UUID, refs []AgentSkillBundleRef) (map[string]AgentSkillData, error) {
 	requestedIDs := make([]pgtype.UUID, 0, len(refs))
 	seenWorkspace := make(map[string]struct{}, len(refs))
 	wantBuiltin := make(map[string]struct{}, len(refs))
@@ -6942,7 +6946,7 @@ func (s *TaskService) LoadRequestedAgentSkillBundles(ctx context.Context, agentI
 			id, err := util.ParseUUID(ref.ID)
 			if err != nil {
 				// An unparseable id matches no row, which is the same outcome
-				// as an id the agent does not have. Skipping it keeps one
+				// as an id not in this workspace. Skipping it keeps one
 				// malformed ref from failing the refs alongside it.
 				continue
 			}
@@ -6955,12 +6959,12 @@ func (s *TaskService) LoadRequestedAgentSkillBundles(ctx context.Context, agentI
 
 	var requested []AgentSkillData
 	if len(requestedIDs) > 0 {
-		skills, err := s.Queries.ListAgentSkillsByIDs(ctx, db.ListAgentSkillsByIDsParams{
-			AgentID:  agentID,
-			SkillIds: requestedIDs,
+		skills, err := s.Queries.ListWorkspaceSkillsByIDs(ctx, db.ListWorkspaceSkillsByIDsParams{
+			WorkspaceID: workspaceID,
+			SkillIds:    requestedIDs,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("list agent skills by ids: %w", err)
+			return nil, fmt.Errorf("list workspace skills by ids: %w", err)
 		}
 		if len(skills) > 0 {
 			// Same fail-closed rule as LoadAgentSkills: a failed file read

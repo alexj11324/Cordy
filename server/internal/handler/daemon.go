@@ -2185,24 +2185,23 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	if agent.McpConfig != nil {
 		agentMCPConfig = json.RawMessage(agent.McpConfig)
 	}
-	mcpConfig := agentMCPConfig
-	// Fold in the workspace MCP servers this agent has been explicitly
-	// given (GH #6062). Only bound AND enabled servers are read, so a
-	// workspace library entry nobody added reaches nothing. Read on every
-	// claim, exactly like the agent column, so an admin's edit or a toggle
-	// lands on the agent's next task with nothing to restart. Errors —
-	// including a failed read — leave the agent config untouched: a broken
-	// shared entry must never take away servers the agent runs with today.
-	if bound, err := h.Queries.ListEnabledAgentMcpServers(r.Context(), agent.ID); err != nil {
-		slog.Warn("daemon claim: load agent mcp servers failed; using agent mcp_config",
+	// Workspace MCP library entries apply to every agent in this workspace
+	// at claim time — no per-agent agent_mcp_server binding required. Pass
+	// a nil overlay so leftover per-agent mcp_config cannot win name
+	// collisions or inject private servers. Composio overlay is layered on
+	// afterwards, unchanged. Errors warn and leave mcpConfig empty; they
+	// must not fall back to agent.mcp_config.
+	var mcpConfig json.RawMessage
+	if servers, err := h.Queries.ListWorkspaceMcpServers(r.Context(), agent.WorkspaceID); err != nil {
+		slog.Warn("daemon claim: load workspace mcp servers failed",
 			"task_id", uuidToString(task.ID), "agent_id", uuidToString(agent.ID), "error", err)
-	} else if len(bound) > 0 {
-		bindings := make([]WorkspaceMcpBinding, 0, len(bound))
-		for _, server := range bound {
+	} else {
+		bindings := make([]WorkspaceMcpBinding, 0, len(servers))
+		for _, server := range servers {
 			bindings = append(bindings, WorkspaceMcpBinding{Name: server.Name, Config: json.RawMessage(server.Config)})
 		}
-		if resolved, err := ResolveAgentMcpConfig(bindings, agentMCPConfig); err != nil {
-			slog.Warn("daemon claim: resolve agent mcp servers failed; falling back to agent mcp_config",
+		if resolved, err := ResolveAgentMcpConfig(bindings, nil); err != nil {
+			slog.Warn("daemon claim: resolve workspace mcp servers failed",
 				"task_id", uuidToString(task.ID), "agent_id", uuidToString(agent.ID), "error", err)
 		} else {
 			mcpConfig = resolved
@@ -2232,7 +2231,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	resp.Agent = &TaskAgentData{
 		ID:                    uuidToString(agent.ID),
 		Name:                  agent.Name,
-		Instructions:          agent.Instructions,
+		Instructions:          "",
 		CustomEnv:             customEnv,
 		CustomArgs:            customArgs,
 		McpConfig:             mcpConfig,
@@ -2246,23 +2245,28 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	// this binary instead of being copied into their row at creation. That
 	// is what makes it hot-updatable: editing the embedded file and
 	// deploying reaches every existing workspace on its next task, with no
-	// migration and no client upgrade. agent.Instructions holds only the
-	// workspace's own notes, so a release can never overwrite them.
+	// migration and no client upgrade.
+	//
+	// User agents do not receive agent.Instructions on claim — task
+	// requirements belong on the assignment, not a per-agent prompt.
+	// Patrick still composes the product-owned layer, with empty workspace
+	// notes so leftover stored instructions cannot sneak in. Team briefing
+	// still appends to resp.Agent.Instructions later on this path.
 	//
 	// Composing here covers every task kind, because this is the single
 	// place a claimed task's agent payload is assembled.
 	if agent.SystemKey.String == service.PatrickSystemKey {
-		resp.Agent.Instructions = service.ComposePatrickInstructions(agent.Name, agent.Instructions)
+		resp.Agent.Instructions = service.ComposePatrickInstructions(agent.Name, "")
 	}
 	if useSkillRefs {
-		_, skillRefs, err := h.TaskService.LoadAgentSkillBundles(r.Context(), task.AgentID)
+		_, skillRefs, err := h.TaskService.LoadAgentSkillBundles(r.Context(), agent.WorkspaceID)
 		if err != nil {
 			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, h.rejectClaimSkillLoad(task, err)
 		}
 		agentSkillCount = len(skillRefs)
 		resp.Agent.SkillRefs = skillRefs
 	} else {
-		skills, err := h.TaskService.LoadAgentSkills(r.Context(), task.AgentID)
+		skills, err := h.TaskService.LoadAgentSkills(r.Context(), agent.WorkspaceID)
 		if err != nil {
 			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, h.rejectClaimSkillLoad(task, err)
 		}
@@ -2386,8 +2390,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// is exactly the same observable result as "condition not
 		// matched". Claim still succeeds; no stale briefing is emitted.
 		// (No FK on team_id — see migration 127.) We append (not replace)
-		// so per-agent instructions stay authoritative; the team briefing
-		// stacks on top as task-specific team context.
+		// so any already-composed claim instructions (Patrick's product
+		// layer) stay in place; the team briefing stacks on top as
+		// task-specific team context.
 		if task.IsLeaderTask {
 			injected := false
 			if resp.Agent != nil && task.TeamID.Valid {
@@ -3816,10 +3821,10 @@ func (h *Handler) ResolveTaskSkillBundles(w http.ResponseWriter, r *http.Request
 	}
 
 	// Load ONLY what was asked for. The daemon resolves one skill per request,
-	// so serving these out of the agent's full bundle set meant reading and
-	// hashing every skill the agent has, once per request, to return one of
-	// them — quadratic in skill count across a cold dispatch.
-	allowed, err := h.TaskService.LoadRequestedAgentSkillBundles(r.Context(), task.AgentID, wanted)
+	// so serving these out of the workspace's full bundle set meant reading
+	// and hashing every skill in the library, once per request, to return one
+	// of them — quadratic in skill count across a cold dispatch.
+	allowed, err := h.TaskService.LoadRequestedAgentSkillBundles(r.Context(), parseUUID(taskWorkspaceID), wanted)
 	if err != nil {
 		// 5xx, not a partial answer: the daemon's resolve retry can recover a
 		// transient read, and a bundle assembled from a failed read would pass

@@ -46,10 +46,11 @@ Two distinct text fields, often confused:
 - `description` is a catalog summary. It is stored and shown in listings; the
   daemon does NOT inject it into the agent's runtime prompt. Treat it as
   human-facing metadata only. Capped at 255 Unicode code points.
-- `instructions` is the runtime behavior contract. The daemon reads it at
-  claim time and ships it to the provider as the agent's durable instructions.
-  Persona, responsibilities, boundaries, output and escalation rules go here,
-  not in `description`.
+- `instructions` is stored on the agent row but is NOT shipped to user agents
+  at claim time. Task requirements belong on the assignment, not a per-agent
+  prompt. Patrick still receives the product-owned instruction layer (composed
+  with empty workspace notes so leftover stored text cannot sneak in).
+  Team-leader tasks still append the briefing onto claim `Instructions`.
 
 ## CLI / API entry points
 
@@ -122,13 +123,13 @@ patchbay agent copy <source-agent-id> --runtime-id <target> --model <model>  # c
 |---|---|---|---|
 | `name` | `agent.name` | required, 400 if empty | listings, runtime payload |
 | `description` | `agent.description` | 400 if > 255 code points | catalog/listing only — NOT the runtime prompt |
-| `instructions` | `agent.instructions` | none | daemon → provider at claim time |
+| `instructions` | `agent.instructions` | none | retained metadata; user-agent claims do not ship it |
 | `conversation_starters` | `agent.conversation_starters` (JSON array) | at most 3 items; each requires a label (≤80 code points) and prompt (≤4000 code points) | human-facing Chat empty state only; selecting one prefills the composer and does not start a run |
 | `avatar_url` | `agent.avatar_url` | none; an explicit non-empty value is preserved, while omitted/empty creates a random `emoji:<glyph>` avatar | catalog/listing UI only — NOT the runtime prompt |
 | `runtime_id` | `agent.runtime_id` (nullable) | required at create (400) + must resolve to a runtime in this workspace | selects runtime/provider; `NULL` means unbound — see below |
 | `model` | `agent.model` (nullable) | none beyond runtime support | daemon reads; empty = runtime default |
 | `thinking_level` | `agent.thinking_level` (nullable) | provider-level enum/safe-token gate; unknown literal → 400. Pi accepts only `off|minimal|low|medium|high|xhigh|max`, then the daemon checks the selected model's RPC-discovered subset. ACP runtimes that advertise an effort selector in `session/new` (currently `reasonix` and `hermes`) take the safe-token path and are checked against the discovered catalog by the daemon; that catalog covers only the model the discovery session was on, so other models show no picker until per-model probing exists. `hermes` covers two binaries — jcode advertises and applies an effort, Hermes Agent advertises none and gets no picker — so the answer there comes from the runtime's discovered catalog, not the provider name. Because that catalog is only written once a client requests a model list, a `hermes` runtime that has never been discovered is refused with a distinct "has not reported a model catalog yet" 400 rather than being assumed capable; `reasonix`, whose provider name does determine the binary, is allowed in that state. A runtime with no reasoning control at all (e.g. `copilot`, which executes outside ACP) rejects EVERY non-empty value and says so — that 400 is a capability answer, not a bad token | daemon; empty = runtime default |
-| `service_tier` | `agent.service_tier` (nullable) | Codex-only safe token; other providers reject; daemon checks either the explicit-standard capability or the exact model/catalog-tier pair | daemon → Codex app-server; empty = local Codex config, `default` = explicit Standard, catalog tier such as `priority` = explicit Fast |
+| `service_tier` | `agent.service_tier` (nullable) | Safe-token gate for Codex, Claude Code Fast mode, and ACP runtimes that apply a discovered speed option (`reasonix`, `hermes`, `dim`, `kimi`); other providers reject. Daemon checks the exact model/`service_tiers` pair (Codex and Claude Opus Fast models also have the explicit-standard `default` sentinel) | daemon → Codex app-server, Claude `--settings` `fastMode`, or ACP `session/set_config_option`; empty = inherit runtime setting. Codex: `default` = explicit Standard, catalog tier such as `priority` = Fast. Claude: `default` = standard Opus, `true` = Fast mode (Opus 5 / 4.8 only). ACP: the tokens the session advertised (`on`/`off`, `true`/`false`, …) |
 | `custom_args` | `agent.custom_args` (JSON array) | JSON shape checked CLI-side; server stores as-is | daemon (extra CLI switches); defaults to `[]` |
 | `runtime_config` | `agent.runtime_config` (JSON) | JSON shape checked CLI-side; server stores as-is | runtime-specific config; defaults to `{}` |
 | `custom_env` | `agent.custom_env` (JSON object) | — | daemon (process env); see Env & secrets |
@@ -170,24 +171,31 @@ provider's fixed-enum or safe-token gate, and the daemon performs the exact
 model/level check. A runtime whose provider has no thinking concept rejects any
 non-empty value with a 400.
 
-`service_tier` is the matching first-class Codex speed control. It has three
+`service_tier` is the matching first-class speed control. Codex has three
 distinct states:
 
 - empty means inherit the local Codex configuration;
 - `default` means explicitly use Standard routing;
 - a runtime catalog tier such as `priority` means explicitly use Fast.
 
+ACP runtimes that advertise a speed-like session config option (for example
+`fast_mode` / `fast-mode` / `service_tier`) store that option's own tokens
+here. The picker only appears when discovery saw the option. Claude Code
+advertises Fast mode on Opus 5 and Opus 4.8 (`true` / `default`) when the
+installed CLI is ≥2.1.205; Copilot still rejects any non-empty value.
+
 Set it with `--service-tier <value>` on create/update; use
-`--service-tier ""` on update to clear it. The picker offers `default` only
+`--service-tier ""` on update to clear it. The picker offers Codex `default` only
 when the daemon reports that its installed Codex CLI supports the request-only
 explicit-standard sentinel (Codex 0.133.0+). A missing capability from an older
 daemon is treated as unsupported. The runtime model catalog owns availability
-and display copy for alternative tiers. The server accepts safe future Codex
-values, while the daemon verifies the explicit-standard capability or exact
-model/catalog-tier pair before execution and omits a stale incompatible
-override. An alternative catalog tier on an agent without an explicit model
-still fails closed because the effective config.toml model is unknown;
-`default` is model-independent once the runtime capability is known.
+and display copy for alternative tiers. The server accepts safe future catalog
+values for Codex and the ACP speed runtimes, while the daemon verifies the
+explicit-standard capability or exact model/catalog-tier pair before execution
+and omits a stale incompatible override. An alternative Codex catalog tier on
+an agent without an explicit model still fails closed because the effective
+config.toml model is unknown; `default` is model-independent once the runtime
+capability is known.
 
 ### conversation_starters
 
@@ -293,30 +301,24 @@ Provider support is not uniform: Qwen Code accepts a managed `mcp_config` throug
 #### Workspace MCP servers
 
 A workspace keeps a LIBRARY of MCP servers (workspace Settings → MCP, or
-`patchbay workspace mcp list|add|update|remove`). Adding one there gives it to
-NO agent — same shape as a workspace skill. It reaches an agent only when
-someone assigns it:
+`patchbay workspace mcp list|add|update|remove`). At claim time every library
+entry in that workspace is folded into every agent's payload — there is no
+per-agent `agent_mcp_server` opt-in on that path.
 
-```bash
-patchbay workspace mcp list --output table        # find the server id
-patchbay agent mcp add <agent-id> <server-id>     # give it to one agent
-patchbay agent mcp disable <agent-id> <server-id> # stop sending it, keep the assignment
-patchbay agent mcp remove <agent-id> <server-id>  # take it away
-```
+Assignment commands (`patchbay agent mcp add|disable|remove`) still mutate
+bindings, but they do not change what the claim carries. Leftover per-agent
+`mcp_config` is also ignored on claim, so a private server stored on the agent
+row cannot win a name collision or inject a server the workspace library does
+not list.
 
 At claim time the effective set is:
 
 | Layer | Reaches the agent when |
 | --- | --- |
 | runtime-local servers | always (the daemon merges the runtime's own file) |
-| workspace servers | assigned to THIS agent and left enabled |
-| the agent's own `mcp_config` | always; it WINS on a name collision |
-
-Two consequences worth knowing before writing an agent's config: assigning a
-shared server does not require re-listing it in `mcp_config` (they merge), and
-`mcp_config` is now only about servers private to that agent — a
-managed-but-empty `{}` no longer means anything about the workspace layer,
-because nothing is inherited in the first place.
+| workspace servers | present in THIS workspace's MCP library |
+| the agent's own `mcp_config` | not applied on claim |
+| per-task overlay (Composio) | when the task carries `runtime_mcp_overlay`; overlay still wins on name collision |
 
 The stored entry is **write-only** — reads return the server's name and
 transport, never urls, commands, headers, or env, for any role.
@@ -336,12 +338,14 @@ patchbay agent skills add <agent-id> --skill-ids <skill-id> --output json
 patchbay agent skills list <agent-id> --output json
 ```
 
-At claim time the daemon assembles the agent's skills as workspace-bound skills
-FIRST, then appends the platform built-in skills. `LoadAgentSkills` loads each
-bound skill's content plus its supporting files; built-in skills are embedded
-at compile time and loaded from `SKILL.md` + sibling files. Both reach the
-provider as skill content — which is why capability belongs in a bound skill,
-not pasted into `instructions`.
+At claim time the daemon assembles skills from the workspace library FIRST
+(every skill in that workspace — no `agent_skill` join), then appends the
+platform built-in skills. `LoadAgentSkills` loads each library skill's content
+plus its supporting files; built-in skills are embedded at compile time and
+loaded from `SKILL.md` + sibling files. A skill never bound to the agent still
+reaches every agent in the workspace; a skill from another workspace does not.
+Both workspace and built-in skills reach the provider as skill content — which
+is why capability belongs in a workspace skill, not pasted into `instructions`.
 
 ## Side effects needing approval
 
@@ -359,9 +363,10 @@ State-changing (require an explicit instruction — do not run speculatively):
 
 ## Common wrong assumptions
 
-- "`description` is the prompt." It is not — only `instructions` reaches the
-  runtime. A rich description with empty instructions yields a named shell with
-  no operating contract.
+- "`description` is the prompt." It is not — and neither is leftover
+  `instructions` on a user agent. Claim does not ship `agent.instructions`
+  to user agents. Patrick still gets the product-owned layer; team-leader
+  tasks still append the briefing.
 - "Create binds the agent's skills." It does not; bind explicitly afterward.
 - "`agent update` can rotate env." It cannot — it 400s on `custom_env`; use the
   env endpoint.

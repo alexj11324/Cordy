@@ -342,7 +342,7 @@ func (b *dimBackend) Execute(ctx context.Context, prompt string, opts ExecOption
 				"name":    "patchbay-agent-sdk",
 				"version": "0.2.0",
 			},
-			"clientCapabilities": map[string]any{},
+			"clientCapabilities": acpClientCapabilities(nil),
 		})
 		if err != nil {
 			finalStatus = "failed"
@@ -569,6 +569,8 @@ func (b *dimBackend) Execute(ctx context.Context, prompt string, opts ExecOption
 		// option may depend on the current model, so apply it after set_model.
 		applyACPEffortOption(runCtx, c.request, "dim", b.cfg.Logger,
 			sessionID, sessionResult, opts.ThinkingLevel, opts.Model == "")
+		applyACPSpeedOption(runCtx, c.request, "dim", b.cfg.Logger,
+			sessionID, sessionResult, opts.ServiceTier, opts.Model == "")
 
 		userText := prompt
 		if opts.SystemPrompt != "" {

@@ -14,10 +14,7 @@ import type { Agent } from "@patchbay/core/types";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
-import {
-  NavigationProvider,
-  type NavigationAdapter,
-} from "../../navigation";
+import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
@@ -64,8 +61,10 @@ vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 vi.mock("@patchbay/core/agents", () => ({
-  isAgentRuntimeBound: (agent: { runtime_id: string; runtime_bound?: boolean }) =>
-    agent.runtime_bound !== false && agent.runtime_id.length > 0,
+  isAgentRuntimeBound: (agent: {
+    runtime_id: string;
+    runtime_bound?: boolean;
+  }) => agent.runtime_bound !== false && agent.runtime_id.length > 0,
   useWorkspacePresenceMap: () => ({ byAgent: new Map() }),
 }));
 vi.mock("@patchbay/core/workspace/queries", () => ({
@@ -114,6 +113,11 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
   },
 }));
 vi.mock("@patchbay/core/runtimes", () => ({
+  runtimeModelsOptions: () => ({
+    queryKey: ["runtime-models", null],
+    queryFn: () => Promise.resolve({ models: [], supported: true }),
+    enabled: false,
+  }),
   runtimeListOptions: (wsId: string) => ({
     queryKey: ["runtimes", wsId],
     queryFn: () => Promise.resolve([]),
@@ -263,9 +267,7 @@ describe("AgentDetailPage direct-detail fallback", () => {
 
   it("keeps 403 distinct from not found", async () => {
     agentsRef.current = [];
-    mockGetAgent.mockRejectedValue(
-      new ApiError("forbidden", 403, "Forbidden"),
-    );
+    mockGetAgent.mockRejectedValue(new ApiError("forbidden", 403, "Forbidden"));
 
     renderPage();
 
@@ -301,9 +303,7 @@ describe("AgentDetailPage direct-detail fallback", () => {
     const { queryClient } = renderPage();
     await screen.findByRole("button", { name: "Assign work" });
 
-    mockGetAgent.mockRejectedValue(
-      new ApiError("forbidden", 403, "Forbidden"),
-    );
+    mockGetAgent.mockRejectedValue(new ApiError("forbidden", 403, "Forbidden"));
     await act(async () => {
       await queryClient.invalidateQueries({
         queryKey: ["agents", "ws-1", "detail", "agent-1"],
@@ -365,12 +365,7 @@ describe("AgentDetailPage direct-detail fallback", () => {
 
     expect(await screen.findByText("new-model")).toBeInTheDocument();
     expect(
-      queryClient.getQueryData<Agent>([
-        "agents",
-        "ws-1",
-        "detail",
-        "agent-1",
-      ]),
+      queryClient.getQueryData<Agent>(["agents", "ws-1", "detail", "agent-1"]),
     ).toMatchObject({ model: "new-model" });
   });
 });
@@ -416,13 +411,13 @@ describe("AgentDetailPage DM button", () => {
   });
 
   it("hides the DM button on an archived agent", async () => {
-    agentsRef.current = [
-      { ...baseAgent, archived_at: "2026-06-01T00:00:00Z" },
-    ];
+    agentsRef.current = [{ ...baseAgent, archived_at: "2026-06-01T00:00:00Z" }];
     renderPage();
     // The archived banner is the signal the page has settled past loading.
     await screen.findByText(/This agent is archived/);
-    expect(screen.queryByRole("button", { name: "DM" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "DM" }),
+    ).not.toBeInTheDocument();
   });
 
   it("hides the more-actions trigger when no menu actions are available", async () => {
@@ -432,16 +427,12 @@ describe("AgentDetailPage DM button", () => {
     // real aria label (locale `detail.more_actions_aria` = "Agent actions"),
     // so removing the `hasMoreActions` gate would render the empty shell and
     // fail this test.
-    agentsRef.current = [
-      { ...baseAgent, system_key: "patrick" },
-    ];
+    agentsRef.current = [{ ...baseAgent, system_key: "patrick" }];
     membersRef.current = [{ user_id: "user-1", role: "admin" }];
     renderPage();
 
     await screen.findByRole("button", { name: "Assign work" });
-    expect(
-      screen.queryByLabelText("Agent actions"),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Agent actions")).not.toBeInTheDocument();
   });
 
   it("keeps the more-actions trigger for an editable non-system agent", async () => {
@@ -453,9 +444,7 @@ describe("AgentDetailPage DM button", () => {
     renderPage();
 
     await screen.findByRole("button", { name: "Assign work" });
-    expect(
-      screen.getByLabelText("Agent actions"),
-    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Agent actions")).toBeInTheDocument();
   });
 
   it("explains an unbound agent and blocks run actions without losing the profile", async () => {

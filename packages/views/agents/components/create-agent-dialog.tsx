@@ -1,13 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Globe, Lock, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ModelDropdown } from "./model-dropdown";
-import { RuntimePicker } from "./runtime-picker";
 import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
-import { InstructionsEditor } from "./instructions-editor";
-import { SkillMultiSelect } from "./skill-multi-select";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { api } from "@patchbay/core/api";
 import { useWorkspaceId } from "@patchbay/core/hooks";
@@ -37,12 +34,10 @@ import { Input } from "@patchbay/ui/components/ui/input";
 import { Label } from "@patchbay/ui/components/ui/label";
 import { toast } from "sonner";
 import {
-  AGENT_DESCRIPTION_MAX_LENGTH,
   VISIBILITY_DESCRIPTION,
   VISIBILITY_LABEL,
 } from "@patchbay/core/agents";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { CharCounter } from "./char-counter";
 import { useT } from "../../i18n";
 
 export function CreateAgentDialog({
@@ -60,12 +55,11 @@ export function CreateAgentDialog({
   members: MemberWithUser[];
   currentUserId: string | null;
   // When provided, the dialog opens in "Duplicate" mode: the visible
-  // fields (name / description / runtime / visibility / model) are
-  // pre-populated from this agent, and the hidden fields
-  // (instructions / custom_args / custom_env / max_concurrent_tasks)
-  // are forwarded to the create call so the new agent is a true clone.
-  // Skills are copied separately by the caller after createAgent
-  // succeeds — they're not part of CreateAgentRequest.
+  // fields (name / avatar / runtime / visibility / model) are
+  // pre-populated from this agent, and the hidden runtime-independent
+  // fields (custom_args / max_concurrent_tasks) are forwarded to the
+  // create call. Description, instructions, and per-agent skills are
+  // workspace-shared or unused and are not copied.
   template?: Agent | null;
   // When set, every successful create is followed by
   // addTeamMember(teamId, agent) so the new agent joins this team.
@@ -74,10 +68,8 @@ export function CreateAgentDialog({
   // Members tab.
   teamId?: string;
   onClose: () => void;
-  // Returns the created Agent so the dialog can run a follow-up
-  // setAgentSkills with the IDs the user picked in the form. Pre-skill-
-  // section callers can keep returning `void`; the dialog tolerates a
-  // falsy return (no follow-up runs).
+  // Returns the created Agent so the dialog can attach it to a team.
+  // Callers that only need the create itself can return `void`.
   onCreate: (data: CreateAgentRequest) => Promise<Agent | void>;
 }) {
   const { t } = useT("agents");
@@ -96,7 +88,6 @@ export function CreateAgentDialog({
   const [name, setName] = useState(
     template ? `${template.name}${t(($) => $.create_dialog.duplicate_copy_suffix)}` : "",
   );
-  const [description, setDescription] = useState(template?.description ?? "");
   // Legacy visibility state. Kept as the source of truth when
   // `accessPickerEnabled` is false; only used to seed the new access state
   // when the flag flips on for a duplicate.
@@ -140,12 +131,10 @@ export function CreateAgentDialog({
       target_id: tgt.target_id as string,
     }));
 
+  const [serviceTier, setServiceTier] = useState(template?.service_tier ?? "");
+  const [thinkingLevel, setThinkingLevel] = useState(template?.thinking_level ?? "");
   const [model, setModel] = useState(template?.model ?? "");
-  const [instructions, setInstructions] = useState(template?.instructions ?? "");
   const [avatarUrl, setAvatarUrl] = useState<string | null>(template?.avatar_url ?? null);
-  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(
-    () => new Set(template?.skills.map((s) => s.id) ?? []),
-  );
   const [creating, setCreating] = useState(false);
 
   // Duplicate-mode pre-fill: clone lands on the source agent's runtime so
@@ -164,6 +153,27 @@ export function CreateAgentDialog({
   });
 
   const selectedRuntime = runtimes.find((d) => d.id === selectedRuntimeId) ?? null;
+  useEffect(() => {
+    if (selectedRuntimeId || runtimesLoading) return;
+    const candidate = runtimes
+      .filter((runtime) => isRuntimeUsableForUser(runtime, currentUserId))
+      .toSorted((a, b) => {
+        const rank = (runtime: RuntimeDevice) => {
+          const owned =
+            currentUserId !== null && runtime.owner_id === currentUserId;
+          if (owned) return runtime.status === "online" ? 0 : 1;
+          return runtime.status === "online" ? 2 : 3;
+        };
+        return rank(a) - rank(b);
+      })[0];
+    if (!candidate) return;
+    setSelectedRuntimeId(candidate.id);
+    if (candidate.id !== template?.runtime_id) {
+      setModel("");
+      setThinkingLevel("");
+      setServiceTier("");
+    }
+  }, [selectedRuntimeId, runtimesLoading, runtimes, currentUserId, template?.runtime_id]);
   // Defense-in-depth: even if a locked runtime somehow ends up selected
   // (e.g. duplicate of an agent whose template runtime is now locked, and
   // the workspace has no usable fallback), gate Create on it so we don't
@@ -220,15 +230,13 @@ export function CreateAgentDialog({
     setCreating(true);
 
     try {
-      const trimmedInstructions = instructions.trim();
       const data: CreateAgentRequest = {
         name: name.trim(),
-        description: description.trim(),
         runtime_id: selectedRuntime.id,
         model: model.trim() || undefined,
-        instructions: trimmedInstructions || undefined,
+        thinking_level: thinkingLevel.trim() || undefined,
+        service_tier: serviceTier.trim() || undefined,
         avatar_url: avatarUrl ?? undefined,
-        skill_ids: [...selectedSkillIds],
       };
       if (accessPickerEnabled) {
         // New MUL-3963 shape: send the authoritative permission fields and
@@ -261,12 +269,12 @@ export function CreateAgentDialog({
       if (template) {
         // Duplicate path: forward the hidden config fields the source
         // agent had so the clone is functional out of the box (args /
-        // concurrency). Skills flow through the dialog form. As of
-        // MUL-2600 the agent resource shape no longer carries
-        // custom_env values, so duplication cannot copy env at all —
-        // the user has to re-set env on the clone via the env tab
-        // (which now goes through the audited `/env` endpoint). The
-        // dialog's create call still accepts custom_env at create
+        // concurrency). Description, instructions, and per-agent skills
+        // are not copied. As of MUL-2600 the agent resource shape no
+        // longer carries custom_env values, so duplication cannot copy
+        // env at all — the user has to re-set env on the clone via the
+        // env tab (which now goes through the audited `/env` endpoint).
+        // The dialog's create call still accepts custom_env at create
         // time, but the source values aren't available here.
         if (template.custom_args.length) data.custom_args = template.custom_args;
         if (template.max_concurrent_tasks) {
@@ -274,11 +282,10 @@ export function CreateAgentDialog({
         }
       }
       const createdAgent = await onCreate(data);
-      // Team context: attach the agent after skills land so the
-      // team's Members tab shows the agent with its skills already
-      // in place. Atomicity is best-effort by design (see plan in
-      // MUL-2178) — a partial failure surfaces a warning toast and
-      // the user can retry from the Add Member dialog.
+      // Team context: attach the agent after create so the team's
+      // Members tab includes it. Atomicity is best-effort by design
+      // (see plan in MUL-2178) — a partial failure surfaces a warning
+      // toast and the user can retry from the Add Member dialog.
       if (createdAgent && teamId) {
         await attachToTeam(createdAgent.id, createdAgent.name);
       }
@@ -312,12 +319,12 @@ export function CreateAgentDialog({
 
         <div className="flex-1 overflow-y-auto p-5">
           <div className="space-y-4 min-w-0">
-            {/* Identity row: avatar (left) + name & description stack
-                (right). The avatar visually anchors the identity of
-                what the user is creating; pairing it with the Name
-                field reads as "this is the agent's face + name",
-                same shape as detail-page header so the affordance is
-                instantly familiar. */}
+            {/* Identity row: avatar (left) + name (right). The avatar
+                visually anchors the identity of what the user is
+                creating; pairing it with the Name field reads as
+                "this is the agent's face + name", same shape as the
+                detail-page header so the affordance is instantly
+                familiar. */}
             <div className="flex items-start gap-4">
               <AvatarUploadControl
                 variant="agent"
@@ -343,24 +350,6 @@ export function CreateAgentDialog({
                       if (e.key === "Enter") handleSubmit();
                     }}
                   />
-                </div>
-
-                <div>
-                  <Label className="text-caption text-muted-foreground">{t(($) => $.create_dialog.description_label)}</Label>
-                  <Input
-                    type="text"
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder={t(($) => $.create_dialog.description_placeholder)}
-                    maxLength={AGENT_DESCRIPTION_MAX_LENGTH}
-                    className="mt-1"
-                  />
-                  <div className="mt-1">
-                    <CharCounter
-                      length={[...description].length}
-                      max={AGENT_DESCRIPTION_MAX_LENGTH}
-                    />
-                  </div>
                 </div>
               </div>
             </div>
@@ -418,44 +407,30 @@ export function CreateAgentDialog({
               </div>
             )}
 
-            <RuntimePicker
-              runtimes={runtimes}
-              runtimesLoading={runtimesLoading}
-              members={members}
-              currentUserId={currentUserId}
-              selectedRuntimeId={selectedRuntimeId}
-              onSelect={(id) => {
-                // Models are per-runtime; a value picked for the old runtime
-                // may not exist on the new one, so drop it on runtime change.
-                if (id !== selectedRuntimeId) setModel("");
-                setSelectedRuntimeId(id);
-              }}
-            />
 
             <ModelDropdown
+              variant="chip"
               runtimeId={selectedRuntime?.id ?? null}
               runtimeOnline={selectedRuntime?.status === "online"}
               value={model}
-              onChange={setModel}
-              disabled={!selectedRuntime}
-            />
-
-            {/* --- Optional sections (instructions / skills) ---
-                Collapsed by default so quick-create stays fast.
-                Duplicate pre-fills everything from the source agent. */}
-            <InstructionsEditor
-              value={instructions}
-              onChange={setInstructions}
-              placeholder={
-                isDuplicate
-                  ? t(($) => $.create_dialog.instructions.placeholder_duplicate)
-                  : t(($) => $.create_dialog.instructions.placeholder_blank)
-              }
-            />
-
-            <SkillMultiSelect
-              selectedIds={selectedSkillIds}
-              onChange={setSelectedSkillIds}
+              onChange={(model) => {
+                setModel(model);
+                setThinkingLevel("");
+                setServiceTier("");
+              }}
+              thinkingLevel={thinkingLevel}
+              serviceTier={serviceTier}
+              provider={selectedRuntime?.provider}
+              runtimes={runtimes.filter((runtime) =>
+                isRuntimeUsableForUser(runtime, currentUserId),
+              )}
+              onSelection={({ runtimeId, model, thinkingLevel, serviceTier }) => {
+                setSelectedRuntimeId(runtimeId);
+                setModel(model);
+                setThinkingLevel(thinkingLevel);
+                setServiceTier(serviceTier);
+              }}
+              disabled={runtimesLoading || creating}
             />
           </div>
         </div>

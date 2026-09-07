@@ -106,10 +106,12 @@ type ExecOptions struct {
 	// the field rather than fail (so MUL-2339 can grow runtime support
 	// incrementally without breaking unrelated agents).
 	ThinkingLevel string
-	// ServiceTier is a runtime-native Codex execution tier (for example
-	// "priority", displayed as Fast). "default" explicitly selects standard
-	// routing; empty means inherit local Codex config.
-	// Other providers ignore this field.
+	// ServiceTier is a runtime-native execution tier. Codex uses catalog
+	// IDs such as "priority" (Fast) and "default" (explicit standard).
+	// ACP runtimes that advertise a speed-like session config option store
+	// that option's value here (select tokens, or "true"/"false" for a
+	// boolean Fast toggle). Empty means inherit the runtime's own setting.
+	// Backends that have no speed surface ignore the field.
 	ServiceTier string
 	// OpenclawMode chooses between local (embedded) and gateway routing for
 	// the openclaw backend. "" or "local" keeps the historical behaviour —
@@ -123,8 +125,9 @@ type ExecOptions struct {
 	// pattern. See issue #3260.
 	OpenclawMode string
 	// ClaudeSettingsPath is a daemon-owned, task-local settings file passed
-	// through Claude Code's --settings flag. It currently carries restrictive
-	// runtime-skill overrides only; other providers ignore it.
+	// through Claude Code's --settings flag. It carries restrictive
+	// runtime-skill overrides and, when ServiceTier is set, the Fast mode
+	// boolean. Other providers ignore it.
 	ClaudeSettingsPath string
 }
 

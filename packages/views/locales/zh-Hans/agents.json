@@ -157,6 +157,10 @@
     "runtime_required_toast": "请先绑定运行时，再运行该智能体。",
     "assign_work": "分配工作",
     "more_actions_aria": "智能体操作",
+    "edit": "编辑",
+    "done": "完成",
+    "edit_aria": "编辑智能体",
+    "done_aria": "完成编辑智能体",
     "updated": "{{when}}更新"
   },
   "inspector": {
@@ -220,6 +224,7 @@
     "model_default": "默认",
     "model_tooltip": "模型 · {{value}}",
     "model_managed_by_runtime": "由运行时管理",
+    "bind_host_managed_runtime": "使用该运行时（不提供模型列表）",
     "model_search_placeholder": "搜索或输入模型 ID",
     "model_discovering": "正在发现模型...",
     "model_discovery_failed_title": "无法列出该运行时的模型。",
@@ -230,21 +235,22 @@
     "model_custom_use": "使用\"{{value}}\"",
     "model_clear": "清除（使用提供方默认）",
     "model_clear_title": "清除并回退到运行时的提供方默认",
-    "thinking_default": "跟随 CLI 配置",
+    "thinking_choose": "选择思考强度",
+    "thinking_default": "选择思考强度",
     "thinking_tooltip": "思考 · {{value}}",
-    "thinking_clear": "跟随 CLI 配置",
-    "thinking_clear_title": "清除覆盖，让本地 CLI（claude/codex）的配置决定推理级别",
-    "service_tier_default": "运行时默认",
+    "thinking_clear": "移除已保存的思考强度",
+    "thinking_clear_title": "移除已保存的思考强度",
+    "service_tier_default": "选择速度",
     "service_tier_standard": "标准速度",
     "service_tier_standard_description": "明确使用标准速度和标准用量",
     "service_tier_tooltip": "速度 · {{value}}",
-    "service_tier_clear": "运行时默认",
+    "service_tier_clear": "移除已保存的速度",
     "service_tier_clear_title": "清除速度覆盖，交由本地 Codex 配置决定"
   },
   "model_dropdown": {
     "label": "模型",
     "select_runtime_first": "请先选择运行时",
-    "default_provider": "默认（提供方）",
+    "default_provider": "未选择模型",
     "runtime_offline_manual": "运行时离线——请手动输入",
     "managed_by_runtime_title": "模型选择由该运行时管理。",
     "managed_by_runtime_hint": "请在运行时主机上配置模型（例如 Hermes 会从自身配置文件读取）。",
@@ -304,11 +310,11 @@
     },
     "sections": {
       "identity": "身份",
-      "identity_hint": "为智能体设置容易识别的名称和简洁的用途。",
+      "identity_hint": "为智能体设置容易识别的名称和头像。",
       "behavior": "行为与能力",
       "behavior_hint": "定义它的工作方式，并添加可使用的工作区 skill。",
       "execution": "执行配置",
-      "execution_hint": "选择智能体使用的运行时，也可以覆盖运行时的默认模型、思考等级和速度。",
+      "execution_hint": "选择智能体使用的运行时，并指定具体的模型、思考强度和速度。",
       "access": "访问权限",
       "access_hint": "控制谁可以运行此智能体，创建后仍可修改。"
     },
@@ -378,7 +384,7 @@
     "title_create": "创建智能体",
     "title_duplicate": "复制智能体",
     "description_create": "为工作区创建一个新的 AI 智能体。",
-    "description_duplicate": "基于\"{{name}}\"创建一个新智能体。指令、环境变量和 skill 会一并复制。",
+    "description_duplicate": "基于 \"{{name}}\" 创建一个新智能体。运行时、模型和访问权限会一并复制。",
     "name_label": "名称",
     "name_placeholder": "例如：深度研究智能体",
     "description_label": "描述",
@@ -473,9 +479,9 @@
     "env": {
       "intro_readonly": "在智能体进程启动时注入。只有工作区所有者 / 管理员可以查看或编辑值；每次解锁和编辑都会写入工作区审计日志。",
       "empty_readonly": "尚未配置环境变量。",
-      "intro_prefix": "在智能体进程启动时注入（例如 ",
+      "intro_prefix": "只会在这个智能体的 task 启动时注入到它自己的进程，不会改这台机器的系统环境变量。常见键名： ",
       "intro_separator": "、",
-      "intro_suffix": "）。",
+      "intro_suffix": "。",
       "bulk_edit_action": "批量编辑",
       "row_edit_action": "逐条编辑",
       "bulk_placeholder": "API_KEY=值\nBASE_URL=https://example.com",
@@ -494,7 +500,7 @@
       "save_failed_toast": "保存环境变量失败",
       "not_revealed_title_other": "已配置 {{count}} 个变量",
       "not_revealed_empty": "尚未配置环境变量。",
-      "not_revealed_hint": "在解锁前所有值保持隐藏。每次解锁与编辑都会写入工作区审计日志。",
+      "not_revealed_hint": "这些 KEY=value 只会在 task 启动时注入到这个智能体的进程里，用来给工具、API、代理等运行配置，不会改这台机器的系统环境变量。点「解锁并编辑」后才会读取值；每次显示和编辑都会记入工作区审计日志。填写时左侧是键名（如 ANTHROPIC_API_KEY），右侧是对应的值。",
       "reveal_action": "解锁并编辑",
       "revealing": "正在解锁…",
       "reveal_failed_toast": "加载环境变量值失败",
@@ -793,7 +799,7 @@
     "owner_label": "所有者",
     "unknown_runtime": "未知运行时",
     "model_label": "模型",
-    "model_unset": "运行时默认"
+    "model_unset": "未选择模型"
   },
   "live_peek": {
     "current_issue_label": "正在处理",
@@ -947,5 +953,21 @@
   "actions": {
     "selected_other": "已选 {{count}} 项",
     "clear_selection": "清除选择"
+  },
+  "model_selector": {
+    "no_speed": "此模型未提供速度选项。",
+    "speed_inherited": "速度沿用智能体或运行时设置。",
+    "providers": "提供商",
+    "favorites": "收藏",
+    "effort": "思考强度",
+    "favorite": "收藏 {{value}}",
+    "unfavorite": "取消收藏 {{value}}",
+    "favorites_empty": "为模型和思考强度加星标，即可收藏到这里。",
+    "favorite_unavailable": "此收藏当前不可用。请选择在线提供商及其支持的模型和思考强度。",
+    "no_effort": "此模型未提供可选思考强度。",
+    "choose_model": "请选择模型",
+    "effort_inherited": "此入口仅覆盖模型，思考强度沿用智能体或运行时设置。",
+    "refresh": "刷新模型",
+    "clear_unsupported_speed": "移除不支持的速度 {{value}}"
   }
 }

@@ -18,12 +18,9 @@ import { useT } from "../../../i18n";
  * discovered, so the value/label pairs match each CLI's own UI (`Low`,
  * `Extra high`, …) verbatim; never normalised across providers.
  *
- * Empty string is the "no override" sentinel: the backend omits the
- * effort flag entirely and the upstream CLI's own config / built-in
- * default decides what the model runs at. We render that state as
- * "Follow CLI config" rather than singling out one level as the
- * factory default, because the actual default at runtime is owned by
- * the user's local CLI install, not by Patchbay's catalog.
+ * Empty string means no thinking effort has been chosen yet. We do not
+ * treat that as "follow the local CLI" — the four-column selector persists
+ * a real catalog level when one exists.
  */
 export function ThinkingPicker({
   value,
@@ -33,7 +30,7 @@ export function ThinkingPicker({
   showLabel = true,
   onChange,
 }: {
-  /** Persisted thinking_level — "" means "follow local CLI config". */
+  /** Persisted thinking_level — "" means none chosen yet. */
   value: string;
   /** Supported levels for the current (runtime, model) pair. Usually
    *  non-empty when the row is shown, but the stale-orphan clear path
@@ -56,7 +53,7 @@ export function ThinkingPicker({
   // "Default" when the backend would still send the stale value.
   const triggerLabel = selected
     ? selected.label
-    : value || t(($) => $.pickers.thinking_default);
+    : value || t(($) => $.pickers.thinking_choose);
   const triggerTitle = t(($) => $.pickers.thinking_tooltip, {
     value: triggerLabel,
   });
@@ -152,13 +149,7 @@ export function ThinkingPicker({
               `<div>` inside that <span> is block-in-inline (invalid HTML5)
               and triggers browser quirks that shift descendant x-position.
               Use a `<span>` with explicit `block` + `text-left` so layout
-              is deterministic across rows regardless of whether the label
-              row has the `default` badge sibling. */}
-          {/* No model-factory-default badge here on purpose: when the
-              picker is "Follow CLI config" (value === ""), Patchbay omits
-              `--effort` and the local CLI config decides — the model's
-              factory default is irrelevant to what actually fires, so
-              flagging one option as "default" was misleading. */}
+              is deterministic across rows. */}
           <span className="block min-w-0 flex-1 text-left">
             <span className="truncate text-label font-medium">{l.label}</span>
             {l.description && (

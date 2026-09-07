@@ -51,4 +51,73 @@ describe("SettingsWindow focus", () => {
     act(() => useWindowOverlayStore.getState().close());
     await waitFor(() => expect(underlying).toHaveFocus());
   });
+
+  it("closes Settings on Escape", () => {
+    render(<WindowOverlay />);
+    act(() => {
+      useWindowOverlayStore.getState().open({
+        type: "settings",
+        path: "/acme/settings",
+      });
+    });
+    expect(screen.getByRole("button", { name: "Back to app" })).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(
+      screen.queryByRole("button", { name: "Back to app" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("leaves Settings open when a dialog owns Escape", () => {
+    render(
+      <>
+        <WindowOverlay />
+        <div data-slot="dialog-content" data-open="" />
+      </>,
+    );
+    act(() => {
+      useWindowOverlayStore.getState().open({
+        type: "settings",
+        path: "/acme/settings",
+      });
+    });
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(screen.getByRole("button", { name: "Back to app" })).toBeInTheDocument();
+  });
+
+  it("leaves Settings open while a shortcut is being recorded", () => {
+    render(
+      <>
+        <WindowOverlay />
+        <button data-shortcut-recording="" type="button">
+          Recording
+        </button>
+      </>,
+    );
+    act(() => {
+      useWindowOverlayStore.getState().open({
+        type: "settings",
+        path: "/acme/settings",
+      });
+    });
+    const recording = screen.getByRole("button", { name: "Recording" });
+    recording.focus();
+
+    act(() => {
+      recording.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key: "Escape",
+          bubbles: true,
+        }),
+      );
+    });
+    expect(
+      screen.getByRole("button", { name: "Back to app" }),
+    ).toBeInTheDocument();
+  });
 });

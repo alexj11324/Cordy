@@ -369,6 +369,9 @@ echo '{"models":[{"slug":"runtime-model","display_name":"Runtime Model","visibil
 		if got[0].SupportsExplicitStandardServiceTier {
 			t.Fatalf("Codex 0.122.0 must not advertise explicit-standard support: %+v", got[0])
 		}
+		if discoverCodexCatalog(context.Background(), Command{Path: fake}).Fallback {
+			t.Fatal("a live Codex catalog must not be marked Fallback")
+		}
 	})
 
 	t.Run("old version uses static fallback", func(t *testing.T) {
@@ -380,11 +383,14 @@ echo '{"models":[{"slug":"runtime-model","display_name":"Runtime Model","visibil
 		writeTestExecutable(t, fake, []byte(script))
 
 		got := discoverCodexModels(context.Background(), Command{Path: fake})
-		if len(got) == 0 || got[0].ID != "gpt-5.6-sol" {
+		if !containsModelID(got, "gpt-5.6-sol") || !containsModelID(got, "gpt-6-astra") {
 			t.Fatalf("expected static fallback, got %+v", got)
 		}
 		if got[0].SupportsExplicitStandardServiceTier {
 			t.Fatalf("old Codex must not advertise explicit-standard support: %+v", got[0])
+		}
+		if !discoverCodexCatalog(context.Background(), Command{Path: fake}).Fallback {
+			t.Fatal("a static Codex stand-in must be marked Fallback so it is never cached as the real catalog")
 		}
 	})
 
@@ -397,11 +403,14 @@ echo '{"models":[{"slug":"runtime-model","display_name":"Runtime Model","visibil
 		writeTestExecutable(t, fake, []byte(script))
 
 		got := discoverCodexModels(context.Background(), Command{Path: fake})
-		if len(got) == 0 || got[0].ID != "gpt-5.6-sol" || got[0].Thinking == nil {
+		if !containsModelID(got, "gpt-5.6-sol") || !containsModelID(got, "gpt-6-astra") || got[0].Thinking == nil {
 			t.Fatalf("expected model + thinking fallback, got %+v", got)
 		}
 		if !got[0].SupportsExplicitStandardServiceTier {
 			t.Fatalf("supported Codex version must retain explicit-standard capability through catalog fallback: %+v", got[0])
+		}
+		if !discoverCodexCatalog(context.Background(), Command{Path: fake}).Fallback {
+			t.Fatal("a static Codex stand-in must be marked Fallback so it is never cached as the real catalog")
 		}
 	})
 }
@@ -489,6 +498,15 @@ func TestParseCodexModelCatalog_PreservesFutureEfforts(t *testing.T) {
 	if hasThinkingLevel(luna.Thinking, "hyper") {
 		t.Errorf("future effort must remain model-specific: %+v", luna.Thinking.SupportedLevels)
 	}
+}
+
+func containsModelID(models []Model, id string) bool {
+	for _, model := range models {
+		if model.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func hasThinkingLevel(mt *ModelThinking, value string) bool {
@@ -1051,6 +1069,93 @@ func TestValidateServiceTierCodexPerModelCatalog(t *testing.T) {
 	}
 }
 
+func TestValidateServiceTierACPCatalog(t *testing.T) {
+	t.Parallel()
+	load := func() (Catalog, error) {
+		return Catalog{Models: []Model{
+			{
+				ID:      "sonnet",
+				Default: true,
+				ServiceTiers: []ModelServiceTier{
+					{ID: "false", Name: "Off"},
+					{ID: "true", Name: "Fast Mode"},
+				},
+			},
+			{ID: "opus"},
+		}}, nil
+	}
+	ok, err := ValidateServiceTierWith(load, "hermes", "sonnet", "true")
+	if err != nil || !ok {
+		t.Fatalf("hermes sonnet true = (%v, %v), want valid", ok, err)
+	}
+	ok, err = ValidateServiceTierWith(load, "hermes", "opus", "true")
+	if err != nil || ok {
+		t.Fatalf("hermes opus true = (%v, %v), want rejected — sibling has no catalog", ok, err)
+	}
+	ok, err = ValidateServiceTierWith(load, "hermes", "", "true")
+	if err != nil || !ok {
+		t.Fatalf("hermes default-model true = (%v, %v), want valid", ok, err)
+	}
+	ok, err = ValidateServiceTierWith(load, "copilot", "sonnet", "true")
+	if err != nil || ok {
+		t.Fatalf("copilot true = (%v, %v), want rejected without a catalog read", ok, err)
+	}
+}
+
+func TestValidateServiceTierClaudeFastMode(t *testing.T) {
+	t.Parallel()
+	models := claudeStaticModels()
+	annotateClaudeSpeed(models, "2.1.260")
+	load := func() (Catalog, error) { return Catalog{Models: models}, nil }
+
+	ok, err := ValidateServiceTierWith(load, "claude", "claude-opus-5", "true")
+	if err != nil || !ok {
+		t.Fatalf("opus-5 true = (%v, %v), want valid", ok, err)
+	}
+	ok, err = ValidateServiceTierWith(load, "claude", "claude-opus-5[1m]", "default")
+	if err != nil || !ok {
+		t.Fatalf("opus-5[1m] default = (%v, %v), want valid", ok, err)
+	}
+	ok, err = ValidateServiceTierWith(load, "claude", "claude-sonnet-5", "true")
+	if err != nil || ok {
+		t.Fatalf("sonnet-5 true = (%v, %v), want rejected", ok, err)
+	}
+	ok, err = ValidateServiceTierWith(load, "claude", "claude-sonnet-5", "default")
+	if err != nil || ok {
+		t.Fatalf("sonnet-5 default = (%v, %v), want rejected", ok, err)
+	}
+}
+
+func TestAnnotateClaudeSpeedOnlyOpusFastModeModels(t *testing.T) {
+	t.Parallel()
+	models := claudeStaticModels()
+	annotateClaudeSpeed(models, "2.1.204")
+	for _, m := range models {
+		if len(m.ServiceTiers) > 0 || m.SupportsExplicitStandardServiceTier {
+			t.Fatalf("CLI before 2.1.205 advertised speed on %s: %+v", m.ID, m)
+		}
+	}
+
+	annotateClaudeSpeed(models, "2.1.260")
+	byID := map[string]Model{}
+	for _, m := range models {
+		byID[m.ID] = m
+	}
+	opus := byID["claude-opus-5"]
+	if !opus.SupportsExplicitStandardServiceTier || len(opus.ServiceTiers) != 1 || opus.ServiceTiers[0].ID != "true" {
+		t.Fatalf("opus-5 speed catalog = %+v", opus)
+	}
+	if byID["claude-opus-4-8"].ServiceTiers[0].ID != "true" {
+		t.Fatalf("opus-4-8 missing Fast: %+v", byID["claude-opus-4-8"])
+	}
+	if len(byID["claude-sonnet-5"].ServiceTiers) != 0 || byID["claude-sonnet-5"].SupportsExplicitStandardServiceTier {
+		t.Fatalf("sonnet-5 must not advertise speed: %+v", byID["claude-sonnet-5"])
+	}
+	if len(byID["claude-opus-4-7"].ServiceTiers) != 0 {
+		t.Fatalf("retired opus-4-7 must not advertise speed: %+v", byID["claude-opus-4-7"])
+	}
+}
+
 func TestIsKnownServiceTier(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -1063,7 +1168,13 @@ func TestIsKnownServiceTier(t *testing.T) {
 		{provider: "codex", value: "priority", want: true},
 		{provider: "codex", value: "future.fast", want: true},
 		{provider: "codex", value: "../priority", want: false},
-		{provider: "claude", value: "priority", want: false},
+		{provider: "claude", value: "priority", want: true},
+		{provider: "claude", value: "true", want: true},
+		{provider: "claude", value: "default", want: true},
+		{provider: "hermes", value: "on", want: true},
+		{provider: "hermes", value: "true", want: true},
+		{provider: "kimi", value: "priority", want: true},
+		{provider: "copilot", value: "on", want: false},
 	} {
 		if got := IsKnownServiceTier(tc.provider, tc.value); got != tc.want {
 			t.Errorf("IsKnownServiceTier(%q, %q) = %v, want %v", tc.provider, tc.value, got, tc.want)

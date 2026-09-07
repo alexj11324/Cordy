@@ -5,6 +5,13 @@ SELECT * FROM skill
 WHERE workspace_id = $1
 ORDER BY name ASC;
 
+-- name: ListWorkspaceSkillsByIDs :many
+-- Claim/resolve scoped load: workspace library skills by ID, NO agent_skill join.
+-- Authorization is workspace membership of the skill row.
+SELECT * FROM skill
+WHERE workspace_id = $1 AND id = ANY(sqlc.arg('skill_ids')::uuid[])
+ORDER BY name ASC;
+
 -- name: ListSkillSummariesByWorkspace :many
 -- Same as ListSkillsByWorkspace but omits the SKILL.md `content` column. Used
 -- by list endpoints (CLI table, web list page) where the body is never read;

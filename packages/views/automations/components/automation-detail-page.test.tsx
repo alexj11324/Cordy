@@ -74,6 +74,17 @@ vi.mock("@patchbay/core/projects/queries", () => ({
   }),
 }));
 
+vi.mock("@patchbay/core/runtimes", () => ({
+  runtimeListOptions: () => ({
+    queryKey: ["runtimes"],
+    queryFn: async () => [{ id: "runtime-1", provider: "codex", status: "online" }],
+  }),
+  runtimeModelsOptions: () => ({
+    queryKey: ["runtime-models"],
+    queryFn: async () => ({ models: [], supported: true }),
+  }),
+}));
+
 vi.mock("@patchbay/core/github/queries", () => ({
   githubInstallationsOptions: (wsId: string) => ({
     queryKey: ["github", wsId],

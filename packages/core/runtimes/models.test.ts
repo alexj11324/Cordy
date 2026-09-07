@@ -7,16 +7,18 @@ import {
   runtimeModelsOptions,
   staleTimeFor,
 } from "./models";
-import type { RuntimeModelListRequest, RuntimeModelsResult } from "../types/agent";
+import type {
+  RuntimeModelListRequest,
+  RuntimeModelsResult,
+} from "../types/agent";
 
 const initiateListModels = vi.fn();
 const getListModelsResult = vi.fn();
 
 vi.mock("../api", () => ({
   api: {
-    initiateListModels: (runtimeId: string) => initiateListModels(runtimeId),
-    getListModelsResult: (runtimeId: string, requestId: string) =>
-      getListModelsResult(runtimeId, requestId),
+    initiateListModels: (...args: unknown[]) => initiateListModels(...args),
+    getListModelsResult: (...args: unknown[]) => getListModelsResult(...args),
   },
 }));
 
@@ -55,6 +57,26 @@ beforeEach(() => {
 });
 
 describe("resolveRuntimeModels", () => {
+  it("keeps the runtime workspace on both discovery and polling", async () => {
+    vi.useFakeTimers();
+    try {
+      initiateListModels.mockResolvedValue(request({ status: "pending" }));
+      getListModelsResult.mockResolvedValue(
+        request({ status: "completed", models: catalog }),
+      );
+      const result = resolveRuntimeModels("rt-1", "ws-owned");
+      await vi.advanceTimersByTimeAsync(500);
+      await result;
+      expect(initiateListModels).toHaveBeenCalledWith("rt-1", "ws-owned");
+      expect(getListModelsResult).toHaveBeenCalledWith(
+        "rt-1",
+        "req-1",
+        "ws-owned",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   // The server answers a warm runtime straight from its catalog cache
   // (MUL-5444). That response is already terminal, so discovery must resolve on
   // the POST alone — one round trip, no polling, no spinner.
@@ -96,7 +118,11 @@ describe("resolveRuntimeModels", () => {
     expect(result.models).toEqual(catalog);
     expect(result.supported).toBe(true);
     expect(getListModelsResult).toHaveBeenCalledTimes(2);
-    expect(getListModelsResult).toHaveBeenLastCalledWith("rt-1", "req-1");
+    expect(getListModelsResult).toHaveBeenLastCalledWith(
+      "rt-1",
+      "req-1",
+      undefined,
+    );
   });
 
   // MUL-6606 review: the client budget has to cover the server's pending AND
@@ -209,13 +235,15 @@ describe("staleTimeFor", () => {
   // observable staleness would be server window + client window. Zero keeps the
   // bound at the server's window alone.
   it("treats a cached answer as immediately revalidatable", () => {
-    expect(staleTimeFor({ models: catalog, supported: true, cached: true })).toBe(0);
+    expect(
+      staleTimeFor({ models: catalog, supported: true, cached: true }),
+    ).toBe(0);
   });
 
   it("trusts a live answer for the full window", () => {
-    expect(staleTimeFor({ models: catalog, supported: true, cached: false })).toBe(
-      LIVE_MODELS_STALE_TIME_MS,
-    );
+    expect(
+      staleTimeFor({ models: catalog, supported: true, cached: false }),
+    ).toBe(LIVE_MODELS_STALE_TIME_MS);
     expect(staleTimeFor({ models: catalog, supported: true })).toBe(
       LIVE_MODELS_STALE_TIME_MS,
     );
@@ -241,10 +269,14 @@ describe("runtimeModelsOptions", () => {
       state: { data?: { models: []; supported: boolean; cached?: boolean } };
     }) => number;
     expect(
-      staleTime({ state: { data: { models: [], supported: true, cached: true } } }),
+      staleTime({
+        state: { data: { models: [], supported: true, cached: true } },
+      }),
     ).toBe(0);
     expect(
-      staleTime({ state: { data: { models: [], supported: true, cached: false } } }),
+      staleTime({
+        state: { data: { models: [], supported: true, cached: false } },
+      }),
     ).toBe(LIVE_MODELS_STALE_TIME_MS);
   });
 
@@ -277,11 +309,9 @@ describe("runtimeModelsOptions", () => {
     ).toMatchObject({ models: catalog, cached: true });
 
     // A cached answer is stale on arrival, so remounting the picker revalidates.
-    const query = client
-      .getQueryCache()
-      .find<RuntimeModelsResult>({
-        queryKey: runtimeModelsKeys.forRuntime("rt-1"),
-      })!;
+    const query = client.getQueryCache().find<RuntimeModelsResult>({
+      queryKey: runtimeModelsKeys.forRuntime("rt-1"),
+    })!;
     expect(query.isStaleByTime(staleTimeFor(query.state.data))).toBe(true);
 
     const observer = new QueryObserver(client, options);
