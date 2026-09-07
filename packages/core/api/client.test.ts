@@ -1229,6 +1229,20 @@ describe("ApiClient", () => {
     expect(tasks[2]?.usage?.[0]?.output_tokens).toBe(0);
   });
 
+  it("sends workspace run filters and pagination to the aggregate endpoint", async () => {
+    const response = { runs: [], summary: { total: 30, successful_24h: 30, failed_24h: 0, successful_7d: 30, failed_7d: 0 } };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(response)));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await new ApiClient("https://api.example.test").listWorkspaceAutomationRuns({ scope: "mine", search: "a & b", statuses: ["failed", "skipped"], offset: 25 });
+    const url = new URL(fetchMock.mock.calls[0]?.[0]);
+    expect(url.pathname).toBe("/api/automations/runs");
+    expect(url.searchParams.get("scope")).toBe("mine");
+    expect(url.searchParams.get("search")).toBe("a & b");
+    expect(url.searchParams.getAll("status")).toEqual(["failed", "skipped"]);
+    expect(url.searchParams.get("offset")).toBe("25");
+    expect(result.summary.total).toBe(30);
+  });
+
   it("uses the expected HTTP contract for automation endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
       new Response(JSON.stringify({ automations: [], runs: [], total: 0 }), {
