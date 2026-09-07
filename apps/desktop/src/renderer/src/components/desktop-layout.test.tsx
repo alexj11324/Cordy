@@ -1,11 +1,40 @@
-import type { ReactNode } from "react";
+import type { ComponentType, CSSProperties, ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import { useSidebar } from "@patchbay/ui/components/ui/sidebar";
 import { RESOURCES } from "@patchbay/views/locales";
+
+// Layout ownership is the contract under test. Apply Motion targets
+// synchronously so the test asserts the intended endpoint rather than waiting
+// on requestAnimationFrame-driven spring timing in jsdom.
+vi.mock("motion/react", async () => {
+  const React = await import("react");
+  const components = new Map<PropertyKey, ComponentType<Record<string, unknown>>>();
+
+  return {
+    motion: new Proxy({}, {
+      get: (_target, tag: PropertyKey) => {
+        const cached = components.get(tag);
+        if (cached) return cached;
+
+        const Component = React.forwardRef<HTMLElement, Record<string, unknown>>(
+          ({ animate, initial: _initial, transition: _transition, style, ...props }, ref) =>
+            React.createElement(tag as string, {
+              ...props,
+              ref,
+              style: { ...(style as CSSProperties), ...(animate as CSSProperties) },
+            }),
+        );
+        Component.displayName = `motion.${String(tag)}`;
+        components.set(tag, Component);
+        return Component;
+      },
+    }),
+  };
+});
 
 // The shell resolves the mocked `getCurrentSlug()` against the workspace list
 // before mounting workspace-scoped chrome, so the list has to contain it or
@@ -74,16 +103,29 @@ vi.mock("@patchbay/views/search", () => ({
   SearchTrigger: () => null,
 }));
 vi.mock("@patchbay/views/chat", () => ({ FloatingChat: () => null }));
-vi.mock("./tab-bar", () => ({ TabBar: () => null }));
+vi.mock("./tab-bar", () => ({ TabBar: () => <div data-testid="tab-bar" /> }));
 vi.mock("./window-overlay", () => ({ WindowOverlay: () => null }));
 
 // Stands in for whatever page the active tab is showing. Reports the one fact
 // a `PageHeader` reads before deciding to render its own fallback trigger.
 vi.mock("./tab-content", () => ({
   TabContent: () => {
-    const { hasExternalTrigger } = useSidebar();
+    const {
+      hasExternalTrigger,
+      hideHoverSidebar,
+      open,
+      revealHoverSidebar,
+      state,
+    } = useSidebar();
     return (
-      <div data-testid="page-content" data-external-trigger={hasExternalTrigger} />
+      <div
+        data-testid="page-content"
+        data-external-trigger={hasExternalTrigger}
+        data-sidebar-open={open}
+        data-sidebar-state={state}
+        onPointerEnter={revealHoverSidebar}
+        onPointerLeave={hideHoverSidebar}
+      />
     );
   },
 }));
@@ -132,6 +174,29 @@ describe("DesktopShell sidebar trigger", () => {
       "data-external-trigger",
       "true",
     );
+  });
+
+  it("keeps the native toolbar clearance while a collapsed sidebar is hover-revealed", () => {
+    const { container, getByTestId } = renderShell("macos");
+    const header = container.querySelector("header")!;
+    const trigger = container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-trigger']",
+    )!;
+    const content = getByTestId("page-content");
+
+    expect(content).toHaveAttribute("data-sidebar-open", "true");
+    expect(header).toHaveStyle({ paddingLeft: "0px" });
+
+    fireEvent.click(trigger);
+    expect(content).toHaveAttribute("data-sidebar-open", "false");
+    expect(header).toHaveStyle({ paddingLeft: "184px" });
+    expect(container.querySelectorAll("[data-slot='sidebar-trigger']")).toHaveLength(1);
+
+    fireEvent.pointerEnter(content);
+    expect(content).toHaveAttribute("data-sidebar-state", "expanded");
+    expect(header).toHaveStyle({ paddingLeft: "184px" });
+
+    expect(container.querySelectorAll("[data-slot='sidebar-trigger']")).toHaveLength(1);
   });
 
   // The macOS shell is transparent so Electron's native sidebar material can
