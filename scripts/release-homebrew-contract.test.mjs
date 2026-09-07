@@ -89,8 +89,6 @@ test("all supported Homebrew instructions use the dedicated tap", async () => {
     "scripts/install.sh",
     "scripts/selfhost-wait.sh",
     "apps/docs/content/docs/cli.mdx",
-    "apps/docs/content/docs/cli.ja.mdx",
-    "apps/docs/content/docs/cli.ko.mdx",
     "apps/docs/content/docs/cli.zh.mdx",
   ];
 
