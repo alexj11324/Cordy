@@ -7,10 +7,10 @@ import (
 	"testing"
 )
 
-// routerSourceFile is parsed by TestWecomMediaAllowListIsWiredAtBoot. Kept as
+// assemblySourceFile is parsed by TestWecomMediaAllowListIsWiredAtBoot. Kept as
 // a constant so a rename shows up as one failing test rather than a silently
 // skipped guard.
-const routerSourceFile = "router.go"
+const assemblySourceFile = "application.go"
 
 const wecomMediaAllowEnv = "ORVILO_WECOM_MEDIA_ALLOW_CIDRS"
 
@@ -25,16 +25,16 @@ const wecomMediaAllowEnv = "ORVILO_WECOM_MEDIA_ALLOW_CIDRS"
 // hostname resolves into 198.18.0.0/15 and the guard therefore refuses every
 // download — had the exemption and no way to turn it on.
 //
-// This parses router.go rather than asserting on behaviour, for the same
-// reason TestMainUsesRouterOwnedBackgroundServices does: the regression being
+// This parses application.go rather than asserting on behaviour, for the same
+// reason TestMainUsesApplicationOwnedBackgroundServices does: the regression being
 // guarded is the absence of a call, and no value-level assertion can observe a
 // call that was never made. The allow-list itself lives in unexported package
 // state, so the only thing reachable from here is the wiring.
 func TestWecomMediaAllowListIsWiredAtBoot(t *testing.T) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, routerSourceFile, nil, 0)
+	file, err := parser.ParseFile(fset, assemblySourceFile, nil, 0)
 	if err != nil {
-		t.Fatalf("parse %s: %v", routerSourceFile, err)
+		t.Fatalf("parse %s: %v", assemblySourceFile, err)
 	}
 
 	var (
@@ -79,11 +79,11 @@ func TestWecomMediaAllowListIsWiredAtBoot(t *testing.T) {
 
 	if readsEnv == "" {
 		t.Errorf("no os.Getenv(%q) in %s — the media guard's allow-list has no operator switch again",
-			wecomMediaAllowEnv, routerSourceFile)
+			wecomMediaAllowEnv, assemblySourceFile)
 	}
 	if appliesIt == "" {
 		t.Errorf("no call to wecom.SetMediaAllowedPrefixes in %s — %s is read but never reaches the guard",
-			routerSourceFile, wecomMediaAllowEnv)
+			assemblySourceFile, wecomMediaAllowEnv)
 	}
 	if t.Failed() {
 		t.FailNow()

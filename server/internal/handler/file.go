@@ -250,12 +250,16 @@ func (h *Handler) buildMarkdownURL(a db.Attachment, id string) string {
 // fetch — the only case where it is safe to persist `a.Url` into a markdown
 // body that will outlive the current session.
 func (h *Handler) storageURLIsPubliclyReadable(rawURL string) bool {
-	if h.Storage == nil || h.CFSigner != nil {
+	return storageURLIsPubliclyReadable(h.Storage, h.CFSigner != nil, rawURL)
+}
+
+func storageURLIsPubliclyReadable(store storage.Storage, signedCDN bool, rawURL string) bool {
+	if store == nil || signedCDN {
 		// CFSigner != nil is per-request signing; the CDN domain serves
 		// private content via signed URLs and `a.Url` is the raw S3 URL.
 		return false
 	}
-	if h.Storage.CdnDomain() == "" {
+	if store.CdnDomain() == "" {
 		// No public-facing base URL configured — the storage's URL is
 		// the raw private object URL (S3 / R2 / MinIO) or a site-relative
 		// LocalStorage path that doesn't carry an origin.

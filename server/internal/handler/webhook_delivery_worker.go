@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
 	"github.com/orvilo-ai/orvilo/server/internal/service"
 
 	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
@@ -26,14 +27,17 @@ const (
 // lease both live in Postgres, so a process restart or replica failover simply
 // reclaims expired rows; the in-memory notification is only a latency hint.
 type WebhookDeliveryWorker struct {
-	h      *Handler
-	notify chan struct{}
-	done   chan struct{}
+	queries     *db.Queries
+	automations *service.AutomationService
+	rateLimiter WebhookRateLimiter
+	metrics     *obsmetrics.BusinessMetrics
+	notify      chan struct{}
+	done        chan struct{}
 }
 
-func NewWebhookDeliveryWorker(h *Handler) *WebhookDeliveryWorker {
+func NewWebhookDeliveryWorker(queries *db.Queries, automations *service.AutomationService, rateLimiter WebhookRateLimiter, metrics *obsmetrics.BusinessMetrics) *WebhookDeliveryWorker {
 	return &WebhookDeliveryWorker{
-		h:      h,
+		queries: queries, automations: automations, rateLimiter: rateLimiter, metrics: metrics,
 		notify: make(chan struct{}, webhookWorkerConcurrency),
 		done:   make(chan struct{}),
 	}
@@ -58,7 +62,7 @@ func (w *WebhookDeliveryWorker) Run(ctx context.Context) {
 		return
 	}
 	defer close(w.done)
-	if w.h == nil || w.h.Queries == nil {
+	if w.queries == nil {
 		return
 	}
 
@@ -111,7 +115,7 @@ func (w *WebhookDeliveryWorker) WaitWithTimeout(timeout time.Duration) bool {
 }
 
 func (w *WebhookDeliveryWorker) ProcessNext(ctx context.Context) (bool, error) {
-	delivery, err := w.h.Queries.ClaimQueuedWebhookDelivery(ctx)
+	delivery, err := w.queries.ClaimQueuedWebhookDelivery(ctx)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -119,15 +123,15 @@ func (w *WebhookDeliveryWorker) ProcessNext(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("claim queued delivery: %w", err)
 	}
 
-	if w.h.WebhookRateLimiter != nil {
+	if w.rateLimiter != nil {
 		key := uuidToString(delivery.TriggerID)
-		if !w.h.WebhookRateLimiter.Allow(ctx, key) {
-			w.h.Metrics.RecordWebhookRateLimited("worker_trigger")
-			retryAfter := slidingWindowLimiterRetryAfter(ctx, w.h.WebhookRateLimiter, key)
+		if !w.rateLimiter.Allow(ctx, key) {
+			w.metrics.RecordWebhookRateLimited("worker_trigger")
+			retryAfter := slidingWindowLimiterRetryAfter(ctx, w.rateLimiter, key)
 			if retryAfter <= 0 {
 				retryAfter = time.Second
 			}
-			_, err := w.h.Queries.DeferClaimedWebhookDelivery(ctx, db.DeferClaimedWebhookDeliveryParams{
+			_, err := w.queries.DeferClaimedWebhookDelivery(ctx, db.DeferClaimedWebhookDeliveryParams{
 				ID:          delivery.ID,
 				LeaseToken:  delivery.LeaseToken,
 				AvailableAt: pgtype.Timestamptz{Time: time.Now().Add(retryAfter), Valid: true},
@@ -137,11 +141,11 @@ func (w *WebhookDeliveryWorker) ProcessNext(ctx context.Context) (bool, error) {
 		}
 	}
 
-	trigger, err := w.h.Queries.GetAutomationTrigger(ctx, delivery.TriggerID)
+	trigger, err := w.queries.GetAutomationTrigger(ctx, delivery.TriggerID)
 	if err != nil {
 		return true, w.retryOrFail(ctx, delivery, fmt.Errorf("load trigger: %w", err))
 	}
-	automation, err := w.h.Queries.GetAutomation(ctx, delivery.AutomationID)
+	automation, err := w.queries.GetAutomation(ctx, delivery.AutomationID)
 	if err != nil {
 		return true, w.retryOrFail(ctx, delivery, fmt.Errorf("load automation: %w", err))
 	}
@@ -170,7 +174,7 @@ func (w *WebhookDeliveryWorker) ProcessNext(ctx context.Context) (bool, error) {
 	// skipped, that decision is durable. Re-check mutable trigger/automation
 	// state only for deliveries recovered from the pre-admission crash window;
 	// otherwise a pause immediately after the response could strand the run.
-	_, admissionErr := w.h.Queries.GetAutomationRunByWebhookDelivery(ctx, delivery.ID)
+	_, admissionErr := w.queries.GetAutomationRunByWebhookDelivery(ctx, delivery.ID)
 	hasAdmittedRun := admissionErr == nil
 	if admissionErr != nil && !errors.Is(admissionErr, pgx.ErrNoRows) {
 		return true, w.retryOrFail(ctx, delivery, fmt.Errorf("load admitted run: %w", admissionErr))
@@ -188,7 +192,7 @@ func (w *WebhookDeliveryWorker) ProcessNext(ctx context.Context) (bool, error) {
 		}
 	}
 
-	run, dispatchErr := w.h.AutomationService.DispatchAutomationForWebhookDelivery(
+	run, dispatchErr := w.automations.DispatchAutomationForWebhookDelivery(
 		ctx,
 		automation,
 		trigger.ID,
@@ -213,7 +217,7 @@ func (w *WebhookDeliveryWorker) ProcessNext(ctx context.Context) (bool, error) {
 		return true, w.complete(ctx, delivery, deliveryStatusFailed, run.ID, reason)
 	}
 
-	if err := w.h.Queries.TouchAutomationTriggerFiredAt(ctx, trigger.ID); err != nil {
+	if err := w.queries.TouchAutomationTriggerFiredAt(ctx, trigger.ID); err != nil {
 		slog.Warn("webhook worker: touch last_fired_at",
 			"delivery_id", uuidToString(delivery.ID),
 			"trigger_id", uuidToString(trigger.ID),
@@ -243,7 +247,7 @@ func (w *WebhookDeliveryWorker) complete(
 	if len(reasonCode) > 0 && reasonCode[0] != "" {
 		params.ReasonCode = pgtype.Text{String: reasonCode[0], Valid: true}
 	}
-	_, err := w.h.Queries.CompleteClaimedWebhookDelivery(ctx, params)
+	_, err := w.queries.CompleteClaimedWebhookDelivery(ctx, params)
 	lost, err := handleWebhookLeaseMutation("complete", delivery, err)
 	if err != nil {
 		return err
@@ -251,7 +255,7 @@ func (w *WebhookDeliveryWorker) complete(
 	if lost {
 		return nil
 	}
-	w.h.Metrics.RecordWebhookDelivery(delivery.Provider, status)
+	w.metrics.RecordWebhookDelivery(delivery.Provider, status)
 	return nil
 }
 
@@ -260,7 +264,7 @@ func (w *WebhookDeliveryWorker) retryOrFail(ctx context.Context, delivery db.Web
 		return w.complete(ctx, delivery, deliveryStatusFailed, pgtype.UUID{}, cause.Error())
 	}
 	backoff := time.Second * time.Duration(1<<min(delivery.DispatchAttempts, 6))
-	_, err := w.h.Queries.RetryClaimedWebhookDelivery(ctx, db.RetryClaimedWebhookDeliveryParams{
+	_, err := w.queries.RetryClaimedWebhookDelivery(ctx, db.RetryClaimedWebhookDeliveryParams{
 		ID:          delivery.ID,
 		LeaseToken:  delivery.LeaseToken,
 		AvailableAt: pgtype.Timestamptz{Time: time.Now().Add(backoff), Valid: true},

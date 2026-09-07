@@ -54,13 +54,13 @@ func TestGuestRouteContract(t *testing.T) {
 	var routerFunc *ast.FuncDecl
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if ok && fn.Name.Name == "NewRouterWithOptions" {
+		if ok && fn.Name.Name == "newRouter" {
 			routerFunc = fn
 			break
 		}
 	}
 	if routerFunc == nil || routerFunc.Body == nil {
-		t.Fatalf("NewRouterWithOptions not found in %s", routerFile)
+		t.Fatalf("newRouter not found in %s", routerFile)
 	}
 
 	var (

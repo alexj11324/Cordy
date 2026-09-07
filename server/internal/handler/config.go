@@ -158,7 +158,7 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 }
 
 func messagingCapabilitiesFromEnv() MessagingCapabilities {
-	appURL := resolveFrontendAppURL()
+	appURL := FrontendAppURLFromEnv()
 	officialCloud := isOfficialCloudDaemonConfig(appURL)
 	requested := strings.TrimSpace(os.Getenv("ORVILO_MESSAGING_MODE"))
 	configured := false
@@ -244,7 +244,7 @@ func daemonSetupURLsFromEnv() (string, string) {
 	if serverURL == "" {
 		serverURL = normalizePublicURL(os.Getenv("ORVILO_PUBLIC_URL"))
 	}
-	appURL := resolveFrontendAppURL()
+	appURL := FrontendAppURLFromEnv()
 	if appURL == "" {
 		return "", ""
 	}
@@ -258,11 +258,11 @@ func daemonSetupURLsFromEnv() (string, string) {
 	return serverURL, appURL
 }
 
-// resolveFrontendAppURL returns the operator-configured frontend origin
+// FrontendAppURLFromEnv returns the operator-configured frontend origin
 // (ORVILO_APP_URL, falling back to FRONTEND_ORIGIN), normalized. Shared by
 // the daemon-setup URLs and the managed-cloud detection so both read the same
 // signal.
-func resolveFrontendAppURL() string {
+func FrontendAppURLFromEnv() string {
 	appURL := normalizePublicURL(os.Getenv("ORVILO_APP_URL"))
 	if appURL == "" {
 		appURL = normalizePublicURL(os.Getenv("FRONTEND_ORIGIN"))
@@ -296,7 +296,7 @@ func isOfficialCloudDaemonConfig(appURL string) bool {
 // server-version row, which only matters to self-hosted operators — is gated on
 // this.
 func isOfficialCloudDeployment() bool {
-	return isOfficialCloudDaemonConfig(resolveFrontendAppURL())
+	return isOfficialCloudDaemonConfig(FrontendAppURLFromEnv())
 }
 
 func urlHostEquals(raw, want string) bool {

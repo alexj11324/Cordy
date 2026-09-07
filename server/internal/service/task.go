@@ -49,7 +49,7 @@ type TaskService struct {
 	// Coordination is the durable outbox producer/consumer. It is optional so
 	// focused task-service tests and deployments that have not generated the
 	// coordination queries yet retain the existing task lifecycle.
-	Coordination *AgentCoordinationService
+	Coordination TaskCoordination
 	// Entitlements supplies Cloud's workspace-scoped issue-count instruction.
 	// Nil keeps self-hosted and isolated test services unlimited.
 	Entitlements entitlement.Provider
@@ -98,6 +98,15 @@ type TaskService struct {
 	analyticsContextMu    sync.Mutex
 	analyticsContextCache map[string]analytics.TaskContext
 	analyticsContextOrder []string
+}
+
+// TaskCoordination is the transaction capability task and issue workflows need.
+// Worker lifecycle, review assignment and dispatch remain owned by coordination.
+type TaskCoordination interface {
+	RecordTaskCompletedTx(context.Context, *db.Queries, db.AgentTaskQueue) error
+	RecordReviewerTaskCancelledTx(context.Context, *db.Queries, db.AgentTaskQueue) error
+	RecordReviewEntryTx(context.Context, *db.Queries, db.Issue, pgtype.UUID, string) error
+	Wake()
 }
 
 // TerminalTaskTxHook lets a caller persist terminal side effects in the exact
@@ -7586,11 +7595,23 @@ func (s *TaskService) broadcastIssueUpdated(ctx context.Context, issue db.Issue,
 }
 
 func (s *TaskService) getIssuePrefix(workspaceID pgtype.UUID) string {
-	ws, err := s.Queries.GetWorkspace(context.Background(), workspaceID)
+	return issuePrefix(context.Background(), s.Queries, workspaceID)
+}
+
+func issuePrefix(ctx context.Context, queries *db.Queries, workspaceID pgtype.UUID) string {
+	ws, err := queries.GetWorkspace(ctx, workspaceID)
 	if err != nil {
 		return ""
 	}
 	return ws.IssuePrefix
+}
+
+// PublishQueuedTask projects a committed queue insertion and invalidates the
+// shared claim cache before waking its runtime. Issue creation and coordination
+// dispatch use the same post-commit capability.
+func (s *TaskService) PublishQueuedTask(ctx context.Context, task db.AgentTaskQueue) {
+	s.BroadcastTaskQueued(ctx, task)
+	s.NotifyTaskEnqueued(ctx, task)
 }
 
 // commentEventFields renders the `comment` object carried by comment:created

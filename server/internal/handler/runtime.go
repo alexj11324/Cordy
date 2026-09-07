@@ -790,38 +790,14 @@ func (h *Handler) ListAgentRuntimes(w http.ResponseWriter, r *http.Request) {
 // PublishRuntimeTeardown fans out a committed teardown. The caller controls
 // actor metadata and whether to append a runtime-list refresh so automatic GC
 // can deduplicate that refresh once per workspace and batch.
-func (h *Handler) PublishRuntimeTeardown(ctx context.Context, res service.RuntimeTeardownResult, wsID, actorType, actorID, action string, publishRuntimeRefresh bool) {
-	// The teardown transaction has already committed when this post-commit
-	// publisher is called. Delete only the system-agent chat objects collected
-	// inside that transaction; user-agent sessions and task history survive.
-	h.deleteS3Objects(ctx, res.AttachmentURLs)
-	if h.TaskService != nil && len(res.CancelledTasks) > 0 {
-		// The teardown deletes the runtime's system agents, and a system agent's
-		// chat sessions go with it, so the workspace of a cancelled chat task is
-		// no longer resolvable from the task row. It is this workspace.
-		h.TaskService.BroadcastCancelledTasks(ctx, wsID, res.CancelledTasks)
-	}
-	for _, a := range res.UnboundAgents {
-		// agent:status is the generic "this agent changed" broadcast the agent
-		// update path already uses; subscribers refresh the row and see
-		// runtime_bound=false. No agent:archived here — nothing was archived.
-		h.publish(protocol.EventAgentStatus, wsID, actorType, actorID, map[string]any{
-			"agent": broadcastAgentResponse(h.agentToResponse(a)),
-		})
-	}
-	for _, a := range res.PausedAutomations {
-		h.publish(protocol.EventAutomationUpdated, wsID, actorType, actorID, map[string]any{
-			"automation": automationToResponse(a, nil),
-		})
-	}
-	if publishRuntimeRefresh {
-		h.PublishRuntimeRefresh(wsID, actorType, actorID, action)
-	}
+func (h *Handler) PublishRuntimeTeardown(ctx context.Context, res service.RuntimeTeardownResult, wsID, actorType, actorID, action string, publishRefresh bool) {
+	publisher := NewRuntimeEventPublisher(h.Storage, h.cfg.PublicURL, h.CFSigner != nil, h.TaskService, h.Bus)
+	publisher.PublishRuntimeTeardown(ctx, res, wsID, actorType, actorID, action, publishRefresh)
 }
 
-// PublishRuntimeRefresh asks connected clients to refetch runtime state.
 func (h *Handler) PublishRuntimeRefresh(wsID, actorType, actorID, action string) {
-	h.publish(protocol.EventDaemonRegister, wsID, actorType, actorID, map[string]any{"action": action})
+	publisher := NewRuntimeEventPublisher(h.Storage, h.cfg.PublicURL, h.CFSigner != nil, h.TaskService, h.Bus)
+	publisher.PublishRuntimeRefresh(wsID, actorType, actorID, action)
 }
 
 func (h *Handler) publishRuntimeTeardown(ctx context.Context, res service.RuntimeTeardownResult, wsID, userID string) {

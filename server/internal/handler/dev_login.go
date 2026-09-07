@@ -177,11 +177,11 @@ func (h *Handler) DevLogin(w http.ResponseWriter, r *http.Request) {
 	slog.Info("dev login", append(logger.RequestAttrs(r), "user_id", uuidToString(user.ID), "email", user.Email)...)
 
 	if r.Method == http.MethodGet {
-		// resolveFrontendAppURL is the repository's app-URL contract
+		// FrontendAppURLFromEnv is the repository's app-URL contract
 		// (ORVILO_APP_URL, then FRONTEND_ORIGIN); a deployment where the two
 		// differ means the browser to land on the configured app, not on
 		// whatever origin the cookie flags happen to be derived from.
-		http.Redirect(w, r, resolveFrontendAppURL()+devLoginRedirect(req.Redirect), http.StatusFound)
+		http.Redirect(w, r, FrontendAppURLFromEnv()+devLoginRedirect(req.Redirect), http.StatusFound)
 		return
 	}
 	writeJSON(w, http.StatusOK, LoginResponse{Token: token, User: h.userToResponse(user)})

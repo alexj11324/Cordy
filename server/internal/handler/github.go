@@ -19,6 +19,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
@@ -1024,23 +1026,29 @@ func (h *Handler) DeleteGitHubInstallation(w http.ResponseWriter, r *http.Reques
 // once an API snapshot is written to a PR row, re-broadcast the PR so every
 // open issue detail page re-queries its PR list and picks up the fresh CI /
 // mergeability state. Runs on a background pipeline goroutine.
-func (h *Handler) broadcastPRSnapshotApplied(ctx context.Context, prID pgtype.UUID) {
-	pr, err := h.Queries.GetGitHubPullRequestByID(ctx, prID)
-	if err != nil {
-		return
+// NewPRSnapshotEventSink projects snapshot changes without retaining an HTTP Handler.
+func NewPRSnapshotEventSink(queries *db.Queries, bus *events.Bus, enabled bool) func(context.Context, pgtype.UUID) {
+	return func(ctx context.Context, prID pgtype.UUID) {
+		pr, err := queries.GetGitHubPullRequestByID(ctx, prID)
+		if err != nil {
+			return
+		}
+		issueIDs, err := queries.ListIssueIDsForPullRequest(ctx, prID)
+		if err != nil {
+			return
+		}
+		linked := make([]string, 0, len(issueIDs))
+		for _, id := range issueIDs {
+			linked = append(linked, uuidToString(id))
+		}
+		if bus == nil {
+			return
+		}
+		bus.Publish(events.Event{Type: protocol.EventPullRequestUpdated, WorkspaceID: uuidToString(pr.WorkspaceID), ActorType: "system", Payload: map[string]any{
+			"pull_request":     githubPullRequestToResponse(pr, enabled),
+			"linked_issue_ids": linked,
+		}})
 	}
-	issueIDs, err := h.Queries.ListIssueIDsForPullRequest(ctx, prID)
-	if err != nil {
-		return
-	}
-	linked := make([]string, 0, len(issueIDs))
-	for _, id := range issueIDs {
-		linked = append(linked, uuidToString(id))
-	}
-	h.publish(protocol.EventPullRequestUpdated, uuidToString(pr.WorkspaceID), "system", "", map[string]any{
-		"pull_request":     githubPullRequestToResponse(pr, h.PRRefresh != nil && h.PRRefresh.Enabled()),
-		"linked_issue_ids": linked,
-	})
 }
 
 // ── Webhook ─────────────────────────────────────────────────────────────────

@@ -31,13 +31,7 @@ func registerSubscriberListeners(bus *events.Bus, pool *pgxpool.Pool) {
 	queries := db.New(pool)
 	// issue:created — subscribe creator plus each explicit issue role.
 	bus.Subscribe(protocol.EventIssueCreated, func(e events.Event) {
-		payload, ok := e.Payload.(map[string]any)
-		if !ok {
-			return
-		}
-		// Issues created via handler use IssueResponse; automation-created issues
-		// use map[string]any (see service/automation.go → IssueToMap).
-		issue, ok := extractIssueFields(payload["issue"])
+		issue, ok := issueCreatedForSubscribers(e)
 		if !ok {
 			return
 		}

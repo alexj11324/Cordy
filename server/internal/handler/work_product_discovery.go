@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/ghsnapshot"
 	"github.com/orvilo-ai/orvilo/server/internal/middleware"
 	"github.com/orvilo-ai/orvilo/server/internal/util"
@@ -32,7 +33,11 @@ const (
 // The queue is intentionally database-backed: a server restart, a GitHub rate
 // limit, or a daemon disconnect must not lose the association attempt.
 type WorkProductDiscoveryRuntime struct {
-	handler   *Handler
+	queries   *db.Queries
+	db        dbExecutor
+	tx        txStarter
+	prRefresh *ghsnapshot.Manager
+	bus       *events.Bus
 	interval  time.Duration
 	batchSize int32
 
@@ -40,9 +45,9 @@ type WorkProductDiscoveryRuntime struct {
 	started bool
 }
 
-func NewWorkProductDiscoveryRuntime(h *Handler) *WorkProductDiscoveryRuntime {
+func NewWorkProductDiscoveryRuntime(queries *db.Queries, executor dbExecutor, tx txStarter, prRefresh *ghsnapshot.Manager, bus *events.Bus) *WorkProductDiscoveryRuntime {
 	return &WorkProductDiscoveryRuntime{
-		handler:   h,
+		queries: queries, db: executor, tx: tx, prRefresh: prRefresh, bus: bus,
 		interval:  workProductDiscoveryInterval,
 		batchSize: workProductDiscoveryBatch,
 	}
@@ -52,7 +57,7 @@ func NewWorkProductDiscoveryRuntime(h *Handler) *WorkProductDiscoveryRuntime {
 // configured: those rows converge to an explicit ineligible result instead of
 // silently remaining pending forever.
 func (r *WorkProductDiscoveryRuntime) Start(ctx context.Context) {
-	if r == nil || r.handler == nil {
+	if r == nil {
 		return
 	}
 	r.mu.Lock()
@@ -81,16 +86,16 @@ func (r *WorkProductDiscoveryRuntime) Start(ctx context.Context) {
 // DrainOnce is exported for focused acceptance tests and for terminal paths
 // that want to kick the queue without waiting for the ticker.
 func (r *WorkProductDiscoveryRuntime) DrainOnce(ctx context.Context) {
-	if r == nil || r.handler == nil || r.handler.Queries == nil || r.handler.DB == nil {
+	if r == nil || r.queries == nil || r.db == nil {
 		return
 	}
-	rows, err := r.handler.Queries.ListPendingExecutionDiscoveryTasks(ctx, r.batchSize)
+	rows, err := r.queries.ListPendingExecutionDiscoveryTasks(ctx, r.batchSize)
 	if err != nil {
 		slog.Warn("work product discovery: list pending tasks failed", "error", err)
 		return
 	}
 	for _, row := range rows {
-		task, taskErr := r.handler.Queries.GetAgentTaskInWorkspace(ctx, db.GetAgentTaskInWorkspaceParams{
+		task, taskErr := r.queries.GetAgentTaskInWorkspace(ctx, db.GetAgentTaskInWorkspaceParams{
 			ID:          row.TaskID,
 			WorkspaceID: row.WorkspaceID,
 		})
@@ -206,15 +211,15 @@ func normalizeWorkProductExecutionFacts(facts workProductExecutionFacts, task db
 // terminal fields; this is what makes the endpoint a rolling-compatible
 // enhancement without inventing a second provenance row.
 func (r *WorkProductDiscoveryRuntime) Schedule(ctx context.Context, task db.AgentTaskQueue, workspaceID pgtype.UUID, facts workProductExecutionFacts) error {
-	if r == nil || r.handler == nil || r.handler.DB == nil || r.handler.Queries == nil || r.handler.TxStarter == nil {
+	if r == nil || r.db == nil || r.queries == nil || r.tx == nil {
 		return errors.New("database unavailable")
 	}
-	tx, err := r.handler.TxStarter.Begin(ctx)
+	tx, err := r.tx.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	rollback := func() { _ = tx.Rollback(ctx) }
-	if err := r.prepareTerminalHandoff(ctx, tx, r.handler.Queries.WithTx(tx), task, workspaceID, facts); err != nil {
+	if err := r.prepareTerminalHandoff(ctx, tx, r.queries.WithTx(tx), task, workspaceID, facts); err != nil {
 		rollback()
 		return err
 	}
@@ -232,7 +237,7 @@ func (r *WorkProductDiscoveryRuntime) Schedule(ctx context.Context, task db.Agen
 // Schedule uses the same helper for cancellation acknowledgements and the
 // standalone provenance endpoint.
 func (r *WorkProductDiscoveryRuntime) prepareTerminalHandoff(ctx context.Context, executor dbExecutor, queries *db.Queries, task db.AgentTaskQueue, workspaceID pgtype.UUID, facts workProductExecutionFacts) error {
-	if r == nil || r.handler == nil || executor == nil || queries == nil {
+	if r == nil || executor == nil || queries == nil {
 		return errors.New("database unavailable")
 	}
 	values, err := normalizeWorkProductExecutionFacts(facts, task)
@@ -451,7 +456,7 @@ func (r *WorkProductDiscoveryRuntime) discoverTask(ctx context.Context, task db.
 	} else if skipped {
 		return nil
 	}
-	items, err := r.handler.Queries.ListExecutionProvenanceByTask(ctx, db.ListExecutionProvenanceByTaskParams{
+	items, err := r.queries.ListExecutionProvenanceByTask(ctx, db.ListExecutionProvenanceByTaskParams{
 		WorkspaceID: workspaceID,
 		TaskID:      task.ID,
 	})
@@ -477,7 +482,7 @@ func (r *WorkProductDiscoveryRuntime) discoverTask(ctx context.Context, task db.
 }
 
 func (r *WorkProductDiscoveryRuntime) claim(ctx context.Context, item db.AgentTaskExecutionProvenance) (db.AgentTaskExecutionProvenance, bool, error) {
-	claimed, err := scanWorkProductProvenance(r.handler.DB.QueryRow(ctx, `
+	claimed, err := scanWorkProductProvenance(r.db.QueryRow(ctx, `
 UPDATE agent_task_execution_provenance
 SET discovery_status = 'in_progress',
     discovery_lease_id = gen_random_uuid(),
@@ -528,7 +533,7 @@ func (r *WorkProductDiscoveryRuntime) discoverOne(ctx context.Context, task db.A
 	if !task.AgentID.Valid {
 		return finish("ineligible", "missing_task_agent", 0, pgtype.UUID{})
 	}
-	workspace, err := r.handler.Queries.GetWorkspace(ctx, item.WorkspaceID)
+	workspace, err := r.queries.GetWorkspace(ctx, item.WorkspaceID)
 	if err != nil {
 		if isNotFound(err) {
 			return finish("ineligible", "workspace_not_found", 0, pgtype.UUID{})
@@ -544,13 +549,13 @@ func (r *WorkProductDiscoveryRuntime) discoverOne(ctx context.Context, task db.A
 	if len(parts) != 2 {
 		return finish("ineligible", "invalid_repository_identity", 0, pgtype.UUID{})
 	}
-	if r.handler.PRRefresh == nil || !r.handler.PRRefresh.Enabled() {
+	if r.prRefresh == nil || !r.prRefresh.Enabled() {
 		return finish("ineligible", "github_app_not_configured", 0, pgtype.UUID{})
 	}
-	if r.handler.TxStarter == nil {
+	if r.tx == nil {
 		return errors.New("database unavailable")
 	}
-	tx, err := r.handler.TxStarter.Begin(ctx)
+	tx, err := r.tx.Begin(ctx)
 	if err != nil {
 		return err
 	}
@@ -617,7 +622,7 @@ WHERE workspace_id = $1 AND repo_identity = $2 AND head_branch = $3
 	// task/branch/lease locks and explicit-relation recheck. This is the same
 	// fence used by Rust: a slow GitHub response cannot race a manual attach or
 	// let a stale discovery result become authoritative after a competing claim.
-	installations, err := r.handler.Queries.WithTx(tx).ListGitHubInstallationsByWorkspace(ctx, item.WorkspaceID)
+	installations, err := r.queries.WithTx(tx).ListGitHubInstallationsByWorkspace(ctx, item.WorkspaceID)
 	if err != nil {
 		rollback()
 		return err
@@ -639,7 +644,7 @@ WHERE workspace_id = $1 AND repo_identity = $2 AND head_branch = $3
 	seenNumbers := make(map[int32]struct{})
 	matchInstallationIDs := make(map[int32]int64)
 	for _, installation := range installations {
-		found, lookupError := r.handler.PRRefresh.PullRequestsByHead(ctx, installation.InstallationID, parts[0], parts[1], branch)
+		found, lookupError := r.prRefresh.PullRequestsByHead(ctx, installation.InstallationID, parts[0], parts[1], branch)
 		if lookupError != nil {
 			lookupErr = true
 			continue
@@ -719,12 +724,12 @@ WHERE workspace_id = $1 AND repo_identity = $2 AND head_branch = $3
 	}
 
 	selected := matches[0]
-	mirrored, err := r.handler.Queries.WithTx(tx).UpsertGitHubPullRequest(ctx, githubPullRequestUpsertParams(item.WorkspaceID, matchInstallationIDs[selected.Number], parts[0], parts[1], selected.Metadata))
+	mirrored, err := r.queries.WithTx(tx).UpsertGitHubPullRequest(ctx, githubPullRequestUpsertParams(item.WorkspaceID, matchInstallationIDs[selected.Number], parts[0], parts[1], selected.Metadata))
 	if err != nil {
 		rollback()
 		return err
 	}
-	product, err := r.handler.Queries.WithTx(tx).CreateWorkProduct(ctx, db.CreateWorkProductParams{
+	product, err := r.queries.WithTx(tx).CreateWorkProduct(ctx, db.CreateWorkProductParams{
 		WorkspaceID:        item.WorkspaceID,
 		Kind:               "pull_request",
 		Provider:           "github",
@@ -835,7 +840,7 @@ func (r *WorkProductDiscoveryRuntime) taskRepositoryAuthorized(ctx context.Conte
 	}
 	projectIDs := make(map[string]pgtype.UUID)
 	if task.IssueID.Valid {
-		issue, err := r.handler.Queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: task.IssueID, WorkspaceID: workspace.ID})
+		issue, err := r.queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: task.IssueID, WorkspaceID: workspace.ID})
 		if err != nil && !isNotFound(err) {
 			return false, err
 		}
@@ -844,7 +849,7 @@ func (r *WorkProductDiscoveryRuntime) taskRepositoryAuthorized(ctx context.Conte
 		}
 	}
 	if task.ChatSessionID.Valid {
-		session, err := r.handler.Queries.GetChatSessionInWorkspace(ctx, db.GetChatSessionInWorkspaceParams{ID: task.ChatSessionID, WorkspaceID: workspace.ID})
+		session, err := r.queries.GetChatSessionInWorkspace(ctx, db.GetChatSessionInWorkspaceParams{ID: task.ChatSessionID, WorkspaceID: workspace.ID})
 		if err != nil && !isNotFound(err) {
 			return false, err
 		}
@@ -853,7 +858,7 @@ func (r *WorkProductDiscoveryRuntime) taskRepositoryAuthorized(ctx context.Conte
 		}
 	}
 	for _, projectID := range projectIDs {
-		resources, err := r.handler.Queries.ListProjectResources(ctx, projectID)
+		resources, err := r.queries.ListProjectResources(ctx, projectID)
 		if err != nil {
 			return false, err
 		}
@@ -875,10 +880,10 @@ func (r *WorkProductDiscoveryRuntime) taskRepositoryAuthorized(ctx context.Conte
 }
 
 func (r *WorkProductDiscoveryRuntime) markPending(ctx context.Context, workspaceID, taskID pgtype.UUID) error {
-	if r.handler.DB == nil {
+	if r.db == nil {
 		return errors.New("database unavailable")
 	}
-	return markPendingWorkProductDiscovery(ctx, r.handler.DB, workspaceID, taskID)
+	return markPendingWorkProductDiscovery(ctx, r.db, workspaceID, taskID)
 }
 
 func markPendingWorkProductDiscovery(ctx context.Context, executor dbExecutor, workspaceID, taskID pgtype.UUID) error {
@@ -897,10 +902,10 @@ WHERE workspace_id = $1 AND task_id = $2 AND discovery_status = 'not_attempted'`
 }
 
 func (r *WorkProductDiscoveryRuntime) markExplicitRelation(ctx context.Context, workspaceID, taskID pgtype.UUID) (bool, error) {
-	if r.handler.DB == nil {
+	if r.db == nil {
 		return false, errors.New("database unavailable")
 	}
-	return markExplicitWorkProductRelation(ctx, r.handler.DB, workspaceID, taskID)
+	return markExplicitWorkProductRelation(ctx, r.db, workspaceID, taskID)
 }
 
 func markExplicitWorkProductRelation(ctx context.Context, executor dbExecutor, workspaceID, taskID pgtype.UUID) (bool, error) {
@@ -928,7 +933,7 @@ WHERE provenance.workspace_id = $1 AND provenance.task_id = $2
 }
 
 func (r *WorkProductDiscoveryRuntime) markMissingTask(ctx context.Context, workspaceID, taskID pgtype.UUID) error {
-	_, err := r.handler.DB.Exec(ctx, `
+	_, err := r.db.Exec(ctx, `
 UPDATE agent_task_execution_provenance
 SET discovery_status = 'ineligible',
     discovery_lease_id = NULL,
@@ -943,7 +948,7 @@ WHERE workspace_id = $1 AND task_id = $2
 var errWorkProductDiscoveryLeaseLost = errors.New("work product discovery lease lost")
 
 func (r *WorkProductDiscoveryRuntime) record(ctx context.Context, item db.AgentTaskExecutionProvenance, status string, matchCount int32, reason string, productID pgtype.UUID) error {
-	return recordWorkProductDiscoveryExec(ctx, r.handler.DB, item, status, matchCount, reason, productID)
+	return recordWorkProductDiscoveryExec(ctx, r.db, item, status, matchCount, reason, productID)
 }
 
 func recordWorkProductDiscoveryExec(ctx context.Context, executor dbExecutor, item db.AgentTaskExecutionProvenance, status string, matchCount int32, reason string, productID pgtype.UUID) error {
@@ -977,17 +982,17 @@ WHERE workspace_id = $1 AND task_id = $2
 }
 
 func (r *WorkProductDiscoveryRuntime) publishDiscovery(item db.AgentTaskExecutionProvenance, task db.AgentTaskQueue, pr db.GithubPullRequest, relation db.WorkProductRelation) {
-	if r.handler.Bus == nil {
+	if r.bus == nil {
 		return
 	}
 	linkedIssueIDs := []string{}
 	if task.IssueID.Valid {
 		linkedIssueIDs = append(linkedIssueIDs, uuidToString(task.IssueID))
 	}
-	snapshotEnabled := r.handler.PRRefresh != nil && r.handler.PRRefresh.Enabled()
-	r.handler.publish(protocol.EventPullRequestUpdated, uuidToString(item.WorkspaceID), "agent", uuidToString(task.AgentID), map[string]any{
+	snapshotEnabled := r.prRefresh != nil && r.prRefresh.Enabled()
+	r.bus.Publish(events.Event{Type: protocol.EventPullRequestUpdated, WorkspaceID: uuidToString(item.WorkspaceID), ActorType: "agent", ActorID: uuidToString(task.AgentID), Payload: map[string]any{
 		"pull_request":     githubPullRequestToResponse(pr, snapshotEnabled),
 		"linked_issue_ids": linkedIssueIDs,
 		"relation":         relation,
-	})
+	}})
 }

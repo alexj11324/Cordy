@@ -441,7 +441,19 @@ type Handler struct {
 	cfg                  Config
 }
 
-func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *events.Bus, emailService *service.EmailService, store storage.Storage, cfSigner *auth.CloudFrontSigner, analyticsClient analytics.Client, cfg Config, daemonHubs ...*daemonws.Hub) *Handler {
+// Services contains application-owned business capabilities. Handler adapts HTTP
+// requests to these instances; it does not construct or start them.
+type Services struct {
+	Tasks                 *service.TaskService
+	Coordination          *service.AgentCoordinationService
+	Issues                *service.IssueService
+	Automations           *service.AutomationService
+	Plugins               *service.PluginService
+	ProviderAuthorization *service.ProviderAuthorizationService
+	LLM                   *llm.Client
+}
+
+func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *events.Bus, emailService *service.EmailService, store storage.Storage, cfSigner *auth.CloudFrontSigner, analyticsClient analytics.Client, cfg Config, services Services, daemonHubs ...*daemonws.Hub) *Handler {
 	var executor dbExecutor
 	if candidate, ok := txStarter.(dbExecutor); ok {
 		executor = candidate
@@ -471,35 +483,6 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		daemonWorkspaceRefresh = daemonHub
 	}
 
-	llmClient := llm.New(llm.Config{
-		APIKey:       cfg.LLMAPIKey,
-		BaseURL:      cfg.LLMBaseURL,
-		DefaultModel: cfg.LLMDefaultModel,
-		MaxRetries:   cfg.LLMMaxRetries,
-	})
-	// Report the effective retry policy so an operator can confirm from the
-	// boot log alone what a misbehaving upstream will cost, instead of inferring
-	// it from an env var whose semantics used to be unguessable (MUL-6364).
-	// Read off the client, not off cfg, so the line cannot drift from what the
-	// SDK actually enforces. Counts and an enum only — never the key or the base
-	// URL, since a self-hosted gateway URL routinely embeds a token.
-	llmRetry := llmClient.RetryBudget()
-	slog.Info("llm retry policy",
-		"max_retries", llmRetry.MaxRetries,
-		"source", llmRetry.Source,
-		"request_timeout", llmRetry.RequestTimeout,
-		"enabled", llmClient.Enabled(),
-	)
-
-	taskSvc := service.NewTaskService(queries, txStarter, hub, bus, daemonHub)
-	taskSvc.Analytics = analyticsClient
-	taskSvc.SourceContextStorage = store
-	// Chat follow-up suggestions run through the same internal LLM layer that
-	// backs auto-titling. A deployment with no ORVILO_LLM_* configuration gets
-	// a disabled client, which turns the feature off rather than failing.
-	taskSvc.QuickActions = llmClient
-	coordinationSvc := service.NewAgentCoordinationService(queries, txStarter, taskSvc)
-	taskSvc.Coordination = coordinationSvc
 	h := &Handler{
 		Queries:                      queries,
 		DB:                           executor,
@@ -509,12 +492,12 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 		DaemonProfileRefresh:         daemonProfileRefresh,
 		DaemonWorkspaceRefresh:       daemonWorkspaceRefresh,
 		Bus:                          bus,
-		TaskService:                  taskSvc,
-		AgentCoordination:            coordinationSvc,
-		PluginService:                service.NewPluginService(queries, txStarter),
-		IssueService:                 service.NewIssueService(queries, txStarter, bus, analyticsClient, taskSvc),
-		AutomationService:            service.NewAutomationService(queries, txStarter, bus, taskSvc),
-		ProviderAuthorization:        service.NewProviderAuthorizationService(queries),
+		TaskService:                  services.Tasks,
+		AgentCoordination:            services.Coordination,
+		PluginService:                services.Plugins,
+		IssueService:                 services.Issues,
+		AutomationService:            services.Automations,
+		ProviderAuthorization:        services.ProviderAuthorization,
 		EmailService:                 emailService,
 		UpdateStore:                  NewInMemoryUpdateStore(),
 		ModelListStore:               NewInMemoryModelListStore(),
@@ -534,7 +517,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 			BaseURL: cfg.CloudURL,
 			Timeout: cfg.CloudTimeout,
 		}),
-		LLM: llmClient,
+		LLM: services.LLM,
 		cfg: cfg,
 	}
 	clerkAuth, err := newClerkAuthClient(cfg)
@@ -543,19 +526,6 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	} else {
 		h.ClerkAuth = clerkAuth
 	}
-	h.WebhookDeliveryWorker = NewWebhookDeliveryWorker(h)
-
-	// GitHub API snapshot pipeline for PR cards (MUL-5265). Built
-	// unconditionally but inert (every trigger no-ops) when the App private key
-	// is unconfigured, so the feature degrades cleanly. main.go calls
-	// h.PRRefresh.Start(ctx) to launch its worker pool + TTL sweeper.
-	ghClient, err := ghsnapshot.NewClientFromEnv()
-	if err != nil {
-		// Malformed key is operator-actionable; the pipeline stays disabled.
-		slog.Warn("github: PR snapshot pipeline disabled (invalid App private key)", "err", err)
-	}
-	h.PRRefresh = ghsnapshot.NewManager(ghClient, queries, txStarter, h.broadcastPRSnapshotApplied)
-	h.WorkProductDiscovery = NewWorkProductDiscoveryRuntime(h)
 
 	if cfg.HostedDesktopIdentity {
 		h.redeemDesktopIdentity = redeemHostedDesktopIdentity
