@@ -697,12 +697,14 @@ describe("AutomationDetailPage settings layout", () => {
     expect(await screen.findByTestId("automation-settings-title")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run now" })).toBeDisabled();
 
-    const connectHrefs = (await screen.findAllByRole("link", { name: /Connect/ }))
-      .map((node) => node.getAttribute("href"));
-    expect(connectHrefs).toEqual(expect.arrayContaining([
-      "/acme/settings?tab=github",
-      "/acme/settings?tab=integrations",
-    ]));
+    await waitFor(() => {
+      const connectHrefs = screen.getAllByRole("link", { name: /Connect/ })
+        .map((node) => node.getAttribute("href"));
+      expect(connectHrefs).toEqual(expect.arrayContaining([
+        "/acme/settings?tab=github",
+        "/acme/settings?tab=integrations",
+      ]));
+    });
 
     await user.click(screen.getByRole("switch", { name: "Activate automation" }));
     expect(mocks.updateAutomation).toHaveBeenCalledWith({ id: "auto-1", status: "active" }, expect.any(Object));
