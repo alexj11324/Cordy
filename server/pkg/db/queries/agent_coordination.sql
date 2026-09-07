@@ -262,7 +262,9 @@ WHERE agent.id = sqlc.arg('agent_id')
   );
 
 -- Selects or locks the reviewer that may receive a coordinator handoff. A
--- non-nil reviewer_id revalidates an explicit reviewer; NULL selects the
+-- explicit_reviewer revalidates a user-selected reviewer without requiring an
+-- additional workspace/team default role; automatic reviewers retain that role
+-- requirement even while revalidating an already selected reviewer_id. NULL selects the
 -- workspace/team reviewer role using the same capacity reservation rule.
 -- The assignment reservation is excluded during revalidation so the selected
 -- reviewer is not counted against its own slot.
@@ -293,6 +295,8 @@ WHERE a.workspace_id = sqlc.arg('workspace_id')
   AND (sqlc.narg('reviewer_id')::uuid IS NULL OR a.id = sqlc.narg('reviewer_id')::uuid)
   AND (sqlc.narg('source_agent_id')::uuid IS NULL OR a.id <> sqlc.narg('source_agent_id')::uuid)
   AND (
+      (sqlc.arg('explicit_reviewer')::boolean AND sqlc.narg('reviewer_id')::uuid IS NOT NULL)
+      OR
       EXISTS (
           SELECT 1
           FROM team_member AS tm

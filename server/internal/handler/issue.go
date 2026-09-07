@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"sort"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -393,6 +393,15 @@ func (h *Handler) validateOwnerPair(ctx context.Context, workspaceID pgtype.UUID
 		return http.StatusBadRequest, "owner_id does not refer to a member of this workspace"
 	}
 	return 0, ""
+}
+
+func (h *Handler) validateReviewerPair(ctx context.Context, r *http.Request, workspaceID string, reviewerType pgtype.Text, reviewerID pgtype.UUID, scope assignAuthorityScope) (int, string) {
+	if reviewerType.Valid && reviewerType.String == "member" {
+		status, message := h.validateOwnerPair(ctx, parseUUID(workspaceID), reviewerType, reviewerID)
+		return status, strings.ReplaceAll(message, "owner", "reviewer")
+	}
+	status, message := h.validateExecutorPair(ctx, r, workspaceID, reviewerType, reviewerID, scope)
+	return status, strings.ReplaceAll(message, "executor", "reviewer")
 }
 
 func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
@@ -3243,6 +3252,10 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, msg)
 		return
 	}
+	if code, msg := h.validateReviewerPair(r.Context(), r, workspaceID, reviewerType, reviewerID, assignScope); code != 0 {
+		writeError(w, code, msg)
+		return
+	}
 	if !h.enforceIssueWorkflowGate(r.Context(), w, wsUUID, "", status, actorRefOrNil(executorType, executorID), actorRefOrNil(reviewerType, reviewerID)) {
 		return
 	}
@@ -3674,8 +3687,12 @@ func refreshUntouchedNullableIssueParams(params *db.UpdateIssueParams, current d
 
 var errIssueFieldConflict = errors.New("issue text field conflict")
 var errIssueReviewTransitionRace = errors.New("issue review transition changed while locking reviewer tasks")
+var errIssueWorkflowRace = errors.New("issue workflow changed while locking the issue")
 
 type issueReviewWritePlan struct {
+	actorUserID       pgtype.UUID
+	reviewerType      pgtype.Text
+	reviewerID        pgtype.UUID
 	lockReviewerTasks bool
 	suppressRun       bool
 	handoffNote       string
@@ -3705,7 +3722,7 @@ func issueReviewTransitionFlags(
 	queries *db.Queries,
 	previous db.Issue,
 	next db.Issue,
-) (leavingReview bool, reviewerReassigned bool) {
+) (leavingReview bool, reviewerReassigned bool, enteringReview bool) {
 	previousCategory := issuestatus.Effective(ctx, queries, previous.WorkspaceID, previous.Status)
 	nextCategory := issuestatus.Effective(ctx, queries, next.WorkspaceID, next.Status)
 	return leavesReviewForImplementation(previousCategory, nextCategory),
@@ -3716,7 +3733,7 @@ func issueReviewTransitionFlags(
 			uuidToPtr(previous.ReviewerID),
 			textToPtr(next.ReviewerType),
 			uuidToPtr(next.ReviewerID),
-		)
+		), previousCategory != issuestatus.InReview && nextCategory == issuestatus.InReview
 }
 
 func (h *Handler) updateIssueAtomically(ctx context.Context, workspaceID pgtype.UUID, params db.UpdateIssueParams, rawFields map[string]json.RawMessage, titleBase, descriptionBase *string, attachmentIDs []pgtype.UUID, statusKey string, reviewPlan *issueReviewWritePlan) (db.Issue, db.Issue, bool, error) {
@@ -3820,11 +3837,21 @@ func (h *Handler) updateIssueAtomically(ctx context.Context, workspaceID pgtype.
 		}
 	}
 
-	leavingReview, reviewerReassigned := issueReviewTransitionFlags(ctx, qtx, current, issue)
-	if (leavingReview || reviewerReassigned) && (reviewPlan == nil || !reviewPlan.lockReviewerTasks) {
+	if issueroles.WorkflowGate(
+		issuestatus.Effective(ctx, qtx, current.WorkspaceID, current.Status),
+		issuestatus.Effective(ctx, qtx, issue.WorkspaceID, issue.Status),
+		actorRefOrNil(issue.ExecutorType, issue.ExecutorID), actorRefOrNil(issue.ReviewerType, issue.ReviewerID),
+	) != nil {
+		return db.Issue{}, current, false, errIssueWorkflowRace
+	}
+	leavingReview, reviewerReassigned, enteringReview := issueReviewTransitionFlags(ctx, qtx, current, issue)
+	if (leavingReview || reviewerReassigned || enteringReview) && (reviewPlan == nil || !reviewPlan.lockReviewerTasks) {
 		return db.Issue{}, current, false, errIssueReviewTransitionRace
 	}
-	if leavingReview || reviewerReassigned {
+	if leavingReview || reviewerReassigned || enteringReview {
+		if enteringReview && !actorRefsEqual(textToPtr(issue.ReviewerType), uuidToPtr(issue.ReviewerID), textToPtr(reviewPlan.reviewerType), uuidToPtr(reviewPlan.reviewerID)) {
+			return db.Issue{}, current, false, errIssueReviewTransitionRace
+		}
 		retired, retireErr := h.AgentCoordination.RetireLockedReviewerTasksForReviewReturnTx(ctx, qtx, lockedReviewerTaskIDs)
 		if retireErr != nil {
 			return db.Issue{}, current, false, retireErr
@@ -3835,6 +3862,12 @@ func (h *Handler) updateIssueAtomically(ctx context.Context, workspaceID pgtype.
 			sourceTaskID = retired[0].ID
 		}
 		if !reviewPlan.suppressRun {
+			if enteringReview {
+				if err := h.AgentCoordination.RecordReviewEntryTx(ctx, qtx, issue, reviewPlan.actorUserID, reviewPlan.handoffNote); err != nil {
+					return db.Issue{}, current, false, err
+				}
+				reviewPlan.recordedHandoff = true
+			}
 			if leavingReview {
 				if recordErr := h.AgentCoordination.RecordReviewReturnTx(ctx, qtx, issue, sourceTaskID, reviewPlan.handoffNote); recordErr != nil {
 					return db.Issue{}, current, false, recordErr
@@ -4137,12 +4170,19 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	prelockNext.Status = nextStatus
 	prelockNext.ReviewerType = params.ReviewerType
 	prelockNext.ReviewerID = params.ReviewerID
-	prelockLeavingReview, prelockReviewerReassigned := issueReviewTransitionFlags(
+	prelockLeavingReview, prelockReviewerReassigned, prelockEnteringReview := issueReviewTransitionFlags(
 		r.Context(), h.Queries, prevIssue, prelockNext,
 	)
 	var reviewPlan *issueReviewWritePlan
-	if prelockLeavingReview || prelockReviewerReassigned {
+	if prelockLeavingReview || prelockReviewerReassigned || prelockEnteringReview {
+		if code, msg := h.validateReviewerPair(r.Context(), r, workspaceID, params.ReviewerType, params.ReviewerID, scopeExistingIssue(&prevIssue)); !prelockLeavingReview && code != 0 {
+			writeError(w, code, msg)
+			return
+		}
 		reviewPlan = &issueReviewWritePlan{
+			actorUserID:       memberActorUserID(h.resolveActor(r, userID, workspaceID)),
+			reviewerType:      params.ReviewerType,
+			reviewerID:        params.ReviewerID,
 			lockReviewerTasks: true,
 			suppressRun:       req.SuppressRun,
 			handoffNote:       req.HandoffNote,
@@ -4156,21 +4196,14 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 
 	var issue db.Issue
 	attachmentsChanged := false
-	if req.Description != nil || req.TitleBase != nil || req.DescriptionBase != nil || len(attachmentIDs) > 0 || reviewPlan != nil {
-		var lockedPrev db.Issue
-		issue, lockedPrev, attachmentsChanged, err = h.updateIssueAtomically(
-			r.Context(), prevIssue.WorkspaceID, params, rawFields, req.TitleBase, req.DescriptionBase, attachmentIDs, statusKeyForGuard, reviewPlan,
-		)
-		if lockedPrev.ID.Valid {
-			prevIssue = lockedPrev
-		}
-	} else {
-		err = h.runWithIssueStatusGuard(r.Context(), prevIssue.WorkspaceID, statusKeyForGuard, func(q *db.Queries) error {
-			var innerErr error
-			issue, innerErr = q.UpdateIssue(r.Context(), params)
-			return innerErr
-		})
+	var lockedPrev db.Issue
+	issue, lockedPrev, attachmentsChanged, err = h.updateIssueAtomically(
+		r.Context(), prevIssue.WorkspaceID, params, rawFields, req.TitleBase, req.DescriptionBase, attachmentIDs, statusKeyForGuard, reviewPlan,
+	)
+	if lockedPrev.ID.Valid {
+		prevIssue = lockedPrev
 	}
+
 	if err != nil {
 		if writeIssueStatusRaceError(w, err) {
 			return
@@ -4179,7 +4212,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 			writeEditConflict(w, "issue", prevIssue.ID)
 			return
 		}
-		if errors.Is(err, errIssueReviewTransitionRace) {
+		if errors.Is(err, errIssueReviewTransitionRace) || errors.Is(err, errIssueWorkflowRace) {
 			writeError(w, http.StatusConflict, "issue review state changed while this request was in flight; reload and retry")
 			return
 		}
@@ -4723,7 +4756,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		req.Updates.Priority != nil ||
 		req.Updates.Position != nil
 	if !hasMutation {
-		for _, k := range []string{"executor_type", "executor_id", "start_date", "due_date", "parent_issue_id", "project_id", "stage"} {
+		for _, k := range []string{"owner_type", "owner_id", "executor_type", "executor_id", "reviewer_type", "reviewer_id", "start_date", "due_date", "parent_issue_id", "project_id", "stage"} {
 			if _, ok := rawUpdates[k]; ok {
 				hasMutation = true
 				break
@@ -5004,12 +5037,18 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		prelockNext.Status = batchNextStatus
 		prelockNext.ReviewerType = params.ReviewerType
 		prelockNext.ReviewerID = params.ReviewerID
-		prelockLeavingReview, prelockReviewerReassigned := issueReviewTransitionFlags(
+		prelockLeavingReview, prelockReviewerReassigned, prelockEnteringReview := issueReviewTransitionFlags(
 			r.Context(), h.Queries, prevIssue, prelockNext,
 		)
 		var reviewPlan *issueReviewWritePlan
-		if prelockLeavingReview || prelockReviewerReassigned {
+		if prelockLeavingReview || prelockReviewerReassigned || prelockEnteringReview {
+			if code, _ := h.validateReviewerPair(r.Context(), r, workspaceID, params.ReviewerType, params.ReviewerID, scopeExistingIssue(&prevIssue)); !prelockLeavingReview && code != 0 {
+				continue
+			}
 			reviewPlan = &issueReviewWritePlan{
+				actorUserID:       memberActorUserID(h.resolveActor(r, userID, workspaceID)),
+				reviewerType:      params.ReviewerType,
+				reviewerID:        params.ReviewerID,
 				lockReviewerTasks: true,
 				suppressRun:       req.Updates.SuppressRun,
 				handoffNote:       req.Updates.HandoffNote,
@@ -5017,24 +5056,17 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 		}
 
 		var issue db.Issue
-		if req.Updates.Description != nil || reviewPlan != nil {
-			// One batch-level base cannot describe multiple issue documents.
-			// Preserve every marked channel-media block conservatively, matching
-			// legacy single-update clients that omit description_base.
-			var lockedPrev db.Issue
-			issue, lockedPrev, _, err = h.updateIssueAtomically(
-				r.Context(), prevIssue.WorkspaceID, params, rawUpdates, nil, nil, nil, batchStatusKey, reviewPlan,
-			)
-			if err == nil {
-				prevIssue = lockedPrev
-			}
-		} else {
-			err = h.runWithIssueStatusGuard(r.Context(), wsUUID, batchStatusKey, func(q *db.Queries) error {
-				var innerErr error
-				issue, innerErr = q.UpdateIssue(r.Context(), params)
-				return innerErr
-			})
+		// One batch-level base cannot describe multiple issue documents.
+		// Preserve every marked channel-media block conservatively, matching
+		// legacy single-update clients that omit description_base.
+		var lockedPrev db.Issue
+		issue, lockedPrev, _, err = h.updateIssueAtomically(
+			r.Context(), prevIssue.WorkspaceID, params, rawUpdates, nil, nil, nil, batchStatusKey, reviewPlan,
+		)
+		if err == nil {
+			prevIssue = lockedPrev
 		}
+
 		if err != nil {
 			// The archive race is a property of the batch's shared target
 			// status, not of one issue, so every remaining item would fail the
