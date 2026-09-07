@@ -57,6 +57,16 @@ for dependency in docker git runuser; do
 done
 docker compose version >/dev/null
 
+# Moving the cache does not rewrite Git's absolute worktree links. Repair
+# both directions before bootstrap checks or prunes cached releases.
+if [ -d "$state_dir/repository.git" ]; then
+  for release in "$state_dir"/releases/*; do
+    if [ -d "$release" ] && [ ! -L "$release" ]; then
+      runuser -u "$deploy_user" -- git --git-dir="$state_dir/repository.git" worktree repair "$release"
+    fi
+  done
+fi
+
 install -o root -g root -m 0755 \
   "$script_dir/production_deploy.py" \
   /usr/local/bin/orvilo-production-deploy

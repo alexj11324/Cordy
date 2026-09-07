@@ -38,6 +38,17 @@ const [
   read(".dockerignore"),
 ]);
 
+test("production cutover pins origins and repairs moved Git worktrees", async () => {
+  assert.match(productionOverride, /ORVILO_APP_URL: https:\/\/orvilo\.aspectlylabs\.com/u);
+  assert.match(productionOverride, /FRONTEND_ORIGIN: https:\/\/orvilo\.aspectlylabs\.com/u);
+  assert.match(productionOverride, /CORS_ALLOWED_ORIGINS: https:\/\/orvilo\.aspectlylabs\.com,https:\/\/accounts\.aspectlylabs\.com/u);
+  const installer = await read("deploy/origin/install-production-deploy.sh");
+  const repair = installer.indexOf('worktree repair "$release"');
+  assert.ok(repair >= 0);
+  assert.ok(repair < installer.indexOf("--bootstrap"));
+  assert.match(installer, /git --git-dir="\$state_dir\/repository\.git" worktree repair/u);
+});
+
 // The manifest assembler takes four positional operands and validates none of
 // them as a path. A mangled shell line continuation still parses as valid bash
 // and still exits 0 on the workflow's own `bash -n`, so assert the argument

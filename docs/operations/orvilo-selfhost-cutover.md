@@ -59,6 +59,13 @@ Before enabling traffic, complete these steps on the isolated restored target:
 - Migration 597 converts persisted channel-media provenance markers and
   Desktop callback schemes. Verify existing attachments remain in descriptions
   after editing an issue, including an edit from a stale revision.
+- While Linear synchronization is paused, inventory every bound remote issue
+  containing the old `[patchbay:issue=…]` provenance marker. Replace only that
+  marker prefix with `[orvilo:issue=…]`, preserving its ID, the rest of the
+  description, and user edits. Reconcile the saved base snapshot with the
+  marker-stripped remote description before restarting inbound or outbound
+  synchronization; otherwise the old marker can cause a false conflict.
+  Verify one inbound and one outbound update before resuming all bindings.
 
 This checklist is a maintenance-window migration, not a rolling compatibility
 contract. Do not let old clients or old plugin bundles operate on the new stack.
