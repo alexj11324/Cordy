@@ -162,10 +162,11 @@ func (w *LinearWorker) processOneInbox(ctx context.Context) bool {
 	if !ok {
 		return false
 	}
-	stopRenew := make(chan struct{})
-	go w.renewLease(ctx, "linear_sync_inbox", c.ID, stopRenew)
-	err = w.handleInbox(ctx, c)
-	close(stopRenew)
+	workCtx, stopRenew := w.startLease(ctx, "linear_sync_inbox", c.ID, c.Attempts)
+	err = w.handleInbox(workCtx, c)
+	if cause := stopRenew(); cause != nil {
+		return true
+	}
 	w.finish(ctx, "linear_sync_inbox", c.ID, c.ConnectionID, c.Attempts, c.MaxAttempts, err)
 	return true
 }
@@ -212,44 +213,18 @@ func (w *LinearWorker) processOneOutbox(ctx context.Context) bool {
 	if !ok {
 		return false
 	}
-	stopRenew := make(chan struct{})
-	go w.renewLease(ctx, "linear_sync_outbox", c.ID, stopRenew)
-	err = w.handleOutbox(ctx, c)
-	close(stopRenew)
+	workCtx, stopRenew := w.startLease(ctx, "linear_sync_outbox", c.ID, c.Attempts)
+	err = w.handleOutbox(workCtx, c)
+	if cause := stopRenew(); cause != nil {
+		return true
+	}
 	var connectionID pgtype.UUID
 	// Push successes complete the outbox in the same transaction as the link,
-	// so finish may observe zero rows. Load the connection unconditionally and
-	// update its health after either the atomic completion or the retry path.
+	// including connection health. The remaining paths are acknowledged by
+	// finish, which updates health only while this claim still owns the row.
 	_ = w.db.QueryRow(ctx, `SELECT connection_id FROM linear_project_binding WHERE id=$1`, c.BindingID).Scan(&connectionID)
 	w.finish(ctx, "linear_sync_outbox", c.ID, connectionID, c.Attempts, c.MaxAttempts, err)
-	if err == nil && connectionID.Valid {
-		_, _ = w.db.Exec(ctx, `UPDATE linear_connection SET last_success_at=now(),last_error=NULL,updated_at=now() WHERE id=$1 AND status='active'`, connectionID)
-	}
 	return true
-}
-
-func (w *LinearWorker) renewLease(ctx context.Context, table string, id pgtype.UUID, stop <-chan struct{}) {
-	ticker := time.NewTicker(20 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			_, err := w.db.Exec(ctx, `UPDATE `+table+` SET locked_until=now()+make_interval(secs=>$2)`+func() string {
-				if table == "linear_sync_outbox" {
-					return `,updated_at=now()`
-				}
-				return ``
-			}()+` WHERE id=$1 AND locked_by=$3 AND processed_at IS NULL AND dead_lettered_at IS NULL`, id, int(linearWorkerLease/time.Second), w.workerID)
-			if err != nil {
-				slog.WarnContext(ctx, "linear lease renewal failed", "queue", table, "id", uuidToString(id), "error", err)
-				return
-			}
-		}
-	}
 }
 
 func retryDelay(attempt int32) time.Duration {
@@ -257,29 +232,28 @@ func retryDelay(attempt int32) time.Duration {
 	return time.Duration(min(seconds, 900)) * time.Second
 }
 func (w *LinearWorker) finish(ctx context.Context, table string, id, connectionID pgtype.UUID, attempts, maxAttempts int32, processErr error) {
-	if processErr == nil {
-		tag, _ := w.db.Exec(ctx, `UPDATE `+table+` SET processed_at=now(),locked_by=NULL,locked_until=NULL,last_error=NULL`+func() string {
-			if table == "linear_sync_outbox" {
-				return `,updated_at=now()`
-			}
-			return ``
-		}()+` WHERE id=$1 AND locked_by=$2`, id, w.workerID)
-		if tag.RowsAffected() == 1 && connectionID.Valid {
-			_, _ = w.db.Exec(ctx, `UPDATE linear_connection SET last_success_at=now(),last_error=NULL,updated_at=now() WHERE id=$1`, connectionID)
-		}
+	if errors.Is(processErr, errLinearLeaseLost) || ctx.Err() != nil {
 		return
 	}
-	dead := attempts >= maxAttempts
-	_, _ = w.db.Exec(ctx, `UPDATE `+table+` SET available_at=now()+make_interval(secs => $2),locked_by=NULL,locked_until=NULL,last_error=$3,dead_lettered_at=CASE WHEN $4 THEN now() ELSE NULL END`+func() string {
-		if table == "linear_sync_outbox" {
-			return `,updated_at=now()`
-		}
-		return ``
-	}()+` WHERE id=$1 AND locked_by=$5`, id, int(retryDelay(attempts)/time.Second), processErr.Error(), dead, w.workerID)
-	if connectionID.Valid {
-		_, _ = w.db.Exec(ctx, `UPDATE linear_connection SET last_error=$2,updated_at=now() WHERE id=$1`, connectionID, processErr.Error())
+	ctx = w.withLease(ctx, table, id, attempts)
+	tx, err := w.beginLeaseTx(ctx)
+	if errors.Is(err, errLinearLeaseLost) {
+		return
 	}
-	slog.WarnContext(ctx, "linear sync item failed", "queue", table, "id", uuidToString(id), "attempt", attempts, "dead_lettered", dead, "error", processErr)
+	if err == nil {
+		defer tx.Rollback(ctx)
+		err = w.releaseLease(ctx, tx, connectionID, processErr, maxAttempts)
+		if err == nil {
+			err = tx.Commit(ctx)
+		}
+	}
+	if err != nil {
+		slog.ErrorContext(ctx, "linear queue completion failed", "queue", table, "id", uuidToString(id), "error", err)
+		return
+	}
+	if processErr != nil {
+		slog.WarnContext(ctx, "linear sync item failed", "queue", table, "id", uuidToString(id), "attempt", attempts, "dead_lettered", attempts >= maxAttempts, "error", processErr)
+	}
 }
 
 type workerBinding struct {
@@ -458,6 +432,10 @@ func (w *LinearWorker) importBinding(ctx context.Context, payload []byte, eventP
 }
 
 func (w *LinearWorker) handleInbox(ctx context.Context, c linearClaim) error {
+	ctx = w.withLease(ctx, "linear_sync_inbox", c.ID, c.Attempts)
+	if err := w.checkLease(ctx); err != nil {
+		return err
+	}
 	switch c.EventType {
 	case "initial_import":
 		return w.importBinding(ctx, c.Payload, "initial-import:", true)

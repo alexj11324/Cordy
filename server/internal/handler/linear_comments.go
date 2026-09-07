@@ -147,7 +147,7 @@ func (w *LinearWorker) handleCommentInbox(ctx context.Context, claim linearClaim
 // Imported discussion is stored as system-authored text with explicit source
 // attribution. It does not impersonate local members or trigger agent runs.
 func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, remote linearapi.Comment, deleted bool) error {
-	tx, err := w.txStarter.Begin(ctx)
+	tx, err := w.beginLeaseTx(ctx)
 	if err != nil {
 		return err
 	}
@@ -304,6 +304,7 @@ func (w *LinearWorker) handleCommentOutbox(ctx context.Context, c linearOutboxCl
 	}
 	if c.EventType == "comment_deleted" {
 		if found {
+			if err = w.checkLease(ctx); err != nil { return err }
 			return api.DeleteComment(ctx, token, remoteID)
 		}
 		return nil
@@ -312,6 +313,7 @@ func (w *LinearWorker) handleCommentOutbox(ctx context.Context, c linearOutboxCl
 		if remote.Body == payload.Body {
 			return nil
 		}
+		if err = w.checkLease(ctx); err != nil { return err }
 		return api.UpdateComment(ctx, token, remoteID, payload.Body)
 	}
 	parentID := ""
@@ -333,6 +335,7 @@ func (w *LinearWorker) handleCommentOutbox(ctx context.Context, c linearOutboxCl
 	if name != "" {
 		author = name + " vian Orvilo"
 	}
+	if err = w.checkLease(ctx); err != nil { return err }
 	_, err = api.CreateComment(ctx, token, remoteID, issueID, parentID, payload.Body, author)
 	return err
 }

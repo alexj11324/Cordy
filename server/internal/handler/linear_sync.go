@@ -30,7 +30,7 @@ func linearSyncDate(value *string) pgtype.Date {
 }
 
 func (w *LinearWorker) accessToken(ctx context.Context, connectionID pgtype.UUID) (string, error) {
-	tx, err := w.txStarter.Begin(ctx)
+	tx, err := w.beginLeaseTx(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -217,7 +217,7 @@ func (w *LinearWorker) applyRemote(ctx context.Context, b workerBinding, remote 
 	if eventID == "" {
 		eventID = "remote:" + remote.ID + ":" + fmt.Sprint(eventAt)
 	}
-	tx, err := w.txStarter.Begin(ctx)
+	tx, err := w.beginLeaseTx(ctx)
 	if err != nil {
 		return err
 	}
@@ -390,15 +390,15 @@ func linearSyncLocalIssueInput(ctx context.Context, tx pgx.Tx, b workerBinding, 
 	return input, nil
 }
 
-func (w *LinearWorker) completeOutboxInTx(ctx context.Context, tx pgx.Tx, id pgtype.UUID) error {
-	var processed bool
-	if err := tx.QueryRow(ctx, `UPDATE linear_sync_outbox SET processed_at=now(),locked_by=NULL,locked_until=NULL,last_error=NULL,updated_at=now() WHERE id=$1 AND locked_by=$2 RETURNING true`, id, w.workerID).Scan(&processed); err != nil {
-		return err
-	}
-	return nil
+func (w *LinearWorker) completeOutboxInTx(ctx context.Context, tx pgx.Tx, connectionID pgtype.UUID) error {
+	return w.releaseLease(ctx, tx, connectionID, nil, 0)
 }
 
 func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) error {
+	ctx = w.withLease(ctx, "linear_sync_outbox", c.ID, c.Attempts)
+	if err := w.checkLease(ctx); err != nil {
+		return err
+	}
 	b, err := w.loadBinding(ctx, c.BindingID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
@@ -435,10 +435,13 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 		if linkErr != nil {
 			return linkErr
 		}
+		if err = w.checkLease(ctx); err != nil {
+			return err
+		}
 		if err = w.api.DeleteIssue(ctx, token, link.LinearIssueID); err != nil {
 			return err
 		}
-		tx, txErr := w.txStarter.Begin(ctx)
+		tx, txErr := w.beginLeaseTx(ctx)
 		if txErr != nil {
 			return txErr
 		}
@@ -446,7 +449,7 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 		if _, txErr = tx.Exec(ctx, `UPDATE linear_issue_link SET sync_status='deleted',updated_at=now() WHERE id=$1 AND workspace_id=$2`, link.ID, b.WorkspaceID); txErr != nil {
 			return txErr
 		}
-		if txErr = w.completeOutboxInTx(ctx, tx, c.ID); txErr != nil {
+		if txErr = w.completeOutboxInTx(ctx, tx, b.ConnectionID); txErr != nil {
 			return txErr
 		}
 		return tx.Commit(ctx)
@@ -482,7 +485,7 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 			}
 		}
 	}
-	readTx, err := w.txStarter.Begin(ctx)
+	readTx, err := w.beginLeaseTx(ctx)
 	if err != nil {
 		return err
 	}
@@ -508,12 +511,18 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 				}
 			}
 		}
+		if err = w.checkLease(ctx); err != nil {
+			return err
+		}
 		if remote.ID == "" {
 			remote, err = w.api.CreateIssue(ctx, token, input)
 		} else {
 			remote, err = w.api.UpdateIssue(ctx, token, remote.ID, input)
 		}
 	} else {
+		if err = w.checkLease(ctx); err != nil {
+			return err
+		}
 		remote, err = w.api.UpdateIssue(ctx, token, link.LinearIssueID, input)
 	}
 	if err != nil {
@@ -528,7 +537,7 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 	if err = w.publishLinearWorkProducts(ctx, b, c.IssueID, remote.ID, token); err != nil {
 		return err
 	}
-	tx, err := w.txStarter.Begin(ctx)
+	tx, err := w.beginLeaseTx(ctx)
 	if err != nil {
 		return err
 	}
@@ -549,7 +558,7 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 			return err
 		}
 	}
-	if err = w.completeOutboxInTx(ctx, tx, c.ID); err != nil {
+	if err = w.completeOutboxInTx(ctx, tx, b.ConnectionID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

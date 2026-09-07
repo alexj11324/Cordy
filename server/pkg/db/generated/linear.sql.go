@@ -142,15 +142,18 @@ const completeLinearSyncInbox = `-- name: CompleteLinearSyncInbox :execrows
 UPDATE linear_sync_inbox
 SET processed_at = now(), locked_by = NULL, locked_until = NULL, last_error = NULL
 WHERE id = $1 AND locked_by = $2
+  AND attempts = $3 AND locked_until > clock_timestamp()
+  AND processed_at IS NULL AND dead_lettered_at IS NULL
 `
 
 type CompleteLinearSyncInboxParams struct {
 	ID       pgtype.UUID `json:"id"`
 	LockedBy pgtype.Text `json:"locked_by"`
+	Attempts int32       `json:"attempts"`
 }
 
 func (q *Queries) CompleteLinearSyncInbox(ctx context.Context, arg CompleteLinearSyncInboxParams) (int64, error) {
-	result, err := q.db.Exec(ctx, completeLinearSyncInbox, arg.ID, arg.LockedBy)
+	result, err := q.db.Exec(ctx, completeLinearSyncInbox, arg.ID, arg.LockedBy, arg.Attempts)
 	if err != nil {
 		return 0, err
 	}
@@ -162,15 +165,18 @@ UPDATE linear_sync_outbox
 SET processed_at = now(), locked_by = NULL, locked_until = NULL,
     last_error = NULL, updated_at = now()
 WHERE id = $1 AND locked_by = $2
+  AND attempts = $3 AND locked_until > clock_timestamp()
+  AND processed_at IS NULL AND dead_lettered_at IS NULL
 `
 
 type CompleteLinearSyncOutboxParams struct {
 	ID       pgtype.UUID `json:"id"`
 	LockedBy pgtype.Text `json:"locked_by"`
+	Attempts int32       `json:"attempts"`
 }
 
 func (q *Queries) CompleteLinearSyncOutbox(ctx context.Context, arg CompleteLinearSyncOutboxParams) (int64, error) {
-	result, err := q.db.Exec(ctx, completeLinearSyncOutbox, arg.ID, arg.LockedBy)
+	result, err := q.db.Exec(ctx, completeLinearSyncOutbox, arg.ID, arg.LockedBy, arg.Attempts)
 	if err != nil {
 		return 0, err
 	}
@@ -419,16 +425,24 @@ const deadLetterLinearSyncInbox = `-- name: DeadLetterLinearSyncInbox :execrows
 UPDATE linear_sync_inbox
 SET dead_lettered_at = now(), locked_by = NULL, locked_until = NULL, last_error = $2
 WHERE id = $1 AND locked_by = $3
+  AND attempts = $4 AND locked_until > clock_timestamp()
+  AND processed_at IS NULL AND dead_lettered_at IS NULL
 `
 
 type DeadLetterLinearSyncInboxParams struct {
 	ID        pgtype.UUID `json:"id"`
 	LastError pgtype.Text `json:"last_error"`
 	LockedBy  pgtype.Text `json:"locked_by"`
+	Attempts  int32       `json:"attempts"`
 }
 
 func (q *Queries) DeadLetterLinearSyncInbox(ctx context.Context, arg DeadLetterLinearSyncInboxParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deadLetterLinearSyncInbox, arg.ID, arg.LastError, arg.LockedBy)
+	result, err := q.db.Exec(ctx, deadLetterLinearSyncInbox,
+		arg.ID,
+		arg.LastError,
+		arg.LockedBy,
+		arg.Attempts,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -440,16 +454,24 @@ UPDATE linear_sync_outbox
 SET dead_lettered_at = now(), locked_by = NULL, locked_until = NULL,
     last_error = $2, updated_at = now()
 WHERE id = $1 AND locked_by = $3
+  AND attempts = $4 AND locked_until > clock_timestamp()
+  AND processed_at IS NULL AND dead_lettered_at IS NULL
 `
 
 type DeadLetterLinearSyncOutboxParams struct {
 	ID        pgtype.UUID `json:"id"`
 	LastError pgtype.Text `json:"last_error"`
 	LockedBy  pgtype.Text `json:"locked_by"`
+	Attempts  int32       `json:"attempts"`
 }
 
 func (q *Queries) DeadLetterLinearSyncOutbox(ctx context.Context, arg DeadLetterLinearSyncOutboxParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deadLetterLinearSyncOutbox, arg.ID, arg.LastError, arg.LockedBy)
+	result, err := q.db.Exec(ctx, deadLetterLinearSyncOutbox,
+		arg.ID,
+		arg.LastError,
+		arg.LockedBy,
+		arg.Attempts,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -1201,19 +1223,37 @@ func (q *Queries) MarkLinearWebhookAccepted(ctx context.Context, id pgtype.UUID)
 }
 
 const renewLinearSyncInbox = `-- name: RenewLinearSyncInbox :execrows
-UPDATE linear_sync_inbox
-SET locked_until = now() + make_interval(secs => $2)
-WHERE id = $1 AND locked_by = $3 AND processed_at IS NULL AND dead_lettered_at IS NULL
+WITH claimed AS MATERIALIZED (
+    SELECT owned.id, owned.locked_by, owned.attempts, owned.locked_until,
+           owned.processed_at, owned.dead_lettered_at
+    FROM linear_sync_inbox owned
+    WHERE owned.id = $1
+    FOR UPDATE OF owned
+)
+UPDATE linear_sync_inbox q
+SET locked_until = clock_timestamp() + make_interval(secs => $2)
+FROM claimed
+WHERE q.id = claimed.id AND claimed.locked_by = $3::text AND claimed.attempts = $4::integer
+  AND claimed.locked_until > clock_timestamp()
+  AND claimed.processed_at IS NULL AND claimed.dead_lettered_at IS NULL
 `
 
 type RenewLinearSyncInboxParams struct {
 	ID       pgtype.UUID `json:"id"`
 	Secs     float64     `json:"secs"`
 	LockedBy pgtype.Text `json:"locked_by"`
+	Attempts int32       `json:"attempts"`
 }
 
+// Materialization keeps the wall-clock predicate above LockRows. Testing it
+// in the locking SELECT can accept a lease that expires during the lock wait.
 func (q *Queries) RenewLinearSyncInbox(ctx context.Context, arg RenewLinearSyncInboxParams) (int64, error) {
-	result, err := q.db.Exec(ctx, renewLinearSyncInbox, arg.ID, arg.Secs, arg.LockedBy)
+	result, err := q.db.Exec(ctx, renewLinearSyncInbox,
+		arg.ID,
+		arg.Secs,
+		arg.LockedBy,
+		arg.Attempts,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -1221,19 +1261,37 @@ func (q *Queries) RenewLinearSyncInbox(ctx context.Context, arg RenewLinearSyncI
 }
 
 const renewLinearSyncOutbox = `-- name: RenewLinearSyncOutbox :execrows
-UPDATE linear_sync_outbox
-SET locked_until = now() + make_interval(secs => $2), updated_at = now()
-WHERE id = $1 AND locked_by = $3 AND processed_at IS NULL AND dead_lettered_at IS NULL
+WITH claimed AS MATERIALIZED (
+    SELECT owned.id, owned.locked_by, owned.attempts, owned.locked_until,
+           owned.processed_at, owned.dead_lettered_at
+    FROM linear_sync_outbox owned
+    WHERE owned.id = $1
+    FOR UPDATE OF owned
+)
+UPDATE linear_sync_outbox q
+SET locked_until = clock_timestamp() + make_interval(secs => $2), updated_at = now()
+FROM claimed
+WHERE q.id = claimed.id AND claimed.locked_by = $3::text AND claimed.attempts = $4::integer
+  AND claimed.locked_until > clock_timestamp()
+  AND claimed.processed_at IS NULL AND claimed.dead_lettered_at IS NULL
 `
 
 type RenewLinearSyncOutboxParams struct {
 	ID       pgtype.UUID `json:"id"`
 	Secs     float64     `json:"secs"`
 	LockedBy pgtype.Text `json:"locked_by"`
+	Attempts int32       `json:"attempts"`
 }
 
+// Materialization keeps the wall-clock predicate above LockRows. Testing it
+// in the locking SELECT can accept a lease that expires during the lock wait.
 func (q *Queries) RenewLinearSyncOutbox(ctx context.Context, arg RenewLinearSyncOutboxParams) (int64, error) {
-	result, err := q.db.Exec(ctx, renewLinearSyncOutbox, arg.ID, arg.Secs, arg.LockedBy)
+	result, err := q.db.Exec(ctx, renewLinearSyncOutbox,
+		arg.ID,
+		arg.Secs,
+		arg.LockedBy,
+		arg.Attempts,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -1274,6 +1332,8 @@ UPDATE linear_sync_inbox
 SET available_at = now() + make_interval(secs => $2), locked_by = NULL,
     locked_until = NULL, last_error = $3
 WHERE id = $1 AND locked_by = $4
+  AND attempts = $5 AND locked_until > clock_timestamp()
+  AND processed_at IS NULL AND dead_lettered_at IS NULL
 `
 
 type RetryLinearSyncInboxParams struct {
@@ -1281,6 +1341,7 @@ type RetryLinearSyncInboxParams struct {
 	Secs      float64     `json:"secs"`
 	LastError pgtype.Text `json:"last_error"`
 	LockedBy  pgtype.Text `json:"locked_by"`
+	Attempts  int32       `json:"attempts"`
 }
 
 func (q *Queries) RetryLinearSyncInbox(ctx context.Context, arg RetryLinearSyncInboxParams) (int64, error) {
@@ -1289,6 +1350,7 @@ func (q *Queries) RetryLinearSyncInbox(ctx context.Context, arg RetryLinearSyncI
 		arg.Secs,
 		arg.LastError,
 		arg.LockedBy,
+		arg.Attempts,
 	)
 	if err != nil {
 		return 0, err
@@ -1301,6 +1363,8 @@ UPDATE linear_sync_outbox
 SET available_at = now() + make_interval(secs => $2), locked_by = NULL,
     locked_until = NULL, last_error = $3, updated_at = now()
 WHERE id = $1 AND locked_by = $4
+  AND attempts = $5 AND locked_until > clock_timestamp()
+  AND processed_at IS NULL AND dead_lettered_at IS NULL
 `
 
 type RetryLinearSyncOutboxParams struct {
@@ -1308,6 +1372,7 @@ type RetryLinearSyncOutboxParams struct {
 	Secs      float64     `json:"secs"`
 	LastError pgtype.Text `json:"last_error"`
 	LockedBy  pgtype.Text `json:"locked_by"`
+	Attempts  int32       `json:"attempts"`
 }
 
 func (q *Queries) RetryLinearSyncOutbox(ctx context.Context, arg RetryLinearSyncOutboxParams) (int64, error) {
@@ -1316,6 +1381,7 @@ func (q *Queries) RetryLinearSyncOutbox(ctx context.Context, arg RetryLinearSync
 		arg.Secs,
 		arg.LastError,
 		arg.LockedBy,
+		arg.Attempts,
 	)
 	if err != nil {
 		return 0, err
