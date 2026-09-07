@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, ChevronDown, ChevronRight, Clock, ExternalLink, Pencil, RotateCw, Trash2, Webhook } from "lucide-react";
+import { ChevronDown, ChevronRight, Clock, ExternalLink, Pencil, RotateCw, Trash2, Webhook } from "lucide-react";
 import { toast } from "sonner";
 import {
   automationTriggerPreset,
@@ -380,6 +380,11 @@ export function TriggerCard({
         <TriggerGlyph provider={provider} kind={trigger.kind} />
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
           <p className="break-words text-body">{primaryTitle}</p>
+          {trigger.kind === "schedule" && !trigger.enabled && (
+            <span className="text-caption text-amber-700 dark:text-amber-300">
+              {t(($) => $.settings.trigger_needs_reconfiguration)}
+            </span>
+          )}
           {provider === "github" && connected && (
             <>
               <span className="text-body text-muted-foreground">{t(($) => $.settings.condition_in)}</span>
@@ -630,17 +635,6 @@ export function TriggerCard({
           </div>
         )}
       </div>
-
-      {(!native || connected) && trigger.readiness_reasons && trigger.readiness_reasons.length > 0 && (
-        <div className="mt-2 space-y-1 text-caption text-amber-700 dark:text-amber-300" role="status">
-          {trigger.readiness_reasons.map((reason) => (
-            <p key={reason} className="flex items-start gap-1.5">
-              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-              <span>{reason}</span>
-            </p>
-          ))}
-        </div>
-      )}
 
       {webhookUrl && (!native || connected) && (
         <div className="mt-2">

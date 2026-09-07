@@ -193,6 +193,11 @@
     "run_blocked_trigger_not_ready": "Not triggered — configure every trigger before running this automation",
     "run_blocked_generic": "Not triggered — the run was blocked",
     "run_blocked_trigger_config": "Configure the triggers before running this automation",
+    "run_blocked_dialog": {
+      "title": "Finish trigger setup before running",
+      "description": "Connect the required services and finish configuring the triggers, then try again.",
+      "confirm": "Back to configuration"
+    },
     "section_properties": "Properties",
     "section_triggers": "Triggers",
     "section_run_history": "Run History",
@@ -692,6 +697,7 @@
     "load_failed": "Could not load this automation",
     "runs_load_failed": "Could not load run history",
     "trigger_help": "Any enabled trigger starts the assigned agent or team with the instructions below.",
+    "trigger_needs_reconfiguration": "Needs reconfiguration",
     "config_repository": "Repository",
     "config_repository_placeholder": "owner/repository (all if empty)",
     "config_review_state": "Review result",

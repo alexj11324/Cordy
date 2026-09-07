@@ -193,6 +193,11 @@
     "run_blocked_trigger_not_ready": "실행되지 않음 — 이 자동화를 실행하기 전에 모든 트리거를 구성하세요",
     "run_blocked_generic": "실행되지 않음 — 실행이 차단되었습니다",
     "run_blocked_trigger_config": "이 자동화를 실행하기 전에 트리거를 구성하세요",
+    "run_blocked_dialog": {
+      "title": "트리거 설정을 먼저 완료하세요",
+      "description": "필요한 서비스에 연결하고 트리거 설정을 완료한 후 다시 실행해 주세요.",
+      "confirm": "설정으로 돌아가기"
+    },
     "section_properties": "속성",
     "section_triggers": "트리거",
     "section_run_history": "실행 기록",
@@ -689,6 +694,7 @@
     "load_failed": "자동화를 불러올 수 없습니다",
     "runs_load_failed": "실행 기록을 불러올 수 없습니다",
     "trigger_help": "활성화된 트리거가 발생하면 지정한 에이전트나 팀이 아래 지침을 실행합니다.",
+    "trigger_needs_reconfiguration": "재설정이 필요합니다",
     "config_repository": "저장소",
     "config_repository_placeholder": "owner/repository (비워두면 모두)",
     "config_review_state": "리뷰 결과",

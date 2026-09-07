@@ -329,6 +329,7 @@ func TestTriggerAutomation_TeamPrivateLeader_PlainMemberCreator_Blocked(t *testi
 		testPool.Exec(context.Background(), `DELETE FROM automation_run WHERE automation_id = $1`, apID)
 		testPool.Exec(context.Background(), `DELETE FROM automation WHERE id = $1`, apID)
 	})
+	seedValidAutomationScheduleTrigger(t, apID)
 
 	// Trigger as workspace owner — the dispatch should fail because the
 	// automation's creator (plain member) cannot access the private leader.
@@ -389,6 +390,7 @@ func TestTriggerAutomation_RunOnly_TeamPrivateLeader_PlainMemberCreator_Blocked(
 		testPool.Exec(context.Background(), `DELETE FROM automation_run WHERE automation_id = $1`, apID)
 		testPool.Exec(context.Background(), `DELETE FROM automation WHERE id = $1`, apID)
 	})
+	seedValidAutomationScheduleTrigger(t, apID)
 
 	w := httptest.NewRecorder()
 	r := newRequest("POST", "/api/automations/"+apID+"/trigger?workspace_id="+testWorkspaceID, nil)

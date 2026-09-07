@@ -12,6 +12,10 @@ const mocks = vi.hoisted(() => ({
   deleteTrigger: vi.fn(async () => {}),
   triggerNow: vi.fn(async () => ({ status: "running" })),
   automationRuns: [] as AutomationRun[],
+  automationStatus: "paused" as "active" | "paused",
+  automationRunReady: undefined as boolean | undefined,
+  triggerEnabled: true,
+  triggerReadinessReasons: [] as string[],
   githubInstallations: vi.fn(async () => ({ installations: [] as Array<{ id: string; status?: string; installation_status?: string }> })),
   slackInstallations: vi.fn(async () => ({ installations: [] as Array<{ id: string; status?: string; installation_status?: string }> })),
   linearConnection: vi.fn(async () => ({ connected: false })),
@@ -122,7 +126,7 @@ vi.mock("@patchbay/core/automations/queries", () => ({
         project_id: null,
         executor_type: "agent",
         executor_id: "agent-1",
-        status: "paused",
+        status: mocks.automationStatus,
         execution_mode: "run_only",
         issue_title_template: null,
         model: "cursor-grok-4.6-high-fast",
@@ -135,13 +139,14 @@ vi.mock("@patchbay/core/automations/queries", () => ({
         can_write: true,
         can_manage_access: true,
         subscribers: [],
+        run_ready: mocks.automationRunReady,
       },
       triggers: [
         {
           id: "trg-1",
           automation_id: "auto-1",
           kind: "schedule",
-          enabled: true,
+          enabled: mocks.triggerEnabled,
           cron_expression: "0 7 * * *",
           timezone: "America/New_York",
           next_run_at: "2026-09-07T11:00:00Z",
@@ -150,6 +155,7 @@ vi.mock("@patchbay/core/automations/queries", () => ({
           last_fired_at: null,
           created_at: "2026-01-01T00:00:00Z",
           updated_at: "2026-01-01T00:00:00Z",
+          readiness_reasons: mocks.triggerReadinessReasons,
         },
         {
           id: "trg-2",
@@ -299,6 +305,10 @@ describe("AutomationDetailPage settings layout", () => {
     mocks.updateTrigger.mockReset().mockResolvedValue(undefined);
     mocks.deleteTrigger.mockClear();
     mocks.triggerNow.mockClear();
+    mocks.automationStatus = "paused";
+    mocks.automationRunReady = undefined;
+    mocks.triggerEnabled = true;
+    mocks.triggerReadinessReasons = [];
     mocks.automationRuns.splice(0);
     mocks.githubInstallations.mockReset().mockResolvedValue({ installations: [] });
     mocks.slackInstallations.mockReset().mockResolvedValue({ installations: [] });
@@ -467,6 +477,44 @@ describe("AutomationDetailPage settings layout", () => {
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Filters" })).not.toBeInTheDocument();
     expect(screen.queryByText("acme/app")).not.toBeInTheDocument();
+  });
+
+  it("keeps an unready active run clickable and explains setup without raw readiness details", async () => {
+    const user = userEvent.setup();
+    mocks.automationStatus = "active";
+    mocks.automationRunReady = false;
+    mocks.triggerReadinessReasons = ["Trigger 123: Schedule has no valid next run."];
+    renderPage();
+
+    const runNow = await screen.findByRole("button", { name: "Run now" });
+    expect(runNow).toBeEnabled();
+    await user.click(runNow);
+
+    expect(mocks.triggerNow).not.toHaveBeenCalled();
+    const dialog = await screen.findByRole("alertdialog", { name: "Finish trigger setup before running" });
+    expect(dialog).toHaveTextContent("Connect the required services and finish configuring the triggers, then try again.");
+    expect(dialog).toHaveTextContent("Back to configuration");
+    expect(screen.queryByText("Trigger 123: Schedule has no valid next run.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Configure the triggers before running this automation")).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole("button", { name: "Back to configuration" }));
+    expect(screen.queryByRole("alertdialog", { name: "Finish trigger setup before running" })).not.toBeInTheDocument();
+  });
+
+  it("localizes a disabled legacy schedule without showing its raw readiness reason", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const trigger = {
+      id: "legacy-schedule-1", automation_id: "auto-1", kind: "schedule", enabled: false,
+      cron_expression: "0 7 * * *", timezone: "America/New_York", next_run_at: null,
+      webhook_token: null, label: null, last_fired_at: null, created_at: "", updated_at: "",
+      readiness_reasons: ["This legacy trigger is disabled; delete and add it again to use it."],
+    } satisfies AutomationTrigger;
+    renderWithI18n(<QueryClientProvider client={qc}>
+      <TriggerCard trigger={trigger} automationId="auto-1" canWrite />
+    </QueryClientProvider>);
+
+    expect(await screen.findByText("Needs reconfiguration")).toBeInTheDocument();
+    expect(screen.queryByText(/This legacy trigger is disabled/)).not.toBeInTheDocument();
   });
 
   it("keeps native conditions hidden while connection status is loading", async () => {

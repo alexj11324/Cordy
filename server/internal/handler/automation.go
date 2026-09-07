@@ -2419,6 +2419,19 @@ func (h *Handler) TriggerAutomation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "automation is not active")
 		return
 	}
+	readiness, err := h.AutomationService.CheckAutomationReadiness(r.Context(), automation)
+	if err != nil {
+		slog.Error("failed to verify automation trigger configuration",
+			"error", err,
+			"automation_id", uuidToString(automation.ID),
+		)
+		writeError(w, http.StatusInternalServerError, "failed to verify automation trigger configuration")
+		return
+	}
+	if !readiness.Ready {
+		writeErrorCode(w, http.StatusConflict, "automation_trigger_not_ready", "Complete trigger configuration before running this automation")
+		return
+	}
 
 	// A manual "run now" is a direct human action, so the run is attributed
 	// direct_human to the triggering member (MUL-4302 §4). Resolve the actor the

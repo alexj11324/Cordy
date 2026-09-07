@@ -19,7 +19,7 @@ import {
   useTriggerAutomation,
   useCreateAutomationTrigger,
 } from "@patchbay/core/automations/mutations";
-import { clientErrorMessage, dispatchReasonCode } from "@patchbay/core/api";
+import { clientErrorMessage, dispatchReasonCode, errorCode } from "@patchbay/core/api";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useActorName } from "@patchbay/core/workspace/hooks";
@@ -362,6 +362,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
   const [triggerDialogOpen, setTriggerDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [runBlockedOpen, setRunBlockedOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   if (isLoading) {
@@ -412,9 +413,12 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
   // doesn't send the field (older backend).
   const canManageAccess = automation.can_manage_access ?? canWrite;
   const runReady = automation.run_ready !== false;
-  const runBlockedReasons = automation.run_blocked_reasons ?? [];
 
   const handleRunNow = async () => {
+    if (!runReady) {
+      setRunBlockedOpen(true);
+      return;
+    }
     try {
       const run = await triggerAutomation.mutateAsync(automationId);
       // Manual "run now" returns 200 even when admission blocks the run, so the
@@ -435,6 +439,10 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
         toast.error(message);
       }
     } catch (e: any) {
+      if (errorCode(e) === "automation_trigger_not_ready") {
+        setRunBlockedOpen(true);
+        return;
+      }
       const reason = dispatchReasonCode(e);
       if (reason) {
         toast.error(t(($) => $.detail[runNowBlockedKey(reason)]));
@@ -519,7 +527,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                 size="sm"
                 variant="outline"
                 onClick={handleRunNow}
-                disabled={automation.status !== "active" || !runReady || triggerAutomation.isPending}
+                disabled={automation.status !== "active" || triggerAutomation.isPending}
                 className="px-2 sm:px-2.5"
                 aria-label={triggerAutomation.isPending ? t(($) => $.detail.running) : t(($) => $.detail.run_now)}
               >
@@ -576,16 +584,6 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
               {t(($) => $.detail.bind_runtime)}
             </AppLink>
           )}
-        </div>
-      )}
-
-      {!runReady && (
-        <div className="flex shrink-0 items-start gap-2 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-caption text-amber-900 dark:text-amber-100" role="status">
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-          <div className="min-w-0 flex-1 space-y-1">
-            <p className="font-medium">{t(($) => $.detail.run_blocked_trigger_config)}</p>
-            {runBlockedReasons.map((reason) => <p key={reason}>{reason}</p>)}
-          </div>
         </div>
       )}
 
@@ -819,6 +817,24 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
               {deleting
                 ? t(($) => $.detail.delete_dialog.deleting)
                 : t(($) => $.detail.delete_dialog.confirm)}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={runBlockedOpen} onOpenChange={setRunBlockedOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t(($) => $.detail.run_blocked_dialog.title)}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(($) => $.detail.run_blocked_dialog.description)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => {
+              setRunBlockedOpen(false);
+              setDetailTab("settings");
+            }}>
+              {t(($) => $.detail.run_blocked_dialog.confirm)}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

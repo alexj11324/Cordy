@@ -193,6 +193,11 @@
     "run_blocked_trigger_not_ready": "未触发——请先配置所有触发器，再运行此自动化",
     "run_blocked_generic": "未触发——本次运行已被拦截",
     "run_blocked_trigger_config": "请先配置触发器，再运行此自动化",
+    "run_blocked_dialog": {
+      "title": "请先完成触发器配置",
+      "description": "请连接所需服务并完成触发器设置后再运行。",
+      "confirm": "返回配置"
+    },
     "section_properties": "属性",
     "section_triggers": "触发器",
     "section_run_history": "运行历史",
@@ -689,6 +694,7 @@
     "load_failed": "无法加载此自动化",
     "runs_load_failed": "无法加载运行历史",
     "trigger_help": "任一启用的触发器都会让指定智能体或团队执行下面的指令。",
+    "trigger_needs_reconfiguration": "需要重新配置",
     "config_repository": "仓库",
     "config_repository_placeholder": "owner/repository，留空匹配全部",
     "config_review_state": "审阅结果",

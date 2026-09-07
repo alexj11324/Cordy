@@ -193,6 +193,11 @@
     "run_blocked_trigger_not_ready": "実行されませんでした — このオートパイロットを実行する前にすべてのトリガーを設定してください",
     "run_blocked_generic": "実行されませんでした — 実行がブロックされました",
     "run_blocked_trigger_config": "このオートパイロットを実行する前にトリガーを設定してください",
+    "run_blocked_dialog": {
+      "title": "トリガーの設定を完了してください",
+      "description": "必要なサービスに接続し、トリガーの設定を完了してから、もう一度実行してください。",
+      "confirm": "設定に戻る"
+    },
     "section_properties": "プロパティ",
     "section_triggers": "トリガー",
     "section_run_history": "実行履歴",
@@ -689,6 +694,7 @@
     "load_failed": "自動化を読み込めません",
     "runs_load_failed": "実行履歴を読み込めません",
     "trigger_help": "有効なトリガーが発火すると、指定したエージェントまたはチームが以下の指示を実行します。",
+    "trigger_needs_reconfiguration": "再設定が必要です",
     "config_repository": "リポジトリ",
     "config_repository_placeholder": "owner/repository（空欄ですべて）",
     "config_review_state": "レビュー結果",

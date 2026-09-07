@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
@@ -94,6 +95,42 @@ func TestGetAutomationReportsTriggerReadiness(t *testing.T) {
 	}
 	if len(ready.Triggers) != 1 || ready.Triggers[0].Ready == nil || !*ready.Triggers[0].Ready || len(ready.Triggers[0].ReadinessReasons) != 0 {
 		t.Fatalf("configured trigger readiness = %+v", ready.Triggers)
+	}
+}
+
+func TestTriggerAutomationRejectsUnreadyBeforeCreatingRun(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	agentID := createWebhookTestAgent(t, "Unready manual trigger agent")
+	automationID := createWebhookTestAutomation(t, agentID, "active", "run_only")
+
+	req := withURLParam(
+		newRequest(http.MethodPost, "/api/automations/"+automationID+"/trigger", nil),
+		"id", automationID,
+	)
+	res := testutil.Call(t, testHandler.TriggerAutomation, req).Want(http.StatusConflict)
+	if got := res.Map()["error"]; got != "Complete trigger configuration before running this automation" {
+		t.Fatalf("error = %#v, want concise readiness error", got)
+	}
+	if got := res.Map()["code"]; got != "automation_trigger_not_ready" {
+		t.Fatalf("code = %#v, want automation_trigger_not_ready", got)
+	}
+
+	var runCount, taskCount int
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT count(*) FROM automation_run WHERE automation_id = $1`, automationID,
+	).Scan(&runCount); err != nil {
+		t.Fatalf("count automation runs: %v", err)
+	}
+	if err := testPool.QueryRow(context.Background(), `
+		SELECT count(*) FROM agent_task_queue
+		WHERE automation_run_id IN (SELECT id FROM automation_run WHERE automation_id = $1)
+	`, automationID).Scan(&taskCount); err != nil {
+		t.Fatalf("count automation tasks: %v", err)
+	}
+	if runCount != 0 || taskCount != 0 {
+		t.Fatalf("unready trigger created run/task: runs=%d tasks=%d", runCount, taskCount)
 	}
 }
 
