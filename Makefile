@@ -10,7 +10,7 @@ endif
 
 POSTGRES_DB ?= orvilo
 POSTGRES_USER ?= orvilo
-POSTGRES_PASSWORD ?= orvilo
+POSTGRES_PASSWORD := $(or $(POSTGRES_PASSWORD),orvilo)
 POSTGRES_PORT ?= 5432
 PORT := $(or $(BACKEND_PORT),$(API_PORT),$(SERVER_PORT),$(PORT),8080)
 ifeq ($(origin ORVILO_PUBLIC_URL), undefined)
@@ -19,7 +19,7 @@ endif
 FRONTEND_PORT ?= 3000
 FRONTEND_ORIGIN ?= http://localhost:$(FRONTEND_PORT)
 ORVILO_APP_URL ?= $(FRONTEND_ORIGIN)
-DATABASE_URL ?= postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable
+DATABASE_URL := $(or $(DATABASE_URL),postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable)
 NEXT_PUBLIC_API_URL ?= http://localhost:$(PORT)
 NEXT_PUBLIC_WS_URL ?= ws://localhost:$(PORT)/ws
 GOOGLE_REDIRECT_URI ?= $(FRONTEND_ORIGIN)/auth/callback

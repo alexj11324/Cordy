@@ -36,7 +36,7 @@ else
   ENV_FILE=".env"
   if [ ! -f "$ENV_FILE" ]; then
     echo "==> Creating $ENV_FILE from .env.example..."
-    cp .env.example "$ENV_FILE"
+    bash scripts/init-main-env.sh "$ENV_FILE"
   fi
 fi
 

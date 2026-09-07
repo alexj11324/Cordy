@@ -267,6 +267,14 @@ orvilo daemon status
 
 ## 常用管理命令
 
+以下升级命令仅适用于已经采用 Orvilo 部署标识的实例。改名前的 Compose
+项目和 Helm release 必须单独迁移：备份数据库与上传文件、暂停写入、使用新
+数据卷或 PVC 创建 Orvilo 部署、恢复数据、验证登录与业务路径后再切换流量。
+验收前保留旧实例及其数据并保持停止状态。普通的 `git pull`/`up -d` 或
+`helm upgrade` 不会完成这次迁移：新 Compose 项目不会接管旧数据卷，
+Helm Deployment selector 也不能原地修改。完整迁移与回退要求见仓库中的
+`docs/operations/orvilo-selfhost-cutover.md`。
+
 以下命令都在 `orvilo` 仓库目录中运行：
 
 ```bash

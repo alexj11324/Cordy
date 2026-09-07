@@ -268,6 +268,16 @@ When the run shows as completed and the agent's reply appears in the timeline, t
 
 ## Common admin commands
 
+These upgrade commands apply to deployments already using the Orvilo identity.
+Pre-cutover Compose projects and Helm releases require a separate migration:
+back up the database and uploads, pause writes, deploy a fresh Orvilo project or
+release with new volumes/PVCs, restore the data, verify authenticated access, and
+then switch traffic. Keep the old installation stopped and intact until acceptance.
+An ordinary `git pull`/`up -d` or `helm upgrade` does not perform this migration.
+The renamed project cannot adopt old Compose volumes, and Helm Deployment
+selectors are immutable. See `docs/operations/orvilo-selfhost-cutover.md` in the
+repository for the migration and rollback requirements.
+
 Run all of these from the `orvilo` repository directory:
 
 ```bash

@@ -318,6 +318,11 @@ Make sure the machine running the daemon has the same `/etc/hosts` (or DNS) entr
 
 ### Updating
 
+The commands below apply to installations already using the Orvilo deployment
+identity. Pre-cutover installations require a separate migration; changing the
+chart name does not migrate an existing Helm release's immutable Deployment
+selectors. See [the identity cutover procedure](docs/operations/orvilo-selfhost-cutover.md).
+
 To pull the latest images without changing the chart version when your values still use the mutable `latest` image tag:
 
 ```bash
@@ -457,6 +462,11 @@ This reconfigures the CLI for Orvilo Cloud, re-authenticates, and restarts the d
 > Your local Docker services are unaffected. Stop them separately if you no longer need them.
 
 ## Upgrading
+
+For pre-cutover installations, complete the
+[separate identity migration](docs/operations/orvilo-selfhost-cutover.md) first.
+The renamed Compose project creates new volumes and does not adopt the old
+project's containers or data. The commands below are for existing Orvilo projects.
 
 ```bash
 docker compose -f docker-compose.selfhost.yml pull

@@ -435,7 +435,12 @@ RETURNING *;
 -- Quota safety: only use for a run known to have no reservation. Normal
 -- terminal paths must call UpdateAutomationRunTerminalWithQuota instead.
 UPDATE automation_run
-SET status = 'completed', completed_at = now(), result = sqlc.narg('result')
+SET status = 'completed', completed_at = now(), result = CASE
+    WHEN result ? 'slack_summary_deliveries' THEN
+        COALESCE(sqlc.narg('result')::jsonb, '{}'::jsonb) ||
+        jsonb_build_object('slack_summary_deliveries', result->'slack_summary_deliveries')
+    ELSE sqlc.narg('result')::jsonb
+END
 WHERE id = $1
 RETURNING *;
 
@@ -477,7 +482,12 @@ WITH updated_run AS (
     SET status = @terminal_status::text,
         completed_at = now(),
         result = CASE
-            WHEN @terminal_status::text = 'completed' THEN sqlc.narg('result')::jsonb
+            WHEN @terminal_status::text = 'completed' THEN CASE
+                WHEN ar.result ? 'slack_summary_deliveries' THEN
+                    COALESCE(sqlc.narg('result')::jsonb, '{}'::jsonb) ||
+                    jsonb_build_object('slack_summary_deliveries', ar.result->'slack_summary_deliveries')
+                ELSE sqlc.narg('result')::jsonb
+            END
             ELSE ar.result
         END,
         failure_reason = CASE
@@ -529,7 +539,12 @@ UPDATE automation_run
 SET status = 'skipped',
     completed_at = now(),
     failure_reason = $2,
-    result = sqlc.narg('result')
+    result = CASE
+        WHEN result ? 'slack_summary_deliveries' THEN
+            COALESCE(sqlc.narg('result')::jsonb, '{}'::jsonb) ||
+            jsonb_build_object('slack_summary_deliveries', result->'slack_summary_deliveries')
+        ELSE sqlc.narg('result')::jsonb
+    END
 WHERE id = $1
 RETURNING *;
 

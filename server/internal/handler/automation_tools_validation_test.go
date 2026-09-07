@@ -24,6 +24,7 @@ func TestAutomationToolsRequireScopedSlackDestination(t *testing.T) {
 		output map[string]any
 		want   int
 	}{
+		{"disabled without installation", map[string]any{"enabled": false}, 200},
 		{"missing target", map[string]any{"enabled": true}, 400},
 		{"foreign installation", map[string]any{"enabled": true, "installation_id": foreignInstallation, "channel_ids": []string{"C123"}}, 400},
 		{"valid target", map[string]any{"enabled": true, "installation_id": localInstallation, "channel_ids": []string{"C123"}}, 200},

@@ -61,6 +61,12 @@ func ParseAutomationTools(raw []byte) AutomationToolsConfig {
 		return cfg
 	}
 	_ = json.Unmarshal(raw, &cfg)
+	if cfg.Memories != nil && !automationToolEnabled(cfg.Memories.Enabled) {
+		cfg.Memories = nil
+	}
+	if cfg.SlackSend != nil && !automationToolEnabled(cfg.SlackSend.Enabled) {
+		cfg.SlackSend = nil
+	}
 	return cfg
 }
 

@@ -1197,7 +1197,7 @@ Start the rest with 'make up C=api,web', or run 'make up C=daemon' from your own
     if [ "$ENV_FILE" = .env.worktree ]; then
       bash "$REPO_ROOT/scripts/init-worktree-env.sh" "$ENV_FILE" >/dev/null
     else
-      cp "$REPO_ROOT/.env.example" "$REPO_ROOT/$ENV_FILE"
+      bash "$REPO_ROOT/scripts/init-main-env.sh" "$REPO_ROOT/$ENV_FILE"
     fi
     info "Created $ENV_FILE"
   fi

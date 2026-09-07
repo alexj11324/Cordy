@@ -229,4 +229,20 @@ printf 'n\n' | dev_env destroy orphan-902 > "$out" 2>&1 || fail "declining destr
 require_contains "$out" "Cancelled."
 [ -d "$ORVILO_DEV_HOME/envs/orphan-902" ] || fail "declined destroy removed the environment anyway"
 
+# Fresh defaults and explicit database credentials must feed the same URL.
+(
+  POSTGRES_USER=fixture
+  POSTGRES_PASSWORD="$(openssl rand -hex 16)"
+  POSTGRES_DB=fixture_db
+  POSTGRES_PORT=15432
+  DATABASE_URL=
+  . "$root_dir/scripts/local-env.sh"
+  [ "$DATABASE_URL" = "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" ] \
+    || fail "local database URL must include the configured password"
+  DATABASE_URL="postgres://remote.example/explicit"
+  . "$root_dir/scripts/local-env.sh"
+  [ "$DATABASE_URL" = "postgres://remote.example/explicit" ] \
+    || fail "an explicit database URL must remain unchanged"
+)
+
 echo "✓ dev-env.sh registry behaviour verified"

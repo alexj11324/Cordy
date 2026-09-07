@@ -69,6 +69,25 @@ func TestPruneTaskTempDirsHoldsOffLiveDirThenReclaimsIt(t *testing.T) {
 // part once liveness is answerable: a directory released seconds ago is gone on
 // the next cycle, no TTL wait. This is what makes the end-of-task RemoveAll
 // failing (the Windows sharing violation in #7364) cost nothing.
+func TestPruneTaskTempDirsReclaimsPreCutoverDirAfterUnlock(t *testing.T) {
+	base := t.TempDir()
+	dir := filepath.Join(base, "patchbay-task-pre-cutover")
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lock, err := LockTaskTempDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed, _ := PruneTaskTempDirs(base, 0, time.Now(), testLogger()); removed != 0 {
+		t.Fatal("pruned a live pre-cutover task")
+	}
+	ReleaseTaskTempLock(lock)
+	if removed, _ := PruneTaskTempDirs(base, 0, time.Now(), testLogger()); removed != 1 {
+		t.Fatalf("removed %d pre-cutover directories, want 1", removed)
+	}
+}
+
 func TestPruneTaskTempDirsReclaimsUnlockedDirImmediately(t *testing.T) {
 	base := t.TempDir()
 	dir := makeTaskTempDir(t, base, "released", true)
