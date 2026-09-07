@@ -23,6 +23,9 @@ import { isFloatingChatRouteSuppressed } from "./floating-chat-visibility";
  */
 export function FloatingChat() {
   const enabled = useChatStore((s) => s.floatingChatEnabled);
+  const agentDetailDmAvailable = useChatStore(
+    (s) => s.agentDetailDmAvailable,
+  );
   const agentThreadPath = useAgentThreadPanelStore((s) => s.panel?.routePath);
   const { pathname } = useNavigation();
   const wsPaths = useWorkspacePaths();
@@ -35,6 +38,7 @@ export function FloatingChat() {
       wsPaths.chat(),
       agentThreadPath,
       wsPaths.agents(),
+      agentDetailDmAvailable,
     )
   ) return null;
 

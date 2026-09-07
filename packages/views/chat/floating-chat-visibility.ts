@@ -16,6 +16,7 @@ export function isFloatingChatRouteSuppressed(
   chatPath: string,
   agentThreadPath?: string,
   agentsPath?: string,
+  agentDetailDmAvailable = false,
 ): boolean {
   const agentDetailSegment = agentsPath
     ? pathname.slice(`${agentsPath}/`.length)
@@ -25,7 +26,8 @@ export function isFloatingChatRouteSuppressed(
     pathname.startsWith(`${agentsPath}/`) &&
     agentDetailSegment !== "new" &&
     !agentDetailSegment.startsWith("new/") &&
-    !agentDetailSegment.includes("/");
+    !agentDetailSegment.includes("/") &&
+    agentDetailDmAvailable;
 
   return (
     pathname === agentThreadPath ||

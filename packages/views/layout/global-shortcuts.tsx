@@ -85,6 +85,7 @@ export function GlobalShortcuts() {
         chatPath,
         useAgentThreadPanelStore.getState().panel?.routePath,
         workspacePaths.agents(),
+        useChatStore.getState().agentDetailDmAvailable,
       );
 
     const handleKeyDown = (event: KeyboardEvent) => {

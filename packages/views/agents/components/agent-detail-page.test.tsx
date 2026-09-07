@@ -55,9 +55,18 @@ const currentUserRef = vi.hoisted(() => ({
 const mockToastError = vi.hoisted(() => vi.fn());
 const mockGetAgent = vi.hoisted(() => vi.fn());
 const mockUpdateAgent = vi.hoisted(() => vi.fn());
+const mockSetAgentDetailDmAvailable = vi.hoisted(() => vi.fn());
 
 vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
+}));
+vi.mock("@patchbay/core/chat", () => ({
+  useChatStore: (
+    selector: (state: {
+      setAgentDetailDmAvailable: typeof mockSetAgentDetailDmAvailable;
+    }) => unknown,
+  ) =>
+    selector({ setAgentDetailDmAvailable: mockSetAgentDetailDmAvailable }),
 }));
 vi.mock("@patchbay/core/agents", () => ({
   isAgentRuntimeBound: (agent: {
@@ -370,6 +379,9 @@ describe("AgentDetailPage message button", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Send message" }));
     expect(push).toHaveBeenCalledWith("/acme/chat?agent=agent-1");
     expect(mockToastError).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockSetAgentDetailDmAvailable).toHaveBeenLastCalledWith(true),
+    );
   });
 
   it("shows a toast instead of navigating when the user lacks chat access", async () => {
@@ -386,6 +398,7 @@ describe("AgentDetailPage message button", () => {
       "You don't have access to chat with this agent.",
     );
     expect(push).not.toHaveBeenCalled();
+    expect(mockSetAgentDetailDmAvailable).toHaveBeenLastCalledWith(false);
   });
 
   it("disables message while membership is resolving instead of toasting a false deny", async () => {
@@ -412,6 +425,7 @@ describe("AgentDetailPage message button", () => {
     expect(
       screen.queryByRole("button", { name: "Send message" }),
     ).not.toBeInTheDocument();
+    expect(mockSetAgentDetailDmAvailable).toHaveBeenLastCalledWith(false);
   });
 
   it("keeps assignment and archive actions out of the identity card", async () => {

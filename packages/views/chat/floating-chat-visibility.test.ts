@@ -34,6 +34,7 @@ describe("floating chat route suppression", () => {
         "/acme/chat",
         undefined,
         "/acme/agents",
+        true,
       ),
     ).toBe(true);
     expect(
@@ -58,6 +59,18 @@ describe("floating chat route suppression", () => {
         "/acme/chat",
         undefined,
         "/acme/agents",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps global chat when Agent detail has no working replacement DM action", () => {
+    expect(
+      isFloatingChatRouteSuppressed(
+        "/acme/agents/agent-1",
+        "/acme/chat",
+        undefined,
+        "/acme/agents",
+        false,
       ),
     ).toBe(false);
   });

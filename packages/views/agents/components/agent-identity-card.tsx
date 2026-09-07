@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Bot, Gauge, MessageSquare, Server } from "lucide-react";
 import type { Agent, AgentRuntime, MemberWithUser } from "@patchbay/core/types";
@@ -48,6 +48,7 @@ export function AgentIdentityCard({
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(agent.name);
   const [saving, setSaving] = useState(false);
+  const previousAgentIdRef = useRef(agent.id);
   const modelsQuery = useQuery(
     runtimeModelsOptions(runtimeOnline ? runtime?.id : null, runtime?.workspace_id),
   );
@@ -69,8 +70,11 @@ export function AgentIdentityCard({
     .join(" · ");
 
   useEffect(() => {
-    setName(agent.name);
-    setEditing(false);
+    if (previousAgentIdRef.current !== agent.id) {
+      previousAgentIdRef.current = agent.id;
+      setName(agent.name);
+      setEditing(false);
+    }
   }, [agent.id, agent.name]);
 
   useEffect(() => {
@@ -96,7 +100,7 @@ export function AgentIdentityCard({
       await onUpdate(agent.id, { name: next });
       setEditing(false);
     } catch {
-      setName(agent.name);
+      // The page reports the error; retain the draft for correction or retry.
     } finally {
       setSaving(false);
     }

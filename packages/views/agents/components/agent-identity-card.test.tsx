@@ -122,7 +122,25 @@ function renderCard(
   };
   const onUpdate = overrides.onUpdate ?? vi.fn().mockResolvedValue(undefined);
   const onDm = overrides.onDm ?? vi.fn();
-  render(
+  const props: ComponentProps<typeof AgentIdentityCard> = {
+    agent,
+    runtime,
+    owner,
+    presence: {
+      availability: "online",
+      workload: "idle",
+      runningCount: 0,
+      queuedCount: 0,
+      capacity: 5,
+    },
+    canEdit: true,
+    dmPending: false,
+    dmHref: "/acme/chat?agent=agent-1",
+    onDm,
+    onUpdate,
+    ...overrides,
+  };
+  const renderTree = (cardProps: ComponentProps<typeof AgentIdentityCard>) => (
     <I18nProvider locale="en" resources={TEST_RESOURCES}>
       <NavigationProvider value={navigation}>
         <QueryClientProvider
@@ -132,29 +150,19 @@ function renderCard(
             })
           }
         >
-          <AgentIdentityCard
-          agent={agent}
-          runtime={runtime}
-          owner={owner}
-          presence={{
-            availability: "online",
-            workload: "idle",
-            runningCount: 0,
-            queuedCount: 0,
-            capacity: 5,
-          }}
-          canEdit
-          dmPending={false}
-          dmHref="/acme/chat?agent=agent-1"
-          onDm={onDm}
-          onUpdate={onUpdate}
-          {...overrides}
-        />
+          <AgentIdentityCard {...cardProps} />
         </QueryClientProvider>
       </NavigationProvider>
-    </I18nProvider>,
+    </I18nProvider>
   );
-  return { onUpdate, onDm };
+  const view = render(renderTree(props));
+  return {
+    onUpdate,
+    onDm,
+    rerenderCard: (
+      next: Partial<ComponentProps<typeof AgentIdentityCard>>,
+    ) => view.rerender(renderTree({ ...props, ...next })),
+  };
 }
 
 describe("AgentIdentityCard", () => {
@@ -205,7 +213,7 @@ describe("AgentIdentityCard", () => {
     );
   });
 
-  it("rolls the draft back when rename fails", async () => {
+  it("retains the draft when rename fails", async () => {
     const user = userEvent.setup();
     const onUpdate = vi.fn().mockRejectedValue(new Error("save failed"));
     renderCard({ onUpdate });
@@ -218,12 +226,44 @@ describe("AgentIdentityCard", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue(
-        "Model Picker Verification",
+        "Broken",
       ),
     );
     expect(
       screen.getByRole("button", { name: "Finish editing agent" }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps the rename draft open through an optimistic name update", async () => {
+    const user = userEvent.setup();
+    let rejectSave: ((reason?: unknown) => void) | undefined;
+    const onUpdate = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectSave = reject;
+        }),
+    );
+    const { rerenderCard } = renderCard({ onUpdate });
+
+    await user.click(screen.getByRole("button", { name: "Edit agent" }));
+    const input = screen.getByRole("textbox", { name: "Name" });
+    await user.clear(input);
+    await user.type(input, "Optimistic Name");
+    await user.click(screen.getByRole("button", { name: "Finish editing agent" }));
+
+    rerenderCard({ agent: { ...agent, name: "Optimistic Name" } });
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue(
+      "Optimistic Name",
+    );
+
+    rejectSave?.(new Error("save failed"));
+    rerenderCard({ agent });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Finish editing agent" }),
+      ).toBeEnabled(),
+    );
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Optimistic Name");
   });
 
   it("hides Edit when the caller cannot manage the agent", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AlertCircle, ArrowLeft, Lock, Server } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,6 +12,7 @@ import {
 } from "@patchbay/core/agents";
 import { api, ApiError } from "@patchbay/core/api";
 import { useAuthStore } from "@patchbay/core/auth";
+import { useChatStore } from "@patchbay/core/chat";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import {
@@ -90,6 +91,22 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     canEdit,
     isLoading: permissionsLoading,
   } = useAgentPermissions(agent, wsId);
+  const setAgentDetailDmAvailable = useChatStore(
+    (state) => state.setAgentDetailDmAvailable,
+  );
+  const isArchived = !!agent?.archived_at;
+  const runtimeBound = agent ? isAgentRuntimeBound(agent) : false;
+  const agentDetailDmAvailable =
+    !!agent &&
+    !isArchived &&
+    !permissionsLoading &&
+    canAssign.allowed &&
+    runtimeBound;
+
+  useEffect(() => {
+    setAgentDetailDmAvailable(agentDetailDmAvailable);
+    return () => setAgentDetailDmAvailable(false);
+  }, [agentDetailDmAvailable, setAgentDetailDmAvailable]);
 
   // One-shot channel: the inspector's compact Lark status row asks the
   // overview pane to focus a tab. The pane clears it after consuming.
@@ -265,8 +282,6 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     );
   }
 
-  const isArchived = !!agent.archived_at;
-  const runtimeBound = isAgentRuntimeBound(agent);
   const runtime = runtimeBound
     ? (runtimes.find((r) => r.id === agent.runtime_id) ?? null)
     : null;
