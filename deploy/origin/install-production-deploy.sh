@@ -84,9 +84,15 @@ forced_entry="restrict,command=\"/usr/local/bin/orvilo-production-deploy\" $publ
 
 # Do not authorize remote deployment until the local baseline has been
 # captured or the existing rollback state has passed validation. Reinstalling
-# the gateway must not overwrite deployment history.
+# the gateway must not overwrite deployment history. A pre-cutover manifest
+# needs one bootstrap refresh so the new gateway records the running baseline
+# before it starts accepting Orvilo-only deployment requests.
 if [ -f "$state_dir/current.json" ]; then
-  runuser -u "$deploy_user" -- /usr/local/bin/orvilo-production-deploy --check
+  if grep -q 'ghcr\.io/alexj11324/patchbay-' "$state_dir/current.json"; then
+    runuser -u "$deploy_user" -- /usr/local/bin/orvilo-production-deploy --bootstrap
+  else
+    runuser -u "$deploy_user" -- /usr/local/bin/orvilo-production-deploy --check
+  fi
 else
   runuser -u "$deploy_user" -- /usr/local/bin/orvilo-production-deploy --bootstrap
 fi

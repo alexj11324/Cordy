@@ -39,6 +39,15 @@ EXPECTED_IMAGE_REPOSITORIES = {
     "docs": "ghcr.io/alexj11324/orvilo-docs",
     "auth-broker": "ghcr.io/alexj11324/orvilo-auth-broker",
 }
+# The running production containers predate the Orvilo image cutover. These
+# repositories are accepted only while recording that one-time bootstrap
+# baseline; network deployment requests remain Orvilo-only below.
+LEGACY_BOOTSTRAP_IMAGE_REPOSITORIES = {
+    "backend": "ghcr.io/alexj11324/patchbay-backend",
+    "web": "ghcr.io/alexj11324/patchbay-web",
+    "docs": "ghcr.io/alexj11324/patchbay-docs",
+    "auth-broker": "ghcr.io/alexj11324/patchbay-auth-broker",
+}
 BOOTSTRAP_CONTAINERS = {
     "backend": "cordy632-backend-1",  # legacy-brand-compat: existing production project
     "web": "cordy632-frontend-1",  # legacy-brand-compat: existing production project
@@ -115,6 +124,21 @@ def validate_image_ref(name: str, value: Any, *, immutable: bool = True) -> str:
     return value
 
 
+def validate_bootstrap_image_ref(name: str, value: Any) -> str:
+    """Accept the current image or its pre-cutover image for one local baseline."""
+    if not isinstance(value, str):
+        raise DeploymentError(f"bootstrap {name} image reference must be a string")
+    for repository in (
+        EXPECTED_IMAGE_REPOSITORIES[name],
+        LEGACY_BOOTSTRAP_IMAGE_REPOSITORIES[name],
+    ):
+        if value.startswith(f"{repository}@") and DIGEST_RE.fullmatch(value[len(repository) + 1 :]):
+            return value
+        if re.fullmatch(re.escape(repository) + r":[A-Za-z0-9_.-]+", value):
+            return value
+    raise DeploymentError(f"bootstrap {name} image is outside the migration allow-list")
+
+
 def validate_deploy_request(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise DeploymentError("deployment request must be a JSON object")
@@ -152,7 +176,11 @@ def validate_stored_manifest(value: Any) -> dict[str, Any]:
     normalized["source_sha"] = source_sha
     normalized["bootstrap"] = bootstrap
     normalized["images"] = {
-        name: validate_image_ref(name, images[name], immutable=not bootstrap)
+        name: (
+            validate_bootstrap_image_ref(name, images[name])
+            if bootstrap
+            else validate_image_ref(name, images[name])
+        )
         for name in EXPECTED_IMAGE_REPOSITORIES
     }
     return normalized
@@ -191,10 +219,10 @@ def select_bootstrap_image(name: str, configured: str, repo_digests: Any) -> str
     if isinstance(repo_digests, list):
         for candidate in repo_digests:
             try:
-                return validate_image_ref(name, candidate)
+                return validate_bootstrap_image_ref(name, candidate)
             except DeploymentError:
                 continue
-    return validate_image_ref(name, configured, immutable=False)
+    return validate_bootstrap_image_ref(name, configured)
 
 
 def clerk_api_request(

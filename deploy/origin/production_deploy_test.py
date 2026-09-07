@@ -99,6 +99,34 @@ class ProductionDeployContractTests(unittest.TestCase):
             configured,
         )
 
+    def test_bootstrap_accepts_the_current_legacy_image_only_for_migration(self):
+        repository = production_deploy.LEGACY_BOOTSTRAP_IMAGE_REPOSITORIES["backend"]
+        digest_ref = f"{repository}@sha256:{'d' * 64}"
+        self.assertEqual(
+            production_deploy.select_bootstrap_image(
+                "backend",
+                f"{repository}:old-tag",
+                [digest_ref],
+            ),
+            digest_ref,
+        )
+        manifest = self.manifest()
+        manifest["bootstrap"] = True
+        manifest["images"]["backend"] = digest_ref
+        self.assertEqual(
+            production_deploy.validate_stored_manifest(manifest)["images"]["backend"],
+            digest_ref,
+        )
+
+    def test_network_deploy_rejects_legacy_image_repositories(self):
+        manifest = self.manifest()
+        legacy = production_deploy.LEGACY_BOOTSTRAP_IMAGE_REPOSITORIES["web"]
+        manifest["images"]["web"] = f"{legacy}@sha256:{'d' * 64}"
+        with self.assertRaisesRegex(
+            production_deploy.DeploymentError, "allow-listed repository"
+        ):
+            production_deploy.validate_deploy_request(manifest)
+
     def test_check_validates_existing_state_without_rebootstrapping(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "state"
