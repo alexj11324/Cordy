@@ -52,7 +52,9 @@ BOOTSTRAP_CONTAINERS = {
     "backend": "cordy632-backend-1",  # legacy-brand-compat: existing production project
     "web": "cordy632-frontend-1",  # legacy-brand-compat: existing production project
     "docs": "cordy-docs-1",  # legacy-brand-compat: existing production project
-    "auth-broker": "orvilo-auth-broker-broker-1",
+    # The one-time baseline is captured from the currently running legacy
+    # project; apply() replaces it with the Orvilo compose project below.
+    "auth-broker": "patchbay-auth-broker-broker-1",
 }
 PRODUCTION_SMOKE_USER_EMAIL = "production-smoke@aspectlylabs.com"
 
