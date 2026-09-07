@@ -3690,6 +3690,7 @@ var errIssueReviewTransitionRace = errors.New("issue review transition changed w
 var errIssueWorkflowRace = errors.New("issue workflow changed while locking the issue")
 
 type issueReviewWritePlan struct {
+	enteringReview    bool
 	actorUserID       pgtype.UUID
 	reviewerType      pgtype.Text
 	reviewerID        pgtype.UUID
@@ -3845,6 +3846,11 @@ func (h *Handler) updateIssueAtomically(ctx context.Context, workspaceID pgtype.
 		return db.Issue{}, current, false, errIssueWorkflowRace
 	}
 	leavingReview, reviewerReassigned, enteringReview := issueReviewTransitionFlags(ctx, qtx, current, issue)
+	// Another writer may have entered Review with dispatch suppressed. Do not
+	// report this request's handoff as successful when its transition vanished.
+	if reviewPlan != nil && reviewPlan.enteringReview && !enteringReview {
+		return db.Issue{}, current, false, errIssueReviewTransitionRace
+	}
 	if (leavingReview || reviewerReassigned || enteringReview) && (reviewPlan == nil || !reviewPlan.lockReviewerTasks) {
 		return db.Issue{}, current, false, errIssueReviewTransitionRace
 	}
@@ -4180,6 +4186,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		reviewPlan = &issueReviewWritePlan{
+			enteringReview:    prelockEnteringReview,
 			actorUserID:       memberActorUserID(h.resolveActor(r, userID, workspaceID)),
 			reviewerType:      params.ReviewerType,
 			reviewerID:        params.ReviewerID,
@@ -5046,6 +5053,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			reviewPlan = &issueReviewWritePlan{
+				enteringReview:    prelockEnteringReview,
 				actorUserID:       memberActorUserID(h.resolveActor(r, userID, workspaceID)),
 				reviewerType:      params.ReviewerType,
 				reviewerID:        params.ReviewerID,

@@ -488,7 +488,7 @@ func (s *AgentCoordinationService) enqueueExplicitReviewerHandoff(ctx context.Co
 	payload.ReviewerID = util.UUIDToString(reviewerID)
 	ownerType := ""
 	ownerID := pgtype.UUID{}
-	if reviewerType == "agent" {
+	if reviewerType == "agent" || reviewerType == "team" {
 		ownerType = reviewerType
 		ownerID = reviewerID
 		payload.OwnerType = ownerType
@@ -799,7 +799,7 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 			}
 				candidate, err := qtx.SelectCoordinationReviewer(ctx, db.SelectCoordinationReviewerParams{
 					WorkspaceID:         issue.WorkspaceID,
-				ExplicitReviewer:    explicitReviewerType != "",
+					ExplicitReviewer:    payload.ExplicitReviewer,
 					ReviewerID:          reviewerID,
 					SourceAgentID:       optionalUUID(payload.AgentID),
 					TeamID:              teamID,
@@ -837,7 +837,7 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 				"assignment_activity_published": false,
 				"candidate_agent_id":             util.UUIDToString(candidate.ID),
 				"candidate_agent_name":           candidate.Name,
-				"explicit_reviewer":              explicitReviewerType != "",
+				"explicit_reviewer":              payload.ExplicitReviewer,
 				"previous_status":                previousIssue.Status,
 				"previous_executor_type":         coordinationText(previousIssue.ExecutorType),
 				"previous_executor_id":           util.UUIDToString(previousIssue.ExecutorID),
@@ -1813,6 +1813,9 @@ func coordinationCompletionStillOwnsIssue(issue db.Issue, role string, taskConte
 		}
 		return taskContext.OwnerGeneration == nil || *taskContext.OwnerGeneration == issue.ExecutorGeneration
 	case CoordinationAssignmentReviewer:
+		if strings.TrimSpace(taskContext.OwnerType) == "team" {
+			return coordinationText(issue.ReviewerType) == "team" && sameCoordinationUUID(issue.ReviewerID, ownerID)
+		}
 		return sameCoordinationUUID(ownerID, agentID) && coordinationText(issue.ReviewerType) == "agent" && sameCoordinationUUID(issue.ReviewerID, agentID)
 	default:
 		return false
@@ -1858,7 +1861,7 @@ func coordinationIssueOwner(issue db.Issue, role string) (string, pgtype.UUID) {
 
 func coordinationOwnerMatchesIssue(issue db.Issue, role, ownerType string, ownerID pgtype.UUID, expectedGeneration *int64) bool {
 	currentType, currentID := coordinationIssueOwner(issue, role)
-	if role == CoordinationAssignmentReviewer && ownerType != "agent" {
+	if role == CoordinationAssignmentReviewer && ownerType != "agent" && ownerType != "team" {
 		return false
 	}
 	if role == CoordinationAssignmentExecutor && ownerType != "agent" && ownerType != "team" {

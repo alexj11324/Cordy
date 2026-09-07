@@ -46,3 +46,22 @@ checks cover auto-collapsed and manually hidden drops, reload persistence,
 failed-move rollback, and light/dark neutral surfaces. Live local HTTP checks
 exercise the API and background coordinator with fixture agents; they do not
 claim real provider/model execution or autonomous review quality.
+
+## PR review follow-through
+
+- Team review assignments now retain the team as owner and dispatch through
+  its leader. Delivery and completion are covered for create, update, and batch
+  entry; existing task identity and current-leader checks still apply.
+- Automatic entry uses the event's explicit-selection flag for both candidate
+  selection and persisted decisions. A retained reviewer field alone does not
+  waive the automatic reviewer-role requirement.
+- A request whose planned Review entry disappears behind a concurrent writer
+  returns a conflict instead of claiming it dispatched work. The regression
+  interleaves a `suppress_run` transition after the second writer's snapshot.
+- Board move completion callbacks follow the mutation promise, so navigation
+  or a newer mutation cannot discard the persisted-column rollback. Tests use
+  real mutation observers and verify failure after unmount and overlapping
+  completions.
+- The reported nil-coordinator panic was not reproducible: `Wake` already
+  accepts a nil receiver. A member-review creation regression confirms the
+  issue commits successfully with a nonnil task service and nil coordinator.
