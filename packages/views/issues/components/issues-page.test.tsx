@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Issue } from "@orvilo/core/types";
 import { I18nProvider } from "@orvilo/core/i18n/react";
@@ -817,6 +817,18 @@ describe("IssuesPage (shared)", () => {
     expect(await screen.findAllByText("All")).not.toHaveLength(0);
     expect(screen.getByText("Members")).toBeInTheDocument();
     expect(screen.getByText("Agents")).toBeInTheDocument();
+  });
+
+  it("opens Dependency Graph from the view menu instead of offering Swimlane", async () => {
+    renderWithQuery(<IssuesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Board/ }));
+    const dependencyGraph = await screen.findByRole("menuitem", {
+      name: "Dependency Graph",
+    });
+    expect(screen.queryByRole("menuitemradio", { name: "Swimlane" })).not.toBeInTheDocument();
+
+    expect(dependencyGraph).toHaveAttribute("href", "/test/task-graph");
   });
 
   // Members are selected by ownership while Agents are selected by executor

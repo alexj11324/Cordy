@@ -42,6 +42,7 @@ function IssuesSurfaceHeader({
       facetCountsExact={facetCountsExact}
       tableFacetCounts={tableFacetCounts}
       onTableFacetChange={onTableFacetChange}
+      allowDependencyGraph
     />
   );
 }
@@ -59,7 +60,7 @@ export function IssuesPage() {
 
       <IssueSurface
         scope={{ type: "workspace", actorKind: scope }}
-        modes={["board", "list", "table", "swimlane"]}
+        modes={["board", "list", "table"]}
         batchToolbar="list"
         renderHeader={({ controller }) => (
           <IssuesSurfaceHeader

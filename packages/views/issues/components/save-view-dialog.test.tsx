@@ -8,7 +8,10 @@ import {
 } from "@orvilo/core/issues/stores/view-store";
 import { ViewStoreProvider } from "@orvilo/core/issues/stores/view-store-context";
 import { renderWithI18n } from "../../test/i18n";
-import { DraftDefinitionFields } from "./save-view-dialog";
+import {
+  DraftDefinitionFields,
+  normalizeSaveViewMode,
+} from "./save-view-dialog";
 
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/react-query")>()),
@@ -58,5 +61,14 @@ describe("DraftDefinitionFields ordering", () => {
 
     expect(screen.queryByRole("button", { name: "Ascending" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Descending" })).not.toBeInTheDocument();
+  });
+});
+
+describe("save-view mode normalization", () => {
+  it("preserves Gantt unless the caller supplies an explicit restricted list", () => {
+    expect(normalizeSaveViewMode("gantt")).toBe("gantt");
+    expect(normalizeSaveViewMode("gantt", ["list", "board", "table"])).toBe(
+      "list",
+    );
   });
 });

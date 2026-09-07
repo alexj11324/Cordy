@@ -115,7 +115,6 @@ type NavKey =
   | "chat"
   | "myIssues"
   | "issues"
-  | "taskGraph"
   | "projects"
   | "automations"
   | "agents"
@@ -133,7 +132,6 @@ type NavLabelKey =
   | "chat"
   | "my_issues"
   | "issues"
-  | "task_graph"
   | "projects"
   | "automations"
   | "agents"
@@ -155,7 +153,6 @@ const personalNav: { key: NavKey; labelKey: NavLabelKey }[] = [
 
 const workspaceNav: { key: NavKey; labelKey: NavLabelKey }[] = [
   { key: "issues", labelKey: "issues" },
-  { key: "taskGraph", labelKey: "task_graph" },
   { key: "projects", labelKey: "projects" },
   { key: "automations", labelKey: "automations" },
   { key: "agents", labelKey: "agents" },
@@ -831,7 +828,11 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                 {workspaceNav.map((item) => {
                   const href = p[item.key]();
                   const Icon = routeIconForPath(href);
-                  const isActive = !isActivePinnedRoute && isNavActive(pathname, href);
+                  const isActive =
+                    !isActivePinnedRoute &&
+                    (isNavActive(pathname, href) ||
+                      (item.key === "issues" &&
+                        isNavActive(pathname, p.taskGraph())));
                   return (
                     <SidebarMenuItem key={item.key}>
                       <SidebarMenuButton
