@@ -205,6 +205,9 @@ test("staging accounts origin validates its own Worker token", () => {
 });
 
 test("staging gateway refuses production state", () => {
+  assert.ok(installer.indexOf('chown "$deploy_user:$deploy_group" "$secret_file"') < installer.indexOf("--bootstrap"));
+  assert.match(installer, /chmod 0600 "\$secret_file"/u);
+  assert.match(installer, /\[ -L "\$secret_file" \]/u);
   for (const file of ["staging-product.override.yml", "staging-docs.compose.yml", "staging-auth-broker.compose.yml"]) {
     assert.ok(stagingGateway.includes(`str(release / "deploy/origin/${file}")`));
     assert.ok(!stagingGateway.includes(`str(self.static_directory / "${file}")`));

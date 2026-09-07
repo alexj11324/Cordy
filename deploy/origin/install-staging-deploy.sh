@@ -34,7 +34,7 @@ if [ -z "$deploy_home" ] || [ ! -d "$deploy_home" ]; then
   echo "deployment user has no usable home directory: $deploy_user" >&2
   exit 1
 fi
-for protected_path in "$state_dir" "$static_dir" "$ssh_dir" "$authorized_keys"; do
+for protected_path in "$state_dir" "$state_dir/secrets" "$static_dir" "$ssh_dir" "$authorized_keys"; do
   if [ -L "$protected_path" ]; then
     echo "refusing symlinked staging deployment path: $protected_path" >&2
     exit 1
@@ -69,10 +69,14 @@ touch "$authorized_keys"
 chown "$deploy_user:$deploy_group" "$authorized_keys"
 chmod 0600 "$authorized_keys"
 
-if [ ! -f "$state_dir/secrets/product-env.json" ] || [ ! -f "$state_dir/secrets/auth-broker-env.json" ]; then
-  echo "place staging product-env.json and auth-broker-env.json in $state_dir/secrets before bootstrap" >&2
-  exit 1
-fi
+for secret_file in "$state_dir/secrets/product-env.json" "$state_dir/secrets/auth-broker-env.json"; do
+  if [ -L "$secret_file" ] || [ ! -f "$secret_file" ]; then
+    echo "place regular staging secret files in $state_dir/secrets before bootstrap; symlinks are not allowed" >&2
+    exit 1
+  fi
+  chown "$deploy_user:$deploy_group" "$secret_file"
+  chmod 0600 "$secret_file"
+done
 
 public_key="$(awk 'NF >= 2 { print $1 " " $2; exit }' "$1")"
 if [[ ! "$public_key" =~ ^(ssh-ed25519|sk-ssh-ed25519@openssh.com)[[:space:]][A-Za-z0-9+/=]+$ ]]; then

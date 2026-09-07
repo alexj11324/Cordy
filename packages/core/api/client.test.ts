@@ -15,9 +15,10 @@ describe("ApiClient desktop handoff", () => {
       location: { href: "https://staging.aspectlylabs.com/" },
       cookie: "patchbay_csrf=production; orvilo_staging_csrf=staging",
     });
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ state: "s", code: "c", callback_protocol: "patchbay" })));
+    const state = "s".repeat(43);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ state, code: `pbd_${"c".repeat(43)}`, callback_protocol: "patchbay" })));
     vi.stubGlobal("fetch", fetchMock);
-    await new ApiClient("https://api.staging.aspectlylabs.com").completeDesktopAuthHandoff("s", "challenge");
+    await new ApiClient("https://api.staging.aspectlylabs.com").completeDesktopAuthHandoff(state, "challenge");
     expect(fetchMock.mock.calls[0]?.[1]?.headers["X-CSRF-Token"]).toBe("staging");
   });
   it("completes self-hosted handoffs with the authenticated API", async () => {
