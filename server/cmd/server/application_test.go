@@ -98,6 +98,30 @@ func TestApplicationSharesDispatchAndLivenessCapabilities(t *testing.T) {
 	}
 }
 
+// The dispatch/cache test below exercises the job itself. Also pin its
+// production registration, so a working but unregistered job cannot pass CI.
+func TestApplicationRegistersScheduledAutomationDispatch(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "application_lifecycle.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registered := 0
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || !strings.HasSuffix(calleeName(call), ".Register") || len(call.Args) != 1 {
+			return true
+		}
+		job, ok := call.Args[0].(*ast.CallExpr)
+		if ok && calleeName(job) == "scheduler.AutomationScheduleDispatchJob" {
+			registered++
+		}
+		return true
+	})
+	if registered != 1 {
+		t.Fatalf("production registers %d automation dispatch jobs, want 1", registered)
+	}
+}
+
 func TestApplicationScheduledDispatchInvalidatesHTTPEmptyClaim(t *testing.T) {
 	rawURL := os.Getenv("REDIS_TEST_URL")
 	if rawURL == "" {
