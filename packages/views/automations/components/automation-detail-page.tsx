@@ -9,10 +9,6 @@ import { useQuery } from "@tanstack/react-query";
 import { automationDetailOptions, automationRunsOptions } from "@patchbay/core/automations/queries";
 import { projectDetailOptions } from "@patchbay/core/projects/queries";
 import type { AutomationTriggerPreset } from "@patchbay/core/automations";
-import { isNativeAutomationProvider } from "@patchbay/core/automations";
-import { githubInstallationsOptions } from "@patchbay/core/github/queries";
-import { slackInstallationsOptions } from "@patchbay/core/slack/queries";
-import { linearConnectionOptions } from "@patchbay/core/linear/queries";
 import {
   useUpdateAutomation,
   useDeleteAutomation,
@@ -354,9 +350,6 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
     ...projectDetailOptions(wsId, projectId ?? ""),
     enabled: Boolean(projectId),
   });
-  const github = useQuery(githubInstallationsOptions(wsId));
-  const slack = useQuery(slackInstallationsOptions(wsId));
-  const linear = useQuery(linearConnectionOptions(wsId));
 
   const [detailTab, setDetailTab] = useState<"settings" | "runs">("settings");
   const [triggerDialogOpen, setTriggerDialogOpen] = useState(false);
@@ -493,19 +486,6 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
   };
 
   const hasWebhookTrigger = triggers.some((trig) => trig.kind === "webhook");
-  const githubConnected = (github.data?.installations.length ?? 0) > 0;
-  const slackConnected = (slack.data?.installations ?? []).some(
-    (row) => row.status === "installed" || row.installation_status === "installed",
-  );
-  const linearConnected = linear.data?.connected === true;
-  const triggersNeedAuth = triggers.some((trig) => {
-    const provider = trig.provider;
-    if (!isNativeAutomationProvider(provider)) return false;
-    if (provider === "github") return !githubConnected;
-    if (provider === "slack") return !slackConnected;
-    if (provider === "linear") return !linearConnected;
-    return false;
-  });
 
   return (
     <div className="flex h-full flex-col">
@@ -715,12 +695,6 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                     />
                   </div>
                 </div>
-                {triggersNeedAuth && (
-                  <p className="flex items-start gap-2 text-caption text-amber-700 dark:text-amber-300">
-                    <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-                    <span>{t(($) => $.settings.triggers_auth_warning)}</span>
-                  </p>
-                )}
               </section>
 
               <InstructionsSection

@@ -623,7 +623,6 @@
     "next_run": "다음 실행 {{date}}",
     "schedule_every_day_at": "매일",
     "schedule_time_aria": "시간",
-    "triggers_auth_warning": "추가 인증이 필요한 트리거가 있습니다.",
     "connect_github": "이 트리거를 쓰려면 GitHub를 연결하세요.",
     "connect_slack": "이 트리거를 쓰려면 Slack을 연결하세요.",
     "connect_linear": "이 트리거를 쓰려면 Linear를 연결하세요.",

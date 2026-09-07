@@ -626,7 +626,6 @@
     "next_run": "Next run {{date}}",
     "schedule_every_day_at": "Every day at",
     "schedule_time_aria": "Time",
-    "triggers_auth_warning": "One or more triggers require additional authentication to be used.",
     "connect_github": "Connect GitHub to use this trigger.",
     "connect_slack": "Connect Slack to use this trigger.",
     "connect_linear": "Connect Linear to use this trigger.",

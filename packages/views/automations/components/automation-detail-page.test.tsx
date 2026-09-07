@@ -698,7 +698,6 @@ describe("AutomationDetailPage settings layout", () => {
     expect(tools).toHaveTextContent("Send to Slack");
     expect(tools).toHaveTextContent("Requires connection");
     expect(tools).toHaveTextContent("Add Tool or MCP");
-    expect(screen.getByText(/triggers require additional authentication/)).toBeInTheDocument();
   });
 
   it("wires Connect, status, time, and GitHub presets to real writes", async () => {

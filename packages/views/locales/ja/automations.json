@@ -623,7 +623,6 @@
     "next_run": "次回 {{date}}",
     "schedule_every_day_at": "毎日",
     "schedule_time_aria": "時刻",
-    "triggers_auth_warning": "認証が必要なトリガーがあります。",
     "connect_github": "このトリガーを使うには GitHub を接続してください。",
     "connect_slack": "このトリガーを使うには Slack を接続してください。",
     "connect_linear": "このトリガーを使うには Linear を接続してください。",
