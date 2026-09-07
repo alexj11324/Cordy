@@ -104,6 +104,7 @@ const GRID_COLS =
 
 // Two-line rows; the virtualizer's fixed-size contract.
 const ROW_HEIGHT = 64;
+const AGENT_CARDS_PAGE_SIZE = 60;
 
 // Single source for hideable column widths: track vars and the grid's
 // min-width derive from the same numbers.
@@ -837,6 +838,7 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
   );
   const [profileAgentId, setProfileAgentId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [cardPage, setCardPage] = useState(0);
 
   const rawScope = useAgentsViewStore((s) => s.scope);
   const scope = AGENT_SCOPES.includes(rawScope) ? rawScope : "mine";
@@ -992,6 +994,22 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
     });
     return filtered;
   }, [scopeRows, search, filters, sortField, sortDirection]);
+
+  useEffect(() => {
+    setCardPage(0);
+  }, [filters, scope, search, sortDirection, sortField]);
+
+  const cardPageCount = Math.max(
+    1,
+    Math.ceil(rows.length / AGENT_CARDS_PAGE_SIZE),
+  );
+  useEffect(() => {
+    setCardPage((page) => Math.min(page, cardPageCount - 1));
+  }, [cardPageCount]);
+  const cardRows = rows.slice(
+    cardPage * AGENT_CARDS_PAGE_SIZE,
+    (cardPage + 1) * AGENT_CARDS_PAGE_SIZE,
+  );
 
   const noMatchText = useMemo(() => {
     const query = search.trim();
@@ -1273,7 +1291,7 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
                       onClick={openNewAgent}
                     />
                   )}
-                  {rows.map((row) => (
+                  {cardRows.map((row) => (
                     <AgentCard
                       duplicateHref={duplicateHref(row.agent)}
                       key={row.agent.id}
@@ -1284,6 +1302,40 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
                     />
                   ))}
                 </div>
+                {cardPageCount > 1 ? (
+                  <nav
+                    aria-label={t(($) => $.page.cards_pagination)}
+                    className="flex items-center justify-center gap-3 pt-5"
+                  >
+                    <Button
+                      disabled={cardPage === 0}
+                      onClick={() => setCardPage((page) => page - 1)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      {t(($) => $.page.cards_previous)}
+                    </Button>
+                    <span
+                      aria-live="polite"
+                      className="text-caption text-muted-foreground"
+                    >
+                      {t(($) => $.page.cards_page, {
+                        page: cardPage + 1,
+                        total: cardPageCount,
+                      })}
+                    </span>
+                    <Button
+                      disabled={cardPage === cardPageCount - 1}
+                      onClick={() => setCardPage((page) => page + 1)}
+                      size="sm"
+                      type="button"
+                      variant="outline"
+                    >
+                      {t(($) => $.page.cards_next)}
+                    </Button>
+                  </nav>
+                ) : null}
                 {rows.length === 0 && (
                   <div className="py-16 text-center text-body text-muted-foreground">
                     {noMatchText}

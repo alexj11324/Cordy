@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
   Bot,
@@ -67,6 +67,10 @@ export function AgentProfilePanel({
   const locale = useLocale();
   const paths = useWorkspacePaths();
   const [activeTab, setActiveTab] = useState<ProfileTab>("info");
+  const [isMobile, setIsMobile] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const { agent, runtime, presence, owner } = row;
 
   useEffect(() => {
@@ -74,12 +78,58 @@ export function AgentProfilePanel({
   }, [agent.id]);
 
   useEffect(() => {
+    const media = window.matchMedia?.("(max-width: 1023px)");
+    if (!media) return;
+    const update = () => setIsMobile(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    const previous =
+      isMobile && document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    const focusables = () =>
+      Array.from(
+        panel?.querySelectorAll<HTMLElement>(
+          'a[href],button:not([disabled]),[tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onCloseRef.current();
+        return;
+      }
+      if (!isMobile || !panel || event.key !== "Tab") return;
+      const items = focusables();
+      if (items.length === 0) {
+        event.preventDefault();
+        panel.focus();
+        return;
+      }
+      const index = items.indexOf(document.activeElement as HTMLElement);
+      if (event.shiftKey && (index <= 0 || index === -1)) {
+        event.preventDefault();
+        items.at(-1)?.focus();
+      } else if (
+        !event.shiftKey &&
+        (index === -1 || index === items.length - 1)
+      ) {
+        event.preventDefault();
+        items[0]?.focus();
+      }
     };
     document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+    if (isMobile && panel) (focusables()[0] ?? panel).focus();
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previous?.focus();
+    };
+  }, [agent.id, isMobile]);
 
   const detailHref = paths.agentDetail(agent.id);
   const detailWithView = (view: string) => `${detailHref}?view=${view}`;
@@ -119,9 +169,12 @@ export function AgentProfilePanel({
       />
       <aside
         aria-labelledby="agent-profile-panel-title"
+        aria-modal={isMobile ? true : undefined}
         className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[420px] min-w-0 flex-col border-l border-border/70 bg-background shadow-xl lg:relative lg:inset-auto lg:z-auto lg:w-[400px] lg:max-w-none lg:shadow-none"
         data-testid="agent-profile-panel"
+        ref={panelRef}
         role="dialog"
+        tabIndex={-1}
       >
         <header className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b px-4">
           <h2
@@ -237,12 +290,14 @@ export function AgentProfilePanel({
                   </ProfileSection>
 
                   <ProfileSection>
-                    <ProfileRow
-                      href={duplicateHref}
-                      icon={CopyPlus}
-                      label={t(($) => $.row_actions.duplicate)}
-                      onClick={onClose}
-                    />
+                    {!agent.archived_at ? (
+                      <ProfileRow
+                        href={duplicateHref}
+                        icon={CopyPlus}
+                        label={t(($) => $.row_actions.duplicate)}
+                        onClick={onClose}
+                      />
+                    ) : null}
                     <ProfileRow
                       href={detailWithView("general")}
                       icon={Settings2}
@@ -463,7 +518,7 @@ function ProfileRow({
         {value !== undefined ? (
           <span
             className={cn(
-              "mt-0.5 block truncate text-body text-muted-foreground/70",
+              "mt-0.5 block truncate text-body text-muted-foreground",
               valueClassName,
             )}
             title={typeof value === "string" ? value : undefined}

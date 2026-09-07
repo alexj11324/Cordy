@@ -204,7 +204,16 @@ function AgentCardAvatar({ row }: { row: AgentListRow }) {
         profileLink={false}
         size="2xl"
       />
-      {availability !== null && visual ? (
+      {!agent.archived_at && !isAgentRuntimeBound(agent) ? (
+        <span
+          aria-label={t(($) => $.row.needs_runtime)}
+          className="absolute right-1 bottom-1 flex size-4 items-center justify-center rounded-full border-2 border-background bg-warning text-warning-foreground"
+          role="img"
+          title={t(($) => $.row.needs_runtime)}
+        >
+          <AlertCircle className="size-2.5" />
+        </span>
+      ) : availability !== null && visual ? (
         <span
           aria-label={t(($) => $.availability[availability])}
           className={cn(
@@ -214,15 +223,6 @@ function AgentCardAvatar({ row }: { row: AgentListRow }) {
           role="img"
           title={t(($) => $.availability[availability])}
         />
-      ) : !isAgentRuntimeBound(agent) ? (
-        <span
-          aria-label={t(($) => $.row.needs_runtime)}
-          className="absolute right-1 bottom-1 flex size-4 items-center justify-center rounded-full border-2 border-background bg-warning text-warning-foreground"
-          role="img"
-          title={t(($) => $.row.needs_runtime)}
-        >
-          <AlertCircle className="size-2.5" />
-        </span>
       ) : null}
     </div>
   );
