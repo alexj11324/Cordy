@@ -372,7 +372,7 @@ func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
 	mustContain := []string{
 		"not a parameter manual",
 		"`description` is a catalog summary",
-		"`instructions` is the runtime behavior contract",
+		"`instructions` is stored on the agent row but is NOT shipped to user agents",
 		"`conversation_starters`",
 		"`avatar_url` → a random `emoji:<glyph>`",
 		"patchbay agent create --name <name> --runtime-id <runtime-id>",

@@ -123,7 +123,7 @@ patchbay agent copy <source-agent-id> --runtime-id <target> --model <model>  # c
 |---|---|---|---|
 | `name` | `agent.name` | required, 400 if empty | listings, runtime payload |
 | `description` | `agent.description` | 400 if > 255 code points | catalog/listing only — NOT the runtime prompt |
-| `instructions` | `agent.instructions` | none | daemon → provider at claim time |
+| `instructions` | `agent.instructions` | none | retained metadata; user-agent claims do not ship it |
 | `conversation_starters` | `agent.conversation_starters` (JSON array) | at most 3 items; each requires a label (≤80 code points) and prompt (≤4000 code points) | human-facing Chat empty state only; selecting one prefills the composer and does not start a run |
 | `avatar_url` | `agent.avatar_url` | none; an explicit non-empty value is preserved, while omitted/empty creates a random `emoji:<glyph>` avatar | catalog/listing UI only — NOT the runtime prompt |
 | `runtime_id` | `agent.runtime_id` (nullable) | required at create (400) + must resolve to a runtime in this workspace | selects runtime/provider; `NULL` means unbound — see below |

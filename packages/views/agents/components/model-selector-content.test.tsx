@@ -507,4 +507,22 @@ describe("four-column model selector", () => {
       screen.getByText(enAgents.model_selector.favorites_empty),
     ).toBeTruthy();
   });
+
+  it("keeps favorites search enabled when the bound runtime is inaccessible", () => {
+    useModelFavoritesStore.setState({
+      favorites: [
+        { runtimeId: "claude", model: "opus", thinkingLevel: "high" },
+      ],
+    });
+    mount(vi.fn(), [
+      { ...runtimes[0]!, selectable: false },
+      runtimes[1]!,
+    ]);
+
+    expect(
+      screen.getByRole("textbox", {
+        name: enAgents.pickers.model_search_placeholder,
+      }),
+    ).toBeEnabled();
+  });
 });

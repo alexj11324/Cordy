@@ -63,7 +63,10 @@ export function AgentDetailInspector({
   // costs no extra request. `null` = not authoritative (offline runtime, still
   // loading, or discovery failed) and must not trigger any clearing.
   const modelsQuery = useQuery(
-    runtimeModelsOptions(canDiscoverRuntimeModels ? agent.runtime_id : null, runtime?.workspace_id),
+    runtimeModelsOptions(
+      canDiscoverRuntimeModels ? agent.runtime_id : null,
+      runtime?.workspace_id,
+    ),
   );
   const modelCatalog = useMemo<ModelCatalog>(
     () =>
@@ -101,10 +104,7 @@ export function AgentDetailInspector({
         description={t(($) => $.inspector.section_execution_hint)}
       >
         <SettingsCard>
-          <SettingsRow
-            label={t(($) => $.inspector.prop_model)}
-            size="none"
-          >
+          <SettingsRow label={t(($) => $.inspector.prop_model)} size="none">
             <ModelPicker
               variant="chip"
               showLabel={false}
@@ -115,9 +115,18 @@ export function AgentDetailInspector({
               provider={runtime?.provider}
               thinkingLevel={agent.thinking_level ?? ""}
               serviceTier={agent.service_tier ?? ""}
-              runtimes={runtimes.filter((item) =>
-                isRuntimeUsableForUser(item, currentUserId),
-              )}
+              runtimes={runtimes
+                .filter(
+                  (item) =>
+                    item.id === agent.runtime_id ||
+                    isRuntimeUsableForUser(item, currentUserId),
+                )
+                .map((item) => ({
+                  ...item,
+                  selectable:
+                    item.id !== agent.runtime_id ||
+                    isRuntimeUsableForUser(item, currentUserId),
+                }))}
               onSelection={(selection) => {
                 const sameRuntime = selection.runtimeId === agent.runtime_id;
                 const selectedEntry = sameRuntime
@@ -146,7 +155,7 @@ export function AgentDetailInspector({
                   ...(sameRuntime ? {} : { runtime_id: selection.runtimeId }),
                   model: selection.model,
                   thinking_level: keepExistingThinking
-                    ? agent.thinking_level ?? ""
+                    ? (agent.thinking_level ?? "")
                     : selection.thinkingLevel,
                   service_tier: selection.serviceTier,
                 });

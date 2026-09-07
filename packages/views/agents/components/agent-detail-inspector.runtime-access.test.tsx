@@ -2,7 +2,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type {
   Agent,
   AgentRuntime,
@@ -15,8 +21,7 @@ const mockGetListModelsResult = vi.hoisted(() => vi.fn());
 
 vi.mock("@patchbay/core/api", () => ({
   api: {
-    initiateListModels: (...args: unknown[]) =>
-      mockInitiateListModels(...args),
+    initiateListModels: (...args: unknown[]) => mockInitiateListModels(...args),
     getListModelsResult: (...args: unknown[]) =>
       mockGetListModelsResult(...args),
   },
@@ -58,6 +63,15 @@ const privateRuntime = {
   updated_at: "2026-01-01T00:00:00Z",
 } satisfies AgentRuntime;
 
+const sharedRuntime = {
+  ...privateRuntime,
+  id: "runtime-2",
+  daemon_id: "daemon-2",
+  name: "Shared runtime",
+  owner_id: "user-3",
+  visibility: "public",
+} satisfies AgentRuntime;
+
 const completedModelsRequest = {
   id: "request-1",
   runtime_id: privateRuntime.id,
@@ -70,14 +84,18 @@ const completedModelsRequest = {
 
 let queryClient: QueryClient;
 
-function renderInspector(currentUserId: string, overrides: Partial<Agent> = {}) {
+function renderInspector(
+  currentUserId: string,
+  overrides: Partial<Agent> = {},
+  runtimes: AgentRuntime[] = [privateRuntime],
+) {
   const onUpdate = vi.fn(async () => {});
   renderWithI18n(
     <QueryClientProvider client={queryClient}>
       <AgentDetailInspector
         agent={{ ...agent, ...overrides }}
         runtime={privateRuntime}
-        runtimes={[privateRuntime]}
+        runtimes={runtimes}
         members={[]}
         currentUserId={currentUserId}
         canEdit
@@ -117,7 +135,10 @@ describe("AgentDetailInspector runtime access", () => {
     renderInspector(privateRuntime.owner_id);
 
     await waitFor(() => {
-      expect(mockInitiateListModels).toHaveBeenCalledWith(privateRuntime.id, privateRuntime.workspace_id);
+      expect(mockInitiateListModels).toHaveBeenCalledWith(
+        privateRuntime.id,
+        privateRuntime.workspace_id,
+      );
     });
   });
 
@@ -128,8 +149,12 @@ describe("AgentDetailInspector runtime access", () => {
       service_tier: "",
     });
 
-    fireEvent.click(await screen.findByRole("button", { name: /gpt-5\.6-sol/i }));
-    const input = await screen.findByPlaceholderText("Search or type a model ID");
+    fireEvent.click(
+      await screen.findByRole("button", { name: /gpt-5\.6-sol/i }),
+    );
+    const input = await screen.findByPlaceholderText(
+      "Search or type a model ID",
+    );
     fireEvent.change(input, { target: { value: "custom-local-build" } });
     fireEvent.click(
       await screen.findByRole("button", { name: 'Use "custom-local-build"' }),
@@ -144,5 +169,25 @@ describe("AgentDetailInspector runtime access", () => {
         }),
       ),
     );
+  });
+
+  it("keeps an inaccessible bound runtime visible without allowing it to be selected", async () => {
+    renderInspector("admin-1", { model: "gpt-5.6-sol" }, [
+      privateRuntime,
+      sharedRuntime,
+    ]);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /gpt-5\.6-sol/i }),
+    );
+
+    const boundRuntime = await screen.findByRole("button", {
+      name: "Private runtime",
+    });
+    expect(boundRuntime).toHaveAttribute("aria-pressed", "true");
+    expect(boundRuntime).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Shared runtime" }),
+    ).toBeEnabled();
   });
 });

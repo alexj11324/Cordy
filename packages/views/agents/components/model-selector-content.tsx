@@ -40,7 +40,10 @@ export type ModelSelectorRuntime = Pick<
   RuntimeDevice,
   "id" | "provider" | "name" | "custom_name" | "status"
 > &
-  Partial<Pick<RuntimeDevice, "workspace_id">>;
+  Partial<Pick<RuntimeDevice, "workspace_id">> & {
+    /** False for the agent's current runtime when the viewer cannot use it. */
+    selectable?: boolean;
+  };
 export type ModelSelection = ModelFavorite & {
   catalog: RuntimeModel[] | null;
   serviceTier: string;
@@ -77,6 +80,8 @@ export function ModelSelectorContent({
   const availableFavorites = favorites.filter(
     (favorite) =>
       runtimes.some((runtime) => runtime.id === favorite.runtimeId) &&
+      runtimes.find((runtime) => runtime.id === favorite.runtimeId)
+        ?.selectable !== false &&
       (allowEffort || favorite.thinkingLevel === thinkingLevel),
   );
   const initialRuntimeId = runtimes.some((item) => item.id === runtimeId)
@@ -100,7 +105,9 @@ export function ModelSelectorContent({
   const runtime = runtimes.find((item) => item.id === browsingRuntimeId);
   const modelsQuery = useQuery(
     runtimeModelsOptions(
-      runtime?.status === "online" ? runtime.id : null,
+      runtime?.status === "online" && runtime.selectable !== false
+        ? runtime.id
+        : null,
       runtime?.workspace_id,
     ),
   );
@@ -170,7 +177,9 @@ export function ModelSelectorContent({
       }
       throw new Error(t(($) => $.model_selector.favorite_unavailable));
     }
-    if ((selectedEntry?.service_tiers ?? []).some((tier) => tier.id === stored)) {
+    if (
+      (selectedEntry?.service_tiers ?? []).some((tier) => tier.id === stored)
+    ) {
       return stored;
     }
     throw new Error(t(($) => $.model_selector.favorite_unavailable));
@@ -230,6 +239,10 @@ export function ModelSelectorContent({
     setSaving(true);
     setError("");
     try {
+      const targetRuntime = runtimes.find(
+        (item) => item.id === choice.runtimeId,
+      );
+      if (targetRuntime?.selectable === false) return;
       let selectedCatalog = catalog;
       let selectedEntry = findModelCapabilityEntry(
         catalog ?? [],
@@ -361,41 +374,42 @@ export function ModelSelectorContent({
         className="w-11 shrink-0 overflow-y-auto border-r border-border/60 bg-muted/30 [scrollbar-width:none]"
       >
         <div className="flex flex-col gap-1 p-1">
-        <button
-          type="button"
-          aria-label={t(($) => $.model_selector.favorites)}
-          aria-pressed={section === "favorites"}
-          className={cn(
-            "flex aspect-square w-full items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-            section === "favorites" &&
-              "bg-primary/10 text-accent-foreground hover:bg-primary/15",
-          )}
-          onClick={() => {
-            setSection("favorites");
-            setSearch("");
-            setError("");
-          }}
-        >
-          <Star className="size-5 fill-current" aria-hidden />
-        </button>
-        <div className="border-b border-border/70" />
-        {runtimes.map((item) => (
           <button
-            key={item.id}
             type="button"
-            title={runtimeDisplayLabel(item)}
-            aria-label={runtimeDisplayLabel(item)}
-            aria-pressed={section === item.id}
-            onClick={() => showRuntime(item.id)}
+            aria-label={t(($) => $.model_selector.favorites)}
+            aria-pressed={section === "favorites"}
             className={cn(
               "flex aspect-square w-full items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-              section === item.id &&
+              section === "favorites" &&
                 "bg-primary/10 text-accent-foreground hover:bg-primary/15",
             )}
+            onClick={() => {
+              setSection("favorites");
+              setSearch("");
+              setError("");
+            }}
           >
-            <ProviderLogo provider={item.provider} className="size-5" />
+            <Star className="size-5 fill-current" aria-hidden />
           </button>
-        ))}
+          <div className="border-b border-border/70" />
+          {runtimes.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              title={runtimeDisplayLabel(item)}
+              aria-label={runtimeDisplayLabel(item)}
+              aria-pressed={section === item.id}
+              disabled={item.selectable === false}
+              onClick={() => showRuntime(item.id)}
+              className={cn(
+                "flex aspect-square w-full items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                section === item.id &&
+                  "bg-primary/10 text-accent-foreground hover:bg-primary/15",
+              )}
+            >
+              <ProviderLogo provider={item.provider} className="size-5" />
+            </button>
+          ))}
         </div>
       </nav>
       <div className="flex min-w-0 flex-1 flex-col">
@@ -410,6 +424,9 @@ export function ModelSelectorContent({
             placeholder={t(($) => $.pickers.model_search_placeholder)}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
+            disabled={
+              section !== "favorites" && runtime?.selectable === false
+            }
             className="h-8 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
           />
           <button
@@ -417,7 +434,10 @@ export function ModelSelectorContent({
             aria-label={t(($) => $.model_selector.refresh)}
             title={t(($) => $.model_selector.refresh)}
             disabled={
-              runtime?.status !== "online" || modelsQuery.isFetching || saving
+              runtime?.status !== "online" ||
+              runtime.selectable === false ||
+              modelsQuery.isFetching ||
+              saving
             }
             aria-busy={modelsQuery.isFetching}
             onClick={() => {
