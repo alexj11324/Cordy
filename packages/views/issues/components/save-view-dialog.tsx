@@ -156,6 +156,16 @@ const DEFAULT_SAVE_VIEW_MODES: readonly SaveViewMode[] = [
   "swimlane",
 ];
 
+export function normalizeSaveViewMode(
+  viewMode: ViewMode,
+  supportedViewModes?: readonly ViewMode[],
+): ViewMode {
+  if (!supportedViewModes || supportedViewModes.includes(viewMode)) {
+    return viewMode;
+  }
+  return supportedViewModes[0] ?? "list";
+}
+
 export function DraftDefinitionFields({
   supportedViewModes = DEFAULT_SAVE_VIEW_MODES,
 }: {
@@ -472,7 +482,7 @@ export function SaveViewDialog({
   scope,
   editView = null,
   seedFromDefinition = false,
-  supportedViewModes = DEFAULT_SAVE_VIEW_MODES,
+  supportedViewModes,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -492,6 +502,7 @@ export function SaveViewDialog({
   const createView = useCreateIssueView(wsId);
   const setActiveInStore = useActiveIssueViewStore((s) => s.setActive);
   const updateView = useUpdateIssueView(wsId);
+  const availableViewModes = supportedViewModes ?? DEFAULT_SAVE_VIEW_MODES;
 
   const [name, setName] = useState("");
   const [nameError, setNameError] = useState(false);
@@ -522,8 +533,12 @@ export function SaveViewDialog({
     } else {
       store.setState(snapshotState(liveStore.getState()));
     }
-    if (!supportedViewModes.includes(store.getState().viewMode as SaveViewMode)) {
-      store.getState().setViewMode(supportedViewModes[0] ?? "list");
+    const normalizedViewMode = normalizeSaveViewMode(
+      store.getState().viewMode,
+      supportedViewModes,
+    );
+    if (normalizedViewMode !== store.getState().viewMode) {
+      store.getState().setViewMode(normalizedViewMode);
     }
     setDraftStore(store);
     setName(editView?.name ?? "");
@@ -816,7 +831,7 @@ export function SaveViewDialog({
 
           {draftStore && (
             <ViewStoreProvider store={draftStore}>
-            <DraftDefinitionFields supportedViewModes={supportedViewModes} />
+            <DraftDefinitionFields supportedViewModes={availableViewModes} />
             </ViewStoreProvider>
           )}
         </div>
