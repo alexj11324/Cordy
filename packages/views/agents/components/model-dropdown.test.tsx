@@ -21,6 +21,10 @@ const CODEX_MODELS: RuntimeModelsResult = {
       label: "GPT-5.6 Sol",
       provider: "openai",
       default: true,
+      thinking: {
+        supported_levels: [{ value: "low", label: "Low" }],
+      },
+      service_tiers: [{ id: "priority", name: "Fast" }],
     },
     { id: "gpt-5.6-terra", label: "GPT-5.6 Terra", provider: "openai" },
     { id: "gpt-5.6-luna", label: "GPT-5.6 Luna", provider: "openai" },
@@ -32,18 +36,25 @@ const CODEX_MODELS: RuntimeModelsResult = {
 // daemon's reported error text, so a failure is modelled as a throwing queryFn.
 let discovery: () => Promise<RuntimeModelsResult> = async () => CODEX_MODELS;
 
-vi.mock("@patchbay/core/runtimes", () => ({
-  runtimeModelsOptions: (runtimeId: string | null) => ({
-    enabled: Boolean(runtimeId),
-    queryKey: ["runtime-models", runtimeId, discoveryKey],
-    queryFn: () => discovery(),
-  }),
-}));
+vi.mock("@patchbay/core/runtimes", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@patchbay/core/runtimes")>();
+  return {
+    ...actual,
+    runtimeModelsOptions: (runtimeId: string | null) => ({
+      enabled: Boolean(runtimeId),
+      queryKey: ["runtime-models", runtimeId, discoveryKey],
+      queryFn: () => discovery(),
+    }),
+  };
+});
 
 // Bumped per test so React Query cannot serve a previous case's cached result.
 let discoveryKey = 0;
 
-function renderDropdown() {
+function renderDropdown(
+  props: Partial<React.ComponentProps<typeof ModelDropdown>> = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -56,6 +67,7 @@ function renderDropdown() {
           runtimeOnline
           value=""
           onChange={onChange}
+          {...props}
         />
       </QueryClientProvider>
     </I18nProvider>,
@@ -72,6 +84,40 @@ function openDropdown(container: HTMLElement) {
 }
 
 describe("ModelDropdown", () => {
+  it("shows a compact trigger and opens the four-column picker on click", async () => {
+    const onSelection = vi.fn();
+    const { container, onChange } = renderDropdown({
+      onSelection,
+      value: "gpt-5.6-sol",
+      thinkingLevel: "low",
+      serviceTier: "priority",
+      provider: "codex",
+    });
+    expect(
+      screen.queryByPlaceholderText(enAgents.pickers.model_search_placeholder),
+    ).toBeNull();
+    const trigger = await screen.findByRole("button", { name: /GPT-5\.6 Sol/ });
+    expect(trigger.textContent).toContain("GPT-5.6 Sol");
+    expect(trigger.textContent).toContain("Low");
+    expect(trigger.textContent).toContain("Fast");
+    expect(
+      container.querySelector('[data-slot="popover-trigger"]'),
+    ).toBeTruthy();
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(trigger.querySelector(".rotate-180")).toBeTruthy();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^GPT-5.6 Terra/ }),
+    );
+    expect(onSelection).toHaveBeenCalledWith({
+      runtimeId: "rt-codex",
+      model: "gpt-5.6-terra",
+      thinkingLevel: "",
+      serviceTier: "",
+      catalog: CODEX_MODELS.models,
+    });
+    expect(onChange).not.toHaveBeenCalled();
+  });
   afterEach(() => {
     cleanup();
     discovery = async () => CODEX_MODELS;
@@ -110,7 +156,9 @@ describe("ModelDropdown", () => {
 
     expect(await screen.findByText(reason)).toBeTruthy();
     // And the picker says so up front, rather than looking like an empty catalog.
-    expect(screen.getByText(enAgents.model_dropdown.discovery_failed)).toBeTruthy();
+    expect(
+      screen.getByText(enAgents.model_dropdown.discovery_failed),
+    ).toBeTruthy();
     expect(
       screen.queryByText(enAgents.pickers.model_empty_with_dot),
     ).toBeNull();

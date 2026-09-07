@@ -27,22 +27,12 @@ export function selectConversationStarters(
  * Whether this viewer should be offered a way to edit the agent's conversation
  * starters from the chat empty state they render in.
  *
- * Three independent reasons to stay silent, each of which would otherwise
- * produce a link that lies:
- *
- *  - no agent, or an archived one: its conversations are read-only, so
- *    editing its starters changes nothing anyone will see,
- *  - a backend that does not persist conversation starters: the Instructions tab
- *    renders no editor there, so the link lands somewhere that cannot honour
- *    it,
- *  - a viewer who cannot edit the agent: a reader would arrive at a page they
- *    have no write access to.
+ * The Instructions tab that hosted that editor is gone: starters can still be
+ * set at create time, but a "customize" link would land on a missing view.
  */
 export function canCustomizeConversationStarters(
-  agent: Pick<Agent, "archived_at"> | null,
-  opts: { conversationStartersSupported: boolean; canEditAgent: boolean },
+  _agent: Pick<Agent, "archived_at"> | null,
+  _opts: { conversationStartersSupported: boolean; canEditAgent: boolean },
 ): boolean {
-  if (!agent || agent.archived_at) return false;
-  if (!opts.conversationStartersSupported) return false;
-  return opts.canEditAgent;
+  return false;
 }

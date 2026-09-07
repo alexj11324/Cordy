@@ -160,6 +160,9 @@ export function deriveDuplicateAccess(
 /**
  * Seeds the create draft from the agent being duplicated.
  *
+ * Description, instructions, and per-agent skills are not copied: those
+ * surfaces are workspace-shared or unused on create.
+ *
  * `model` / `thinkingLevel` / `serviceTier` only mean something on the runtime
  * they were chosen for, so they ride along only when the copy stays on that
  * exact runtime. When the source runtime is gone, private to somebody else or
@@ -187,8 +190,6 @@ export function buildDuplicateDraft(
   return {
     ...EMPTY_AGENT_DRAFT,
     name: `${source.name}${options.nameSuffix}`,
-    description: source.description ?? "",
-    instructions: source.instructions ?? "",
     conversationStarters: (source.conversation_starters ?? []).map((item) => ({ ...item })),
     avatarUrl: source.avatar_url ?? null,
     runtimeId: keepsRuntime
@@ -197,7 +198,6 @@ export function buildDuplicateDraft(
     model: keepsRuntime ? source.model ?? "" : "",
     thinkingLevel: keepsRuntime ? source.thinking_level ?? "" : "",
     serviceTier: keepsRuntime ? source.service_tier ?? "" : "",
-    skillIds: new Set(source.skills.map((skill) => skill.id)),
     ...deriveDuplicateAccess(source),
   };
 }
@@ -206,7 +206,9 @@ export function buildDuplicateDraft(
  * Assembles the `POST /api/agents` body. Empty execution overrides are omitted
  * rather than sent as `""` so the runtime resolves its own default, and the
  * duplicate-only fields are the runtime-independent ones (`custom_args`,
- * concurrency) — mirroring `patchbay agent copy`.
+ * concurrency) — mirroring `patchbay agent copy`. Description, instructions,
+ * and per-agent skill IDs are omitted: those surfaces are workspace-shared
+ * or unused on create.
  */
 export function buildCreateAgentRequest(options: {
   draft: AgentDraft;
@@ -218,8 +220,6 @@ export function buildCreateAgentRequest(options: {
   const { draft, runtimeId, template, duplicateSource } = options;
   const request: CreateAgentRequest = {
     name: draft.name.trim(),
-    description: draft.description.trim(),
-    instructions: draft.instructions.trim() || undefined,
     ...(draft.conversationStarters.length > 0
       ? {
           conversation_starters: draft.conversationStarters.map((item) => ({
@@ -236,7 +236,6 @@ export function buildCreateAgentRequest(options: {
     permission_mode:
       draft.permissionScope === "private" ? "private" : "public_to",
     invocation_targets: buildInvocationTargets(draft),
-    skill_ids: [...draft.skillIds],
     template,
   };
   if (duplicateSource) {

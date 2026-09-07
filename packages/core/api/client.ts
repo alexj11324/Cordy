@@ -2531,9 +2531,12 @@ export class ApiClient {
   // than cast: an unparseable body degrades to an explicit "failed" record that
   // shows the discovery error and keeps manual model entry usable, instead of a
   // fabricated empty catalog or an endless spinner (MUL-5444).
-  async initiateListModels(runtimeId: string): Promise<RuntimeModelListRequest> {
+  async initiateListModels(runtimeId: string, workspaceId?: string): Promise<RuntimeModelListRequest> {
     const raw = await this.fetch<unknown>(`/api/runtimes/${runtimeId}/models`, {
       method: "POST",
+      // The runtime owns this scope, even before route plumbing initializes or
+      // after navigation changes the global slug. A slug takes priority over ID.
+      headers: workspaceId ? { "X-Workspace-Slug": "", "X-Workspace-ID": workspaceId } : undefined,
     });
     return parseWithFallback<RuntimeModelListRequest>(
       raw,
@@ -2546,9 +2549,11 @@ export class ApiClient {
   async getListModelsResult(
     runtimeId: string,
     requestId: string,
+    workspaceId?: string,
   ): Promise<RuntimeModelListRequest> {
     const raw = await this.fetch<unknown>(
       `/api/runtimes/${runtimeId}/models/${requestId}`,
+      { headers: workspaceId ? { "X-Workspace-Slug": "", "X-Workspace-ID": workspaceId } : undefined },
     );
     return parseWithFallback<RuntimeModelListRequest>(
       raw,

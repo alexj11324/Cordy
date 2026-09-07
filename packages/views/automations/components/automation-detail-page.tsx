@@ -19,6 +19,7 @@ import {
   useCreateAutomationTrigger,
 } from "@patchbay/core/automations/mutations";
 import { clientErrorMessage, dispatchReasonCode } from "@patchbay/core/api";
+import { runtimeListOptions } from "@patchbay/core/runtimes";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useActorName } from "@patchbay/core/workspace/hooks";
@@ -341,13 +342,20 @@ function InstructionsSection({
   automation,
   canWrite,
   runtimeId,
+  thinkingLevel,
+  serviceTier,
 }: {
   automation: Automation;
   canWrite: boolean;
   runtimeId: string | null;
+  thinkingLevel: string;
+  serviceTier: string;
 }) {
   const { t } = useT("automations");
   const updateAutomation = useUpdateAutomation();
+  const wsId = useWorkspaceId();
+  const { data: runtimes = [] } = useQuery(runtimeListOptions(wsId));
+  const runtime = runtimes.find((item) => item.id === runtimeId);
   const lastSaved = useRef(automation.description ?? "");
 
   const persistDescription = (next: string) => {
@@ -392,21 +400,28 @@ function InstructionsSection({
             {t(($) => $.dialog.description_placeholder)}
           </p>
         )}
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+        <div className="space-y-3 border-t px-4 py-3">
           <div>
             <p className="text-caption font-medium">{t(($) => $.settings.section_model)}</p>
             <p className="text-caption text-muted-foreground">
               {t(($) => $.settings.model_default)}
             </p>
           </div>
-          <div className="min-w-[12rem]">
+          <div>
             <ModelDropdown
+              variant="chip"
+              showLabel={false}
+              allowEffort={false}
+              provider={runtime?.provider}
+              thinkingLevel={thinkingLevel}
+              serviceTier={serviceTier}
+              runtimes={runtime ? [runtime] : []}
               runtimeId={runtimeId}
-              runtimeOnline={Boolean(runtimeId)}
+              runtimeOnline={runtime?.status === "online"}
               value={automation.model ?? ""}
               onChange={(model) => {
                 if (!canWrite) return;
-                updateAutomation.mutate({ id: automation.id, model: model || "" });
+                return updateAutomation.mutateAsync({ id: automation.id, model: model || "" }).then(() => {});
               }}
               disabled={!canWrite}
             />
@@ -830,6 +845,8 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
             automation={automation}
             canWrite={canWrite}
             runtimeId={runtimeId}
+            thinkingLevel={executorAgent?.thinking_level ?? ""}
+            serviceTier={executorAgent?.service_tier ?? ""}
           />
 
           <AutomationToolsSection automation={automation} canWrite={canWrite} />

@@ -7,9 +7,6 @@ import type {
   AgentRuntime,
   MemberWithUser,
 } from "@patchbay/core/types";
-import { providerSupportsMcpConfig } from "@patchbay/core/agents";
-import { useFeatureEnabled } from "@patchbay/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { larkInstallationsOptions } from "@patchbay/core/lark";
 import { slackInstallationsOptions } from "@patchbay/core/slack";
@@ -27,30 +24,16 @@ import {
   AlertDialogTitle,
 } from "@patchbay/ui/components/ui/alert-dialog";
 import { cn } from "@patchbay/ui/lib/utils";
-import { ActivityTab } from "./tabs/activity-tab";
-import { InstructionsTab } from "./tabs/instructions-tab";
-import { SkillsTab } from "./tabs/skills-tab";
 import { EnvTab } from "./tabs/env-tab";
 import { CustomArgsTab } from "./tabs/custom-args-tab";
-import { McpConfigTab } from "./tabs/mcp-config-tab";
-import { AgentMcpTab } from "./tabs/agent-mcp-tab";
 import { IntegrationsTab } from "./tabs/integrations-tab";
 import { RuntimeConfigTab } from "./tabs/runtime-config-tab";
 import { AgentDetailInspector } from "./agent-detail-inspector";
 import { AgentAccessSettings } from "./agent-access-settings";
-import { AgentOverviewSummary } from "./agent-overview-summary";
-import { ActorIssuesPanel } from "../../common/actor-issues-panel";
 import { useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 
-type DetailSection = "overview" | "work" | "capabilities" | "settings";
-
 export type DetailTab =
-  | "overview"
-  | "work"
-  | "instructions"
-  | "skills"
-  | "mcp_config"
   | "composio_mcp"
   | "integrations"
   | "general"
@@ -62,9 +45,6 @@ export type DetailTab =
 type SecondaryTab = {
   id: DetailTab;
   labelKey:
-    | "instructions"
-    | "skills"
-    | "mcp_config"
     | "composio_mcp"
     | "integrations"
     | "general"
@@ -74,49 +54,35 @@ type SecondaryTab = {
     | "runtime_config";
 };
 
-const CAPABILITY_TABS: SecondaryTab[] = [
-  { id: "instructions", labelKey: "instructions" },
-  { id: "skills", labelKey: "skills" },
-  { id: "mcp_config", labelKey: "mcp_config" },
-  { id: "composio_mcp", labelKey: "composio_mcp" },
-  { id: "integrations", labelKey: "integrations" },
-];
-
 const SETTINGS_TABS: SecondaryTab[] = [
   { id: "general", labelKey: "general" },
   { id: "access", labelKey: "access" },
   { id: "env", labelKey: "environment" },
   { id: "custom_args", labelKey: "custom_args" },
   { id: "runtime_config", labelKey: "runtime_config" },
+  { id: "integrations", labelKey: "integrations" },
 ];
 
-const TOP_TABS: { id: DetailSection; labelKey: DetailSection }[] = [
-  { id: "overview", labelKey: "overview" },
-  { id: "work", labelKey: "work" },
-  { id: "capabilities", labelKey: "capabilities" },
-  { id: "settings", labelKey: "settings" },
-];
-
-const CAPABILITY_IDS = new Set<DetailTab>(
-  CAPABILITY_TABS.map((tab) => tab.id),
-);
-const SETTINGS_IDS = new Set<DetailTab>(SETTINGS_TABS.map((tab) => tab.id));
-const DETAIL_VIEWS = new Set<DetailTab>([
+const DETAIL_VIEWS = new Set<DetailTab>(SETTINGS_TABS.map((tab) => tab.id));
+const LEGACY_VIEWS = new Set([
   "overview",
   "work",
-  ...CAPABILITY_TABS.map((tab) => tab.id),
-  ...SETTINGS_TABS.map((tab) => tab.id),
+  "instructions",
+  "skills",
+  "mcp_config",
+  "composio_mcp",
+  "capabilities",
+  "settings",
 ]);
 
 function isDetailTab(value: string | null): value is DetailTab {
   return value !== null && DETAIL_VIEWS.has(value as DetailTab);
 }
 
-function sectionForView(view: DetailTab): DetailSection {
-  if (view === "overview") return "overview";
-  if (view === "work") return "work";
-  if (CAPABILITY_IDS.has(view)) return "capabilities";
-  return "settings";
+function viewFromUrl(value: string | null): DetailTab {
+  if (isDetailTab(value)) return value;
+  if (value !== null && LEGACY_VIEWS.has(value)) return "general";
+  return "general";
 }
 
 interface AgentOverviewPaneProps {
@@ -133,16 +99,13 @@ interface AgentOverviewPaneProps {
 }
 
 /**
- * Agent workbench organised around user intent instead of backend fields.
- * Overview answers "what is happening now?", Work owns the issue surface,
- * Capabilities describes what the agent can do, and Settings describes how
- * it runs. The lower-level editors stay intact so the reorganisation does not
- * alter persistence or permission semantics.
+ * Agent settings workbench. Identity lives on the page card; Skills and MCP
+ * are workspace-shared in Settings. This pane keeps how the agent runs.
  */
 export function AgentOverviewPane({
   agent,
   runtime,
-  owner,
+  owner: _owner,
   runtimes,
   members,
   onUpdate,
@@ -155,12 +118,8 @@ export function AgentOverviewPane({
   const wsId = useWorkspaceId();
   const navigation = useNavigation();
   const urlView = navigation.searchParams.get("view");
-  const composioMCPAppsEnabled = useFeatureEnabled(
-    COMPOSIO_MCP_APPS_FLAG,
-    false,
-  );
   const [activeView, setActiveView] = useState<DetailTab>(() =>
-    isDetailTab(urlView) ? urlView : "overview",
+    viewFromUrl(urlView),
   );
   const [activeDirty, setActiveDirty] = useState(false);
   const [pendingView, setPendingView] = useState<DetailTab | null>(null);
@@ -193,64 +152,31 @@ export function AgentOverviewPane({
     wecomListing?.configured === true ||
     telegramListing?.configured === true;
 
-  const visibleCapabilityTabs = useMemo(() => {
-    const showMcp = runtime
-      ? providerSupportsMcpConfig(runtime.provider)
-      : true;
-    const showComposioMcp =
-      composioMCPAppsEnabled &&
-      !!currentUserId &&
-      !!agent.owner_id &&
-      agent.owner_id === currentUserId;
-
-    return CAPABILITY_TABS.filter((tab) => {
-      if (tab.id === "mcp_config") return showMcp;
-      if (tab.id === "composio_mcp") return showComposioMcp;
+  const visibleSettingsTabs = useMemo(() => {
+    return SETTINGS_TABS.filter((tab) => {
+      // Env is the only settings tab backed by a secret-bearing endpoint.
+      // GET/PUT /api/agents/{id}/env admits the agent owner or a workspace
+      // owner/admin (MUL-5438) — the same rule `canEdit` encodes — so
+      // showing the tab to anyone else guarantees a 403 on "Reveal & edit".
+      if (tab.id === "env") return canEdit;
+      if (tab.id === "runtime_config") return runtime?.provider === "openclaw";
       if (tab.id === "integrations") return integrationsConfigured;
       return true;
     });
-  }, [
-    agent.owner_id,
-    composioMCPAppsEnabled,
-    currentUserId,
-    integrationsConfigured,
-    runtime,
-  ]);
-
-  const visibleSettingsTabs = useMemo(
-    () =>
-      SETTINGS_TABS.filter((tab) => {
-        // Env is the only settings tab backed by a secret-bearing endpoint.
-        // GET/PUT /api/agents/{id}/env admits the agent owner or a workspace
-        // owner/admin (MUL-5438) — the same rule `canEdit` encodes — so
-        // showing the tab to anyone else guarantees a 403 on "Reveal & edit".
-        // The server stays the boundary; this only removes a dead entry point.
-        if (tab.id === "env") return canEdit;
-        if (tab.id === "runtime_config") return runtime?.provider === "openclaw";
-        return true;
-      }),
-    [canEdit, runtime?.provider],
-  );
+  }, [canEdit, integrationsConfigured, runtime?.provider]);
 
   const visibleViews = useMemo(
-    () =>
-      new Set<DetailTab>([
-        "overview",
-        "work",
-        ...visibleCapabilityTabs.map((tab) => tab.id),
-        ...visibleSettingsTabs.map((tab) => tab.id),
-      ]),
-    [visibleCapabilityTabs, visibleSettingsTabs],
+    () => new Set<DetailTab>(visibleSettingsTabs.map((tab) => tab.id)),
+    [visibleSettingsTabs],
   );
 
-  const effectiveView = visibleViews.has(activeView) ? activeView : "overview";
-  const activeSection = sectionForView(effectiveView);
+  const effectiveView = visibleViews.has(activeView) ? activeView : "general";
 
   const commitView = useCallback(
     (next: DetailTab) => {
       setActiveView(next);
       const params = new URLSearchParams(navigation.searchParams);
-      if (next === "overview") params.delete("view");
+      if (next === "general") params.delete("view");
       else params.set("view", next);
       const query = params.toString();
       navigation.replace(`${navigation.pathname}${query ? `?${query}` : ""}`);
@@ -270,24 +196,6 @@ export function AgentOverviewPane({
     [activeDirty, commitView, effectiveView],
   );
 
-  const requestSection = (section: DetailSection) => {
-    if (section === "overview" || section === "work") {
-      requestView(section);
-      return;
-    }
-    if (section === "capabilities") {
-      const current = CAPABILITY_IDS.has(effectiveView)
-        ? effectiveView
-        : visibleCapabilityTabs[0]?.id;
-      if (current) requestView(current);
-      return;
-    }
-    const current = SETTINGS_IDS.has(effectiveView)
-      ? effectiveView
-      : visibleSettingsTabs[0]?.id;
-    if (current) requestView(current);
-  };
-
   const commitViewChange = () => {
     if (!pendingView) return;
     commitView(pendingView);
@@ -298,13 +206,8 @@ export function AgentOverviewPane({
   useEffect(() => {
     if (urlView === lastUrlViewRef.current) return;
     lastUrlViewRef.current = urlView;
-    if (urlView === null) {
-      setActiveView("overview");
-      return;
-    }
-    if (isDetailTab(urlView) && visibleViews.has(urlView)) {
-      setActiveView(urlView);
-    }
+    const next = viewFromUrl(urlView);
+    if (visibleViews.has(next)) setActiveView(next);
   }, [urlView, visibleViews]);
 
   useEffect(() => {
@@ -313,77 +216,15 @@ export function AgentOverviewPane({
     onNavIntentHandled?.();
   }, [navIntent, onNavIntentHandled, requestView, visibleViews]);
 
-  const secondaryTabs =
-    activeSection === "capabilities"
-      ? visibleCapabilityTabs
-      : activeSection === "settings"
-        ? visibleSettingsTabs
-        : [];
-  const activeSecondaryTab = secondaryTabs.find(
+  const activeSecondaryTab = visibleSettingsTabs.find(
     (tab) => tab.id === effectiveView,
   );
-  const isSecondaryLayout = secondaryTabs.length > 0 && activeSecondaryTab != null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
-      <div
-        className="shrink-0 overflow-x-auto border-b px-4 sm:px-6"
-        role="tablist"
-        aria-label={t(($) => $.tabs.page_navigation_aria)}
-      >
-        <div className="mx-auto flex max-w-[1440px] items-center gap-6">
-          {TOP_TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={activeSection === tab.id}
-              onClick={() => requestSection(tab.id)}
-              className={cn(
-                "relative shrink-0 py-3 text-body font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-                activeSection === tab.id
-                  ? "text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-foreground"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t(($) => $.tabs[tab.labelKey])}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Overview/Work scroll as one page. Sidebar views split scrolling on
-          md+ (nav rail pinned, content pane scrolls) like settings-page.tsx;
-          below md the rail is a horizontal strip and the page scrolls whole. */}
-      <div
-        className={cn(
-          "min-h-0 flex-1 overflow-y-auto",
-          isSecondaryLayout && "md:overflow-hidden",
-        )}
-      >
-        {effectiveView === "overview" && (
-          <div className="mx-auto max-w-[1440px] p-4 sm:p-6">
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-              <ActivityTab agent={agent} showPerformance={false} />
-              <AgentOverviewSummary
-                agent={agent}
-                runtime={runtime}
-                owner={owner}
-              />
-            </div>
-          </div>
-        )}
-
-        {effectiveView === "work" && (
-          <div className="flex min-h-[620px] flex-col">
-            <ActorIssuesPanel actorType="agent" actorId={agent.id} />
-          </div>
-        )}
-
-        {secondaryTabs.length > 0 && activeSecondaryTab && (
+      <div className="min-h-0 flex-1 overflow-y-auto md:overflow-hidden">
+        {visibleSettingsTabs.length > 0 && activeSecondaryTab && (
           <div className="flex min-h-full flex-col md:h-full md:flex-row">
-            {/* Content-surface color, no shell tint — same rule as the settings
-                nav: in-card panels must not break the desktop tab merge (MUL-4439). */}
             <aside className="shrink-0 overflow-x-auto border-b border-surface-border p-2 md:w-52 md:overflow-y-auto md:border-b-0 md:border-r md:p-4">
               <div
                 className="flex w-max min-w-full items-center gap-1 md:w-full md:flex-col md:items-stretch"
@@ -391,7 +232,7 @@ export function AgentOverviewPane({
                 aria-orientation="vertical"
                 aria-label={t(($) => $.tabs.section_navigation_aria)}
               >
-                {secondaryTabs.map((tab) => {
+                {visibleSettingsTabs.map((tab) => {
                   const active = effectiveView === tab.id;
                   return (
                     <button
@@ -423,34 +264,6 @@ export function AgentOverviewPane({
                 </header>
 
                 <div className="mt-6">
-                  {effectiveView === "instructions" && (
-                    <InstructionsTab
-                      agent={agent}
-                      onSave={(updates) => onUpdate(agent.id, updates)}
-                      onDirtyChange={setActiveDirty}
-                    />
-                  )}
-                  {effectiveView === "skills" && (
-                    <SkillsTab
-                      agent={agent}
-                      runtime={runtime}
-                      currentUserId={currentUserId}
-                      canEdit={canEdit}
-                    />
-                  )}
-                  {effectiveView === "mcp_config" && (
-                    <McpConfigTab
-                      agent={agent}
-                      runtime={runtime}
-                      currentUserId={currentUserId}
-                      canEdit={canEdit}
-                      onSave={(updates) => onUpdate(agent.id, updates)}
-                      onDirtyChange={setActiveDirty}
-                    />
-                  )}
-                  {effectiveView === "composio_mcp" && (
-                    <AgentMcpTab agent={agent} />
-                  )}
                   {effectiveView === "integrations" && (
                     <IntegrationsTab agent={agent} />
                   )}

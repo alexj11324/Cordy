@@ -62,7 +62,7 @@ func registerAgentCopyFlags(cmd *cobra.Command) {
 	cmd.Flags().String("instructions", "", "Override the copied instructions")
 	cmd.Flags().String("model", "", "Model identifier for the copy. Required when --runtime-id selects a different runtime (pass \"\" to accept the target runtime default). Empty otherwise = runtime default.")
 	cmd.Flags().String("thinking-level", "", "Override thinking level. Not carried across a runtime change unless set here.")
-	cmd.Flags().String("service-tier", "", "Override Codex service tier. Not carried across a runtime change unless set here.")
+	cmd.Flags().String("service-tier", "", "Override execution speed. Not carried across a runtime change unless set here.")
 	cmd.Flags().String("custom-args", "", "Override custom CLI arguments as a JSON array.")
 	cmd.Flags().Int32("max-concurrent-tasks", 6, "Override maximum concurrent tasks")
 	cmd.Flags().String("visibility", "", "Override visibility: private or workspace (legacy; mapped to --permission-mode)")

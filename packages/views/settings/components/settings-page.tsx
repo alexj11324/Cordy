@@ -20,6 +20,7 @@ import {
   Blocks,
   CreditCard,
   Server,
+  Sparkles,
 } from "lucide-react";
 import { GitHubMark } from "./github-mark";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@patchbay/ui/components/ui/tabs";
@@ -51,6 +52,7 @@ import { QuickActionsTab } from "./quick-actions-tab";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
 import { PluginsTab } from "./plugins-tab";
 import { McpTab } from "./mcp-tab";
+import { SkillsTab } from "./skills-tab";
 import { BillingTab } from "./billing-tab";
 import { CollapsedNavTrigger } from "../../layout/page-header";
 import { useT } from "../../i18n";
@@ -78,6 +80,7 @@ const WORKSPACE_TAB_KEYS = [
   "issue_statuses",
   "properties",
   "quick_actions",
+  "skills",
   "mcp",
   "plugins",
 ] as const;
@@ -93,6 +96,7 @@ const WORKSPACE_TAB_VALUES = {
   issue_statuses: "issue-statuses",
   properties: "properties",
   quick_actions: "quick-actions",
+  skills: "skills",
   mcp: "mcp",
   plugins: "plugins",
 } as const;
@@ -108,6 +112,7 @@ const WORKSPACE_TAB_ICONS = {
   issue_statuses: CircleDot,
   properties: SlidersHorizontal,
   quick_actions: Zap,
+  skills: Sparkles,
   mcp: Server,
   plugins: Blocks,
 } as const;
@@ -240,7 +245,7 @@ export function SettingsPage({
           standalone ? "p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "p-2 md:p-3",
         )}
       >
-        {navigationHeader ? <div>{navigationHeader}</div> : null}
+        {navigationHeader ? <div className="w-full">{navigationHeader}</div> : null}
         {/* This page builds its own chrome instead of a PageHeader, so it has
             to supply the nav trigger itself — below `xl` the nav is a sheet or
             auto-collapsed, and settings has no other way back to it. */}
@@ -361,6 +366,7 @@ function SettingsTabPanels({
       <TabsContent value="issue-statuses"><IssueStatusesTab /></TabsContent>
       <TabsContent value="properties"><PropertiesTab /></TabsContent>
       <TabsContent value="quick-actions"><QuickActionsTab /></TabsContent>
+      <TabsContent value="skills"><SkillsTab /></TabsContent>
       <TabsContent value="mcp"><McpTab /></TabsContent>
       {pluginsEnabled ? <TabsContent value="plugins"><PluginsTab /></TabsContent> : null}
       {extraAccountTabs?.map((tab) => (

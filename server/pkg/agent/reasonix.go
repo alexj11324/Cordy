@@ -254,7 +254,7 @@ func (b *reasonixBackend) Execute(ctx context.Context, prompt string, opts ExecO
 				"name":    "patchbay-agent-sdk",
 				"version": "0.2.0",
 			},
-			"clientCapabilities": map[string]any{},
+			"clientCapabilities": acpClientCapabilities(nil),
 		})
 		if err != nil {
 			finalStatus, finalError = reasonixRequestFailure(runCtx, timeout, fmt.Sprintf("reasonix initialize failed: %v", err))
@@ -392,6 +392,8 @@ func (b *reasonixBackend) Execute(ctx context.Context, prompt string, opts ExecO
 		// trusts the runtime's answer over a stale advertised list.
 		applyACPEffortOption(runCtx, c.request, "reasonix", b.cfg.Logger,
 			sessionID, sessionResult, opts.ThinkingLevel, opts.Model == "")
+		applyACPSpeedOption(runCtx, c.request, "reasonix", b.cfg.Logger,
+			sessionID, sessionResult, opts.ServiceTier, opts.Model == "")
 
 		// 4. Send the prompt and wait for PromptResponse. Reasonix loads
 		// AGENTS.md from cwd, so the daemon deliberately does not duplicate the
