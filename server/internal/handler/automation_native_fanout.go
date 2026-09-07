@@ -128,7 +128,7 @@ func (h *Handler) HandleSlackNativeAutomation(ctx context.Context, inst db.Chann
 		switch {
 		case err == nil:
 			_, memberErr := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-				UserID:      binding.PatchbayUserID,
+				UserID:      binding.OrviloUserID,
 				WorkspaceID: inst.WorkspaceID,
 			})
 			switch {
