@@ -835,6 +835,7 @@
     "agent_type": "Agent type",
     "agent_type_value": "Agent",
     "agent_instructions": "Agent instructions",
+    "open_profile": "Open {{name}} profile",
     "select": "Select {{name}}",
     "deselect": "Deselect {{name}}",
     "no_instruction": "No instruction set.",

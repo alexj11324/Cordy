@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   Activity,
+  AlertCircle,
   Bot,
   ChevronRight,
   Clock3,
@@ -22,6 +23,7 @@ import {
 } from "lucide-react";
 import {
   effectiveAccessScope,
+  isAgentRuntimeBound,
   providerSupportsMcpConfig,
 } from "@patchbay/core/agents";
 import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
@@ -72,6 +74,7 @@ export function AgentProfilePanel({
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const { agent, runtime, presence, owner } = row;
+  const needsRuntime = !agent.archived_at && !isAgentRuntimeBound(agent);
 
   useEffect(() => {
     setActiveTab("info");
@@ -212,6 +215,7 @@ export function AgentProfilePanel({
             <ProfileHero
               agent={agent}
               description={description}
+              needsRuntime={needsRuntime}
               presence={presence}
             />
 
@@ -263,7 +267,7 @@ export function AgentProfilePanel({
                       label={t(($) => $.inspector.prop_owner)}
                       value={
                         owner ? (
-                          <span className="flex min-w-0 items-center gap-1.5">
+                          <div className="flex min-w-0 items-center gap-1.5">
                             <ActorAvatar
                               actorId={owner.user_id}
                               actorType="member"
@@ -271,7 +275,7 @@ export function AgentProfilePanel({
                               size="sm"
                             />
                             <span className="truncate">{owner.name}</span>
-                          </span>
+                          </div>
                         ) : (
                           "—"
                         )
@@ -317,6 +321,8 @@ export function AgentProfilePanel({
                       value={
                         agent.archived_at ? (
                           t(($) => $.row.archived)
+                        ) : needsRuntime ? (
+                          t(($) => $.row.needs_runtime)
                         ) : (
                           <AgentPresenceIndicator detail={presence} />
                         )
@@ -422,16 +428,20 @@ export function AgentProfilePanel({
 function ProfileHero({
   agent,
   description,
+  needsRuntime,
   presence,
 }: {
   agent: AgentListRow["agent"];
   description: string;
+  needsRuntime: boolean;
   presence: AgentListRow["presence"];
 }) {
   const { t } = useT("agents");
-  const availability = agent.archived_at
-    ? "archived"
-    : (presence?.availability ?? null);
+  const availability = needsRuntime
+    ? null
+    : agent.archived_at
+      ? "archived"
+      : (presence?.availability ?? null);
   const visual =
     availability === null ? null : availabilityConfig[availability];
 
@@ -445,7 +455,16 @@ function ProfileHero({
           profileLink={false}
           size="2xl"
         />
-        {availability !== null && visual ? (
+        {needsRuntime ? (
+          <span
+            aria-label={t(($) => $.row.needs_runtime)}
+            className="absolute right-1 bottom-1 flex size-4 items-center justify-center rounded-full border-2 border-background bg-warning text-warning-foreground"
+            role="img"
+            title={t(($) => $.row.needs_runtime)}
+          >
+            <AlertCircle className="size-2.5" />
+          </span>
+        ) : availability !== null && visual ? (
           <span
             aria-label={t(($) => $.availability[availability])}
             className={cn(
@@ -511,12 +530,12 @@ function ProfileRow({
         aria-hidden="true"
         className="size-4 shrink-0 text-muted-foreground"
       />
-      <span className="min-w-0 flex-1 text-left">
+      <div className="min-w-0 flex-1 text-left">
         <span className="block text-body font-medium text-foreground">
           {label}
         </span>
         {value !== undefined ? (
-          <span
+          <div
             className={cn(
               "mt-0.5 block truncate text-body text-muted-foreground",
               valueClassName,
@@ -524,9 +543,9 @@ function ProfileRow({
             title={typeof value === "string" ? value : undefined}
           >
             {value}
-          </span>
+          </div>
         ) : null}
-      </span>
+      </div>
       {href ? (
         <ChevronRight
           aria-hidden="true"

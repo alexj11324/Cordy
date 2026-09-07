@@ -820,6 +820,7 @@
     "agent_type": "智能体类型",
     "agent_type_value": "智能体",
     "agent_instructions": "智能体指令",
+    "open_profile": "打开 {{name}} 的资料",
     "select": "选择 {{name}}",
     "deselect": "取消选择 {{name}}",
     "no_instruction": "尚未设置指令。",

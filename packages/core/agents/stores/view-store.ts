@@ -195,6 +195,7 @@ export const useAgentsViewStore = create<AgentsViewState>()(
         return {
           ...current,
           ...p,
+          viewMode: p.viewMode ?? DEFAULTS.viewMode,
           filters: { ...EMPTY_AGENT_FILTERS, ...(p.filters ?? {}) },
         };
       },

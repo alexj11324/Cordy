@@ -147,6 +147,7 @@ export function AgentCard({
               selected
                 ? "opacity-100"
                 : "opacity-0 group-hover/identity:opacity-100",
+              "[@media(hover:none)]:opacity-100",
             )}
             onClick={(event) => {
               event.stopPropagation();
@@ -172,7 +173,7 @@ export function AgentCard({
           />
         </>
       }
-      ariaLabel={`${agent.name} agent profile`}
+      ariaLabel={t(($) => $.profile_panel.open_profile, { name: agent.name })}
       avatar={<AgentCardAvatar row={row} />}
       dataTestId={`agent-card-${agent.id}`}
       label={agent.name}

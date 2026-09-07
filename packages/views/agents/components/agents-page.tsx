@@ -839,6 +839,7 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
   const [profileAgentId, setProfileAgentId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [cardPage, setCardPage] = useState(0);
+  const cardScrollRef = useRef<HTMLDivElement | null>(null);
 
   const rawScope = useAgentsViewStore((s) => s.scope);
   const scope = AGENT_SCOPES.includes(rawScope) ? rawScope : "mine";
@@ -1006,6 +1007,11 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
   useEffect(() => {
     setCardPage((page) => Math.min(page, cardPageCount - 1));
   }, [cardPageCount]);
+  useEffect(() => {
+    if (viewMode === "cards" && cardScrollRef.current) {
+      cardScrollRef.current.scrollTop = 0;
+    }
+  }, [cardPage, viewMode]);
   const cardRows = rows.slice(
     cardPage * AGENT_CARDS_PAGE_SIZE,
     (cardPage + 1) * AGENT_CARDS_PAGE_SIZE,
@@ -1279,7 +1285,10 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
             </ListGrid>
           </div>
           ) : (
-            <div className="min-h-0 flex-1 overflow-y-auto @container">
+            <div
+              className="min-h-0 flex-1 overflow-y-auto @container"
+              ref={cardScrollRef}
+            >
               <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
                 <div
                   className={`grid gap-4 ${AGENT_CARD_GRID_CLASS}`}
