@@ -9,6 +9,7 @@ import (
 	"github.com/orvilo-ai/orvilo/server/internal/hostedcapacity"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/ghsnapshot"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/linearsync"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/slack"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/telegram"
 	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
@@ -31,7 +32,7 @@ type applicationWorkers struct {
 	SeatCapacity   *seatcapacity.Worker
 	HostedCapacity *hostedcapacity.Worker
 	SlackTokens    *slack.ManagedTokenWorker
-	Linear         *handler.LinearWorker
+	Linear         *linearsync.Worker
 	Telegram       *telegram.Outbound
 	PRRefresh      *ghsnapshot.Manager
 	WorkProducts   *handler.WorkProductDiscoveryRuntime

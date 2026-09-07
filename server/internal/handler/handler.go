@@ -30,6 +30,7 @@ import (
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/dingtalk"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/ghsnapshot"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/lark"
+	linearapi "github.com/orvilo-ai/orvilo/server/internal/integrations/linear"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/slack"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/telegram"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/wecom"
@@ -422,7 +423,8 @@ type Handler struct {
 	LinearWebhookSecret string
 	LinearPullEnabled   bool
 	LinearPushEnabled   bool
-	LinearWorker        *LinearWorker
+	LinearWorker        LinearSyncWorker
+	LinearProvider      linearapi.API
 	// PluginSurfaceTokens seal short-lived launch claims. Nil disables surface
 	// launches; wired from a domain-separated ORVILO_PLUGIN_SECRET_KEY at boot.
 	PluginSurfaceTokens *secretbox.Box

@@ -1,4 +1,4 @@
-package handler
+package linearsync
 
 import (
 	"context"
@@ -23,11 +23,11 @@ type linearLease struct {
 
 type linearLeaseKey struct{}
 
-func (w *LinearWorker) withLease(ctx context.Context, table string, id pgtype.UUID, attempt int32) context.Context {
+func (w *Worker) withLease(ctx context.Context, table string, id pgtype.UUID, attempt int32) context.Context {
 	return context.WithValue(ctx, linearLeaseKey{}, linearLease{table: table, id: id, owner: w.workerID, attempt: attempt})
 }
 
-func (w *LinearWorker) startLease(ctx context.Context, table string, id pgtype.UUID, attempt int32) (context.Context, func() error) {
+func (w *Worker) startLease(ctx context.Context, table string, id pgtype.UUID, attempt int32) (context.Context, func() error) {
 	workCtx, cancelWork := context.WithCancelCause(w.withLease(ctx, table, id, attempt))
 	renewCtx, cancelRenew := context.WithCancel(workCtx)
 	ticker := time.NewTicker(20 * time.Second)
@@ -49,7 +49,7 @@ func (w *LinearWorker) startLease(ctx context.Context, table string, id pgtype.U
 // Renewal failure invalidates the work context, including in-flight provider
 // requests. A database failure leaves ownership uncertain, so it also stops
 // the work; recovery belongs to the next durable claim.
-func (w *LinearWorker) renewLease(ctx context.Context, ticks <-chan time.Time, cancel context.CancelCauseFunc) {
+func (w *Worker) renewLease(ctx context.Context, ticks <-chan time.Time, cancel context.CancelCauseFunc) {
 	lease := ctx.Value(linearLeaseKey{}).(linearLease)
 	for {
 		select {
@@ -80,7 +80,7 @@ func (w *LinearWorker) renewLease(ctx context.Context, ticks <-chan time.Time, c
 	}
 }
 
-func checkLinearLease(ctx context.Context, executor dbExecutor, lease linearLease, lock bool) error {
+func checkLinearLease(ctx context.Context, executor DBExecutor, lease linearLease, lock bool) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func checkLinearLease(ctx context.Context, executor dbExecutor, lease linearLeas
 // Check again before each provider mutation. An already accepted remote write
 // cannot be rolled back by cancelling HTTP, so the existing stable identities
 // remain necessary when the next owner retries.
-func (w *LinearWorker) checkLease(ctx context.Context) error {
+func (w *Worker) checkLease(ctx context.Context) error {
 	if lease, ok := ctx.Value(linearLeaseKey{}).(linearLease); ok {
 		return checkLinearLease(ctx, w.db, lease, false)
 	}
@@ -121,7 +121,7 @@ func (w *LinearWorker) checkLease(ctx context.Context) error {
 // that lock, and Commit checks expiry again using PostgreSQL's wall clock.
 // The token service is also called directly by HTTP handlers without a queue
 // claim; those transactions retain their existing connection-level locking.
-func (w *LinearWorker) beginLeaseTx(ctx context.Context) (pgx.Tx, error) {
+func (w *Worker) beginLeaseTx(ctx context.Context) (pgx.Tx, error) {
 	tx, err := w.txStarter.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -171,7 +171,7 @@ func (tx *linearLeaseTx) Commit(ctx context.Context) error {
 	return tx.Tx.Commit(ctx)
 }
 
-func (w *LinearWorker) releaseLease(ctx context.Context, tx pgx.Tx, connectionID pgtype.UUID, processErr error, maxAttempts int32) error {
+func (w *Worker) releaseLease(ctx context.Context, tx pgx.Tx, connectionID pgtype.UUID, processErr error, maxAttempts int32) error {
 	leaseTx, ok := tx.(*linearLeaseTx)
 	if !ok {
 		return errors.New("Linear queue completion requires a claimed transaction")

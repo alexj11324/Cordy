@@ -1,4 +1,4 @@
-package handler
+package linearsync
 
 import (
 	"context"
@@ -46,7 +46,7 @@ func (a *commentMemoryAPI) DeleteComment(_ context.Context, _ string, id string)
 }
 
 func TestLinearCommentsOutboundRetryUsesOneRemoteComment(t *testing.T) {
-	f := setupLinearWorker(t, "two_way", &fakeLinearAPI{})
+	f := setupWorker(t, "two_way", &fakeLinearAPI{})
 	ctx := context.Background()
 	issueID := dbfx.Issue(t, "Outbound comments", testutil.Cols{"project_id": f.projectID})
 	if !f.worker.processOneOutbox(ctx) {
@@ -82,7 +82,7 @@ func TestLinearCommentsOutboundRetryUsesOneRemoteComment(t *testing.T) {
 }
 
 func TestLinearCommentsImportDeduplicatesAndDoesNotEcho(t *testing.T) {
-	f := setupLinearWorker(t, "two_way", &fakeLinearAPI{})
+	f := setupWorker(t, "two_way", &fakeLinearAPI{})
 	ctx := context.Background()
 	issueID := dbfx.Issue(t, "Comments", testutil.Cols{"project_id": f.projectID})
 	if !f.worker.processOneOutbox(ctx) {
@@ -137,7 +137,7 @@ func TestLinearCommentsImportDeduplicatesAndDoesNotEcho(t *testing.T) {
 }
 
 func TestLinearCommentsLocalWriteQueuesDurably(t *testing.T) {
-	f := setupLinearWorker(t, "two_way", &fakeLinearAPI{})
+	f := setupWorker(t, "two_way", &fakeLinearAPI{})
 	ctx := context.Background()
 	issueID := dbfx.Issue(t, "Local discussion", testutil.Cols{"project_id": f.projectID})
 	created, err := db.New(testPool).CreateComment(ctx, db.CreateCommentParams{IssueID: parseUUID(issueID), WorkspaceID: parseUUID(testWorkspaceID), AuthorType: "member", AuthorID: parseUUID(testUserID), Content: "Reply", Type: "comment"})
@@ -170,7 +170,7 @@ func TestLinearCommentsLocalWriteQueuesDurably(t *testing.T) {
 }
 
 func TestLinearBindingSeedIncludesExistingComments(t *testing.T) {
-	f := setupLinearWorker(t, "publish", &fakeLinearAPI{})
+	f := setupWorker(t, "publish", &fakeLinearAPI{})
 	ctx := context.Background()
 	issueID := dbfx.Issue(t, "Existing discussion", testutil.Cols{"project_id": f.projectID})
 	created, err := db.New(testPool).CreateComment(ctx, db.CreateCommentParams{IssueID: parseUUID(issueID), WorkspaceID: parseUUID(testWorkspaceID), AuthorType: "member", AuthorID: parseUUID(testUserID), Content: "Before binding", Type: "comment"})
@@ -199,7 +199,7 @@ func TestLinearBindingSeedIncludesExistingComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = testHandler.seedLinearOutbound(ctx, tx, parseUUID(testWorkspaceID), parseUUID(f.bindingID), parseUUID(f.projectID)); err != nil {
+	if err = SeedOutbound(ctx, tx, parseUUID(testWorkspaceID), parseUUID(f.bindingID), parseUUID(f.projectID)); err != nil {
 		_ = tx.Rollback(ctx)
 		t.Fatal(err)
 	}
@@ -245,7 +245,7 @@ func TestLinearBindingSeedIncludesExistingComments(t *testing.T) {
 func TestLinearCommentWebhookRetriesUntilIssueLinkExists(t *testing.T) {
 	remoteIssue := linearapi.Issue{ID: "remote-pending-issue", ProjectID: "linear-project", TeamID: "linear-team", UpdatedAt: time.Now()}
 	api := &fakeLinearAPI{listed: []linearapi.Issue{remoteIssue}}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 	payload, err := json.Marshal(map[string]any{"action": "create", "type": "Comment", "data": map[string]any{"id": "remote-pending-comment", "issueId": remoteIssue.ID}})
 	if err != nil {
 		t.Fatal(err)
@@ -258,7 +258,7 @@ func TestLinearCommentWebhookRetriesUntilIssueLinkExists(t *testing.T) {
 
 func TestLinearWorkProductPublishesPullRequestAttachment(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 	ctx := context.Background()
 	issueID := dbfx.Issue(t, "PR attachment", testutil.Cols{"project_id": f.projectID})
 	if !f.worker.processOneOutbox(ctx) {
@@ -342,7 +342,7 @@ func TestLinearWorkProductPublishesPullRequestAttachment(t *testing.T) {
 }
 
 func TestLinearAttachmentDeletionWaitsForLastLiveRelation(t *testing.T) {
-	f := setupLinearWorker(t, "two_way", &fakeLinearAPI{})
+	f := setupWorker(t, "two_way", &fakeLinearAPI{})
 	ctx := context.Background()
 	issueID := dbfx.Issue(t, "Shared PR relation", testutil.Cols{"project_id": f.projectID})
 	if !f.worker.processOneOutbox(ctx) {
@@ -406,7 +406,7 @@ func TestLinearAttachmentDeletionWaitsForLastLiveRelation(t *testing.T) {
 }
 
 func TestLinearImportedCommentReappearsAfterLocalDeletion(t *testing.T) {
-	f := setupLinearWorker(t, "two_way", &fakeLinearAPI{})
+	f := setupWorker(t, "two_way", &fakeLinearAPI{})
 	ctx := context.Background()
 	issueID := dbfx.Issue(t, "Remote discussion recovery", testutil.Cols{"project_id": f.projectID})
 	if !f.worker.processOneOutbox(ctx) {
@@ -443,7 +443,7 @@ func TestLinearImportedCommentReappearsAfterLocalDeletion(t *testing.T) {
 }
 
 func TestLinearReplyWaitsForUnseenParent(t *testing.T) {
-	f := setupLinearWorker(t, "two_way", &fakeLinearAPI{})
+	f := setupWorker(t, "two_way", &fakeLinearAPI{})
 	ctx := context.Background()
 	issueID := dbfx.Issue(t, "Remote reply ordering", testutil.Cols{"project_id": f.projectID})
 	if !f.worker.processOneOutbox(ctx) {
@@ -477,5 +477,30 @@ func TestLinearReplyWaitsForUnseenParent(t *testing.T) {
 	}
 	if !linked {
 		t.Fatal("child was not linked to imported parent")
+	}
+}
+
+func TestLinearImportedCommentPreservesPostgresTextSanitization(t *testing.T) {
+	f := setupWorker(t, "two_way", &fakeLinearAPI{})
+	ctx := context.Background()
+	issueID := dbfx.Issue(t, "Sanitized discussion", testutil.Cols{"project_id": f.projectID})
+	if !f.worker.processOneOutbox(ctx) {
+		t.Fatal("issue did not publish")
+	}
+	binding, err := f.worker.loadBinding(ctx, parseUUID(f.bindingID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote := linearapi.Comment{ID: "remote-unsafe-encoding", Body: string([]byte{'a', 0, 0xff, 'b'}), UpdatedAt: time.Now()}
+	remote.Issue.ID = linkedRemoteID(t, issueID)
+	if err = f.worker.applyLinearComment(ctx, binding, remote, false); err != nil {
+		t.Fatalf("comment text was not sanitized: %v", err)
+	}
+	var content string
+	if err = testPool.QueryRow(ctx, `SELECT c.content FROM comment c JOIN linear_comment_link l ON l.comment_id=c.id WHERE l.binding_id=$1 AND l.linear_comment_id=$2`, f.bindingID, remote.ID).Scan(&content); err != nil {
+		t.Fatal(err)
+	}
+	if content != "Linear user · Linear\n\na\uFFFDb" {
+		t.Fatalf("sanitized content=%q", content)
 	}
 }

@@ -1,4 +1,4 @@
-package handler
+package linearsync
 
 import (
 	"context"
@@ -12,11 +12,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/orvilo-ai/orvilo/server/internal/events"
 	linearapi "github.com/orvilo-ai/orvilo/server/internal/integrations/linear"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
 	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
-	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 type linearCommentAPI interface {
@@ -27,7 +26,7 @@ type linearCommentAPI interface {
 	DeleteComment(context.Context, string, string) error
 }
 
-func (w *LinearWorker) importComments(ctx context.Context, b workerBinding, token, issueID string) error {
+func (w *Worker) importComments(ctx context.Context, b workerBinding, token, issueID string) error {
 	api, ok := w.api.(linearCommentAPI)
 	if !ok {
 		return errors.New("Linear comment API is unavailable")
@@ -69,7 +68,7 @@ func (w *LinearWorker) importComments(ctx context.Context, b workerBinding, toke
 	return nil
 }
 
-func (w *LinearWorker) handleCommentInbox(ctx context.Context, claim linearClaim) error {
+func (w *Worker) handleCommentInbox(ctx context.Context, claim linearClaim) error {
 	var envelope struct {
 		Action string `json:"action"`
 		Data   struct {
@@ -94,7 +93,7 @@ func (w *LinearWorker) handleCommentInbox(ctx context.Context, claim linearClaim
 		// A new issue and its first comment are separate webhook deliveries and
 		// may arrive in either order. Retry only when the issue belongs to an
 		// active import binding; comments on unbound projects remain ignored.
-		token, tokenErr := w.accessToken(ctx, claim.ConnectionID)
+		token, tokenErr := w.AccessToken(ctx, claim.ConnectionID)
 		if tokenErr != nil {
 			return tokenErr
 		}
@@ -123,7 +122,7 @@ func (w *LinearWorker) handleCommentInbox(ctx context.Context, claim linearClaim
 	if !ok {
 		return errors.New("Linear comment API is unavailable")
 	}
-	token, err := w.accessToken(ctx, b.ConnectionID)
+	token, err := w.AccessToken(ctx, b.ConnectionID)
 	if err != nil {
 		return err
 	}
@@ -146,7 +145,7 @@ func (w *LinearWorker) handleCommentInbox(ctx context.Context, claim linearClaim
 
 // Imported discussion is stored as system-authored text with explicit source
 // attribution. It does not impersonate local members or trigger agent runs.
-func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, remote linearapi.Comment, deleted bool) error {
+func (w *Worker) applyLinearComment(ctx context.Context, b workerBinding, remote linearapi.Comment, deleted bool) error {
 	tx, err := w.beginLeaseTx(ctx)
 	if err != nil {
 		return err
@@ -199,7 +198,7 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 	if remote.User != nil && strings.TrimSpace(remote.User.Name) != "" {
 		author = strings.NewReplacer("\n", " ", "\r", " ", "[", "", "]", "").Replace(remote.User.Name)
 	}
-	body := author + " · Linear\n\n" + sanitizeNullBytes(remote.Body)
+	body := author + " · Linear\n\n" + util.SanitizeTextForPostgres(remote.Body)
 	if deleted {
 		body = "[Comment deleted in Linear]"
 	}
@@ -261,19 +260,13 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	if w.bus != nil {
-		eventType := protocol.EventCommentUpdated
-		if createdLocal {
-			eventType = protocol.EventCommentCreated
-		}
-		response := commentToResponse(comment, nil, nil)
-		response.IssueRevision = issueRevision
-		w.bus.Publish(events.Event{Type: eventType, WorkspaceID: uuidToString(b.WorkspaceID), ActorType: "system", ActorID: uuid.Nil.String(), Payload: map[string]any{"comment": response, "issue_revision": issueRevision}, TaskID: uuidToString(issueID)})
+	if w.events != nil {
+		w.events.CommentChanged(comment, issueRevision, createdLocal)
 	}
 	return nil
 }
 
-func (w *LinearWorker) handleCommentOutbox(ctx context.Context, c linearOutboxClaim, b workerBinding, token string) error {
+func (w *Worker) handleCommentOutbox(ctx context.Context, c linearOutboxClaim, b workerBinding, token string) error {
 	api, ok := w.api.(linearCommentAPI)
 	if !ok {
 		return errors.New("Linear comment API is unavailable")
@@ -304,7 +297,9 @@ func (w *LinearWorker) handleCommentOutbox(ctx context.Context, c linearOutboxCl
 	}
 	if c.EventType == "comment_deleted" {
 		if found {
-			if err = w.checkLease(ctx); err != nil { return err }
+			if err = w.checkLease(ctx); err != nil {
+				return err
+			}
 			return api.DeleteComment(ctx, token, remoteID)
 		}
 		return nil
@@ -313,7 +308,9 @@ func (w *LinearWorker) handleCommentOutbox(ctx context.Context, c linearOutboxCl
 		if remote.Body == payload.Body {
 			return nil
 		}
-		if err = w.checkLease(ctx); err != nil { return err }
+		if err = w.checkLease(ctx); err != nil {
+			return err
+		}
 		return api.UpdateComment(ctx, token, remoteID, payload.Body)
 	}
 	parentID := ""
@@ -335,7 +332,9 @@ func (w *LinearWorker) handleCommentOutbox(ctx context.Context, c linearOutboxCl
 	if name != "" {
 		author = name + " vian Orvilo"
 	}
-	if err = w.checkLease(ctx); err != nil { return err }
+	if err = w.checkLease(ctx); err != nil {
+		return err
+	}
 	_, err = api.CreateComment(ctx, token, remoteID, issueID, parentID, payload.Body, author)
 	return err
 }

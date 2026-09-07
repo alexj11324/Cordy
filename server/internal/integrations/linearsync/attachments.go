@@ -1,4 +1,4 @@
-package handler
+package linearsync
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
-func (w *LinearWorker) publishLinearWorkProducts(ctx context.Context, b workerBinding, issueID pgtype.UUID, remoteID, token string) error {
+func (w *Worker) publishLinearWorkProducts(ctx context.Context, b workerBinding, issueID pgtype.UUID, remoteID, token string) error {
 	q := db.New(w.db)
 	for offset := int32(0); offset < 10000; offset += 100 {
 		products, err := q.ListWorkProductsByIssue(ctx, db.ListWorkProductsByIssueParams{WorkspaceID: b.WorkspaceID, IssueID: issueID, Limit: 100, Offset: offset})
@@ -33,7 +33,9 @@ func (w *LinearWorker) publishLinearWorkProducts(ctx context.Context, b workerBi
 			if !ok {
 				return errors.New("Linear attachment API is unavailable")
 			}
-			if err = w.checkLease(ctx); err != nil { return err }
+			if err = w.checkLease(ctx); err != nil {
+				return err
+			}
 			if err = api.UpsertAttachment(ctx, token, remoteID, product.ExternalIdentity, product.ExternalUrl.String); err != nil {
 				return err
 			}
@@ -45,7 +47,7 @@ func (w *LinearWorker) publishLinearWorkProducts(ctx context.Context, b workerBi
 	return errors.New("Linear work product pagination limit reached")
 }
 
-func (w *LinearWorker) deleteLinearWorkProductAttachment(ctx context.Context, b workerBinding, issueID pgtype.UUID, token string, payload []byte) error {
+func (w *Worker) deleteLinearWorkProductAttachment(ctx context.Context, b workerBinding, issueID pgtype.UUID, token string, payload []byte) error {
 	api, ok := w.api.(interface {
 		DeleteAttachmentByURL(context.Context, string, string, string) error
 	})
@@ -72,7 +74,9 @@ func (w *LinearWorker) deleteLinearWorkProductAttachment(ctx context.Context, b 
 	if err != nil {
 		return err
 	}
-	if err = w.checkLease(ctx); err != nil { return err }
+	if err = w.checkLease(ctx); err != nil {
+		return err
+	}
 	return api.DeleteAttachmentByURL(ctx, token, remoteID, event.URL)
 }
 

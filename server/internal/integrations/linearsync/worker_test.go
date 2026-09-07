@@ -1,21 +1,13 @@
-package handler
+package linearsync
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/linear"
 	"github.com/orvilo-ai/orvilo/server/internal/testutil"
@@ -195,7 +187,7 @@ func (f *fakeLinearAPI) calls() (created, updated, deleted, refreshed int) {
 }
 
 type linearFixture struct {
-	worker       *LinearWorker
+	worker       *Worker
 	box          *secretbox.Box
 	api          *fakeLinearAPI
 	bindingID    string
@@ -203,13 +195,13 @@ type linearFixture struct {
 	connectionID string
 }
 
-// setupLinearWorker builds one connection plus one binding in the shared test
+// setupWorker builds one connection plus one binding in the shared test
 // workspace and returns a worker wired to them.
 //
 // Teardown deletes the local issues before the queues, not after: `issue` runs
 // the outbound trigger, so a teardown that drained the outbox first would
 // refill it on its way out and leave rows the next test's claim can reach.
-func setupLinearWorker(t *testing.T, mode string, api *fakeLinearAPI) linearFixture {
+func setupWorker(t *testing.T, mode string, api *fakeLinearAPI) linearFixture {
 	t.Helper()
 	if testPool == nil {
 		t.Skip("database not available")
@@ -242,7 +234,7 @@ func setupLinearWorker(t *testing.T, mode string, api *fakeLinearAPI) linearFixt
 	bindingID := dbfx.Insert(t, "linear_project_binding", testutil.Cols{
 		"workspace_id":            testWorkspaceID,
 		"connection_id":           connectionID,
-		"orvilo_project_id":     projectID,
+		"orvilo_project_id":       projectID,
 		"linear_project_id":       "linear-project",
 		"linear_team_id":          "linear-team",
 		"status":                  "active",
@@ -253,7 +245,7 @@ func setupLinearWorker(t *testing.T, mode string, api *fakeLinearAPI) linearFixt
 		"created_by_id":           testUserID,
 	})
 	t.Cleanup(func() { purgeLinearState(t) })
-	worker := NewLinearWorker(testPool, testPool, box, api, "client", "secret", true, true)
+	worker := NewWorker(testPool, testPool, box, api, "client", "secret", true, true, nil)
 	return linearFixture{worker: worker, box: box, api: api, bindingID: bindingID, projectID: projectID, connectionID: connectionID}
 }
 
@@ -312,16 +304,6 @@ func (f linearFixture) queueWebhook(t *testing.T, delivery string, body []byte) 
 	})
 }
 
-// linearTestSignature reproduces the HMAC the webhook endpoint verifies.
-func linearTestSignature(t *testing.T, secret string, body []byte) string {
-	t.Helper()
-	mac := hmac.New(sha256.New, []byte(secret))
-	if _, err := mac.Write(body); err != nil {
-		t.Fatal(err)
-	}
-	return hex.EncodeToString(mac.Sum(nil))
-}
-
 func issueRevision(t *testing.T, issueID string) int64 {
 	t.Helper()
 	var revision int64
@@ -351,7 +333,7 @@ func linkedRemoteID(t *testing.T, issueID string) string {
 // without ever calling the integration.
 func TestLinearWorkerPublishesTriggerBackedOutbox(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "publish", api)
+	f := setupWorker(t, "publish", api)
 	issueID := dbfx.Issue(t, "Publish me", testutil.Cols{"project_id": f.projectID, "description": "body", "priority": "high"})
 
 	var queued int
@@ -393,7 +375,7 @@ func TestLinearWorkerPublishesTriggerBackedOutbox(t *testing.T) {
 // to write, and the issue is created twice in Linear.
 func TestLinearWorkerKeepsOutboxFIFOPerIssue(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 	issueID := dbfx.Issue(t, "First title", testutil.Cols{"project_id": f.projectID})
 	if _, err := testPool.Exec(context.Background(), `UPDATE issue SET title='Second title', revision=revision+1 WHERE id=$1`, issueID); err != nil {
 		t.Fatal(err)
@@ -440,7 +422,7 @@ func TestLinearWorkerKeepsOutboxFIFOPerIssue(t *testing.T) {
 // so both are asserted here.
 func TestLinearWorkerClaimIsALeaseThatExpires(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "publish", api)
+	f := setupWorker(t, "publish", api)
 	dbfx.Issue(t, "Leased", testutil.Cols{"project_id": f.projectID})
 
 	first, ok, err := f.worker.claimOutbox(context.Background())
@@ -476,7 +458,7 @@ func TestLinearWorkerClaimIsALeaseThatExpires(t *testing.T) {
 // limit has to come back with a delay, and only the last one may stop.
 func TestLinearWorkerBacksOffThenDeadLetters(t *testing.T) {
 	api := &fakeLinearAPI{err: errors.New("provider unavailable")}
-	f := setupLinearWorker(t, "publish", api)
+	f := setupWorker(t, "publish", api)
 	issueID := dbfx.Issue(t, "Will fail", testutil.Cols{"project_id": f.projectID})
 	if _, err := testPool.Exec(context.Background(), `UPDATE linear_sync_outbox SET max_attempts=2 WHERE issue_id=$1`, issueID); err != nil {
 		t.Fatal(err)
@@ -526,7 +508,7 @@ func TestLinearWorkerBacksOffThenDeadLetters(t *testing.T) {
 // recognised as belonging to a deleted mapping.
 func TestLinearWorkerPublishesLocalDeletion(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "publish", api)
+	f := setupWorker(t, "publish", api)
 	issueID := dbfx.Issue(t, "Delete me", testutil.Cols{"project_id": f.projectID})
 	if !f.worker.processOneOutbox(context.Background()) {
 		t.Fatal("create was not published")
@@ -555,7 +537,7 @@ func TestLinearWorkerPublishesLocalDeletion(t *testing.T) {
 // reports the integration as broken.
 func TestLinearWorkerDropsOutboxForInactiveBinding(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "publish", api)
+	f := setupWorker(t, "publish", api)
 	dbfx.Issue(t, "Queued before pause", testutil.Cols{"project_id": f.projectID})
 	if _, err := testPool.Exec(context.Background(), `UPDATE linear_project_binding SET status='paused' WHERE id=$1`, f.bindingID); err != nil {
 		t.Fatal(err)
@@ -586,7 +568,7 @@ func TestLinearWorkerDropsOutboxForInactiveBinding(t *testing.T) {
 func TestLinearWorkerImportsWithoutOutboxEcho(t *testing.T) {
 	remoteID := "20000000-0000-0000-0000-000000000002"
 	api := &fakeLinearAPI{listed: []linear.Issue{{ID: remoteID, Identifier: "ENG-2", Title: "Remote issue", Description: "remote body", StateID: "remote-todo", ProjectID: "linear-project", TeamID: "linear-team", Priority: 3, UpdatedAt: time.Now()}}}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 	payload, err := json.Marshal(map[string]string{"binding_id": f.bindingID})
 	if err != nil {
 		t.Fatal(err)
@@ -633,7 +615,7 @@ func TestLinearWorkerReimportOfUnchangedIssueTouchesNothing(t *testing.T) {
 	remoteID := "20000000-0000-0000-0000-000000000003"
 	updatedAt := time.Now().Add(-time.Hour).UTC()
 	api := &fakeLinearAPI{listed: []linear.Issue{{ID: remoteID, Identifier: "ENG-3", Title: "Stable", Description: "same", StateID: "remote-todo", ProjectID: "linear-project", TeamID: "linear-team", Priority: 3, UpdatedAt: updatedAt}}}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 	payload, err := json.Marshal(map[string]string{"binding_id": f.bindingID})
 	if err != nil {
 		t.Fatal(err)
@@ -674,7 +656,7 @@ func TestLinearWorkerReimportOfUnchangedIssueTouchesNothing(t *testing.T) {
 // "nothing changed", not as a remote edit, or every publish would ping-pong.
 func TestLinearWorkerSuppressesEchoOfItsOwnPush(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 	issueID := dbfx.Issue(t, "Pushed title", testutil.Cols{"project_id": f.projectID, "description": "pushed body", "priority": "high"})
 	if !f.worker.processOneOutbox(context.Background()) {
 		t.Fatal("issue was not published")
@@ -714,7 +696,7 @@ func TestLinearWorkerSuppressesEchoOfItsOwnPush(t *testing.T) {
 // A remote-only edit applies cleanly and moves the link's baseline forward.
 func TestLinearWorkerAppliesRemoteOnlyEdit(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 	issueID := dbfx.Issue(t, "Pushed title", testutil.Cols{"project_id": f.projectID, "description": "pushed body"})
 	if !f.worker.processOneOutbox(context.Background()) {
 		t.Fatal("issue was not published")
@@ -752,7 +734,7 @@ func TestLinearWorkerAppliesRemoteOnlyEdit(t *testing.T) {
 // is recorded for a human, and the link is flagged.
 func TestLinearWorkerRecordsConflictWhenBothSidesMoved(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 	issueID := dbfx.Issue(t, "Shared title", testutil.Cols{"project_id": f.projectID, "description": "body"})
 	if !f.worker.processOneOutbox(context.Background()) {
 		t.Fatal("issue was not published")
@@ -818,7 +800,7 @@ func TestLinearWorkerRecordsConflictWhenBothSidesMoved(t *testing.T) {
 // already absorbed must not be replayed over newer state.
 func TestLinearWorkerIgnoresStaleRemoteEvent(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 	issueID := dbfx.Issue(t, "Original", testutil.Cols{"project_id": f.projectID, "description": "body"})
 	if !f.worker.processOneOutbox(context.Background()) {
 		t.Fatal("issue was not published")
@@ -855,7 +837,7 @@ func TestLinearWorkerIgnoresStaleRemoteEvent(t *testing.T) {
 // link; dropping the row would let the next import recreate the issue.
 func TestLinearWorkerAppliesRemoteDeletion(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 	issueID := dbfx.Issue(t, "Doomed", testutil.Cols{"project_id": f.projectID})
 	if !f.worker.processOneOutbox(context.Background()) {
 		t.Fatal("issue was not published")
@@ -882,7 +864,7 @@ func TestLinearWorkerAppliesRemoteDeletion(t *testing.T) {
 // integration as broken.
 func TestLinearWorkerAcknowledgesEventForUnboundProject(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 	f.queueWebhook(t, "unbound", webhookPayload(t, "update", time.Now().UnixMilli(), map[string]any{
 		"id": "30000000-0000-0000-0000-000000000009", "identifier": "OTH-1", "title": "Someone else's issue",
 		"project": map[string]any{"id": "other-project"}, "team": map[string]any{"id": "other-team"},
@@ -917,7 +899,7 @@ func TestLinearWorkerAcknowledgesEventForUnboundProject(t *testing.T) {
 func TestLinearWorkerPollFallbackEnqueuesOncePerBucket(t *testing.T) {
 	remoteID := "20000000-0000-0000-0000-00000000000a"
 	api := &fakeLinearAPI{listed: []linear.Issue{{ID: remoteID, Identifier: "ENG-9", Title: "Missed webhook", StateID: "remote-todo", ProjectID: "linear-project", TeamID: "linear-team", UpdatedAt: time.Now()}}}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 
 	for i := 0; i < 3; i++ {
 		if err := f.worker.enqueuePolls(context.Background()); err != nil {
@@ -960,7 +942,7 @@ func TestLinearWorkerPollFallbackEnqueuesOncePerBucket(t *testing.T) {
 // A publish-only binding has nothing to pull, so it must not be polled.
 func TestLinearWorkerDoesNotPollPublishOnlyBinding(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "publish", api)
+	f := setupWorker(t, "publish", api)
 	if err := f.worker.enqueuePolls(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -977,7 +959,7 @@ func TestLinearWorkerDoesNotPollPublishOnlyBinding(t *testing.T) {
 // so the next claim finds a usable credential.
 func TestLinearWorkerRefreshesExpiringToken(t *testing.T) {
 	api := &fakeLinearAPI{refresh: linear.Token{AccessToken: "fresh-access", RefreshToken: "fresh-refresh", Scope: "read write", ExpiresIn: time.Hour}}
-	f := setupLinearWorker(t, "publish", api)
+	f := setupWorker(t, "publish", api)
 	if _, err := testPool.Exec(context.Background(), `UPDATE linear_connection SET token_expires_at=now()+interval '30 seconds' WHERE id=$1`, f.connectionID); err != nil {
 		t.Fatal(err)
 	}
@@ -1011,7 +993,7 @@ func TestLinearWorkerRefreshesExpiringToken(t *testing.T) {
 // with a credential that will never work again.
 func TestLinearWorkerMarksConnectionForReauthorizationOnRefreshFailure(t *testing.T) {
 	api := &fakeLinearAPI{authErr: errors.New("invalid_grant")}
-	f := setupLinearWorker(t, "publish", api)
+	f := setupWorker(t, "publish", api)
 	if _, err := testPool.Exec(context.Background(), `UPDATE linear_connection SET token_expires_at=now()-interval '1 minute' WHERE id=$1`, f.connectionID); err != nil {
 		t.Fatal(err)
 	}
@@ -1036,7 +1018,7 @@ func TestLinearWorkerMarksConnectionForReauthorizationOnRefreshFailure(t *testin
 // worker must leave queued work alone rather than draining it silently.
 func TestLinearWorkerRespectsDirectionFlags(t *testing.T) {
 	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "two_way", api)
+	f := setupWorker(t, "two_way", api)
 	payload, err := json.Marshal(map[string]string{"binding_id": f.bindingID})
 	if err != nil {
 		t.Fatal(err)
@@ -1044,7 +1026,7 @@ func TestLinearWorkerRespectsDirectionFlags(t *testing.T) {
 	dbfx.Insert(t, "linear_sync_inbox", testutil.Cols{"connection_id": f.connectionID, "delivery_id": "flagged", "event_type": "initial_import", "payload": payload})
 	dbfx.Issue(t, "Not published while off", testutil.Cols{"project_id": f.projectID})
 
-	off := NewLinearWorker(testPool, testPool, f.box, api, "client", "secret", false, false)
+	off := NewWorker(testPool, testPool, f.box, api, "client", "secret", false, false, nil)
 	off.interval = 5 * time.Millisecond
 	off.pollInterval = 5 * time.Millisecond
 	offCtx, cancelOff := context.WithTimeout(context.Background(), 150*time.Millisecond)
@@ -1068,7 +1050,7 @@ func TestLinearWorkerRespectsDirectionFlags(t *testing.T) {
 		t.Fatal("disabled worker still called the provider")
 	}
 
-	on := NewLinearWorker(testPool, testPool, f.box, api, "client", "secret", true, true)
+	on := NewWorker(testPool, testPool, f.box, api, "client", "secret", true, true, nil)
 	on.interval = 5 * time.Millisecond
 	on.pollInterval = time.Hour
 	onCtx, cancelOn := context.WithTimeout(context.Background(), time.Second)
@@ -1088,133 +1070,6 @@ func TestLinearWorkerRespectsDirectionFlags(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Webhook intake and revocation
 // ---------------------------------------------------------------------------
-
-func linearIntegrationHandler(t *testing.T, f linearFixture) *Handler {
-	t.Helper()
-	return &Handler{
-		DB:                  testPool,
-		TxStarter:           testPool,
-		FeatureFlags:        linearTestFlags(true),
-		LinearSecretBox:     f.box,
-		LinearClientID:      "client",
-		LinearClientSecret:  "secret",
-		LinearWebhookSecret: "webhook-secret",
-		LinearWorker:        f.worker,
-	}
-}
-
-// The webhook endpoint is the wake path: it persists the delivery, dedupes
-// redeliveries on the provider's own delivery id, and nudges the worker so the
-// event is applied now instead of at the next poll.
-func TestHandleLinearWebhookPersistsDedupesAndWakesWorker(t *testing.T) {
-	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "two_way", api)
-	h := linearIntegrationHandler(t, f)
-	var organizationID string
-	if err := testPool.QueryRow(context.Background(), `SELECT organization_id FROM linear_connection WHERE id=$1`, f.connectionID).Scan(&organizationID); err != nil {
-		t.Fatal(err)
-	}
-	timestamp := time.Now().UnixMilli()
-	body, err := json.Marshal(map[string]any{
-		"type": "Issue", "action": "update", "organizationId": organizationID,
-		"webhookId":        "linear-hook-1",
-		"webhookTimestamp": timestamp,
-		"data":             map[string]any{"id": "40000000-0000-0000-0000-000000000004"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	send := func(delivery string) *httptest.ResponseRecorder {
-		request := httptest.NewRequest(http.MethodPost, "/api/webhooks/linear", strings.NewReader(string(body)))
-		request.Header.Set("Linear-Signature", linearTestSignature(t, "webhook-secret", body))
-		request.Header.Set("Linear-Timestamp", fmt.Sprint(timestamp))
-		request.Header.Set("Linear-Delivery", delivery)
-		recorder := httptest.NewRecorder()
-		h.HandleLinearWebhook(recorder, request)
-		return recorder
-	}
-
-	// Drain the startup nudge so the assertion below sees only what this
-	// request produced.
-	select {
-	case <-f.worker.wake:
-	default:
-	}
-
-	first := send("delivery-1")
-	if first.Code != http.StatusOK {
-		t.Fatalf("status = %d body = %s", first.Code, first.Body.String())
-	}
-	select {
-	case <-f.worker.wake:
-	default:
-		t.Fatal("accepted webhook did not wake the worker")
-	}
-
-	replay := send("delivery-1")
-	if replay.Code != http.StatusOK || !strings.Contains(replay.Body.String(), `"duplicate":true`) {
-		t.Fatalf("redelivery status = %d body = %s", replay.Code, replay.Body.String())
-	}
-	var stored int
-	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_sync_inbox WHERE connection_id=$1 AND delivery_id='delivery-1'`, f.connectionID).Scan(&stored); err != nil {
-		t.Fatal(err)
-	}
-	if stored != 1 {
-		t.Fatalf("redelivery stored %d rows", stored)
-	}
-}
-
-// Disconnecting revokes the provider credential and tombstones only the
-// connection. Binding/link history remains auditable and can be reactivated by
-// a later OAuth install; workspace deletion owns the destructive cleanup.
-func TestDisconnectLinearRevokesAndMarksConnection(t *testing.T) {
-	api := &fakeLinearAPI{}
-	f := setupLinearWorker(t, "two_way", api)
-	h := linearIntegrationHandler(t, f)
-	issueID := dbfx.Issue(t, "Linked", testutil.Cols{"project_id": f.projectID})
-	if !f.worker.processOneOutbox(context.Background()) {
-		t.Fatal("issue was not published")
-	}
-	dbfx.Insert(t, "linear_member_binding", testutil.Cols{"workspace_id": testWorkspaceID, "connection_id": f.connectionID, "orvilo_user_id": testUserID, "linear_user_id": "linear-user"})
-
-	request := httptest.NewRequest(http.MethodDelete, "/api/workspaces/"+testWorkspaceID+"/linear/connection", nil)
-	routeCtx := chi.NewRouteContext()
-	routeCtx.URLParams.Add("id", testWorkspaceID)
-	request = request.WithContext(context.WithValue(request.Context(), chi.RouteCtxKey, routeCtx))
-	recorder := httptest.NewRecorder()
-	h.DisconnectLinear(recorder, request)
-	if recorder.Code != http.StatusNoContent {
-		t.Fatalf("status = %d body = %s", recorder.Code, recorder.Body.String())
-	}
-	if len(api.revoked) != 1 || api.revoked[0] != "access" {
-		t.Fatalf("revoked = %v, want the stored access token", api.revoked)
-	}
-
-	var status string
-	if err := testPool.QueryRow(context.Background(), `SELECT status FROM linear_connection WHERE id=$1`, f.connectionID).Scan(&status); err != nil {
-		t.Fatal(err)
-	}
-	if status != "revoked" {
-		t.Fatalf("connection status=%q, want revoked", status)
-	}
-	var bindings, links int
-	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_project_binding WHERE workspace_id=$1`, testWorkspaceID).Scan(&bindings); err != nil {
-		t.Fatal(err)
-	}
-	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_issue_link WHERE workspace_id=$1`, testWorkspaceID).Scan(&links); err != nil {
-		t.Fatal(err)
-	}
-	if bindings != 1 || links != 1 {
-		t.Fatalf("disconnect removed audit state: bindings=%d links=%d", bindings, links)
-	}
-	var issues int
-	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM issue WHERE id=$1`, issueID).Scan(&issues); err != nil {
-		t.Fatal(err)
-	}
-	if issues != 1 {
-		t.Fatal("disconnect deleted the local issue")
-	}
-}
 
 func TestLinearRetryDelayGrowsAndIsCapped(t *testing.T) {
 	for _, tc := range []struct {
