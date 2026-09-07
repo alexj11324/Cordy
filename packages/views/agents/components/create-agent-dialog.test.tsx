@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, fireEvent, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
 import type { Agent, MemberWithUser, RuntimeDevice } from "@orvilo/core/types";
 import { I18nProvider } from "@orvilo/core/i18n/react";
 import { WorkspaceSlugProvider } from "@orvilo/core/paths";
@@ -31,7 +31,10 @@ vi.mock("@orvilo/core/hooks", () => ({
 // ModelDropdown talks to the api; the create dialog only needs it as a
 // stand-in here, so swap it out.
 vi.mock("./model-dropdown", () => ({
-  ModelDropdown: () => null,
+  ModelDropdown: (props: import("./model-dropdown").ModelDropdownProps) => <div>
+    <span className="truncate">{props.runtimes?.find((runtime) => runtime.id === props.runtimeId)?.name}</span>
+    {props.runtimes?.map((runtime) => <button key={runtime.id} type="button" onClick={() => void props.onSelection?.({ runtimeId: runtime.id, model: "", thinkingLevel: "", serviceTier: "", catalog: [] })}>{runtime.name}</button>)}
+  </div>,
 }));
 
 // Provider logos don't matter for these assertions but they pull in SVGs.
@@ -124,19 +127,24 @@ function makeDuplicateSource(runtimeId: string): Agent {
   };
 }
 
-function renderDialog(runtimes: RuntimeDevice[], template?: Agent) {
+function renderDialog(
+  runtimes: RuntimeDevice[],
+  template?: Agent,
+  runtimesLoading = false,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   const onCreate = vi.fn().mockResolvedValue(undefined);
   const onClose = vi.fn();
-  render(
+  const tree = (nextRuntimes: RuntimeDevice[], nextLoading: boolean) => (
     <I18nProvider locale="en" resources={TEST_RESOURCES}>
       <QueryClientProvider client={queryClient}>
         <WorkspaceSlugProvider slug="test-ws">
         <NavigationProvider value={navigationStub}>
           <CreateAgentDialog
-            runtimes={runtimes}
+            runtimes={nextRuntimes}
+            runtimesLoading={nextLoading}
             members={members}
             currentUserId={ME}
             template={template}
@@ -146,9 +154,15 @@ function renderDialog(runtimes: RuntimeDevice[], template?: Agent) {
         </NavigationProvider>
         </WorkspaceSlugProvider>
       </QueryClientProvider>
-    </I18nProvider>,
+    </I18nProvider>
   );
-  return { onCreate, onClose };
+  const view = render(tree(runtimes, runtimesLoading));
+  return {
+    onCreate,
+    onClose,
+    rerenderRuntimes: (nextRuntimes: RuntimeDevice[], nextLoading = false) =>
+      view.rerender(tree(nextRuntimes, nextLoading)),
+  };
 }
 
 describe("CreateAgentDialog runtime visibility gate", () => {
@@ -163,7 +177,15 @@ describe("CreateAgentDialog runtime visibility gate", () => {
     document.body.innerHTML = "";
   });
 
-  it("disables another member's private runtime in the picker", () => {
+  it("preserves the selected model, effort and speed when duplicating on the same runtime", async () => {
+    const runtime = makeRuntime({ id: "rt-codex", provider: "codex", owner_id: ME });
+    const template = { ...makeDuplicateSource(runtime.id), model: "gpt-6-astra", thinking_level: "high", service_tier: "priority" };
+    const { onCreate } = renderDialog([runtime], template);
+    fireEvent.click(screen.getByText("Create"));
+    await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ runtime_id: "rt-codex", model: "gpt-6-astra", thinking_level: "high", service_tier: "priority" })));
+  });
+
+  it("omits another member's private runtime from the selector", () => {
     const mine = makeRuntime({ id: "rt-mine", name: "My Runtime", owner_id: ME, visibility: "private" });
     const othersPrivate = makeRuntime({
       id: "rt-others-private",
@@ -173,19 +195,8 @@ describe("CreateAgentDialog runtime visibility gate", () => {
     });
     renderDialog([mine, othersPrivate]);
 
-    // Flip to "All" so other-owned runtimes show.
-    fireEvent.click(screen.getByText("All"));
-    // Open the picker.
-    fireEvent.click(
-      screen.getByText("My Runtime", { selector: "span.truncate" }),
-    );
 
-    const disabledRow = screen
-      .getByText("Others Private")
-      .closest("button") as HTMLButtonElement;
-    expect(disabledRow).not.toBeNull();
-    expect(disabledRow.disabled).toBe(true);
-    expect(disabledRow.title).toMatch(/Private runtime/i);
+    expect(screen.queryByText("Others Private")).toBeNull();
   });
 
   it("lets a plain member pick another member's public runtime", () => {
@@ -198,10 +209,6 @@ describe("CreateAgentDialog runtime visibility gate", () => {
     });
     renderDialog([mine, othersPublic]);
 
-    fireEvent.click(screen.getByText("All"));
-    fireEvent.click(
-      screen.getByText("My Runtime", { selector: "span.truncate" }),
-    );
 
     const publicRow = screen
       .getByText("Others Public")
@@ -230,6 +237,92 @@ describe("CreateAgentDialog runtime visibility gate", () => {
     // first in the input list.
     expect(screen.queryByText("Others Private", { selector: "span.truncate" })).toBeNull();
     expect(screen.getByText("My Runtime", { selector: "span.truncate" })).toBeInTheDocument();
+  });
+
+  it("defaults to the owned online runtime before a shared online runtime", async () => {
+    const sharedOnline = makeRuntime({
+      id: "rt-shared-online",
+      name: "Shared Online",
+      owner_id: OTHER,
+      visibility: "public",
+      status: "online",
+    });
+    const ownedOnline = makeRuntime({
+      id: "rt-owned-online",
+      name: "Owned Online",
+      owner_id: ME,
+      status: "online",
+    });
+    const { onCreate } = renderDialog([sharedOnline, ownedOnline]);
+
+    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+      target: { value: "Preferred Runtime Agent" },
+    });
+    fireEvent.click(screen.getByText("Create"));
+
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ runtime_id: "rt-owned-online" }),
+      ),
+    );
+  });
+
+  it("falls back to the owned offline runtime before a shared online runtime", async () => {
+    const sharedOnline = makeRuntime({
+      id: "rt-shared-online",
+      name: "Shared Online",
+      owner_id: OTHER,
+      visibility: "public",
+      status: "online",
+    });
+    const ownedOffline = makeRuntime({
+      id: "rt-owned-offline",
+      name: "Owned Offline",
+      owner_id: ME,
+      status: "offline",
+    });
+    const { onCreate } = renderDialog([sharedOnline, ownedOffline]);
+
+    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+      target: { value: "Offline Runtime Agent" },
+    });
+    fireEvent.click(screen.getByText("Create"));
+
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ runtime_id: "rt-owned-offline" }),
+      ),
+    );
+  });
+
+  it("preserves duplicate model settings when the valid source runtime loads asynchronously", async () => {
+    const sourceRuntime = makeRuntime({
+      id: "rt-source",
+      provider: "codex",
+      owner_id: ME,
+      status: "online",
+    });
+    const template = {
+      ...makeDuplicateSource(sourceRuntime.id),
+      model: "gpt-6-astra",
+      thinking_level: "high",
+      service_tier: "priority",
+    };
+    const { onCreate, rerenderRuntimes } = renderDialog([], template, true);
+
+    rerenderRuntimes([sourceRuntime], false);
+    fireEvent.click(screen.getByText("Create"));
+
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtime_id: sourceRuntime.id,
+          model: template.model,
+          thinking_level: template.thinking_level,
+          service_tier: template.service_tier,
+        }),
+      ),
+    );
   });
 
   it("in duplicate mode, does not pre-fill the source agent's runtime when it's now locked", async () => {
@@ -326,6 +419,9 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
     expect(payload.visibility).toBe("workspace");
     expect(payload.permission_mode).toBeUndefined();
     expect(payload.invocation_targets).toBeUndefined();
+    expect(payload).not.toHaveProperty("description");
+    expect(payload).not.toHaveProperty("instructions");
+    expect(payload).not.toHaveProperty("skill_ids");
   });
 
   it("submits permission_mode=public_to + workspace target when the flag is ON (default)", async () => {
@@ -408,5 +504,28 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
     expect(payload.invocation_targets).toEqual([
       { target_type: "member", target_id: OTHER },
     ]);
+  });
+
+  it("does not render or submit description, instructions, or skills", async () => {
+    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: false });
+    const mine = makeRuntime({ id: "rt-mine", name: "My Runtime", owner_id: ME });
+    const { onCreate } = renderDialog([mine]);
+
+    expect(screen.queryByText("Description")).toBeNull();
+    expect(screen.queryByText("Instructions")).toBeNull();
+    expect(screen.queryByText("Skills")).toBeNull();
+    expect(screen.queryByText("Add skills from workspace")).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+      target: { value: "Lean Agent" },
+    });
+    fireEvent.click(screen.getByText("Create"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const payload = onCreate.mock.calls[0]?.[0];
+    expect(payload).toBeDefined();
+    expect(payload).not.toHaveProperty("description");
+    expect(payload).not.toHaveProperty("instructions");
+    expect(payload).not.toHaveProperty("skill_ids");
   });
 });

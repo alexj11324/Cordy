@@ -64,6 +64,15 @@ describe("EnvTab", () => {
     updateAgentEnv.mockResolvedValue({ custom_env: {} });
   });
 
+  it("explains purpose, scope, and how to fill values before they are revealed", () => {
+    renderTab();
+
+    expect(
+      screen.getByText(enAgents.tab_body.env.not_revealed_hint),
+    ).toBeInTheDocument();
+    expect(getAgentEnv).not.toHaveBeenCalled();
+  });
+
   it("turns pasted environment-file assignments into separate rows", async () => {
     const user = userEvent.setup();
     renderTab();

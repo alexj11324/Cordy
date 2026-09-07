@@ -32,8 +32,11 @@ vi.mock("./labels-tab", stub("LabelsTab"));
 vi.mock("./properties-tab", stub("PropertiesTab"));
 vi.mock("./quick-actions-tab", stub("QuickActionsTab"));
 vi.mock("./keyboard-shortcuts-tab", stub("KeyboardShortcutsTab"));
+vi.mock("./issue-statuses-tab", stub("IssueStatusesTab"));
 vi.mock("./plugins-tab", stub("PluginsTab"));
 vi.mock("./billing-tab", stub("BillingTab"));
+vi.mock("./skills-tab", stub("SkillsTab"));
+vi.mock("./mcp-tab", stub("McpTab"));
 
 vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Acme" }),
@@ -157,6 +160,7 @@ describe("SettingsPage nav trigger", () => {
       "Issue Statuses",
       "Properties",
       "Quick Actions",
+      "Skills",
       "MCP",
       "Plugins",
     ]) {

@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { shouldCloseSettingsOnEscape } from "./settings-escape";
 import { useQuery } from "@tanstack/react-query";
 import { InvitePage } from "@orvilo/views/invite";
 import { InvitationsPage } from "@orvilo/views/invitations";
@@ -55,6 +56,16 @@ function SettingsWindow() {
       });
     };
   }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!shouldCloseSettingsOnEscape(event)) return;
+      event.preventDefault();
+      close();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [close]);
 
   return (
     <div

@@ -166,6 +166,10 @@
     "runtime_required_toast": "Bind a runtime before running this agent.",
     "assign_work": "Assign work",
     "more_actions_aria": "Agent actions",
+    "edit": "Edit",
+    "done": "Done",
+    "edit_aria": "Edit agent",
+    "done_aria": "Finish editing agent",
     "updated": "Updated {{when}}"
   },
   "inspector": {
@@ -230,6 +234,7 @@
     "model_default": "Default",
     "model_tooltip": "Model · {{value}}",
     "model_managed_by_runtime": "Managed by runtime",
+    "bind_host_managed_runtime": "Use this runtime — it has no model list",
     "model_search_placeholder": "Search or type a model ID",
     "model_discovering": "Discovering models…",
     "model_discovery_failed_title": "Could not list this runtime's models.",
@@ -240,21 +245,22 @@
     "model_custom_use": "Use \"{{value}}\"",
     "model_clear": "Clear (use provider default)",
     "model_clear_title": "Clear and fall back to the runtime's provider default",
-    "thinking_default": "Follow CLI config",
+    "thinking_choose": "Choose effort",
+    "thinking_default": "Choose effort",
     "thinking_tooltip": "Thinking · {{value}}",
-    "thinking_clear": "Follow CLI config",
-    "thinking_clear_title": "Clear the override and let the local CLI config (claude/codex) decide the reasoning level",
-    "service_tier_default": "Runtime default",
+    "thinking_clear": "Remove saved effort",
+    "thinking_clear_title": "Remove the saved thinking effort",
+    "service_tier_default": "Choose speed",
     "service_tier_standard": "Standard",
     "service_tier_standard_description": "Standard speed and standard usage",
     "service_tier_tooltip": "Speed · {{value}}",
-    "service_tier_clear": "Runtime default",
+    "service_tier_clear": "Remove saved speed",
     "service_tier_clear_title": "Clear the speed override and let the local Codex configuration decide"
   },
   "model_dropdown": {
     "label": "Model",
     "select_runtime_first": "Select a runtime first",
-    "default_provider": "Default (provider)",
+    "default_provider": "No model selected",
     "runtime_offline_manual": "Runtime offline — enter manually",
     "managed_by_runtime_title": "Model selection is managed by this runtime.",
     "managed_by_runtime_hint": "Configure the model on the runtime host (e.g. Hermes reads it from its own config file).",
@@ -314,11 +320,11 @@
     },
     "sections": {
       "identity": "Identity",
-      "identity_hint": "Give the agent a recognizable name and a concise purpose.",
+      "identity_hint": "Give the agent a recognizable name and avatar.",
       "behavior": "Behavior & capabilities",
       "behavior_hint": "Define how it should work and attach workspace skills it can rely on.",
       "execution": "Execution",
-      "execution_hint": "Choose where the agent runs, and optionally override the runtime's default model, thinking level and speed.",
+      "execution_hint": "Choose where the agent runs, and pick a specific model, thinking level, and speed.",
       "access": "Access",
       "access_hint": "Control who can start runs with this agent. You can change this later."
     },
@@ -388,7 +394,7 @@
     "title_create": "Create Agent",
     "title_duplicate": "Duplicate Agent",
     "description_create": "Create a new AI agent for your workspace.",
-    "description_duplicate": "Create a new agent based on \"{{name}}\". Instructions, env, and skills are copied for you.",
+    "description_duplicate": "Create a new agent based on \"{{name}}\". Runtime, model, and access settings are copied for you.",
     "name_label": "Name",
     "name_placeholder": "e.g. Deep Research Agent",
     "description_label": "Description",
@@ -484,9 +490,9 @@
     "env": {
       "intro_readonly": "Injected into the agent process at launch. Only workspace owners and admins can read or edit values; every reveal and edit is recorded in the workspace audit log.",
       "empty_readonly": "No environment variables configured.",
-      "intro_prefix": "Injected into the agent process at launch (e.g. ",
+      "intro_prefix": "Injected only into this agent's process at task launch — not the machine's system environment. Typical keys: ",
       "intro_separator": ", ",
-      "intro_suffix": ").",
+      "intro_suffix": ".",
       "bulk_edit_action": "Bulk edit",
       "row_edit_action": "Edit as rows",
       "bulk_placeholder": "API_KEY=value\nBASE_URL=https://example.com",
@@ -506,7 +512,7 @@
       "not_revealed_title_one": "{{count}} variable configured",
       "not_revealed_title_other": "{{count}} variables configured",
       "not_revealed_empty": "No environment variables configured.",
-      "not_revealed_hint": "Values stay masked until you reveal them. Every reveal and edit is recorded in the workspace audit log.",
+      "not_revealed_hint": "These KEY=value pairs are injected only into this agent's process when a task starts — for tool APIs, proxies, and similar runtime settings. They do not change the machine's system environment. Values stay masked until you reveal them. Every reveal and edit is recorded in the workspace audit log.",
       "reveal_action": "Reveal & edit",
       "revealing": "Revealing…",
       "reveal_failed_toast": "Failed to load env values",
@@ -808,7 +814,7 @@
     "owner_label": "Owner",
     "unknown_runtime": "Unknown runtime",
     "model_label": "Model",
-    "model_unset": "Runtime default"
+    "model_unset": "No model selected"
   },
   "live_peek": {
     "current_issue_label": "Now on",
@@ -969,5 +975,21 @@
     "selected_one": "{{count}} selected",
     "selected_other": "{{count}} selected",
     "clear_selection": "Clear selection"
+  },
+  "model_selector": {
+    "no_speed": "This model has no advertised speed options.",
+    "speed_inherited": "Speed follows the existing agent or runtime settings.",
+    "providers": "Providers",
+    "favorites": "Favorites",
+    "effort": "Thinking effort",
+    "favorite": "Favorite {{value}}",
+    "unfavorite": "Unfavorite {{value}}",
+    "favorites_empty": "Star a model and effort to keep it here.",
+    "favorite_unavailable": "This favorite is unavailable. Choose an online provider and a supported model and effort.",
+    "no_effort": "This model has no advertised effort options.",
+    "choose_model": "Choose a model",
+    "effort_inherited": "This entry changes the model only. Thinking effort follows the existing agent or runtime settings.",
+    "refresh": "Refresh models",
+    "clear_unsupported_speed": "Remove unsupported speed {{value}}"
   }
 }

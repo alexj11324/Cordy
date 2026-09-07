@@ -665,6 +665,50 @@ func (q *Queries) ListSkillsByWorkspace(ctx context.Context, workspaceID pgtype.
 	return items, nil
 }
 
+const listWorkspaceSkillsByIDs = `-- name: ListWorkspaceSkillsByIDs :many
+SELECT id, workspace_id, name, description, content, config, created_by, created_at, updated_at, plugin_installation_id FROM skill
+WHERE workspace_id = $1 AND id = ANY($2::uuid[])
+ORDER BY name ASC
+`
+
+type ListWorkspaceSkillsByIDsParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	SkillIds    []pgtype.UUID `json:"skill_ids"`
+}
+
+// Claim/resolve scoped load: workspace library skills by ID, NO agent_skill join.
+// Authorization is workspace membership of the skill row.
+func (q *Queries) ListWorkspaceSkillsByIDs(ctx context.Context, arg ListWorkspaceSkillsByIDsParams) ([]Skill, error) {
+	rows, err := q.db.Query(ctx, listWorkspaceSkillsByIDs, arg.WorkspaceID, arg.SkillIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Skill{}
+	for rows.Next() {
+		var i Skill
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.Name,
+			&i.Description,
+			&i.Content,
+			&i.Config,
+			&i.CreatedBy,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.PluginInstallationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const removeAgentSkill = `-- name: RemoveAgentSkill :exec
 DELETE FROM agent_skill
 WHERE agent_id = $1 AND skill_id = $2

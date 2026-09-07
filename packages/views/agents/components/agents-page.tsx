@@ -82,9 +82,9 @@ import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 // with min-width + horizontal-scroll escape valve; <@2xl static core set of
 // name + status, toggles don't apply).
 //
-// Agents are identity-type entities (few, avatar + persona), so rows are
-// the TWO-LINE form: avatar left, name + description right, 64px tall —
-// the documented exception to the single-line management-list rule.
+// Agents are identity-type entities (few, avatar + name), so rows are
+// the TWO-LINE form: avatar left, name right, 64px tall — the
+// documented exception to the single-line management-list rule.
 const GRID_COLS =
   "grid-cols-[0.75rem_minmax(120px,1fr)_var(--agc-status-mobile)_1.75rem_0.75rem] " +
   "@2xl:grid-cols-[0.75rem_1rem_minmax(200px,1fr)_var(--agc-status-desktop)_var(--agc-owner)_var(--agc-access)_var(--agc-runtime)_var(--agc-lastactive)_var(--agc-runs)_var(--agc-model)_var(--agc-created)_1.75rem_0.75rem]";
@@ -361,10 +361,9 @@ function CheckboxCell({
   );
 }
 
-// Two-line identity cell: avatar left, name + description right. The
-// documented exception to the single-line rule — agents are few and
-// identity-rich, so this is the "team roster" form (GitHub org members,
-// Slack member list).
+// Two-line identity cell: avatar left, name right. The documented
+// exception to the single-line rule — agents are few, so this is the
+// "team roster" form (GitHub org members, Slack member list).
 function NameCell({ row }: { row: AgentListRow }) {
   const { t } = useT("agents");
   const { agent, isOwnedByMe } = row;
@@ -404,11 +403,6 @@ function NameCell({ row }: { row: AgentListRow }) {
             </span>
           )}
         </div>
-        {agent.description ? (
-          <div className="mt-0.5 truncate text-caption text-muted-foreground">
-            {agent.description}
-          </div>
-        ) : null}
       </div>
     </ListGridCell>
   );

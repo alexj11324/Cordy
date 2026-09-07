@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Agent, AgentRuntime } from "@orvilo/core/types";
 import { I18nProvider } from "@orvilo/core/i18n/react";
@@ -14,24 +14,8 @@ import {
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
-// AgentOverviewPane pulls in ActorIssuesPanel which in turn touches the api
-// layer. The test only cares about which top-of-pane tab buttons render,
-// not what each tab does, so we stub the heavy children.
-vi.mock("./tabs/activity-tab", () => ({
-  ActivityTab: () => <div>activity-tab</div>,
-  AgentPerformanceSummary: () => <div>performance-summary</div>,
-}));
-vi.mock("./agent-overview-summary", () => ({
-  AgentOverviewSummary: () => <div>agent-overview-summary</div>,
-}));
 vi.mock("./agent-access-settings", () => ({
   AgentAccessSettings: () => <div>agent-access-settings</div>,
-}));
-vi.mock("./tabs/instructions-tab", () => ({
-  InstructionsTab: () => <div>instructions-tab</div>,
-}));
-vi.mock("./tabs/skills-tab", () => ({
-  SkillsTab: () => <div>skills-tab</div>,
 }));
 vi.mock("./tabs/env-tab", () => ({
   EnvTab: () => <div>env-tab</div>,
@@ -39,20 +23,13 @@ vi.mock("./tabs/env-tab", () => ({
 vi.mock("./tabs/custom-args-tab", () => ({
   CustomArgsTab: () => <div>custom-args-tab</div>,
 }));
-vi.mock("./tabs/mcp-config-tab", () => ({
-  McpConfigTab: () => <div>mcp-config-tab</div>,
-}));
 vi.mock("./tabs/integrations-tab", () => ({
   IntegrationsTab: () => <div>integrations-tab</div>,
 }));
-vi.mock("../../common/actor-issues-panel", () => ({
-  ActorIssuesPanel: () => <div>actor-issues-panel</div>,
+vi.mock("./agent-detail-inspector", () => ({
+  AgentDetailInspector: () => <div>agent-detail-inspector</div>,
 }));
 
-// The pane now reads workspace context to decide whether the Integrations
-// tab is worth showing (it queries Lark installations to learn whether the
-// deployment has the feature configured). Provide a stable workspace id and
-// a listing query backed by a ref so each test can flip `configured`.
 const larkListingRef = vi.hoisted(() => ({
   current: { installations: [] as unknown[], configured: false },
 }));
@@ -81,6 +58,18 @@ vi.mock("@orvilo/core/telegram", () => ({
   telegramInstallationsOptions: () => ({
     queryKey: ["telegram", "installations"],
     queryFn: () => Promise.resolve(telegramListingRef.current),
+  }),
+}));
+vi.mock("@orvilo/core/dingtalk", () => ({
+  dingtalkInstallationsOptions: () => ({
+    queryKey: ["dingtalk", "installations"],
+    queryFn: () => Promise.resolve({ installations: [], configured: false }),
+  }),
+}));
+vi.mock("@orvilo/core/wecom", () => ({
+  wecomInstallationsOptions: () => ({
+    queryKey: ["wecom", "installations"],
+    queryFn: () => Promise.resolve({ installations: [], configured: false }),
   }),
 }));
 
@@ -166,54 +155,22 @@ function renderPane(
   );
 }
 
-function openCapabilities() {
-  fireEvent.click(screen.getByRole("tab", { name: /^Capabilities$/i }));
-}
-
-function openSettings() {
-  fireEvent.click(screen.getByRole("tab", { name: /^Settings$/i }));
-}
-
 beforeEach(() => {
   larkListingRef.current = { installations: [], configured: false };
   slackListingRef.current = { installations: [], configured: false };
   telegramListingRef.current = { installations: [], configured: false };
 });
 
-describe("AgentOverviewPane MCP tab visibility", () => {
-  it.each([
-    ["Claude", "claude"],
-    ["Codex", "codex"],
-    ["Cursor", "cursor"],
-    ["Hermes", "hermes"],
-    ["Kimi", "kimi"],
-    ["Kiro", "kiro"],
-    ["OpenCode", "opencode"],
-    ["OpenClaw", "openclaw"],
-    ["Oh My Pi", "omp"],
-  ])("renders the MCP tab when the agent runs on the %s runtime", (_label, provider) => {
-    renderPane([makeRuntime(provider)]);
-    openCapabilities();
-    expect(screen.getByRole("tab", { name: /^MCP$/i })).toBeInTheDocument();
-  });
-
-  it("hides the MCP tab for providers whose backend does not read mcp_config", () => {
-    // Saving an MCP config on e.g. Gemini would be a silent no-op at run
-    // time — that's the bug this hiding logic is meant to prevent.
-    renderPane([makeRuntime("gemini")]);
-    openCapabilities();
-    expect(
-      screen.queryByRole("tab", { name: /^MCP$/i }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("keeps the MCP tab visible when the runtime row hasn't loaded yet", () => {
-    // Empty runtimes[] mimics the brief window between the page mounting and
-    // the runtimes query resolving. Hiding the tab would flicker it off and
-    // then back on, which reads as a bug.
-    renderPane([]);
-    openCapabilities();
-    expect(screen.getByRole("tab", { name: /^MCP$/i })).toBeInTheDocument();
+describe("AgentOverviewPane removed agent-local tabs", () => {
+  it("does not keep Overview, Work, Capabilities, Skills, or per-agent MCP", () => {
+    renderPane([makeRuntime("codex")]);
+    expect(screen.queryByRole("tab", { name: /^Overview$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /^Work$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /^Capabilities$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /^Skills$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /^MCP$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /^Instructions$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: /^MCP Apps$/i })).not.toBeInTheDocument();
   });
 });
 
@@ -221,18 +178,14 @@ describe("AgentOverviewPane Integrations tab visibility", () => {
   it("shows the Integrations tab once the deployment has Lark configured", async () => {
     larkListingRef.current = { installations: [], configured: true };
     renderPane([makeRuntime("claude")]);
-    openCapabilities();
     expect(
       await screen.findByRole("tab", { name: /^Integrations$/i }),
     ).toBeInTheDocument();
   });
 
   it("shows the Integrations tab when only Slack is configured (Lark off)", async () => {
-    // Regression: the tab gate must consider Slack too, not just Lark —
-    // a Slack-only deployment was hiding the tab (and its bind entry).
     slackListingRef.current = { installations: [], configured: true };
     renderPane([makeRuntime("claude")]);
-    openCapabilities();
     expect(
       await screen.findByRole("tab", { name: /^Integrations$/i }),
     ).toBeInTheDocument();
@@ -241,17 +194,13 @@ describe("AgentOverviewPane Integrations tab visibility", () => {
   it("shows the Integrations tab when only Telegram is configured", async () => {
     telegramListingRef.current = { installations: [], configured: true };
     renderPane([makeRuntime("claude")]);
-    openCapabilities();
     expect(
       await screen.findByRole("tab", { name: /^Integrations$/i }),
     ).toBeInTheDocument();
   });
 
   it("hides the Integrations tab when no channel integration is configured", () => {
-    // Default refs are configured:false; the tab must not appear on a
-    // deployment without any channel integration, the common case.
     renderPane([makeRuntime("claude")]);
-    openCapabilities();
     expect(
       screen.queryByRole("tab", { name: /^Integrations$/i }),
     ).not.toBeInTheDocument();
@@ -261,7 +210,6 @@ describe("AgentOverviewPane Integrations tab visibility", () => {
 describe("AgentOverviewPane Settings navigation", () => {
   it("gives Access its own settings tab", () => {
     renderPane([makeRuntime("claude")]);
-    openSettings();
     expect(screen.getByRole("tab", { name: /^Access$/i })).toBeInTheDocument();
   });
 });
@@ -269,18 +217,13 @@ describe("AgentOverviewPane Settings navigation", () => {
 describe("AgentOverviewPane Environment tab visibility", () => {
   it("shows the Environment tab to someone who can manage the agent", () => {
     renderPane([makeRuntime("claude")]);
-    openSettings();
     expect(
       screen.getByRole("tab", { name: /^Environment$/i }),
     ).toBeInTheDocument();
   });
 
   it("hides the Environment tab from users who cannot manage the agent", () => {
-    // The env endpoints admit the agent owner or a workspace owner/admin
-    // (MUL-5438) — the rule `canEdit` already encodes. Anyone else who opens
-    // the tab hits a guaranteed 403 on "Reveal & edit".
     renderPane([makeRuntime("claude")], { canEdit: false });
-    openSettings();
     expect(
       screen.queryByRole("tab", { name: /^Environment$/i }),
     ).not.toBeInTheDocument();

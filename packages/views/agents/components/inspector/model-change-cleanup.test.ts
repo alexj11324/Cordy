@@ -157,6 +157,46 @@ describe("buildModelChangeUpdate (MUL-5390)", () => {
     });
   });
 
+  it("clears explicit standard when only a sibling model advertised it", () => {
+    const opus: RuntimeModel = {
+      id: "claude-opus-5",
+      label: "Claude Opus 5",
+      supports_explicit_standard_service_tier: true,
+      service_tiers: [{ id: "true", name: "Fast" }],
+    };
+    const sonnet: RuntimeModel = {
+      id: "claude-sonnet-5",
+      label: "Claude Sonnet 5",
+    };
+    expect(
+      buildModelChangeUpdate({
+        provider: "claude",
+        model: "claude-sonnet-5",
+        thinkingLevel: "",
+        serviceTier: "default",
+        catalog: [opus, sonnet],
+      }),
+    ).toEqual({ model: "claude-sonnet-5", service_tier: "" });
+  });
+
+  it("keeps explicit standard on the Claude model that advertised it", () => {
+    const opus: RuntimeModel = {
+      id: "claude-opus-5",
+      label: "Claude Opus 5",
+      supports_explicit_standard_service_tier: true,
+      service_tiers: [{ id: "true", name: "Fast" }],
+    };
+    expect(
+      buildModelChangeUpdate({
+        provider: "claude",
+        model: "claude-opus-5",
+        thinkingLevel: "",
+        serviceTier: "default",
+        catalog: [opus, { id: "claude-sonnet-5", label: "Claude Sonnet 5" }],
+      }),
+    ).toEqual({ model: "claude-opus-5" });
+  });
+
   it("never sends a clear when nothing is set", () => {
     expect(
       buildModelChangeUpdate({

@@ -6963,11 +6963,12 @@ func resolveTaskModelSelection(
 
 	sel.Model = qualifyTaskModel(provider, sel.Model, capabilityChecksPending, loadCatalog, taskLog)
 
-	// service_tier is catalog-owned and currently Codex-only. As with
-	// thinking_level, stale or incompatible persisted values degrade to the
-	// runtime default instead of failing the task. Catalog lookup errors pass
-	// through so a transient discovery failure does not silently disable a
-	// previously valid user choice.
+	// service_tier is catalog-owned. Codex advertises tiers from
+	// `codex debug models`; ACP runtimes advertise them from session/new.
+	// As with thinking_level, stale or incompatible persisted values degrade
+	// to the runtime default instead of failing the task. Catalog lookup
+	// errors pass through so a transient discovery failure does not silently
+	// disable a previously valid user choice.
 	if sel.ServiceTier != "" {
 		ok, err := agent.ValidateServiceTierWith(loadCatalog, provider, sel.Model, sel.ServiceTier)
 		if err != nil {

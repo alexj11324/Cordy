@@ -158,12 +158,14 @@ func ListModels(ctx context.Context, providerType string, runtimeCmd Command) (C
 	case "claude":
 		models := claudeStaticModels()
 		annotateClaudeThinking(ctx, models, runtimeCmd)
+		version, _ := DetectVersion(ctx, runtimeCmd)
+		annotateClaudeSpeed(models, version)
 		// Claude's catalog is static by design, not by failure: there is no
 		// discovery step to fall back from, so this is authoritative.
 		return Catalog{Models: models}, nil
 	case "codex":
 		return cachedDiscovery(discoveryCacheKey(providerType, runtimeCmd), func() (Catalog, error) {
-			return discovered(discoverCodexModels(ctx, runtimeCmd), nil)
+			return discoverCodexCatalog(ctx, runtimeCmd), nil
 		})
 	case "antigravity":
 		// agy 1.0.6 added a `--model` flag plus an `agy models` catalog
@@ -598,7 +600,8 @@ func codexStaticModels() []Model {
 		}
 	}
 	return []Model{
-		{ID: "gpt-5.6-sol", Label: "GPT-5.6 Sol", Provider: "openai", Default: true, Thinking: standardThinking("low", true, true)},
+		{ID: "gpt-6-astra", Label: "GPT-6-Astra", Provider: "openai", Default: true, Thinking: standardThinking("low", true, true)},
+		{ID: "gpt-5.6-sol", Label: "GPT-5.6 Sol", Provider: "openai", Thinking: standardThinking("low", true, true)},
 		{ID: "gpt-5.6-terra", Label: "GPT-5.6 Terra", Provider: "openai", Thinking: standardThinking("medium", true, true)},
 		{ID: "gpt-5.6-luna", Label: "GPT-5.6 Luna", Provider: "openai", Thinking: standardThinking("medium", true, false)},
 		{ID: "gpt-5.5", Label: "GPT-5.5", Provider: "openai", Thinking: standardThinking("medium", false, false)},
@@ -1408,7 +1411,7 @@ func discoverHermesModels(ctx context.Context, runtimeCmd Command) ([]Model, err
 		// Hermes Agent models come back with a nil Thinking and show no
 		// picker. Only the session's current model is annotated; see
 		// annotateACPThinkingForSessionModel.
-		annotate: annotateACPThinkingForSessionModel,
+		annotate: annotateACPSessionConfig,
 	})
 	if err != nil {
 		return nil, annotateHermesDiscoveryUnconfigured(err)
@@ -1502,6 +1505,7 @@ func discoverKimiModels(ctx context.Context, runtimeCmd Command) ([]Model, error
 		defaultBin:   "kimi",
 		clientName:   "orvilo-model-discovery",
 		tmpdirPrefix: "orvilo-kimi-discovery-",
+		annotate:     annotateACPSpeedForSessionModel,
 		inspectInit: func(initResult json.RawMessage) {
 			acpVersion = acpAgentInfoVersion(initResult)
 		},
@@ -1678,9 +1682,9 @@ func kimiThinkingLabel(value string) string {
 }
 
 type acpConfigOptionState struct {
-	ID                string `json:"id"`
-	CurrentValue      string `json:"currentValue"`
-	CurrentValueSnake string `json:"current_value"`
+	ID                string       `json:"id"`
+	CurrentValue      acpJSONValue `json:"currentValue"`
+	CurrentValueSnake acpJSONValue `json:"current_value"`
 }
 
 // findACPConfigOption returns one exact config-id match from an ACP response.
@@ -1710,9 +1714,9 @@ func acpConfigOptionCurrentValue(raw json.RawMessage, configID string) (string, 
 	if !ok {
 		return "", false
 	}
-	value := strings.TrimSpace(option.CurrentValue)
+	value := strings.TrimSpace(option.CurrentValue.String())
 	if value == "" {
-		value = strings.TrimSpace(option.CurrentValueSnake)
+		value = strings.TrimSpace(option.CurrentValueSnake.String())
 	}
 	return value, value != ""
 }
@@ -1737,7 +1741,7 @@ func discoverReasonixModels(ctx context.Context, runtimeCmd Command) ([]Model, e
 		acpArgs:          reasonixACPLaunchArgs(),
 		tmpdirPrefix:     "orvilo-reasonix-discovery-",
 		isolatedStateEnv: "REASONIX_STATE_HOME",
-		annotate:         annotateACPThinkingForSessionModel,
+		annotate:         annotateACPSessionConfig,
 	})
 }
 
@@ -2006,7 +2010,7 @@ func discoverACPModels(ctx context.Context, runtimeCmd Command, p acpDiscoveryPr
 	initResult, err := requestACP("initialize", map[string]any{
 		"protocolVersion":    1,
 		"clientInfo":         map[string]any{"name": p.clientName, "version": "0.1.0"},
-		"clientCapabilities": map[string]any{},
+		"clientCapabilities": acpClientCapabilities(nil),
 	})
 	if err != nil {
 		return fail("initialize", err)
@@ -2187,8 +2191,8 @@ func parseACPConfigOptionModels(raw json.RawMessage) []Model {
 	type acpConfigOption struct {
 		ID                string            `json:"id"`
 		Category          string            `json:"category"`
-		CurrentValue      string            `json:"currentValue"`
-		CurrentValueSnake string            `json:"current_value"`
+		CurrentValue      acpJSONValue      `json:"currentValue"`
+		CurrentValueSnake acpJSONValue      `json:"current_value"`
 		Options           []acpConfigChoice `json:"options"`
 	}
 	var resp struct {
@@ -2207,9 +2211,9 @@ func parseACPConfigOptionModels(raw json.RawMessage) []Model {
 			!strings.EqualFold(strings.TrimSpace(opt.Category), "model") {
 			continue
 		}
-		currentValue := strings.TrimSpace(opt.CurrentValue)
+		currentValue := strings.TrimSpace(opt.CurrentValue.String())
 		if currentValue == "" {
-			currentValue = strings.TrimSpace(opt.CurrentValueSnake)
+			currentValue = strings.TrimSpace(opt.CurrentValueSnake.String())
 		}
 		models := make([]Model, 0, len(opt.Options))
 		seen := map[string]bool{}
@@ -2869,6 +2873,7 @@ func discoverDimModels(ctx context.Context, runtimeCmd Command) (Catalog, error)
 		clientName:   "orvilo-model-discovery",
 		tmpdirPrefix: "orvilo-dim-discovery-",
 		acpArgs:      []string{"acp"},
+		annotate:     annotateACPSessionConfig,
 	})
 	if err != nil || len(models) == 0 {
 		if err != nil {

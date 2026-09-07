@@ -16,3 +16,8 @@ export {
   type TranscriptFilterKey,
   type TranscriptSortDirection,
 } from "./transcript-view-store";
+export {
+  useModelFavoritesStore,
+  modelFavoriteKey,
+  type ModelFavorite,
+} from "./model-favorites-store";

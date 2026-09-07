@@ -143,6 +143,56 @@ func annotateClaudeThinking(ctx context.Context, models []Model, cmd Command) {
 	}
 }
 
+// Claude Code fast mode is a boolean `fastMode` settings key, not a
+// Codex service_tier. Persist the same "true" token ACP boolean speed
+// uses so IsKnownServiceTier / ValidateServiceTier can round-trip it.
+// "default" is the synthesized Standard row (same UI as Codex explicit
+// standard) and is applied as fastMode=false so a user's global /fast
+// preference cannot leak into a session that asked for standard speed.
+//
+// Official docs (2026-09): non-interactive `-p` honours
+// `--settings '{"fastMode": true}'` from 2.1.205; fast mode is Opus-only
+// (Opus 5 and Opus 4.8). Sonnet/Haiku/older Opus must not advertise a
+// picker — enabling /fast on those models switches the session to Opus.
+const (
+	claudeFastServiceTier                 = "true"
+	minClaudeFastModePrintSettingsVersion = "2.1.205"
+)
+
+var claudeFastModeModels = map[string]bool{
+	"claude-opus-5":   true,
+	"claude-opus-4-8": true,
+}
+
+func claudeBareModelID(id string) string {
+	id = strings.TrimSpace(id)
+	if i := strings.IndexByte(id, '['); i >= 0 {
+		return id[:i]
+	}
+	return id
+}
+
+func claudeModelSupportsFastMode(id string) bool {
+	return claudeFastModeModels[claudeBareModelID(id)]
+}
+
+func annotateClaudeSpeed(models []Model, cliVersion string) {
+	if !codexVersionAtLeast(cliVersion, minClaudeFastModePrintSettingsVersion) {
+		return
+	}
+	for i := range models {
+		if !claudeModelSupportsFastMode(models[i].ID) {
+			continue
+		}
+		models[i].ServiceTiers = []ModelServiceTier{{
+			ID:          claudeFastServiceTier,
+			Name:        "Fast",
+			Description: "Up to 2.5x faster Opus responses at higher cost",
+		}}
+		models[i].SupportsExplicitStandardServiceTier = true
+	}
+}
+
 func loadClaudeThinkingByModel(ctx context.Context, cmd Command) map[string]*ModelThinking {
 	if cmd.Path == "" {
 		cmd.Path = "claude"
@@ -321,27 +371,37 @@ type codexDebugServiceTier struct {
 // debug command so old binaries do not log a predictable "unknown command"
 // failure on every cache refresh.
 func discoverCodexModels(ctx context.Context, cmd Command) []Model {
+	return discoverCodexCatalog(ctx, cmd).Models
+}
+
+func discoverCodexCatalog(ctx context.Context, cmd Command) Catalog {
 	if cmd.Path == "" {
 		cmd.Path = "codex"
 	}
 	version, err := DetectVersion(ctx, cmd)
 	if err != nil {
-		return codexStaticModels()
+		return Catalog{Models: codexStaticModels(), Fallback: true}
 	}
 	supportsExplicitStandard := codexSupportsExplicitStandardServiceTier(version)
+	fallback := Catalog{
+		Models:   annotateCodexExplicitStandardServiceTier(codexStaticModels(), supportsExplicitStandard),
+		Fallback: true,
+	}
 	if !codexSupportsDebugModels(version) {
-		return annotateCodexExplicitStandardServiceTier(codexStaticModels(), supportsExplicitStandard)
+		return fallback
 	}
 
 	raw, err := runCodexDebugModels(ctx, cmd)
 	if err != nil {
-		return annotateCodexExplicitStandardServiceTier(codexStaticModels(), supportsExplicitStandard)
+		return fallback
 	}
 	models, err := parseCodexModelCatalog(raw)
 	if err != nil || len(models) == 0 {
-		return annotateCodexExplicitStandardServiceTier(codexStaticModels(), supportsExplicitStandard)
+		return fallback
 	}
-	return annotateCodexExplicitStandardServiceTier(models, supportsExplicitStandard)
+	return Catalog{
+		Models: annotateCodexExplicitStandardServiceTier(models, supportsExplicitStandard),
+	}
 }
 
 func codexSupportsDebugModels(version string) bool {
@@ -720,11 +780,15 @@ func ValidateThinkingLevelWith(loadCatalog func() (Catalog, error), providerType
 }
 
 // ValidateServiceTier reports whether value is advertised by the current
-// Codex catalog for the explicit model. An empty value is always valid and
+// catalog for the explicit model. An empty value is always valid and
 // means "inherit runtime configuration". Codex's "default" sentinel is valid
 // only when the daemon's installed CLI reports support for explicit standard
 // routing. An empty Codex model otherwise fails closed because its effective
 // model comes from config.toml and may not support the requested tier.
+//
+// ACP runtimes are catalog-driven the same way thinking is: the picker only
+// appears when session/new advertised a speed-like option, and this check
+// asks that catalog rather than a provider-name allowlist.
 func ValidateServiceTier(ctx context.Context, providerType string, cmd Command, model, value string) (bool, error) {
 	return ValidateServiceTierWith(catalogLoader(ctx, providerType, cmd), providerType, model, value)
 }
@@ -735,17 +799,17 @@ func ValidateServiceTierWith(loadCatalog func() (Catalog, error), providerType, 
 	if value == "" {
 		return true, nil
 	}
-	if providerType != "codex" {
+	if !usesDynamicServiceTierCatalog(providerType) {
 		return false, nil
 	}
-	if value != codexStandardServiceTier && model == "" {
+	if providerType == "codex" && value != codexStandardServiceTier && model == "" {
 		return false, nil
 	}
 	catalog, err := loadCatalog()
 	if err != nil {
 		return false, err
 	}
-	if value == codexStandardServiceTier {
+	if providerType == "codex" && value == codexStandardServiceTier {
 		for _, candidate := range catalog.Models {
 			if candidate.SupportsExplicitStandardServiceTier {
 				return true, nil
@@ -753,9 +817,24 @@ func ValidateServiceTierWith(loadCatalog func() (Catalog, error), providerType, 
 		}
 		return false, nil
 	}
+	target := model
+	if target == "" {
+		for _, candidate := range catalog.Models {
+			if candidate.Default {
+				target = candidate.ID
+				break
+			}
+		}
+		if target == "" {
+			return false, nil
+		}
+	}
 	for _, m := range catalog.Models {
-		if m.ID != model {
+		if !catalogModelIDEqual(m.ID, target) {
 			continue
+		}
+		if value == codexStandardServiceTier && m.SupportsExplicitStandardServiceTier {
+			return true, nil
 		}
 		for _, tier := range m.ServiceTiers {
 			if tier.ID == value {
@@ -765,6 +844,16 @@ func ValidateServiceTierWith(loadCatalog func() (Catalog, error), providerType, 
 		return false, nil
 	}
 	return false, nil
+}
+
+func catalogModelIDEqual(id, target string) bool {
+	if id == target {
+		return true
+	}
+	if strings.Contains(id, "[") || strings.Contains(target, "[") {
+		return claudeBareModelID(id) == claudeBareModelID(target)
+	}
+	return false
 }
 
 func anyModelSupportsThinkingValue(models []Model, value string) bool {
@@ -962,15 +1051,35 @@ func IsKnownThinkingValue(providerType, value string) bool {
 	return enum[value]
 }
 
+// acpCatalogSpeedProviders are the ACP runtimes that discover a speed
+// catalog from session/new and apply it with session/set_config_option.
+// Membership means Execute calls applyACPSpeedOption; the catalog still
+// decides whether a picker appears. Do not add a runtime just because it
+// speaks ACP — Copilot discovers over ACP but executes through its own CLI.
+var acpCatalogSpeedProviders = map[string]bool{
+	"reasonix": true,
+	"hermes":   true,
+	"dim":      true,
+	"kimi":     true,
+}
+
+func usesDynamicServiceTierCatalog(providerType string) bool {
+	return providerType == "codex" || providerType == "claude" || acpCatalogSpeedProviders[providerType]
+}
+
 // IsKnownServiceTier is the server-side literal gate. The exact per-model
-// catalog lives on the daemon host, so Codex accepts safe future catalog IDs
-// here and ValidateServiceTier performs the execution-time compatibility
-// check. Other providers do not currently expose service tiers.
+// catalog lives on the daemon host, so Codex and the ACP speed runtimes
+// accept safe future catalog IDs here and ValidateServiceTier performs the
+// execution-time compatibility check. Providers with no speed surface
+// accept only the empty inherit value.
 func IsKnownServiceTier(providerType, value string) bool {
 	if value == "" {
 		return true
 	}
-	return providerType == "codex" && isValidDynamicThinkingValue(value)
+	if !usesDynamicServiceTierCatalog(providerType) {
+		return false
+	}
+	return isValidDynamicThinkingValue(value)
 }
 
 func isValidDynamicThinkingValue(value string) bool {

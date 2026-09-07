@@ -335,4 +335,20 @@ describe("AgentsPage listReady gate", () => {
     expect(screen.getByText("No agents yet")).toBeInTheDocument();
     expect(screen.queryByTestId("skeleton")).not.toBeInTheDocument();
   });
+
+  it("does not render agent description on the row", () => {
+    mocks.viewState.sortField = "name";
+    mocks.agents = [
+      makeAgent({
+        id: "a-alpha",
+        name: "Alpha Agent",
+        description: "Hidden row description",
+      }),
+    ];
+
+    renderPage();
+
+    expect(screen.getByText("Alpha Agent")).toBeInTheDocument();
+    expect(screen.queryByText("Hidden row description")).not.toBeInTheDocument();
+  });
 });

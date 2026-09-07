@@ -224,9 +224,9 @@ func (b *kimiBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 				"name":    "orvilo-agent-sdk",
 				"version": "0.2.0",
 			},
-			"clientCapabilities": map[string]any{
+			"clientCapabilities": acpClientCapabilities(map[string]any{
 				"terminal": true,
-			},
+			}),
 		})
 		if err != nil {
 			finalStatus = "failed"
@@ -247,6 +247,7 @@ func (b *kimiBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 			cwd = "."
 		}
 
+		var sessionResult json.RawMessage
 		if opts.ResumeSessionID != "" {
 			// Per ACP Session Setup, session/resume accepts mcpServers and
 			// the runtime re-connects them as part of the resume. Without
@@ -263,6 +264,7 @@ func (b *kimiBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 				resCh <- Result{Status: finalStatus, Error: finalError, DurationMs: time.Since(startTime).Milliseconds()}
 				return
 			}
+			sessionResult = result
 			var changed bool
 			sessionID, changed = resolveResumedSessionID(opts.ResumeSessionID, result)
 			if changed {
@@ -283,6 +285,7 @@ func (b *kimiBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 				resCh <- Result{Status: finalStatus, Error: finalError, DurationMs: time.Since(startTime).Milliseconds()}
 				return
 			}
+			sessionResult = result
 			sessionID = extractACPSessionID(result)
 			if sessionID == "" {
 				finalStatus = "failed"
@@ -374,6 +377,9 @@ func (b *kimiBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 				}
 			}
 		}
+
+		applyACPSpeedOption(runCtx, c.request, "kimi", b.cfg.Logger,
+			sessionID, sessionResult, opts.ServiceTier, opts.Model == "")
 
 		// 4. Build the prompt content. If we have a system prompt, prepend it.
 		userText := prompt

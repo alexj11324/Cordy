@@ -22,10 +22,11 @@ export type ModelChangeUpdate = {
  * `thinking_level` and catalog service tiers are per-model capabilities:
  * keeping a value the new model never advertised leaves an orphan override
  * that the daemon silently drops at execution time, so the settings page would
- * claim a tier that never ran (MUL-5390). Explicit Standard is the exception:
- * its advertised capability belongs to the installed Codex CLI. Clearing
- * unconditionally is worse though — moving between two models that both
- * support Fast would throw the user's choice away, and clearing while the
+ * claim a tier that never ran (MUL-5390). Explicit Standard is per catalog
+ * entry: Codex stamps it on every model, Claude only on Opus 5 / 4.8. Using a
+ * sibling model's flag would keep Standard on models with no speed dial.
+ * Clearing unconditionally is worse though — moving between two models that
+ * both support Fast would throw the user's choice away, and clearing while the
  * catalog is unknown would delete a value the daemon would have honoured.
  *
  * So: clear only what the authoritative catalog says the new model does not
@@ -64,10 +65,7 @@ export function buildModelChangeUpdate(input: {
   const supportsTier =
     (entry.service_tiers ?? []).some((tier) => tier.id === input.serviceTier) ||
     (input.serviceTier === "default" &&
-      input.catalog.some(
-        (candidate) =>
-          candidate.supports_explicit_standard_service_tier === true,
-      ));
+      entry.supports_explicit_standard_service_tier === true);
   if (input.serviceTier && !supportsTier) update.service_tier = "";
 
   return update;

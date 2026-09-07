@@ -1,5 +1,6 @@
 "use client";
 
+import type { ModelSelection } from "../components/model-selector-content";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useDefaultLayout } from "react-resizable-panels";
@@ -19,6 +20,7 @@ import {
   ResizablePanelGroup,
 } from "@orvilo/ui/components/ui/resizable";
 import {
+  applyDraftModelChange,
   applyDraftRuntimeChange,
   decodeBuilderInput,
   encodeBuilderInput,
@@ -105,6 +107,7 @@ export function BuilderWorkspace({
   const builderModelsQuery = useQuery(
     runtimeModelsOptions(
       selectedRuntime?.status === "online" ? selectedRuntime.id : null,
+      selectedRuntime?.workspace_id,
     ),
   );
   // `null` means discovery is not available yet (or failed), while `[]` is
@@ -250,18 +253,34 @@ export function BuilderWorkspace({
   const runtimeKnown = sessionSettled && draft.runtimeId.length > 0;
 
   useEffect(() => {
-    onRuntimeLabel(selectedRuntime ? runtimeDisplayLabel(selectedRuntime) : null);
+    onRuntimeLabel(
+      selectedRuntime ? runtimeDisplayLabel(selectedRuntime) : null,
+    );
   }, [onRuntimeLabel, selectedRuntime]);
 
-  const handleRuntimeSelect = async (runtimeId: string) => {
-    if (!runtimeKnown) return;
-    if (!runtimeId || runtimeId === draft.runtimeId) return;
-    const bound = await builder.switchRuntime(runtimeId);
-    if (!bound) return;
-    // Model ids are per-runtime; clear it — with the per-model thinking /
-    // speed overrides — so the new runtime resolves its own defaults instead
-    // of keeping values it may not serve.
-    setDraft((current) => applyDraftRuntimeChange(current, bound));
+  const handleModelSelection = async (selection: ModelSelection) => {
+    if (!runtimeKnown)
+      throw new Error(
+        t(($) => $.creation_studio.builder.switch_runtime_pending),
+      );
+    const bound =
+      selection.runtimeId === draft.runtimeId
+        ? draft.runtimeId
+        : await builder.switchRuntime(selection.runtimeId);
+    if (!bound)
+      throw new Error(
+        t(($) => $.creation_studio.builder.switch_runtime_failed),
+      );
+    setDraft((current) => ({
+      ...applyDraftModelChange(
+        bound === current.runtimeId
+          ? current
+          : applyDraftRuntimeChange(current, bound),
+        selection.model,
+      ),
+      thinkingLevel: selection.thinkingLevel,
+      serviceTier: selection.serviceTier,
+    }));
   };
 
   const canCreate =
@@ -346,9 +365,7 @@ export function BuilderWorkspace({
                     submit.clearNameError();
                     setDraft((current) => ({ ...current, name }));
                   }}
-                  onRuntimeSelect={(runtimeId) => {
-                    void handleRuntimeSelect(runtimeId);
-                  }}
+                  onModelSelection={handleModelSelection}
                   runtimeSwitchPending={builder.pending}
                   // Also locked while the carrier's runtime is unknown, so the
                   // picker cannot offer a switch it would refuse to perform.

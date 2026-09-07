@@ -145,5 +145,9 @@ describe("useCreateAgentSubmit cache handoff", () => {
     expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
       queryKey: workspaceKeys.agents("ws-1"),
     });
+    const payload = mockCreateAgent.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("description");
+    expect(payload).not.toHaveProperty("instructions");
+    expect(payload).not.toHaveProperty("skill_ids");
   });
 });

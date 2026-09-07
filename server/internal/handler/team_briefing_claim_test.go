@@ -155,6 +155,36 @@ func TestClaim_LeaderTaskFromCommentMention_InjectsBriefing(t *testing.T) {
 	}
 }
 
+// TestClaim_UserAgentInstructionsAreNotCarried_TeamBriefingStillIs: leftover
+// per-agent instructions must not appear on claim. Team briefing still
+// appends onto resp.Agent.Instructions.
+func TestClaim_UserAgentInstructionsAreNotCarried_TeamBriefingStillIs(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	fx := newTeamBriefingClaimFixture(t, ctx, "Briefing no-user-instr")
+	const secret = "UNIQUE-PER-AGENT-INSTRUCTION-MUST-NOT-CLAIM"
+	if _, err := testPool.Exec(ctx, `UPDATE agent SET instructions = $1 WHERE id = $2`, secret, fx.AgentID); err != nil {
+		t.Fatalf("set agent instructions: %v", err)
+	}
+	want := enqueueClaimTask(t, ctx, fx, true /*isLeader*/, true /*withTeamID*/)
+
+	got, instr, isLeader, raw := claimAgentInstructionsForTest(t, fx.RuntimeID)
+	if got != want {
+		t.Fatalf("claimed task id = %q, want %q: %s", got, want, raw)
+	}
+	if strings.Contains(instr, secret) {
+		t.Fatalf("per-agent instructions must not appear on claim, got:\n%s", instr)
+	}
+	if !strings.Contains(instr, "## Team Operating Protocol") || !strings.Contains(instr, "## Team Roster") {
+		t.Fatalf("expected team-leader briefing in agent instructions, got:\n%s", instr)
+	}
+	if !isLeader {
+		t.Fatalf("claim injected the briefing but reported is_leader_task=false: %s", raw)
+	}
+}
+
 // TestClaim_NonLeaderTask_NoBriefing guards the negative: a task that is NOT a
 // leader task (is_leader_task=false), even with a team_id present, must not
 // receive the briefing. This keeps worker/mention runs free of leader framing.

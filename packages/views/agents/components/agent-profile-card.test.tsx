@@ -149,11 +149,10 @@ describe("AgentProfileCard — Model row", () => {
     expect(screen.queryByText(enAgents.profile_card.model_unset)).toBeNull();
   });
 
-  // Regression (Emacs code review): an agent with no pinned model but a
-  // persisted thinking_level runs WITH that effort at run time. The badge
-  // must render even though the model cell reads "Runtime default" — gating
-  // it on `hasModel` hid legitimate runtime config.
-  it("shows the effort badge even when the model is unset (Runtime default)", () => {
+  // Regression: an agent with no pinned model but a persisted thinking_level
+  // still runs WITH that effort. The badge must render even though the model
+  // cell reads "No model selected".
+  it("shows the effort badge even when the model is unset", () => {
     mockAgents.current = [makeAgent({ model: "", thinking_level: "high" })];
     renderCard();
 
@@ -169,5 +168,24 @@ describe("AgentProfileCard — Model row", () => {
     // No effort token anywhere on the card.
     expect(screen.queryByText("high")).toBeNull();
     expect(screen.queryByText("medium")).toBeNull();
+  });
+
+  it("does not render the agent description", () => {
+    mockAgents.current = [makeAgent({ description: "A coding agent." })];
+    renderCard();
+
+    expect(screen.queryByText("A coding agent.")).toBeNull();
+  });
+
+  it("does not render per-agent skills on the hover card", () => {
+    mockAgents.current = [
+      makeAgent({
+        skills: [{ id: "skill-1", name: "deploy-helper", description: "" }],
+      }),
+    ];
+    renderCard();
+
+    expect(screen.queryByText("deploy-helper")).toBeNull();
+    expect(screen.queryByText(enAgents.profile_card.skills_label)).toBeNull();
   });
 });

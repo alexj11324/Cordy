@@ -19,17 +19,16 @@ import (
 )
 
 // The daemon resolves one skill bundle per request (GH #4505), so what the
-// resolve endpoint loads per request is multiplied by the agent's skill count
-// across a cold dispatch. These tests pin that it loads only the refs it was
-// asked for, and that narrowing the read did not narrow what the agent is
-// allowed to see -- the junction predicate is now doing the authorization the
-// full-set lookup used to do.
+// resolve endpoint loads per request is multiplied by the workspace skill
+// count across a cold dispatch. These tests pin that it loads only the refs
+// it was asked for, and that authorization is workspace membership of the
+// skill row — not an agent_skill join.
 
 // Query markers include the trailing kind so they cannot match a sibling query
-// whose name shares a prefix (ListAgentSkills vs ListAgentSkillsByIDs).
+// whose name shares a prefix.
 const (
-	queryFullAgentSkills   = "-- name: ListAgentSkills :many"
-	queryScopedAgentSkills = "-- name: ListAgentSkillsByIDs :many"
+	queryFullAgentSkills   = "-- name: ListSkillsByWorkspace :many"
+	queryScopedAgentSkills = "-- name: ListWorkspaceSkillsByIDs :many"
 	querySkillFilesByIDs   = "-- name: ListSkillFilesBySkillIDs :many"
 )
 
@@ -187,7 +186,7 @@ func TestResolveTaskSkillBundles_LoadsOnlyTheRequestedSkill(t *testing.T) {
 
 	fullCalls, scoped, files := spy.snapshot()
 	if fullCalls != 0 {
-		t.Fatalf("the full ListAgentSkills ran %d times; resolve must not load the agent's whole skill set", fullCalls)
+		t.Fatalf("the full ListSkillsByWorkspace ran %d times; resolve must not load the workspace's whole skill set", fullCalls)
 	}
 	if len(scoped) != 1 || scoped[0] != 1 {
 		t.Fatalf("scoped skill query calls = %v, want exactly one call for one id", scoped)
@@ -279,10 +278,12 @@ func TestResolveTaskSkillBundles_KeepsRequestOrderAndDeduplicates(t *testing.T) 
 	}
 }
 
-// TestResolveTaskSkillBundles_RefusesSkillsTheAgentCannotSee is the reason the
-// narrowed read is safe: the old code authorized by membership in the agent's
-// full bundle set, and the new query has to reject exactly the same refs.
-func TestResolveTaskSkillBundles_RefusesSkillsTheAgentCannotSee(t *testing.T) {
+// TestResolveTaskSkillBundles_AuthorizesByWorkspaceMembership is the
+// workspace-shared skill rule: a skill in THIS workspace resolves even if it
+// was never bound to the agent (or the binding is disabled). A skill from
+// another workspace, an unparseable id, or a source with no server-side
+// producer is absent → 404.
+func TestResolveTaskSkillBundles_AuthorizesByWorkspaceMembership(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -292,7 +293,7 @@ func TestResolveTaskSkillBundles_RefusesSkillsTheAgentCannotSee(t *testing.T) {
 	agentID := ""
 	dbfx.QueryRow(t, `SELECT agent_id::text FROM agent_task_queue WHERE id = $1`, taskID).Scan(&agentID)
 
-	// A workspace skill nobody assigned to this agent.
+	// A workspace skill nobody assigned to this agent — still in the library.
 	unassigned := dbfx.Insert(t, "skill", testutil.Cols{
 		"workspace_id": testWorkspaceID,
 		"name":         "resolvedeny-unassigned",
@@ -302,7 +303,7 @@ func TestResolveTaskSkillBundles_RefusesSkillsTheAgentCannotSee(t *testing.T) {
 		"created_by":   testUserID,
 	})
 
-	// Assigned, but the assignment is disabled.
+	// Assigned, but the assignment is disabled — junction is ignored.
 	disabled := dbfx.Insert(t, "skill", testutil.Cols{
 		"workspace_id": testWorkspaceID,
 		"name":         "resolvedeny-disabled",
@@ -333,29 +334,37 @@ func TestResolveTaskSkillBundles_RefusesSkillsTheAgentCannotSee(t *testing.T) {
 		"created_by":   testUserID,
 	})
 
-	tests := []struct {
+	okCases := []struct {
 		name string
 		ref  resolveSkillBundleRef
 	}{
 		{name: "skill not assigned to the agent", ref: workspaceRef(unassigned)},
 		{name: "assignment disabled", ref: workspaceRef(disabled)},
+		{name: "skill already bound to the agent", ref: workspaceRef(skillIDs[0])},
+	}
+	for _, tc := range okCases {
+		t.Run(tc.name, func(t *testing.T) {
+			spy := &skillQuerySpy{inner: testPool}
+			resolveBundles(t, newSpyHandler(t, spy), runtimeID, taskID, tc.ref).Want(http.StatusOK)
+		})
+	}
+
+	denyCases := []struct {
+		name string
+		ref  resolveSkillBundleRef
+	}{
 		{name: "skill owned by another workspace", ref: workspaceRef(foreign)},
 		{name: "unparseable skill id", ref: workspaceRef("not-a-uuid")},
 		{name: "source with no server-side producer", ref: resolveSkillBundleRef{
 			ID: skillIDs[0], Source: skillbundle.SourcePlugin, Hash: "sha256:whatever",
 		}},
 	}
-	for _, tc := range tests {
+	for _, tc := range denyCases {
 		t.Run(tc.name, func(t *testing.T) {
 			spy := &skillQuerySpy{inner: testPool}
 			resolveBundles(t, newSpyHandler(t, spy), runtimeID, taskID, tc.ref).Want(http.StatusNotFound)
 		})
 	}
-
-	// The agent's own skill still resolves, so the cases above are denials and
-	// not a fixture that could never resolve anything.
-	spy := &skillQuerySpy{inner: testPool}
-	resolveBundles(t, newSpyHandler(t, spy), runtimeID, taskID, workspaceRef(skillIDs[0])).Want(http.StatusOK)
 }
 
 // TestResolveTaskSkillBundles_ScopedReadFailureReturns500 extends the

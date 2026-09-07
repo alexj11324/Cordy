@@ -290,18 +290,18 @@
   },
   "mcp": {
     "title": "MCP",
-    "description": "A library of MCP servers for this workspace. Adding one here gives it to no agent — an agent owner assigns it on the agent's own MCP tab, where it also gets a per-agent on/off toggle.",
+    "description": "A library of MCP servers for this workspace. Every agent uses these servers when a task starts — you do not assign them on each agent.",
     "servers_title": "Shared servers",
-    "write_only_note": "Saved configurations are write-only — urls, commands, headers, and environment values are never shown again, so editing a server replaces its configuration. Renaming is safe: agents keep their assignment.",
+    "write_only_note": "Saved configurations are write-only — urls, commands, headers, and environment values are never shown again, so editing a server replaces its configuration. Renaming is safe: every agent keeps using this library entry.",
     "add_server": "Add server",
     "edit_server": "Edit server",
     "remove_server": "Remove server",
     "empty_title": "No shared MCP servers",
-    "empty_description": "Add a server here, then assign it to the agents that should use it from their own MCP tab.",
+    "empty_description": "Add a server here. Every agent in this workspace will use it on its next task.",
     "disabled_badge": "Disabled",
     "admin_only_note": "Only workspace owners and admins can change the shared MCP servers.",
     "delete_title": "Remove shared server?",
-    "delete_description": "{{name}} will be removed from the library and from every agent it is assigned to, taking effect on their next task.",
+    "delete_description": "{{name}} will be removed from the library. Every agent in this workspace stops using it on its next task.",
     "delete_confirm": "Remove",
     "cancel": "Cancel",
     "added_toast": "Shared MCP server added",
@@ -309,6 +309,15 @@
     "removed_toast": "Shared MCP server removed",
     "save_failed_toast": "Could not save the shared MCP server",
     "remove_failed_toast": "Could not remove the shared MCP server"
+  },
+  "skills": {
+    "title": "Skills",
+    "description": "Skills in this workspace are shared by every agent. They are injected when a task starts — you do not assign them on each agent.",
+    "library_title": "Workspace skills",
+    "open_library": "Open Skills page",
+    "empty_title": "No skills yet",
+    "empty_description": "Create or import a skill on the Skills page. Every agent in this workspace will use it.",
+    "loading": "Loading skills…"
   },
   "page": {
     "connection_status": {
@@ -471,6 +480,7 @@
       "issue_statuses": "Issue Statuses",
       "properties": "Properties",
       "quick_actions": "Quick Actions",
+      "skills": "Skills",
       "plugins": "Plugins",
       "mcp": "MCP",
       "billing": "Billing"

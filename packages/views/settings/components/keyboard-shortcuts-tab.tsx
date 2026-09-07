@@ -296,6 +296,7 @@ function ShortcutRow({
             )}
             aria-label={t(($) => $.shortcuts.record_aria, { action: label })}
             aria-pressed={recording}
+            data-shortcut-recording={recording ? "" : undefined}
           >
             {recording ? (
               <span className="inline-flex items-center gap-1.5">

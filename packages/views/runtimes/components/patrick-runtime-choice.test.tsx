@@ -9,15 +9,15 @@ import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
 import { PatrickRuntimeChoice } from "./patrick-runtime-choice";
 
-vi.mock("@orvilo/core/api", () => ({ api: { listRuntimeModels: vi.fn() } }));
+vi.mock("../../agents/components/model-dropdown", () => ({ ModelDropdown: () => null }));
 
 const RESOURCES = {
   en: { agents: enAgents, common: enCommon, runtimes: enRuntimes },
 };
 
 const runtimes = [
-  { id: "rt-1", name: "MacBook", provider: "claude", status: "online" },
-  { id: "rt-2", name: "Server", provider: "codex", status: "offline" },
+  { id: "rt-1", name: "MacBook", owner_id: "owner", provider: "claude", status: "online" },
+  { id: "rt-2", name: "Server", owner_id: "owner", provider: "codex", status: "offline" },
 ] as AgentRuntime[];
 
 function renderChoice(props: Partial<Parameters<typeof PatrickRuntimeChoice>[0]>) {

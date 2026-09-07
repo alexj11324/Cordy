@@ -52,7 +52,7 @@ go test ./internal/service -run TestBuiltinSkillsConformToTemplate
 |---|---|---|
 | `maxAgentDescriptionLength = 255` | 31 | Cap is 255 **Unicode code points** (comment: counted via `utf8.RuneCountInString`, matches Postgres `char_length`) |
 | `AgentResponse` omits plaintext `custom_env` | 33–53 | Exposes only `has_custom_env` (52) and `custom_env_key_count` (53); comment cites MUL-2600 |
-| `CreateAgentRequest` fields | 930–970 | Includes `model`, `thinking_level`, and Codex `service_tier` alongside the profile/runtime/permission inputs |
+| `CreateAgentRequest` fields | 930–970 | Includes `model`, `thinking_level`, and `service_tier` alongside the profile/runtime/permission inputs |
 | Conversation-starter request and validation | `AgentConversationStarter`, `normaliseAgentConversationStarters`, create/update paths | `conversation_starters` is trimmed and validated as at most three complete label/prompt pairs before JSONB persistence; omission defaults to `[]`, update omission preserves, and `[]` clears |
 | `name` required | 623–625 | 400 "name is required" |
 | `description` ≤ 255 code points | 627–629 | `utf8.RuneCountInString(req.Description) > maxAgentDescriptionLength` → 400 |
@@ -60,7 +60,7 @@ go test ./internal/service -run TestBuiltinSkillsConformToTemplate
 | `runtime_id` must resolve in workspace | 642–658 | parsed + `GetAgentRuntimeForWorkspace`; unknown → 400 "invalid runtime_id" |
 | `thinking_level` provider-level validation | `agent.go` create/update paths | `!agent.IsKnownThinkingValue(runtime.Provider, req.ThinkingLevel)` → 400; fixed-vocabulary providers use an enum (Pi: `off|minimal|low|medium|high|xhigh|max`), Codex/OpenCode use safe-token syntax, and per-model gaps are deferred to daemon (MUL-2339) |
 | `thinking_level` rejection copy | `agent.go` `thinkingLevelRejection` / `existingThinkingLevelRejection` | Splits "runtime has no reasoning control" from "unrecognised token" so a runtime-capability 400 does not read as a typo; both carry-over branches point at `thinking_level=""` (MUL-5770) |
-| `service_tier` provider-level validation | `agent.go` create/update paths | Non-empty values are Codex-only safe tokens; daemon owns the explicit-standard capability check and exact per-model catalog-tier validation |
+| `service_tier` provider-level validation | `agent.go` create/update paths | Non-empty values are safe tokens for Codex, Claude Code Fast mode, and ACP speed runtimes (`reasonix`, `hermes`, `dim`, `kimi`); daemon owns the explicit-standard capability check and exact per-model catalog-tier validation |
 | Defaults: `{}` config/env, `[]` args | 688–701 | `RuntimeConfig`→`{}`, `CustomEnv`→`{}`, `CustomArgs`→`[]` when nil, before insert |
 | `visibility` default | 635–636 | `if req.Visibility == "" { req.Visibility = "private" }` — access-control field, not the runtime prompt |
 | `max_concurrent_tasks` create/default validation | `agent.go`; `agent_validation.go`; `internal/agentconfig/concurrency.go` | Shared 1–50 validator; a missing or explicit `null` field defaults to 6, while an explicitly supplied numeric 0/out-of-range value returns 400 |
@@ -68,7 +68,7 @@ go test ./internal/service -run TestBuiltinSkillsConformToTemplate
 | `mcp_config` null-skip on create | 704–705 | raw JSON copied through unless the body value is the literal `null` |
 | `mcp_config` redacted on read | 54, 848–851 | `redactMcpConfig` sets `McpConfigRedacted=true`; a private agent read by a member also redacts (494, 509) |
 | Qwen Code managed-MCP injection | `pkg/agent/qwen.go` | Non-null `mcp_config` is written to a daemon-owned 0600 temporary JSON file and passed with `--mcp-config`; the file is removed after the process exits, while `null` preserves native inheritance. |
-| Assigned workspace MCP servers folded into the agent's | `internal/handler/workspace_mcp.go` `ResolveAgentMcpConfig`; applied in `internal/handler/daemon.go` `buildClaimedTaskResponse` | Only servers bound to this agent AND enabled are folded in; union by name with the agent's own winning; both containers normalized onto `mcpServers`; read on every claim, so an assignment or toggle lands on the agent's next task |
+| Assigned workspace MCP servers folded into the agent's | `internal/handler/workspace_mcp.go` `ResolveAgentMcpConfig`; applied in `internal/handler/daemon.go` `buildClaimedTaskResponse` | Claim loads `ListWorkspaceMcpServers(workspaceID)` for every agent and calls `ResolveAgentMcpConfig(bindings, nil)` — leftover per-agent `mcp_config` does not win collisions or inject private servers. Composio overlay still layers after this. Automation allowlist in `applyAutomationClaimSettings` is unchanged (empty = deny-all). |
 | Workspace MCP library + assignment API | `internal/handler/workspace_mcp_api.go` | `GET /api/workspaces/{id}/mcp-servers` returns name / transport only, never the entry, for any role; `POST`/`PUT`/`DELETE` on the library are owner/admin; `GET`/`POST`/`PUT .../enabled`/`DELETE /api/agents/{id}/mcp-servers` manage one agent's assignments and admit the agent owner or a workspace owner/admin. Every write refuses agent actors. Deleting a library entry sweeps its bindings in the same transaction (no FK) |
 | Effective-set regression guard | `internal/daemon/runtime_mcp_workspace_test.go` | Runs resolve -> `mergeRuntimeAndAgentMcpConfig` for OpenCode; catches a resolver that emits a container the daemon merge would not read |
 | Random emoji avatar default | `agent_avatar.go` 11–32; `agent.go` 1127–1133 | Omitted, empty, or whitespace-only `avatar_url` becomes a cryptographically selected `emoji:<glyph>` sentinel; explicit values are preserved. |
@@ -119,9 +119,9 @@ go test ./internal/service -run TestBuiltinSkillsConformToTemplate
 | Contract | Line | Behavior |
 |---|---|---|
 | Fresh agent re-read on claim | 1109–1111 | `GetAgent(task.AgentID)` — claim uses persisted fields, not create output |
-| Workspace skills FIRST | 1115 | `skills := h.TaskService.LoadAgentSkills(...)` |
+| Workspace skills FIRST | `daemon.go` `buildClaimedTaskResponse` | `skills := h.TaskService.LoadAgentSkills(ctx, agent.WorkspaceID)` — every workspace library skill, no `agent_skill` join |
 | Built-ins appended | 1116 | `skills = append(skills, h.TaskService.BuiltinSkills()...)` |
-| Runtime payload | `daemon.go` `TaskAgentData` | Carries `Instructions`, `Skills`, `CustomEnv`, `CustomArgs`, `Model`, `ThinkingLevel`, `ServiceTier`, and `McpConfig`; metadata-only fields remain absent |
+| Runtime payload | `daemon.go` `TaskAgentData` | Carries `Instructions` (empty for user agents; Patrick composed with empty notes; team briefing may append), `Skills` / `SkillRefs` from the workspace library, `CustomEnv`, `CustomArgs`, `Model`, `ThinkingLevel`, `ServiceTier`, and workspace-library `McpConfig`; metadata-only fields remain absent |
 | `custom_args` argv and safe launch log | `internal/daemon/daemon.go` `ExecOptions.CustomArgs`; `pkg/agent/launch.go` `Config.logAgentCommand` | Custom args normally reach the provider process argv. Launch logs preserve flag names but redact inline values and positional/value tokens; OS process-list exposure remains, so credentials belong in `custom_env`. |
 | ZeroClaw agent alias pseudo-args | `pkg/agent/zeroclaw.go` `takeZeroclawAgentAlias` / `zeroclawBlockedArgs` | `--agent` and `--agent-alias` (separate or `=value`) are consumed from `custom_args` and sent as `session/new.agentAlias`; neither token reaches argv because `zeroclaw acp` rejects those CLI flags. Omit the selector for sole-agent auto-selection; use it when multiple agents exist without `[acp].default_agent`. |
 
@@ -129,7 +129,7 @@ go test ./internal/service -run TestBuiltinSkillsConformToTemplate
 
 | Contract | Line | Behavior |
 |---|---|---|
-| `LoadAgentSkills` | 1685 | `ListAgentSkills` + per-skill `ListSkillFiles` → content + supporting files for execution |
+| `LoadAgentSkills` | `task.go` | `ListSkillsByWorkspace` + batched `ListSkillFilesBySkillIDs` → content + supporting files for every workspace library skill. `LoadRequestedAgentSkillBundles` uses `ListWorkspaceSkillsByIDs` with the same workspace_id authorization. |
 
 ## Built-in skills — `server/internal/service/builtin_skills.go`
 

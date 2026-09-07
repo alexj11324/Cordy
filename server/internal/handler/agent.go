@@ -108,8 +108,10 @@ type AgentResponse struct {
 	// for this agent (empty = use runtime default). The picker is per-runtime
 	// per-model; the API never normalizes across providers. See MUL-2339.
 	ThinkingLevel string `json:"thinking_level"`
-	// ServiceTier is the runtime-native Codex execution tier persisted for
-	// this agent (empty = inherit local Codex configuration).
+	// ServiceTier is the runtime-native execution tier persisted for
+	// this agent (empty = inherit the runtime's own setting). Codex uses
+	// catalog IDs such as "priority"; ACP speed options use the tokens
+	// that session advertised.
 	ServiceTier string `json:"service_tier"`
 	// ComposioToolkitAllowlist is the subset of Composio toolkit slugs this
 	// agent is allowed to mount as MCP at task dispatch — for ANY run that

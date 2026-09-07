@@ -561,7 +561,7 @@ func TestCodexStaticModelsMatchVerifiedFallbackCatalog(t *testing.T) {
 		ids[m.ID] = m
 	}
 	for _, want := range []string{
-		"gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
+		"gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna",
 		"gpt-5.5", "gpt-5.4", "gpt-5.4-mini",
 		"gpt-5.3-codex", "gpt-5.2",
 	} {
@@ -574,9 +574,9 @@ func TestCodexStaticModelsMatchVerifiedFallbackCatalog(t *testing.T) {
 			t.Errorf("unexpected stale/invalid Codex model %q in fallback: %+v", unwanted, models)
 		}
 	}
-	latest, ok := ids["gpt-5.6-sol"]
+	latest, ok := ids["gpt-6-astra"]
 	if !ok || !latest.Default {
-		t.Errorf("expected `gpt-5.6-sol` to be the default Codex entry, got %+v", latest)
+		t.Errorf("expected `gpt-6-astra` to be the default Codex entry, got %+v", latest)
 	}
 	defaults := 0
 	for _, m := range models {
@@ -590,6 +590,9 @@ func TestCodexStaticModelsMatchVerifiedFallbackCatalog(t *testing.T) {
 	if defaults != 1 {
 		t.Errorf("expected exactly one default Codex entry, got %d", defaults)
 	}
+	if got := ids["gpt-6-astra"].Thinking; got == nil || got.DefaultLevel != "low" || !hasThinkingLevel(got, "max") || !hasThinkingLevel(got, "ultra") {
+		t.Errorf("unexpected gpt-6-astra thinking catalog: %+v", got)
+	}
 	if got := ids["gpt-5.6-sol"].Thinking; got == nil || got.DefaultLevel != "low" || !hasThinkingLevel(got, "max") || !hasThinkingLevel(got, "ultra") {
 		t.Errorf("unexpected gpt-5.6-sol thinking catalog: %+v", got)
 	}
@@ -600,6 +603,7 @@ func TestCodexStaticModelsMatchVerifiedFallbackCatalog(t *testing.T) {
 		t.Errorf("unexpected gpt-5.3-codex thinking catalog: %+v", got)
 	}
 	for id, label := range map[string]string{
+		"gpt-6-astra":   "GPT-6-Astra",
 		"gpt-5.6-sol":   "GPT-5.6 Sol",
 		"gpt-5.6-terra": "GPT-5.6 Terra",
 		"gpt-5.6-luna":  "GPT-5.6 Luna",

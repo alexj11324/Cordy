@@ -1321,3 +1321,58 @@ func TestBuildClaudeArgsManagedSkillSettingsWins(t *testing.T) {
 		t.Fatalf("unrelated custom arg was dropped: %v", args)
 	}
 }
+
+func TestApplyClaudeFastModeToSettings(t *testing.T) {
+	t.Parallel()
+
+	path, created, err := applyClaudeFastModeToSettings("", "")
+	if err != nil || created || path != "" {
+		t.Fatalf("empty tier = (%q, %v, %v)", path, created, err)
+	}
+
+	path, created, err = applyClaudeFastModeToSettings("", "true")
+	if err != nil || !created || path == "" {
+		t.Fatalf("true without base = (%q, %v, %v)", path, created, err)
+	}
+	t.Cleanup(func() { _ = os.Remove(path) })
+	assertClaudeFastMode(t, path, true)
+
+	base := filepath.Join(t.TempDir(), "settings.json")
+	if err := os.WriteFile(base, []byte(`{"skillOverrides":{"review":"off"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	merged, created, err := applyClaudeFastModeToSettings(base, "default")
+	if err != nil || created || merged != base {
+		t.Fatalf("default with base = (%q, %v, %v)", merged, created, err)
+	}
+	data, err := os.ReadFile(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["fastMode"] != false {
+		t.Fatalf("fastMode = %v, want false", payload["fastMode"])
+	}
+	overrides, _ := payload["skillOverrides"].(map[string]any)
+	if overrides["review"] != "off" {
+		t.Fatalf("skillOverrides clobbered: %+v", payload)
+	}
+}
+
+func assertClaudeFastMode(t *testing.T, path string, want bool) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["fastMode"] != want {
+		t.Fatalf("fastMode = %v, want %v in %s", payload["fastMode"], want, string(data))
+	}
+}

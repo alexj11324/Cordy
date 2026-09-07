@@ -2,15 +2,9 @@ import { test, expect, type Page } from "@playwright/test";
 import { TestApiClient } from "./fixtures";
 import { waitForPageText } from "./helpers";
 
-// Stage 3.2 (MUL-3870): the creator-only MCP tab on the agent detail page.
-//
-// Auth + workspace bootstrap go through the real backend (same as every other
-// spec), but the agent list and the Composio connection/catalog endpoints are
-// mocked at the network boundary so the test runs without a configured
-// COMPOSIO_API_KEY or a live runtime to bind an agent to. The PUT /api/agents
-// write is intercepted so we can assert the exact allowlist body the toggle
-// produces — the heart of the data contract — instead of depending on the
-// backend persisting it.
+// Agent-page MCP is workspace-shared in Settings. This spec only proves
+// the per-agent MCP Apps tab is gone. Auth still uses the real backend;
+// the agent list is mocked so the page can render without a live runtime.
 
 const E2E_WORKER =
   process.env.TEST_PARALLEL_INDEX ?? process.env.TEST_WORKER_INDEX ?? "0";
@@ -149,34 +143,24 @@ async function mockApis(page: Page, ownerId: string) {
   return () => captured.allowlist;
 }
 
-test.describe("Agent MCP tab (creator-only)", () => {
-  test("creator sees the MCP Apps tab and toggling a toolkit writes the allowlist", async ({
+test.describe("Agent page has no per-agent MCP", () => {
+  test("creator does not see an MCP Apps tab on the agent page", async ({
     page,
   }) => {
     const { slug, userId } = await loginCapturingUser(page);
-    const getAllowlist = await mockApis(page, userId);
+    await mockApis(page, userId);
 
     await page.goto(`/${slug}/agents/${AGENT_ID}`, {
       waitUntil: "domcontentloaded",
     });
     await waitForPageText(page, "MCP Test Agent");
 
-    // The creator-only tab entry is present and opens the connection list.
-    const tab = page.getByRole("button", { name: "MCP Apps" });
-    await expect(tab).toBeVisible({ timeout: 15000 });
-    await tab.click();
-
-    await expect(page.getByText("Notion")).toBeVisible();
-    await expect(page.getByText("Slack")).toBeVisible();
-
-    // Allow Notion → the PUT body carries exactly ["notion"].
-    await page.getByLabel(/Allow Notion for this agent/i).click();
-    await expect.poll(() => getAllowlist()).toEqual(["notion"]);
+    await expect(page.getByRole("button", { name: "MCP Apps" })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: /^MCP Apps$/i })).toHaveCount(0);
   });
 
-  test("a non-creator viewer does not see the MCP Apps tab", async ({ page }) => {
+  test("a non-creator viewer also has no MCP Apps tab", async ({ page }) => {
     const { slug } = await loginCapturingUser(page);
-    // Agent owned by someone else → the creator gate hides the tab entry.
     await mockApis(page, OTHER_USER_ID);
 
     await page.goto(`/${slug}/agents/${AGENT_ID}`, {
@@ -184,10 +168,7 @@ test.describe("Agent MCP tab (creator-only)", () => {
     });
     await waitForPageText(page, "MCP Test Agent");
 
-    // Other tabs render, but the creator-only MCP Apps entry must not.
-    await expect(page.getByRole("button", { name: "Activity" })).toBeVisible({
-      timeout: 15000,
-    });
     await expect(page.getByRole("button", { name: "MCP Apps" })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: /^MCP Apps$/i })).toHaveCount(0);
   });
 });

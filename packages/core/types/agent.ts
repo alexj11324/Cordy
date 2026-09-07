@@ -486,7 +486,7 @@ export interface Agent {
   /** Up to three agent-authored first-turn suggestions. Older servers omit it. */
   conversation_starters?: AgentConversationStarter[];
   /** Set for product-defined agents (e.g. "patrick"). Absent for user- and
-   *  template-created agents. Identity for "maintained by Orvilo" checks —
+   *  template-created agents. Identity for "maintained by Patchbay" checks —
    *  never the display name, which owners may change. */
   system_key?: string;
   /** Read-only product half of a system agent's prompt, served from the
@@ -1129,10 +1129,9 @@ export interface RuntimeModelThinking {
   /** Levels the user is allowed to pick for this model. */
   supported_levels: RuntimeModelThinkingLevel[];
   /** Informational: the level the upstream CLI documents as its built-in
-   *  default when no `--effort` flag is passed. Surfaced by the daemon
-   *  but not actively rendered today — Orvilo's empty `thinking_level`
-   *  means "no override; let the local CLI config decide", which may
-   *  itself differ from this value. */
+   *  default when no `--effort` flag is passed. Patchbay persists an
+   *  explicit catalog level when the user picks one; an empty
+   *  `thinking_level` means none has been chosen yet. */
   default_level?: string;
 }
 

@@ -188,7 +188,7 @@ describe("ThinkingPropRow", () => {
     // matching the i18n `thinking_clear_title` copy.
     await screen.findByText("xhigh");
     fireEvent.click(screen.getByRole("button"));
-    const clearButton = await screen.findByTitle(/Clear the override/i);
+    const clearButton = await screen.findByTitle(/Remove the saved thinking effort/i);
     fireEvent.click(clearButton);
 
     expect(onChange).toHaveBeenCalledWith("");
@@ -202,20 +202,18 @@ describe("ThinkingPropRow", () => {
     expect((await screen.findAllByText("High")).length).toBeGreaterThan(0);
   });
 
-  it("renders the row with \"Follow CLI config\" when value is empty and the model exposes levels", async () => {
+  it("renders the row with \"Choose effort\" when value is empty and the model exposes levels", async () => {
     renderRow({ value: "" });
 
     await screen.findByText("Thinking");
-    // Empty value means Orvilo omits --effort, so the local CLI's
-    // config decides — chip + tooltip both read "Follow CLI config".
-    expect((await screen.findAllByText("Follow CLI config")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Choose effort")).length).toBeGreaterThan(0);
   });
 
   it("inherits the base Claude model catalog for a context-tagged model", async () => {
     renderRow({ model: "claude-sonnet-4-6[1m]", value: "" });
 
     await screen.findByText("Thinking");
-    expect((await screen.findAllByText("Follow CLI config")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Choose effort")).length).toBeGreaterThan(0);
   });
 
   it("hides the picker for an empty codex model — it must not borrow the Default's catalog (MUL-4347)", async () => {
@@ -260,7 +258,7 @@ describe("ThinkingPropRow", () => {
     await screen.findByText("Thinking");
     expect(await screen.findByText("ultra")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button"));
-    const clearButton = await screen.findByTitle(/Clear the override/i);
+    const clearButton = await screen.findByTitle(/Remove the saved thinking effort/i);
     fireEvent.click(clearButton);
     expect(onChange).toHaveBeenCalledWith("");
   });
@@ -273,6 +271,6 @@ describe("ThinkingPropRow", () => {
 
     await screen.findByText("Thinking");
     // CLAUDE_MODEL (Default) advertises Low/Medium/High — the picker shows them.
-    expect((await screen.findAllByText("Follow CLI config")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Choose effort")).length).toBeGreaterThan(0);
   });
 });
