@@ -56,7 +56,7 @@ Bundle id and display name switch on `APP_ENV` (see `app.config.ts`), so Dev / S
 
 ## First-time setup
 
-`.env.staging` is committed (public staging URL). `.env.development.local` is gitignored — copy the template once:
+`.env.staging` is committed (internal staging URL). `.env.development.local` is gitignored — copy the template once:
 
 ```bash
 cp apps/mobile/.env.example apps/mobile/.env.development.local

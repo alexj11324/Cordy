@@ -23,6 +23,7 @@ import {
 } from "@/lib/desktop-handoff";
 import { useAuthMessages } from "@/lib/auth-messages";
 import { resolveStandaloneReturnUrl } from "@/lib/redirect";
+import { useProductOrigin } from "@/components/runtime-clerk-provider";
 
 export default function Page() {
   return (
@@ -33,6 +34,7 @@ export default function Page() {
 }
 
 function Content() {
+  const productOrigin = useProductOrigin();
   const params = useSearchParams();
   const binding = useMemo(() => readDesktopHandoffBinding(params), [params]);
   const desktopRequest = params.get("platform") === "desktop";
@@ -53,8 +55,9 @@ function Content() {
     if (binding) return `/login?${binding.query}`;
     return resolveStandaloneReturnUrl(
       params.get("return_url") ?? params.get("redirect_url"),
+      productOrigin,
     );
-  }, [binding, params]);
+  }, [binding, params, productOrigin]);
   const storageKey = binding
     ? desktopAttemptStorageKey(binding.state)
     : "";

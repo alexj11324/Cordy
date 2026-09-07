@@ -9,6 +9,7 @@ describe("desktop callback protocols", () => {
   it.each([
     PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
     "patchbay-canary-5718c47b86bf9ece",
+    "patchbay-staging-5718c47b86bf9ece",
   ])("accepts a Patchbay-owned callback protocol: %s", (protocol) => {
     expect(isDesktopCallbackProtocol(protocol)).toBe(true);
   });
@@ -22,6 +23,8 @@ describe("desktop callback protocols", () => {
     "patchbay-canary-01zp-25",
     "patchbay-canary-login-fix-123",
     `patchbay-canary-${"a".repeat(49)}`,
+    "patchbay-staging",
+    "patchbay-staging-",
   ])("rejects an unowned callback protocol: %s", (protocol) => {
     expect(isDesktopCallbackProtocol(protocol)).toBe(false);
   });

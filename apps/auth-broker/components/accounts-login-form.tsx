@@ -2,10 +2,11 @@
 import { AccountsLoginForm as SharedLoginForm } from '@patchbay/auth-ui/login-form';
 import { useAuthMessages } from '@/lib/auth-messages';
 import { resolveAccountsReturnUrl } from '@/lib/redirect';
+import { useProductOrigin } from './runtime-clerk-provider';
 
-export function buildGoogleLoginUrl(returnUrl: string, origin: string): string {
+export function buildGoogleLoginUrl(returnUrl: string, origin: string, productOrigin?: string): string {
   const destination = new URL(
-    resolveAccountsReturnUrl(returnUrl),
+    resolveAccountsReturnUrl(returnUrl, productOrigin),
     origin,
   );
   const url = new URL("/oauth/google", origin);
@@ -20,5 +21,6 @@ export function buildGoogleLoginUrl(returnUrl: string, origin: string): string {
 
 export function AccountsLoginForm({returnUrl}: {returnUrl: string}) {
  const messages = useAuthMessages();
- return <SharedLoginForm messages={messages} onGoogleLogin={() => window.location.assign(buildGoogleLoginUrl(returnUrl, window.location.origin))} />;
+ const productOrigin = useProductOrigin();
+ return <SharedLoginForm messages={messages} onGoogleLogin={() => window.location.assign(buildGoogleLoginUrl(returnUrl, window.location.origin, productOrigin))} />;
 }

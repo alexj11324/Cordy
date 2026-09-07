@@ -10,7 +10,7 @@ describe("desktop callback protocol", () => {
   it("keeps packaged Desktop on patchbay://", () => {
     expect(
       resolveDesktopCallbackProtocol({
-        packaged: true,
+        channel: "production",
         developmentProtocol: "patchbay-canary-5718c47b86bf9ece",
       }),
     ).toBe("patchbay");
@@ -22,7 +22,10 @@ describe("desktop callback protocol", () => {
       callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
       name: "Orvilo Canary first", dataName: "Patchbay Canary first",
     });
-    expect(resolveDesktopCallbackProtocol({ packaged: true, previewIdentity: identity }))
+    expect(resolveDesktopCallbackProtocol({
+      channel: "production",
+      previewIdentity: identity,
+    }))
       .toBe("patchbay-canary-5718c47b86bf9ece");
     expect(parseDesktopPreviewIdentity(undefined)).toBeNull();
     expect(() => parseDesktopPreviewIdentity({ ...identity, callbackProtocol: "patchbay" })).toThrow();
@@ -32,19 +35,46 @@ describe("desktop callback protocol", () => {
   it("isolates Canary and linked worktrees from production and each other", () => {
     expect(
       resolveDesktopCallbackProtocol({
-        packaged: false,
+        channel: "development",
         developmentProtocol: "patchbay-canary-5718c47b86bf9ece",
       }),
     ).toBe("patchbay-canary-5718c47b86bf9ece");
   });
 
+  it("isolates Desktop staging from Canary and production callbacks", () => {
+    expect(
+      resolveDesktopCallbackProtocol({
+        channel: "staging",
+        developmentProtocol: "patchbay-staging-5718c47b86bf9ece",
+      }),
+    ).toBe("patchbay-staging-5718c47b86bf9ece");
+    expect(() =>
+      resolveDesktopCallbackProtocol({
+        channel: "staging",
+        developmentProtocol: "patchbay",
+      }),
+    ).toThrow("staging callback protocol");
+    expect(() =>
+      resolveDesktopCallbackProtocol({
+        channel: "staging",
+        developmentProtocol: "patchbay-canary-5718c47b86bf9ece",
+      }),
+    ).toThrow("staging callback protocol");
+    expect(() =>
+      resolveDesktopCallbackProtocol({
+        channel: "staging",
+        developmentProtocol: "patchbay-staging",
+      }),
+    ).toThrow("staging callback protocol");
+  });
+
   it("rejects a missing or shared development protocol", () => {
     expect(() =>
-      resolveDesktopCallbackProtocol({ packaged: false }),
+      resolveDesktopCallbackProtocol({ channel: "development" }),
     ).toThrow("development callback protocol");
     expect(() =>
       resolveDesktopCallbackProtocol({
-        packaged: false,
+        channel: "development",
         developmentProtocol: "patchbay",
       }),
     ).toThrow("development callback protocol");
