@@ -122,12 +122,24 @@ func (h *Handler) HandleSlackNativeAutomation(ctx context.Context, inst db.Chann
 		return
 	}
 	if match.SenderID != "" {
-		_, err := h.Queries.GetChannelUserBindingByUserID(ctx, db.GetChannelUserBindingByUserIDParams{
+		binding, err := h.Queries.GetChannelUserBindingByUserID(ctx, db.GetChannelUserBindingByUserIDParams{
 			InstallationID: inst.ID, ChannelUserID: match.SenderID,
 		})
 		switch {
 		case err == nil:
-			match.SenderAuthenticated = true
+			_, memberErr := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+				UserID:      binding.PatchbayUserID,
+				WorkspaceID: inst.WorkspaceID,
+			})
+			switch {
+			case memberErr == nil:
+				match.SenderAuthenticated = true
+			case errors.Is(memberErr, pgx.ErrNoRows):
+				// A stale binding does not prove current workspace membership.
+			default:
+				slog.Warn("automation native fan-out: verify Slack sender membership",
+					"installation_id", uuidToString(inst.ID), "sender_id", match.SenderID, "err", memberErr)
+			}
 		case errors.Is(err, pgx.ErrNoRows):
 			// Anyone remains eligible; authenticated-only triggers reject below.
 		default:
