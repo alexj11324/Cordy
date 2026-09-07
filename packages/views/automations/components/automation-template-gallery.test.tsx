@@ -14,9 +14,10 @@ describe("AutomationTemplateGallery", () => {
       />,
     );
 
-    expect(
-      screen.getByRole("tab", { name: "Popular" }),
-    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Popular" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
     expect(screen.getByText("Find critical bugs")).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -66,5 +67,26 @@ describe("AutomationTemplateGallery", () => {
       screen.getByRole("button", { name: "Start from scratch" }),
     );
     expect(onStartBlank).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the recommendation catalog visible above existing automations", () => {
+    renderWithI18n(
+      <AutomationTemplateGallery
+        persistent
+        onSelectTemplate={vi.fn()}
+        onStartBlank={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Add automation" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/These suggestions stay here for your next automation/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Popular" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Find critical bugs/ }),
+    ).toBeInTheDocument();
   });
 });

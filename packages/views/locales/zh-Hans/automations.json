@@ -3,6 +3,11 @@
     "title": "自动化",
     "new_automation": "新建自动化",
     "start_blank": "从空白开始",
+    "recommended": {
+      "title": "添加自动化",
+      "hint": "从推荐自动化开始，或从空白创建。这些建议会保留在这里，方便继续添加。"
+    },
+    "your_automations": "你的自动化",
     "table": {
       "name": "名称",
       "agent": "智能体",
@@ -264,6 +269,23 @@
       "summary": "{{count}} 条跳过的运行"
     }
   },
+  "run_history": {
+    "trigger": "触发方式",
+    "model": "模型",
+    "triggered": "触发时间",
+    "tools": "工具",
+    "status": "状态",
+    "duration": "耗时",
+    "test_run": "测试运行",
+    "tools_count": "{{count}} 个工具",
+    "search": "搜索运行历史",
+    "search_placeholder": "搜索运行记录…",
+    "filter": "筛选运行历史",
+    "filter_status": "状态",
+    "actions": "运行操作",
+    "open_issue": "打开任务",
+    "no_matches": "没有符合搜索或筛选条件的运行记录。"
+  },
   "webhook_payload": {
     "label": "Webhook 事件：",
     "unknown_event": "webhook.received",
@@ -372,9 +394,7 @@
     "toast_add_failed": "添加触发器失败"
   },
   "dialog": {
-    "sr_create": "新建自动化",
     "sr_edit": "编辑自动化",
-    "header_create": "新建自动化",
     "header_edit": "编辑自动化",
     "subtitle": "周期性的 AI task",
     "expand": "展开",
@@ -386,7 +406,6 @@
     "description_placeholder": "# 目标\n你希望智能体完成什么？\n\n# 上下文\n这是给谁的？有什么约束？\n\n# 步骤\n1. ...\n2. ...",
     "auto_run_hint": "保存后会自动运行，直到暂停。",
     "cancel": "取消",
-    "create": "创建自动化",
     "save": "保存",
     "creating": "创建中...",
     "saving": "保存中...",
@@ -418,12 +437,7 @@
     "trigger_kind_schedule": "时间表",
     "trigger_kind_webhook": "Webhook",
     "section_webhook": "Webhook",
-    "webhook_help_create": "自动化创建后会生成一个 Webhook URL。向它 POST 任意 JSON 即可触发。",
     "webhook_help_edit": "该自动化由 Webhook 触发。请在详情页复制或重新生成 URL。",
-    "webhook_created_title": "Webhook 自动化已就绪",
-    "webhook_created_description": "向下方的 URL POST 任意 JSON 即可触发该自动化。请立即复制——之后也能在自动化详情页查看或重新生成。",
-    "webhook_created_warning": "请把该 URL 当作密码对待，任何拿到它的人都能触发该自动化。",
-    "webhook_created_done": "完成",
     "event_filter_label": "事件过滤",
     "event_filter_docs_link_label": "了解事件过滤的工作方式",
     "event_filter_event_placeholder": "例如 workflow_run",
@@ -749,5 +763,27 @@
       "cancelled": "已取消",
       "unsuccessful": "任意非成功结果"
     }
+  },
+  "overview": {
+    "mine": "我的",
+    "team": "团队",
+    "all_runs": "全部运行",
+    "runs": "运行记录",
+    "search_automations": "搜索自动化",
+    "all_statuses": "全部状态",
+    "select_all": "选择全部",
+    "previous": "上一页",
+    "next": "下一页",
+    "successful_24h": "过去 24 小时成功",
+    "failed_24h": "过去 24 小时失败",
+    "successful_7d": "过去 7 天成功",
+    "failed_7d": "过去 7 天失败",
+    "filter_automations": "筛选自动化"
+  },
+  "create_settings": {
+    "memory_after_save": "创建自动化后管理记忆文件",
+    "provider_after_save": "创建后在此配置连接和事件条件。",
+    "remove_trigger": "移除触发器",
+    "draft": "未保存"
   }
 }

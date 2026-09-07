@@ -28,23 +28,62 @@ import {
 export function AutomationTemplateGallery({
   onSelectTemplate,
   onStartBlank,
+  persistent = false,
 }: {
   onSelectTemplate: (template: AutomationTemplate) => void;
   onStartBlank: () => void;
+  /** Keep recommendations available below an existing automation list. */
+  persistent?: boolean;
 }) {
   const { t } = useT("automations");
   const [category, setCategory] = useState<TemplateCategoryId>("popular");
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col px-5 py-10">
-      <div className="mb-8 flex flex-col items-center text-center">
-        <AlarmClock className="mb-3 size-10 text-faint-foreground" />
-        <p className="text-body text-muted-foreground">
-          {t(($) => $.page.empty.title)}
-        </p>
-        <p className="mt-1 max-w-xl text-caption text-muted-foreground">
-          {t(($) => $.page.empty.hint)}
-        </p>
+    <div
+      data-testid="automation-template-gallery"
+      className={cn(
+        "@container mx-auto flex w-full max-w-4xl flex-col px-5",
+        persistent ? "py-5" : "py-10",
+      )}
+    >
+      <div
+        className={cn(
+          persistent
+            ? "mb-4 flex items-start justify-between gap-4"
+            : "mb-8 flex flex-col items-center text-center",
+        )}
+      >
+        {!persistent ? (
+          <AlarmClock className="mb-3 size-10 text-faint-foreground" />
+        ) : null}
+        <div>
+          <h2
+            className={cn(
+              "font-medium",
+              persistent ? "text-body" : "text-title-sm",
+            )}
+          >
+            {persistent
+              ? t(($) => $.page.recommended.title)
+              : t(($) => $.page.empty.title)}
+          </h2>
+          <p
+            className={cn(
+              "mt-1 text-caption text-muted-foreground",
+              !persistent && "max-w-xl",
+            )}
+          >
+            {persistent
+              ? t(($) => $.page.recommended.hint)
+              : t(($) => $.page.empty.hint)}
+          </p>
+        </div>
+        {persistent ? (
+          <Button size="sm" variant="outline" onClick={onStartBlank}>
+            <Plus className="mr-1 size-3.5" />
+            {t(($) => $.page.start_blank)}
+          </Button>
+        ) : null}
       </div>
 
       <Tabs
@@ -54,7 +93,7 @@ export function AutomationTemplateGallery({
         }}
         className="gap-4"
       >
-        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-transparent p-0">
+        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-transparent p-0 group-data-horizontal/tabs:h-auto">
           {TEMPLATE_CATEGORIES.map((cat) => (
             <TabsTrigger
               key={cat.id}
@@ -73,7 +112,7 @@ export function AutomationTemplateGallery({
 
         {TEMPLATE_CATEGORIES.map((cat) => (
           <TabsContent key={cat.id} value={cat.id} className="mt-1">
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
               {cat.templateIds.map((id) => (
                 <TemplateCard
                   key={id}
@@ -86,12 +125,14 @@ export function AutomationTemplateGallery({
         ))}
       </Tabs>
 
-      <div className="mt-6 flex justify-center">
-        <Button size="sm" variant="outline" onClick={onStartBlank}>
-          <Plus className="mr-1 size-3.5" />
-          {t(($) => $.page.start_blank)}
-        </Button>
-      </div>
+      {!persistent ? (
+        <div className="mt-6 flex justify-center">
+          <Button size="sm" variant="outline" onClick={onStartBlank}>
+            <Plus className="mr-1 size-3.5" />
+            {t(($) => $.page.start_blank)}
+          </Button>
+        </div>
+      ) : null}
     </div>
   );
 }
