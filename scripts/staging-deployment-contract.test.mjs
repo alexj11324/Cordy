@@ -157,10 +157,40 @@ test("staging compose overlays never reattach production projects", () => {
   assert.match(stagingOverride, /\n      ORVILO_DESKTOP_BROKER_AUTH_TOKEN:/u);
   assert.match(stagingOverride, /\n      ORVILO_CLERK_PUBLISHABLE_KEY:/u);
   assert.doesNotMatch(`${stagingOverride}\n${stagingBroker}`, /PATCHBAY_/u);
-  const stagingAccounts = originNginx.split("server_name accounts-origin.staging.aspectlylabs.com;")[1].split("\n}")[0];
-  assert.match(stagingAccounts, /include \/etc\/nginx\/snippets\/orvilo-staging-accounts-origin-auth\.conf;/u);
-  assert.doesNotMatch(stagingAccounts, /snippets\/patchbay-accounts-origin-auth\.conf/u);
   assert.doesNotMatch(stagingOverride, /patchbay\.aspectlylabs\.com/u);
+});
+
+function originServerBlock(source, serverName) {
+  const marker = `server_name ${serverName};`;
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, marker);
+  const end = source.indexOf("\n}", start);
+  return source.slice(start, end === -1 ? undefined : end + 2);
+}
+
+test("staging accounts origin validates its own Worker token", () => {
+  const staging = originServerBlock(
+    originNginx,
+    "accounts-origin.staging.aspectlylabs.com",
+  );
+  const production = originServerBlock(
+    originNginx,
+    "accounts-origin.aspectlylabs.com",
+  );
+  assert.match(
+    staging,
+    /include \/etc\/nginx\/snippets\/orvilo-staging-accounts-origin-auth\.conf;/u,
+  );
+  assert.doesNotMatch(staging, /snippets\/patchbay-accounts-origin-auth\.conf/u);
+  assert.match(
+    production,
+    /include \/etc\/nginx\/snippets\/patchbay-accounts-origin-auth\.conf;/u,
+  );
+  assert.doesNotMatch(production, /orvilo-staging-accounts-origin-auth/u);
+  assert.match(environmentsDoc, /orvilo-staging-accounts-origin-auth\.conf/u);
+  assert.match(environmentsDoc, /patchbay-accounts-origin-auth\.conf/u);
+  assert.match(environmentsDoc, /\$http_x_patchbay_origin_auth/u);
+  assert.match(environmentsDoc, /wrangler secret put ORIGIN_AUTH_TOKEN --env staging/u);
 });
 
 test("staging gateway refuses production state", () => {

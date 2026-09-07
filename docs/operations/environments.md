@@ -117,14 +117,17 @@ its Compose project, Secret Manager entry, or smoke user here.
 5. Install the origin nginx map from `deploy/origin/nginx/aspectlylabs-origin.conf`
    (staging server blocks are in the same file, different ports). Before reloading
    nginx, install a root-owned mode-0600 snippet at
-   `/etc/nginx/snippets/orvilo-staging-accounts-origin-auth.conf` that rejects
+   `/etc/nginx/snippets/orvilo-staging-accounts-origin-auth.conf`. It must reject
    requests unless `$http_x_patchbay_origin_auth` equals the staging-only
-   `ORVILO_ORIGIN_AUTH_TOKEN` from the broker snapshot. Use an nginx `if` with
-   `return 403` for a mismatch; never log or commit the token. Do not include
-   the production token snippet in the staging server. Validate the configuration
-   and verify that missing and production credentials are rejected before traffic
-   is enabled. The staging overlay forces `ALLOW_SIGNUP=false`; provision QA
-   users explicitly instead of allowing public registration.
+   `ORVILO_ORIGIN_AUTH_TOKEN` from the broker snapshot — the same value as
+   `wrangler secret put ORIGIN_AUTH_TOKEN --env staging`. Do not copy
+   `/etc/nginx/snippets/patchbay-accounts-origin-auth.conf`; that file holds
+   the production Worker token and would 403 staging `/readyz` before traffic
+   reaches port 43101. Use an nginx `if` with `return 403` for a mismatch;
+   never log or commit the token. Validate the configuration and verify that
+   missing and production credentials are rejected before traffic is enabled.
+   The staging overlay forces `ALLOW_SIGNUP=false`; provision QA users
+   explicitly instead of allowing public registration.
 6. Deploy the staging Accounts edge Worker. Wrangler environments do not
    inherit bindings, so this Worker has its own route, origin, origin-auth
    secret, and rate-limit namespaces (`21410502821` / `21410502822`) and must
@@ -136,8 +139,9 @@ its Compose project, Secret Manager entry, or smoke user here.
    npx wrangler deploy --env staging
    ```
 
-   The token must match `/var/lib/patchbay-staging/secrets`. Deploying without
-   `--env staging` would publish over the production Worker.
+   The token must match both `/var/lib/patchbay-staging/secrets` and the
+   staging nginx origin-auth snippet. Deploying without `--env staging`
+   would publish over the production Worker.
 7. From a reviewed checkout:
 
    ```bash

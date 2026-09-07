@@ -15,6 +15,9 @@ services:
       # analytics client falls back to it, so staging must label its own
       # events or internal QA activity lands in the production PostHog funnels.
       ANALYTICS_ENVIRONMENT: staging
+      # docker-compose.selfhost.yml defaults ALLOW_SIGNUP to true. Staging
+      # hosts are internet-routable, so this overlay pins false; provision
+      # QA users in the dedicated Clerk app instead of public registration.
       ALLOW_SIGNUP: "false"
       ORVILO_DESKTOP_BROKER_AUTH_TOKEN: ${ORVILO_DESKTOP_BROKER_AUTH_TOKEN:?Set ORVILO_DESKTOP_BROKER_AUTH_TOKEN}
 
