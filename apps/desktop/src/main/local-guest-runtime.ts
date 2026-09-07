@@ -42,7 +42,7 @@ async function localGuestHome(): Promise<string> {
 }
 
 export async function localGuestChildEnvironment(): Promise<NodeJS.ProcessEnv> {
-  // Do not inherit PATCHBAY_* settings: they can point the CLI at a cloud
+  // Do not inherit ORVILO_* settings: they can point the CLI at a cloud
   // profile, task context, or remote server. The local probe only needs the
   // host's command lookup environment and locale.
   const allowedKeys = [

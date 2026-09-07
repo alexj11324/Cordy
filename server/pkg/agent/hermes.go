@@ -473,7 +473,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 				"name":    "patchbay-agent-sdk",
 				"version": "0.2.0",
 			},
-			"clientCapabilities": map[string]any{},
+			"clientCapabilities": acpClientCapabilities(nil),
 		})
 		if err != nil {
 			finalStatus = "failed"
@@ -623,6 +623,8 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		// because an ACP effort option may depend on the current model.
 		applyACPEffortOption(runCtx, c.request, "hermes", b.cfg.Logger,
 			sessionID, sessionResult, opts.ThinkingLevel, opts.Model == "")
+		applyACPSpeedOption(runCtx, c.request, "hermes", b.cfg.Logger,
+			sessionID, sessionResult, opts.ServiceTier, opts.Model == "")
 
 		// 4. Send the prompt and wait for PromptResponse.
 		//

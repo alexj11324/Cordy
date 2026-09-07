@@ -21,7 +21,7 @@ import (
 // call from InstallationCredentials.Region via Region.OpenPlatformBaseURL
 // (Lark returns the actual wss URL in the response body, so only the
 // bootstrap POST host has to be region-aware). A deployment-wide
-// PATCHBAY_LARK_CALLBACK_BASE_URL still overrides every installation when
+// ORVILO_LARK_CALLBACK_BASE_URL still overrides every installation when
 // set (staging / mock).
 
 // HTTPConnectionTokenFetcher is the production EndpointFetcher. It
@@ -69,7 +69,7 @@ func (c HTTPConnectionTokenConfig) withDefaults() HTTPConnectionTokenConfig {
 	// deployment-wide override" — Endpoint() then resolves the bootstrap
 	// host per installation from InstallationCredentials.Region, so one
 	// fetcher serves both Feishu and Lark. A non-empty BaseURL
-	// (PATCHBAY_LARK_CALLBACK_BASE_URL, or an httptest URL in tests)
+	// (ORVILO_LARK_CALLBACK_BASE_URL, or an httptest URL in tests)
 	// forces every installation to that host.
 	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
 	if c.HTTPClient == nil {

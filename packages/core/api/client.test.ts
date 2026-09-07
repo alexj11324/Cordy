@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setCurrentWorkspace } from "../platform/workspace-storage";
 import { configStore } from "../config";
 import { ApiClient, ApiError, CHAT_DRAFT_RESTORE_CAPABILITY, clientErrorMessage } from "./client";
 import { EMPTY_PLUGIN_PACKAGE_LIST, EMPTY_PLUGIN_PREVIEW, EMPTY_PLUGIN_SURFACE_LAUNCH } from "./schemas";
@@ -2199,6 +2200,24 @@ describe("ApiClient", () => {
 // before ?workspace_id, so the header — not the param — is what has to carry
 // the target workspace.
 describe("ApiClient explicit workspace targeting", () => {
+  it.each([null, "another-workspace"])("uses the runtime workspace for discovery when the global slug is %s", async (slug) => {
+    setCurrentWorkspace(slug, slug ? "other-id" : null);
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      id: "req-1", runtime_id: "rt-1", status: "completed", supported: true,
+      models: [], created_at: "2026-09-06T00:00:00Z", updated_at: "2026-09-06T00:00:00Z",
+    })));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const client = new ApiClient("https://api.example.test");
+      await client.initiateListModels("rt-1", "runtime-workspace");
+      await client.getListModelsResult("rt-1", "req-1", "runtime-workspace");
+      for (const [, init] of fetchMock.mock.calls) {
+        expect(init.headers).toMatchObject({ "X-Workspace-Slug": "", "X-Workspace-ID": "runtime-workspace" });
+      }
+    } finally {
+      setCurrentWorkspace(null, null);
+    }
+  });
   function stubOk(body: unknown) {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify(body), {

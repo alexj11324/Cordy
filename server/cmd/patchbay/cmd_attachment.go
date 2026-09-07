@@ -44,7 +44,7 @@ paste nothing. The command also returns a markdown snippet you may paste on its
 own line to place the item: files use !file[name](url) (a card), images use
 ![name](url) (inline).
 
-The task id is read from PATCHBAY_TASK_ID (set by the daemon inside a task);
+The task id is read from ORVILO_TASK_ID (set by the daemon inside a task);
 override it with --task when needed.`,
 	Example: `  # Attach an image to the current chat reply
   $ patchbay attachment upload ./chart.png`,
@@ -57,7 +57,7 @@ func init() {
 	attachmentCmd.AddCommand(attachmentUploadCmd)
 
 	attachmentDownloadCmd.Flags().StringP("output-dir", "o", ".", "Directory to save the downloaded file")
-	attachmentUploadCmd.Flags().String("task", "", "Chat task id to attach to (defaults to PATCHBAY_TASK_ID)")
+	attachmentUploadCmd.Flags().String("task", "", "Chat task id to attach to (defaults to ORVILO_TASK_ID)")
 }
 
 func runAttachmentUpload(cmd *cobra.Command, args []string) error {
@@ -71,7 +71,7 @@ func runAttachmentUpload(cmd *cobra.Command, args []string) error {
 		taskID = client.TaskID
 	}
 	if taskID == "" {
-		return fmt.Errorf("no chat task in context: run inside a chat task (PATCHBAY_TASK_ID set) or pass --task <id>")
+		return fmt.Errorf("no chat task in context: run inside a chat task (ORVILO_TASK_ID set) or pass --task <id>")
 	}
 
 	path := args[0]

@@ -88,11 +88,11 @@ func parseACPEffortOption(raw json.RawMessage) (acpEffortOption, bool) {
 		Name  string `json:"name"`
 	}
 	type acpOption struct {
-		ID                string      `json:"id"`
-		Category          string      `json:"category"`
-		CurrentValue      string      `json:"currentValue"`
-		CurrentValueSnake string      `json:"current_value"`
-		Options           []acpChoice `json:"options"`
+		ID                string       `json:"id"`
+		Category          string       `json:"category"`
+		CurrentValue      acpJSONValue `json:"currentValue"`
+		CurrentValueSnake acpJSONValue `json:"current_value"`
+		Options           []acpChoice  `json:"options"`
 	}
 	var resp struct {
 		ConfigOptions      []acpOption `json:"configOptions"`
@@ -131,9 +131,9 @@ func parseACPEffortOption(raw json.RawMessage) (acpEffortOption, bool) {
 			}
 			result.Choices = append(result.Choices, ThinkingLevel{Value: value, Label: label})
 		}
-		current := strings.TrimSpace(opt.CurrentValue)
+		current := strings.TrimSpace(opt.CurrentValue.String())
 		if current == "" {
-			current = strings.TrimSpace(opt.CurrentValueSnake)
+			current = strings.TrimSpace(opt.CurrentValueSnake.String())
 		}
 		// Only echo a default we also advertise. A currentValue outside the
 		// choice list (CodeBuddy's `enabled`) becomes an empty DefaultLevel,

@@ -9,8 +9,6 @@ const checkForUpdatesLabel: Record<
 > = {
   en: "Check for Updates…",
   "zh-Hans": "检查更新…",
-  ja: "更新を確認…",
-  ko: "업데이트 확인…",
 };
 
 export function checkForUpdatesMenuLabel(

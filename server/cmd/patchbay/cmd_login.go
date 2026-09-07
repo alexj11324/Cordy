@@ -15,7 +15,7 @@ import (
 // tryResolveAppURL returns the app URL if configured, or "" if not available.
 // Unlike resolveAppURL, it never calls os.Exit.
 func tryResolveAppURL(cmd *cobra.Command) string {
-	for _, key := range []string{"PATCHBAY_APP_URL", "FRONTEND_ORIGIN"} {
+	for _, key := range []string{"ORVILO_APP_URL", "FRONTEND_ORIGIN"} {
 		if val := strings.TrimSpace(os.Getenv(key)); val != "" {
 			return strings.TrimRight(val, "/")
 		}
@@ -87,7 +87,7 @@ func autoWatchWorkspaces(cmd *cobra.Command) error {
 	// runLogin has already passed the human/local command guard and saved the
 	// newly authenticated profile. Read that exact profile here rather than the
 	// general task-safe resolvers, which intentionally fail closed on a lone
-	// PATCHBAY_DAEMON_PORT signal.
+	// ORVILO_DAEMON_PORT signal.
 	profile := resolveProfile(cmd)
 	cfg, err := cli.LoadCLIConfigForProfile(profile)
 	if err != nil {
@@ -179,7 +179,7 @@ func waitForWorkspaceCreation(cmd *cobra.Command, client *cli.APIClient) ([]stru
 
 	// Per-poll request budget. We keep a short 10s floor so the loop stays
 	// responsive (a hung request shouldn't block a single iteration for long),
-	// but it still honors PATCHBAY_HTTP_TIMEOUT via AtLeastAPITimeout so a user
+	// but it still honors ORVILO_HTTP_TIMEOUT via AtLeastAPITimeout so a user
 	// who raised the timeout for a slow network isn't capped below it. The
 	// overall wait is bounded by pollTimeout regardless.
 	pollRequestTimeout := cli.AtLeastAPITimeout(10 * time.Second)

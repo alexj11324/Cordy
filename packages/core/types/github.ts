@@ -148,6 +148,11 @@ export interface GitHubRepository {
   default_branch: string;
 }
 
+export interface AutomationGitHubCatalog {
+  repositories: GitHubRepository[];
+  me_logins: string[];
+}
+
 export interface ListGitHubRepositoriesResponse {
   repositories: GitHubRepository[];
   total_count: number;

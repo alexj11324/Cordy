@@ -175,19 +175,19 @@ test("public and authenticated browser acceptance gate success", () => {
 });
 
 test("the deployed Web Clerk provider is runtime-configured and accepts both browser origins", () => {
-  assert.match(webLayout, /PATCHBAY_CLERK_PUBLISHABLE_KEY/u);
+  assert.match(webLayout, /ORVILO_CLERK_PUBLISHABLE_KEY/u);
   assert.match(
     deployGateway,
-    /CLERK_PUBLISHABLE_KEY[\s\S]*PATCHBAY_CLERK_PUBLISHABLE_KEY/u,
+    /CLERK_PUBLISHABLE_KEY[\s\S]*ORVILO_CLERK_PUBLISHABLE_KEY/u,
   );
   assert.match(
     productionOverride,
     /CLERK_AUTHORIZED_PARTIES: https:\/\/accounts\.aspectlylabs\.com,https:\/\/patchbay\.aspectlylabs\.com/u,
   );
-  assert.match(productionOverride, /PATCHBAY_CLERK_PUBLISHABLE_KEY/u);
+  assert.match(productionOverride, /ORVILO_CLERK_PUBLISHABLE_KEY/u);
   assert.match(
     productionOverride,
-    /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: \$\{PATCHBAY_CLERK_PUBLISHABLE_KEY/u,
+    /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: \$\{ORVILO_CLERK_PUBLISHABLE_KEY/u,
   );
   assert.match(
     productionOverride,

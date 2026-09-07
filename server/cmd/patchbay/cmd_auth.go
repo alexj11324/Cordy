@@ -71,13 +71,13 @@ func init() {
 }
 
 func resolveToken(cmd *cobra.Command) string {
-	if v := strings.TrimSpace(os.Getenv("PATCHBAY_TOKEN")); v != "" {
+	if v := strings.TrimSpace(os.Getenv("ORVILO_TOKEN")); v != "" {
 		return v
 	}
 	// Inside a daemon-managed task, never fall back to the user-global config
 	// token: that silent fallback is how agent writes land as the wrong actor.
-	// inDaemonManagedExecutionContext already covers the PATCHBAY_DAEMON_PORT
-	// signal for subprocesses that lost PATCHBAY_AGENT_ID / PATCHBAY_TASK_ID.
+	// inDaemonManagedExecutionContext already covers the ORVILO_DAEMON_PORT
+	// signal for subprocesses that lost ORVILO_AGENT_ID / ORVILO_TASK_ID.
 	if inDaemonManagedExecutionContext() {
 		return ""
 	}
@@ -87,7 +87,7 @@ func resolveToken(cmd *cobra.Command) string {
 }
 
 func resolveAppURL(cmd *cobra.Command) string {
-	for _, key := range []string{"PATCHBAY_APP_URL", "FRONTEND_ORIGIN"} {
+	for _, key := range []string{"ORVILO_APP_URL", "FRONTEND_ORIGIN"} {
 		if val := strings.TrimSpace(os.Getenv(key)); val != "" {
 			return strings.TrimRight(val, "/")
 		}
@@ -470,7 +470,7 @@ func runAuthStatus(cmd *cobra.Command, _ []string) error {
 	taskContext := inDaemonManagedExecutionContext()
 	token := resolveToken(cmd)
 	if taskContext && !strings.HasPrefix(token, "mat_") {
-		return fmt.Errorf("agent execution context requires PATCHBAY_TOKEN to be a task-scoped mat_ token")
+		return fmt.Errorf("agent execution context requires ORVILO_TOKEN to be a task-scoped mat_ token")
 	}
 	serverURL := resolveServerURL(cmd)
 

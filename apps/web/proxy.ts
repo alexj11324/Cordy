@@ -6,7 +6,7 @@ import {
 } from "next/server";
 import { LOCALE_COOKIE } from "@patchbay/core/i18n";
 import {
-  PATCHBAY_LOCALE_HEADER,
+  ORVILO_LOCALE_HEADER,
   resolveLocaleFromSignals,
 } from "./lib/locale-routing";
 import {
@@ -63,7 +63,7 @@ function resolveLocale(req: NextRequest): string {
 // request — without it the value would only sit on the response.
 function nextWithLocale(req: NextRequest): NextResponse {
   const headers = new Headers(req.headers);
-  headers.set(PATCHBAY_LOCALE_HEADER, resolveLocale(req));
+  headers.set(ORVILO_LOCALE_HEADER, resolveLocale(req));
   return NextResponse.next({ request: { headers } });
 }
 

@@ -76,6 +76,75 @@ func TestPrepareCodexSessionsDir_FreshCreatesEmptyLocalDir(t *testing.T) {
 	}
 }
 
+func TestPrepareCodexSessionsDir_AgentThreadRootUsesPersistentStore(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sharedHome := filepath.Join(root, "shared-codex")
+	codexHome := filepath.Join(root, "task", "codex-home")
+	key := filepath.Join("default", "agent-thread-key", "thread_root-task")
+	if err := os.MkdirAll(codexHome, 0o755); err != nil {
+		t.Fatalf("mkdir codex home: %v", err)
+	}
+
+	if err := prepareCodexSessionsDir(codexHome, sharedHome, CodexHomeOptions{
+		SessionStoreKey:        key,
+		PersistentSessionStore: true,
+	}, testLogger()); err != nil {
+		t.Fatalf("prepare persistent Agent session store: %v", err)
+	}
+
+	sessions := filepath.Join(codexHome, "sessions")
+	fi, err := os.Lstat(sessions)
+	if err != nil {
+		t.Fatalf("stat sessions: %v", err)
+	}
+	if fi.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("Agent conversation sessions must link the durable store, mode=%v", fi.Mode())
+	}
+	store := filepath.Join(sharedHome, codexSessionStoreRoot, key)
+	if target, err := os.Readlink(sessions); err != nil || filepath.Clean(target) != filepath.Clean(store) {
+		t.Fatalf("sessions link target = %q (err=%v), want %q", target, err, store)
+	}
+}
+
+func TestPrepareCodexSessionsDir_AgentThreadContinuationSurvivesEnvGC(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	sharedHome := filepath.Join(root, "shared-codex")
+	key := filepath.Join("default", "agent-thread-key", "thread_root-task")
+	resumeID := "019c6e27-e55b-73d1-87d8-4e01f1f75043"
+	rootHome := filepath.Join(root, "root-task", "codex-home")
+	if err := os.MkdirAll(rootHome, 0o755); err != nil {
+		t.Fatalf("mkdir root codex home: %v", err)
+	}
+	if err := prepareCodexSessionsDir(rootHome, sharedHome, CodexHomeOptions{
+		SessionStoreKey:        key,
+		PersistentSessionStore: true,
+	}, testLogger()); err != nil {
+		t.Fatalf("prepare root sessions: %v", err)
+	}
+	store := filepath.Join(sharedHome, codexSessionStoreRoot, key)
+	seedFakeRollout(t, store, "2026", "09", "07", resumeID, 16)
+	if err := os.RemoveAll(filepath.Dir(rootHome)); err != nil {
+		t.Fatalf("remove GC'd root env: %v", err)
+	}
+
+	childHome := filepath.Join(root, "child-task", "codex-home")
+	if err := os.MkdirAll(childHome, 0o755); err != nil {
+		t.Fatalf("mkdir child codex home: %v", err)
+	}
+	if err := prepareCodexSessionsDir(childHome, sharedHome, CodexHomeOptions{
+		ResumeSessionID:        resumeID,
+		SessionStoreKey:        key,
+		PersistentSessionStore: true,
+	}, testLogger()); err != nil {
+		t.Fatalf("prepare child sessions: %v", err)
+	}
+	if !CodexResumeRolloutPresent(childHome, resumeID) {
+		t.Fatal("post-GC Agent continuation cannot see the root's Codex rollout")
+	}
+}
+
 func TestPrepareCodexSessionsDir_RealDirIsAuthoritative(t *testing.T) {
 	t.Parallel()
 	codexHome := filepath.Join(t.TempDir(), "codex-home")

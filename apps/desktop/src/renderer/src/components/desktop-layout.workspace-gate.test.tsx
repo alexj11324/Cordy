@@ -103,6 +103,9 @@ vi.mock("@patchbay/views/search", () => ({
 vi.mock("@patchbay/views/chat", () => ({
   FloatingChat: () => <div data-testid="floating-chat" />,
 }));
+vi.mock("@patchbay/views/agent-thread", () => ({
+  AgentThreadPanelLayout: ({ children }: { children: ReactNode }) => <>{children}</>,
+}));
 
 vi.mock("./tab-bar", () => ({ TabBar: () => null }));
 vi.mock("./window-overlay", () => ({ WindowOverlay: () => null }));

@@ -16,7 +16,7 @@ import (
 
 // TaskContextMarkerRelPath is a non-secret marker the daemon writes under the
 // task workdir. The CLI uses it as a fallback daemon-task signal when a child
-// sandbox strips all PATCHBAY_* env vars before invoking `patchbay`.
+// sandbox strips all ORVILO_* env vars before invoking `patchbay`.
 const TaskContextMarkerRelPath = ".patchbay/daemon_task_context.json"
 
 // TaskContextMarkerManagedBy is the marker discriminator the CLI checks before
@@ -24,10 +24,12 @@ const TaskContextMarkerRelPath = ".patchbay/daemon_task_context.json"
 const TaskContextMarkerManagedBy = "patchbay-daemon-task"
 
 type taskContextMarkerFile struct {
-	ManagedBy     string `json:"managed_by"`
-	AgentID       string `json:"agent_id,omitempty"`
-	IssueID       string `json:"issue_id,omitempty"`
-	ChatSessionID string `json:"chat_session_id,omitempty"`
+	ManagedBy             string `json:"managed_by"`
+	AgentID               string `json:"agent_id,omitempty"`
+	RuntimeID             string `json:"runtime_id,omitempty"`
+	IssueID               string `json:"issue_id,omitempty"`
+	ChatSessionID         string `json:"chat_session_id,omitempty"`
+	AgentThreadRootTaskID string `json:"agent_thread_root_task_id,omitempty"`
 }
 
 // EnsureWorkspacesRootMarker writes a persistent daemon-task marker at
@@ -35,7 +37,7 @@ type taskContextMarkerFile struct {
 //
 // The per-workdir marker only protects `patchbay` invocations whose cwd is
 // inside the workdir, because the CLI discovers markers by walking *up* from
-// cwd. A sandboxed subprocess that lost every PATCHBAY_* env var and escaped
+// cwd. A sandboxed subprocess that lost every ORVILO_* env var and escaped
 // to the workdir's parent directory sits above that marker, finds no daemon
 // signal, and would fall back to the user's config PAT — a confirmed
 // impersonation path. Every directory under workspacesRoot is daemon-owned,
@@ -213,10 +215,12 @@ func writeTaskContextMarker(workDir string, ctx TaskContextForEnv, manifest *sid
 	// cleanup. If a crash leaves it behind, the CLI intentionally treats it
 	// as daemon context and fails closed instead of using a user PAT.
 	payload := taskContextMarkerFile{
-		ManagedBy:     TaskContextMarkerManagedBy,
-		AgentID:       ctx.AgentID,
-		IssueID:       ctx.IssueID,
-		ChatSessionID: ctx.ChatSessionID,
+		ManagedBy:             TaskContextMarkerManagedBy,
+		AgentID:               ctx.AgentID,
+		RuntimeID:             ctx.RuntimeID,
+		IssueID:               ctx.IssueID,
+		ChatSessionID:         ctx.ChatSessionID,
+		AgentThreadRootTaskID: ctx.AgentThreadRootTaskID,
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
@@ -1009,6 +1013,15 @@ func writeSkillFiles(skillsDir string, skills []SkillContextForEnv, manifest *si
 
 // renderIssueContext builds the markdown content for issue_context.md.
 func renderIssueContext(provider string, ctx TaskContextForEnv) string {
+	if ctx.IsAgentThreadContinuation && ctx.IssueID == "" {
+		var b strings.Builder
+		b.WriteString("# Agent conversation\n\n")
+		b.WriteString(AgentThreadNoIssueWorkflow + "\n\n")
+		if ctx.AutomationID != "" {
+			fmt.Fprintf(&b, "**Automation ID:** %s\n", ctx.AutomationID)
+		}
+		return b.String()
+	}
 	if ctx.AutomationRunID != "" {
 		return renderAutomationContext(ctx)
 	}

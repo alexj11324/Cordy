@@ -145,9 +145,9 @@ describe("PreferencesTab — Language switcher", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<PreferencesTab />, { wrapper: I18nWrapper });
 
-    await pickLanguage(user, "한국어");
+    await pickLanguage(user, "中文");
 
-    expect(mockPersist).toHaveBeenCalledWith("ko");
+    expect(mockPersist).toHaveBeenCalledWith("zh-Hans");
     expect(mockUpdateMe).not.toHaveBeenCalled();
     expect(mockToastSuccess).toHaveBeenCalledTimes(1);
     expect(mockReload).not.toHaveBeenCalled();
@@ -156,19 +156,15 @@ describe("PreferencesTab — Language switcher", () => {
     expect(mockToastWarning).not.toHaveBeenCalled();
   });
 
-  it("when not logged in: selecting Japanese persists ja + reloads, no PATCH", async () => {
+  it("offers only the locales the product ships", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<PreferencesTab />, { wrapper: I18nWrapper });
 
-    await pickLanguage(user, "日本語");
+    await user.click(screen.getByRole("combobox", { name: "Language" }));
 
-    expect(mockPersist).toHaveBeenCalledWith("ja");
-    expect(mockUpdateMe).not.toHaveBeenCalled();
-    expect(mockToastSuccess).toHaveBeenCalledTimes(1);
-    expect(mockReload).not.toHaveBeenCalled();
-    act(() => vi.advanceTimersByTime(900));
-    expect(mockReload).toHaveBeenCalledTimes(1);
-    expect(mockToastWarning).not.toHaveBeenCalled();
+    expect(
+      (await screen.findAllByRole("option")).map((o) => o.textContent),
+    ).toEqual(["English", "中文"]);
   });
 
   it("when logged in + PATCH success: confirms the save before reloading", async () => {

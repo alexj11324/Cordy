@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
 	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
 )
 
@@ -95,6 +96,86 @@ func TestClaimTasksByRuntime_RoutesAcrossRuntimesAndMintsTokens(t *testing.T) {
 	}
 	if seen[rt1] != 1 || seen[rt2] != 1 {
 		t.Fatalf("runtime distribution = %v, want one task each for rt1/rt2", seen)
+	}
+}
+
+// TestClaimTasksByRuntime_AutomationUsesRuntimeOwnerForTokenIdentity proves
+// the autonomous-task boundary end to end: originator_user_id stays NULL, the
+// provider authorization principal stays NULL, but the mat_ token still has a
+// current workspace identity projected from the runtime owner.
+func TestClaimTasksByRuntime_AutomationUsesRuntimeOwnerForTokenIdentity(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	ctx := context.Background()
+	runtimeID := createClaimReclaimRuntime(t, ctx, "Automation token identity runtime")
+	agentID, _ := createClaimReclaimAgentAndIssue(t, ctx, runtimeID, "Automation token identity agent")
+
+	var automationID, runID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO automation (
+			workspace_id, title, executor_type, executor_id, status, execution_mode,
+			created_by_type, created_by_id
+		) VALUES ($1, 'automation token identity', 'agent', $2, 'active', 'run_only', 'member', $3)
+		RETURNING id
+	`, testWorkspaceID, agentID, testUserID).Scan(&automationID); err != nil {
+		t.Fatalf("create automation: %v", err)
+	}
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO automation_run (automation_id, source, status)
+		VALUES ($1, 'webhook', 'running')
+		RETURNING id
+	`, automationID).Scan(&runID); err != nil {
+		t.Fatalf("create automation run: %v", err)
+	}
+	var taskID string
+	if err := testPool.QueryRow(ctx, `
+		INSERT INTO agent_task_queue (
+			agent_id, runtime_id, status, priority, automation_run_id,
+			originator_user_id, accountable_user_id, originator_source,
+			trigger_evidence_kind, trigger_evidence_ref_id
+		) VALUES ($1, $2, 'queued', 0, $3, NULL, $4, 'trigger_owner', 'automation_run', $3)
+		RETURNING id
+	`, agentID, runtimeID, runID, testUserID).Scan(&taskID); err != nil {
+		t.Fatalf("create automation task: %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = testPool.Exec(ctx, `DELETE FROM agent_task_queue WHERE id = $1`, taskID)
+		_, _ = testPool.Exec(ctx, `DELETE FROM automation_run WHERE id = $1`, runID)
+		_, _ = testPool.Exec(ctx, `DELETE FROM automation WHERE id = $1`, automationID)
+	})
+
+	w := postBatchClaim(t, testWorkspaceID, []string{runtimeID}, 1)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp batchClaimResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(resp.Tasks) != 1 || resp.Tasks[0].ID != taskID {
+		t.Fatalf("claimed tasks = %+v, want automation task %s", resp.Tasks, taskID)
+	}
+	if !strings.HasPrefix(resp.Tasks[0].AuthToken, "mat_") {
+		t.Fatalf("automation task missing mat_ token: %q", resp.Tasks[0].AuthToken)
+	}
+
+	var tokenUserID, onBehalfOfUserID, originatorUserID string
+	if err := testPool.QueryRow(ctx, `
+		SELECT token.user_id::text,
+		       COALESCE(token.on_behalf_of_user_id::text, ''),
+		       COALESCE(task.originator_user_id::text, '')
+		FROM task_token token
+		JOIN agent_task_queue task ON task.id = token.task_id
+		WHERE token.token_hash = $1
+	`, auth.HashToken(resp.Tasks[0].AuthToken)).Scan(&tokenUserID, &onBehalfOfUserID, &originatorUserID); err != nil {
+		t.Fatalf("load automation task token: %v", err)
+	}
+	if tokenUserID != testUserID {
+		t.Fatalf("task token user_id = %q, want runtime owner %q", tokenUserID, testUserID)
+	}
+	if onBehalfOfUserID != "" || originatorUserID != "" {
+		t.Fatalf("automation authorization identity widened: on_behalf_of=%q originator=%q", onBehalfOfUserID, originatorUserID)
 	}
 }
 

@@ -356,7 +356,7 @@ describe("resolveAccountsOrigin", () => {
   it("accepts an explicit hosted or staging Accounts origin", () => {
     expect(
       resolveAccountsOrigin({
-        PATCHBAY_AUTH_BROKER_ORIGIN: "https://accounts.staging.aspectlylabs.com/",
+        ORVILO_AUTH_BROKER_ORIGIN: "https://accounts.staging.aspectlylabs.com/",
       }),
     ).toBe("https://accounts.staging.aspectlylabs.com");
   });
@@ -369,7 +369,7 @@ describe("resolveAccountsOrigin", () => {
     ).toBeUndefined();
     expect(
       resolveAccountsOrigin({
-        PATCHBAY_AUTH_BROKER_ORIGIN: "http://127.0.0.1:3100",
+        ORVILO_AUTH_BROKER_ORIGIN: "http://127.0.0.1:3100",
       }),
     ).toBeUndefined();
   });

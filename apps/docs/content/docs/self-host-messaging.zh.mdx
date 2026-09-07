@@ -23,7 +23,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 - `DELETE /api/workspaces/{id}/slack/installations/{installationId}` —— 断开连接，需要 owner 或 admin。数据行会保留用于审计，重新连接会将其翻回 active。
 - `POST /api/slack/binding/redeem` —— 从"绑定账号"提示进入，把 Slack 用户 id 绑定到当前登录的 Patchbay 用户。
 
-仅托管部署可用（没有 `PATCHBAY_SLACK_CLIENT_ID/_SECRET` 时保持惰性）：
+仅托管部署可用（没有 `ORVILO_SLACK_CLIENT_ID/_SECRET` 时保持惰性）：
 
 - `POST /api/workspaces/{id}/slack/install/managed` —— 发起托管 OAuth 授权（owner/admin）。Body：`{ "redirect_url": "…" }`。
 - `GET /api/integrations/slack/oauth/callback` —— 公开的 Slack 跳转落点；消费一次性 state、交换 code，然后 302 到绑定的 redirect URL。
@@ -32,7 +32,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 1. BYO Socket Mode 部署
 
-1. 先设置 `PATCHBAY_SLACK_SECRET_KEY`（见[凭据处理](#4-凭据处理)）并重启后端。没有它，Slack 集成完全不会启用。
+1. 先设置 `ORVILO_SLACK_SECRET_KEY`（见[凭据处理](#4-凭据处理)）并重启后端。没有它，Slack 集成完全不会启用。
 2. 按 [Slack Bot 集成](/slack-bot-integration) 中的 manifest 为每个智能体创建一个 Slack app，安装到 Slack workspace，然后复制 `xoxb-` Bot token 和 `xapp-` App-level Token（需要 `connections:write` scope）。
 3. 在 Patchbay 中打开该智能体的**集成**页面并填入两个 token，也可以直接调用 `POST .../slack/install/byo?agent_id=…`。
 4. Patchbay 在落库前会验证这对 token：
@@ -45,7 +45,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 Go 后端在 BYO 之外还带有一个托管（managed）OAuth 服务（`server/internal/integrations/slack/managed_oauth.go`）。它管理一次性、10 分钟有效、只存哈希的安装 state，入库的只有 state 哈希，并在 `https://slack.com/api/oauth.v2.access` 完成 code 交换。安装者访问 `https://slack.com/oauth/v2/authorize`，scope 为 `ManagedSlackBotScopes`（`app_mentions:read,channels:history,chat:write,commands,files:read,groups:history,im:history,mpim:history,reactions:write,users:read`）。没有托管客户端凭据时，交换会明确报错，不会半截运行。
 
-自托管部署只走 BYO，不需要配置任何 OAuth 回调：Go 服务里虽有托管 begin/callback 路由，但在没有托管客户端凭据（`PATCHBAY_SLACK_CLIENT_ID/_SECRET`）时保持惰性；BYO 安装本身不做任何 OAuth code 交换。自托管安装不要在 app manifest 里加 Slack redirect URL，Socket Mode 不需要它。
+自托管部署只走 BYO，不需要配置任何 OAuth 回调：Go 服务里虽有托管 begin/callback 路由，但在没有托管客户端凭据（`ORVILO_SLACK_CLIENT_ID/_SECRET`）时保持惰性；BYO 安装本身不做任何 OAuth code 交换。自托管安装不要在 app manifest 里加 Slack redirect URL，Socket Mode 不需要它。
 
 ## 3. localhost 绑定警告
 
@@ -55,17 +55,17 @@ Docker Compose 把 `3000` 和 `8080` 只绑定在 `127.0.0.1` 上。不要把绑
 
 消息链接能否正常工作，取决于两个 URL 设置：
 
-- 账号绑定链接使用 `PATCHBAY_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`，绝不是 `PATCHBAY_PUBLIC_URL`（后端/API 地址）。它必须指向所有成员都能访问的 Patchbay 地址，不能是 loopback 地址。
+- 账号绑定链接使用 `ORVILO_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`，绝不是 `ORVILO_PUBLIC_URL`（后端/API 地址）。它必须指向所有成员都能访问的 Patchbay 地址，不能是 loopback 地址。
 - 自托管部署必须把 `FRONTEND_ORIGIN` 设为公网应用地址；邀请链接、cookie 属性、WebSocket 来源校验都从它推导。
 
-如果绑定链接或 `/api/config` 的 `daemon_server_url` 仍然是 `localhost` 地址，说明 `.env` 还留着本地默认值：把 `FRONTEND_ORIGIN` 和 `PATCHBAY_APP_URL` 显式改成公网地址，然后用 `docker compose -f docker-compose.selfhost.yml up -d` 重建容器（只 `restart` 不会重读 `.env`）。
+如果绑定链接或 `/api/config` 的 `daemon_server_url` 仍然是 `localhost` 地址，说明 `.env` 还留着本地默认值：把 `FRONTEND_ORIGIN` 和 `ORVILO_APP_URL` 显式改成公网地址，然后用 `docker compose -f docker-compose.selfhost.yml up -d` 重建容器（只 `restart` 不会重读 `.env`）。
 
 ## 4. 凭据处理
 
-- `PATCHBAY_SLACK_SECRET_KEY` 是 Slack 唯一的部署级密钥，为 base64 编码的 32 字节：
+- `ORVILO_SLACK_SECRET_KEY` 是 Slack 唯一的部署级密钥，为 base64 编码的 32 字节：
 
   ```dotenv
-  PATCHBAY_SLACK_SECRET_KEY=<base64 编码的 32 字节密钥>
+  ORVILO_SLACK_SECRET_KEY=<base64 编码的 32 字节密钥>
   ```
 
   ```bash

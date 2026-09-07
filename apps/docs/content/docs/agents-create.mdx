@@ -20,8 +20,6 @@ The creation page offers two options:
 
 Build with AI needs an online runtime for the Builder conversation. Either way, you can review and edit the final configuration before creating.
 
-![Agent creation starting points: Start blank and Build with AI](/images/docs/quickstart-new-agent.webp)
-
 ## Required fields
 
 Creating an agent requires only two things:
@@ -91,8 +89,6 @@ Access decides which members can run this agent (assign, @-mention, or chat):
 | **Entire workspace** | Every workspace member can run it. |
 | **Specific people** | Only you and the selected members can run it. |
 
-![Access settings: Only me, Entire workspace, Specific people](/images/docs/agent-access-settings.webp)
-
 Only the agent owner can change Access — workspace admins cannot. Workspace `owner`s and `admin`s can manage the rest of the configuration, but cannot use their admin role to run agents they aren't granted.
 
 ## Configuration after creation
@@ -121,7 +117,7 @@ Environment variables suit limited-privilege credentials the agent needs at run 
 
 Do not use production database admin passwords or other high-value long-lived credentials.
 
-Critical runtime variables such as `PATH`, `HOME`, and `PATCHBAY_*` cannot be overridden here.
+Critical runtime variables such as `PATH`, `HOME`, and `ORVILO_*` cannot be overridden here.
 
 ## Custom arguments and MCP
 

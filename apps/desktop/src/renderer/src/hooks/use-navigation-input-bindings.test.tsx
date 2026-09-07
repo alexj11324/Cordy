@@ -21,7 +21,6 @@ function seedHistory() {
             url: "/acme/issues/abc",
             resourceKey: "/acme/issues/abc",
             title: "",
-            pinned: false,
             history: {
               stack: ["/acme/issues", "/acme/issues/abc"],
               index: 1,

@@ -9,6 +9,26 @@ export {
   cronPreviewOptions,
 } from "./queries";
 export {
+  AUTOMATION_TRIGGER_PRESETS,
+  AUTOMATION_TRIGGER_SOURCES,
+  automationTriggerPreset,
+  isNativeAutomationProvider,
+  parseAutomationTools,
+  parseAutomationTriggerConfig,
+  presetsForSource,
+  searchTriggerCatalog,
+  settingsPathForTriggerProvider,
+} from "./trigger-catalog";
+export type {
+  AutomationToolId,
+  AutomationToolsConfig,
+  AutomationTriggerConfig,
+  AutomationTriggerPreset,
+  AutomationTriggerProvider,
+  AutomationTriggerSource,
+  AutomationTriggerSourceId,
+} from "./trigger-catalog";
+export {
   useCreateAutomation,
   useUpdateAutomation,
   useDeleteAutomation,
@@ -20,3 +40,12 @@ export {
   useReplayAutomationDelivery,
 } from "./mutations";
 export { buildAutomationWebhookUrl, maskAutomationWebhookUrl } from "./webhook";
+export {
+  automationMemoryKeys,
+  automationMemoryListOptions,
+  automationMemoryOptions,
+} from "./memory-queries";
+export {
+  useUpdateAutomationMemory,
+  useDeleteAutomationMemory,
+} from "./memory-mutations";

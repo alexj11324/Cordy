@@ -1947,17 +1947,17 @@ func TestPruneWorktreePreemptionCleansLocksBeforeTaskStarts(t *testing.T) {
 	script := `#!/bin/sh
 if [ "$3" = "reflog" ] && [ "$4" = "expire" ]; then
   : > "$2/refs/remotes/origin/main.lock"
-  : > "$PATCHBAY_TEST_MAINTENANCE_STARTED"
+  : > "$ORVILO_TEST_MAINTENANCE_STARTED"
   trap 'exit 143' TERM INT
   while :; do sleep 1; done
 fi
-exec "$PATCHBAY_TEST_REAL_GIT" "$@"
+exec "$ORVILO_TEST_REAL_GIT" "$@"
 `
 	if err := os.WriteFile(fakeGit, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("PATCHBAY_TEST_REAL_GIT", realGit)
-	t.Setenv("PATCHBAY_TEST_MAINTENANCE_STARTED", startedPath)
+	t.Setenv("ORVILO_TEST_REAL_GIT", realGit)
+	t.Setenv("ORVILO_TEST_MAINTENANCE_STARTED", startedPath)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	pruneDone := make(chan struct{})

@@ -335,17 +335,17 @@ func runRepoRemove(cmd *cobra.Command, args []string) error {
 func runRepoCheckout(cmd *cobra.Command, args []string) error {
 	repoURL := args[0]
 
-	daemonPort := os.Getenv("PATCHBAY_DAEMON_PORT")
+	daemonPort := os.Getenv("ORVILO_DAEMON_PORT")
 	if daemonPort == "" {
-		return fmt.Errorf("PATCHBAY_DAEMON_PORT not set (this command is intended to be run by an agent inside a daemon task)")
+		return fmt.Errorf("ORVILO_DAEMON_PORT not set (this command is intended to be run by an agent inside a daemon task)")
 	}
 
-	workspaceID := os.Getenv("PATCHBAY_WORKSPACE_ID")
-	agentName := os.Getenv("PATCHBAY_AGENT_NAME")
-	taskID := os.Getenv("PATCHBAY_TASK_ID")
-	taskToken := os.Getenv("PATCHBAY_TOKEN")
+	workspaceID := os.Getenv("ORVILO_WORKSPACE_ID")
+	agentName := os.Getenv("ORVILO_AGENT_NAME")
+	taskID := os.Getenv("ORVILO_TASK_ID")
+	taskToken := os.Getenv("ORVILO_TOKEN")
 	if taskToken == "" {
-		return fmt.Errorf("PATCHBAY_TOKEN not set (repo checkout requires the active task credential)")
+		return fmt.Errorf("ORVILO_TOKEN not set (repo checkout requires the active task credential)")
 	}
 
 	// Use current working directory as the checkout target.
@@ -361,7 +361,7 @@ func runRepoCheckout(cmd *cobra.Command, args []string) error {
 		"ref":           repoCheckoutRef,
 		"agent_name":    agentName,
 		"task_id":       taskID,
-		"checkout_mode": strings.TrimSpace(os.Getenv("PATCHBAY_REPO_CHECKOUT_MODE")),
+		"checkout_mode": strings.TrimSpace(os.Getenv("ORVILO_REPO_CHECKOUT_MODE")),
 		"retry_busy":    true,
 	}
 

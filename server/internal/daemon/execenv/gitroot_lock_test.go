@@ -25,9 +25,9 @@ func TestGitRootLockHolderProcess(t *testing.T) {
 	if len(os.Args) == 0 || os.Args[len(os.Args)-1] != gitRootLockHolderMode {
 		return
 	}
-	repo := os.Getenv("PATCHBAY_TEST_LOCK_REPO")
-	readyPath := os.Getenv("PATCHBAY_TEST_LOCK_READY")
-	releasePath := os.Getenv("PATCHBAY_TEST_LOCK_RELEASE")
+	repo := os.Getenv("ORVILO_TEST_LOCK_REPO")
+	readyPath := os.Getenv("ORVILO_TEST_LOCK_READY")
+	releasePath := os.Getenv("ORVILO_TEST_LOCK_RELEASE")
 
 	unlock, err := lockGitRoot(repo, worktreeTestLogger())
 	if err != nil {
@@ -76,9 +76,9 @@ func startLockHolder(t *testing.T, repo string) (release func()) {
 
 	child := exec.Command(os.Args[0], "-test.run=^TestGitRootLockHolderProcess$", "--", gitRootLockHolderMode)
 	child.Env = append(os.Environ(),
-		"PATCHBAY_TEST_LOCK_REPO="+repo,
-		"PATCHBAY_TEST_LOCK_READY="+readyPath,
-		"PATCHBAY_TEST_LOCK_RELEASE="+releasePath,
+		"ORVILO_TEST_LOCK_REPO="+repo,
+		"ORVILO_TEST_LOCK_READY="+readyPath,
+		"ORVILO_TEST_LOCK_RELEASE="+releasePath,
 	)
 	if err := child.Start(); err != nil {
 		t.Fatalf("start lock holder: %v", err)

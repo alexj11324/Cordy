@@ -47,7 +47,7 @@ func TestCreateWorkspaceGuestLimitSerializesConcurrentRequests(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
-	t.Setenv("PATCHBAY_APP_URL", "")
+	t.Setenv("ORVILO_APP_URL", "")
 	t.Setenv("FRONTEND_ORIGIN", "")
 	ctx := context.Background()
 	userID := uuid.New()
@@ -96,7 +96,7 @@ func TestCreateWorkspaceHostedLimitSerializesConcurrentOwnership(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
-	t.Setenv("PATCHBAY_APP_URL", "https://patchbay.aspectlylabs.com")
+	t.Setenv("ORVILO_APP_URL", "https://patchbay.aspectlylabs.com")
 	ctx := context.Background()
 	userID := uuid.New()
 	sourceWorkspaceID := uuid.New()
@@ -162,7 +162,7 @@ func TestUpdateMemberHostedLimitBlocksOwnerPromotion(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
-	t.Setenv("PATCHBAY_APP_URL", "https://patchbay.aspectlylabs.com")
+	t.Setenv("ORVILO_APP_URL", "https://patchbay.aspectlylabs.com")
 	ctx := context.Background()
 	targetUserID := uuid.New()
 	sourceOne := uuid.New()

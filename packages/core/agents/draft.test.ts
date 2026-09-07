@@ -189,6 +189,22 @@ describe("agent draft execution overrides", () => {
     );
   });
 
+  it("omits description, instructions, and skill_ids from the create request", () => {
+    const request = buildCreateAgentRequest({
+      draft: {
+        ...draft(),
+        description: "Should not be sent",
+        instructions: "Should not be sent",
+        skillIds: new Set(["skill-1"]),
+      },
+      runtimeId: "runtime-1",
+    });
+
+    expect(request).not.toHaveProperty("description");
+    expect(request).not.toHaveProperty("instructions");
+    expect(request).not.toHaveProperty("skill_ids");
+  });
+
   it("carries the runtime-independent duplicate config", () => {
     const request = buildCreateAgentRequest({
       draft: { ...draft(), thinkingLevel: "high", serviceTier: "priority" },
@@ -264,8 +280,10 @@ describe("agent draft execution overrides", () => {
       model: "gpt-5.6-sol",
       thinkingLevel: "high",
       serviceTier: "priority",
+      description: "",
+      instructions: "",
     });
-    expect([...duplicate.skillIds]).toEqual(["skill-1"]);
+    expect([...duplicate.skillIds]).toEqual([]);
   });
 
   it("drops the execution config when the duplicate falls back to another runtime", () => {

@@ -856,7 +856,9 @@ export function useRealtimeSync(
       },
       github_installation: () => {
         const wsId = getCurrentWsId();
-        if (wsId) qc.invalidateQueries({ queryKey: githubKeys.installations(wsId) });
+        // Installation changes also change the repository choices available
+        // to automation triggers, so invalidate the whole provider namespace.
+        if (wsId) qc.invalidateQueries({ queryKey: githubKeys.all(wsId) });
       },
       lark_installation: () => {
         const wsId = getCurrentWsId();
@@ -864,7 +866,8 @@ export function useRealtimeSync(
       },
       slack_installation: () => {
         const wsId = getCurrentWsId();
-        if (wsId) qc.invalidateQueries({ queryKey: slackKeys.installations(wsId) });
+        // A newly connected bot contributes a new public-channel catalog.
+        if (wsId) qc.invalidateQueries({ queryKey: slackKeys.all(wsId) });
       },
       dingtalk_installation: () => {
         const wsId = getCurrentWsId();

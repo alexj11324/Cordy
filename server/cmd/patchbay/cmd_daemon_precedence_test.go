@@ -16,7 +16,7 @@ import (
 // value itself via envOrDefault, so when only env is set we return "" —
 // the "don't touch, let the runtime read it" signal.
 func TestResolveDaemonStringOverridePrecedence(t *testing.T) {
-	const envName = "TEST_PATCHBAY_STR_OVERRIDE"
+	const envName = "TEST_ORVILO_STR_OVERRIDE"
 
 	cases := []struct {
 		name string
@@ -57,7 +57,7 @@ func TestResolveDaemonWorkspacesRootPrecedence(t *testing.T) {
 	if err := cli.SaveCLIConfigForProfile(cli.CLIConfig{WorkspacesRoot: configRoot}, "dev"); err != nil {
 		t.Fatalf("SaveCLIConfigForProfile: %v", err)
 	}
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", envRoot)
+	t.Setenv("ORVILO_WORKSPACES_ROOT", envRoot)
 
 	got, err := resolveWorkspacesRootForProfile("dev", flagRoot)
 	if err != nil {
@@ -75,7 +75,7 @@ func TestResolveDaemonWorkspacesRootPrecedence(t *testing.T) {
 		t.Fatalf("env root = %q, want %q", got, envRoot)
 	}
 
-	t.Setenv("PATCHBAY_WORKSPACES_ROOT", "")
+	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
 	got, err = resolveWorkspacesRootForProfile("dev", "")
 	if err != nil {
 		t.Fatalf("resolve config root: %v", err)
@@ -101,7 +101,7 @@ func TestResolveDaemonWorkspacesRootPrecedence(t *testing.T) {
 // flag>0 wins, env suppresses cfg, cfg parsed on demand, invalid cfg
 // surfaces as an error so the daemon doesn't silently fall back.
 func TestResolveDaemonDurationOverridePrecedence(t *testing.T) {
-	const envName = "TEST_PATCHBAY_DUR_OVERRIDE"
+	const envName = "TEST_ORVILO_DUR_OVERRIDE"
 
 	cases := []struct {
 		name   string
@@ -151,7 +151,7 @@ func TestResolveDaemonDurationOverridePrecedence(t *testing.T) {
 // but with the int knob (max_concurrent_tasks). flag>0 wins; env
 // non-empty suppresses cfg; cfg>0 wins only when both are absent.
 func TestResolveDaemonIntOverridePrecedence(t *testing.T) {
-	const envName = "TEST_PATCHBAY_INT_OVERRIDE"
+	const envName = "TEST_ORVILO_INT_OVERRIDE"
 
 	cases := []struct {
 		name string
@@ -187,7 +187,7 @@ func TestResolveDaemonIntOverridePrecedence(t *testing.T) {
 // (nil); cfg pointer is only consulted when both flag and env are silent,
 // and "0s" there is a legitimate persisted "disable the cap" sentinel.
 func TestResolveDaemonAgentTimeoutOverridePrecedence(t *testing.T) {
-	const envName = "TEST_PATCHBAY_AGENT_TIMEOUT"
+	const envName = "TEST_ORVILO_AGENT_TIMEOUT"
 	strPtr := func(s string) *string { return &s }
 
 	newCmd := func(changed bool, flagVal time.Duration) *cobra.Command {
@@ -263,7 +263,7 @@ func TestResolveDaemonAgentTimeoutOverridePrecedence(t *testing.T) {
 // LoadConfig honors the raw env; missing signals return false so the default
 // wins.
 func TestResolveDaemonDisableSignalPrecedence(t *testing.T) {
-	const envName = "TEST_PATCHBAY_DAEMON_AUTO_UPDATE"
+	const envName = "TEST_ORVILO_DAEMON_AUTO_UPDATE"
 
 	cases := []struct {
 		name string

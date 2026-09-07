@@ -84,13 +84,13 @@ type Config struct {
 	DisableWorkspaceCreation bool
 	// VCSIntegrationEnabled gates the self-hosted Git provider integration
 	// (Forgejo / Gitea / GitLab) at the deployment level, independent of whether
-	// PATCHBAY_VCS_SECRET_KEY is set. It is the product boundary: the feature is
+	// ORVILO_VCS_SECRET_KEY is set. It is the product boundary: the feature is
 	// intended for self-hosted Patchbay only (where Patchbay and the Git instance
 	// can share a network), and is left off on the managed cloud — connect,
 	// rotate, and webhook handlers reject when it is false, and /api/config
 	// omits it so the UI hides the whole section rather than showing a
 	// "missing key" message a cloud user cannot act on. Populated from
-	// PATCHBAY_VCS_INTEGRATION_ENABLED; the self-host compose defaults it on.
+	// ORVILO_VCS_INTEGRATION_ENABLED; the self-host compose defaults it on.
 	VCSIntegrationEnabled bool
 	// PublicURL is the absolute base URL the API is reachable at from the
 	// public internet, with no trailing slash (e.g. "https://patchbay.aspectlylabs.com").
@@ -104,13 +104,13 @@ type Config struct {
 	// host.
 	PublicURL string
 	// AppURL is the browser application's canonical origin, resolved from
-	// PATCHBAY_APP_URL (falling back to FRONTEND_ORIGIN). It is kept separate
+	// ORVILO_APP_URL (falling back to FRONTEND_ORIGIN). It is kept separate
 	// from PublicURL because split app/API deployments use different origins.
 	AppURL string
 	// TrustedProxies are CIDRs whose source IP we trust to set
 	// X-Forwarded-For / X-Real-IP. Empty means "trust nothing": the rate
 	// limiter uses r.RemoteAddr exclusively. Populated via the
-	// PATCHBAY_TRUSTED_PROXIES env var (comma-separated CIDRs, e.g.
+	// ORVILO_TRUSTED_PROXIES env var (comma-separated CIDRs, e.g.
 	// "10.0.0.0/8,127.0.0.1/32"). This is specifically to keep the per-IP
 	// webhook limiter from being bypassed by a spoofed XFF on deployments
 	// without a header-stripping reverse proxy in front.
@@ -137,14 +137,14 @@ type Config struct {
 	// MUL-4309; LLM access is internal-only now. When both LLMAPIKey and
 	// LLMBaseURL are empty the layer is disabled and callers fall back
 	// silently (see maybeGenerateChatTitleAsync).
-	//   - LLMAPIKey       -> PATCHBAY_LLM_API_KEY
-	//   - LLMBaseURL       -> PATCHBAY_LLM_BASE_URL (OpenAI or any compatible gateway)
-	//   - LLMDefaultModel  -> PATCHBAY_LLM_DEFAULT_MODEL (used when a request omits `model`)
-	//   - LLMMaxRetries    -> PATCHBAY_LLM_MAX_RETRIES (transport retry budget)
+	//   - LLMAPIKey       -> ORVILO_LLM_API_KEY
+	//   - LLMBaseURL       -> ORVILO_LLM_BASE_URL (OpenAI or any compatible gateway)
+	//   - LLMDefaultModel  -> ORVILO_LLM_DEFAULT_MODEL (used when a request omits `model`)
+	//   - LLMMaxRetries    -> ORVILO_LLM_MAX_RETRIES (transport retry budget)
 	LLMAPIKey       string
 	LLMBaseURL      string
 	LLMDefaultModel string
-	// LLMMaxRetries is the parsed PATCHBAY_LLM_MAX_RETRIES budget. nil means
+	// LLMMaxRetries is the parsed ORVILO_LLM_MAX_RETRIES budget. nil means
 	// unset (llm.DefaultMaxRetries applies); llm.Retries(0) disables retries.
 	// The type carries the validation: it can only be built through llm.Retries,
 	// and cmd/server additionally fails the boot on an out-of-range value before
@@ -260,7 +260,7 @@ type Handler struct {
 	WebhookDeliveryWorker        *WebhookDeliveryWorker
 	CloudRuntime                 cloudRuntimeProxy
 	// Lark integration. All three are nil when the Lark master key
-	// (PATCHBAY_LARK_SECRET_KEY) is unset; the corresponding HTTP
+	// (ORVILO_LARK_SECRET_KEY) is unset; the corresponding HTTP
 	// handlers return 503 in that case so a misconfigured self-host
 	// deployment surfaces a clear error instead of silently using a
 	// zero key. Wired in cmd/server/router.go after handler.New.
@@ -276,7 +276,7 @@ type Handler struct {
 	// LarkAPIClient is the live transport that backs SendInteractiveCard,
 	// PatchInteractiveCard, SendBindingPromptCard, GetBotInfo. The
 	// router wires the real Lark HTTP client whenever
-	// PATCHBAY_LARK_SECRET_KEY is set; tests that need a no-op
+	// ORVILO_LARK_SECRET_KEY is set; tests that need a no-op
 	// behaviour can swap in `lark.NewStubAPIClient(...)` directly. The
 	// UI consults IsConfigured() to decide whether to surface install
 	// entry points.
@@ -292,7 +292,7 @@ type Handler struct {
 	// drives any channel type, not just Feishu. It remains nil when lease
 	// configuration is unsafe or a selected Redis backend fails its startup
 	// readiness check; each platform registers its Factory only when configured
-	// (Feishu when PATCHBAY_LARK_SECRET_KEY is set). The router does NOT
+	// (Feishu when ORVILO_LARK_SECRET_KEY is set). The router does NOT
 	// call Run; the process owner (main.go) starts it under a long-running
 	// context and joins via WaitWithTimeout (bounded, fenced by
 	// ShutdownTimeout) during graceful shutdown so the lease renewer yields
@@ -312,17 +312,17 @@ type Handler struct {
 	ChannelMediaReconciler *service.ChannelMediaReconciler
 	// SlackInstall owns the bring-your-own-app Slack install lifecycle (register
 	// pasted tokens / list / revoke) and the at-rest encryption of each app's bot
-	// + app tokens (MUL-3666). Nil unless PATCHBAY_SLACK_SECRET_KEY is set.
+	// + app tokens (MUL-3666). Nil unless ORVILO_SLACK_SECRET_KEY is set.
 	SlackInstall *slack.InstallService
 	// SlackBindingTokens mints/redeems the user-binding tokens behind the
 	// "link your Slack account" prompt (MUL-3666). Nil unless Slack is
-	// configured (PATCHBAY_SLACK_SECRET_KEY set).
+	// configured (ORVILO_SLACK_SECRET_KEY set).
 	SlackBindingTokens *slack.BindingTokenService
 	// ManagedSlack owns the hosted Slack OAuth flow (begin/callback): minting
 	// single-use state tokens and exchanging callback codes for bot tokens.
-	// Nil unless PATCHBAY_SLACK_SECRET_KEY is set; the handlers return 503 in
+	// Nil unless ORVILO_SLACK_SECRET_KEY is set; the handlers return 503 in
 	// that case. The OAuth client credentials come from
-	// PATCHBAY_SLACK_CLIENT_ID/_SECRET — when those are empty the begin
+	// ORVILO_SLACK_CLIENT_ID/_SECRET — when those are empty the begin
 	// handler still mints state but refuses the authorize URL with 503, so a
 	// deployment without a hosted app fails loudly instead of half-working.
 	// Wired in cmd/server/router.go after handler.New.
@@ -332,11 +332,11 @@ type Handler struct {
 	ManagedSlackTokens *slack.ManagedTokenWorker
 	// ManagedSlackWebhook serves the deployment-wide managed Events API
 	// webhook (POST /api/integrations/slack/events). Nil unless
-	// PATCHBAY_SLACK_SECRET_KEY is set; the route 503s without a signing
-	// secret (PATCHBAY_SLACK_SIGNING_SECRET). Wired in cmd/server/router.go.
+	// ORVILO_SLACK_SECRET_KEY is set; the route 503s without a signing
+	// secret (ORVILO_SLACK_SIGNING_SECRET). Wired in cmd/server/router.go.
 	ManagedSlackWebhook *slack.ManagedWebhook
 	// DingTalkInstall owns the bring-your-own-app DingTalk lifecycle. It is nil
-	// unless PATCHBAY_DINGTALK_SECRET_KEY is configured.
+	// unless ORVILO_DINGTALK_SECRET_KEY is configured.
 	DingTalkInstall *dingtalk.InstallService
 	// DingTalkBindingTokens mints and redeems the single-use account-link tokens.
 	DingTalkBindingTokens *dingtalk.BindingTokenService
@@ -367,7 +367,7 @@ type Handler struct {
 
 	// TelegramInstall owns the Telegram bot install lifecycle (register a
 	// pasted BotFather token / list / revoke) and the at-rest encryption of
-	// each bot's token. Nil unless PATCHBAY_TELEGRAM_SECRET_KEY is set.
+	// each bot's token. Nil unless ORVILO_TELEGRAM_SECRET_KEY is set.
 	TelegramInstall *telegram.InstallService
 	// TelegramBindingTokens mints/redeems the user-binding tokens behind the
 	// "link your Telegram account" prompt. Nil unless Telegram is configured.
@@ -408,7 +408,7 @@ type Handler struct {
 	LLM *llm.Client
 	// VCSSecretBox encrypts/decrypts per-workspace Git provider access tokens and
 	// webhook secrets at rest (Forgejo / Gitea / GitLab). Nil when
-	// PATCHBAY_VCS_SECRET_KEY is unset; the connect/webhook handlers return 503
+	// ORVILO_VCS_SECRET_KEY is unset; the connect/webhook handlers return 503
 	// in that case so a misconfigured self-host deployment surfaces a clear
 	// error rather than silently storing plaintext. Wired in
 	// cmd/server/router.go after New.
@@ -424,7 +424,7 @@ type Handler struct {
 	LinearPushEnabled   bool
 	LinearWorker        *LinearWorker
 	// PluginSurfaceTokens seal short-lived launch claims. Nil disables surface
-	// launches; wired from a domain-separated PATCHBAY_PLUGIN_SECRET_KEY at boot.
+	// launches; wired from a domain-separated ORVILO_PLUGIN_SECRET_KEY at boot.
 	PluginSurfaceTokens *secretbox.Box
 	// PRRefresh drives the GitHub API snapshot pipeline for PR cards (MUL-5265):
 	// webhook / page-visit / TTL triggers → authenticated GraphQL fetch →
@@ -495,7 +495,7 @@ func New(queries *db.Queries, txStarter txStarter, hub *realtime.Hub, bus *event
 	taskSvc.Analytics = analyticsClient
 	taskSvc.SourceContextStorage = store
 	// Chat follow-up suggestions run through the same internal LLM layer that
-	// backs auto-titling. A deployment with no PATCHBAY_LLM_* configuration gets
+	// backs auto-titling. A deployment with no ORVILO_LLM_* configuration gets
 	// a disabled client, which turns the feature off rather than failing.
 	taskSvc.QuickActions = llmClient
 	coordinationSvc := service.NewAgentCoordinationService(queries, txStarter, taskSvc)

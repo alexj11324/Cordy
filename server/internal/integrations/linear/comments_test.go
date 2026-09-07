@@ -82,3 +82,29 @@ func TestListCommentsRejectsStalledCursor(t *testing.T) {
 		t.Fatalf("calls=%d err=%v", calls, err)
 	}
 }
+
+func TestListCommentsUsesStringIdentifierVariable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(request.Query, "query($issue: String!") {
+			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []any{map[string]any{
+				"message": `Variable "$issue" of type "ID!" used in position expecting type "String!".`,
+			}}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{
+			"comments": map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false}},
+		}})
+	}))
+	defer server.Close()
+	client := NewHTTPClient(server.Client())
+	client.GraphQLURL = server.URL
+	if comments, err := client.ListComments(context.Background(), "fixture-token", "issue-1"); err != nil || len(comments) != 0 {
+		t.Fatalf("comments=%v err=%v", comments, err)
+	}
+}

@@ -13,22 +13,22 @@ POSTGRES_USER ?= patchbay
 POSTGRES_PASSWORD ?= patchbay
 POSTGRES_PORT ?= 5432
 PORT := $(or $(BACKEND_PORT),$(API_PORT),$(SERVER_PORT),$(PORT),8080)
-ifeq ($(origin PATCHBAY_PUBLIC_URL), undefined)
-PATCHBAY_PUBLIC_URL := http://localhost:$(PORT)
+ifeq ($(origin ORVILO_PUBLIC_URL), undefined)
+ORVILO_PUBLIC_URL := http://localhost:$(PORT)
 endif
 FRONTEND_PORT ?= 3000
 FRONTEND_ORIGIN ?= http://localhost:$(FRONTEND_PORT)
-PATCHBAY_APP_URL ?= $(FRONTEND_ORIGIN)
+ORVILO_APP_URL ?= $(FRONTEND_ORIGIN)
 DATABASE_URL ?= postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable
 NEXT_PUBLIC_API_URL ?= http://localhost:$(PORT)
 NEXT_PUBLIC_WS_URL ?= ws://localhost:$(PORT)/ws
 GOOGLE_REDIRECT_URI ?= $(FRONTEND_ORIGIN)/auth/callback
-PATCHBAY_SERVER_URL ?= ws://localhost:$(PORT)/ws
+ORVILO_SERVER_URL ?= ws://localhost:$(PORT)/ws
 LOCAL_UPLOAD_BASE_URL ?= http://localhost:$(PORT)
 
 export
 
-PATCHBAY_ARGS ?= $(ARGS)
+ORVILO_ARGS ?= $(ARGS)
 
 COMPOSE := docker compose
 
@@ -91,19 +91,19 @@ selfhost: ## Create .env if needed, then pull and start the official self-hosted
 			sed -i '' "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
 			sed -i '' "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i '' -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i '' "s#^PATCHBAY_VCS_SECRET_KEY=.*#PATCHBAY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i '' "s#^ORVILO_VCS_SECRET_KEY=.*#ORVILO_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		else \
 			sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
 			sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i "s#^PATCHBAY_VCS_SECRET_KEY=.*#PATCHBAY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i "s#^ORVILO_VCS_SECRET_KEY=.*#ORVILO_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		fi; \
-		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and PATCHBAY_VCS_SECRET_KEY"; \
+		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and ORVILO_VCS_SECRET_KEY"; \
 	fi
 	@echo "==> Pulling official Patchbay images..."
 	@if ! $(COMPOSE) -f docker-compose.selfhost.yml pull; then \
 		echo ""; \
-		echo "Official images for tag '$${PATCHBAY_IMAGE_TAG:-latest}' are not published yet."; \
+		echo "Official images for tag '$${ORVILO_IMAGE_TAG:-latest}' are not published yet."; \
 		echo "If this is before the first GHCR release, build from the current checkout:"; \
 		echo "  make selfhost-build"; \
 		exit 1; \
@@ -124,14 +124,14 @@ selfhost-build: ## Build backend/web from the current checkout and start the sel
 			sed -i '' "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
 			sed -i '' "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i '' -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i '' "s#^PATCHBAY_VCS_SECRET_KEY=.*#PATCHBAY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i '' "s#^ORVILO_VCS_SECRET_KEY=.*#ORVILO_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		else \
 			sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
 			sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i "s#^PATCHBAY_VCS_SECRET_KEY=.*#PATCHBAY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i "s#^ORVILO_VCS_SECRET_KEY=.*#ORVILO_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		fi; \
-		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and PATCHBAY_VCS_SECRET_KEY"; \
+		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and ORVILO_VCS_SECRET_KEY"; \
 	fi
 	@echo "==> Building Patchbay from the current checkout..."
 	$(COMPOSE) -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build
@@ -176,13 +176,13 @@ env-exec: ## Run a command with this environment's variables (ARGS="-- pnpm dev:
 	@bash scripts/dev-env.sh exec $(ARGS)
 
 # Skips the login page entirely: prints a URL that installs the session cookie
-# and lands in the app, plus a bearer token for curl. Needs PATCHBAY_DEV_LOGIN=1
+# and lands in the app, plus a bearer token for curl. Needs ORVILO_DEV_LOGIN=1
 # in the env file, which `make up` writes.
 dev-login: ## Sign in to this environment with no login page (ARGS="--email you@example.com --open")
 	@bash scripts/dev-env.sh login $(ARGS)
 
 seed-dev: ## Add persistent issues and a dependency graph to this checkout's local database
-	@bash scripts/dev-env.sh exec -- env PATCHBAY_ENABLE_DEV_SEED=1 go -C server run ./cmd/dev-seed
+	@bash scripts/dev-env.sh exec -- env ORVILO_ENABLE_DEV_SEED=1 go -C server run ./cmd/dev-seed
 
 # Single-component entry points. No database preflight: `up` has already proven
 # the database is reachable before it launches anything, and repeating the
@@ -322,13 +322,13 @@ server: ## Run only the Go server for the current checkout
 	cd server && go run ./cmd/server
 
 daemon: ## Restart the local agent daemon using the CLI's stored auth/session
-	@$(MAKE) patchbay PATCHBAY_ARGS="daemon restart --profile local"
+	@$(MAKE) patchbay ORVILO_ARGS="daemon restart --profile local"
 
-cli: ## Run the patchbay CLI with ARGS or PATCHBAY_ARGS from source
-	@$(MAKE) patchbay PATCHBAY_ARGS="$(PATCHBAY_ARGS)"
+cli: ## Run the patchbay CLI with ARGS or ORVILO_ARGS from source
+	@$(MAKE) patchbay ORVILO_ARGS="$(ORVILO_ARGS)"
 
 patchbay: ## Run the patchbay CLI entrypoint directly from the Go source tree
-	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/patchbay $(PATCHBAY_ARGS)
+	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/patchbay $(ORVILO_ARGS)
 
 VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)

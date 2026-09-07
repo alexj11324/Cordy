@@ -15,8 +15,8 @@ import (
 //
 // Two things disqualify a marker from the leftover treatment:
 //
-// Any PATCHBAY_* task identity in the environment means the daemon really did
-// launch this process, so the marker is doing its job. PATCHBAY_DAEMON_PORT
+// Any ORVILO_* task identity in the environment means the daemon really did
+// launch this process, so the marker is doing its job. ORVILO_DAEMON_PORT
 // counts here even though it is not sufficient on its own for identity: it
 // still says a daemon environment is present, which is not a leftover's
 // fingerprint.
@@ -26,7 +26,7 @@ import (
 func leftoverDaemonTaskMarkerPath() string {
 	if inAgentExecutionContext() ||
 		strings.TrimSpace(os.Getenv(cli.TaskConfigRootEnv)) != "" ||
-		strings.TrimSpace(os.Getenv("PATCHBAY_DAEMON_PORT")) != "" {
+		strings.TrimSpace(os.Getenv("ORVILO_DAEMON_PORT")) != "" {
 		return ""
 	}
 	markerPath := daemonTaskContextMarkerPath()

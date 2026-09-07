@@ -22,22 +22,25 @@ function expectChineseFontsBeforeKoreanFonts(source: string) {
   }
 }
 
-// Japanese Kanji share the Han Unicode block with Chinese, so the Korean
-// "append after Chinese" tactic would render Japanese with Chinese glyph
-// shapes. The Japanese CJK chain must therefore be (a) gated behind a lang
-// selector so zh/en keep Chinese-first ordering, and (b) ordered Japanese
-// fonts BEFORE the Chinese families inside that scoped stack.
-function expectJapaneseScopedOverride(source: string) {
-  expect(source).toContain('html[lang|="ja"]');
+// The UI ships English and Chinese only, but members still write Japanese into
+// issues and comments, so the stack must keep Japanese coverage. Kana has its
+// own Unicode block and renders natively from these families; shared Han
+// ideographs stay Chinese-first, the same tradeoff already made for Korean.
+// No lang-scoped override survives: <html lang> is only ever en or zh-CN.
+function expectJapaneseFontsAfterChinese(source: string) {
+  expect(source).not.toContain('html[lang|="ja"]');
 
   const japaneseIndexes = japaneseFonts.map((font) => source.indexOf(font));
-  expect(japaneseIndexes).not.toContain(-1);
+  const chineseIndexes = chineseFonts.map((font) => source.indexOf(font));
 
-  const firstJapanese = Math.min(...japaneseIndexes);
-  const lastChinese = Math.max(
-    ...chineseFonts.map((font) => source.lastIndexOf(font)),
-  );
-  expect(firstJapanese).toBeLessThan(lastChinese);
+  expect(japaneseIndexes).not.toContain(-1);
+  expect(chineseIndexes).not.toContain(-1);
+
+  for (const chineseIndex of chineseIndexes) {
+    for (const japaneseIndex of japaneseIndexes) {
+      expect(chineseIndex).toBeLessThan(japaneseIndex);
+    }
+  }
 }
 
 describe("CJK font fallback order", () => {
@@ -50,13 +53,13 @@ describe("CJK font fallback order", () => {
     expectChineseFontsBeforeKoreanFonts(cssSource);
   });
 
-  it("scopes the Japanese-first CJK stack to html[lang|='ja'] (web)", () => {
+  it("keeps Japanese font fallbacks after Chinese (web)", () => {
     const cssSource = readFileSync(
       resolve(repoRoot, "apps/web/app/globals.css"),
       "utf8",
     );
 
-    expectJapaneseScopedOverride(cssSource);
+    expectJapaneseFontsAfterChinese(cssSource);
   });
 
   it("keeps desktop Chinese font fallbacks before Korean font fallbacks", () => {
@@ -68,12 +71,12 @@ describe("CJK font fallback order", () => {
     expectChineseFontsBeforeKoreanFonts(desktopCss);
   });
 
-  it("scopes the Japanese-first CJK stack to html[lang|='ja'] (desktop)", () => {
+  it("keeps Japanese font fallbacks after Chinese (desktop)", () => {
     const desktopCss = readFileSync(
       resolve(repoRoot, "apps/desktop/src/renderer/src/globals.css"),
       "utf8",
     );
 
-    expectJapaneseScopedOverride(desktopCss);
+    expectJapaneseFontsAfterChinese(desktopCss);
   });
 });

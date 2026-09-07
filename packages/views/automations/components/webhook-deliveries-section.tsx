@@ -107,7 +107,7 @@ export function WebhookDeliveriesSection({
   const { t } = useT("automations");
   const wsId = useWorkspaceId();
 
-  const { data: deliveries = [], isLoading } = useQuery(
+  const { data: deliveries = [], isLoading, isError, refetch } = useQuery(
     automationDeliveriesOptions(wsId, automationId, {
       enabled: hasWebhookTrigger,
     }),
@@ -128,6 +128,11 @@ export function WebhookDeliveriesSection({
           {Array.from({ length: 3 }).map((_, i) => (
             <Skeleton key={i} className="h-10 w-full" />
           ))}
+        </div>
+      ) : isError ? (
+        <div className="space-y-3 rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
+          <p role="status">{t(($) => $.deliveries.load_failed)}</p>
+          <Button size="sm" variant="outline" onClick={() => void refetch()}>{t(($) => $.page.retry)}</Button>
         </div>
       ) : deliveries.length === 0 ? (
         <div className="rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">

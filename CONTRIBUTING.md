@@ -33,15 +33,15 @@ expands on those; [Environments](#environments) is the section to read first.
 
 ## Contribution Terms
 
-By submitting a contribution to Patchbay — a pull request, a patch, or any
-other work — you agree to condition 2 of the [Patchbay License](LICENSE):
+By submitting a contribution to Orvilo — a pull request, a patch, or any
+other work — you agree to condition 2 of the [Orvilo License](LICENSE):
 
-- your contribution is submitted under the Patchbay License as a whole (the
+- your contribution is submitted under the Orvilo License as a whole (the
   additional conditions in Part I together with the incorporated Apache
   License 2.0 text in Part II), not under the Apache License 2.0 alone;
 - your contributed code may be used for commercial purposes, including the
   producer's cloud business operations;
-- the producer can adjust the Patchbay License to be more strict or relaxed
+- the producer can adjust the Orvilo License to be more strict or relaxed
   as deemed necessary.
 
 See the [LICENSE](LICENSE) file for the full terms.
@@ -178,7 +178,7 @@ make env-exec ARGS="-- pnpm exec playwright test"
 
 ### Signing in without the login page
 
-`make up` writes `PATCHBAY_DEV_LOGIN=1` into the env file, which makes the
+`make up` writes `ORVILO_DEV_LOGIN=1` into the env file, which makes the
 backend serve `/auth/dev-login`. `make dev-login` uses it and prints:
 
 - a URL that installs the session cookie and lands on this environment's issues
@@ -194,7 +194,7 @@ make dev-login ARGS="--path /dev/inbox"               # land somewhere else
 make dev-login ARGS=--json                            # url + token for a script
 ```
 
-The endpoint exists only when `PATCHBAY_DEV_LOGIN=1` and `APP_ENV` is
+The endpoint exists only when `ORVILO_DEV_LOGIN=1` and `APP_ENV` is
 non-production; a production build does not register the route at all. Add
 `?onboarding=keep` to the URL when you want to test the onboarding flow itself.
 Backends started before this variable was in the env file need one
@@ -514,12 +514,12 @@ bearer token, so the HttpOnly cookie `make dev-login` installs does nothing for 
 session always wins — the seed only fills an empty storage, so it never logs you out of an account
 you are testing with.
 
-If the token could not be minted (a backend started before `PATCHBAY_DEV_LOGIN=1` was in the env
+If the token could not be minted (a backend started before `ORVILO_DEV_LOGIN=1` was in the env
 file), `make up C=desktop` says so and Electron shows the login page; `make down && make up
 C=desktop` fixes it. You can always fall back to `dev@localhost` with code `888888` on that page.
 
 To exercise the onboarding flow itself — which starts from a user who has not completed it — run
-`PATCHBAY_DEV_KEEP_ONBOARDING=1 make up C=desktop`. The browser equivalent is `?onboarding=keep` on
+`ORVILO_DEV_KEEP_ONBOARDING=1 make up C=desktop`. The browser equivalent is `?onboarding=keep` on
 the URL `make dev-login` prints.
 
 ### Isolation Guarantee

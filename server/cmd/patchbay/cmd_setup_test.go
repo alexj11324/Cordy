@@ -144,7 +144,7 @@ func TestDispatchDaemonAfterSetup(t *testing.T) {
 }
 
 // TestResolveSelfHostServerURL covers GitHub #3912: `setup self-host` must
-// honor PATCHBAY_SERVER_URL when --server-url is not passed, instead of always
+// honor ORVILO_SERVER_URL when --server-url is not passed, instead of always
 // defaulting to localhost (which left self-hosters stuck on an "unreachable"
 // error). The flag still wins over the env var.
 func TestResolveSelfHostServerURL(t *testing.T) {
@@ -156,7 +156,7 @@ func TestResolveSelfHostServerURL(t *testing.T) {
 	}
 
 	t.Run("env var honored when flag absent", func(t *testing.T) {
-		t.Setenv("PATCHBAY_SERVER_URL", "https://api.internal.co")
+		t.Setenv("ORVILO_SERVER_URL", "https://api.internal.co")
 		serverURL, userProvided := resolveSelfHostServerURL(newCmd(), cli.CLIConfig{})
 		if serverURL != "https://api.internal.co" {
 			t.Fatalf("server_url: want env value, got %q", serverURL)
@@ -167,7 +167,7 @@ func TestResolveSelfHostServerURL(t *testing.T) {
 	})
 
 	t.Run("flag wins over env", func(t *testing.T) {
-		t.Setenv("PATCHBAY_SERVER_URL", "https://env.example")
+		t.Setenv("ORVILO_SERVER_URL", "https://env.example")
 		cmd := newCmd()
 		if err := cmd.Flags().Set("server-url", "https://flag.example"); err != nil {
 			t.Fatalf("set flag: %v", err)
@@ -182,7 +182,7 @@ func TestResolveSelfHostServerURL(t *testing.T) {
 	})
 
 	t.Run("falls back to localhost with --port when neither set", func(t *testing.T) {
-		t.Setenv("PATCHBAY_SERVER_URL", "")
+		t.Setenv("ORVILO_SERVER_URL", "")
 		cmd := newCmd()
 		if err := cmd.Flags().Set("port", "9090"); err != nil {
 			t.Fatalf("set flag: %v", err)
@@ -199,7 +199,7 @@ func TestResolveSelfHostServerURL(t *testing.T) {
 	// Re-running `setup self-host` after `config set` (or an earlier setup)
 	// must keep the configured remote server instead of probing localhost.
 	t.Run("falls back to existing config server_url when no flag, env, or --port", func(t *testing.T) {
-		t.Setenv("PATCHBAY_SERVER_URL", "")
+		t.Setenv("ORVILO_SERVER_URL", "")
 		existing := cli.CLIConfig{ServerURL: "https://api.example.com"}
 		serverURL, userProvided := resolveSelfHostServerURL(newCmd(), existing)
 		if serverURL != "https://api.example.com" {
@@ -211,7 +211,7 @@ func TestResolveSelfHostServerURL(t *testing.T) {
 	})
 
 	t.Run("explicit --port overrides existing config server_url", func(t *testing.T) {
-		t.Setenv("PATCHBAY_SERVER_URL", "")
+		t.Setenv("ORVILO_SERVER_URL", "")
 		existing := cli.CLIConfig{ServerURL: "https://api.internal.co"}
 		cmd := newCmd()
 		if err := cmd.Flags().Set("port", "9090"); err != nil {
@@ -227,7 +227,7 @@ func TestResolveSelfHostServerURL(t *testing.T) {
 	})
 
 	t.Run("flag wins over existing config", func(t *testing.T) {
-		t.Setenv("PATCHBAY_SERVER_URL", "")
+		t.Setenv("ORVILO_SERVER_URL", "")
 		existing := cli.CLIConfig{ServerURL: "https://config.example"}
 		cmd := newCmd()
 		if err := cmd.Flags().Set("server-url", "https://flag.example"); err != nil {
@@ -244,7 +244,7 @@ func TestResolveSelfHostServerURL(t *testing.T) {
 	// http(s) base — otherwise the probe hits the raw wss:// value and reports
 	// the server as unreachable.
 	t.Run("normalizes ws:// daemon form from existing config", func(t *testing.T) {
-		t.Setenv("PATCHBAY_SERVER_URL", "")
+		t.Setenv("ORVILO_SERVER_URL", "")
 		existing := cli.CLIConfig{ServerURL: "wss://api.internal.co/ws"}
 		serverURL, userProvided := resolveSelfHostServerURL(newCmd(), existing)
 		if serverURL != "https://api.internal.co" {
@@ -255,11 +255,11 @@ func TestResolveSelfHostServerURL(t *testing.T) {
 		}
 	})
 
-	// PATCHBAY_SERVER_URL is documented as a ws:// daemon address; the probe and
+	// ORVILO_SERVER_URL is documented as a ws:// daemon address; the probe and
 	// stored config need an http(s) base, so the ws/wss + /ws form must be
 	// normalized just like every other command does.
 	t.Run("normalizes the documented ws:// daemon form", func(t *testing.T) {
-		t.Setenv("PATCHBAY_SERVER_URL", "wss://api.internal.co/ws")
+		t.Setenv("ORVILO_SERVER_URL", "wss://api.internal.co/ws")
 		serverURL, userProvided := resolveSelfHostServerURL(newCmd(), cli.CLIConfig{})
 		if serverURL != "https://api.internal.co" {
 			t.Fatalf("server_url: want normalized https base, got %q", serverURL)
@@ -272,24 +272,24 @@ func TestResolveSelfHostServerURL(t *testing.T) {
 
 // TestSelfHostAppURLHonorsEnv pins the app-url half of the GitHub #3912 fix:
 // setup self-host resolves --app-url through the same FlagOrEnv path, so
-// PATCHBAY_APP_URL is honored when the flag is absent.
+// ORVILO_APP_URL is honored when the flag is absent.
 func TestSelfHostAppURLHonorsEnv(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.Flags().String("app-url", "", "")
 
 	t.Run("env honored when flag absent", func(t *testing.T) {
-		t.Setenv("PATCHBAY_APP_URL", "https://app.internal.co")
-		if got := cli.FlagOrEnv(cmd, "app-url", "PATCHBAY_APP_URL", ""); got != "https://app.internal.co" {
+		t.Setenv("ORVILO_APP_URL", "https://app.internal.co")
+		if got := cli.FlagOrEnv(cmd, "app-url", "ORVILO_APP_URL", ""); got != "https://app.internal.co" {
 			t.Fatalf("app_url: want env value, got %q", got)
 		}
 	})
 
 	t.Run("flag wins over env", func(t *testing.T) {
-		t.Setenv("PATCHBAY_APP_URL", "https://env.example")
+		t.Setenv("ORVILO_APP_URL", "https://env.example")
 		if err := cmd.Flags().Set("app-url", "https://flag.example"); err != nil {
 			t.Fatalf("set flag: %v", err)
 		}
-		if got := cli.FlagOrEnv(cmd, "app-url", "PATCHBAY_APP_URL", ""); got != "https://flag.example" {
+		if got := cli.FlagOrEnv(cmd, "app-url", "ORVILO_APP_URL", ""); got != "https://flag.example" {
 			t.Fatalf("app_url: want flag value, got %q", got)
 		}
 	})
@@ -308,7 +308,7 @@ func TestResolveSelfHostAppURL(t *testing.T) {
 	}
 
 	t.Run("flag wins over env and config", func(t *testing.T) {
-		t.Setenv("PATCHBAY_APP_URL", "https://env.example")
+		t.Setenv("ORVILO_APP_URL", "https://env.example")
 		existing := cli.CLIConfig{AppURL: "https://config.example"}
 		cmd := newCmd()
 		if err := cmd.Flags().Set("app-url", "https://flag.example"); err != nil {
@@ -320,7 +320,7 @@ func TestResolveSelfHostAppURL(t *testing.T) {
 	})
 
 	t.Run("env wins over config when flag absent", func(t *testing.T) {
-		t.Setenv("PATCHBAY_APP_URL", "https://env.example")
+		t.Setenv("ORVILO_APP_URL", "https://env.example")
 		existing := cli.CLIConfig{AppURL: "https://config.example"}
 		if got := resolveSelfHostAppURL(newCmd(), existing); got != "https://env.example" {
 			t.Fatalf("app_url: want env value, got %q", got)
@@ -328,7 +328,7 @@ func TestResolveSelfHostAppURL(t *testing.T) {
 	})
 
 	t.Run("falls back to existing config when no flag, env, or --frontend-port", func(t *testing.T) {
-		t.Setenv("PATCHBAY_APP_URL", "")
+		t.Setenv("ORVILO_APP_URL", "")
 		existing := cli.CLIConfig{AppURL: "https://app.example.com"}
 		if got := resolveSelfHostAppURL(newCmd(), existing); got != "https://app.example.com" {
 			t.Fatalf("app_url: want existing config value, got %q", got)
@@ -336,7 +336,7 @@ func TestResolveSelfHostAppURL(t *testing.T) {
 	})
 
 	t.Run("explicit --frontend-port skips config fallback", func(t *testing.T) {
-		t.Setenv("PATCHBAY_APP_URL", "")
+		t.Setenv("ORVILO_APP_URL", "")
 		existing := cli.CLIConfig{AppURL: "https://config.example"}
 		cmd := newCmd()
 		if err := cmd.Flags().Set("frontend-port", "4000"); err != nil {
@@ -348,7 +348,7 @@ func TestResolveSelfHostAppURL(t *testing.T) {
 	})
 
 	t.Run("empty when nothing set", func(t *testing.T) {
-		t.Setenv("PATCHBAY_APP_URL", "")
+		t.Setenv("ORVILO_APP_URL", "")
 		if got := resolveSelfHostAppURL(newCmd(), cli.CLIConfig{}); got != "" {
 			t.Fatalf("app_url: want empty, got %q", got)
 		}
@@ -439,9 +439,9 @@ func TestServerHostIsLocal(t *testing.T) {
 func TestSetupCommandsFailClosedInTaskContext(t *testing.T) {
 	ownerHome := t.TempDir()
 	t.Setenv("HOME", ownerHome)
-	t.Setenv("PATCHBAY_AGENT_ID", "agent-test")
-	t.Setenv("PATCHBAY_TASK_ID", "task-test")
-	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_AGENT_ID", "agent-test")
+	t.Setenv("ORVILO_TASK_ID", "task-test")
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
 
 	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {

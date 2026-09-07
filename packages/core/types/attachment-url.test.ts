@@ -137,7 +137,7 @@ describe("contentReferencesAttachment", () => {
   // Regression — issue DESCRIPTION editor binding (Desktop image render).
   //
   // The editor persists the durable `markdown_url`
-  // (`<PATCHBAY_PUBLIC_URL>/api/attachments/<id>/download`) into the body,
+  // (`<ORVILO_PUBLIC_URL>/api/attachments/<id>/download`) into the body,
   // NOT the raw storage `a.url`. The description composer used to bind
   // pending uploads with `md.includes(a.url)`, which never matched this
   // shape, so the upload was never linked via `attachment_ids`. After a

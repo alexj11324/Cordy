@@ -50,7 +50,7 @@ func weixinInstallationToResponse(row db.ChannelInstallation) WeixinInstallation
 }
 
 func (h *Handler) newWeixinInstallationService() (*weixin.InstallationService, error) {
-	key, err := secretbox.LoadKey("PATCHBAY_WEIXIN_SECRET_KEY")
+	key, err := secretbox.LoadKey("ORVILO_WEIXIN_SECRET_KEY")
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +71,7 @@ func (h *Handler) newWeixinInstallationService() (*weixin.InstallationService, e
 func (h *Handler) ListWeixinInstallations(w http.ResponseWriter, r *http.Request) {
 	service, err := h.newWeixinInstallationService()
 	if err != nil {
-		if strings.Contains(err.Error(), "PATCHBAY_WEIXIN_SECRET_KEY is not set") {
+		if strings.Contains(err.Error(), "ORVILO_WEIXIN_SECRET_KEY is not set") {
 			writeJSON(w, http.StatusOK, map[string]any{"installations": []WeixinInstallationResponse{}, "configured": false, "install_supported": false})
 			return
 		}
@@ -288,7 +288,7 @@ type RedeemWeixinBindingTokenResponse struct {
 }
 
 func (h *Handler) RedeemWeixinBindingToken(w http.ResponseWriter, r *http.Request) {
-	key, err := secretbox.LoadKey("PATCHBAY_WEIXIN_SECRET_KEY")
+	key, err := secretbox.LoadKey("ORVILO_WEIXIN_SECRET_KEY")
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "weixin integration not configured")
 		return

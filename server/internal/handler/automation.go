@@ -47,6 +47,8 @@ type AutomationResponse struct {
 	PauseReason        *string `json:"pause_reason"`
 	ExecutionMode      string  `json:"execution_mode"`
 	IssueTitleTemplate *string `json:"issue_title_template"`
+	Model              *string `json:"model,omitempty"`
+	Tools              any     `json:"tools,omitempty"`
 	CreatedByType      string  `json:"created_by_type"`
 	CreatedByID        string  `json:"created_by_id"`
 	LastRunAt          *string `json:"last_run_at"`
@@ -77,6 +79,11 @@ type AutomationResponse struct {
 	// owners/admins, NOT by granted collaborators (who can write but cannot
 	// re-grant). Nil when built without a caller in context. See MUL-3807.
 	CanManageAccess *bool `json:"can_manage_access,omitempty"`
+	// RunReady and RunBlockedReasons are detail-endpoint readiness facts. They
+	// are omitted from list/create responses and older servers; the backend
+	// admission gate remains authoritative.
+	RunReady          *bool    `json:"run_ready,omitempty"`
+	RunBlockedReasons []string `json:"run_blocked_reasons,omitempty"`
 }
 
 type AutomationQuotaUsageResponse struct {
@@ -120,7 +127,7 @@ type AutomationSubscriberEntry struct {
 
 type AutomationTriggerResponse struct {
 	ID             string  `json:"id"`
-	AutomationID    string  `json:"automation_id"`
+	AutomationID   string  `json:"automation_id"`
 	Kind           string  `json:"kind"`
 	Enabled        bool    `json:"enabled"`
 	CronExpression *string `json:"cron_expression"`
@@ -131,7 +138,7 @@ type AutomationTriggerResponse struct {
 	// triggers; nil for schedule/api. Not stored — see triggerToResponse.
 	WebhookPath *string `json:"webhook_path"`
 	// WebhookURL is the absolute URL composed from the server's
-	// PATCHBAY_PUBLIC_URL setting. Nil when the server has no public URL
+	// ORVILO_PUBLIC_URL setting. Nil when the server has no public URL
 	// configured; clients then build the URL themselves from webhook_path
 	// plus their API base / current origin.
 	WebhookURL *string `json:"webhook_url"`
@@ -156,12 +163,16 @@ type AutomationTriggerResponse struct {
 	// triggers; omitted when the trigger accepts all events. Serializes as
 	// a JSON array of {event, actions?} objects — never as a base64 string
 	// (which is what []byte would produce through encoding/json).
-	EventFilters []WebhookEventFilter `json:"event_filters,omitempty"`
+	EventFilters     []WebhookEventFilter `json:"event_filters,omitempty"`
+	Preset           *string              `json:"preset,omitempty"`
+	Config           any                  `json:"config,omitempty"`
+	Ready            *bool                `json:"ready,omitempty"`
+	ReadinessReasons []string             `json:"readiness_reasons,omitempty"`
 }
 
 type AutomationRunResponse struct {
 	ID            string  `json:"id"`
-	AutomationID   string  `json:"automation_id"`
+	AutomationID  string  `json:"automation_id"`
 	TriggerID     *string `json:"trigger_id"`
 	Source        string  `json:"source"`
 	Status        string  `json:"status"`
@@ -210,6 +221,8 @@ func automationToResponse(a db.Automation, subscribers []db.AutomationSubscriber
 		PauseReason:        textToPtr(a.PauseReason),
 		ExecutionMode:      a.ExecutionMode,
 		IssueTitleTemplate: textToPtr(a.IssueTitleTemplate),
+		Model:              textToPtr(a.Model),
+		Tools:              jsonObjectOrNil(a.Tools),
 		CreatedByType:      a.CreatedByType,
 		CreatedByID:        uuidToString(a.CreatedByID),
 		LastRunAt:          timestampToPtr(a.LastRunAt),
@@ -222,7 +235,7 @@ func automationToResponse(a db.Automation, subscribers []db.AutomationSubscriber
 func (h *Handler) triggerToResponse(t db.AutomationTrigger) AutomationTriggerResponse {
 	resp := AutomationTriggerResponse{
 		ID:             uuidToString(t.ID),
-		AutomationID:    uuidToString(t.AutomationID),
+		AutomationID:   uuidToString(t.AutomationID),
 		Kind:           t.Kind,
 		Enabled:        t.Enabled,
 		CronExpression: textToPtr(t.CronExpression),
@@ -233,14 +246,10 @@ func (h *Handler) triggerToResponse(t db.AutomationTrigger) AutomationTriggerRes
 		LastFiredAt:    timestampToPtr(t.LastFiredAt),
 		CreatedAt:      timestampToString(t.CreatedAt),
 		UpdatedAt:      timestampToString(t.UpdatedAt),
+		Preset:         textToPtr(t.Preset),
+		Config:         jsonObjectOrNil(t.Config),
 	}
-	if t.Kind == "webhook" && t.WebhookToken.Valid && t.WebhookToken.String != "" {
-		path := webhookPathForToken(t.WebhookToken.String)
-		resp.WebhookPath = &path
-		if h.cfg.PublicURL != "" {
-			full := h.cfg.PublicURL + path
-			resp.WebhookURL = &full
-		}
+	if t.Kind == "webhook" {
 		provider := t.Provider
 		if provider == "" {
 			provider = "generic"
@@ -256,13 +265,42 @@ func (h *Handler) triggerToResponse(t db.AutomationTrigger) AutomationTriggerRes
 			if err := json.Unmarshal(t.EventFilters, &filters); err == nil {
 				resp.EventFilters = filters
 			}
-			// On unmarshal error we deliberately drop the field instead of
-			// surfacing raw bytes or 500ing — strict write-time validation
-			// is supposed to make this branch unreachable, and the matcher
-			// fails closed if a corrupt row ever slips through.
+		}
+		if t.WebhookToken.Valid && t.WebhookToken.String != "" {
+			path := webhookPathForToken(t.WebhookToken.String)
+			resp.WebhookPath = &path
+			if h.cfg.PublicURL != "" {
+				full := h.cfg.PublicURL + path
+				resp.WebhookURL = &full
+			}
 		}
 	}
 	return resp
+}
+
+func jsonObjectOrNil(raw []byte) any {
+	if len(raw) == 0 {
+		return nil
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil
+	}
+	return value
+}
+
+func optionalJSONObject(raw json.RawMessage) []byte {
+	if len(raw) == 0 {
+		return nil
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil
+	}
+	if _, ok := value.(map[string]any); !ok {
+		return nil
+	}
+	return raw
 }
 
 // signingSecretHint returns the last 4 characters of the signing secret so a
@@ -294,7 +332,7 @@ func runToResponse(r db.AutomationRun) AutomationRunResponse {
 	}
 	return AutomationRunResponse{
 		ID:             uuidToString(r.ID),
-		AutomationID:    uuidToString(r.AutomationID),
+		AutomationID:   uuidToString(r.AutomationID),
 		TriggerID:      uuidToPtr(r.TriggerID),
 		Source:         r.Source,
 		Status:         r.Status,
@@ -333,18 +371,22 @@ type CreateAutomationRequest struct {
 	ExecutorID         string            `json:"executor_id"`
 	ExecutionMode      string            `json:"execution_mode"`
 	IssueTitleTemplate *string           `json:"issue_title_template"`
+	Model              *string           `json:"model"`
+	Tools              json.RawMessage   `json:"tools"`
 	Subscribers        []SubscriberInput `json:"subscribers"`
 }
 
 type UpdateAutomationRequest struct {
-	Title              *string `json:"title"`
-	Description        *string `json:"description"`
-	ProjectID          *string `json:"project_id"`
-	ExecutorType       *string `json:"executor_type"`
-	ExecutorID         *string `json:"executor_id"`
-	Status             *string `json:"status"`
-	ExecutionMode      *string `json:"execution_mode"`
-	IssueTitleTemplate *string `json:"issue_title_template"`
+	Title              *string         `json:"title"`
+	Description        *string         `json:"description"`
+	ProjectID          *string         `json:"project_id"`
+	ExecutorType       *string         `json:"executor_type"`
+	ExecutorID         *string         `json:"executor_id"`
+	Status             *string         `json:"status"`
+	ExecutionMode      *string         `json:"execution_mode"`
+	IssueTitleTemplate *string         `json:"issue_title_template"`
+	Model              *string         `json:"model"`
+	Tools              json.RawMessage `json:"tools"`
 	// Wholesale replacement when present; omit to leave subscribers untouched.
 	Subscribers []SubscriberInput `json:"subscribers"`
 }
@@ -360,8 +402,14 @@ type CreateAutomationTriggerRequest struct {
 	Timezone       *string `json:"timezone"`
 	Label          *string `json:"label"`
 	// Provider is currently only meaningful for kind=webhook. Allowed
-	// values: "generic" (default) or "github". Unset → "generic".
-	Provider *string `json:"provider"`
+	// values: "generic" (default), "github", "slack", or "linear".
+	// Unset → inferred from preset, otherwise "generic".
+	//
+	// Legacy github-without-preset still mints a public URL. Native
+	// github/slack/linear triggers require a catalog preset and do not.
+	Provider *string         `json:"provider"`
+	Preset   *string         `json:"preset"`
+	Config   json.RawMessage `json:"config"`
 	// EventFilters is an optional list of {event, actions?} scopes. Only
 	// meaningful for webhook triggers. nil/empty means "accept all events".
 	EventFilters []WebhookEventFilter `json:"event_filters,omitempty"`
@@ -399,6 +447,8 @@ type UpdateAutomationTriggerRequest struct {
 	// there is no way to tell "field absent from the PATCH body" from "field
 	// present but empty", and the user can never clear filters once set.
 	EventFilters *[]WebhookEventFilter `json:"event_filters,omitempty"`
+	Preset       *string               `json:"preset"`
+	Config       json.RawMessage       `json:"config"`
 }
 
 // ── Handlers ────────────────────────────────────────────────────────────────
@@ -529,14 +579,34 @@ func (h *Handler) GetAutomation(w http.ResponseWriter, r *http.Request) {
 		triggers = nil
 	}
 	triggerResp := make([]AutomationTriggerResponse, len(triggers))
+	var readiness service.AutomationReadiness
+	if h.AutomationService != nil {
+		if checked, checkErr := h.AutomationService.CheckAutomationReadiness(r.Context(), automation); checkErr == nil {
+			readiness = checked
+		} else {
+			readiness = service.AutomationReadiness{Ready: false, Reasons: []string{"Trigger configuration could not be verified."}}
+		}
+	}
+	readinessByTrigger := make(map[string]service.AutomationTriggerReadiness, len(readiness.Triggers))
+	for _, item := range readiness.Triggers {
+		readinessByTrigger[item.TriggerID] = item
+	}
 	for i, t := range triggers {
 		tr := h.triggerToResponse(t)
+		if item, ok := readinessByTrigger[uuidToString(t.ID)]; ok {
+			tr.Ready = &item.Ready
+			tr.ReadinessReasons = item.Reasons
+		}
 		if !canWrite {
 			tr.WebhookToken = nil
 			tr.WebhookPath = nil
 			tr.WebhookURL = nil
 		}
 		triggerResp[i] = tr
+	}
+	if h.AutomationService != nil {
+		resp.RunReady = &readiness.Ready
+		resp.RunBlockedReasons = readiness.Reasons
 	}
 
 	// Include the explicit collaborator grants so the "manage access" UI can
@@ -551,7 +621,7 @@ func (h *Handler) GetAutomation(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"automation":     resp,
+		"automation":    resp,
 		"triggers":      triggerResp,
 		"collaborators": collabResp,
 	})
@@ -602,7 +672,7 @@ func (h *Handler) memberCanWriteAutomation(ctx context.Context, ap db.Automation
 	}
 	granted, err := h.Queries.IsAutomationCollaborator(ctx, db.IsAutomationCollaboratorParams{
 		AutomationID: ap.ID,
-		UserID:      member.UserID,
+		UserID:       member.UserID,
 	})
 	return err == nil && granted
 }
@@ -698,6 +768,9 @@ func (h *Handler) CreateAutomation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if !h.validateAutomationToolsForSave(w, r, req.Tools, wsUUID) {
+		return
+	}
 
 	// Parse before insert so a malformed payload doesn't open a transaction.
 	subscribers, ok := parseAutomationSubscribers(w, req.Subscribers)
@@ -725,7 +798,7 @@ func (h *Handler) CreateAutomation(w http.ResponseWriter, r *http.Request) {
 	// Keep save-time readiness validation in the same transaction as the
 	// insert. The assignment lock serializes this path with Runtime teardown,
 	// so an active Automation cannot slip in after teardown's pause sweep.
-	if !h.validateAutomationAssigneeForSave(w, r, qtx, assigneeType, assigneeUUID, wsUUID, true) {
+	if !h.validateAutomationAssigneeForSave(w, r, qtx, assigneeType, assigneeUUID, wsUUID, true, "member", userID) {
 		return
 	}
 
@@ -741,6 +814,8 @@ func (h *Handler) CreateAutomation(w http.ResponseWriter, r *http.Request) {
 		Description:        ptrToText(req.Description),
 		IssueTitleTemplate: ptrToText(req.IssueTitleTemplate),
 		ProjectID:          projectID,
+		Model:              ptrToText(req.Model),
+		Tools:              optionalJSONObject(req.Tools),
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create automation")
@@ -758,8 +833,8 @@ func (h *Handler) CreateAutomation(w http.ResponseWriter, r *http.Request) {
 	for _, subscriber := range subscribers {
 		if err := qtx.AddAutomationSubscriber(r.Context(), db.AddAutomationSubscriberParams{
 			AutomationID: automation.ID,
-			UserType:    "member",
-			UserID:      subscriber.UserID,
+			UserType:     "member",
+			UserID:       subscriber.UserID,
 		}); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to add automation subscriber")
 			return
@@ -931,6 +1006,22 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 		}
 		params.ProjectID = projectID
 	}
+	if _, ok := rawFields["model"]; ok {
+		params.Model = ptrToText(req.Model)
+	}
+	if _, ok := rawFields["tools"]; ok {
+		if len(req.Tools) > 0 && optionalJSONObject(req.Tools) == nil {
+			writeError(w, http.StatusBadRequest, "tools must be a JSON object")
+			return
+		}
+		params.Tools = optionalJSONObject(req.Tools)
+		if params.Tools == nil {
+			params.Tools = []byte("{}")
+		}
+		if !h.validateAutomationToolsForSave(w, r, params.Tools, prev.WorkspaceID) {
+			return
+		}
+	}
 	// executor_type and executor_id are validated as a pair: switching
 	// between agent and team without supplying a new id would leave the
 	// row pointing at the wrong table. The client is expected to send both
@@ -1013,7 +1104,7 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 	}
 	validateAssignee := typeSent || idSent || (req.Status != nil && *req.Status == "active")
 	if validateAssignee && !h.validateAutomationAssigneeForSave(
-		w, r, qtx, nextType, nextID, prev.WorkspaceID, nextStatus == "active",
+		w, r, qtx, nextType, nextID, prev.WorkspaceID, nextStatus == "active", prev.CreatedByType, uuidToString(prev.CreatedByID),
 	) {
 		return
 	}
@@ -1048,7 +1139,8 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A substantive change (target / enabled-state / execution mode) republishes the
+	// A substantive change (target / enabled-state / execution mode / execution
+	// settings) republishes the
 	// rule: append a new version with THIS member as publisher, so a later run
 	// attributes to whoever last changed what the rule does — not the original
 	// creator. Cosmetic edits (title / description / template) write no version and
@@ -1062,7 +1154,7 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 		// for each firing trigger transfers to this editor (source=trigger_owner). A
 		// trigger-scoped edit re-stamps only its own row (see UpdateAutomationTrigger).
 		if err := qtx.SetAutomationTriggerPublishersByAutomation(r.Context(), db.SetAutomationTriggerPublishersByAutomationParams{
-			AutomationID:     automation.ID,
+			AutomationID:    automation.ID,
 			PublishedByType: pgtype.Text{String: "member", Valid: true},
 			PublishedByID:   parseUUID(userID),
 		}); err != nil {
@@ -1079,8 +1171,8 @@ func (h *Handler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 		for _, subscriber := range subscribers {
 			if err := qtx.AddAutomationSubscriber(r.Context(), db.AddAutomationSubscriberParams{
 				AutomationID: automation.ID,
-				UserType:    "member",
-				UserID:      subscriber.UserID,
+				UserType:     "member",
+				UserID:       subscriber.UserID,
 			}); err != nil {
 				writeError(w, http.StatusInternalServerError, "failed to add automation subscriber")
 				return
@@ -1130,7 +1222,9 @@ func automationRuleSubstantiveChange(prev, next db.Automation) bool {
 		prev.Status != next.Status ||
 		prev.ExecutionMode != next.ExecutionMode ||
 		prev.Description != next.Description ||
-		prev.IssueTitleTemplate != next.IssueTitleTemplate
+		prev.IssueTitleTemplate != next.IssueTitleTemplate ||
+		prev.Model != next.Model ||
+		!bytes.Equal(prev.Tools, next.Tools)
 }
 
 // recordAutomationRuleVersion appends one rule-version snapshot for a substantive
@@ -1291,9 +1385,9 @@ func (h *Handler) AddAutomationCollaborator(w http.ResponseWriter, r *http.Reque
 
 	if _, err := h.Queries.AddAutomationCollaborator(r.Context(), db.AddAutomationCollaboratorParams{
 		AutomationID: ap.ID,
-		UserType:    "member",
-		UserID:      targetUUID,
-		GrantedBy:   grantedByUUID,
+		UserType:     "member",
+		UserID:       targetUUID,
+		GrantedBy:    grantedByUUID,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to grant access")
 		return
@@ -1328,8 +1422,8 @@ func (h *Handler) RemoveAutomationCollaborator(w http.ResponseWriter, r *http.Re
 
 	if err := h.Queries.DeleteAutomationCollaborator(r.Context(), db.DeleteAutomationCollaboratorParams{
 		AutomationID: ap.ID,
-		UserType:    "member",
-		UserID:      targetUUID,
+		UserType:     "member",
+		UserID:       targetUUID,
 	}); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to revoke access")
 		return
@@ -1411,16 +1505,55 @@ func (h *Handler) CreateAutomationTrigger(w http.ResponseWriter, r *http.Request
 	// degrade into a "generic" trigger that bypasses provider-specific
 	// dedupe / signature behaviour.
 	provider := "generic"
+	presetText := pgtype.Text{}
+	var configBytes []byte
+	if raw := bytes.TrimSpace(req.Config); len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
+		configBytes = optionalJSONObject(req.Config)
+		if configBytes == nil {
+			writeError(w, http.StatusBadRequest, "config must be a JSON object")
+			return
+		}
+	}
+	if req.Preset != nil && strings.TrimSpace(*req.Preset) != "" {
+		spec, ok := service.LookupAutomationTriggerPreset(strings.TrimSpace(*req.Preset))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "unknown trigger preset")
+			return
+		}
+		if spec.Kind != req.Kind {
+			writeError(w, http.StatusBadRequest, "preset does not match trigger kind")
+			return
+		}
+		provider = spec.Provider
+		presetText = pgtype.Text{String: spec.ID, Valid: true}
+	}
 	if req.Provider != nil && *req.Provider != "" {
 		if req.Kind != "webhook" {
 			writeError(w, http.StatusBadRequest, "provider is only valid for webhook triggers")
 			return
 		}
 		if !isAllowedWebhookProvider(*req.Provider) {
-			writeError(w, http.StatusBadRequest, "provider must be generic or github")
+			writeError(w, http.StatusBadRequest, "provider must be generic, github, slack, or linear")
 			return
 		}
-		provider = *req.Provider
+		if presetText.Valid && provider != *req.Provider {
+			writeError(w, http.StatusBadRequest, "provider does not match preset")
+			return
+		}
+		if !presetText.Valid {
+			provider = *req.Provider
+		}
+	}
+	if req.Kind == "webhook" && (provider == "slack" || provider == "linear") && !presetText.Valid {
+		writeError(w, http.StatusBadRequest, "preset is required for slack and linear triggers")
+		return
+	}
+	if presetText.Valid && presetText.String == "slack.message" && len(configBytes) == 0 {
+		configBytes = []byte(`{"sender_scope":"anyone","ignore_thread_replies":true,"completion_reaction":"white_check_mark"}`)
+	}
+	if err := service.ValidateAutomationTriggerConfig(presetText.String, configBytes); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
 	}
 
 	if req.Timezone != nil && *req.Timezone != "" {
@@ -1453,26 +1586,28 @@ func (h *Handler) CreateAutomationTrigger(w http.ResponseWriter, r *http.Request
 		}
 		nextRunAt = pgtype.Timestamptz{Time: t, Valid: true}
 	case "webhook":
-		// Mint the token BEFORE the INSERT so the row never exists in a
-		// half-written kind=webhook + webhook_token=NULL state. If the
-		// random token happens to collide with an existing unique-index
-		// entry (vanishingly unlikely with 256 bits but the retry keeps
-		// the failure mode obvious if RNG is degraded), we re-generate
-		// and re-INSERT — never UPDATE.
 		eventFiltersBytes, err := encodeWebhookEventFilters(req.EventFilters)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to encode event_filters")
 			return
 		}
-		trigger, err := h.createWebhookTriggerWithMintedToken(r, ap, ptrToText(req.Label), provider, eventFiltersBytes, publisherID)
-		if err != nil {
+		var (
+			trigger   db.AutomationTrigger
+			createErr error
+		)
+		if service.IsNativeAutomationProvider(provider) && presetText.Valid {
+			trigger, createErr = h.createNativeWebhookTrigger(r, ap, ptrToText(req.Label), provider, presetText, configBytes, eventFiltersBytes, publisherID)
+		} else {
+			trigger, createErr = h.createWebhookTriggerWithMintedToken(r, ap, ptrToText(req.Label), provider, presetText, configBytes, eventFiltersBytes, publisherID)
+		}
+		if createErr != nil {
 			writeError(w, http.StatusInternalServerError, "failed to create trigger")
 			return
 		}
 		resp := h.triggerToResponse(trigger)
 		h.publish(protocol.EventAutomationUpdated, workspaceID, "member", userID, map[string]any{
 			"automation_id": uuidToString(ap.ID),
-			"trigger":      resp,
+			"trigger":       resp,
 		})
 		writeJSON(w, http.StatusCreated, resp)
 		return
@@ -1488,7 +1623,7 @@ func (h *Handler) CreateAutomationTrigger(w http.ResponseWriter, r *http.Request
 	qtx := h.Queries.WithTx(tx)
 
 	trigger, err := qtx.CreateAutomationTrigger(r.Context(), db.CreateAutomationTriggerParams{
-		AutomationID:    ap.ID,
+		AutomationID:   ap.ID,
 		Kind:           req.Kind,
 		Enabled:        true,
 		CronExpression: cronText,
@@ -1501,6 +1636,8 @@ func (h *Handler) CreateAutomationTrigger(w http.ResponseWriter, r *http.Request
 		// (source=trigger_owner, MUL-4302).
 		PublishedByType: pgtype.Text{String: "member", Valid: publisherID.Valid},
 		PublishedByID:   publisherID,
+		Preset:          presetText,
+		Config:          configBytes,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to create trigger")
@@ -1518,7 +1655,7 @@ func (h *Handler) CreateAutomationTrigger(w http.ResponseWriter, r *http.Request
 	resp := h.triggerToResponse(trigger)
 	h.publish(protocol.EventAutomationUpdated, workspaceID, "member", userID, map[string]any{
 		"automation_id": uuidToString(ap.ID),
-		"trigger":      resp,
+		"trigger":       resp,
 	})
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -1541,6 +1678,8 @@ func (h *Handler) createWebhookTriggerWithMintedToken(
 	ap db.Automation,
 	label pgtype.Text,
 	provider string,
+	preset pgtype.Text,
+	config []byte,
 	eventFilters []byte,
 	publisherID pgtype.UUID,
 ) (db.AutomationTrigger, error) {
@@ -1556,7 +1695,7 @@ func (h *Handler) createWebhookTriggerWithMintedToken(
 		}
 		qtx := h.Queries.WithTx(tx)
 		trigger, err := qtx.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
-			AutomationID:  ap.ID,
+			AutomationID: ap.ID,
 			Kind:         "webhook",
 			Enabled:      true,
 			Label:        label,
@@ -1567,6 +1706,8 @@ func (h *Handler) createWebhookTriggerWithMintedToken(
 			// later substantive edit (source=trigger_owner, MUL-4302).
 			PublishedByType: pgtype.Text{String: "member", Valid: publisherID.Valid},
 			PublishedByID:   publisherID,
+			Preset:          preset,
+			Config:          config,
 		})
 		if err != nil {
 			tx.Rollback(ctx)
@@ -1587,9 +1728,53 @@ func (h *Handler) createWebhookTriggerWithMintedToken(
 	return db.AutomationTrigger{}, fmt.Errorf("could not mint unique webhook token")
 }
 
+// createNativeWebhookTrigger inserts a kind=webhook row for GitHub/Slack/Linear
+// catalog presets without minting a public bearer URL. Ingress is the
+// platform's existing signed webhook, fanned out by preset.
+func (h *Handler) createNativeWebhookTrigger(
+	r *http.Request,
+	ap db.Automation,
+	label pgtype.Text,
+	provider string,
+	preset pgtype.Text,
+	config []byte,
+	eventFilters []byte,
+	publisherID pgtype.UUID,
+) (db.AutomationTrigger, error) {
+	ctx := r.Context()
+	tx, err := h.TxStarter.Begin(ctx)
+	if err != nil {
+		return db.AutomationTrigger{}, err
+	}
+	defer tx.Rollback(ctx)
+	qtx := h.Queries.WithTx(tx)
+	trigger, err := qtx.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
+		AutomationID:    ap.ID,
+		Kind:            "webhook",
+		Enabled:         true,
+		Label:           label,
+		Provider:        pgtype.Text{String: provider, Valid: provider != ""},
+		EventFilters:    eventFilters,
+		PublishedByType: pgtype.Text{String: "member", Valid: publisherID.Valid},
+		PublishedByID:   publisherID,
+		Preset:          preset,
+		Config:          config,
+	})
+	if err != nil {
+		return db.AutomationTrigger{}, err
+	}
+	if err := h.recordAutomationRuleVersion(ctx, qtx, ap, "member", publisherID); err != nil {
+		return db.AutomationTrigger{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return db.AutomationTrigger{}, err
+	}
+	return trigger, nil
+}
+
 func isAllowedWebhookProvider(p string) bool {
 	switch p {
-	case "generic", "github":
+	case "generic", "github", "slack", "linear":
 		return true
 	default:
 		return false
@@ -1603,6 +1788,18 @@ func isValidAutomationAssigneeType(t string) bool {
 	default:
 		return false
 	}
+}
+
+// canInvokeAutomationAssignee applies the same invocation principal that the
+// automation dispatcher will use for schedule/webhook runs. The workspace
+// admin who edits an automation may see a private agent without being allowed
+// to run it; the durable owner is the automation creator, so save-time checks
+// must use that owner rather than the editor's broader view permission.
+func (h *Handler) canInvokeAutomationAssignee(ctx context.Context, agent db.Agent, principalType, principalID string, workspaceID pgtype.UUID) bool {
+	if principalType == "" {
+		principalType = "member"
+	}
+	return h.canInvokeAgent(ctx, agent, principalType, principalID, "", uuidToString(workspaceID))
 }
 
 // validateAutomationAssigneeForSave checks that the assignee (agent or team)
@@ -1622,6 +1819,7 @@ func (h *Handler) validateAutomationAssigneeForSave(
 	assigneeType string,
 	assigneeID, workspaceID pgtype.UUID,
 	requireRuntime bool,
+	principalType, principalID string,
 ) bool {
 	switch assigneeType {
 	case "agent":
@@ -1639,6 +1837,10 @@ func (h *Handler) validateAutomationAssigneeForSave(
 		}
 		if requireRuntime && !agent.RuntimeID.Valid {
 			writeError(w, http.StatusUnprocessableEntity, "assignee agent needs a runtime before this automation can be active")
+			return false
+		}
+		if !h.canInvokeAutomationAssignee(r.Context(), agent, principalType, principalID, workspaceID) {
+			writeError(w, http.StatusForbidden, "automation owner cannot invoke assignee agent")
 			return false
 		}
 		return true
@@ -1677,11 +1879,8 @@ func (h *Handler) validateAutomationAssigneeForSave(
 			writeError(w, http.StatusUnprocessableEntity, "team leader needs a runtime before this automation can be active")
 			return false
 		}
-		// Private-leader gate: the member configuring the automation must have
-		// access to the private leader, same as validateExecutorPair.
-		actorType, actorID := h.resolveActor(r, requestUserID(r), util.UUIDToString(workspaceID))
-		if !h.canInvokeAgent(r.Context(), leader, actorType, actorID, h.invokeOriginatorFromRequest(r, actorType, actorID), util.UUIDToString(workspaceID)) {
-			writeError(w, http.StatusForbidden, "cannot assign automation to team with private leader")
+		if !h.canInvokeAutomationAssignee(r.Context(), leader, principalType, principalID, workspaceID) {
+			writeError(w, http.StatusForbidden, "automation owner cannot invoke team leader")
 			return false
 		}
 		return true
@@ -1783,6 +1982,48 @@ func (h *Handler) UpdateAutomationTrigger(w http.ResponseWriter, r *http.Request
 		}
 		params.EventFilters = encoded
 	}
+	if req.Preset != nil {
+		spec, ok := service.LookupAutomationTriggerPreset(strings.TrimSpace(*req.Preset))
+		if !ok {
+			writeError(w, http.StatusBadRequest, "unknown trigger preset")
+			return
+		}
+		if spec.Kind != prev.Kind {
+			writeError(w, http.StatusBadRequest, "preset does not match trigger kind")
+			return
+		}
+		if prev.Kind == "webhook" {
+			prevProvider := prev.Provider
+			if prevProvider == "" {
+				prevProvider = "generic"
+			}
+			if spec.Provider != prevProvider {
+				writeError(w, http.StatusBadRequest, "preset does not match trigger provider")
+				return
+			}
+		}
+		params.Preset = pgtype.Text{String: spec.ID, Valid: true}
+	}
+	if raw := bytes.TrimSpace(req.Config); len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
+		encoded := optionalJSONObject(req.Config)
+		if encoded == nil {
+			writeError(w, http.StatusBadRequest, "config must be a JSON object")
+			return
+		}
+		params.Config = encoded
+	}
+	presetID := prev.Preset.String
+	if params.Preset.Valid {
+		presetID = params.Preset.String
+	}
+	configForValidation := prev.Config
+	if params.Config != nil {
+		configForValidation = params.Config
+	}
+	if err := service.ValidateAutomationTriggerConfig(presetID, configForValidation); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	// Recompute next_run_at if cron or timezone changed.
 	cronExpr := prev.CronExpression.String
@@ -1834,7 +2075,9 @@ func (h *Handler) UpdateAutomationTrigger(w http.ResponseWriter, r *http.Request
 	triggerSubstantiveChange := prev.Enabled != trigger.Enabled ||
 		prev.CronExpression != trigger.CronExpression ||
 		prev.Timezone != trigger.Timezone ||
-		!bytes.Equal(prev.EventFilters, trigger.EventFilters)
+		!bytes.Equal(prev.EventFilters, trigger.EventFilters) ||
+		prev.Preset != trigger.Preset ||
+		!bytes.Equal(prev.Config, trigger.Config)
 	if triggerSubstantiveChange {
 		if err := h.recordAutomationRuleVersion(r.Context(), qtx, ap, "member", parseUUID(userID)); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to update trigger")
@@ -1860,7 +2103,7 @@ func (h *Handler) UpdateAutomationTrigger(w http.ResponseWriter, r *http.Request
 	resp := h.triggerToResponse(trigger)
 	h.publish(protocol.EventAutomationUpdated, workspaceID, "member", userID, map[string]any{
 		"automation_id": uuidToString(ap.ID),
-		"trigger":      resp,
+		"trigger":       resp,
 	})
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -1932,7 +2175,7 @@ func (h *Handler) DeleteAutomationTrigger(w http.ResponseWriter, r *http.Request
 
 	h.publish(protocol.EventAutomationUpdated, workspaceID, "member", userID, map[string]any{
 		"automation_id": uuidToString(automationUUID),
-		"trigger_id":   uuidToString(triggerUUID),
+		"trigger_id":    uuidToString(triggerUUID),
 	})
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -1967,6 +2210,10 @@ func (h *Handler) RotateAutomationTriggerWebhookToken(w http.ResponseWriter, r *
 		writeError(w, http.StatusBadRequest, "trigger is not a webhook trigger")
 		return
 	}
+	if !prev.WebhookToken.Valid || prev.WebhookToken.String == "" {
+		writeError(w, http.StatusBadRequest, "trigger has no webhook URL")
+		return
+	}
 
 	var rotated db.AutomationTrigger
 	for attempt := 0; attempt < 3; attempt++ {
@@ -1996,7 +2243,7 @@ func (h *Handler) RotateAutomationTriggerWebhookToken(w http.ResponseWriter, r *
 	userID, _ := requireUserID(w, r)
 	h.publish(protocol.EventAutomationUpdated, workspaceID, "member", userID, map[string]any{
 		"automation_id": uuidToString(ap.ID),
-		"trigger":      resp,
+		"trigger":       resp,
 	})
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -2067,7 +2314,7 @@ func (h *Handler) SetAutomationTriggerSigningSecret(w http.ResponseWriter, r *ht
 	// which excludes the secret.
 	h.publish(protocol.EventAutomationUpdated, workspaceID, "member", userID, map[string]any{
 		"automation_id": uuidToString(ap.ID),
-		"trigger":      resp,
+		"trigger":       resp,
 	})
 	writeJSON(w, http.StatusOK, resp)
 }
@@ -2101,8 +2348,8 @@ func (h *Handler) ListAutomationRuns(w http.ResponseWriter, r *http.Request) {
 
 	runs, err := h.Queries.ListAutomationRuns(r.Context(), db.ListAutomationRunsParams{
 		AutomationID: automation.ID,
-		Limit:       limit,
-		Offset:      offset,
+		Limit:        limit,
+		Offset:       offset,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to list runs")
@@ -2170,6 +2417,19 @@ func (h *Handler) TriggerAutomation(w http.ResponseWriter, r *http.Request) {
 	}
 	if automation.Status != "active" {
 		writeError(w, http.StatusBadRequest, "automation is not active")
+		return
+	}
+	readiness, err := h.AutomationService.CheckAutomationReadiness(r.Context(), automation)
+	if err != nil {
+		slog.Error("failed to verify automation trigger configuration",
+			"error", err,
+			"automation_id", uuidToString(automation.ID),
+		)
+		writeError(w, http.StatusInternalServerError, "failed to verify automation trigger configuration")
+		return
+	}
+	if !readiness.Ready {
+		writeErrorCode(w, http.StatusConflict, "automation_trigger_not_ready", "Complete trigger configuration before running this automation")
 		return
 	}
 

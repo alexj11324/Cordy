@@ -89,11 +89,11 @@ After disconnecting, the Bot stops receiving new messages. Existing Patchbay con
 A self-hosted deployment must configure a 32-byte encryption key for each platform before Patchbay opens its connection entry point:
 
 ```dotenv
-PATCHBAY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
-PATCHBAY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
-PATCHBAY_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
-PATCHBAY_WECOM_SECRET_KEY=<base64-encoded 32-byte key>
-PATCHBAY_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_LARK_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_WECOM_SECRET_KEY=<base64-encoded 32-byte key>
+ORVILO_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
 These keys encrypt stored Bot credentials. See [Environment variables](/environment-variables) for how to generate, store, and rotate them. Patchbay Cloud already has this configured.

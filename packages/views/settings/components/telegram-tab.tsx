@@ -109,7 +109,7 @@ export function TelegramTab() {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.telegram.not_enabled_description_prefix)}{" "}
               <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                PATCHBAY_TELEGRAM_SECRET_KEY
+                ORVILO_TELEGRAM_SECRET_KEY
               </code>{" "}
               {t(($) => $.telegram.not_enabled_description_suffix)}{" "}
               {t(($) => $.telegram.not_enabled_self_host_hint)}
@@ -237,13 +237,7 @@ function InstallationRow({
 // telegramDocsUrl points at the Telegram integration guide on the docs site,
 // localized like the Slack docs link.
 function telegramDocsUrl(lang: string | undefined): string {
-  const prefix = lang?.startsWith("zh")
-    ? "/zh"
-    : lang?.startsWith("ja")
-      ? "/ja"
-      : lang?.startsWith("ko")
-        ? "/ko"
-        : "";
+  const prefix = lang?.startsWith("zh") ? "/zh" : "";
   return `https://patchbay.aspectlylabs.com/docs${prefix}/telegram-bot-integration`;
 }
 

@@ -31,8 +31,8 @@ func TestProbeAgentCLIsDiscoversCodeArtsDefaultInstallPath(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("USERPROFILE", home)
 	t.Setenv("PATH", t.TempDir())
-	t.Setenv("PATCHBAY_CODEARTS_PATH", "")
-	t.Setenv("PATCHBAY_CODEARTS_MODEL", "mimo/mimo-v2.5")
+	t.Setenv("ORVILO_CODEARTS_PATH", "")
+	t.Setenv("ORVILO_CODEARTS_MODEL", "mimo/mimo-v2.5")
 
 	entry, ok := probeAgentCLIs()["codearts"]
 	if !ok {

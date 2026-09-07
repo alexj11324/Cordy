@@ -59,7 +59,7 @@ func TestProbeAgentCLIs_QoderCNResolvesIndependently(t *testing.T) {
 }
 
 // TestProbeAgentCLIs_QoderPinnedPathStaysHardMiss keeps the fallback from
-// rescuing an operator-pinned PATCHBAY_QODER_PATH. A pinned absolute path that
+// rescuing an operator-pinned ORVILO_QODER_PATH. A pinned absolute path that
 // no longer exists must stay a miss rather than silently resolve a different
 // binary — the same rule probe() applies to every other provider.
 func TestProbeAgentCLIs_QoderPinnedPathStaysHardMiss(t *testing.T) {
@@ -70,10 +70,10 @@ func TestProbeAgentCLIs_QoderPinnedPathStaysHardMiss(t *testing.T) {
 	}
 
 	t.Setenv("PATH", "")
-	t.Setenv("PATCHBAY_QODER_PATH", "/nonexistent/pinned/qodercli")
+	t.Setenv("ORVILO_QODER_PATH", "/nonexistent/pinned/qodercli")
 
 	if entry, ok := probeAgentCLIs()["qoder"]; ok {
-		t.Errorf("pinned-but-missing PATCHBAY_QODER_PATH resolved to %q, want a hard miss", entry.Path)
+		t.Errorf("pinned-but-missing ORVILO_QODER_PATH resolved to %q, want a hard miss", entry.Path)
 	}
 }
 

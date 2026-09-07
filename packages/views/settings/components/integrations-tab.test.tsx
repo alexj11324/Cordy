@@ -293,7 +293,7 @@ describe("Settings IntegrationsTab", () => {
 
     expect(screen.getByTestId("integration-setup-guide-dingtalk")).toBeInTheDocument();
     expect(screen.getByTestId("dingtalk-hub-install")).toBeInTheDocument();
-    expect(screen.queryByText("PATCHBAY_DINGTALK_SECRET_KEY")).toBeNull();
+    expect(screen.queryByText("ORVILO_DINGTALK_SECRET_KEY")).toBeNull();
   });
 
   it("hides Composio and disables the toolkits query when the feature flag is off", () => {    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: false });

@@ -133,8 +133,6 @@ export const metadata: Metadata = {
 const HTML_LANG: Record<SupportedLocale, string> = {
   en: "en",
   "zh-Hans": "zh-CN",
-  ko: "ko-KR",
-  ja: "ja-JP",
 };
 
 export default async function RootLayout({
@@ -192,7 +190,7 @@ export default async function RootLayout({
           // Keep this server-read value runtime-configurable in standalone
           // images. NEXT_PUBLIC_* values are otherwise frozen at build time.
           publishableKey={
-            process.env.PATCHBAY_CLERK_PUBLISHABLE_KEY ??
+            process.env.ORVILO_CLERK_PUBLISHABLE_KEY ??
             process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
           }
         >

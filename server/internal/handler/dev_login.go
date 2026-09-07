@@ -8,7 +8,7 @@
 // browser can be signed in by opening one URL and a script can get a bearer
 // token in one call.
 //
-// It exists only when APP_ENV is non-production AND PATCHBAY_DEV_LOGIN=1. Both
+// It exists only when APP_ENV is non-production AND ORVILO_DEV_LOGIN=1. Both
 // halves are deliberate: the variable is the explicit opt-in, and the APP_ENV
 // check makes a production deployment unable to honour the opt-in even if the
 // variable leaks into its environment.
@@ -30,8 +30,8 @@ import (
 )
 
 const (
-	devLoginEnv      = "PATCHBAY_DEV_LOGIN"
-	devLoginEmailEnv = "PATCHBAY_DEV_EMAIL"
+	devLoginEnv      = "ORVILO_DEV_LOGIN"
+	devLoginEmailEnv = "ORVILO_DEV_EMAIL"
 	// Mirrors devseed.DefaultDeveloperEmail: `make seed-dev` attaches its
 	// fixtures to this user, so signing in as the same address is what makes
 	// the seeded workspace visible without naming an email anywhere.
@@ -178,7 +178,7 @@ func (h *Handler) DevLogin(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodGet {
 		// resolveFrontendAppURL is the repository's app-URL contract
-		// (PATCHBAY_APP_URL, then FRONTEND_ORIGIN); a deployment where the two
+		// (ORVILO_APP_URL, then FRONTEND_ORIGIN); a deployment where the two
 		// differ means the browser to land on the configured app, not on
 		// whatever origin the cookie flags happen to be derived from.
 		http.Redirect(w, r, resolveFrontendAppURL()+devLoginRedirect(req.Redirect), http.StatusFound)

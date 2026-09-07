@@ -9,8 +9,8 @@ import en from "@/locales/en/agent-thread";
 describe("mobile Agent thread locale resources", () => {
   it("normalizes supported user language tags and falls back to English", () => {
     expect(normalizeMobileLocale("zh-CN")).toBe("zh-Hans");
-    expect(normalizeMobileLocale("ja-JP")).toBe("ja");
-    expect(normalizeMobileLocale("ko-KR")).toBe("ko");
+    expect(normalizeMobileLocale("ja-JP")).toBe("en");
+    expect(normalizeMobileLocale("ko-KR")).toBe("en");
     expect(normalizeMobileLocale("fr-FR")).toBe("en");
   });
 

@@ -124,8 +124,8 @@ EXAMPLES
   $ patchbay agent list --output json
 
 ENVIRONMENT VARIABLES
-  PATCHBAY_SERVER_URL    Override the default server URL
-  PATCHBAY_WORKSPACE_ID  Set the active workspace
+  ORVILO_SERVER_URL    Override the default server URL
+  ORVILO_WORKSPACE_ID  Set the active workspace
 
 LEARN MORE
   Use ` + "`patchbay <command> <subcommand> --help`" + ` for more information about a command.

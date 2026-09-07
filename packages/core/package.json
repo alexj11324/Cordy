@@ -109,6 +109,8 @@
     "./automations": "./automations/index.ts",
     "./automations/queries": "./automations/queries.ts",
     "./automations/mutations": "./automations/mutations.ts",
+    "./automations/memory-queries": "./automations/memory-queries.ts",
+    "./automations/memory-mutations": "./automations/memory-mutations.ts",
     "./pins": "./pins/index.ts",
     "./pins/queries": "./pins/queries.ts",
     "./pins/mutations": "./pins/mutations.ts",

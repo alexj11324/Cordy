@@ -4,10 +4,10 @@ set -euo pipefail
 # Deployment-time guard for the server-managed IM surface. This script never
 # prints credential values and never calls the app API. It validates the one
 # property the app cannot safely infer: that cross-device binding has a public
-# HTTPS origin. Run it from the repository root or set PATCHBAY_ROOT explicitly.
+# HTTPS origin. Run it from the repository root or set ORVILO_ROOT explicitly.
 
-ROOT_DIR="${PATCHBAY_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-MANIFEST="${PATCHBAY_MESSAGING_MANIFEST:-${ROOT_DIR}/deploy/messaging/manifest.yaml}"
+ROOT_DIR="${ORVILO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+MANIFEST="${ORVILO_MESSAGING_MANIFEST:-${ROOT_DIR}/deploy/messaging/manifest.yaml}"
 
 fail() {
   echo "messaging self-host check: $*" >&2
@@ -35,27 +35,27 @@ for provider in slack telegram lark dingtalk wecom weixin; do
   ' "$MANIFEST" || fail "manifest provider entry is incomplete: $provider"
 done
 
-mode="${PATCHBAY_MESSAGING_MODE:-server_configured}"
-[[ "$mode" == "server_configured" ]] || fail "PATCHBAY_MESSAGING_MODE must be server_configured"
+mode="${ORVILO_MESSAGING_MODE:-server_configured}"
+[[ "$mode" == "server_configured" ]] || fail "ORVILO_MESSAGING_MODE must be server_configured"
 
-bootstrap="${PATCHBAY_MESSAGING_BOOTSTRAP:-false}"
+bootstrap="${ORVILO_MESSAGING_BOOTSTRAP:-false}"
 case "$bootstrap" in
   false|0|no) ;;
   true|1|yes)
-    [[ -n "${PATCHBAY_MESSAGING_WORKSPACE_ID:-}" ]] || fail "PATCHBAY_MESSAGING_WORKSPACE_ID is required when bootstrap is enabled"
-    [[ -n "${PATCHBAY_MESSAGING_INSTALLER_USER_ID:-}" ]] || fail "PATCHBAY_MESSAGING_INSTALLER_USER_ID is required when bootstrap is enabled"
+    [[ -n "${ORVILO_MESSAGING_WORKSPACE_ID:-}" ]] || fail "ORVILO_MESSAGING_WORKSPACE_ID is required when bootstrap is enabled"
+    [[ -n "${ORVILO_MESSAGING_INSTALLER_USER_ID:-}" ]] || fail "ORVILO_MESSAGING_INSTALLER_USER_ID is required when bootstrap is enabled"
     if [[ -n "${SLACK_BOT_TOKEN:-}" || -n "${SLACK_APP_TOKEN:-}" ]]; then
       [[ -n "${SLACK_BOT_TOKEN:-}" && -n "${SLACK_APP_TOKEN:-}" ]] || fail "SLACK_BOT_TOKEN and SLACK_APP_TOKEN must be configured together"
       [[ -n "${SLACK_TEAM_ID:-}" && -n "${SLACK_BOT_USER_ID:-}" ]] || fail "SLACK_TEAM_ID and SLACK_BOT_USER_ID are required for Slack bootstrap"
     fi
     ;;
-  *) fail "PATCHBAY_MESSAGING_BOOTSTRAP must be true or false" ;;
+  *) fail "ORVILO_MESSAGING_BOOTSTRAP must be true or false" ;;
 esac
 
-app_url="${PATCHBAY_APP_URL:-${FRONTEND_ORIGIN:-}}"
-api_url="${PATCHBAY_PUBLIC_URL:-}"
-[[ "$app_url" == https://* ]] || fail "PATCHBAY_APP_URL/FRONTEND_ORIGIN must be an HTTPS public URL"
-[[ "$api_url" == https://* ]] || fail "PATCHBAY_PUBLIC_URL must be an HTTPS public URL"
+app_url="${ORVILO_APP_URL:-${FRONTEND_ORIGIN:-}}"
+api_url="${ORVILO_PUBLIC_URL:-}"
+[[ "$app_url" == https://* ]] || fail "ORVILO_APP_URL/FRONTEND_ORIGIN must be an HTTPS public URL"
+[[ "$api_url" == https://* ]] || fail "ORVILO_PUBLIC_URL must be an HTTPS public URL"
 # The checked-in manifest is a portable template. Keep the equality check for
 # a deployment-specific manifest, but allow its documented example origins so
 # an operator does not have to rewrite a tracked file just to deploy.

@@ -57,7 +57,7 @@ func TestProbeAgentCLIsRequiresDshPatchbayProfile(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", fakeDir)
-			t.Setenv("PATCHBAY_DSH_PATH", "")
+			t.Setenv("ORVILO_DSH_PATH", "")
 			_, found := probeAgentCLIs()["dsh"]
 			if found != tc.want {
 				t.Fatalf("dsh discovered = %v, want %v", found, tc.want)

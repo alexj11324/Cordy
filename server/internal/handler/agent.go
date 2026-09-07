@@ -108,8 +108,10 @@ type AgentResponse struct {
 	// for this agent (empty = use runtime default). The picker is per-runtime
 	// per-model; the API never normalizes across providers. See MUL-2339.
 	ThinkingLevel string `json:"thinking_level"`
-	// ServiceTier is the runtime-native Codex execution tier persisted for
-	// this agent (empty = inherit local Codex configuration).
+	// ServiceTier is the runtime-native execution tier persisted for
+	// this agent (empty = inherit the runtime's own setting). Codex uses
+	// catalog IDs such as "priority"; ACP speed options use the tokens
+	// that session advertised.
 	ServiceTier string `json:"service_tier"`
 	// ComposioToolkitAllowlist is the subset of Composio toolkit slugs this
 	// agent is allowed to mount as MCP at task dispatch — for ANY run that
@@ -466,6 +468,7 @@ type AgentTaskResponse struct {
 	ChatMessage              string                 `json:"chat_message,omitempty"`                // user message for chat tasks
 	ChatMessageAttachments   []ChatAttachmentMeta   `json:"chat_message_attachments,omitempty"`    // attachments on the user message — agent calls `patchbay attachment download <id>` per entry
 	ChatIntro                bool                   `json:"chat_intro,omitempty"`                  // legacy compatibility for historical is_agent_intro sessions; new agent creation no longer creates these chats
+	AgentThreadRootTaskID    string                 `json:"agent_thread_root_task_id,omitempty"`   // immutable server-validated root identity for task-level conversations
 	AutomationRunID          string                 `json:"automation_run_id,omitempty"`           // non-empty for automation-spawned tasks
 	AutomationID             string                 `json:"automation_id,omitempty"`               // automation that spawned this task
 	AutomationTitle          string                 `json:"automation_title,omitempty"`            // automation title used as task context
@@ -526,7 +529,7 @@ type AgentTaskResponse struct {
 	// free. omitempty keeps both off the wire.
 	Usage []TaskUsageData `json:"usage,omitempty"`
 	// AuthToken is the task-scoped `mat_` token the daemon must inject as
-	// PATCHBAY_TOKEN in the agent process environment. The server binds it to
+	// ORVILO_TOKEN in the agent process environment. The server binds it to
 	// this (agent_id, task_id) pair at claim time and treats any request
 	// authenticated with it as actor=agent, regardless of headers — so the
 	// agent process cannot use it to read another agent's secrets via the

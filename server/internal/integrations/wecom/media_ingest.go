@@ -136,7 +136,7 @@ func (r *wecomMediaResolver) ResolveMedia(ctx context.Context, inst engine.Resol
 			// "ingest failed" for this sends them looking at WeCom.
 			logLine := "wecom media ingest failed"
 			if failure == mediaFailureBlocked {
-				logLine = "wecom media ingest refused by the media address guard: the host resolved to a non-public address and was not dialed. If this deployment sits behind a fake-IP proxy, declare its range in PATCHBAY_WECOM_MEDIA_ALLOW_CIDRS; otherwise this is a URL that should not have been sent."
+				logLine = "wecom media ingest refused by the media address guard: the host resolved to a non-public address and was not dialed. If this deployment sits behind a fake-IP proxy, declare its range in ORVILO_WECOM_MEDIA_ALLOW_CIDRS; otherwise this is a URL that should not have been sent."
 			}
 			// The url and the key never reach the log: one is a signed
 			// address anyone could then fetch, the other unlocks it. stripURL

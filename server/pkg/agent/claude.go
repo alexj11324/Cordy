@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -53,6 +54,17 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 	timeout := opts.Timeout
 	runCtx, cancel := runContext(ctx, timeout)
 
+	settingsPath, settingsCreated, err := applyClaudeFastModeToSettings(opts.ClaudeSettingsPath, opts.ServiceTier)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	opts.ClaudeSettingsPath = settingsPath
+	var settingsCleanup func()
+	if settingsCreated {
+		settingsCleanup = func() { _ = os.Remove(settingsPath) }
+	}
+
 	args := buildClaudeArgs(opts, b.cfg.Logger)
 
 	// If the caller provided an MCP config, write it to a temp file and pass
@@ -74,6 +86,9 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 	defer func() {
 		if mcpFileCleanup != nil {
 			mcpFileCleanup()
+		}
+		if settingsCleanup != nil {
+			settingsCleanup()
 		}
 	}()
 
@@ -126,6 +141,11 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 
 	// The process started — transfer temp file ownership to the goroutine.
 	mcpFileCleanup = nil
+	ownedSettingsPath := ""
+	if settingsCleanup != nil {
+		ownedSettingsPath = settingsPath
+		settingsCleanup = nil
+	}
 
 	msgCh := make(chan Message, 256)
 	resCh := make(chan Result, 1)
@@ -163,6 +183,9 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		defer close(resCh)
 		if mcpConfigPath != "" {
 			defer cleanupMcpConfigTemp(mcpConfigPath)
+		}
+		if ownedSettingsPath != "" {
+			defer os.Remove(ownedSettingsPath)
 		}
 
 		startTime := time.Now()
@@ -864,6 +887,68 @@ func buildClaudeArgs(opts ExecOptions, logger *slog.Logger) []string {
 	return args
 }
 
+func claudeFastModeFromServiceTier(tier string) (enabled bool, set bool) {
+	switch strings.TrimSpace(tier) {
+	case "":
+		return false, false
+	case claudeFastServiceTier:
+		return true, true
+	case "false", "default":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+// applyClaudeFastModeToSettings merges fastMode into the daemon-owned
+// Claude --settings JSON. created is true only when this function made a
+// new temp file that Execute must delete after the child exits.
+func applyClaudeFastModeToSettings(path, tier string) (string, bool, error) {
+	enabled, set := claudeFastModeFromServiceTier(tier)
+	if !set {
+		return path, false, nil
+	}
+	payload := map[string]any{}
+	created := false
+	if path != "" {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return "", false, fmt.Errorf("read claude settings: %w", err)
+		}
+		if len(bytes.TrimSpace(data)) > 0 {
+			if err := json.Unmarshal(data, &payload); err != nil {
+				return "", false, fmt.Errorf("decode claude settings: %w", err)
+			}
+		}
+	} else {
+		file, err := os.CreateTemp("", "patchbay-claude-settings-*.json")
+		if err != nil {
+			return "", false, fmt.Errorf("create claude settings: %w", err)
+		}
+		path = file.Name()
+		created = true
+		if err := file.Close(); err != nil {
+			_ = os.Remove(path)
+			return "", false, fmt.Errorf("close claude settings: %w", err)
+		}
+	}
+	payload["fastMode"] = enabled
+	data, err := json.Marshal(payload)
+	if err != nil {
+		if created {
+			_ = os.Remove(path)
+		}
+		return "", false, err
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		if created {
+			_ = os.Remove(path)
+		}
+		return "", false, fmt.Errorf("write claude settings: %w", err)
+	}
+	return path, created, nil
+}
+
 func writeClaudeInput(w io.Writer, prompt string) error {
 	data, err := buildClaudeInput(prompt)
 	if err != nil {
@@ -1013,10 +1098,10 @@ func mergeEnv(base []string, extra map[string]string) []string {
 	env := make([]string, 0, len(base)+len(extra))
 	for _, entry := range base {
 		key, _, _ := strings.Cut(entry, "=")
-		// PATCHBAY_* in the daemon's own environment is not task context. Drop
+		// ORVILO_* in the daemon's own environment is not task context. Drop
 		// the inherited namespace for every backend and append only the values
 		// daemon.go explicitly assembled for this task below.
-		if isFilteredChildEnvKey(key) || strings.HasPrefix(strings.ToUpper(key), "PATCHBAY_") {
+		if isFilteredChildEnvKey(key) || strings.HasPrefix(strings.ToUpper(key), "ORVILO_") {
 			continue
 		}
 		env = append(env, entry)

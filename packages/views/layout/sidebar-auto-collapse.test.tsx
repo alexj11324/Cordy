@@ -1,5 +1,7 @@
 import { act, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   Sidebar,
@@ -155,6 +157,95 @@ describe("sidebar auto-collapse between lg and xl", () => {
     expect(root.className).not.toContain("md:block");
     expect(inner.className).toContain("lg:flex");
     expect(inner.className).not.toContain("md:flex");
+  });
+
+  it("keeps the in-flow column visible at 963px when the shell opts out of compact sheets", () => {
+    setWidth(963);
+    const { container } = renderWithI18n(
+      <SidebarProvider compactBehavior="collapse">
+        <Sidebar />
+        <Probe />
+      </SidebarProvider>,
+    );
+
+    const root = container.querySelector<HTMLElement>("[data-slot='sidebar']")!;
+    const inner = container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-container']",
+    )!;
+    expect(root).not.toHaveAttribute("data-mobile");
+    expect(root.className).toContain("block");
+    expect(root.className).not.toContain("hidden");
+    expect(inner.className).toContain("flex");
+    expect(inner.className).not.toContain("hidden");
+
+    fireEvent.click(screen.getByTestId("state"));
+    expect(state()).toBe("collapsed");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps the compact Sheet as the default web behavior", () => {
+    setWidth(963);
+    renderWithI18n(
+      <SidebarProvider>
+        <Sidebar>Navigation</Sidebar>
+        <Probe />
+      </SidebarProvider>,
+    );
+
+    fireEvent.click(screen.getByTestId("state"));
+
+    expect(document.querySelector("[data-mobile='true']")).toBeInTheDocument();
+  });
+
+  it("gives a hover-revealed glass sidebar its own opaque raised surface", () => {
+    setWidth(963);
+    const { container } = renderWithI18n(
+      <SidebarProvider
+        compactBehavior="collapse"
+        defaultOpen={false}
+        hoverReveal
+        glass
+      >
+        <Sidebar>Navigation</Sidebar>
+        <Probe />
+      </SidebarProvider>,
+    );
+    const root = container.querySelector<HTMLElement>("[data-slot='sidebar']")!;
+    const sidebarContainer = container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-container']",
+    )!;
+    const inner = container.querySelector<HTMLElement>("[data-slot='sidebar-inner']")!;
+
+    expect(root).not.toHaveAttribute("data-hover-revealed");
+    expect(sidebarContainer).toHaveClass("inset-y-0", "h-svh", "z-10");
+    expect(inner.className).toContain("[[data-sidebar-glass=true]_&]:bg-transparent");
+    expect(inner).not.toHaveClass("bg-surface-raised");
+    fireEvent.pointerEnter(root);
+
+    expect(state()).toBe("expanded");
+    expect(root).toHaveAttribute("data-hover-revealed", "true");
+    expect(sidebarContainer).toHaveClass("inset-y-0", "h-svh", "z-20");
+    expect(sidebarContainer).not.toHaveClass("z-10");
+    expect(inner).toHaveClass(
+      "bg-surface-raised",
+      "ring-1",
+      "ring-surface-border",
+      "shadow-[var(--floating-shadow)]",
+    );
+    expect(inner.className).not.toContain("bg-transparent");
+  });
+
+  it("overrides the native glass container and inner transparency for hover reveal", () => {
+    const css = readFileSync(
+      join(process.cwd(), "../ui/styles/base.css"),
+      "utf8",
+    );
+
+    expect(css).toContain(
+      '[data-slot="sidebar"][data-hover-revealed="true"]\n  [data-slot="sidebar-container"]',
+    );
+    expect(css).toContain("background: var(--surface-raised);");
+    expect(css).toContain("backdrop-filter: none;");
   });
 
   it("does not touch the collapsed state below the band", () => {

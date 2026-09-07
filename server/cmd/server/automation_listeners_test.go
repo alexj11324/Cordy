@@ -4,12 +4,35 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/patchbay-ai/patchbay/server/internal/events"
 	"github.com/patchbay-ai/patchbay/server/internal/service"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
+
+func createReadyScheduleTrigger(t *testing.T, queries *db.Queries, automationID pgtype.UUID) db.AutomationTrigger {
+	t.Helper()
+	trigger, err := queries.CreateAutomationTrigger(context.Background(), db.CreateAutomationTriggerParams{
+		AutomationID: automationID,
+		Kind:         "schedule",
+		Enabled:      true,
+		CronExpression: pgtype.Text{
+			String: "*/5 * * * *",
+			Valid:  true,
+		},
+		Timezone: pgtype.Text{String: "UTC", Valid: true},
+		NextRunAt: pgtype.Timestamptz{
+			Time:  time.Now().UTC().Add(time.Hour),
+			Valid: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateAutomationTrigger: %v", err)
+	}
+	return trigger
+}
 
 func TestAutomationRunOnlyTaskTerminalEventsUpdateRun(t *testing.T) {
 	ctx := context.Background()
@@ -73,6 +96,7 @@ func TestAutomationRunOnlyTaskTerminalEventsUpdateRun(t *testing.T) {
 			if err != nil {
 				t.Fatalf("CreateAutomation: %v", err)
 			}
+			createReadyScheduleTrigger(t, queries, ap.ID)
 			t.Cleanup(func() {
 				if _, err := testPool.Exec(context.Background(), `DELETE FROM automation WHERE id = $1`, ap.ID); err != nil {
 					t.Logf("cleanup automation: %v", err)
@@ -168,6 +192,7 @@ func dispatchCreateIssueAutomation(t *testing.T, title string) linkedIssueAutoma
 	if err != nil {
 		t.Fatalf("CreateAutomation: %v", err)
 	}
+	createReadyScheduleTrigger(t, queries, ap.ID)
 	t.Cleanup(func() {
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM automation WHERE id = $1`, ap.ID)
 	})
@@ -365,6 +390,7 @@ func TestAutomationDispatchSkipsWhenRuntimeOffline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAutomation: %v", err)
 	}
+	createReadyScheduleTrigger(t, queries, ap.ID)
 	t.Cleanup(func() {
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM automation WHERE id = $1`, ap.ID)
 	})
@@ -454,6 +480,7 @@ func TestAutomationCreateIssueDispatchCreatesIssueWhenRuntimeOffline(t *testing.
 	if err != nil {
 		t.Fatalf("CreateAutomation: %v", err)
 	}
+	createReadyScheduleTrigger(t, queries, ap.ID)
 	t.Cleanup(func() {
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM automation WHERE id = $1`, ap.ID)
 	})
@@ -566,6 +593,7 @@ func TestManualTriggerDoesNotErrorOnPostAdmissionSkip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateAutomation: %v", err)
 	}
+	createReadyScheduleTrigger(t, queries, ap.ID)
 	t.Cleanup(func() {
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM automation WHERE id = $1`, ap.ID)
 	})

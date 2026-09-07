@@ -323,12 +323,12 @@ func TestCreateWorktreeContextCancelsRunningGitProcessTree(t *testing.T) {
 	binDir := t.TempDir()
 	marker := filepath.Join(t.TempDir(), "git-descendant-survived")
 	script := filepath.Join(binDir, "git")
-	body := "#!/bin/sh\n(sleep 0.5; echo leaked > \"$PATCHBAY_TEST_GIT_MARKER\") &\nwait\n"
+	body := "#!/bin/sh\n(sleep 0.5; echo leaked > \"$ORVILO_TEST_GIT_MARKER\") &\nwait\n"
 	if err := os.WriteFile(script, []byte(body), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	t.Setenv("PATCHBAY_TEST_GIT_MARKER", marker)
+	t.Setenv("ORVILO_TEST_GIT_MARKER", marker)
 
 	root := t.TempDir()
 	cache := New(root, testLogger())

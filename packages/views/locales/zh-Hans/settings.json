@@ -115,8 +115,6 @@
       "title": "语言",
       "english": "English",
       "chinese": "中文",
-      "korean": "한국어",
-      "japanese": "日本語",
       "sync_failed": "语言已在本设备保存，但同步到账号失败。其他设备可能仍显示旧语言。"
     },
     "timezone": {
@@ -290,18 +288,18 @@
   },
   "mcp": {
     "title": "MCP",
-    "description": "本工作区的 MCP 服务库。在这里添加不会分配给任何智能体——由智能体的负责人在该智能体自己的 MCP 页里分配，并可按智能体单独开关。",
+    "description": "本工作区的 MCP 服务库。这里的服务会在下一个 task 启动时注入到每个智能体，不用在单个智能体上再分配。",
     "servers_title": "共享服务",
-    "write_only_note": "已保存的配置是只写的——URL、命令、请求头和环境变量不会再次展示，因此编辑一个服务等于整条替换它的配置。改名是安全的：已分配的智能体不受影响。",
+    "write_only_note": "已保存的配置是只写的——URL、命令、请求头和环境变量不会再次展示，因此编辑一个服务等于整条替换它的配置。改名是安全的：所有智能体继续使用这条库记录。",
     "add_server": "添加服务",
     "edit_server": "编辑服务",
     "remove_server": "移除服务",
     "empty_title": "还没有共享的 MCP 服务",
-    "empty_description": "先在这里添加服务，再到需要用它的智能体的 MCP 页里分配。",
+    "empty_description": "在这里添加服务后，这个工作区里的每个智能体都会在下一个 task 用到它。",
     "disabled_badge": "已禁用",
     "admin_only_note": "只有工作区 owner 和 admin 可以修改共享的 MCP 服务。",
     "delete_title": "移除共享服务？",
-    "delete_description": "{{name}} 将从服务库以及所有已分配的智能体上移除，在它们的下一个 task 起生效。",
+    "delete_description": "{{name}} 将从服务库移除。这个工作区里的每个智能体从下一个 task 起不再使用它。",
     "delete_confirm": "移除",
     "cancel": "取消",
     "added_toast": "已添加共享 MCP 服务",
@@ -309,6 +307,15 @@
     "removed_toast": "已移除共享 MCP 服务",
     "save_failed_toast": "共享 MCP 服务保存失败",
     "remove_failed_toast": "共享 MCP 服务移除失败"
+  },
+  "skills": {
+    "title": "Skills",
+    "description": "这个工作区里的 skill 对所有智能体共用。下一个 task 启动时会注入到每个智能体的进程，不用在单个智能体上再分配一遍。",
+    "library_title": "工作区 Skills",
+    "open_library": "打开 Skills 页面",
+    "empty_title": "还没有 skill",
+    "empty_description": "在 Skills 页面创建或导入后，这个工作区里的每个智能体都能用。",
+    "loading": "正在加载 Skills…"
   },
   "page": {
     "connection_status": {
@@ -471,6 +478,7 @@
       "issue_statuses": "任务状态",
       "properties": "属性",
       "quick_actions": "快捷操作",
+      "skills": "Skills",
       "plugins": "Plugins",
       "mcp": "MCP",
       "billing": "账单与套餐"

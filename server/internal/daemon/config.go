@@ -26,7 +26,7 @@ const (
 	// agent run. 0 = no cap: a run is bounded only by the inactivity watchdog
 	// (DefaultAgentIdleWatchdog), so a session that keeps emitting events is
 	// never killed merely for running long (MUL-3064). Operators who want a
-	// hard ceiling for cost/resource control can set PATCHBAY_AGENT_TIMEOUT.
+	// hard ceiling for cost/resource control can set ORVILO_AGENT_TIMEOUT.
 	DefaultAgentTimeout                   = 0
 	DefaultCodexSemanticInactivityTimeout = 10 * time.Minute
 	DefaultCodexHandshakeTimeout          = 30 * time.Second
@@ -54,7 +54,7 @@ const (
 	// from 5 min to 30 min), a subagent, a full test suite. 30 min still cut
 	// real work short, so this is 2h.
 	//
-	// Set PATCHBAY_AGENT_IDLE_WATCHDOG=0 to disable the whole watchdog suite.
+	// Set ORVILO_AGENT_IDLE_WATCHDOG=0 to disable the whole watchdog suite.
 	DefaultAgentIdleWatchdog              = 2 * time.Hour
 	DefaultRuntimeName                    = "Local Agent"
 	DefaultWorkspaceBootstrapSyncInterval = 30 * time.Second
@@ -90,7 +90,7 @@ const (
 // always cheap to recreate (`pnpm install`, `next build`, `turbo build`). Things
 // like `dist/`, `build/`, `.cache/` or `.venv/` may legitimately hold source or
 // release output in some repos and are NOT included by default — set
-// PATCHBAY_GC_ARTIFACT_PATTERNS to extend the list per deployment.
+// ORVILO_GC_ARTIFACT_PATTERNS to extend the list per deployment.
 var DefaultGCArtifactPatterns = []string{"node_modules", ".next", ".turbo"}
 
 // Config holds all daemon configuration.
@@ -129,7 +129,7 @@ type Config struct {
 	AgentTimeout                   time.Duration
 	CodexSemanticInactivityTimeout time.Duration
 	// CodexFirstTurnNoProgressTimeout is an explicit override for the Codex
-	// first-turn no-progress ceiling (PATCHBAY_CODEX_FIRST_TURN_TIMEOUT). 0 means
+	// first-turn no-progress ceiling (ORVILO_CODEX_FIRST_TURN_TIMEOUT). 0 means
 	// unset: the backend keeps its default ceiling, which CodexSemanticInactivityTimeout
 	// can only shrink. A positive value raises (or lowers) that ceiling outright,
 	// for app-servers that are legitimately slow to their first event (GH #3262).
@@ -190,7 +190,7 @@ type Overrides struct {
 // and optional CLI flag overrides.
 func LoadConfig(overrides Overrides) (Config, error) {
 	// Server URL: override > env > default
-	rawServerURL := envOrDefault("PATCHBAY_SERVER_URL", DefaultServerURL)
+	rawServerURL := envOrDefault("ORVILO_SERVER_URL", DefaultServerURL)
 	if overrides.ServerURL != "" {
 		rawServerURL = overrides.ServerURL
 	}
@@ -206,15 +206,15 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// instead of a launchctl env hack. We translate those fields into the
 	// same env vars the rest of LoadConfig already honors:
 	//
-	//   - PATCHBAY_OPENCLAW_PATH: read by probe() via envOrDefault for the
+	//   - ORVILO_OPENCLAW_PATH: read by probe() via envOrDefault for the
 	//     binary lookup; pre-existing path.
 	//   - OPENCLAW_STATE_DIR:    OpenClaw's own env var; the daemon already
 	//     forwards it to spawned children via mergeEnv (server/pkg/agent/...).
-	//   - PATCHBAY_OPENCLAW_CLI_TIMEOUT: read by execenv when it sets the
+	//   - ORVILO_OPENCLAW_CLI_TIMEOUT: read by execenv when it sets the
 	//     deadline on each `openclaw config ...` call during task prep.
 	//
 	// Precedence is "env wins over config wins over default" — same shape
-	// users already get with PATCHBAY_OPENCLAW_PATH today. We achieve it with
+	// users already get with ORVILO_OPENCLAW_PATH today. We achieve it with
 	// LookupEnv guards: if the user already exported the env var (in their
 	// shell, via launchctl, or via the systemd unit), we leave it alone;
 	// otherwise we Setenv from the config file. This keeps every downstream
@@ -254,23 +254,23 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		return Config{}, fmt.Errorf("no agent CLI found: install claude, codebuddy, codearts, codex, copilot, opencode, deveco, openclaw, hermes, pi, omp, cursor-agent, kimi, reasonix, dsh, kiro-cli, agy, qodercli, qoderclicn, traecli, grok, qwen, qwenpaw, mcode, dim, or zeroclaw and ensure it is on PATH")
 	}
 
-	claudeArgs, err := shellArgsFromEnv("PATCHBAY_CLAUDE_ARGS")
+	claudeArgs, err := shellArgsFromEnv("ORVILO_CLAUDE_ARGS")
 	if err != nil {
 		return Config{}, err
 	}
-	codexArgs, err := shellArgsFromEnv("PATCHBAY_CODEX_ARGS")
+	codexArgs, err := shellArgsFromEnv("ORVILO_CODEX_ARGS")
 	if err != nil {
 		return Config{}, err
 	}
-	codebuddyArgs, err := shellArgsFromEnv("PATCHBAY_CODEBUDDY_ARGS")
+	codebuddyArgs, err := shellArgsFromEnv("ORVILO_CODEBUDDY_ARGS")
 	if err != nil {
 		return Config{}, err
 	}
-	qwenArgs, err := shellArgsFromEnv("PATCHBAY_QWEN_ARGS")
+	qwenArgs, err := shellArgsFromEnv("ORVILO_QWEN_ARGS")
 	if err != nil {
 		return Config{}, err
 	}
-	qwenpawArgs, err := shellArgsFromEnv("PATCHBAY_QWENPAW_ARGS")
+	qwenpawArgs, err := shellArgsFromEnv("ORVILO_QWENPAW_ARGS")
 	if err != nil {
 		return Config{}, err
 	}
@@ -282,7 +282,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	}
 
 	// Durations: override > env > default
-	pollInterval, err := durationFromEnv("PATCHBAY_DAEMON_POLL_INTERVAL", DefaultPollInterval)
+	pollInterval, err := durationFromEnv("ORVILO_DAEMON_POLL_INTERVAL", DefaultPollInterval)
 	if err != nil {
 		return Config{}, err
 	}
@@ -290,7 +290,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		pollInterval = overrides.PollInterval
 	}
 
-	heartbeatInterval, err := durationFromEnv("PATCHBAY_DAEMON_HEARTBEAT_INTERVAL", DefaultHeartbeatInterval)
+	heartbeatInterval, err := durationFromEnv("ORVILO_DAEMON_HEARTBEAT_INTERVAL", DefaultHeartbeatInterval)
 	if err != nil {
 		return Config{}, err
 	}
@@ -298,7 +298,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		heartbeatInterval = overrides.HeartbeatInterval
 	}
 
-	agentTimeout, err := durationFromEnv("PATCHBAY_AGENT_TIMEOUT", DefaultAgentTimeout)
+	agentTimeout, err := durationFromEnv("ORVILO_AGENT_TIMEOUT", DefaultAgentTimeout)
 	if err != nil {
 		return Config{}, err
 	}
@@ -306,19 +306,19 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		agentTimeout = *overrides.AgentTimeout
 	}
 
-	// PATCHBAY_AGENT_IDLE_WATCHDOG=0 disables the per-task idle watchdog. We
+	// ORVILO_AGENT_IDLE_WATCHDOG=0 disables the per-task idle watchdog. We
 	// route 0 through durationFromEnv so the operator can opt out without
 	// patching the binary; any positive duration overrides DefaultAgentIdleWatchdog.
-	agentIdleWatchdog, err := durationFromEnv("PATCHBAY_AGENT_IDLE_WATCHDOG", DefaultAgentIdleWatchdog)
+	agentIdleWatchdog, err := durationFromEnv("ORVILO_AGENT_IDLE_WATCHDOG", DefaultAgentIdleWatchdog)
 	if err != nil {
 		return Config{}, err
 	}
-	// PATCHBAY_OPENCODE_IDLE_WATCHDOG narrows the no-message window for
+	// ORVILO_OPENCODE_IDLE_WATCHDOG narrows the no-message window for
 	// OpenCode's streamed model responses. Zero removes the provider-specific
-	// override and falls back to PATCHBAY_AGENT_IDLE_WATCHDOG; positive values
+	// override and falls back to ORVILO_AGENT_IDLE_WATCHDOG; positive values
 	// cannot extend the global bound, and the global zero still disables the
 	// whole mechanism.
-	openCodeIdleWatchdog, err := durationFromEnv("PATCHBAY_OPENCODE_IDLE_WATCHDOG", DefaultOpenCodeIdleWatchdog)
+	openCodeIdleWatchdog, err := durationFromEnv("ORVILO_OPENCODE_IDLE_WATCHDOG", DefaultOpenCodeIdleWatchdog)
 	if err != nil {
 		return Config{}, err
 	}
@@ -329,17 +329,17 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// silent step it already covers those.
 	//
 	// The derivation tracks in BOTH directions, which is the point of collapsing
-	// this to one number. Raising PATCHBAY_AGENT_IDLE_WATCHDOG no longer leaves
+	// this to one number. Raising ORVILO_AGENT_IDLE_WATCHDOG no longer leaves
 	// tool calls silently pinned to the old ceiling — and lowering it now also
 	// lowers the tool budget, where previously a shortened idle window left
 	// tools at a separate, larger 2h. That second direction is a real behaviour
 	// change for anyone who had deliberately shortened the idle window; the
 	// override below is how they keep the two apart.
 	//
-	// PATCHBAY_AGENT_TOOL_WATCHDOG still overrides for the deliberate "tools may
+	// ORVILO_AGENT_TOOL_WATCHDOG still overrides for the deliberate "tools may
 	// run longer than the model may think" case, and 0 keeps its meaning: never
 	// force-stop while a tool is in flight.
-	agentToolWatchdog, err := durationFromEnv("PATCHBAY_AGENT_TOOL_WATCHDOG", agentIdleWatchdog)
+	agentToolWatchdog, err := durationFromEnv("ORVILO_AGENT_TOOL_WATCHDOG", agentIdleWatchdog)
 	if err != nil {
 		return Config{}, err
 	}
@@ -370,7 +370,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	if codexSemanticDefault <= 0 {
 		codexSemanticDefault = DefaultCodexSemanticInactivityTimeout
 	}
-	codexSemanticInactivityTimeout, err := durationFromEnv("PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", codexSemanticDefault)
+	codexSemanticInactivityTimeout, err := durationFromEnv("ORVILO_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", codexSemanticDefault)
 	if err != nil {
 		return Config{}, err
 	}
@@ -380,7 +380,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 
 	// 0 = unset: the codex backend keeps its default first-turn ceiling. A
 	// positive value is an explicit operator override (GH #3262 / #5959).
-	codexFirstTurnNoProgressTimeout, err := durationFromEnv("PATCHBAY_CODEX_FIRST_TURN_TIMEOUT", 0)
+	codexFirstTurnNoProgressTimeout, err := durationFromEnv("ORVILO_CODEX_FIRST_TURN_TIMEOUT", 0)
 	if err != nil {
 		return Config{}, err
 	}
@@ -401,14 +401,14 @@ func LoadConfig(overrides Overrides) (Config, error) {
 			effectiveSemanticTimeout = DefaultCodexSemanticInactivityTimeout
 		}
 		if codexFirstTurnNoProgressTimeout >= effectiveSemanticTimeout {
-			slog.Warn("PATCHBAY_CODEX_FIRST_TURN_TIMEOUT is greater than or equal to the semantic-inactivity timeout; the effective first-turn wait is truncated to the semantic timeout and the model-catalog startup retry is disabled. Because the semantic timer is armed first and equal durations do not deterministically favour the first-turn deadline, set PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT strictly above PATCHBAY_CODEX_FIRST_TURN_TIMEOUT (with some margin) to preserve it.",
+			slog.Warn("ORVILO_CODEX_FIRST_TURN_TIMEOUT is greater than or equal to the semantic-inactivity timeout; the effective first-turn wait is truncated to the semantic timeout and the model-catalog startup retry is disabled. Because the semantic timer is armed first and equal durations do not deterministically favour the first-turn deadline, set ORVILO_CODEX_SEMANTIC_INACTIVITY_TIMEOUT strictly above ORVILO_CODEX_FIRST_TURN_TIMEOUT (with some margin) to preserve it.",
 				"first_turn_timeout", codexFirstTurnNoProgressTimeout.String(),
 				"semantic_inactivity_timeout", effectiveSemanticTimeout.String(),
 			)
 		}
 	}
 
-	codexHandshakeTimeout, err := durationFromEnv("PATCHBAY_CODEX_HANDSHAKE_TIMEOUT", DefaultCodexHandshakeTimeout)
+	codexHandshakeTimeout, err := durationFromEnv("ORVILO_CODEX_HANDSHAKE_TIMEOUT", DefaultCodexHandshakeTimeout)
 	if err != nil {
 		return Config{}, err
 	}
@@ -423,7 +423,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// persisted config values into Overrides, while embedded callers may reach
 	// LoadConfig with the environment directly.
 	codexThreadHandshakeTimeout := DefaultCodexThreadHandshakeTimeout
-	if raw, ok := os.LookupEnv("PATCHBAY_CODEX_HANDSHAKE_TIMEOUT"); ok && strings.TrimSpace(raw) != "" {
+	if raw, ok := os.LookupEnv("ORVILO_CODEX_HANDSHAKE_TIMEOUT"); ok && strings.TrimSpace(raw) != "" {
 		if parsed, parseErr := parseFlexDuration(strings.TrimSpace(raw)); parseErr == nil && parsed > 0 {
 			codexThreadHandshakeTimeout = codexHandshakeTimeout
 		}
@@ -432,7 +432,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		codexThreadHandshakeTimeout = overrides.CodexHandshakeTimeout
 	}
 
-	maxConcurrentTasks, err := intFromEnv("PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS", DefaultMaxConcurrentTasks)
+	maxConcurrentTasks, err := intFromEnv("ORVILO_DAEMON_MAX_CONCURRENT_TASKS", DefaultMaxConcurrentTasks)
 	if err != nil {
 		return Config{}, err
 	}
@@ -447,9 +447,9 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// The persistent UUID is written once to `<profile-dir>/daemon.id` and
 	// then reused forever so hostname drift (.local suffix, system rename,
 	// mDNS state, profile switch) no longer mints a new runtime identity.
-	// Callers may still pin a specific id via PATCHBAY_DAEMON_ID or the
+	// Callers may still pin a specific id via ORVILO_DAEMON_ID or the
 	// override field (e.g. for tests or embedded environments).
-	daemonID := strings.TrimSpace(os.Getenv("PATCHBAY_DAEMON_ID"))
+	daemonID := strings.TrimSpace(os.Getenv("ORVILO_DAEMON_ID"))
 	if overrides.DaemonID != "" {
 		daemonID = overrides.DaemonID
 	}
@@ -474,16 +474,16 @@ func LoadConfig(overrides Overrides) (Config, error) {
 		legacyDaemonIDs = append(legacyDaemonIDs, uuids...)
 	}
 	// Strip anything that collides with the resolved daemon_id (e.g. when
-	// the user explicitly pins PATCHBAY_DAEMON_ID=<hostname>, or when the
+	// the user explicitly pins ORVILO_DAEMON_ID=<hostname>, or when the
 	// canonical id was itself promoted from a pre-change profile file).
 	legacyDaemonIDs = filterLegacyIDs(legacyDaemonIDs, daemonID)
 
-	deviceName := envOrDefault("PATCHBAY_DAEMON_DEVICE_NAME", host)
+	deviceName := envOrDefault("ORVILO_DAEMON_DEVICE_NAME", host)
 	if overrides.DeviceName != "" {
 		deviceName = overrides.DeviceName
 	}
 
-	runtimeName := envOrDefault("PATCHBAY_AGENT_RUNTIME_NAME", DefaultRuntimeName)
+	runtimeName := envOrDefault("ORVILO_AGENT_RUNTIME_NAME", DefaultRuntimeName)
 	if overrides.RuntimeName != "" {
 		runtimeName = overrides.RuntimeName
 	}
@@ -501,55 +501,55 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	}
 
 	// Keep env after task: env > default (false)
-	keepEnv := os.Getenv("PATCHBAY_KEEP_ENV_AFTER_TASK") == "true" || os.Getenv("PATCHBAY_KEEP_ENV_AFTER_TASK") == "1"
+	keepEnv := os.Getenv("ORVILO_KEEP_ENV_AFTER_TASK") == "true" || os.Getenv("ORVILO_KEEP_ENV_AFTER_TASK") == "1"
 
 	// GC config: env > defaults
 	gcEnabled := true
-	if v := os.Getenv("PATCHBAY_GC_ENABLED"); v == "false" || v == "0" {
+	if v := os.Getenv("ORVILO_GC_ENABLED"); v == "false" || v == "0" {
 		gcEnabled = false
 	}
-	gcInterval, err := durationFromEnv("PATCHBAY_GC_INTERVAL", DefaultGCInterval)
+	gcInterval, err := durationFromEnv("ORVILO_GC_INTERVAL", DefaultGCInterval)
 	if err != nil {
 		return Config{}, err
 	}
-	gcTTL, err := durationFromEnv("PATCHBAY_GC_TTL", DefaultGCTTL)
+	gcTTL, err := durationFromEnv("ORVILO_GC_TTL", DefaultGCTTL)
 	if err != nil {
 		return Config{}, err
 	}
-	gcCompletedTaskTTL, err := durationFromEnv("PATCHBAY_GC_COMPLETED_TASK_TTL", defaultGCCompletedTaskTTL(serverBaseURL))
+	gcCompletedTaskTTL, err := durationFromEnv("ORVILO_GC_COMPLETED_TASK_TTL", defaultGCCompletedTaskTTL(serverBaseURL))
 	if err != nil {
 		return Config{}, err
 	}
-	gcOrphanTTL, err := durationFromEnv("PATCHBAY_GC_ORPHAN_TTL", DefaultGCOrphanTTL)
+	gcOrphanTTL, err := durationFromEnv("ORVILO_GC_ORPHAN_TTL", DefaultGCOrphanTTL)
 	if err != nil {
 		return Config{}, err
 	}
-	gcArtifactTTL, err := durationFromEnv("PATCHBAY_GC_ARTIFACT_TTL", DefaultGCArtifactTTL)
+	gcArtifactTTL, err := durationFromEnv("ORVILO_GC_ARTIFACT_TTL", DefaultGCArtifactTTL)
 	if err != nil {
 		return Config{}, err
 	}
-	gcCodexSessionTTL, err := durationFromEnv("PATCHBAY_GC_CODEX_SESSION_TTL", DefaultGCCodexSessionTTL)
+	gcCodexSessionTTL, err := durationFromEnv("ORVILO_GC_CODEX_SESSION_TTL", DefaultGCCodexSessionTTL)
 	if err != nil {
 		return Config{}, err
 	}
-	gcTaskTempLegacyTTL, err := durationFromEnv("PATCHBAY_GC_TASK_TEMP_LEGACY_TTL", DefaultGCTaskTempLegacyTTL)
+	gcTaskTempLegacyTTL, err := durationFromEnv("ORVILO_GC_TASK_TEMP_LEGACY_TTL", DefaultGCTaskTempLegacyTTL)
 	if err != nil {
 		return Config{}, err
 	}
-	gcHermesMemoryTTL, err := durationFromEnv("PATCHBAY_GC_HERMES_MEMORY_TTL", DefaultGCHermesMemoryTTL)
+	gcHermesMemoryTTL, err := durationFromEnv("ORVILO_GC_HERMES_MEMORY_TTL", DefaultGCHermesMemoryTTL)
 	if err != nil {
 		return Config{}, err
 	}
-	gcHermesSessionTTL, err := durationFromEnv("PATCHBAY_GC_HERMES_SESSION_TTL", DefaultGCHermesSessionTTL)
+	gcHermesSessionTTL, err := durationFromEnv("ORVILO_GC_HERMES_SESSION_TTL", DefaultGCHermesSessionTTL)
 	if err != nil {
 		return Config{}, err
 	}
-	gcRepoTTL, err := durationFromEnv("PATCHBAY_GC_REPO_TTL", DefaultGCRepoTTL)
+	gcRepoTTL, err := durationFromEnv("ORVILO_GC_REPO_TTL", DefaultGCRepoTTL)
 	if err != nil {
 		return Config{}, err
 	}
-	gcRepoMaintenanceEnabled := boolFromEnv("PATCHBAY_GC_REPO_MAINTENANCE_ENABLED", true)
-	gcArtifactPatterns := patternsFromEnv("PATCHBAY_GC_ARTIFACT_PATTERNS", DefaultGCArtifactPatterns)
+	gcRepoMaintenanceEnabled := boolFromEnv("ORVILO_GC_REPO_MAINTENANCE_ENABLED", true)
+	gcArtifactPatterns := patternsFromEnv("ORVILO_GC_ARTIFACT_PATTERNS", DefaultGCArtifactPatterns)
 
 	// Auto-update config: default -> env override -> CLI override.
 	//
@@ -559,12 +559,12 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// GitHub release would clobber that work; they also commonly stay on an
 	// older server build, which a fresh CLI may no longer talk to. Keeping
 	// auto-update off by default for self-host avoids both footguns (MUL-2381).
-	// Operators on either side can flip the default with PATCHBAY_DAEMON_AUTO_UPDATE.
-	autoUpdateEnabled := boolFromEnv("PATCHBAY_DAEMON_AUTO_UPDATE", isOfficialCloudServer(serverBaseURL))
+	// Operators on either side can flip the default with ORVILO_DAEMON_AUTO_UPDATE.
+	autoUpdateEnabled := boolFromEnv("ORVILO_DAEMON_AUTO_UPDATE", isOfficialCloudServer(serverBaseURL))
 	if overrides.DisableAutoUpdate {
 		autoUpdateEnabled = false
 	}
-	autoUpdateInterval, err := durationFromEnv("PATCHBAY_DAEMON_AUTO_UPDATE_INTERVAL", DefaultAutoUpdateCheckInterval)
+	autoUpdateInterval, err := durationFromEnv("ORVILO_DAEMON_AUTO_UPDATE_INTERVAL", DefaultAutoUpdateCheckInterval)
 	if err != nil {
 		return Config{}, err
 	}
@@ -578,7 +578,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// off (don't clobber my fork) argues the opposite way for the latter: an
 	// operator who installed a build by hand wants the daemon to run it.
 	// Default on for every CLI-launched daemon; Desktop opts out at the loop.
-	autoReloadEnabled := boolFromEnv("PATCHBAY_DAEMON_AUTO_RELOAD", true)
+	autoReloadEnabled := boolFromEnv("ORVILO_DAEMON_AUTO_RELOAD", true)
 	if overrides.DisableAutoReload {
 		autoReloadEnabled = false
 	}
@@ -661,7 +661,7 @@ func isOfficialCloudServer(baseURL string) bool {
 // a full disk is our incident rather than a user's, and unbounded retention has
 // no operator watching it. On self-host the same default would turn a routine
 // daemon upgrade into a silent deletion of data the operator never agreed to
-// give up, so it stays disabled until they set PATCHBAY_GC_COMPLETED_TASK_TTL
+// give up, so it stays disabled until they set ORVILO_GC_COMPLETED_TASK_TTL
 // themselves. Either side can override in either direction; cloud disables it
 // again with an explicit 0.
 //
@@ -679,7 +679,7 @@ func defaultGCCompletedTaskTTL(serverBaseURL string) time.Duration {
 func NormalizeServerBaseURL(raw string) (string, error) {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil {
-		return "", fmt.Errorf("invalid PATCHBAY_SERVER_URL: %w", err)
+		return "", fmt.Errorf("invalid ORVILO_SERVER_URL: %w", err)
 	}
 	switch u.Scheme {
 	case "ws":
@@ -688,7 +688,7 @@ func NormalizeServerBaseURL(raw string) (string, error) {
 		u.Scheme = "https"
 	case "http", "https":
 	default:
-		return "", fmt.Errorf("PATCHBAY_SERVER_URL must use ws, wss, http, or https")
+		return "", fmt.Errorf("ORVILO_SERVER_URL must use ws, wss, http, or https")
 	}
 	if u.Path == "/ws" {
 		u.Path = ""
@@ -704,24 +704,24 @@ func NormalizeServerBaseURL(raw string) (string, error) {
 // reads this and nothing else: ResolveWorkspacesRoot derives its default from
 // $HOME and the --profile name, so a task hosted by a named-profile daemon
 // would otherwise scan the default root and silently report the wrong tree.
-const TaskWorkspacesRootEnv = "PATCHBAY_TASK_WORKSPACES_ROOT"
+const TaskWorkspacesRootEnv = "ORVILO_TASK_WORKSPACES_ROOT"
 
 // ResolveWorkspacesRoot returns the absolute path that the daemon and CLI
 // should treat as the workspaces root. Resolution order: explicit override >
-// PATCHBAY_WORKSPACES_ROOT env > default ($HOME/patchbay_workspaces, or
+// ORVILO_WORKSPACES_ROOT env > default ($HOME/patchbay_workspaces, or
 // $HOME/patchbay_workspaces_<profile> for a named profile). Read-only callers
 // (e.g. `patchbay daemon disk-usage`) use this directly so they pick the same
 // directory the running daemon would have picked. Inside a managed task use
 // TaskWorkspacesRootEnv instead — see resolveDiskUsageRoot.
 func ResolveWorkspacesRoot(profile, override string) (string, error) {
-	root := strings.TrimSpace(os.Getenv("PATCHBAY_WORKSPACES_ROOT"))
+	root := strings.TrimSpace(os.Getenv("ORVILO_WORKSPACES_ROOT"))
 	if override != "" {
 		root = override
 	}
 	if root == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("resolve home directory: %w (set PATCHBAY_WORKSPACES_ROOT to override)", err)
+			return "", fmt.Errorf("resolve home directory: %w (set ORVILO_WORKSPACES_ROOT to override)", err)
 		}
 		if profile != "" {
 			root = filepath.Join(home, "patchbay_workspaces_"+profile)
@@ -741,7 +741,7 @@ func ResolveWorkspacesRoot(profile, override string) (string, error) {
 // disk-usage CLI uses this to make sure the "artifact size" it reports
 // matches what the GC would actually reclaim.
 func ArtifactPatternsFromEnv() []string {
-	return patternsFromEnv("PATCHBAY_GC_ARTIFACT_PATTERNS", DefaultGCArtifactPatterns)
+	return patternsFromEnv("ORVILO_GC_ARTIFACT_PATTERNS", DefaultGCArtifactPatterns)
 }
 
 // patternsFromEnv reads a comma-separated list from env. Patterns containing
@@ -960,7 +960,7 @@ var agentInstallDirectories = func() []string {
 
 // resolveAgentsFromInstallPaths supplements inherited PATH with conventional
 // installer locations. Explicit executable overrides still hard-fail if absent.
-// Nonstandard installations can supply PATH or PATCHBAY_<PROVIDER>_PATH instead
+// Nonstandard installations can supply PATH or ORVILO_<PROVIDER>_PATH instead
 // of implicitly executing arbitrary user startup scripts during discovery.
 var resolveAgentsFromInstallPaths = func(names []string) map[string]string {
 	out := map[string]string{}
@@ -1021,8 +1021,8 @@ func openclawOverrideFrom(cfg cli.CLIConfig) *cli.OpenClawOverride {
 //
 // Side-effecting on os.Setenv is intentional and scoped:
 //
-//   - The three vars touched (PATCHBAY_OPENCLAW_PATH, OPENCLAW_STATE_DIR,
-//     PATCHBAY_OPENCLAW_CLI_TIMEOUT) are
+//   - The three vars touched (ORVILO_OPENCLAW_PATH, OPENCLAW_STATE_DIR,
+//     ORVILO_OPENCLAW_CLI_TIMEOUT) are
 //     OpenClaw-specific. Other backends do not read them; setting them in the
 //     daemon process has no observable effect on, e.g., Claude Code or Codex
 //     spawn behavior.
@@ -1035,8 +1035,8 @@ func applyOpenclawOverride(oc *cli.OpenClawOverride) {
 		return
 	}
 	if oc.BinaryPath != "" {
-		if _, set := os.LookupEnv("PATCHBAY_OPENCLAW_PATH"); !set {
-			_ = os.Setenv("PATCHBAY_OPENCLAW_PATH", oc.BinaryPath)
+		if _, set := os.LookupEnv("ORVILO_OPENCLAW_PATH"); !set {
+			_ = os.Setenv("ORVILO_OPENCLAW_PATH", oc.BinaryPath)
 		}
 	}
 	if oc.StateDir != "" {

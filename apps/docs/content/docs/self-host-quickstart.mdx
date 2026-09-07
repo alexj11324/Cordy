@@ -48,7 +48,7 @@ make selfhost
 On first run, `make selfhost` will:
 
 1. Create `.env` from `.env.example`
-2. Generate a random `JWT_SECRET`, PostgreSQL password, and `PATCHBAY_VCS_SECRET_KEY` (the encryption key for self-hosted Git integrations)
+2. Generate a random `JWT_SECRET`, PostgreSQL password, and `ORVILO_VCS_SECRET_KEY` (the encryption key for self-hosted Git integrations)
 3. Pull the PostgreSQL, Patchbay backend, and Patchbay frontend images
 4. Create persistent volumes and start the three containers
 5. Wait until the backend starts answering health checks
@@ -107,8 +107,8 @@ First set the public URLs in `.env`:
 
 ```bash
 FRONTEND_ORIGIN=https://app.example.com
-PATCHBAY_APP_URL=https://app.example.com
-PATCHBAY_PUBLIC_URL=https://api.example.com
+ORVILO_APP_URL=https://app.example.com
+ORVILO_PUBLIC_URL=https://api.example.com
 ```
 
 With this configuration all browser traffic stays on the app domain, so cookies never cross domains and `COOKIE_DOMAIN` is not needed. If the browser talks to the api domain directly instead, you must set it — see [Environment variables](/environment-variables).
@@ -171,7 +171,7 @@ patchbay.example.com {
 }
 ```
 
-With a single origin, point both URLs at it (`FRONTEND_ORIGIN` and `PATCHBAY_APP_URL` in `.env`, then `--server-url` and `--app-url` in `patchbay setup self-host`).
+With a single origin, point both URLs at it (`FRONTEND_ORIGIN` and `ORVILO_APP_URL` in `.env`, then `--server-url` and `--app-url` in `patchbay setup self-host`).
 
 Caddy obtains TLS certificates and forwards WebSockets. After editing `.env`, recreate the containers with `up -d` so the new configuration takes effect:
 
@@ -181,7 +181,7 @@ curl -fsS https://api.example.com/readyz
 curl -fsS https://app.example.com/api/config | grep -o '"daemon_server_url":"[^"]*"'
 ```
 
-The last command prints `daemon_server_url`, the URL daemons use to reach the API: `PATCHBAY_DAEMON_SERVER_URL` when set, then `PATCHBAY_PUBLIC_URL`, otherwise the app URL — `PATCHBAY_APP_URL`, falling back to `FRONTEND_ORIGIN`. When neither `PATCHBAY_APP_URL` nor `FRONTEND_ORIGIN` is set, the field is omitted from the response entirely (so the grep prints nothing), even if `PATCHBAY_DAEMON_SERVER_URL` or `PATCHBAY_PUBLIC_URL` is set. If it prints a `localhost` address, `.env` still carries local defaults: set `FRONTEND_ORIGIN` and `PATCHBAY_APP_URL` explicitly to the public URLs instead of relying on the `${FRONTEND_PORT}` references copied from `.env.example`, then recreate the containers.
+The last command prints `daemon_server_url`, the URL daemons use to reach the API: `ORVILO_DAEMON_SERVER_URL` when set, then `ORVILO_PUBLIC_URL`, otherwise the app URL — `ORVILO_APP_URL`, falling back to `FRONTEND_ORIGIN`. When neither `ORVILO_APP_URL` nor `FRONTEND_ORIGIN` is set, the field is omitted from the response entirely (so the grep prints nothing), even if `ORVILO_DAEMON_SERVER_URL` or `ORVILO_PUBLIC_URL` is set. If it prints a `localhost` address, `.env` still carries local defaults: set `FRONTEND_ORIGIN` and `ORVILO_APP_URL` explicitly to the public URLs instead of relying on the `${FRONTEND_PORT}` references copied from `.env.example`, then recreate the containers.
 
 <Callout type="warning">
 `docker compose restart` only restarts existing containers and does not re-read `.env`. After changing configuration, run `docker compose -f docker-compose.selfhost.yml up -d` to re-read `.env`.
@@ -207,7 +207,7 @@ The logs contain a line like:
 Enter the code and create your first workspace. Once Resend or SMTP is configured, codes are sent by email and members no longer need to read container logs — see [Auth setup](/auth-setup).
 
 <Callout type="warning">
-Self-hosted deployments default to `APP_ENV=production`, which disables fixed verification codes. Do not set `PATCHBAY_DEV_VERIFICATION_CODE` on a public instance.
+Self-hosted deployments default to `APP_ENV=production`, which disables fixed verification codes. Do not set `ORVILO_DEV_VERIFICATION_CODE` on a public instance.
 </Callout>
 
 ## 5. Connect a computer
@@ -264,7 +264,7 @@ The output should show:
 
 Back in Patchbay, once an online runtime appears in the runtime list, create an agent and assign it your first issue.
 
-When the run shows as completed and the agent's reply appears in the timeline, the self-hosted service, the computer, and the AI coding tool are all connected. For detailed steps, see steps 3-5 of the [quickstart](/cloud-quickstart).
+When the run shows as completed and the agent's reply appears in the timeline, the self-hosted service, the computer, and the AI coding tool are all connected.
 
 ## Common admin commands
 
@@ -315,11 +315,11 @@ docker compose -f docker-compose.selfhost.yml up -d
 The version you end up running is resolved by `docker compose pull`, which asks GHCR what the tag points at right now. A checkout that is months out of date will still pull today's `latest` images; conversely, `git pull` alone changes nothing until you pull images and recreate the containers.
 
 <Callout type="warning">
-**If you pinned `PATCHBAY_IMAGE_TAG`, neither command upgrades anything.** Both images resolve as `${PATCHBAY_IMAGE_TAG:-latest}` in `docker-compose.selfhost.yml`, and `.env.example` ships `PATCHBAY_IMAGE_TAG=latest`. If your `.env` pins an exact release, `pull` just re-fetches that same tag and you stay on the old version — no error, no warning. Check before you upgrade:
+**If you pinned `ORVILO_IMAGE_TAG`, neither command upgrades anything.** Both images resolve as `${ORVILO_IMAGE_TAG:-latest}` in `docker-compose.selfhost.yml`, and `.env.example` ships `ORVILO_IMAGE_TAG=latest`. If your `.env` pins an exact release, `pull` just re-fetches that same tag and you stay on the old version — no error, no warning. Check before you upgrade:
 
 ```bash
-grep PATCHBAY_IMAGE_TAG .env
-# PATCHBAY_IMAGE_TAG=v0.4.5   ← pinned: edit to `latest` (or the release you want) first
+grep ORVILO_IMAGE_TAG .env
+# ORVILO_IMAGE_TAG=v0.4.5   ← pinned: edit to `latest` (or the release you want) first
 ```
 </Callout>
 
@@ -367,7 +367,7 @@ Anything other than HTTP 200 with both checks `ok` means the new version did not
 
 Helm has its own upgrade path: set `images.backend.tag` / `images.frontend.tag` to the release you want in your values file, then `helm upgrade`. Changing the tag changes the pod spec, so Kubernetes pulls the new image and rolls the Deployments — this is the reliable route.
 
-`kubectl -n patchbay rollout restart` is **not** an upgrade on its own. The chart ships `pullPolicy: IfNotPresent` (`deploy/helm/patchbay/values.yaml`), so a node that already has that tag cached reuses the old image and the restart silently changes nothing — the same class of trap as a pinned `PATCHBAY_IMAGE_TAG`. If you want to track a floating tag that way, set `images.backend.pullPolicy` / `images.frontend.pullPolicy` to `Always` first. See the [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative).
+`kubectl -n patchbay rollout restart` is **not** an upgrade on its own. The chart ships `pullPolicy: IfNotPresent` (`deploy/helm/patchbay/values.yaml`), so a node that already has that tag cached reuses the old image and the restart silently changes nothing — the same class of trap as a pinned `ORVILO_IMAGE_TAG`. If you want to track a floating tag that way, set `images.backend.pullPolicy` / `images.frontend.pullPolicy` to `Always` first. See the [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative).
 
 <Callout type="warning">
 `docker compose down` keeps `pgdata` and `backend_uploads`. Adding `-v` deletes these volumes, including the database; do not run `docker compose down -v` unless you intend to wipe the instance.

@@ -81,7 +81,7 @@ var daemonDiskUsageCmd = &cobra.Command{
 		"`desktop-<host>` root — and prints a per-root breakdown with a combined grand total. In that mode --top\n" +
 		"applies within each root and --workspaces-root is not allowed.\n\n" +
 		"Bytes are split into total and the artifact-cleanable subset (node_modules, .next, .turbo by default,\n" +
-		"overridable via PATCHBAY_GC_ARTIFACT_PATTERNS) so the report stays in sync with what the GC reclaims.\n" +
+		"overridable via ORVILO_GC_ARTIFACT_PATTERNS) so the report stays in sync with what the GC reclaims.\n" +
 		"A .git directory counts toward the total but never toward the artifact subset — the GC frees it only\n" +
 		"when it removes the whole task directory. Symlinks are never followed.\n\n" +
 		"The STATUS column shows the current status of the issue each directory belongs to, which requires\n" +
@@ -94,19 +94,19 @@ var daemonDiskUsageCmd = &cobra.Command{
 func init() {
 	f := daemonStartCmd.Flags()
 	f.Bool("foreground", false, "Run in the foreground instead of background")
-	f.String("daemon-id", "", "Unique daemon identifier (env: PATCHBAY_DAEMON_ID)")
-	f.String("device-name", "", "Human-readable device name (env: PATCHBAY_DAEMON_DEVICE_NAME)")
-	f.String("runtime-name", "", "Runtime display name (env: PATCHBAY_AGENT_RUNTIME_NAME)")
-	f.String("workspaces-root", "", "Base directory for task workspaces (env: PATCHBAY_WORKSPACES_ROOT)")
-	f.Duration("poll-interval", 0, "Task poll interval (env: PATCHBAY_DAEMON_POLL_INTERVAL)")
-	f.Duration("heartbeat-interval", 0, "Heartbeat interval (env: PATCHBAY_DAEMON_HEARTBEAT_INTERVAL)")
-	f.Duration("agent-timeout", 0, "Absolute per-task wall-clock cap; 0 = no cap, rely on the watchdogs (env: PATCHBAY_AGENT_TIMEOUT)")
-	f.Duration("codex-semantic-inactivity-timeout", 0, "Codex semantic inactivity timeout (env: PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT)")
-	f.Duration("codex-handshake-timeout", 0, "Codex app-server startup RPC timeout (env: PATCHBAY_CODEX_HANDSHAKE_TIMEOUT)")
-	f.Int("max-concurrent-tasks", 0, "Max tasks running in parallel (env: PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS)")
-	f.Bool("no-auto-update", false, "Disable periodic CLI self-update (env: PATCHBAY_DAEMON_AUTO_UPDATE=false)")
-	f.Duration("auto-update-interval", 0, "How often to poll GitHub for a newer release (env: PATCHBAY_DAEMON_AUTO_UPDATE_INTERVAL)")
-	f.Bool("no-auto-reload", false, "Disable restarting when the patchbay binary on disk changes version (env: PATCHBAY_DAEMON_AUTO_RELOAD=false)")
+	f.String("daemon-id", "", "Unique daemon identifier (env: ORVILO_DAEMON_ID)")
+	f.String("device-name", "", "Human-readable device name (env: ORVILO_DAEMON_DEVICE_NAME)")
+	f.String("runtime-name", "", "Runtime display name (env: ORVILO_AGENT_RUNTIME_NAME)")
+	f.String("workspaces-root", "", "Base directory for task workspaces (env: ORVILO_WORKSPACES_ROOT)")
+	f.Duration("poll-interval", 0, "Task poll interval (env: ORVILO_DAEMON_POLL_INTERVAL)")
+	f.Duration("heartbeat-interval", 0, "Heartbeat interval (env: ORVILO_DAEMON_HEARTBEAT_INTERVAL)")
+	f.Duration("agent-timeout", 0, "Absolute per-task wall-clock cap; 0 = no cap, rely on the watchdogs (env: ORVILO_AGENT_TIMEOUT)")
+	f.Duration("codex-semantic-inactivity-timeout", 0, "Codex semantic inactivity timeout (env: ORVILO_CODEX_SEMANTIC_INACTIVITY_TIMEOUT)")
+	f.Duration("codex-handshake-timeout", 0, "Codex app-server startup RPC timeout (env: ORVILO_CODEX_HANDSHAKE_TIMEOUT)")
+	f.Int("max-concurrent-tasks", 0, "Max tasks running in parallel (env: ORVILO_DAEMON_MAX_CONCURRENT_TASKS)")
+	f.Bool("no-auto-update", false, "Disable periodic CLI self-update (env: ORVILO_DAEMON_AUTO_UPDATE=false)")
+	f.Duration("auto-update-interval", 0, "How often to poll GitHub for a newer release (env: ORVILO_DAEMON_AUTO_UPDATE_INTERVAL)")
+	f.Bool("no-auto-reload", false, "Disable restarting when the patchbay binary on disk changes version (env: ORVILO_DAEMON_AUTO_RELOAD=false)")
 
 	daemonLogsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
 	daemonLogsCmd.Flags().IntP("lines", "n", 50, "Number of lines to show")
@@ -116,19 +116,19 @@ func init() {
 	// restart shares all the same flags as start
 	rf := daemonRestartCmd.Flags()
 	rf.Bool("foreground", false, "Run in the foreground instead of background")
-	rf.String("daemon-id", "", "Unique daemon identifier (env: PATCHBAY_DAEMON_ID)")
-	rf.String("device-name", "", "Human-readable device name (env: PATCHBAY_DAEMON_DEVICE_NAME)")
-	rf.String("runtime-name", "", "Runtime display name (env: PATCHBAY_AGENT_RUNTIME_NAME)")
-	rf.String("workspaces-root", "", "Base directory for task workspaces (env: PATCHBAY_WORKSPACES_ROOT)")
-	rf.Duration("poll-interval", 0, "Task poll interval (env: PATCHBAY_DAEMON_POLL_INTERVAL)")
-	rf.Duration("heartbeat-interval", 0, "Heartbeat interval (env: PATCHBAY_DAEMON_HEARTBEAT_INTERVAL)")
-	rf.Duration("agent-timeout", 0, "Absolute per-task wall-clock cap; 0 = no cap, rely on the watchdogs (env: PATCHBAY_AGENT_TIMEOUT)")
-	rf.Duration("codex-semantic-inactivity-timeout", 0, "Codex semantic inactivity timeout (env: PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT)")
-	rf.Duration("codex-handshake-timeout", 0, "Codex app-server startup RPC timeout (env: PATCHBAY_CODEX_HANDSHAKE_TIMEOUT)")
-	rf.Int("max-concurrent-tasks", 0, "Max tasks running in parallel (env: PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS)")
-	rf.Bool("no-auto-update", false, "Disable periodic CLI self-update (env: PATCHBAY_DAEMON_AUTO_UPDATE=false)")
-	rf.Duration("auto-update-interval", 0, "How often to poll GitHub for a newer release (env: PATCHBAY_DAEMON_AUTO_UPDATE_INTERVAL)")
-	rf.Bool("no-auto-reload", false, "Disable restarting when the patchbay binary on disk changes version (env: PATCHBAY_DAEMON_AUTO_RELOAD=false)")
+	rf.String("daemon-id", "", "Unique daemon identifier (env: ORVILO_DAEMON_ID)")
+	rf.String("device-name", "", "Human-readable device name (env: ORVILO_DAEMON_DEVICE_NAME)")
+	rf.String("runtime-name", "", "Runtime display name (env: ORVILO_AGENT_RUNTIME_NAME)")
+	rf.String("workspaces-root", "", "Base directory for task workspaces (env: ORVILO_WORKSPACES_ROOT)")
+	rf.Duration("poll-interval", 0, "Task poll interval (env: ORVILO_DAEMON_POLL_INTERVAL)")
+	rf.Duration("heartbeat-interval", 0, "Heartbeat interval (env: ORVILO_DAEMON_HEARTBEAT_INTERVAL)")
+	rf.Duration("agent-timeout", 0, "Absolute per-task wall-clock cap; 0 = no cap, rely on the watchdogs (env: ORVILO_AGENT_TIMEOUT)")
+	rf.Duration("codex-semantic-inactivity-timeout", 0, "Codex semantic inactivity timeout (env: ORVILO_CODEX_SEMANTIC_INACTIVITY_TIMEOUT)")
+	rf.Duration("codex-handshake-timeout", 0, "Codex app-server startup RPC timeout (env: ORVILO_CODEX_HANDSHAKE_TIMEOUT)")
+	rf.Int("max-concurrent-tasks", 0, "Max tasks running in parallel (env: ORVILO_DAEMON_MAX_CONCURRENT_TASKS)")
+	rf.Bool("no-auto-update", false, "Disable periodic CLI self-update (env: ORVILO_DAEMON_AUTO_UPDATE=false)")
+	rf.Duration("auto-update-interval", 0, "How often to poll GitHub for a newer release (env: ORVILO_DAEMON_AUTO_UPDATE_INTERVAL)")
+	rf.Bool("no-auto-reload", false, "Disable restarting when the patchbay binary on disk changes version (env: ORVILO_DAEMON_AUTO_RELOAD=false)")
 
 	df := daemonDiskUsageCmd.Flags()
 	df.Bool("by-workspace", false, "Aggregate output by workspace instead of by task")
@@ -242,9 +242,9 @@ const (
 func newDaemonLogRotator(logPath string) *lumberjack.Logger {
 	return &lumberjack.Logger{
 		Filename:   logPath,
-		MaxSize:    envPositiveIntOrDefault("PATCHBAY_DAEMON_LOG_MAX_SIZE_MB", defaultDaemonLogMaxSizeMB),
-		MaxBackups: envPositiveIntOrDefault("PATCHBAY_DAEMON_LOG_MAX_BACKUPS", defaultDaemonLogMaxBackups),
-		MaxAge:     envPositiveIntOrDefault("PATCHBAY_DAEMON_LOG_MAX_AGE_DAYS", defaultDaemonLogMaxAgeDays),
+		MaxSize:    envPositiveIntOrDefault("ORVILO_DAEMON_LOG_MAX_SIZE_MB", defaultDaemonLogMaxSizeMB),
+		MaxBackups: envPositiveIntOrDefault("ORVILO_DAEMON_LOG_MAX_BACKUPS", defaultDaemonLogMaxBackups),
+		MaxAge:     envPositiveIntOrDefault("ORVILO_DAEMON_LOG_MAX_AGE_DAYS", defaultDaemonLogMaxAgeDays),
 		Compress:   true,
 	}
 }
@@ -532,7 +532,7 @@ var daemonExecutable = selfexec.Resolve
 // port for the full 45s readiness window and then print a vague "check logs"
 // warning. Checking before spawning turns that silent stall into an
 // immediate, actionable error. Mirrors daemon.resolveAuth: the daemon only
-// authenticates via the stored config token, never PATCHBAY_TOKEN.
+// authenticates via the stored config token, never ORVILO_TOKEN.
 func requireDaemonAuth(profile string) error {
 	cfg, err := cli.LoadCLIConfigForProfile(profile)
 	if err != nil {
@@ -723,9 +723,9 @@ func runDaemonBackground(cmd *cobra.Command) error {
 
 // resolveDaemonServerURL resolves the server URL the daemon will talk to,
 // in the same precedence order the foreground daemon uses: --server-url flag,
-// PATCHBAY_SERVER_URL env, then the stored CLI config for the profile.
+// ORVILO_SERVER_URL env, then the stored CLI config for the profile.
 func resolveDaemonServerURL(cmd *cobra.Command, profile string) string {
-	serverURL := cli.FlagOrEnv(cmd, "server-url", "PATCHBAY_SERVER_URL", "")
+	serverURL := cli.FlagOrEnv(cmd, "server-url", "ORVILO_SERVER_URL", "")
 	if serverURL == "" {
 		if c, err := cli.LoadCLIConfigForProfile(profile); err == nil && c.ServerURL != "" {
 			serverURL = c.ServerURL
@@ -882,7 +882,7 @@ func buildDaemonStartArgs(cmd *cobra.Command) []string {
 		args = append(args, "--heartbeat-interval", d.String())
 	}
 	// Forward agent-timeout when explicitly set, including an explicit 0
-	// (= no cap), so it can override an environment PATCHBAY_AGENT_TIMEOUT.
+	// (= no cap), so it can override an environment ORVILO_AGENT_TIMEOUT.
 	if cmd.Flags().Changed("agent-timeout") {
 		d, _ := cmd.Flags().GetDuration("agent-timeout")
 		args = append(args, "--agent-timeout", d.String())
@@ -959,7 +959,7 @@ func runDaemonForeground(cmd *cobra.Command) error {
 	serverURL := resolveDaemonServerURL(cmd, profile)
 	// Each persistable daemon knob follows the same three-tier precedence:
 	//
-	//   --flag  >  PATCHBAY_… env  >  config.json  >  built-in default
+	//   --flag  >  ORVILO_… env  >  config.json  >  built-in default
 	//
 	// The flag/env pair is resolved inside daemon.LoadConfig (via
 	// Overrides + envOrDefault). Here we only substitute the config-file
@@ -968,12 +968,12 @@ func runDaemonForeground(cmd *cobra.Command) error {
 	// matches server_url's precedence above and resolves #3824.
 	deviceNameFlag := resolveDaemonStringOverride(
 		flagString(cmd, "device-name"),
-		"PATCHBAY_DAEMON_DEVICE_NAME",
+		"ORVILO_DAEMON_DEVICE_NAME",
 		fileCfg.DeviceName,
 	)
 	runtimeNameFlag := resolveDaemonStringOverride(
 		flagString(cmd, "runtime-name"),
-		"PATCHBAY_AGENT_RUNTIME_NAME",
+		"ORVILO_AGENT_RUNTIME_NAME",
 		fileCfg.RuntimeName,
 	)
 	workspacesRoot, err := resolveWorkspacesRootForProfile(profile, flagString(cmd, "workspaces-root"))
@@ -991,7 +991,7 @@ func runDaemonForeground(cmd *cobra.Command) error {
 		HealthPort:     healthPortForProfile(profile),
 	}
 	pollFlag, _ := cmd.Flags().GetDuration("poll-interval")
-	pollOverride, err := resolveDaemonDurationOverride(pollFlag, "PATCHBAY_DAEMON_POLL_INTERVAL", fileCfg.PollInterval)
+	pollOverride, err := resolveDaemonDurationOverride(pollFlag, "ORVILO_DAEMON_POLL_INTERVAL", fileCfg.PollInterval)
 	if err != nil {
 		return err
 	}
@@ -999,7 +999,7 @@ func runDaemonForeground(cmd *cobra.Command) error {
 		overrides.PollInterval = pollOverride
 	}
 	heartbeatFlag, _ := cmd.Flags().GetDuration("heartbeat-interval")
-	heartbeatOverride, err := resolveDaemonDurationOverride(heartbeatFlag, "PATCHBAY_DAEMON_HEARTBEAT_INTERVAL", fileCfg.HeartbeatInterval)
+	heartbeatOverride, err := resolveDaemonDurationOverride(heartbeatFlag, "ORVILO_DAEMON_HEARTBEAT_INTERVAL", fileCfg.HeartbeatInterval)
 	if err != nil {
 		return err
 	}
@@ -1010,7 +1010,7 @@ func runDaemonForeground(cmd *cobra.Command) error {
 	// user can turn off an env-configured cap from the CLI. The persisted
 	// config.json value uses the same tri-state (see cli.CLIConfig.AgentTimeout)
 	// so `config set agent_timeout 0s` can survive daemon restarts.
-	agentTimeoutOverride, err := resolveDaemonAgentTimeoutOverride(cmd, "PATCHBAY_AGENT_TIMEOUT", fileCfg.AgentTimeout)
+	agentTimeoutOverride, err := resolveDaemonAgentTimeoutOverride(cmd, "ORVILO_AGENT_TIMEOUT", fileCfg.AgentTimeout)
 	if err != nil {
 		return err
 	}
@@ -1018,7 +1018,7 @@ func runDaemonForeground(cmd *cobra.Command) error {
 		overrides.AgentTimeout = agentTimeoutOverride
 	}
 	semanticFlag, _ := cmd.Flags().GetDuration("codex-semantic-inactivity-timeout")
-	semanticOverride, err := resolveDaemonDurationOverride(semanticFlag, "PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", fileCfg.CodexSemanticInactivityTimeout)
+	semanticOverride, err := resolveDaemonDurationOverride(semanticFlag, "ORVILO_CODEX_SEMANTIC_INACTIVITY_TIMEOUT", fileCfg.CodexSemanticInactivityTimeout)
 	if err != nil {
 		return err
 	}
@@ -1026,7 +1026,7 @@ func runDaemonForeground(cmd *cobra.Command) error {
 		overrides.CodexSemanticInactivityTimeout = semanticOverride
 	}
 	handshakeFlag, _ := cmd.Flags().GetDuration("codex-handshake-timeout")
-	handshakeOverride, err := resolveDaemonDurationOverride(handshakeFlag, "PATCHBAY_CODEX_HANDSHAKE_TIMEOUT", fileCfg.CodexHandshakeTimeout)
+	handshakeOverride, err := resolveDaemonDurationOverride(handshakeFlag, "ORVILO_CODEX_HANDSHAKE_TIMEOUT", fileCfg.CodexHandshakeTimeout)
 	if err != nil {
 		return err
 	}
@@ -1034,27 +1034,27 @@ func runDaemonForeground(cmd *cobra.Command) error {
 		overrides.CodexHandshakeTimeout = handshakeOverride
 	}
 	maxFlag, _ := cmd.Flags().GetInt("max-concurrent-tasks")
-	if n := resolveDaemonIntOverride(maxFlag, "PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS", fileCfg.MaxConcurrentTasks); n > 0 {
+	if n := resolveDaemonIntOverride(maxFlag, "ORVILO_DAEMON_MAX_CONCURRENT_TASKS", fileCfg.MaxConcurrentTasks); n > 0 {
 		overrides.MaxConcurrentTasks = n
 	}
-	// --no-auto-update / PATCHBAY_DAEMON_AUTO_UPDATE=false / config.json
+	// --no-auto-update / ORVILO_DAEMON_AUTO_UPDATE=false / config.json
 	// disable_auto_update are all single-direction: none of them can force
 	// auto-update *on*, they can only turn it off. Env "true" is not
 	// treated as an override signal here — LoadConfig honors the raw env
 	// itself for the affirmative case.
 	noAutoUpdateFlag, _ := cmd.Flags().GetBool("no-auto-update")
-	if resolveDaemonDisableSignal(noAutoUpdateFlag, "PATCHBAY_DAEMON_AUTO_UPDATE", fileCfg.DisableAutoUpdate) {
+	if resolveDaemonDisableSignal(noAutoUpdateFlag, "ORVILO_DAEMON_AUTO_UPDATE", fileCfg.DisableAutoUpdate) {
 		overrides.DisableAutoUpdate = true
 	}
 	// Same single-direction shape for the on-disk version watcher, resolved
 	// through its own env var: turning off GitHub polling must not also stop the
 	// daemon from following a binary the operator replaced by hand.
 	noAutoReloadFlag, _ := cmd.Flags().GetBool("no-auto-reload")
-	if resolveDaemonDisableSignal(noAutoReloadFlag, "PATCHBAY_DAEMON_AUTO_RELOAD", fileCfg.DisableAutoReload) {
+	if resolveDaemonDisableSignal(noAutoReloadFlag, "ORVILO_DAEMON_AUTO_RELOAD", fileCfg.DisableAutoReload) {
 		overrides.DisableAutoReload = true
 	}
 	autoUpdateFlag, _ := cmd.Flags().GetDuration("auto-update-interval")
-	autoUpdateOverride, err := resolveDaemonDurationOverride(autoUpdateFlag, "PATCHBAY_DAEMON_AUTO_UPDATE_INTERVAL", fileCfg.AutoUpdateCheckInterval)
+	autoUpdateOverride, err := resolveDaemonDurationOverride(autoUpdateFlag, "ORVILO_DAEMON_AUTO_UPDATE_INTERVAL", fileCfg.AutoUpdateCheckInterval)
 	if err != nil {
 		return err
 	}
@@ -1069,7 +1069,7 @@ func runDaemonForeground(cmd *cobra.Command) error {
 	cfg.CLIVersion = version
 	// Set by the Electron Desktop app when it spawns the CLI so the server
 	// can mark those runtimes as "managed" and hide CLI self-update UI.
-	cfg.LaunchedBy = os.Getenv("PATCHBAY_LAUNCHED_BY")
+	cfg.LaunchedBy = os.Getenv("ORVILO_LAUNCHED_BY")
 
 	ctx, stop := notifyShutdownContext(context.Background())
 	defer stop()
@@ -1433,7 +1433,7 @@ func runDaemonStatus(cmd *cobra.Command, _ []string) error {
 
 // daemonStatusHealthPort resolves which daemon `status` should probe. Outside a
 // task that is the --profile-derived port, even when a stale
-// PATCHBAY_DAEMON_PORT remains in the host environment. Inside a managed task it
+// ORVILO_DAEMON_PORT remains in the host environment. Inside a managed task it
 // is the daemon-injected port and nothing else: healthPortForProfile hashes
 // whatever profile name the caller passes, so deriving the port there would let
 // a task report on a daemon that is not the one hosting it — and for a task
@@ -1447,13 +1447,13 @@ func daemonStatusHealthPort(cmd *cobra.Command) (int, error) {
 	if profile != "" {
 		return 0, fmt.Errorf("daemon status --profile is not available inside a daemon-managed task")
 	}
-	raw := strings.TrimSpace(os.Getenv("PATCHBAY_DAEMON_PORT"))
+	raw := strings.TrimSpace(os.Getenv("ORVILO_DAEMON_PORT"))
 	if raw == "" {
-		return 0, fmt.Errorf("daemon status inside a daemon-managed task requires the daemon-injected PATCHBAY_DAEMON_PORT")
+		return 0, fmt.Errorf("daemon status inside a daemon-managed task requires the daemon-injected ORVILO_DAEMON_PORT")
 	}
 	port, err := strconv.Atoi(raw)
 	if err != nil || port <= 0 {
-		return 0, fmt.Errorf("invalid PATCHBAY_DAEMON_PORT %q inside a daemon-managed task", raw)
+		return 0, fmt.Errorf("invalid ORVILO_DAEMON_PORT %q inside a daemon-managed task", raw)
 	}
 	return port, nil
 }
@@ -1659,7 +1659,7 @@ func resolveWorkspacesRootForProfile(profile, flagValue string) (string, error) 
 	fileCfg, _ := cli.LoadCLIConfigForProfile(profile)
 	override := resolveDaemonStringOverride(
 		flagValue,
-		"PATCHBAY_WORKSPACES_ROOT",
+		"ORVILO_WORKSPACES_ROOT",
 		fileCfg.WorkspacesRoot,
 	)
 	return daemon.ResolveWorkspacesRoot(profile, override)
@@ -1712,7 +1712,7 @@ func resolveDaemonIntOverride(flagValue int, envName string, cfgValue int) int {
 //
 //  1. --agent-timeout was explicitly passed (even as `--agent-timeout 0`)
 //     -> use that value; daemon.LoadConfig then bypasses env/default.
-//  2. PATCHBAY_AGENT_TIMEOUT is set -> return nil so LoadConfig reads the
+//  2. ORVILO_AGENT_TIMEOUT is set -> return nil so LoadConfig reads the
 //     env itself (matches the other duration helpers).
 //  3. cfgValue non-nil -> parse the persisted string and use it. "0s" is
 //     valid here (it's the "disabled" sentinel).
@@ -1743,7 +1743,7 @@ func resolveDaemonAgentTimeoutOverride(cmd *cobra.Command, envName string, cfgVa
 // shape. Precedence, using auto-update as the example:
 //
 //  1. --no-auto-update flag passed -> disable.
-//  2. PATCHBAY_DAEMON_AUTO_UPDATE explicitly set to a falsy value ->
+//  2. ORVILO_DAEMON_AUTO_UPDATE explicitly set to a falsy value ->
 //     disable. Env values other than false/0/no/off are handled inside
 //     daemon.LoadConfig (they may enable auto-update on self-host, which
 //     is not something we can express via CLI overrides today).
@@ -1991,7 +1991,7 @@ func runDaemonDiskUsageAggregate(cmd *cobra.Command, byWorkspace bool, top int, 
 // roots to scan in --all-profiles mode: the default root first (always, for
 // orientation even when empty), then each ~/.patchbay/profiles/* root that
 // exists on disk, sorted by profile name. Roots that resolve to the same path
-// (e.g. when PATCHBAY_WORKSPACES_ROOT pins every profile to one directory) are
+// (e.g. when ORVILO_WORKSPACES_ROOT pins every profile to one directory) are
 // collapsed to a single entry.
 func enumerateDiskUsageRoots() ([]daemon.DiskUsageRoot, error) {
 	out := make([]daemon.DiskUsageRoot, 0)
@@ -2112,7 +2112,7 @@ func printRepoCacheLine(w io.Writer, report daemon.DiskUsageReport) {
 	if report.RepoCacheCount == 0 && report.RepoCacheSizeBytes == 0 {
 		return
 	}
-	fmt.Fprintf(w, "Repo cache (.repos): %s across %d repo(s), not included above. Evicted once a repo is unused for PATCHBAY_GC_REPO_TTL and no longer attached to a workspace.\n",
+	fmt.Fprintf(w, "Repo cache (.repos): %s across %d repo(s), not included above. Evicted once a repo is unused for ORVILO_GC_REPO_TTL and no longer attached to a workspace.\n",
 		formatBytes(report.RepoCacheSizeBytes), report.RepoCacheCount)
 }
 

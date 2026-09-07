@@ -76,11 +76,11 @@ var workspaceMcpLeakMarkers = []string{
 func mcpTestServer(t *testing.T, handler http.HandlerFunc) {
 	t.Helper()
 	t.Setenv("HOME", t.TempDir())
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", testWorkspaceMcpID)
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_WORKSPACE_ID", testWorkspaceMcpID)
 	srv := httptest.NewServer(handler)
 	t.Cleanup(srv.Close)
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 }
 
 func TestRunWorkspaceMcpListShowsTheLibrary(t *testing.T) {

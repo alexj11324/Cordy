@@ -54,6 +54,7 @@ export function ChatQueue({
     headStatus === "running" ||
     headStatus === "waiting_local_directory";
   const canSendNow = !readOnly && !!onSendNow && !sendNowDisabled && dispatchableHead;
+  const hasActions = !!onSendNow || !!onEdit || !!onRemove || !!onClear;
   // The two blocked states need different copy: "wait for the reply to start"
   // is actionable, "you cannot run this agent" is not — telling a user to wait
   // for something waiting cannot fix is the bug (MUL-6380).
@@ -125,7 +126,8 @@ export function ChatQueue({
                   <span className="min-w-0 flex-1 truncate text-muted-foreground">
                     {task.content?.trim() || t(($) => $.queue.fallback)}
                   </span>
-                  {!readOnly ? <div className="flex shrink-0 items-center gap-0.5">
+                  {!readOnly && hasActions ? <div className="flex shrink-0 items-center gap-0.5">
+                    {onSendNow ? (
                     <span
                       className="shrink-0"
                       title={sendNowLabel}
@@ -146,6 +148,8 @@ export function ChatQueue({
                         {t(($) => $.queue.steer)}
                       </Button>
                     </span>
+                    ) : null}
+                    {onRemove ? (
                     <Button
                       variant="ghost"
                       size="icon-xs"
@@ -161,6 +165,8 @@ export function ChatQueue({
                         <Trash2 aria-hidden="true" />
                       )}
                     </Button>
+                    ) : null}
+                    {onEdit || onClear ? (
                     <DropdownMenu>
                       <DropdownMenuTrigger
                         render={
@@ -187,24 +193,25 @@ export function ChatQueue({
                         sideOffset={6}
                         className="w-auto"
                       >
-                        <DropdownMenuItem
+                        {onEdit ? <DropdownMenuItem
                           disabled={busyAction !== null}
                           onClick={() => void run(editKey, () => onEdit?.(task.task_id))}
                         >
                           <Pencil aria-hidden="true" />
                           {t(($) => $.queue.edit)}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
+                        </DropdownMenuItem> : null}
+                        {onEdit && onClear ? <DropdownMenuSeparator /> : null}
+                        {onClear ? <DropdownMenuItem
                           variant="destructive"
                           disabled={busyAction !== null}
                           onClick={() => void run(clearKey, () => onClear?.())}
                         >
                           <Trash2 aria-hidden="true" />
                           {t(($) => $.queue.clear)}
-                        </DropdownMenuItem>
+                        </DropdownMenuItem> : null}
                       </DropdownMenuContent>
                     </DropdownMenu>
+                    ) : null}
                   </div> : null}
                 </div>
               );

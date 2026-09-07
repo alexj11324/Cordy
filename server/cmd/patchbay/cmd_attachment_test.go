@@ -45,7 +45,7 @@ func TestRunAttachmentDownloadWritesBasenameIntoOutputDir(t *testing.T) {
 	// A task-scoped mat_ token so the test also runs inside an agent workdir,
 	// where a daemon task marker makes newAPIClient reject the helper's
 	// default non-mat_ token before the download logic is reached.
-	t.Setenv("PATCHBAY_TOKEN", "mat_test-token")
+	t.Setenv("ORVILO_TOKEN", "mat_test-token")
 
 	outputDir := t.TempDir()
 	cmd := newAttachmentDownloadTestCmd()
@@ -101,7 +101,7 @@ func TestRunAttachmentDownloadCreatesMissingOutputDir(t *testing.T) {
 	}))
 	defer srv.Close()
 	setCLITestServerEnv(t, srv.URL)
-	t.Setenv("PATCHBAY_TOKEN", "mat_test-token")
+	t.Setenv("ORVILO_TOKEN", "mat_test-token")
 
 	outputDir := filepath.Join(t.TempDir(), "attachments", "images")
 	cmd := newAttachmentDownloadTestCmd()
@@ -159,7 +159,7 @@ func TestRunAttachmentUploadSendsTaskIDAndPrintsContract(t *testing.T) {
 	setCLITestServerEnv(t, srv.URL)
 	// An agent upload always carries a task-scoped mat_ token; set one so the
 	// daemon-managed-context gate in newAPIClient admits the request.
-	t.Setenv("PATCHBAY_TOKEN", "mat_test-token")
+	t.Setenv("ORVILO_TOKEN", "mat_test-token")
 
 	dir := t.TempDir()
 	imgPath := filepath.Join(dir, "chart.png")
@@ -211,7 +211,7 @@ func TestRunAttachmentUploadNonImageUsesFileCardMarkdown(t *testing.T) {
 	}))
 	defer srv.Close()
 	setCLITestServerEnv(t, srv.URL)
-	t.Setenv("PATCHBAY_TOKEN", "mat_test-token")
+	t.Setenv("ORVILO_TOKEN", "mat_test-token")
 
 	dir := t.TempDir()
 	docPath := filepath.Join(dir, "report.pdf")
@@ -256,7 +256,7 @@ func TestRunAttachmentUploadEscapesFilename(t *testing.T) {
 	}))
 	defer srv.Close()
 	setCLITestServerEnv(t, srv.URL)
-	t.Setenv("PATCHBAY_TOKEN", "mat_test-token")
+	t.Setenv("ORVILO_TOKEN", "mat_test-token")
 
 	dir := t.TempDir()
 	docPath := filepath.Join(dir, "a]b.pdf")
@@ -278,13 +278,13 @@ func TestRunAttachmentUploadEscapesFilename(t *testing.T) {
 }
 
 func TestRunAttachmentUploadRequiresTask(t *testing.T) {
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer srv.Close()
 	setCLITestServerEnv(t, srv.URL)
-	t.Setenv("PATCHBAY_TOKEN", "mat_test-token")
+	t.Setenv("ORVILO_TOKEN", "mat_test-token")
 
 	dir := t.TempDir()
 	imgPath := filepath.Join(dir, "chart.png")
@@ -292,7 +292,7 @@ func TestRunAttachmentUploadRequiresTask(t *testing.T) {
 		t.Fatalf("write temp image: %v", err)
 	}
 
-	cmd := newAttachmentUploadTestCmd() // no --task, no PATCHBAY_TASK_ID
+	cmd := newAttachmentUploadTestCmd() // no --task, no ORVILO_TASK_ID
 	if err := runAttachmentUpload(cmd, []string{imgPath}); err == nil || !strings.Contains(err.Error(), "no chat task in context") {
 		t.Fatalf("runAttachmentUpload error = %v, want no-chat-task error", err)
 	}
@@ -310,7 +310,7 @@ func TestRunAttachmentDownloadRequiresDownloadURL(t *testing.T) {
 	}))
 	defer srv.Close()
 	setCLITestServerEnv(t, srv.URL)
-	t.Setenv("PATCHBAY_TOKEN", "mat_test-token")
+	t.Setenv("ORVILO_TOKEN", "mat_test-token")
 
 	cmd := newAttachmentDownloadTestCmd()
 	if err := runAttachmentDownload(cmd, []string{"att-no-url"}); err == nil || !strings.Contains(err.Error(), "no download URL") {

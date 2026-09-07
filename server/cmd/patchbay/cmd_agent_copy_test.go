@@ -79,11 +79,11 @@ func setCopyTestEnv(t *testing.T, serverURL string) {
 	// ancestry: the CLI then treats this as a normal (non-agent) context and
 	// accepts the plain test token instead of demanding a task-scoped mat_ one.
 	t.Chdir(t.TempDir())
-	t.Setenv("PATCHBAY_SERVER_URL", serverURL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
-	t.Setenv("PATCHBAY_AGENT_ID", "")
-	t.Setenv("PATCHBAY_TASK_ID", "")
+	t.Setenv("ORVILO_SERVER_URL", serverURL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
 }
 
 func TestAgentCopySameRuntimeCopiesPortableFields(t *testing.T) {

@@ -658,7 +658,7 @@ done
 	}
 }
 
-// TestQwenpawExtraArgsReachTheCommandLine pins PATCHBAY_QWENPAW_ARGS end to
+// TestQwenpawExtraArgsReachTheCommandLine pins ORVILO_QWENPAW_ARGS end to
 // end. config.go reads it and daemon.go forwards it as ExecOptions.ExtraArgs,
 // but the backend used to consume CustomArgs only, so the variable was read,
 // plumbed, and then silently dropped. ExtraArgs must land before CustomArgs,

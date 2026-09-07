@@ -15,12 +15,12 @@ function leafKeys(value: Record<string, unknown>, prefix = ""): string[] {
 }
 
 describe("W8 locale copy", () => {
-  it("normalizes API language variants to the supported four locales", () => {
+  it("normalizes API language variants to the supported locales", () => {
     expect(normalizeW8Locale(null)).toBe("en");
     expect(normalizeW8Locale("zh-CN")).toBe("zh-Hans");
     expect(normalizeW8Locale("zh-Hant")).toBe("zh-Hans");
     expect(normalizeW8Locale("ja-JP")).toBe("en");
-    expect(normalizeW8Locale("ko")).toBe("ko");
+    expect(normalizeW8Locale("ko")).toBe("en");
   });
 
   it("keeps the channel, WeCom, and bind copy contract complete in all locales", () => {

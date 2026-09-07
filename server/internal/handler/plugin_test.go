@@ -136,7 +136,7 @@ func writeLocalPluginFile(t *testing.T, dir, entry, content string) {
 	}
 }
 
-// withLocalPluginSource points the service at a temp PATCHBAY_PLUGIN_DIR,
+// withLocalPluginSource points the service at a temp ORVILO_PLUGIN_DIR,
 // enables every capability, publishes the plugin, and returns the published
 // version id — which is what an install names now.
 func withLocalPluginSource(t *testing.T, manifest string) string {
@@ -173,7 +173,7 @@ func withLocalPluginSourceIn(t *testing.T, root string, manifest string) string 
 	return publishLocalPlugin(t, "hello")
 }
 
-// publishLocalPlugin publishes a directory under PATCHBAY_PLUGIN_DIR and returns
+// publishLocalPlugin publishes a directory under ORVILO_PLUGIN_DIR and returns
 // the id of the version it created. Re-publishing an unchanged version string is
 // what a development loop does, so the service gives those a `+dev.N` suffix
 // rather than a conflict — which is why this always returns a NEW version.

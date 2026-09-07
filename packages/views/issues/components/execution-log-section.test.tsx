@@ -17,9 +17,9 @@ vi.mock("../../common/actor-avatar", () => ({
   ActorAvatar: () => <span data-testid="actor-avatar" />,
 }));
 
-vi.mock("../../common/task-transcript", () => ({
-  TranscriptButton: ({ title }: { title?: string }) => (
-    <button type="button">{title ?? "Transcript"}</button>
+vi.mock("../../agent-thread", () => ({
+  AgentThreadButton: ({ title }: { title: string }) => (
+    <button type="button">{title}</button>
   ),
 }));
 
@@ -85,26 +85,37 @@ describe("ActiveTaskRow", () => {
     expect(screen.queryByText(/events?/i)).not.toBeInTheDocument();
     expect(screen.getByText("Started from comment")).toBeInTheDocument();
     expect(screen.getByText("Includes 3 comments")).toBeInTheDocument();
-    expect(screen.getByText("View transcript")).toBeInTheDocument();
+    expect(screen.getByText("View conversation")).toBeInTheDocument();
     expect(mockState.taskMessagesOptions).not.toHaveBeenCalled();
   });
 
-  it("does not make transcript actions depend on hover-only rendering", () => {
+  it("does not make conversation actions depend on hover-only rendering", () => {
     renderWithI18n(<ActiveTaskRow task={makeTask()} issueId="issue-1" />);
 
-    const transcriptButton = screen.getByRole("button", { name: "View transcript" });
+    const conversationButton = screen.getByRole("button", { name: "View conversation" });
     const status = screen.getByText("5m 04s");
 
     expect(status.parentElement?.className).toContain("flex h-7");
     expect(status.parentElement?.className).toContain(
       "[@media(hover:hover)]:group-hover/execution-log-row:hidden",
     );
-    expect(transcriptButton.parentElement?.className).toContain("flex h-7");
-    expect(transcriptButton.parentElement?.className).toContain("[@media(hover:hover)]:hidden");
-    expect(transcriptButton.parentElement?.className).toContain(
+    expect(conversationButton.parentElement?.className).toContain("flex h-7");
+    expect(conversationButton.parentElement?.className).toContain("[@media(hover:hover)]:hidden");
+    expect(conversationButton.parentElement?.className).toContain(
       "[@media(hover:hover)]:group-hover/execution-log-row:flex",
     );
   });
+
+  it.each<AgentTask["status"]>(["queued", "deferred", "waiting_local_directory"])(
+    "keeps the Agent conversation available while a task is %s",
+    (status) => {
+      renderWithI18n(
+        <ActiveTaskRow task={makeTask({ status })} issueId="issue-1" />,
+      );
+
+      expect(screen.getByRole("button", { name: "View conversation" })).toBeInTheDocument();
+    },
+  );
 });
 
 describe("TaskCommentCoverage", () => {
@@ -262,7 +273,7 @@ describe("execution log failure reasons", () => {
   // and classification. It used to be concatenated into the status tooltip,
   // which put untranslated text — and absolute worktree paths — in front of
   // every non-English workspace. The localized reason is the whole hover text
-  // now; the raw diagnostic lives in the transcript's Run details.
+  // now; the raw diagnostic lives in the Agent conversation's task details.
   it("keeps the raw server error out of the status tooltip", () => {
     renderWithI18n(
       <QueryClientProvider client={failedLogClient()}>

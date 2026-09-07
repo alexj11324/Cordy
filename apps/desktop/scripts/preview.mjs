@@ -12,7 +12,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 const root = repoRootFromScriptDir(here);
 const appRoot = join(root, "apps", "desktop");
 applyWorktreeDevEnv(process.env, { root, log: true });
-process.env.PATCHBAY_REQUIRE_SOURCE_CLI = "1";
+process.env.ORVILO_REQUIRE_SOURCE_CLI = "1";
 const env = envWithLocalBins(process.env);
 function run(command, args) {
   const result = spawnSync(command, args, { cwd: appRoot, stdio: "inherit", env, shell: process.platform === "win32" });

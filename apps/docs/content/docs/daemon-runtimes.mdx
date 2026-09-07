@@ -44,7 +44,7 @@ The daemon runs in the background by default. Common commands:
 | `patchbay daemon stop` | Stop the daemon |
 | `patchbay daemon start --foreground` | Run in the current terminal, for debugging |
 
-To place task workspaces on another disk, persist a root for the current profile with `patchbay config set workspaces_root <path>`, or pass `--workspaces-root <path>` to `daemon start` or `daemon restart`. The flag overrides `PATCHBAY_WORKSPACES_ROOT`, which overrides the profile config. Existing task directories are not moved when the root changes.
+To place task workspaces on another disk, persist a root for the current profile with `patchbay config set workspaces_root <path>`, or pass `--workspaces-root <path>` to `daemon start` or `daemon restart`. The flag overrides `ORVILO_WORKSPACES_ROOT`, which overrides the profile config. Existing task directories are not moved when the root changes.
 
 On startup, the daemon detects supported AI coding tools on `PATH` and registers runtimes for the workspaces you are allowed to connect. If a tool was just installed or signed in, restart the daemon to detect it again.
 
@@ -55,8 +55,6 @@ The daemon needs at least one built-in supported AI coding tool detected before 
 Once registered, a runtime keeps a persistent connection. When a new task enters the queue, the server notifies the matching daemon; the daemon also polls periodically as a backstop after connection interruptions. So when a runtime is online with spare capacity, tasks usually start immediately.
 
 The daemon sends a heartbeat every 15 seconds. The server combines heartbeats and connection state to decide whether a runtime is online; after a daemon exits unexpectedly, the runtime usually shows as offline within about 3 minutes at the latest.
-
-![Runtime details for one online computer: the same daemon registered 7 runtimes, one row per detected AI coding tool, each showing online status and CLI version](/images/docs/runtime-machine-detail.webp)
 
 When a runtime is offline:
 
@@ -71,7 +69,7 @@ Detailed states and retry rules are in [Tasks](/tasks).
 
 One daemon executes at most 20 tasks at a time by default; each agent at most 6. Effective concurrency is the smaller of the two.
 
-Once a limit is reached, new tasks keep queueing. You can adjust a single agent's concurrency in the agent settings, and the machine-wide cap through `PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS`. Parallel runs compete for machine capacity, tool account quota, and the same working directory all at once.
+Once a limit is reached, new tasks keep queueing. You can adjust a single agent's concurrency in the agent settings, and the machine-wide cap through `ORVILO_DAEMON_MAX_CONCURRENT_TASKS`. Parallel runs compete for machine capacity, tool account quota, and the same working directory all at once.
 
 ## Private and public runtimes
 

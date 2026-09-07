@@ -81,6 +81,19 @@ func TestBuildIssueDescription_NoTriggerPayload(t *testing.T) {
 	}
 }
 
+func TestBuildIssueDescriptionDoesNotEmbedExecutionModel(t *testing.T) {
+	s := &AutomationService{}
+	ap := db.Automation{
+		Description: pgtype.Text{String: "do the thing", Valid: true},
+		Model:       pgtype.Text{String: "claude-opus", Valid: true},
+	}
+	run := db.AutomationRun{Source: "schedule", TriggeredAt: pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}}
+
+	if got := s.buildIssueDescription(ap, run, "UTC").String; strings.Contains(got, "claude-opus") {
+		t.Fatalf("execution model must be applied to the daemon, not embedded in the issue prompt: %q", got)
+	}
+}
+
 func TestBuildIssueDescription_UsesTriggerTimezone(t *testing.T) {
 	s := &AutomationService{}
 	ap := db.Automation{Description: pgtype.Text{String: "daily sync", Valid: true}}

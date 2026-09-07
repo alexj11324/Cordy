@@ -25,7 +25,6 @@ import {
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { ModelDropdown } from "../components/model-dropdown";
-import { RuntimePicker } from "../components/runtime-picker";
 
 /**
  * Pre-conversation card: the builder runs on a real runtime, so the runtime and
@@ -37,7 +36,6 @@ export function BuilderSetup({
   onChange,
   runtimes,
   runtimesLoading,
-  members,
   currentUserId,
   selectedRuntime,
   starting,
@@ -82,24 +80,33 @@ export function BuilderSetup({
           {t(($) => $.creation_studio.builder.setup_description)}
         </p>
         <div className="mt-6 space-y-4">
-          <RuntimePicker
-            runtimes={runtimes}
-            runtimesLoading={runtimesLoading}
-            members={members}
-            currentUserId={currentUserId}
-            selectedRuntimeId={draft.runtimeId}
-            onSelect={(runtimeId) => {
-              if (runtimeId !== draft.runtimeId) {
-                onChange(applyDraftRuntimeChange(draft, runtimeId));
-              }
-            }}
-          />
           <ModelDropdown
+            variant="chip"
             runtimeId={selectedRuntime?.id ?? null}
             runtimeOnline={selectedRuntime?.status === "online"}
             value={draft.model}
-            onChange={(model) => onChange(applyDraftModelChange(draft, model))}
-            disabled={!selectedRuntime}
+            thinkingLevel={draft.thinkingLevel}
+            serviceTier={draft.serviceTier}
+            provider={selectedRuntime?.provider}
+            runtimes={runtimes.filter((runtime) =>
+              isRuntimeUsableForUser(runtime, currentUserId),
+            )}
+            onSelection={({ runtimeId, model, thinkingLevel, serviceTier }) =>
+              onChange({
+                ...applyDraftModelChange(
+                  runtimeId === draft.runtimeId
+                    ? draft
+                    : applyDraftRuntimeChange(draft, runtimeId),
+                  model,
+                ),
+                thinkingLevel,
+                serviceTier,
+              })
+            }
+            onChange={(model) =>
+              onChange(applyDraftModelChange(draft, model))
+            }
+            disabled={runtimesLoading || starting}
           />
         </div>
         {error && (

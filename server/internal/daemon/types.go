@@ -10,7 +10,7 @@ import (
 // AgentEntry describes a single available agent CLI.
 type AgentEntry struct {
 	Path string // stable startup-resolved CLI entry point; launch resolution may follow platform links to a concrete path
-	// Command is the bare command name or PATCHBAY_*_PATH value that Path was
+	// Command is the bare command name or ORVILO_*_PATH value that Path was
 	// resolved from at startup. It is kept so the daemon can re-resolve Path
 	// if the pinned executable later vanishes — e.g. a version manager
 	// (Homebrew Cask, nvm/fnm) does an in-place upgrade that deletes the old
@@ -138,6 +138,7 @@ type Task struct {
 	ChatInThread                  bool                   `json:"chat_in_thread,omitempty"`                   // true when the latest @mention was a thread reply; selects which read command the prompt tells the agent to start with
 	ChatMessage                   string                 `json:"chat_message,omitempty"`                     // user message content for chat tasks
 	AgentThreadMessage            string                 `json:"agent_thread_message,omitempty"`             // full task-level continuation turn; never sourced from ordinary Chat
+	AgentThreadRootTaskID         string                 `json:"agent_thread_root_task_id,omitempty"`        // immutable server-validated root identity for task-level conversations
 	ChatMessageAttachments        []ChatAttachmentMeta   `json:"chat_message_attachments,omitempty"`         // attachments linked to the chat message; agent uses these to `patchbay attachment download <id>`
 	ChatIntro                     bool                   `json:"chat_intro,omitempty"`                       // legacy compatibility for historical is_agent_intro sessions; new agent creation no longer creates these chats
 	RegenerateQuickActionsFor     string                 `json:"regenerate_quick_actions_for,omitempty"`     // set only by servers predating server-side quick-actions generation (MUL-5573). Read as a REFUSAL marker, never executed: see the guard in runTask
@@ -182,7 +183,7 @@ type Task struct {
 	InitiatorName  string `json:"initiator_name,omitempty"`
 	InitiatorEmail string `json:"initiator_email,omitempty"`
 	// AuthToken is the task-scoped credential the server mints at claim time.
-	// The daemon injects it into the spawned agent as PATCHBAY_TOKEN so the
+	// The daemon injects it into the spawned agent as ORVILO_TOKEN so the
 	// agent never sees the daemon's own (often workspace-owner) credential.
 	// Empty or non-task-scoped values are fatal for writable agent tasks; the
 	// daemon must not fall back to its own token. See MUL-3292.

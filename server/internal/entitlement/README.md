@@ -5,7 +5,7 @@ enforcement-policy endpoint. Commercial inputs stay in Cloud: this package does
 not contain plan names, subscription-state mapping, limit values, or policy
 switches.
 
-Production wiring has one boundary: setting `PATCHBAY_CLOUD_URL` connects this
+Production wiring has one boundary: setting `ORVILO_CLOUD_URL` connects this
 consumer as well as the other managed Cloud clients. An empty URL performs no
 HTTP request, issue creation does not count rows, and the automation consumer
 does not access its quota tables. Self-hosted deployments therefore retain the

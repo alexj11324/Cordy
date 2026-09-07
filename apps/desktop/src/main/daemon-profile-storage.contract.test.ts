@@ -34,7 +34,7 @@ describe("Desktop profile storage wiring", () => {
 
   it("hardens existing profiles and strips task-scoped config from children", () => {
     expect(source).toContain("hardenExistingDesktopProfiles(profilesRoot)");
-    expect(source).toContain("delete env.PATCHBAY_TASK_CONFIG_ROOT");
+    expect(source).toContain("delete env.ORVILO_TASK_CONFIG_ROOT");
     expect(source).toContain("await configureDesktopProfile(bin, active)");
     expect(source).toContain(
       '{ timeout: 15_000, env: desktopSpawnEnv() }',

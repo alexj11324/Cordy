@@ -50,7 +50,7 @@ func TestBootstrapWithNoProviderCredentialsDoesNotRequireScope(t *testing.T) {
 func TestSlackSpecEncryptsCredentialsAndPreservesRoutingIdentity(t *testing.T) {
 	clearProviderCredentials(t)
 	key := make([]byte, secretbox.KeySize)
-	t.Setenv("PATCHBAY_SLACK_SECRET_KEY", base64.StdEncoding.EncodeToString(key))
+	t.Setenv("ORVILO_SLACK_SECRET_KEY", base64.StdEncoding.EncodeToString(key))
 	t.Setenv("SLACK_BOT_TOKEN", "xoxb-secret")
 	appToken := strings.Join([]string{"xapp", "1", "A123", "456", "fixture"}, "-")
 	t.Setenv("SLACK_APP_TOKEN", appToken)

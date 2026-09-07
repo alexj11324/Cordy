@@ -119,4 +119,11 @@ describe("DesktopSettingsPage window title", () => {
       screen.queryByRole("button", { name: "Back to app" }),
     ).not.toBeInTheDocument();
   });
+
+  it("makes the back control span the full nav column", () => {
+    render(<DesktopSettingsPage onBack={() => {}} />);
+    expect(screen.getByRole("button", { name: "Back to app" })).toHaveClass(
+      "w-full",
+    );
+  });
 });

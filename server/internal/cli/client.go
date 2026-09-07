@@ -120,19 +120,19 @@ func requestUsedTaskToken(resp *http.Response) bool {
 }
 
 // defaultHTTPTimeout is the per-request timeout for the CLI's HTTP client.
-// It can be overridden with the PATCHBAY_HTTP_TIMEOUT environment variable
+// It can be overridden with the ORVILO_HTTP_TIMEOUT environment variable
 // (see httpTimeout). 30s is chosen over the historical 15s because complex
 // networks (notably in mainland China) routinely need more than 15s to
 // complete the TLS handshake plus request round-trip, which surfaced as an
 // opaque "context deadline exceeded" to users.
 const defaultHTTPTimeout = 30 * time.Second
 
-// httpTimeout returns the HTTP client timeout, honoring PATCHBAY_HTTP_TIMEOUT.
+// httpTimeout returns the HTTP client timeout, honoring ORVILO_HTTP_TIMEOUT.
 // The value may be a Go duration string ("45s", "2m") or a plain integer
 // number of seconds ("45"). Invalid or non-positive values fall back to the
 // default.
 func httpTimeout() time.Duration {
-	v := strings.TrimSpace(os.Getenv("PATCHBAY_HTTP_TIMEOUT"))
+	v := strings.TrimSpace(os.Getenv("ORVILO_HTTP_TIMEOUT"))
 	if v == "" {
 		return defaultHTTPTimeout
 	}
@@ -153,7 +153,7 @@ const apiContextGrace = 5 * time.Second
 
 // APITimeout returns the deadline budget for a single CLI API command. It is
 // always at least the configured HTTP transport timeout (see httpTimeout,
-// which honors PATCHBAY_HTTP_TIMEOUT) plus a small grace margin, so a
+// which honors ORVILO_HTTP_TIMEOUT) plus a small grace margin, so a
 // command-level context never truncates an in-flight request below the timeout
 // the user configured. This is the fix for command contexts that previously
 // hardcoded a 15s deadline shorter than the 30s/env transport timeout.
@@ -175,7 +175,7 @@ func AtLeastAPITimeout(min time.Duration) time.Duration {
 // APIContext derives a command-scoped context whose deadline is APITimeout().
 // The returned cancel func must be called (typically via defer) to release
 // resources. Commands should use this instead of context.WithTimeout with a
-// hardcoded duration so the deadline always respects PATCHBAY_HTTP_TIMEOUT.
+// hardcoded duration so the deadline always respects ORVILO_HTTP_TIMEOUT.
 func APIContext(parent context.Context) (context.Context, context.CancelFunc) {
 	if parent == nil {
 		parent = context.Background()

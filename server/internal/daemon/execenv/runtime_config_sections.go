@@ -562,6 +562,10 @@ func writeWorkflowQuickCreate(b *strings.Builder) {
 // unconditional ban on one surface and a conditional one on the other.
 const AutomationIssueCommandsGuard = "Do not run `patchbay issue get`, `patchbay issue comment add`, or `patchbay issue status` for this run unless the automation instructions explicitly tell you to create or update an issue"
 
+// Keep the live turn, persistent context, and runtime workflow consistent for
+// follow-ups whose original automation/quick-create task has no attached issue.
+const AgentThreadNoIssueWorkflow = "Respond in this Agent conversation. This follow-up has no attached Patchbay issue. Follow the member's latest message; do not automatically repeat the original automation or quick-create instructions. Use issue commands only when the current request calls for an issue action."
+
 // writeWorkflowAutomation emits the automation run-only workflow.
 func writeWorkflowAutomation(b *strings.Builder, ctx TaskContextForEnv) {
 	b.WriteString("**This task was triggered by an Automation in run-only mode.** There is no Patchbay issue attached to this run.\n\n")
@@ -832,6 +836,8 @@ func writeDeliveryInvariant(b *strings.Builder) {
 func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 	b.WriteString("## Output\n\n")
 	switch kind {
+	case kindAgentThread:
+		b.WriteString("Your final assistant output appears in this Agent conversation. Reply to the member's current request; no issue comment is required.\n")
 	case kindAutomationRunOnly:
 		b.WriteString("This is a run-only automation task, so there may be no issue comment to post. Your final assistant output is captured automatically as the automation run result. Keep it concise and state the outcome.\n\n")
 		b.WriteString("**Delivering files here:** this surface is text-only — the run result carries no attachments. Describe what you produced; do not link its path.\n")
@@ -949,6 +955,8 @@ func buildMetaSkillContentSlim(provider string, ctx TaskContextForEnv) string {
 
 	writeWorkflowHeader(&b)
 	switch kind {
+	case kindAgentThread:
+		b.WriteString(AgentThreadNoIssueWorkflow + "\n\n")
 	case kindChat:
 		writeWorkflowChat(&b)
 	case kindQuickCreate:

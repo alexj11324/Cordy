@@ -72,7 +72,7 @@ printf '%%s\n' '{"type":"turn_end","message":{"role":"assistant","model":"test",
 func TestPiExecuteSendsBuilderPromptOnStdinNotArgv(t *testing.T) {
 	t.Parallel()
 
-	prompt := "PATCHBAY_AGENT_BUILDER_INPUT\n" +
+	prompt := "ORVILO_AGENT_BUILDER_INPUT\n" +
 		"{\n" +
 		`  "user_request": "专注本机 CPA 有关的所有工作",` + "\n" +
 		`  "current_draft": {"instructions": "Run go build -ldflags \"-X main.version=foo\""},` + "\n" +
@@ -85,7 +85,7 @@ func TestPiExecuteSendsBuilderPromptOnStdinNotArgv(t *testing.T) {
 		t.Errorf("prompt did not arrive on stdin intact:\n got  %q\n want %q", stdinGot, prompt)
 	}
 	for _, arg := range argv {
-		for _, needle := range []string{"PATCHBAY_AGENT_BUILDER_INPUT", "user_request", "-X", "inspect local"} {
+		for _, needle := range []string{"ORVILO_AGENT_BUILDER_INPUT", "user_request", "-X", "inspect local"} {
 			if strings.Contains(arg, needle) {
 				t.Errorf("prompt fragment %q leaked into argv element %q; argv=%v", needle, arg, argv)
 			}

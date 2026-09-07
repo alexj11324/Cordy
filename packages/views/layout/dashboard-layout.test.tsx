@@ -26,6 +26,11 @@ vi.mock("./workspace-presence-prefetch", () => ({
   WorkspacePresencePrefetch: () => null,
 }));
 vi.mock("./global-shortcuts", () => ({ GlobalShortcuts: () => null }));
+vi.mock("../agent-thread/components/agent-thread-panel-layout", () => ({
+  AgentThreadPanelLayout: ({ children }: { children: ReactNode }) => (
+    <div data-testid="agent-thread-layout">{children}</div>
+  ),
+}));
 
 const { DashboardLayout } = await import("./dashboard-layout");
 
@@ -47,6 +52,7 @@ describe("DashboardLayout route viewport", () => {
       "overscroll-contain",
     );
     expect(viewport).toContainElement(screen.getByTestId("route-content"));
+    expect(screen.getByTestId("agent-thread-layout")).toContainElement(viewport);
     expect(viewport).not.toContainElement(screen.getByTestId("overlay"));
   });
 });

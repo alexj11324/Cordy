@@ -472,7 +472,7 @@ func TestTeamLeaderIssueWorkflowKeepsParentInProgress(t *testing.T) {
 	t.Parallel()
 	const issueID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 	out := buildMetaSkillContent("claude", TaskContextForEnv{
-		IssueID:       issueID,
+		IssueID:      issueID,
 		IsTeamLeader: true,
 	})
 
@@ -504,7 +504,7 @@ func TestProtocolHeadingInInstructionsGetsNoLeaderBrief(t *testing.T) {
 		TriggerCommentID:  "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
 		AgentName:         "Docs writer",
 		AgentInstructions: instructions,
-		IsTeamLeader:     false,
+		IsTeamLeader:      false,
 	})
 
 	if !strings.Contains(out, instructions) {
@@ -707,7 +707,7 @@ func TestWorkspaceContextRenderedAcrossTaskKinds(t *testing.T) {
 		{
 			name: "automation run-only",
 			ctx: TaskContextForEnv{
-				AutomationRunID:   "run-1",
+				AutomationRunID:  "run-1",
 				WorkspaceContext: wsContext,
 			},
 		},
@@ -1708,7 +1708,7 @@ func TestMultiThreadReplyInstructionsFanOut(t *testing.T) {
 	for _, banned := range []string{
 		"For EACH thread above",                // old cookbook opener
 		"UTF-8 file with your file-write tool", // restated mechanism
-		"patchbay issue comment add",            // embedded example commands
+		"patchbay issue comment add",           // embedded example commands
 		"--content-file",                       // restated posting flag (#6517 review)
 		"inline `--content`",                   // restated inline ban (#6517 review)
 		"--content-stdin",                      // restated HEREDOC ban
@@ -1931,7 +1931,8 @@ func TestBriefByteIdenticalAcrossRunsForEveryKind(t *testing.T) {
 	kinds := map[string]TaskContextForEnv{
 		"chat":         {ChatSessionID: "chat-1", ChatChannelType: ChannelTypeSlack, AgentID: "a-1", AgentName: "Eve"},
 		"quick-create": {QuickCreatePrompt: "make an issue", AgentID: "a-1", AgentName: "Eve"},
-		"automation":    {AutomationRunID: "run-1", AutomationID: "ap-1", AgentID: "a-1", AgentName: "Eve"},
+		"automation":   {AutomationRunID: "run-1", AutomationID: "ap-1", AgentID: "a-1", AgentName: "Eve"},
+		"agent-thread": {IsAgentThreadContinuation: true, AutomationID: "ap-1", AgentID: "a-1", AgentName: "Eve"},
 		// WeCom is the channel a real deployment flips the file-delivery
 		// verdict on. The Slack row above catches the same leak today, but only
 		// because the brief's copy is channel-agnostic; scope that copy to

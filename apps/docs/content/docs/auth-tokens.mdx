@@ -53,18 +53,18 @@ patchbay login --token
 Put the PAT in the `Authorization` header:
 
 ```bash
-export PATCHBAY_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+export ORVILO_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
 curl https://api.aspectlylabs.com/api/me \
-  -H "Authorization: Bearer $PATCHBAY_TOKEN"
+  -H "Authorization: Bearer $ORVILO_TOKEN"
 ```
 
 Workspace-level API calls also need the workspace, as required by the endpoint:
 
 ```bash
 curl https://api.aspectlylabs.com/api/issues \
-  -H "Authorization: Bearer $PATCHBAY_TOKEN" \
-  -H "X-Workspace-ID: $PATCHBAY_WORKSPACE_ID"
+  -H "Authorization: Bearer $ORVILO_TOKEN" \
+  -H "X-Workspace-ID: $ORVILO_WORKSPACE_ID"
 ```
 
 In scripts, take the token from a secret manager or a protected environment variable — never hardcode it. On self-hosted instances, replace the domain with your own public API address.

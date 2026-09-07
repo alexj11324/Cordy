@@ -3,14 +3,14 @@ import { cookies, headers } from "next/headers";
 import { LOCALE_COOKIE, type SupportedLocale } from "@patchbay/core/i18n";
 import {
   isSupportedLocale,
-  PATCHBAY_LOCALE_HEADER,
+  ORVILO_LOCALE_HEADER,
   resolveLocaleFromSignals,
 } from "./locale-routing";
 
 export const getRequestLocale = cache(
   async (): Promise<SupportedLocale> => {
     const headerList = await headers();
-    const headerLocale = headerList.get(PATCHBAY_LOCALE_HEADER);
+    const headerLocale = headerList.get(ORVILO_LOCALE_HEADER);
     if (isSupportedLocale(headerLocale)) return headerLocale;
 
     const cookieStore = await cookies();

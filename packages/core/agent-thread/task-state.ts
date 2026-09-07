@@ -34,6 +34,11 @@ export function deriveAgentThreadTaskState(tasks: AgentTask[]): {
       : null,
     queuedTasks: active
       .filter((task) => task.id !== head?.id)
-      .map((task) => ({ task_id: task.id, status: task.status, created_at: task.created_at })),
+      .map((task) => ({
+        task_id: task.id,
+        status: task.status,
+        created_at: task.created_at,
+        content: task.agent_thread_message?.trim() || task.trigger_summary?.trim() || undefined,
+      })),
   };
 }

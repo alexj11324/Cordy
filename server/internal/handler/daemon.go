@@ -1711,7 +1711,11 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 			// the reclaim path.
 			continue
 		}
-		providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), task, rt)
+		effectiveModel := ""
+		if resp.Agent != nil {
+			effectiveModel = resp.Agent.Model
+		}
+		providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), task, rt, effectiveModel)
 		if providerErr != nil {
 			slog.Error("batch claim: provider authorization failed; requeueing claim",
 				"task_id", uuidToString(task.ID), "error", providerErr)
@@ -1724,21 +1728,22 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 		if !providerAllowed {
 			continue
 		}
-		if !task.OriginatorUserID.Valid {
-			slog.Error("batch claim: initiating user missing; cancelling task before token issuance",
-				"task_id", uuidToString(task.ID), "runtime_id", uuidToString(task.RuntimeID))
-			if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
-				"Task capability issuance requires an initiating user.", "authorization_denied"); cerr != nil {
-				slog.Error("batch claim: cancel after missing initiating user failed",
-					"task_id", uuidToString(task.ID), "error", cerr)
-			}
-			continue
-		}
 		if !rt.OwnerID.Valid {
 			slog.Error("batch claim: runtime owner missing; cancelling task to avoid unscoped agent credentials",
 				"task_id", uuidToString(task.ID), "runtime_id", uuidToString(task.RuntimeID))
 			if _, cerr := h.TaskService.CancelTask(r.Context(), task.ID); cerr != nil {
 				slog.Error("batch claim: cancel after missing runtime owner failed",
+					"task_id", uuidToString(task.ID), "error", cerr)
+			}
+			continue
+		}
+		tokenUserID, tokenUserOK := service.TaskTokenUserID(task, rt.OwnerID)
+		if !tokenUserOK {
+			slog.Error("batch claim: task token user missing; cancelling task before token issuance",
+				"task_id", uuidToString(task.ID), "runtime_id", uuidToString(task.RuntimeID))
+			if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
+				"Task capability issuance requires a task token user.", "authorization_denied"); cerr != nil {
+				slog.Error("batch claim: cancel after missing task token user failed",
 					"task_id", uuidToString(task.ID), "error", cerr)
 			}
 			continue
@@ -1774,8 +1779,8 @@ func (h *Handler) ClaimTasksByRuntime(w http.ResponseWriter, r *http.Request) {
 			TaskID:            task.ID,
 			AgentID:           task.AgentID,
 			WorkspaceID:       parseUUID(resp.WorkspaceID),
-			UserID:           task.OriginatorUserID,
-			ExpiresAt:        pgtype.Timestamptz{Time: time.Now().Add(2 * time.Hour), Valid: true},
+			UserID:            tokenUserID,
+			ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(2 * time.Hour), Valid: true},
 			Scope:             service.RootTaskCapabilityScope(task),
 			ClaimDispatchedAt: task.DispatchedAt,
 			OnBehalfOfUserID:  task.OriginatorUserID,
@@ -1905,7 +1910,7 @@ func (h *Handler) rejectClaimSkillLoad(task *db.AgentTaskQueue, err error) *clai
 
 // rejectClaimOnWorkspaceMismatch enforces the claim's tenant boundary against
 // the workspace that OWNS the task's context (issue / chat session / automation
-// / quick-create), which is the only authority for PATCHBAY_WORKSPACE_ID in the
+// / quick-create), which is the only authority for ORVILO_WORKSPACE_ID in the
 // agent env. An empty value would make the CLI silently fall back to the
 // user-global config and talk to whatever workspace the user happened to last
 // configure; a value that doesn't match the runtime's workspace means upstream
@@ -2044,6 +2049,24 @@ func claimResponseAgentIdentityMatches(resp AgentTaskResponse) bool {
 func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQueue, runtime db.AgentRuntime, runtimeID, runtimeWorkspaceID string) (resp AgentTaskResponse, deliveredCommentIDs []pgtype.UUID, agentSkillCount, builtinSkillCount int, failure *claimBuildFailure) {
 	// Build response with fresh agent data (name + skills + custom_env + custom_args).
 	resp = taskToResponse(*task, runtimeWorkspaceID)
+	// A direct Automation/issue/quick-create root has no continuation edge yet,
+	// so its own task id is the immutable scope used by provider session stores.
+	// Continuations replace this below with the server-validated chain root.
+	if service.AgentThreadMessage(*task) == "" && service.AgentThreadRootEligible(*task) {
+		resp.AgentThreadRootTaskID = uuidToString(task.ID)
+	}
+	// Agent-thread continuations persist the provider session/workdir copied
+	// from their parent on their own task row. Feed those values through the
+	// daemon's resume fields even when the continuation has no issue/chat FK
+	// from which the ordinary resume branches could recover them.
+	if service.AgentThreadMessage(*task) != "" {
+		if task.SessionID.Valid {
+			resp.PriorSessionID = task.SessionID.String
+		}
+		if task.WorkDir.Valid {
+			resp.PriorWorkDir = task.WorkDir.String
+		}
+	}
 	var issueNumber int32
 	// Claim-only capability: this server resolves the team-leader role on the
 	// wire (is_leader_task / team_id), so the daemon must not re-derive it
@@ -2158,27 +2181,27 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			slog.Warn("failed to unmarshal agent custom_args", "agent_id", uuidToString(agent.ID), "error", err)
 		}
 	}
-	var mcpConfig json.RawMessage
+	var agentMCPConfig json.RawMessage
 	if agent.McpConfig != nil {
-		mcpConfig = json.RawMessage(agent.McpConfig)
+		agentMCPConfig = json.RawMessage(agent.McpConfig)
 	}
-	// Fold in the workspace MCP servers this agent has been explicitly
-	// given (GH #6062). Only bound AND enabled servers are read, so a
-	// workspace library entry nobody added reaches nothing. Read on every
-	// claim, exactly like the agent column, so an admin's edit or a toggle
-	// lands on the agent's next task with nothing to restart. Errors —
-	// including a failed read — leave the agent config untouched: a broken
-	// shared entry must never take away servers the agent runs with today.
-	if bound, err := h.Queries.ListEnabledAgentMcpServers(r.Context(), agent.ID); err != nil {
-		slog.Warn("daemon claim: load agent mcp servers failed; using agent mcp_config",
+	// Workspace MCP library entries apply to every agent in this workspace
+	// at claim time — no per-agent agent_mcp_server binding required. Pass
+	// a nil overlay so leftover per-agent mcp_config cannot win name
+	// collisions or inject private servers. Composio overlay is layered on
+	// afterwards, unchanged. Errors warn and leave mcpConfig empty; they
+	// must not fall back to agent.mcp_config.
+	var mcpConfig json.RawMessage
+	if servers, err := h.Queries.ListWorkspaceMcpServers(r.Context(), agent.WorkspaceID); err != nil {
+		slog.Warn("daemon claim: load workspace mcp servers failed",
 			"task_id", uuidToString(task.ID), "agent_id", uuidToString(agent.ID), "error", err)
-	} else if len(bound) > 0 {
-		bindings := make([]WorkspaceMcpBinding, 0, len(bound))
-		for _, server := range bound {
+	} else {
+		bindings := make([]WorkspaceMcpBinding, 0, len(servers))
+		for _, server := range servers {
 			bindings = append(bindings, WorkspaceMcpBinding{Name: server.Name, Config: json.RawMessage(server.Config)})
 		}
-		if resolved, err := ResolveAgentMcpConfig(bindings, mcpConfig); err != nil {
-			slog.Warn("daemon claim: resolve agent mcp servers failed; falling back to agent mcp_config",
+		if resolved, err := ResolveAgentMcpConfig(bindings, nil); err != nil {
+			slog.Warn("daemon claim: resolve workspace mcp servers failed",
 				"task_id", uuidToString(task.ID), "agent_id", uuidToString(agent.ID), "error", err)
 		} else {
 			mcpConfig = resolved
@@ -2208,7 +2231,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	resp.Agent = &TaskAgentData{
 		ID:                    uuidToString(agent.ID),
 		Name:                  agent.Name,
-		Instructions:          agent.Instructions,
+		Instructions:          "",
 		CustomEnv:             customEnv,
 		CustomArgs:            customArgs,
 		McpConfig:             mcpConfig,
@@ -2222,23 +2245,28 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	// this binary instead of being copied into their row at creation. That
 	// is what makes it hot-updatable: editing the embedded file and
 	// deploying reaches every existing workspace on its next task, with no
-	// migration and no client upgrade. agent.Instructions holds only the
-	// workspace's own notes, so a release can never overwrite them.
+	// migration and no client upgrade.
+	//
+	// User agents do not receive agent.Instructions on claim — task
+	// requirements belong on the assignment, not a per-agent prompt.
+	// Patrick still composes the product-owned layer, with empty workspace
+	// notes so leftover stored instructions cannot sneak in. Team briefing
+	// still appends to resp.Agent.Instructions later on this path.
 	//
 	// Composing here covers every task kind, because this is the single
 	// place a claimed task's agent payload is assembled.
 	if agent.SystemKey.String == service.PatrickSystemKey {
-		resp.Agent.Instructions = service.ComposePatrickInstructions(agent.Name, agent.Instructions)
+		resp.Agent.Instructions = service.ComposePatrickInstructions(agent.Name, "")
 	}
 	if useSkillRefs {
-		_, skillRefs, err := h.TaskService.LoadAgentSkillBundles(r.Context(), task.AgentID)
+		_, skillRefs, err := h.TaskService.LoadAgentSkillBundles(r.Context(), agent.WorkspaceID)
 		if err != nil {
 			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, h.rejectClaimSkillLoad(task, err)
 		}
 		agentSkillCount = len(skillRefs)
 		resp.Agent.SkillRefs = skillRefs
 	} else {
-		skills, err := h.TaskService.LoadAgentSkills(r.Context(), task.AgentID)
+		skills, err := h.TaskService.LoadAgentSkills(r.Context(), agent.WorkspaceID)
 		if err != nil {
 			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, h.rejectClaimSkillLoad(task, err)
 		}
@@ -2314,6 +2342,20 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		resp.ThreadName = issue.Title
 		issueNumber = issue.Number
 
+		// create_issue automations link their task through the generated issue,
+		// not automation_run_id. Rehydrate the automation settings here so the
+		// same model override and MCP allowlist apply to both execution modes.
+		if issue.OriginType.Valid && issue.OriginType.String == "automation" && issue.OriginID.Valid {
+			if ap, apErr := h.Queries.GetAutomation(r.Context(), issue.OriginID); apErr == nil {
+				if failure := h.applyAutomationClaimSettings(r.Context(), ap, *task, agentMCPConfig, resp.Agent, composioMCPEnabled); failure != nil {
+					return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
+				}
+			} else if !errors.Is(apErr, pgx.ErrNoRows) {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
+					h.rejectClaimSourceLoad(r.Context(), task, apErr, "automation", uuidToString(issue.OriginID))
+			}
+		}
+
 		// Team-leader briefing injection: keyed off the task being a
 		// leader-task (is_leader_task) carrying a team_id — NOT off the
 		// issue whose executor is a team. The task flag is stamped at
@@ -2348,8 +2390,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// is exactly the same observable result as "condition not
 		// matched". Claim still succeeds; no stale briefing is emitted.
 		// (No FK on team_id — see migration 127.) We append (not replace)
-		// so per-agent instructions stay authoritative; the team briefing
-		// stacks on top as task-specific team context.
+		// so any already-composed claim instructions (Patrick's product
+		// layer) stay in place; the team briefing stacks on top as
+		// task-specific team context.
 		if task.IsLeaderTask {
 			injected := false
 			if resp.Agent != nil && task.TeamID.Valid {
@@ -2893,6 +2936,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		if failure := h.rejectClaimOnWorkspaceMismatch(r.Context(), task, resp.WorkspaceID, runtimeID, runtimeWorkspaceID, false); failure != nil {
 			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
 		}
+		if failure := h.applyAutomationClaimSettings(r.Context(), ap, *task, agentMCPConfig, resp.Agent, composioMCPEnabled); failure != nil {
+			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
+		}
 
 		resp.AutomationID = uuidToString(run.AutomationID)
 		resp.AutomationSource = run.Source
@@ -2903,6 +2949,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		resp.ThreadName = ap.Title
 		if ap.Description.Valid {
 			resp.AutomationDescription = ap.Description.String
+		}
+		if notes := service.AutomationToolsDispatchNotes(resp.AutomationID, ap.Tools); notes != "" {
+			resp.AutomationDescription += "\n\n" + notes
 		}
 
 		// A run_only automation has no issue from which to inherit project
@@ -2925,6 +2974,97 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		projectCtx.applyTo(&resp)
 	}
 
+	// Source-neutral continuation of a run_only Automation: the child must not
+	// carry automation_run_id (otherwise its completion would overwrite the
+	// historical run), so resolve the bounded server-owned thread back to its
+	// root and restore only execution capabilities. AgentThreadMessage remains
+	// the prompt; the original Automation instructions and trigger payload are
+	// deliberately not copied onto this follow-up turn.
+	if !task.IssueID.Valid && !task.ChatSessionID.Valid && !task.AutomationRunID.Valid &&
+		service.AgentThreadMessage(*task) != "" {
+		thread, threadErr := h.Queries.ListAgentThreadTasks(r.Context(), task.ID)
+		if threadErr != nil {
+			return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
+				h.rejectClaimSourceLoad(r.Context(), task, threadErr, "Agent thread", uuidToString(task.ID))
+		}
+		root, rootOK := service.AgentThreadRootTask(thread)
+		if !rootOK {
+			return resp, nil, 0, 0, h.failClaimedTaskBeforeLaunch(
+				r.Context(), task,
+				"Agent thread lineage is invalid. Start a new task instead.",
+				taskfailure.ReasonInvalidTaskIdentity,
+				"error_agent_thread_lineage", http.StatusConflict, "Agent thread lineage is invalid",
+			)
+		}
+		resp.AgentThreadRootTaskID = uuidToString(root.ID)
+		runID, isAutomationContinuation := service.AgentThreadAutomationRunID(thread)
+		if isAutomationContinuation {
+			run, runErr := h.Queries.GetAutomationRun(r.Context(), runID)
+			if runErr != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
+					h.rejectClaimSourceLoad(r.Context(), task, runErr, "automation run", uuidToString(runID))
+			}
+			ap, apErr := h.Queries.GetAutomation(r.Context(), run.AutomationID)
+			if apErr != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
+					h.rejectClaimSourceLoad(r.Context(), task, apErr, "automation", uuidToString(run.AutomationID))
+			}
+
+			resp.WorkspaceID = uuidToString(ap.WorkspaceID)
+			if failure := h.rejectClaimOnWorkspaceMismatch(r.Context(), task, resp.WorkspaceID, runtimeID, runtimeWorkspaceID, false); failure != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
+			}
+			if failure := h.applyAutomationClaimSettings(r.Context(), ap, *task, agentMCPConfig, resp.Agent, composioMCPEnabled); failure != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
+			}
+			resp.AutomationID = uuidToString(ap.ID)
+			resp.AutomationTitle = ap.Title
+			resp.ThreadName = ap.Title
+
+			projectCtx, projectErr := h.resolveClaimProjectContext(r.Context(), ap.ProjectID, ap.WorkspaceID)
+			if projectErr != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount,
+					h.rejectClaimSourceLoad(r.Context(), task, projectErr, "automation project", uuidToString(ap.ProjectID))
+			}
+			projectCtx.applyTo(&resp)
+		} else if quickCreate, isQuickCreateContinuation := service.AgentThreadQuickCreateContext(thread); isQuickCreateContinuation {
+			// Quick-create continuation rows omit every one-shot source field.
+			// Recover only workspace/project from the validated root so the
+			// follow-up runs in the same project without replaying issue creation,
+			// attachment delivery, or captured source consumption.
+			resp.WorkspaceID = quickCreate.WorkspaceID
+			if failure := h.rejectClaimOnWorkspaceMismatch(r.Context(), task, resp.WorkspaceID, runtimeID, runtimeWorkspaceID, true); failure != nil {
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
+			}
+			var projectID pgtype.UUID
+			if quickCreate.ProjectID != "" {
+				if parsed, err := util.ParseUUID(quickCreate.ProjectID); err == nil {
+					projectID = parsed
+				}
+			}
+			projectCtx, projectErr := h.resolveClaimProjectContext(r.Context(), projectID, parseUUID(quickCreate.WorkspaceID))
+			if projectErr != nil {
+				slog.Error("quick-create continuation claim: load project context failed; preserving task for redelivery",
+					"task_id", uuidToString(task.ID),
+					"project_id", quickCreate.ProjectID,
+					"error", projectErr)
+				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, &claimBuildFailure{
+					outcome: "error_project_context",
+					status:  http.StatusInternalServerError,
+					message: "failed to load project context",
+				}
+			}
+			projectCtx.applyTo(&resp)
+		} else if len(thread) > 0 && thread[0].AutomationRunID.Valid {
+			return resp, nil, 0, 0, h.failClaimedTaskBeforeLaunch(
+				r.Context(), task,
+				"Agent thread lineage is invalid. Start a new task instead.",
+				taskfailure.ReasonInvalidTaskIdentity,
+				"error_agent_thread_lineage", http.StatusConflict, "Agent thread lineage is invalid",
+			)
+		}
+	}
+
 	// Handoff note (MUL-3375) is populated by taskToResponse (the shared mapper
 	// resp came from above), so the daemon's prompt + issue_context.md render the
 	// executor-handoff branch. Empty for all other task kinds.
@@ -2936,17 +3076,20 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	if task.Context != nil && !task.IssueID.Valid && !task.ChatSessionID.Valid && !task.AutomationRunID.Valid {
 		var qc service.QuickCreateContext
 		if json.Unmarshal(task.Context, &qc) == nil && qc.Type == service.QuickCreateContextType {
+			isContinuation := service.AgentThreadMessage(*task) != ""
 			hasQuickCreate = true
-			resp.QuickCreatePrompt = qc.Prompt
-			resp.QuickCreatePriority = qc.Priority
-			resp.QuickCreateDueDate = qc.DueDate
-			resp.QuickCreateAttachmentIDs = append([]string(nil), qc.AttachmentIDs...)
+			if !isContinuation {
+				resp.QuickCreatePrompt = qc.Prompt
+				resp.QuickCreatePriority = qc.Priority
+				resp.QuickCreateDueDate = qc.DueDate
+				resp.QuickCreateAttachmentIDs = append([]string(nil), qc.AttachmentIDs...)
+			}
 			resp.ThreadName = qc.Prompt
 			resp.WorkspaceID = qc.WorkspaceID
 			if failure := h.rejectClaimOnWorkspaceMismatch(r.Context(), task, resp.WorkspaceID, runtimeID, runtimeWorkspaceID, true); failure != nil {
 				return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, failure
 			}
-			if qc.SourceContextID != "" {
+			if !isContinuation && qc.SourceContextID != "" {
 				workspaceID, workspaceErr := util.ParseUUID(qc.WorkspaceID)
 				contextID, contextIDErr := util.ParseUUID(qc.SourceContextID)
 				if workspaceErr != nil || contextIDErr != nil {
@@ -3009,7 +3152,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			// still passes `--parent <uuid>` and the server-side create
 			// will fail loud, which is a better outcome than silently
 			// dropping the sub-issue intent.
-			if qc.ParentIssueID != "" {
+			if !isContinuation && qc.ParentIssueID != "" {
 				parentExists := true
 				if parentUUID, err := util.ParseUUID(qc.ParentIssueID); err == nil {
 					if wsUUID, wsErr := util.ParseUUID(qc.WorkspaceID); wsErr == nil {
@@ -3044,7 +3187,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			// same Operating Protocol + Roster + user Instructions that
 			// issue-bound team tasks see, so the leader can decide to
 			// delegate before opening the issue.
-			if resp.Agent != nil && qc.TeamID != "" {
+			if !isContinuation && resp.Agent != nil && qc.TeamID != "" {
 				wsUUID, wsErr := util.ParseUUID(qc.WorkspaceID)
 				teamUUID, sqErr := util.ParseUUID(qc.TeamID)
 				if wsErr == nil && sqErr == nil {
@@ -3237,6 +3380,113 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	return resp, deliveredCommentIDs, agentSkillCount, builtinSkillCount, nil
 }
 
+// applyAutomationClaimSettings applies execution settings that belong to the
+// automation rather than the executor agent. It runs after the automation has
+// been resolved so both run_only tasks and issues created by create_issue
+// receive the same effective capabilities.
+//
+// The normal claim path mounts enabled workspace MCP bindings. An explicit
+// automation allowlist replaces that workspace layer with exactly the selected
+// library entries; the executor's own mcp_config and the separate per-task
+// Composio overlay remain independent layers. An empty configured list is an
+// intentional deny-all for workspace library servers, not the same as an old
+// automation that has no allowlist field.
+func (h *Handler) applyAutomationClaimSettings(
+	ctx context.Context,
+	ap db.Automation,
+	task db.AgentTaskQueue,
+	baseAgentMCPConfig json.RawMessage,
+	agentData *TaskAgentData,
+	composioMCPEnabled bool,
+) *claimBuildFailure {
+	if agentData == nil {
+		return nil
+	}
+	if service.AgentThreadMessage(task) != "" {
+		member, err := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
+			UserID: task.OriginatorUserID, WorkspaceID: ap.WorkspaceID,
+		})
+		if !task.OriginatorUserID.Valid || err != nil || !h.memberCanWriteAutomation(ctx, ap, member) {
+			return h.failClaimedTaskBeforeLaunch(
+				ctx, &task,
+				"Your access to this Automation was revoked before the follow-up could start.",
+				taskfailure.ReasonInvalidTaskIdentity,
+				"error_automation_access_revoked", http.StatusForbidden, "Automation access was revoked",
+			)
+		}
+	}
+	if ap.Model.Valid && strings.TrimSpace(ap.Model.String) != "" {
+		// TaskAgentData.Model is consumed by the daemon's provider invocation;
+		// keeping the override here avoids turning a model selection into prompt
+		// prose and covers both automation execution modes.
+		agentData.Model = strings.TrimSpace(ap.Model.String)
+	}
+	ids, configured, err := service.AutomationMCPServerAllowlist(ap.Tools)
+	if err != nil {
+		return &claimBuildFailure{
+			outcome: "error_automation_tools",
+			status:  http.StatusInternalServerError,
+			message: "automation tools configuration is invalid",
+		}
+	}
+	if !configured {
+		return nil
+	}
+
+	servers, err := h.Queries.ListWorkspaceMcpServers(ctx, ap.WorkspaceID)
+	if err != nil {
+		slog.Error("daemon claim: load automation MCP allowlist failed",
+			"task_id", uuidToString(task.ID),
+			"automation_id", uuidToString(ap.ID),
+			"error", err,
+		)
+		return &claimBuildFailure{
+			outcome: "error_automation_tools_load",
+			status:  http.StatusInternalServerError,
+			message: "failed to load automation tools",
+		}
+	}
+	wanted := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		wanted[strings.ToLower(strings.TrimSpace(id))] = struct{}{}
+	}
+	bindings := make([]WorkspaceMcpBinding, 0, len(wanted))
+	for _, server := range servers {
+		if _, ok := wanted[strings.ToLower(uuidToString(server.ID))]; !ok {
+			continue
+		}
+		bindings = append(bindings, WorkspaceMcpBinding{
+			Name:   server.Name,
+			Config: json.RawMessage(server.Config),
+		})
+	}
+	resolved, err := ResolveAgentMcpConfig(bindings, baseAgentMCPConfig)
+	if err != nil {
+		slog.Error("daemon claim: resolve automation MCP allowlist failed",
+			"task_id", uuidToString(task.ID),
+			"automation_id", uuidToString(ap.ID),
+			"error", err,
+		)
+		return &claimBuildFailure{
+			outcome: "error_automation_tools",
+			status:  http.StatusInternalServerError,
+			message: "failed to resolve automation tools",
+		}
+	}
+	if composioMCPEnabled && len(task.RuntimeMcpOverlay) > 0 {
+		if merged, mergeErr := mergeMCPOverlay(resolved, json.RawMessage(task.RuntimeMcpOverlay)); mergeErr == nil {
+			resolved = merged
+		} else {
+			// Match the ordinary claim path's fail-soft overlay behavior while
+			// retaining the explicit workspace allowlist we just enforced.
+			slog.Warn("daemon claim: merge automation MCP overlay failed; using allowlisted servers",
+				"task_id", uuidToString(task.ID), "error", mergeErr)
+		}
+	}
+	agentData.McpConfig = resolved
+	return nil
+}
+
 // worktreeClaimBlockReason returns a user-facing reason when this runtime must
 // not run the task, or "" when it may proceed.
 //
@@ -3370,7 +3620,11 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 			)
 		}
 	}
-	providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), *task, runtime)
+	effectiveModel := ""
+	if resp.Agent != nil {
+		effectiveModel = resp.Agent.Model
+	}
+	providerAllowed, providerErr := h.authorizeProviderTaskClaim(r.Context(), *task, runtime, effectiveModel)
 	if providerErr != nil {
 		outcome = "error_provider_authorization"
 		slog.Error("task claim: provider authorization failed; requeueing claim",
@@ -3385,17 +3639,19 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Mint a task-scoped `mat_` token bound to (agent, task, workspace,
-	// initiating user). The daemon will inject this as PATCHBAY_TOKEN into the agent
+	// token user). The daemon will inject this as ORVILO_TOKEN into the agent
 	// process instead of its own credential, so any API call the agent
 	// makes — even one that strips X-Agent-ID / X-Task-ID headers — is
 	// recognized server-side as actor=agent, closing the lateral-movement
 	// path on human-only endpoints (e.g. `/api/agents/{id}/env`). Both the
-	// runtime owner and initiating user are required; without either, fail the claim
-	// explicitly instead of letting the daemon
+	// runtime owner and a task token user are required. Autonomous automation tasks
+	// use the runtime owner as the token's workspace identity while keeping their
+	// NULL originator for authorization. Without either, fail the claim explicitly
+	// instead of letting the daemon
 	// fall back to a member/owner credential. MUL-3292.
 	// Token expires after the lease upper bound (2h) so it cannot outlive a
 	// forgotten execution window.
-	if !runtime.OwnerID.Valid || !task.OriginatorUserID.Valid {
+	if !runtime.OwnerID.Valid {
 		outcome = "error_token"
 		slog.Error("task claim: runtime owner missing; cancelling task to avoid unscoped agent credentials",
 			"task_id", uuidToString(task.ID),
@@ -3408,6 +3664,22 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 				"task_id", uuidToString(task.ID), "error", cerr)
 		}
 		writeError(w, http.StatusInternalServerError, "initiating user and runtime owner required to mint task token")
+		return
+	}
+	tokenUserID, tokenUserOK := service.TaskTokenUserID(*task, runtime.OwnerID)
+	if !tokenUserOK {
+		outcome = "error_token"
+		slog.Error("task claim: task token user missing; cancelling task before token issuance",
+			"task_id", uuidToString(task.ID),
+			"runtime_id", runtimeID,
+			"workspace_id", runtimeWorkspaceID,
+		)
+		if _, cerr := h.TaskService.CancelTaskWithReason(r.Context(), task.ID,
+			"Task capability issuance requires a task token user.", "authorization_denied"); cerr != nil {
+			slog.Error("task claim: cancel after missing task token user failed",
+				"task_id", uuidToString(task.ID), "error", cerr)
+		}
+		writeError(w, http.StatusInternalServerError, "task token user required to mint task token")
 		return
 	}
 	tokenStr, terr := auth.GenerateAgentTaskToken()
@@ -3434,7 +3706,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		TaskID:            task.ID,
 		AgentID:           task.AgentID,
 		WorkspaceID:       parseUUID(resp.WorkspaceID),
-		UserID:            task.OriginatorUserID,
+		UserID:            tokenUserID,
 		ExpiresAt:         pgtype.Timestamptz{Time: time.Now().Add(2 * time.Hour), Valid: true},
 		Scope:             service.RootTaskCapabilityScope(*task),
 		ClaimDispatchedAt: task.DispatchedAt,
@@ -3549,10 +3821,10 @@ func (h *Handler) ResolveTaskSkillBundles(w http.ResponseWriter, r *http.Request
 	}
 
 	// Load ONLY what was asked for. The daemon resolves one skill per request,
-	// so serving these out of the agent's full bundle set meant reading and
-	// hashing every skill the agent has, once per request, to return one of
-	// them — quadratic in skill count across a cold dispatch.
-	allowed, err := h.TaskService.LoadRequestedAgentSkillBundles(r.Context(), task.AgentID, wanted)
+	// so serving these out of the workspace's full bundle set meant reading
+	// and hashing every skill in the library, once per request, to return one
+	// of them — quadratic in skill count across a cold dispatch.
+	allowed, err := h.TaskService.LoadRequestedAgentSkillBundles(r.Context(), parseUUID(taskWorkspaceID), wanted)
 	if err != nil {
 		// 5xx, not a partial answer: the daemon's resolve retry can recover a
 		// transient read, and a bundle assembled from a failed read would pass

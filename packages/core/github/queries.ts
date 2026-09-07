@@ -6,7 +6,16 @@ export const githubKeys = {
   installations: (wsId: string) => [...githubKeys.all(wsId), "installations"] as const,
   repositories: (wsId: string, installationId: string) =>
     [...githubKeys.all(wsId), "installations", installationId, "repositories"] as const,
+  automationRepositories: (wsId: string, automationId: string) =>
+    [...githubKeys.all(wsId), "automation-repositories", automationId] as const,
 };
+
+export const githubAutomationRepositoriesOptions = (wsId: string, automationId: string, enabled = true) =>
+  queryOptions({
+    queryKey: githubKeys.automationRepositories(wsId, automationId),
+    queryFn: () => api.getAutomationGitHubCatalog(automationId),
+    enabled: enabled && !!wsId && !!automationId,
+  });
 
 export const githubInstallationsOptions = (wsId: string) =>
   queryOptions({

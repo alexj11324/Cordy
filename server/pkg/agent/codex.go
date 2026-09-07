@@ -610,8 +610,8 @@ func renderCodexMcpServersBlock(raw json.RawMessage) (string, bool, error) {
 	sb.WriteString(patchbayCodexMcpBeginMarker)
 	sb.WriteString("\n")
 	for i, name := range names {
-		if !isCodexBareTomlKey(name) {
-			return "", false, fmt.Errorf("mcp server name %q must be ASCII alphanumeric / _ / - to fit Codex's bare-key requirement", name)
+		if name == "" {
+			return "", false, errors.New("mcp server name must not be empty")
 		}
 		var serverVal map[string]any
 		if err := json.Unmarshal(parsed.McpServers[name], &serverVal); err != nil {
@@ -625,7 +625,7 @@ func renderCodexMcpServersBlock(raw json.RawMessage) (string, bool, error) {
 			sb.WriteString("\n")
 		}
 		sb.WriteString("[mcp_servers.")
-		sb.WriteString(name)
+		sb.WriteString(codexTOMLKey(name))
 		sb.WriteString("]\n")
 		keys := make([]string, 0, len(serverVal))
 		for k := range serverVal {
@@ -2033,7 +2033,7 @@ func stopTimer(timer *time.Timer) {
 // wait unless the semantic timeout is raised too; LoadConfig warns when it does
 // not. See the run loop's competing-timer select for the interaction.
 //
-// An explicit configured override (PATCHBAY_CODEX_FIRST_TURN_TIMEOUT) is honored
+// An explicit configured override (ORVILO_CODEX_FIRST_TURN_TIMEOUT) is honored
 // as-is, upward included: an operator whose app-server is legitimately slow to
 // its first event (a heavy MCP boot, a cold model catalog) can lift this ceiling
 // past the default that the semantic-inactivity timeout alone can never raise

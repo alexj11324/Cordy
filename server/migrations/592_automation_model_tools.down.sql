@@ -1,0 +1,3 @@
+ALTER TABLE automation
+    DROP COLUMN IF EXISTS tools,
+    DROP COLUMN IF EXISTS model;

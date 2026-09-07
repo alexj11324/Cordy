@@ -67,13 +67,13 @@ SMTP_EHLO_NAME=mail.example.com
 
 ```dotenv
 APP_ENV=development
-PATCHBAY_DEV_VERIFICATION_CODE=888888
+ORVILO_DEV_VERIFICATION_CODE=888888
 ```
 
 验证码必须是 6 位数字。`APP_ENV=production` 时固定验证码会被忽略。
 
 <Callout type="warning">
-不要在公网实例中启用固定验证码。生产环境的组合是 `APP_ENV=production` 加空的 `PATCHBAY_DEV_VERIFICATION_CODE`。
+不要在公网实例中启用固定验证码。生产环境的组合是 `APP_ENV=production` 加空的 `ORVILO_DEV_VERIFICATION_CODE`。
 </Callout>
 
 ## 开发环境跳过登录页
@@ -82,7 +82,7 @@ PATCHBAY_DEV_VERIFICATION_CODE=888888
 
 ```dotenv
 APP_ENV=development
-PATCHBAY_DEV_LOGIN=1
+ORVILO_DEV_LOGIN=1
 ```
 
 此时后端会提供 `/auth/dev-login`：
@@ -90,10 +90,10 @@ PATCHBAY_DEV_LOGIN=1
 - `GET /auth/dev-login?email=dev@localhost&redirect=/dev/issues` 会写入会话 Cookie 并跳转到 Web 应用，打开这个链接就等于完成登录。
 - `POST /auth/dev-login`，请求体 `{"email":"dev@localhost"}`，返回与 `verify-code` 相同的 `{ token, user }`，供 curl 和脚本使用。
 
-`email` 默认取 `PATCHBAY_DEV_EMAIL`（再回退到 `dev@localhost`）；`redirect` 只接受同源路径；除非传 `onboarding=keep`，否则会直接标记引导完成。在本仓库中，`make dev-login` 会打印该链接、bearer token 和要打开的工作区。
+`email` 默认取 `ORVILO_DEV_EMAIL`（再回退到 `dev@localhost`）；`redirect` 只接受同源路径；除非传 `onboarding=keep`，否则会直接标记引导完成。在本仓库中，`make dev-login` 会打印该链接、bearer token 和要打开的工作区。
 
 <Callout type="warning">
-绝不要在公网实例上设置 `PATCHBAY_DEV_LOGIN`：任何知道邮箱地址的人都能免验证码登录为该用户。`APP_ENV=production` 时它会被忽略，且只有该变量为 `1` 时后端才会注册这个路由。
+绝不要在公网实例上设置 `ORVILO_DEV_LOGIN`：任何知道邮箱地址的人都能免验证码登录为该用户。`APP_ENV=production` 时它会被忽略，且只有该变量为 `1` 时后端才会注册这个路由。
 </Callout>
 
 ## Google 登录

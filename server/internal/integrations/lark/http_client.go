@@ -43,7 +43,7 @@ const (
 	// defaultLarkBaseURL is the mainland 飞书 open-platform host. It is the
 	// fallback host for an installation whose region is feishu (or unset);
 	// Region.OpenPlatformBaseURL maps region=lark to open.larksuite.com.
-	// Operators do NOT set PATCHBAY_LARK_HTTP_BASE_URL to pick a cloud
+	// Operators do NOT set ORVILO_LARK_HTTP_BASE_URL to pick a cloud
 	// anymore — the per-installation region does that automatically. The
 	// env var remains only as a deployment-wide override (proxy / mock /
 	// single-cloud staging); tests substitute an httptest.Server URL.
@@ -131,7 +131,7 @@ func (c HTTPClientConfig) withDefaults() HTTPClientConfig {
 	// An empty BaseURL means "no deployment-wide override" — each call
 	// then resolves its host from InstallationCredentials.Region (see
 	// resolveBaseURL), so one client serves both Feishu and Lark. A
-	// non-empty BaseURL (PATCHBAY_LARK_HTTP_BASE_URL, or an httptest URL
+	// non-empty BaseURL (ORVILO_LARK_HTTP_BASE_URL, or an httptest URL
 	// in tests) forces every region to that host.
 	c.BaseURL = strings.TrimRight(c.BaseURL, "/")
 	if c.HTTPClient == nil {
@@ -252,7 +252,7 @@ func (c *httpAPIClient) tenantAccessToken(ctx context.Context, creds Installatio
 }
 
 // resolveBaseURL picks the open-platform host for one call. An explicit
-// cfg.BaseURL (PATCHBAY_LARK_HTTP_BASE_URL, or an httptest URL in tests)
+// cfg.BaseURL (ORVILO_LARK_HTTP_BASE_URL, or an httptest URL in tests)
 // overrides every region and routes all traffic there. With no override,
 // the host comes from the installation's region, so Feishu and Lark
 // installations served by the same process each reach their own cloud.

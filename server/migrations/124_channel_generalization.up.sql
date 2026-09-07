@@ -40,7 +40,7 @@
 --     multi-replica RollingUpdate needs the prd procedure below.
 --
 --     PRD (rolling patchbay-api, maxUnavailable:0) overlapped old and new pods.
---     A one-time PATCHBAY_LARK_HUB_DISABLED park-switch existed during the
+--     A one-time ORVILO_LARK_HUB_DISABLED park-switch existed during the
 --     cutover to hold a hub dormant while the API stayed up, so only one hub
 --     was ever live (invariant b). That cutover is complete and the switch has
 --     since been removed (MUL-3515); this note is kept as history. Rollback to

@@ -22,7 +22,7 @@ type CredentialsResolver interface {
 
 // SecretboxCredentialsResolver decrypts the smart-bot secret using a single
 // secretbox.Box shared across every wecom installation. Rotation is the same
-// story as Feishu / Slack: change PATCHBAY_WECOM_SECRET_KEY, and every
+// story as Feishu / Slack: change ORVILO_WECOM_SECRET_KEY, and every
 // existing row needs a re-encrypt migration.
 type SecretboxCredentialsResolver struct {
 	Box *secretbox.Box

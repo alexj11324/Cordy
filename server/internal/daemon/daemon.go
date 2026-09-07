@@ -69,7 +69,7 @@ var errSkillBundleUnavailable = errors.New("skill bundle unavailable")
 const (
 	taskSlotWaitTimeout      = 2 * time.Second
 	taskSlotCapacityBackoff  = 5 * time.Second
-	repoCheckoutModeEnv      = "PATCHBAY_REPO_CHECKOUT_MODE"
+	repoCheckoutModeEnv      = "ORVILO_REPO_CHECKOUT_MODE"
 	repoCheckoutModeIsolated = "isolated"
 	// defaultTaskPrepareTimeout is a hard liveness bound for everything after
 	// claim and before StartTask succeeds: runtime resolution, skill bundles,
@@ -162,19 +162,19 @@ func taskScopedAuthToken(task Task) (string, error) {
 
 func taskPatchbayEnvironment(task Task, agentName, token, configRoot, workspacesRoot, serverURL string, healthPort, slot int, tempDir string) map[string]string {
 	return map[string]string{
-		"PATCHBAY_TOKEN":        token,
-		cli.TaskConfigRootEnv:   configRoot,
-		TaskWorkspacesRootEnv:   workspacesRoot,
-		"PATCHBAY_SERVER_URL":   serverURL,
-		"PATCHBAY_DAEMON_PORT":  strconv.Itoa(healthPort),
-		"PATCHBAY_WORKSPACE_ID": task.WorkspaceID,
-		"PATCHBAY_AGENT_NAME":   agentName,
-		"PATCHBAY_AGENT_ID":     task.AgentID,
-		"PATCHBAY_TASK_ID":      task.ID,
-		"PATCHBAY_TASK_SLOT":    strconv.Itoa(slot),
-		"TMPDIR":                tempDir,
-		"TMP":                   tempDir,
-		"TEMP":                  tempDir,
+		"ORVILO_TOKEN":        token,
+		cli.TaskConfigRootEnv: configRoot,
+		TaskWorkspacesRootEnv: workspacesRoot,
+		"ORVILO_SERVER_URL":   serverURL,
+		"ORVILO_DAEMON_PORT":  strconv.Itoa(healthPort),
+		"ORVILO_WORKSPACE_ID": task.WorkspaceID,
+		"ORVILO_AGENT_NAME":   agentName,
+		"ORVILO_AGENT_ID":     task.AgentID,
+		"ORVILO_TASK_ID":      task.ID,
+		"ORVILO_TASK_SLOT":    strconv.Itoa(slot),
+		"TMPDIR":              tempDir,
+		"TMP":                 tempDir,
+		"TEMP":                tempDir,
 	}
 }
 
@@ -2000,7 +2000,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	)
 
 	// Mark the daemon-owned workspaces tree before any task runs. A sandbox
-	// fault can strip every PATCHBAY_* env var from an agent subprocess; the
+	// fault can strip every ORVILO_* env var from an agent subprocess; the
 	// per-workdir marker then only protects cwds inside the workdir, and a
 	// subprocess that escaped to the workdir's parent would fall back to the
 	// user's config PAT. The root marker makes the CLI fail closed anywhere
@@ -5210,7 +5210,7 @@ func waitForTaskSlot(ctx context.Context, sem chan int, wakeup <-chan struct{}, 
 
 // newTaskSlotSemaphore returns a buffered channel pre-populated with stable
 // slot indices [0, n). Receive to acquire a slot, send the same slot back to
-// release. Used by pollLoop to expose PATCHBAY_TASK_SLOT to spawned tasks.
+// release. Used by pollLoop to expose ORVILO_TASK_SLOT to spawned tasks.
 func newTaskSlotSemaphore(maxConcurrentTasks int) chan int {
 	sem := make(chan int, maxConcurrentTasks)
 	for i := 0; i < maxConcurrentTasks; i++ {
@@ -6093,6 +6093,8 @@ func providerNeedsInlineSystemPrompt(provider string) bool {
 // to --session. The transcript remains resumable when only the task workdir
 // changes, so binding it to workdir reuse discards healthy conversation history
 // and forces the model to reconstruct it through `patchbay chat history`.
+// Antigravity's --conversation id is likewise resolved from its user-home
+// transcript store, independent of the task workdir.
 //
 // A matching workdir is not sufficient on its own. Hermes keys its sessions to
 // HERMES_HOME — the per-task overlay under envRoot — not to the cwd, and the
@@ -6124,10 +6126,31 @@ func sameExistingDir(a, b string) bool {
 	return os.SameFile(ai, bi)
 }
 
+// isAgentThreadContinuation identifies the source-neutral task-level
+// conversation surface. Both fields are server-derived: the message is the
+// user turn and the root id is the validated lineage scope. Ordinary issue,
+// chat and root tasks must keep their existing best-effort resume behavior.
+func isAgentThreadContinuation(task Task) bool {
+	return strings.TrimSpace(task.AgentThreadMessage) != "" && strings.TrimSpace(task.AgentThreadRootTaskID) != ""
+}
+
+const agentThreadContinuationResumeUnavailableMessage = "Agent thread continuation is unavailable because the previous provider session could not be restored. Start a new task instead."
+
 func gateResumeToReachableSession(task *Task, taskCtx *execenv.TaskContextForEnv, provider, envWorkDir string, sessionHomeReachable bool, taskLog *slog.Logger) bool {
 	var reachable bool
 	if providerUsesPiSessionFile(provider) {
 		reachable = piSessionFilePresent(task.PriorSessionID)
+	} else if provider == "antigravity" {
+		// Antigravity's --conversation id addresses the transcript under its
+		// user-home app-data store. It is independent of the task cwd, so a GC'd
+		// workdir must not make a valid conversation look unreachable.
+		reachable = task.PriorSessionID != "" && sessionHomeReachable
+	} else if provider == "codex" && task.AgentThreadRootTaskID != "" {
+		// Source-neutral Agent continuations use a root-scoped Codex session
+		// store that survives task workdir GC. The old workdir is therefore not
+		// an ownership proof for this provider; rollout presence is checked by
+		// gateCodexResumeToRolloutPresence immediately after this gate.
+		reachable = task.PriorSessionID != "" && sessionHomeReachable
 	} else {
 		// Compare the directories, not the spelling. Reuse runs in the canonical
 		// path it validated and locked, which need not be character-identical to
@@ -6248,7 +6271,7 @@ func shouldReusePriorWorkdir(task Task, localAssignment *localDirectoryAssignmen
 	if len(parts) != 3 || parts[0] == "" || parts[1] == "" || parts[2] != "workdir" {
 		return "", false
 	}
-	if task.AgentID == "" || (task.IssueID == "" && task.ChatSessionID == "") {
+	if task.AgentID == "" || (task.IssueID == "" && task.ChatSessionID == "" && task.AgentThreadRootTaskID == "") {
 		return "", false
 	}
 	// Managed-env provenance is written only for non-local resumable envs, so
@@ -6266,10 +6289,12 @@ func shouldReusePriorWorkdir(task Task, localAssignment *localDirectoryAssignmen
 		return "", false
 	}
 	var marker struct {
-		ManagedBy     string `json:"managed_by"`
-		AgentID       string `json:"agent_id"`
-		IssueID       string `json:"issue_id"`
-		ChatSessionID string `json:"chat_session_id"`
+		ManagedBy             string `json:"managed_by"`
+		AgentID               string `json:"agent_id"`
+		RuntimeID             string `json:"runtime_id"`
+		IssueID               string `json:"issue_id"`
+		ChatSessionID         string `json:"chat_session_id"`
+		AgentThreadRootTaskID string `json:"agent_thread_root_task_id"`
 	}
 	if json.Unmarshal(data, &marker) != nil {
 		return "", false
@@ -6283,7 +6308,20 @@ func shouldReusePriorWorkdir(task Task, localAssignment *localDirectoryAssignmen
 		}
 		return workdir, true
 	}
-	if prov.ChatSessionID != task.ChatSessionID || marker.ChatSessionID != task.ChatSessionID {
+	if task.ChatSessionID != "" {
+		if prov.ChatSessionID != task.ChatSessionID || marker.ChatSessionID != task.ChatSessionID {
+			return "", false
+		}
+		return workdir, true
+	}
+	// Source-neutral Agent conversations have no mutable issue/chat foreign key.
+	// Their root task id is the durable scope, and the runtime fence prevents a
+	// stale path from being adopted by another provider/runtime.
+	if prov.IssueID != "" || prov.ChatSessionID != "" || marker.IssueID != "" || marker.ChatSessionID != "" ||
+		prov.AgentThreadRootTaskID != task.AgentThreadRootTaskID || marker.AgentThreadRootTaskID != task.AgentThreadRootTaskID {
+		return "", false
+	}
+	if task.RuntimeID == "" || prov.RuntimeID != task.RuntimeID || marker.RuntimeID != task.RuntimeID {
 		return "", false
 	}
 	return workdir, true
@@ -6963,11 +7001,12 @@ func resolveTaskModelSelection(
 
 	sel.Model = qualifyTaskModel(provider, sel.Model, capabilityChecksPending, loadCatalog, taskLog)
 
-	// service_tier is catalog-owned and currently Codex-only. As with
-	// thinking_level, stale or incompatible persisted values degrade to the
-	// runtime default instead of failing the task. Catalog lookup errors pass
-	// through so a transient discovery failure does not silently disable a
-	// previously valid user choice.
+	// service_tier is catalog-owned. Codex advertises tiers from
+	// `codex debug models`; ACP runtimes advertise them from session/new.
+	// As with thinking_level, stale or incompatible persisted values degrade
+	// to the runtime default instead of failing the task. Catalog lookup
+	// errors pass through so a transient discovery failure does not silently
+	// disable a previously valid user choice.
 	if sel.ServiceTier != "" {
 		ok, err := agent.ValidateServiceTierWith(loadCatalog, provider, sel.Model, sel.ServiceTier)
 		if err != nil {
@@ -7080,7 +7119,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 
 	// Refuse to spawn an agent without a workspace. An empty workspace_id
-	// here would make PATCHBAY_WORKSPACE_ID empty in the agent env, and the
+	// here would make ORVILO_WORKSPACE_ID empty in the agent env, and the
 	// CLI would otherwise silently fall back to the user-global config — a
 	// path that can leak operations into an unrelated workspace when
 	// multiple workspaces share a host.
@@ -7177,13 +7216,16 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// Repos are passed as metadata only — the agent checks them out on demand
 	// via `patchbay repo checkout <url>`.
 	taskCtx := execenv.TaskContextForEnv{
-		IssueID:             task.IssueID,
-		TriggerCommentID:    task.TriggerCommentID,
-		TriggerThreadID:     task.TriggerThreadID,
-		CommentReplyTargets: commentReplyThreads(task),
-		NewCommentCount:     task.NewCommentCount,
-		NewCommentsSince:    task.NewCommentsSince,
-		PriorSessionResumed: task.PriorSessionID != "",
+		IssueID:                   task.IssueID,
+		IsAgentThreadContinuation: isAgentThreadContinuation(task),
+		RuntimeID:                 task.RuntimeID,
+		AgentThreadRootTaskID:     task.AgentThreadRootTaskID,
+		TriggerCommentID:          task.TriggerCommentID,
+		TriggerThreadID:           task.TriggerThreadID,
+		CommentReplyTargets:       commentReplyThreads(task),
+		NewCommentCount:           task.NewCommentCount,
+		NewCommentsSince:          task.NewCommentsSince,
+		PriorSessionResumed:       task.PriorSessionID != "",
 		// MUL-5305: the server sets this when a more recent Codex session was
 		// withheld (rollout missing) and PriorSessionID is an older fallback (or
 		// absent). Seed the brief's continuity disclosure from it; the local
@@ -7872,6 +7914,24 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if resumeReachable {
 		gateCodexResumeToRolloutPresence(&task, &taskCtx, provider, env.CodexHome, taskLog)
 	}
+	// A source-neutral Agent continuation is an explicit request to continue
+	// the provider conversation. Once the reachability gates have cleared its
+	// only session pointer, starting a fresh provider thread would silently
+	// turn that follow-up into an unrelated run. Persist the unavailable state
+	// through the normal terminal failure callback instead of invoking a
+	// backend at all.
+	strictContinuation := isAgentThreadContinuation(task)
+	if strictContinuation && task.PriorSessionID == "" {
+		taskLog.Warn("agent thread continuation: prior provider session unavailable; refusing fresh launch")
+		return TaskResult{
+			Status:                "blocked",
+			Comment:               agentThreadContinuationResumeUnavailableMessage,
+			WorkDir:               env.WorkDir,
+			EnvRoot:               env.RootDir,
+			FailureReason:         taskfailure.ReasonAgentUnknown.String(),
+			SessionRolloutMissing: true,
+		}, nil
+	}
 
 	// Inject runtime-specific config (meta skill) so the agent discovers .agent_context/.
 	runtimeBrief, err := execenv.InjectRuntimeConfig(env.WorkDir, provider, taskCtx)
@@ -7897,10 +7957,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 
 	// Pass task-scoped auth credentials and context so the spawned agent CLI
 	// can call the Patchbay API and the local daemon (e.g. `patchbay repo checkout`).
-	// PATCHBAY_TASK_SLOT is allocated from the daemon-wide concurrency pool, not
+	// ORVILO_TASK_SLOT is allocated from the daemon-wide concurrency pool, not
 	// per-agent. When one daemon hosts multiple agents, slots index shared
 	// daemon-level resources such as GPUs.
-	// PATCHBAY_TOKEN is bound to (agent, task) by the server. Never fall back
+	// ORVILO_TOKEN is bound to (agent, task) by the server. Never fall back
 	// to the daemon's own credential here: doing so lets agent CLI writes land
 	// as the runtime owner's member actor and can retrigger the same agent.
 	agentToken, err := taskScopedAuthToken(task)
@@ -7913,20 +7973,20 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		agentEnv[repoCheckoutModeEnv] = checkoutMode
 	}
 	if task.AutomationRunID != "" {
-		agentEnv["PATCHBAY_AUTOMATION_RUN_ID"] = task.AutomationRunID
+		agentEnv["ORVILO_AUTOMATION_RUN_ID"] = task.AutomationRunID
 	}
 	if task.AutomationID != "" {
-		agentEnv["PATCHBAY_AUTOMATION_ID"] = task.AutomationID
+		agentEnv["ORVILO_AUTOMATION_ID"] = task.AutomationID
 	}
 	// Quick-create marker — when set, the patchbay CLI's `issue create`
 	// command stamps the new issue with origin_type=quick_create +
 	// origin_id=<task_id> so the completion handler can find it
 	// deterministically (see GetIssueByOrigin).
 	if task.QuickCreatePrompt != "" {
-		agentEnv["PATCHBAY_QUICK_CREATE_TASK_ID"] = task.ID
+		agentEnv["ORVILO_QUICK_CREATE_TASK_ID"] = task.ID
 		if len(task.QuickCreateAttachmentIDs) > 0 {
 			if raw, err := json.Marshal(task.QuickCreateAttachmentIDs); err == nil {
-				agentEnv["PATCHBAY_QUICK_CREATE_ATTACHMENT_IDS"] = string(raw)
+				agentEnv["ORVILO_QUICK_CREATE_ATTACHMENT_IDS"] = string(raw)
 			} else {
 				taskLog.Warn("quick-create attachment ids: marshal failed; skipping env injection", "error", err)
 			}
@@ -7948,7 +8008,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// HOME and the XDG base dirs are deliberately not touched here: provider
 	// tools such as gh, aws, kubectl, and npm continue resolving the daemon
 	// user's existing state (MUL-5578). The Patchbay CLI is the exception:
-	// PATCHBAY_TASK_CONFIG_ROOT above redirects its implicit profile lookup to
+	// ORVILO_TASK_CONFIG_ROOT above redirects its implicit profile lookup to
 	// private task-local state and prevents Owner-profile fallback.
 	// (Hermes HERMES_HOME is applied after custom_env below so the per-task
 	// overlay can win over a user-set HERMES_HOME; see
@@ -7998,7 +8058,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		if err != nil {
 			return TaskResult{}, fmt.Errorf("prepare dsh session root: %w", err)
 		}
-		agentEnv["PATCHBAY_DSH_SESSION_ROOT"] = dshSessionRoot
+		agentEnv["ORVILO_DSH_SESSION_ROOT"] = dshSessionRoot
 		agentEnv["DSH_TELEMETRY_DISABLED"] = "1"
 	}
 	if err := configureCodexTaskShellEnvironment(provider, env.CodexHome, os.Environ(), agentEnv, agentCustomEnv, d.logger); err != nil {
@@ -8041,7 +8101,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 
 	// Two-tier model resolution: an explicit agent.model wins,
-	// then the daemon-wide PATCHBAY_<PROVIDER>_MODEL env var. If
+	// then the daemon-wide ORVILO_<PROVIDER>_MODEL env var. If
 	// both are empty we deliberately pass "" through — each
 	// backend omits `--model` from the CLI invocation, so the
 	// provider picks its own default (Claude Code's shipped
@@ -8128,6 +8188,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		// than a flag. Empty when the prompt already carries the notice, so a turn
 		// can never pay for it twice (MUL-5722).
 		ResumeExpected:         task.PriorSessionID != "",
+		RequireResume:          strictContinuation,
 		ResumeContinuityNotice: backendResumeContinuityNotice(task),
 		ExtraArgs:              extraArgs,
 		CustomArgs:             customArgs,
@@ -8222,8 +8283,18 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// through the chat_session pointer (GH #6066).
 	var retiredSessionID string
 	defer func() { taskResult.RetiredSessionID = retiredSessionID }()
+	// A permanent resume rejection on an explicit Agent continuation cannot be
+	// repaired by a fresh thread. Mark the task's provider session unavailable
+	// while preserving the original no-fresh-session invariant. Transient busy
+	// rejections keep the session pointer for a later retry.
+	continuationSessionUnavailable := strictContinuation && result.Status == "failed" &&
+		result.ResumeRejected && !result.ResumeRejectedTransient
+	if continuationSessionUnavailable {
+		taskLog.Warn("agent thread continuation: provider permanently rejected the prior session")
+		result.SessionID = ""
+	}
 
-	if shouldRetryWithFreshSession(result, task.PriorSessionID, tools, provider) {
+	if shouldRetryTaskWithFreshSession(task, result, task.PriorSessionID, tools, provider) {
 		firstResult := result
 		firstUsage := result.Usage
 		firstTools := tools
@@ -8331,7 +8402,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// loss (PriorSessionResumeUnavailable, MUL-4424 transparency) even while
 	// resuming that older good session. No-op for non-Codex providers
 	// (env.CodexHome == "") and when there is no session.
-	var sessionRolloutMissing bool
+	sessionRolloutMissing := continuationSessionUnavailable
 	if result.SessionID != "" && !codexSessionResumable(env.CodexHome, result.SessionID, codexRolloutFlushWait) {
 		taskLog.Warn("codex session rollout not present in task CODEX_HOME; withholding resume pointer and flagging continuity gap",
 			"session_id", result.SessionID, "codex_home", env.CodexHome, "status", result.Status)
@@ -8530,6 +8601,13 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			FailureReason: failureReason,
 		}, nil
 	}
+}
+
+func shouldRetryTaskWithFreshSession(task Task, result agent.Result, priorSessionID string, tools int32, provider string) bool {
+	if isAgentThreadContinuation(task) {
+		return false
+	}
+	return shouldRetryWithFreshSession(result, priorSessionID, tools, provider)
 }
 
 // shouldRetryWithFreshSession reports whether a failed run that requested
@@ -8791,7 +8869,7 @@ func (d *Daemon) executeAndDrain(ctx context.Context, backend agent.Backend, pro
 	// window — so the failure message reports the real duration.
 	idleWindow := d.cfg.AgentIdleWatchdog
 	// A provider may opt into a shorter per-run no-message budget. The global
-	// zero remains authoritative so PATCHBAY_AGENT_IDLE_WATCHDOG=0 still disables
+	// zero remains authoritative so ORVILO_AGENT_IDLE_WATCHDOG=0 still disables
 	// the entire watchdog suite. Tool calls continue to use AgentToolWatchdog.
 	if idleWindow > 0 && opts.IdleWatchdogTimeout > 0 && opts.IdleWatchdogTimeout < idleWindow {
 		idleWindow = opts.IdleWatchdogTimeout
@@ -9124,7 +9202,7 @@ func idleWatchdogTickInterval(window time.Duration) time.Duration {
 //     `toolWindow` applies instead. It defaults to `window`, so the two are
 //     normally identical and this branch only changes which duration the
 //     failure message reports; an operator who deliberately sets
-//     PATCHBAY_AGENT_TOOL_WATCHDOG higher buys long tools extra room, and
+//     ORVILO_AGENT_TOOL_WATCHDOG higher buys long tools extra room, and
 //     toolWindow <= 0 keeps the historical behavior of never force-stopping
 //     while a tool is in flight. Without this in-flight budget a backend that
 //     emits tool_use and never the matching tool_result would run forever now
@@ -9497,7 +9575,7 @@ func ensureTaskTempDir(envRoot string, workspaceID string, taskID string) (strin
 	dir, err := os.MkdirTemp(base, execenv.TaskTempDirPrefix)
 	if err != nil {
 		if overrideConfigured {
-			return "", nil, fmt.Errorf("PATCHBAY_AGENT_TEMP_BASE: create task temp dir: %w", err)
+			return "", nil, fmt.Errorf("ORVILO_AGENT_TEMP_BASE: create task temp dir: %w", err)
 		}
 		return "", nil, err
 	}
@@ -9515,7 +9593,7 @@ func ensureTaskTempDir(envRoot string, workspaceID string, taskID string) (strin
 
 // taskTempBaseDir resolves the parent directory for private per-task temp
 // dirs on Linux and macOS. The daemon operator can relocate it with
-// PATCHBAY_AGENT_TEMP_BASE, which must be an absolute path to an existing,
+// ORVILO_AGENT_TEMP_BASE, which must be an absolute path to an existing,
 // writable directory; an invalid value fails task startup instead of silently
 // falling back. Windows ignores the variable. Unset keeps the platform default
 // exactly as before, down to the syscalls made.
@@ -9525,12 +9603,12 @@ func taskTempBaseDir() (string, bool, error) {
 	if runtime.GOOS == "windows" {
 		return socketSafeTempBaseDir(), false, nil
 	}
-	base := strings.TrimSpace(os.Getenv("PATCHBAY_AGENT_TEMP_BASE"))
+	base := strings.TrimSpace(os.Getenv("ORVILO_AGENT_TEMP_BASE"))
 	if base == "" {
 		return socketSafeTempBaseDir(), false, nil
 	}
 	if !filepath.IsAbs(base) {
-		return "", true, fmt.Errorf("PATCHBAY_AGENT_TEMP_BASE must be an absolute path, got %q", base)
+		return "", true, fmt.Errorf("ORVILO_AGENT_TEMP_BASE must be an absolute path, got %q", base)
 	}
 	return base, true, nil
 }
@@ -9549,7 +9627,7 @@ func socketSafeTempBaseDir() string {
 // daemon-internal variables and critical system paths.
 func isBlockedEnvKey(key string) bool {
 	upper := strings.ToUpper(key)
-	if strings.HasPrefix(upper, "PATCHBAY_") {
+	if strings.HasPrefix(upper, "ORVILO_") {
 		return true
 	}
 	switch upper {
@@ -9612,7 +9690,7 @@ const hermesProviderUnconfiguredHint = " [patchbay] hermes did not read the HERM
 //
 // The two paths themselves are deliberately NOT interpolated here. They are
 // user-controlled (HERMES_HOME comes from the agent's custom_env, the overlay
-// root from PATCHBAY_WORKSPACES_ROOT), and this string is persisted as the
+// root from ORVILO_WORKSPACES_ROOT), and this string is persisted as the
 // task's error text, which the resume guards keep matching against for the life
 // of the row. A source home under /srv/400-invalid_request_error/ would trip
 // ResumeUnsafeFailure and the SQL guard, dropping a healthy session pointer —

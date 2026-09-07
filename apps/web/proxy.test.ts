@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { PATCHBAY_LOCALE_HEADER } from "./lib/locale-routing";
+import { ORVILO_LOCALE_HEADER } from "./lib/locale-routing";
 
 vi.mock("@clerk/nextjs/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@clerk/nextjs/server")>();
@@ -169,7 +169,7 @@ describe("proxy runtime upstream rewrites", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
       expect(
-        res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
+        res.headers.get(`x-middleware-request-${ORVILO_LOCALE_HEADER}`),
       ).toBe("en");
     });
   });
@@ -181,7 +181,7 @@ describe("proxy runtime upstream rewrites", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
       expect(
-        res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
+        res.headers.get(`x-middleware-request-${ORVILO_LOCALE_HEADER}`),
       ).toBe("en");
     });
   });
@@ -226,7 +226,7 @@ describe("proxy runtime upstream rewrites", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
       expect(
-        res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
+        res.headers.get(`x-middleware-request-${ORVILO_LOCALE_HEADER}`),
       ).toBe("en");
     } finally {
       restoreEnv("REMOTE_API_URL", previous);
@@ -257,7 +257,7 @@ describe("proxy root and locale handling", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("location")).toBeNull();
     expect(
-      res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
+      res.headers.get(`x-middleware-request-${ORVILO_LOCALE_HEADER}`),
     ).toBe("zh-Hans");
   });
 
@@ -266,8 +266,8 @@ describe("proxy root and locale handling", () => {
   });
 
   it("sends Desktop Google broker routes to hosted Accounts", async () => {
-    const previous = process.env.PATCHBAY_AUTH_BROKER_ORIGIN;
-    process.env.PATCHBAY_AUTH_BROKER_ORIGIN =
+    const previous = process.env.ORVILO_AUTH_BROKER_ORIGIN;
+    process.env.ORVILO_AUTH_BROKER_ORIGIN =
       "https://accounts.aspectlylabs.com";
     try {
       expect(
@@ -285,13 +285,13 @@ describe("proxy root and locale handling", () => {
         `https://accounts.aspectlylabs.com/oauth/google/callback?platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
       );
     } finally {
-      restoreEnv("PATCHBAY_AUTH_BROKER_ORIGIN", previous);
+      restoreEnv("ORVILO_AUTH_BROKER_ORIGIN", previous);
     }
   });
 
   it("sends Desktop login off the product web origin onto hosted Accounts", async () => {
-    const previous = process.env.PATCHBAY_AUTH_BROKER_ORIGIN;
-    process.env.PATCHBAY_AUTH_BROKER_ORIGIN =
+    const previous = process.env.ORVILO_AUTH_BROKER_ORIGIN;
+    process.env.ORVILO_AUTH_BROKER_ORIGIN =
       "https://accounts.aspectlylabs.com";
     const challenge = "a".repeat(43);
     const state = "b".repeat(43);
@@ -304,14 +304,14 @@ describe("proxy root and locale handling", () => {
         `https://accounts.aspectlylabs.com/login?platform=desktop&code_challenge=${challenge}&state=${state}&session_api=http%3A%2F%2Flocalhost%3A8080`,
       );
     } finally {
-      restoreEnv("PATCHBAY_AUTH_BROKER_ORIGIN", previous);
+      restoreEnv("ORVILO_AUTH_BROKER_ORIGIN", previous);
     }
   });
 
   it("does not send self-host Desktop login to production Accounts", async () => {
-    const previousBroker = process.env.PATCHBAY_AUTH_BROKER_ORIGIN;
+    const previousBroker = process.env.ORVILO_AUTH_BROKER_ORIGIN;
     const previousAccounts = process.env.NEXT_PUBLIC_ACCOUNTS_URL;
-    delete process.env.PATCHBAY_AUTH_BROKER_ORIGIN;
+    delete process.env.ORVILO_AUTH_BROKER_ORIGIN;
     delete process.env.NEXT_PUBLIC_ACCOUNTS_URL;
     try {
       expect(
@@ -320,7 +320,7 @@ describe("proxy root and locale handling", () => {
         ),
       ).toBeNull();
     } finally {
-      restoreEnv("PATCHBAY_AUTH_BROKER_ORIGIN", previousBroker);
+      restoreEnv("ORVILO_AUTH_BROKER_ORIGIN", previousBroker);
       restoreEnv("NEXT_PUBLIC_ACCOUNTS_URL", previousAccounts);
     }
   });

@@ -86,8 +86,8 @@ make start            # start backend + frontend
 make stop             # stop app processes for this checkout
 make db-drop          # permanently drop this checkout's local database
 make remove-worktree WORKTREE=../path  # drop a linked worktree DB, then remove it
-make up C=desktop     # backend + Electron, signed in — the client changes are verified on
-make dev-login        # sign in a browser / get a bearer token for curl (web only)
+make up C=desktop     # backend + Electron, signed in — preferred UI verification
+make dev-login        # sign in a browser / get a bearer token for curl
 make seed-dev         # sample issues + dependency graph, in the dev-fixtures workspace
 make server           # run Go server only
 make daemon           # run local daemon
@@ -230,17 +230,15 @@ Rules:
 - Keep an assertion where the test wrote it when its message says something the shared one cannot. `.Want()` prints the request line, both statuses and the response body; it does not know which case in a loop was running.
 - Helpers in `internal/testutil` insert rows, run handlers and report mismatches. They must not assert a product rule on a test's behalf — a helper that knows what a correct response looks like has taken the assertion away from the test making it.
 - Default tests must never resolve or execute user-installed agent CLIs. Pass a test-created fake executable path or a test-created missing path to agent subprocess code.
-- Real-agent smoke tests belong behind the `agentintegration` build tag and must check `PATCHBAY_RUN_REAL_AGENT_SMOKE=1` before executable lookup or account access.
-- Run an explicitly authorized real-agent smoke test with `(cd server && PATCHBAY_RUN_REAL_AGENT_SMOKE=1 go test -tags=agentintegration ./pkg/agent -run '<test-name>' -count=1 -v)`. This command may access an authenticated account and consume quota.
+- Real-agent smoke tests belong behind the `agentintegration` build tag and must check `ORVILO_RUN_REAL_AGENT_SMOKE=1` before executable lookup or account access.
+- Run an explicitly authorized real-agent smoke test with `(cd server && ORVILO_RUN_REAL_AGENT_SMOKE=1 go test -tags=agentintegration ./pkg/agent -run '<test-name>' -count=1 -v)`. This command may access an authenticated account and consume quota.
 - When adding a default agent command, add it to `scripts/agent-cli-command-names.txt`; the normal Linux/macOS test entry points fail on ambient agent CLI execution.
 
 ## Verification
 
-Product behavior is verified in the **desktop app (Electron), not the browser**. `make up C=desktop`
-starts Electron against this environment's backend, already signed in and in a workspace — it mints a
-dev token into the gitignored `apps/desktop/.env.development.local`, because Desktop authenticates
-with a stored bearer token and cannot use the cookie `make dev-login` sets in a browser. Use the web
-app only when the change is web-only platform wiring (`apps/web/`), and say which client you checked.
+Shared Web/Desktop UI lives in `packages/views` (thin routes only in `apps/web` and `apps/desktop`). After merge to `main` and CI succeeds, production Web deploys via `aspectlylabs-production-images`; installed desktop clients get the same UI on the next `v*` release (`release.yml` + electron-updater). Shared UI changes must be visually accepted: **prefer Electron** (`make up C=desktop`). After Web is deployed, Web is a valid check. If the environment cannot run Electron, or the renderer is broken, use Web (`make up` + `make dev-login`). Say which client you checked.
+
+`make up C=desktop` mints a dev token into the gitignored `apps/desktop/.env.development.local`, because Desktop authenticates with a stored bearer token and cannot use the cookie `make dev-login` sets in a browser.
 
 For code changes, run the narrowest useful checks while iterating, then run broader verification when risk justifies it or when asked.
 

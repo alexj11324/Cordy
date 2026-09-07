@@ -5,6 +5,6 @@
 //
 // A zero Config is disabled. Disabled, unavailable, invalid, or expired policy
 // always returns ActionOff, so merely importing or constructing this package
-// cannot change product behavior. A configured PATCHBAY_CLOUD_URL connects the
+// cannot change product behavior. A configured ORVILO_CLOUD_URL connects the
 // production consumer.
 package entitlement

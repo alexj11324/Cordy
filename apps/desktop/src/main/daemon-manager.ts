@@ -413,7 +413,7 @@ function findCliOnPath(): string | null {
 }
 
 function requiresSourceCli(): boolean {
-  return process.env.PATCHBAY_REQUIRE_SOURCE_CLI === "1";
+  return process.env.ORVILO_REQUIRE_SOURCE_CLI === "1";
 }
 
 /**
@@ -934,11 +934,11 @@ function desktopSpawnEnv(): NodeJS.ProcessEnv {
   // A Desktop launched from an agent task must still mutate the owner's
   // Desktop profile, never the task-local config root inherited from that
   // shell. Credentials continue to travel only over helper stdin.
-  delete env.PATCHBAY_TASK_CONFIG_ROOT;
-  delete env.PATCHBAY_TOKEN;
-  delete env.PATCHBAY_SERVER_URL;
-  delete env.PATCHBAY_WORKSPACE_ID;
-  return { ...env, PATCHBAY_LAUNCHED_BY: "desktop" };
+  delete env.ORVILO_TASK_CONFIG_ROOT;
+  delete env.ORVILO_TOKEN;
+  delete env.ORVILO_SERVER_URL;
+  delete env.ORVILO_WORKSPACE_ID;
+  return { ...env, ORVILO_LAUNCHED_BY: "desktop" };
 }
 
 async function applyDesktopProfileRequest(

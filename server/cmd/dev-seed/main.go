@@ -22,7 +22,7 @@ func main() {
 
 func run(ctx context.Context) error {
 	databaseURL := os.Getenv("DATABASE_URL")
-	enabled := os.Getenv("PATCHBAY_ENABLE_DEV_SEED") == "1"
+	enabled := os.Getenv("ORVILO_ENABLE_DEV_SEED") == "1"
 	if err := devseed.ValidateTarget(databaseURL, enabled); err != nil {
 		return err
 	}
@@ -36,7 +36,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("reach development database: %w", err)
 	}
 
-	email := strings.TrimSpace(os.Getenv("PATCHBAY_DEV_EMAIL"))
+	email := strings.TrimSpace(os.Getenv("ORVILO_DEV_EMAIL"))
 	result, err := devseed.Seed(ctx, pool, email)
 	if err != nil {
 		return err

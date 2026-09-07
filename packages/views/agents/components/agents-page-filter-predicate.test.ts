@@ -179,6 +179,15 @@ describe("rowMatchesFilters — access dimension", () => {
     expect(rowMatchesFilters(cloudAgent, filters, "")).toBe(false);
   });
 
+  it("still matches search against a stored description without rendering it", () => {
+    const row = makeRow({
+      name: "Reviewer",
+      description: "Ships carefully",
+    });
+    expect(rowMatchesFilters(row, noFilters, "carefully")).toBe(true);
+    expect(rowMatchesFilters(row, noFilters, "missing")).toBe(false);
+  });
+
   it("access filter value matches the same derivation as effectiveAccessScope", () => {
     // The column and the filter share one derivation — guard against drift.
     const cases: Array<{

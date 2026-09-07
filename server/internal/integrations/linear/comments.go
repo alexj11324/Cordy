@@ -34,7 +34,7 @@ func (c *HTTPClient) FetchComment(ctx context.Context, token, id string) (Commen
 			Nodes []Comment `json:"nodes"`
 		} `json:"comments"`
 	}
-	err := c.graphql(ctx, token, `query($id: ID!) { comments(filter: { id: { eq: $id } }, first: 1) { nodes { `+commentFields+` } } }`, map[string]any{"id": id}, &response)
+	err := c.graphql(ctx, token, `query($id: String!) { comments(filter: { id: { eq: $id } }, first: 1) { nodes { `+commentFields+` } } }`, map[string]any{"id": id}, &response)
 	if err != nil {
 		return Comment{}, false, err
 	}
@@ -65,7 +65,7 @@ func (c *HTTPClient) ListComments(ctx context.Context, token, issueID string) ([
 		if cursor != "" {
 			variables["after"] = cursor
 		}
-		if err := c.graphql(ctx, token, `query($issue: ID!, $after: String) { comments(filter: { issue: { id: { eq: $issue } } }, first: 100, after: $after) { nodes { `+commentFields+` } pageInfo { hasNextPage endCursor } } }`, variables, &response); err != nil {
+		if err := c.graphql(ctx, token, `query($issue: String!, $after: String) { comments(filter: { issue: { id: { eq: $issue } } }, first: 100, after: $after) { nodes { `+commentFields+` } pageInfo { hasNextPage endCursor } } }`, variables, &response); err != nil {
 			return nil, err
 		}
 		for _, comment := range response.Comments.Nodes {

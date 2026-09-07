@@ -34,6 +34,7 @@ import type {
   AgentThreadResponse,
   ContinueAgentThreadRequest,
   ContinueAgentThreadResponse,
+  PrioritizeAgentThreadTaskResponse,
   AgentActivityBucket,
   AgentRunCount,
   WorkspaceWorkingAgent,
@@ -172,6 +173,9 @@ import type {
   ListAutomationsResponse,
   CronPreviewResponse,
   GetAutomationResponse,
+  AutomationMemoryFile,
+  ListAutomationMemoriesResponse,
+  UpdateAutomationMemoryRequest,
   AutomationCollaboratorsResponse,
   ListAutomationRunsResponse,
   ListWebhookDeliveriesResponse,
@@ -193,6 +197,7 @@ import type {
   PluginConfigRequest,
   ListGitHubInstallationsResponse,
   ListGitHubRepositoriesResponse,
+  AutomationGitHubCatalog,
   GitHubConnectResponse,
   LinearCatalogResponse,
   LinearConnectResponse,
@@ -220,6 +225,7 @@ import type {
   ComposioConnectInitResponse,
   SlackInstallation,
   ListSlackInstallationsResponse,
+  SlackAutomationCatalogResponse,
   RegisterSlackBYORequest,
   BeginManagedSlackInstallResponse,
   RedeemSlackBindingTokenResponse,
@@ -272,6 +278,10 @@ import type {
   CreateCommentSubIssueAgentRequest,
   CreateCommentSubIssueRequest,
 } from "../types";
+import {
+  AutomationMemoryFileSchema,
+  ListAutomationMemoriesResponseSchema,
+} from "../automations/memory-schemas";
 import type { OnboardingCompletionPath } from "../onboarding/types";
 
 import type {
@@ -294,6 +304,7 @@ import {
   AgentTaskListSchema,
   AgentThreadResponseSchema,
   ContinueAgentThreadResponseSchema,
+  PrioritizeAgentThreadTaskResponseSchema,
   AttachmentResponseSchema,
   CancelTaskResponseSchema,
   ChatDraftRestoresResponseSchema,
@@ -359,6 +370,8 @@ import {
   IssueTableRowsResponseSchema,
   ListAutomationsResponseSchema,
   EMPTY_LIST_AUTOMATIONS_RESPONSE,
+  GetAutomationResponseSchema,
+  fallbackGetAutomation,
   AutomationRunSchema,
   AutomationQuotaUsageSchema,
   FALLBACK_AUTOMATION_RUN,
@@ -525,8 +538,12 @@ import {
   ListLinearMemberBindingsResponseSchema,
   ListLinearSyncConflictsResponseSchema,
   ListGitHubRepositoriesResponseSchema,
+  AutomationGitHubCatalogSchema,
+  EMPTY_AUTOMATION_GITHUB_CATALOG,
   EMPTY_GITHUB_CONNECT_RESPONSE,
   ListSlackInstallationsResponseSchema,
+  SlackAutomationCatalogResponseSchema,
+  EMPTY_SLACK_AUTOMATION_CATALOG_RESPONSE,
   ListLarkInstallationsResponseSchema,
   EMPTY_LIST_SLACK_INSTALLATIONS_RESPONSE,
   EMPTY_LIST_LARK_INSTALLATIONS_RESPONSE,
@@ -2530,9 +2547,12 @@ export class ApiClient {
   // than cast: an unparseable body degrades to an explicit "failed" record that
   // shows the discovery error and keeps manual model entry usable, instead of a
   // fabricated empty catalog or an endless spinner (MUL-5444).
-  async initiateListModels(runtimeId: string): Promise<RuntimeModelListRequest> {
+  async initiateListModels(runtimeId: string, workspaceId?: string): Promise<RuntimeModelListRequest> {
     const raw = await this.fetch<unknown>(`/api/runtimes/${runtimeId}/models`, {
       method: "POST",
+      // The runtime owns this scope, even before route plumbing initializes or
+      // after navigation changes the global slug. A slug takes priority over ID.
+      headers: workspaceId ? { "X-Workspace-Slug": "", "X-Workspace-ID": workspaceId } : undefined,
     });
     return parseWithFallback<RuntimeModelListRequest>(
       raw,
@@ -2545,9 +2565,11 @@ export class ApiClient {
   async getListModelsResult(
     runtimeId: string,
     requestId: string,
+    workspaceId?: string,
   ): Promise<RuntimeModelListRequest> {
     const raw = await this.fetch<unknown>(
       `/api/runtimes/${runtimeId}/models/${requestId}`,
+      { headers: workspaceId ? { "X-Workspace-Slug": "", "X-Workspace-ID": workspaceId } : undefined },
     );
     return parseWithFallback<RuntimeModelListRequest>(
       raw,
@@ -2683,6 +2705,24 @@ export class ApiClient {
       { endpoint: "POST /api/tasks/:id/agent-thread/continue" },
     );
     if (!parsed) throw new Error("Invalid Agent thread continuation response");
+    return parsed;
+  }
+
+  async prioritizeAgentThreadTask(
+    taskId: string,
+    queuedTaskId: string,
+  ): Promise<PrioritizeAgentThreadTaskResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/tasks/${taskId}/agent-thread/queued-tasks/${queuedTaskId}/prioritize`,
+      { method: "POST" },
+    );
+    const parsed = parseWithFallback<PrioritizeAgentThreadTaskResponse | null>(
+      raw,
+      PrioritizeAgentThreadTaskResponseSchema,
+      null,
+      { endpoint: "POST /api/tasks/:id/agent-thread/queued-tasks/:queuedTaskId/prioritize" },
+    );
+    if (!parsed) throw new Error("Invalid Agent thread prioritize response");
     return parsed;
   }
 
@@ -3005,7 +3045,7 @@ export class ApiClient {
   }
 
   /**
-   * Publishes from a directory the operator hosts (PATCHBAY_PLUGIN_DIR) — the
+   * Publishes from a directory the operator hosts (ORVILO_PLUGIN_DIR) — the
    * development channel, so iterating on a surface does not mean zipping and
    * uploading after every edit. It still produces an immutable version.
    */
@@ -4656,7 +4696,13 @@ export class ApiClient {
   }
 
   async getAutomation(id: string): Promise<GetAutomationResponse> {
-    return this.fetch(`/api/automations/${id}`);
+    const raw = await this.fetch<unknown>(`/api/automations/${id}`);
+    return parseWithFallback(
+      raw,
+      GetAutomationResponseSchema,
+      fallbackGetAutomation(id),
+      { endpoint: "GET /api/automations/:id" },
+    );
   }
 
   async createAutomation(data: CreateAutomationRequest): Promise<Automation> {
@@ -4675,6 +4721,58 @@ export class ApiClient {
 
   async deleteAutomation(id: string): Promise<void> {
     await this.fetch(`/api/automations/${id}`, { method: "DELETE" });
+  }
+
+  async listAutomationMemories(id: string): Promise<ListAutomationMemoriesResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/automations/${encodeURIComponent(id)}/memories`,
+    );
+    const parsed = ListAutomationMemoriesResponseSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new ApiError("Invalid automation memory response", 502, "Bad Gateway", {
+        issues: parsed.error.issues,
+      });
+    }
+    return parsed.data;
+  }
+
+  async getAutomationMemory(id: string, name: string): Promise<AutomationMemoryFile> {
+    const raw = await this.fetch<unknown>(
+      `/api/automations/${encodeURIComponent(id)}/memories/${encodeURIComponent(name)}`,
+    );
+    const parsed = AutomationMemoryFileSchema.safeParse(raw);
+    if (!parsed.success || parsed.data.name !== name) {
+      throw new ApiError("Invalid automation memory response", 502, "Bad Gateway", {
+        issues: parsed.success ? [{ message: "response name did not match request" }] : parsed.error.issues,
+      });
+    }
+    return parsed.data;
+  }
+
+  async updateAutomationMemory(
+    id: string,
+    name: string,
+    data: UpdateAutomationMemoryRequest,
+  ): Promise<AutomationMemoryFile> {
+    const raw = await this.fetch<unknown>(
+      `/api/automations/${encodeURIComponent(id)}/memories/${encodeURIComponent(name)}`,
+      { method: "PUT", body: JSON.stringify(data) },
+    );
+    const parsed = AutomationMemoryFileSchema.safeParse(raw);
+    if (!parsed.success || parsed.data.name !== name) {
+      throw new ApiError("Invalid automation memory response", 502, "Bad Gateway", {
+        issues: parsed.success ? [{ message: "response name did not match request" }] : parsed.error.issues,
+      });
+    }
+    return parsed.data;
+  }
+
+  async deleteAutomationMemory(id: string, name: string, revision: number): Promise<void> {
+    const query = new URLSearchParams({ revision: String(revision) });
+    await this.fetch(
+      `/api/automations/${encodeURIComponent(id)}/memories/${encodeURIComponent(name)}?${query}`,
+      { method: "DELETE" },
+    );
   }
 
   // Grant a workspace member explicit write access to the automation. Both
@@ -4889,6 +4987,12 @@ export class ApiClient {
       EMPTY_LIST_GITHUB_REPOSITORIES_RESPONSE,
       { endpoint: "GET /api/workspaces/:id/github/installations/:installationId/repositories" },
     );
+  }
+
+  async getAutomationGitHubCatalog(automationId: string): Promise<AutomationGitHubCatalog> {
+    const raw = await this.fetch<unknown>(`/api/automations/${automationId}/github-catalog`);
+    return parseWithFallback(raw, AutomationGitHubCatalogSchema, EMPTY_AUTOMATION_GITHUB_CATALOG,
+      { endpoint: "GET /api/automations/:id/github-catalog" });
   }
 
   async deleteGitHubInstallation(workspaceId: string, installationId: string): Promise<void> {
@@ -5239,6 +5343,16 @@ export class ApiClient {
       { endpoint: "GET /api/workspaces/:id/slack/installations" });
   }
 
+  async getSlackAutomationCatalog(workspaceId: string): Promise<SlackAutomationCatalogResponse> {
+    const raw = await this.fetch<unknown>(`/api/workspaces/${workspaceId}/slack/automation-catalog`);
+    return parseWithFallback(
+      raw,
+      SlackAutomationCatalogResponseSchema,
+      EMPTY_SLACK_AUTOMATION_CATALOG_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/slack/automation-catalog" },
+    );
+  }
+
   // registerSlackBYO performs a bring-your-own-app install: the admin pastes the
   // bot token (xoxb-) + app-level token (xapp-) of the Slack app they created,
   // and the backend validates + persists it, returning the new installation.
@@ -5447,7 +5561,7 @@ export class ApiClient {
 
   // registerWecomBYO performs a bring-your-own-app install: the admin pastes
   // the bot id and long-connection secret from the WeCom admin console,
-  // and the backend seals the secret with PATCHBAY_WECOM_SECRET_KEY before
+  // and the backend seals the secret with ORVILO_WECOM_SECRET_KEY before
   // persisting, returning the new installation.
   async registerWecomBYO(
     workspaceId: string,

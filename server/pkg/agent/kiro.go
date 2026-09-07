@@ -563,7 +563,7 @@ func isKiroIssueCommentAddCommand(command string) bool {
 }
 
 // trimLeadingEnvAssignments drops leading `KEY=VALUE` tokens so an invocation
-// like `PATCHBAY_TOKEN=x patchbay issue comment add ...` is still recognized.
+// like `ORVILO_TOKEN=x patchbay issue comment add ...` is still recognized.
 func trimLeadingEnvAssignments(parts []string) []string {
 	for len(parts) > 0 && isEnvAssignment(parts[0]) {
 		parts = parts[1:]

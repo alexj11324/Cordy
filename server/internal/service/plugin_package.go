@@ -68,7 +68,7 @@ func (s *PluginService) PublishBundle(ctx context.Context, workspaceID, userID p
 	return s.publish(ctx, workspaceID, userID, bundle, false)
 }
 
-// PublishLocalBundle publishes from PATCHBAY_PLUGIN_DIR — the development
+// PublishLocalBundle publishes from ORVILO_PLUGIN_DIR — the development
 // channel, so an author iterating on a surface does not have to zip and upload
 // after every edit.
 //
@@ -80,10 +80,10 @@ func (s *PluginService) PublishBundle(ctx context.Context, workspaceID, userID p
 // of a conflict.
 func (s *PluginService) PublishLocalBundle(ctx context.Context, workspaceID, userID pgtype.UUID, name string) (PluginPackageSummary, error) {
 	if s.LocalDir == "" {
-		return PluginPackageSummary{}, pluginErrf(PluginErrorInvalid, "local plugin sources require PATCHBAY_PLUGIN_DIR")
+		return PluginPackageSummary{}, pluginErrf(PluginErrorInvalid, "local plugin sources require ORVILO_PLUGIN_DIR")
 	}
 	if name == "" || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, ".") {
-		return PluginPackageSummary{}, pluginErrf(PluginErrorInvalid, "local plugin source must be a single directory name under PATCHBAY_PLUGIN_DIR")
+		return PluginPackageSummary{}, pluginErrf(PluginErrorInvalid, "local plugin source must be a single directory name under ORVILO_PLUGIN_DIR")
 	}
 	bundle, err := plugincontract.ParseBundleFromDir(func(entry string) ([]byte, bool, error) {
 		content, readErr := s.readLocalFile(name, entry)
@@ -503,10 +503,10 @@ func (s *PluginService) packageFile(ctx context.Context, queries *db.Queries, ve
 // directory after cleaning.
 func (s *PluginService) readLocalFile(name, entry string) ([]byte, error) {
 	if s.LocalDir == "" {
-		return nil, pluginErrf(PluginErrorInvalid, "local plugin sources require PATCHBAY_PLUGIN_DIR")
+		return nil, pluginErrf(PluginErrorInvalid, "local plugin sources require ORVILO_PLUGIN_DIR")
 	}
 	if name == "" || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, ".") {
-		return nil, pluginErrf(PluginErrorInvalid, "local plugin source must be a single directory name under PATCHBAY_PLUGIN_DIR")
+		return nil, pluginErrf(PluginErrorInvalid, "local plugin source must be a single directory name under ORVILO_PLUGIN_DIR")
 	}
 	root := filepath.Join(s.LocalDir, name)
 	path := filepath.Clean(filepath.Join(root, entry))

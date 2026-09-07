@@ -116,7 +116,7 @@ var reservedMediaPrefixes = []netip.Prefix{
 // only knows how to recognise an IPv4 address when it is written as one. This
 // list is the ONLY thing standing between the guard and the address embedded
 // inside. Letting mediaAllowedPrefixes override it would mean
-// PATCHBAY_WECOM_MEDIA_ALLOW_CIDRS=::/0 — or, just as well, =2002::/16 —
+// ORVILO_WECOM_MEDIA_ALLOW_CIDRS=::/0 — or, just as well, =2002::/16 —
 // reaching the loopback and the metadata endpoint the guard exists to refuse,
 // written in a spelling the operator never thought they were opening.
 //
@@ -156,7 +156,7 @@ type addrPolicy func(netip.Addr) bool
 var mediaAllowedPrefixes []netip.Prefix
 
 // SetMediaAllowedPrefixes declares ranges the media guard may dial. Called at
-// boot from PATCHBAY_WECOM_MEDIA_ALLOW_CIDRS. An unparseable entry is reported
+// boot from ORVILO_WECOM_MEDIA_ALLOW_CIDRS. An unparseable entry is reported
 // and skipped rather than silently widening or silently narrowing the guard.
 func SetMediaAllowedPrefixes(cidrs []string) []error {
 	var (

@@ -165,7 +165,7 @@ func (h *Handler) ConnectVCS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !h.isVCSConfigured() {
-		writeError(w, http.StatusServiceUnavailable, "vcs integration not configured (PATCHBAY_VCS_SECRET_KEY unset)")
+		writeError(w, http.StatusServiceUnavailable, "vcs integration not configured (ORVILO_VCS_SECRET_KEY unset)")
 		return
 	}
 
@@ -287,7 +287,7 @@ func (h *Handler) RotateVCSConnectionWebhook(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	if !h.isVCSConfigured() {
-		writeError(w, http.StatusServiceUnavailable, "vcs integration not configured (PATCHBAY_VCS_SECRET_KEY unset)")
+		writeError(w, http.StatusServiceUnavailable, "vcs integration not configured (ORVILO_VCS_SECRET_KEY unset)")
 		return
 	}
 

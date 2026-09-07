@@ -141,7 +141,7 @@ func normalizeLocalRunRequest(request localRunRequest) (localRunRequest, error) 
 func validateLocalRunEnvironment() error {
 	for _, entry := range os.Environ() {
 		key, _, _ := strings.Cut(entry, "=")
-		if strings.HasPrefix(strings.ToUpper(key), "PATCHBAY_") {
+		if strings.HasPrefix(strings.ToUpper(key), "ORVILO_") {
 			return fmt.Errorf("local Guest runner refuses Patchbay environment %q", key)
 		}
 	}

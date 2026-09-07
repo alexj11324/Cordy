@@ -1140,13 +1140,13 @@ func appendUniqueStrings(dst []string, values ...string) []string {
 }
 
 func quickCreateAttachmentIDsFromEnv() ([]string, error) {
-	raw := strings.TrimSpace(os.Getenv("PATCHBAY_QUICK_CREATE_ATTACHMENT_IDS"))
+	raw := strings.TrimSpace(os.Getenv("ORVILO_QUICK_CREATE_ATTACHMENT_IDS"))
 	if raw == "" {
 		return nil, nil
 	}
 	var ids []string
 	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
-		return nil, fmt.Errorf("parse PATCHBAY_QUICK_CREATE_ATTACHMENT_IDS: %w", err)
+		return nil, fmt.Errorf("parse ORVILO_QUICK_CREATE_ATTACHMENT_IDS: %w", err)
 	}
 	return appendUniqueStrings(nil, ids...), nil
 }
@@ -1235,14 +1235,14 @@ func runIssueCreate(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	// Quick-create stamp: when the daemon sets PATCHBAY_QUICK_CREATE_TASK_ID
+	// Quick-create stamp: when the daemon sets ORVILO_QUICK_CREATE_TASK_ID
 	// before invoking the agent, the agent's `patchbay issue create` call
 	// inherits the env var and tags the new issue with origin_type=
 	// quick_create + origin_id=<task_id>. The completion handler then
 	// locates the issue deterministically by origin instead of "most
 	// recent issue by this agent", which is racy when max_concurrent_tasks
 	// > 1 and the agent is creating other issues in parallel.
-	if taskID := os.Getenv("PATCHBAY_QUICK_CREATE_TASK_ID"); taskID != "" {
+	if taskID := os.Getenv("ORVILO_QUICK_CREATE_TASK_ID"); taskID != "" {
 		body["origin_type"] = "quick_create"
 		body["origin_id"] = taskID
 	}
@@ -2643,7 +2643,7 @@ func (k actorKinds) describe() string {
 
 func resolveActor(ctx context.Context, client *cli.APIClient, name string, kinds actorKinds) (string, string, error) {
 	if client.WorkspaceID == "" {
-		return "", "", fmt.Errorf("workspace ID is required to resolve actors; use --workspace-id or set PATCHBAY_WORKSPACE_ID")
+		return "", "", fmt.Errorf("workspace ID is required to resolve actors; use --workspace-id or set ORVILO_WORKSPACE_ID")
 	}
 
 	input := normalizeActorLookupInput(name)
@@ -2789,7 +2789,7 @@ func ambiguousActorError(input string, matches []actorMatch) error {
 // with overlapping names.
 func resolveActorByID(ctx context.Context, client *cli.APIClient, id string, kinds actorKinds) (string, string, error) {
 	if client.WorkspaceID == "" {
-		return "", "", fmt.Errorf("workspace ID is required to resolve actors; use --workspace-id or set PATCHBAY_WORKSPACE_ID")
+		return "", "", fmt.Errorf("workspace ID is required to resolve actors; use --workspace-id or set ORVILO_WORKSPACE_ID")
 	}
 	input := strings.TrimSpace(id)
 	if !uuidRegexp.MatchString(input) {

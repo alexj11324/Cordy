@@ -5,6 +5,7 @@ import type {
   AgentBuilderSessionSummary,
   Attachment,
   AutomationRun,
+  GetAutomationResponse,
   BillingBalance,
   BillingBatchesPage,
   BillingCheckoutSessionStatus,
@@ -480,11 +481,13 @@ const LinearCatalogTeamSchema = z.object({
   id: z.string(),
   key: z.string(),
   name: z.string(),
+  organization_id: z.string().optional(),
 }).loose();
 
 const LinearCatalogProjectSchema = z.object({
   id: z.string(),
   name: z.string(),
+  team_id: z.string().optional(),
 }).loose();
 
 const LinearCatalogStateSchema = z.object({
@@ -493,6 +496,7 @@ const LinearCatalogStateSchema = z.object({
   // Keep this open: Linear may add workflow categories.
   type: z.string(),
   color: z.string(),
+  team_id: z.string().optional(),
 }).loose();
 
 const LinearCatalogUserSchema = z.object({
@@ -691,6 +695,13 @@ export const EMPTY_LIST_GITHUB_REPOSITORIES_RESPONSE: ListGitHubRepositoriesResp
   total_count: 0,
   next_page: null,
 };
+
+export const AutomationGitHubCatalogSchema = z.object({
+  repositories: z.array(GitHubRepositorySchema).default([]),
+  me_logins: z.array(z.string()).default([]),
+}).loose();
+
+export const EMPTY_AUTOMATION_GITHUB_CATALOG = { repositories: [], me_logins: [] };
 
 export const GitHubPullRequestSchema = z.object({
   id: z.string(),
@@ -2671,6 +2682,11 @@ export const ContinueAgentThreadResponseSchema = z.object({
   status: z.enum(["queued", "coalesced"]).catch("queued"),
 }).loose();
 
+export const PrioritizeAgentThreadTaskResponseSchema = z.object({
+  task_id: z.string(),
+  active_task_id: z.string(),
+}).loose();
+
 // Task cancellation (`POST /api/tasks/:id/cancel`) is consumed directly by
 // chat recovery. Its optional message payload must be well-formed before the
 // UI deletes a message from cache or restores text into the input.
@@ -3115,10 +3131,15 @@ const AutomationListItemSchema = z.object({
   trigger_kinds: z.array(z.string()).optional(),
   next_run_at: z.string().nullable().optional(),
   last_run_status: z.string().nullable().optional(),
+  pause_reason: z.string().nullable().optional(),
+  model: z.string().nullable().optional(),
+  tools: z.record(z.string(), z.unknown()).nullable().optional(),
   // Per-caller write capability; absent on older servers (treated as unknown).
   can_write: z.boolean().optional(),
   // Narrower per-caller access-management capability (detail endpoint only).
   can_manage_access: z.boolean().optional(),
+  run_ready: z.boolean().optional(),
+  run_blocked_reasons: z.array(z.string()).optional(),
 }).loose();
 
 export const ListAutomationsResponseSchema = z.object({
@@ -3130,6 +3151,77 @@ export const EMPTY_LIST_AUTOMATIONS_RESPONSE = {
   automations: [],
   total: 0,
 };
+
+const AutomationSubscriberSchema = z.object({
+  user_type: z.string(),
+  user_id: z.string(),
+  created_at: z.string().optional(),
+}).loose();
+
+const AutomationCollaboratorSchema = z.object({
+  user_type: z.string(),
+  user_id: z.string(),
+  granted_by: z.string().optional(),
+  created_at: z.string().optional(),
+}).loose();
+
+const AutomationDetailSchema = AutomationListItemSchema.extend({
+  subscribers: z.array(AutomationSubscriberSchema).optional(),
+}).loose();
+
+const AutomationTriggerSchema = z.object({
+  id: z.string(),
+  automation_id: z.string(),
+  kind: z.string(),
+  enabled: z.boolean().default(true),
+  cron_expression: z.string().nullable().optional(),
+  timezone: z.string().nullable().optional(),
+  next_run_at: z.string().nullable().optional(),
+  webhook_token: z.string().nullable().optional(),
+  webhook_path: z.string().nullable().optional(),
+  webhook_url: z.string().nullable().optional(),
+  label: z.string().nullable().optional(),
+  event_filters: z.array(z.unknown()).nullable().optional(),
+  provider: z.string().nullable().optional(),
+  preset: z.string().nullable().optional(),
+  config: z.record(z.string(), z.unknown()).nullable().optional(),
+  ready: z.boolean().optional(),
+  readiness_reasons: z.array(z.string()).optional(),
+  has_signing_secret: z.boolean().optional(),
+  last_fired_at: z.string().nullable().optional(),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+}).loose();
+
+export const GetAutomationResponseSchema = z.object({
+  automation: AutomationDetailSchema,
+  triggers: z.array(AutomationTriggerSchema).default([]),
+  collaborators: z.array(AutomationCollaboratorSchema).optional(),
+}).loose();
+
+export function fallbackGetAutomation(id: string): GetAutomationResponse {
+  return {
+    automation: {
+      id,
+      workspace_id: "",
+      title: "",
+      description: null,
+      executor_type: "agent",
+      executor_id: "",
+      status: "paused",
+      execution_mode: "run_only",
+      issue_title_template: null,
+      created_by_type: "member",
+      created_by_id: "",
+      last_run_at: null,
+      created_at: "",
+      updated_at: "",
+      subscribers: [],
+    },
+    triggers: [],
+    collaborators: [],
+  };
+}
 
 // Automation run (POST /trigger, GET /runs). Consumed by the "run now" flow,
 // which branches on `status` to avoid a false-success toast (MUL-4525), so the
@@ -3939,6 +4031,17 @@ export const ListSlackInstallationsResponseSchema = z.object({
   install_supported: z.boolean().optional(),
   managed_supported: z.boolean().optional(),
 }).loose();
+
+export const SlackAutomationCatalogResponseSchema = z.object({
+  channels: z.array(z.object({
+    installation_id: z.string(),
+    team_id: z.string(),
+    id: z.string(),
+    name: z.string(),
+  }).loose()).default([]),
+}).loose();
+
+export const EMPTY_SLACK_AUTOMATION_CATALOG_RESPONSE = { channels: [] };
 
 export const ListLarkInstallationsResponseSchema = z.object({
   installations: z.array(LarkInstallationSchema).default([]),

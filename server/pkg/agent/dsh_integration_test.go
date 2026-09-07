@@ -15,12 +15,12 @@ import (
 // model and consumes API quota. It exercises the complete Patchbay backend,
 // installed DSH profile, model provider, and terminal-result path.
 func TestDshRealRuntimeSmoke(t *testing.T) {
-	if os.Getenv("PATCHBAY_RUN_REAL_AGENT_SMOKE") != "1" {
-		t.Skip("set PATCHBAY_RUN_REAL_AGENT_SMOKE=1 to run the DSH integration smoke")
+	if os.Getenv("ORVILO_RUN_REAL_AGENT_SMOKE") != "1" {
+		t.Skip("set ORVILO_RUN_REAL_AGENT_SMOKE=1 to run the DSH integration smoke")
 	}
-	path := os.Getenv("PATCHBAY_DSH_PATH")
+	path := os.Getenv("ORVILO_DSH_PATH")
 	if path == "" {
-		t.Fatal("PATCHBAY_DSH_PATH is required")
+		t.Fatal("ORVILO_DSH_PATH is required")
 	}
 	b, err := New("dsh", Config{ExecutablePath: path, TaskID: "dsh-real-smoke", Logger: slog.Default()})
 	if err != nil {
@@ -29,7 +29,7 @@ func TestDshRealRuntimeSmoke(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	cwd := t.TempDir()
-	session, err := b.Execute(ctx, "Remember the code word PINEAPPLE. Reply with exactly DSH_PATCHBAY_OK and nothing else.", ExecOptions{
+	session, err := b.Execute(ctx, "Remember the code word PINEAPPLE. Reply with exactly DSH_ORVILO_OK and nothing else.", ExecOptions{
 		Cwd: cwd, Model: "deepseek-official/deepseek-v4-flash", ThinkingLevel: "off",
 		Timeout: 90 * time.Second,
 	})
@@ -42,7 +42,7 @@ func TestDshRealRuntimeSmoke(t *testing.T) {
 	if result.Status != "completed" {
 		t.Fatalf("DSH smoke failed: status=%q error=%q", result.Status, result.Error)
 	}
-	if strings.TrimSpace(result.Output) != "DSH_PATCHBAY_OK" {
+	if strings.TrimSpace(result.Output) != "DSH_ORVILO_OK" {
 		t.Fatalf("unexpected DSH output: %q", result.Output)
 	}
 	if result.SessionID == "" {

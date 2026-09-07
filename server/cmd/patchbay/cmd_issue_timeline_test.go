@@ -290,9 +290,9 @@ func TestRunIssueTimelineReportsTruncationOnStderr(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newIssueTimelineTestCmd()
 	_ = cmd.Flags().Set("output", "json")
@@ -337,9 +337,9 @@ func TestRunIssueTimelineSilentWhenNotTruncated(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newIssueTimelineTestCmd()
 	_ = cmd.Flags().Set("output", "json")
@@ -430,9 +430,9 @@ func TestRunIssueTimelineRequestsFlatShapeAndFilters(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newIssueTimelineTestCmd()
 	_ = cmd.Flags().Set("output", "json")
@@ -479,9 +479,9 @@ func TestRunIssueTimelineEmptyResultPrintsEmptyJSONArray(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newIssueTimelineTestCmd()
 	_ = cmd.Flags().Set("output", "json")

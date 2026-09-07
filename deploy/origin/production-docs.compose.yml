@@ -2,7 +2,7 @@ name: cordy # legacy-brand-compat: preserves the existing production Compose pro
 
 services:
   docs:
-    image: ${PATCHBAY_DOCS_IMAGE_REF:?PATCHBAY_DOCS_IMAGE_REF must be an immutable digest}
+    image: ${ORVILO_DOCS_IMAGE_REF:?ORVILO_DOCS_IMAGE_REF must be an immutable digest}
     ports:
       - "127.0.0.1:4000:3000"
     restart: unless-stopped

@@ -51,6 +51,38 @@ func RootTaskCapabilityScope(task db.AgentTaskQueue) []byte {
 	return raw
 }
 
+// IsAutomationRootedTask identifies a precisely attributed autonomous task
+// whose audit accountability is explicit but whose originator is intentionally
+// NULL. Only trigger_owner and rule_owner prove an automation lineage;
+// owner_fallback is deliberately excluded because it names the agent owner,
+// not the human who armed or published the automation. The accountable user is
+// provenance only; it must not become the provider authorization principal.
+func IsAutomationRootedTask(task db.AgentTaskQueue) bool {
+	if task.OriginatorUserID.Valid || !task.AccountableUserID.Valid || !task.OriginatorSource.Valid {
+		return false
+	}
+	switch task.OriginatorSource.String {
+	case "trigger_owner", "rule_owner":
+		return true
+	default:
+		return false
+	}
+}
+
+// TaskTokenUserID returns the human identity projected by a task token. Human
+// initiated tasks use their originator. Autonomous automation tasks retain a
+// NULL originator for authorization and audit semantics, so the token uses the
+// runtime owner only for workspace-scoped identity checks.
+func TaskTokenUserID(task db.AgentTaskQueue, runtimeOwner pgtype.UUID) (pgtype.UUID, bool) {
+	if task.OriginatorUserID.Valid {
+		return task.OriginatorUserID, true
+	}
+	if IsAutomationRootedTask(task) && runtimeOwner.Valid {
+		return runtimeOwner, true
+	}
+	return pgtype.UUID{}, false
+}
+
 // TaskClaimFence deterministically binds one lease to one dispatched claim.
 // A replay computes the same value and loses the unique claim index; a
 // re-dispatch changes dispatched_at and therefore invalidates the old lease.

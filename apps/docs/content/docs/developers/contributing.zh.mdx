@@ -5,7 +5,11 @@ description: 配置 Patchbay 本地开发环境，运行测试，并按仓库约
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `make dev`；它会为当前 checkout 准备环境、数据库和 migration，再启动 Web 与 API。
+Patchbay 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `make up C=desktop`。
+
+Web 和 Electron 的产品 UI 都来自 `packages/views`。PR 合入 `main` 且 CI 通过后，生产 Web 由 `aspectlylabs-production-images` 自动部署。已安装的桌面客户端会在下一次 `v*` 发版（`release.yml` + electron-updater）拿到同一套 UI。应用壳留在 `apps/web` 和 `apps/desktop`；共享页面放在 `packages/views`。
+
+**界面验收：** 首选 Electron（`make up C=desktop`）。Web 部署之后也可以在浏览器里验收。如果当前环境无法运行 Electron，或桌面渲染异常，就走 Web（`make up` / `make up C=api,web` 和 `make dev-login`）。不要跳过视觉检查。
 
 ## 环境要求
 
@@ -26,7 +30,7 @@ make up C=desktop   # 装依赖、准备数据库、启动后端和 Electron 桌
 make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作区
 ```
 
-改动在桌面端验证，不在浏览器里验证：`make up C=desktop` 会用当前 checkout 的后端把 Electron 拉起来，并且已经是登录状态、已经在一个工作区里。只有当改动是 Web 独有的平台接线时，才用 `make up C=api,web` 配合 `make dev-login`——后者会打印一个能让浏览器直接登录的链接，以及一个给 `curl` 用的 bearer token。
+界面验收首选 Electron：`make up C=desktop` 会用当前 checkout 的后端把 Electron 拉起来，并且已经是登录状态、已经在一个工作区里。Web 部署之后也可以在浏览器里验收。如果环境没有可用的 Electron，或桌面渲染异常，就用 `make up C=api,web` 配合 `make dev-login`——后者会打印一个能让浏览器直接登录的链接，以及一个给 `curl` 用的 bearer token。
 
 桌面端用不了那个链接：它靠存储里的 bearer token 认证，而不是浏览器的 cookie，所以 `make up C=desktop` 会单独签发一个，写进被 gitignore 的 `apps/desktop/.env.development.local`。已有的会话优先，所以它绝不会把你正在测试的账号挤下线。
 
@@ -34,7 +38,7 @@ make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作�
 
 `make up` 会在加锁的前提下为当前 checkout 分配端口和数据库名并记录下来，所以多个 checkout 和 worktree 可以同时运行，`make status` / `make down` / `make destroy` 也能精确作用到其中一个。它会打印分配到的地址。`make dev` 是另一种方式：用默认端口、跑在同一个终端的前台——它启动后端并打开 Electron，不会启动 Web 应用。
 
-`make dev-login` 能用，是因为 `make up` 会把 `PATCHBAY_DEV_LOGIN=1` 写进本地 env 文件——见[登录与注册](/auth-setup#开发环境跳过登录页)。绝不要在公网部署上启用它，也不要把本地 `.env` 用到公网部署。
+`make dev-login` 能用，是因为 `make up` 会把 `ORVILO_DEV_LOGIN=1` 写进本地 env 文件——见[登录与注册](/auth-setup#开发环境跳过登录页)。绝不要在公网部署上启用它，也不要把本地 `.env` 用到公网部署。
 
 完整的贡献指南——环境、worktree、测试分层、排查和彻底重置——在仓库的 [CONTRIBUTING.md](https://github.com/patchbay-ai/patchbay/blob/main/CONTRIBUTING.md)。本页是简版。
 

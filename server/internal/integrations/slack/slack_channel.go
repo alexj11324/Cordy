@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
@@ -31,13 +32,15 @@ import (
 // EventChatDone subscriber (NewOutbound); Send satisfies the Channel contract
 // and posts with this installation's bot token.
 type slackChannel struct {
-	appID     string
-	botUserID string
-	appToken  string        // decrypted xapp- — authorizes the Socket Mode connection
-	botAPI    *slack.Client // bot-token client for outbound Send
-	handler   channel.InboundHandler
-	slash     *SlashCommandProcessor // nil disables /issue and /new slash-command handling
-	logger    *slog.Logger
+	appID          string
+	botUserID      string
+	appToken       string        // decrypted xapp- — authorizes the Socket Mode connection
+	botAPI         *slack.Client // bot-token client for outbound Send
+	handler        channel.InboundHandler
+	installationID pgtype.UUID
+	onNativeEvent  func(ctx context.Context, installationID pgtype.UUID, body []byte)
+	slash          *SlashCommandProcessor // nil disables /issue and /new slash-command handling
+	logger         *slog.Logger
 }
 
 // slashCommandTimeout bounds detached `/issue`, `/new`, and `/clear` processing
@@ -45,6 +48,8 @@ type slackChannel struct {
 // off the socket receive loop on its own context, so a slow DB or Slack HTTP
 // call cannot wedge event delivery.
 const slashCommandTimeout = 10 * time.Second
+
+const nativeAutomationTimeout = 30 * time.Second
 
 func (c *slackChannel) Type() channel.Type { return TypeSlack }
 
@@ -141,6 +146,17 @@ func (c *slackChannel) handleSocketEvent(ctx context.Context, sm *socketmode.Cli
 				c.logger.WarnContext(ctx, "slack: ack failed", "error", err)
 			}
 		}
+		if c.onNativeEvent != nil && evt.Request != nil && nativeEventEligible(evt.Request.Payload, c.botUserID) {
+			payload := append([]byte(nil), evt.Request.Payload...)
+			// Native fan-out is independent of the interactive channel handler.
+			// Run it after ACK and off the socket receive loop so a database
+			// hiccup cannot make Slack redeliver or stall this installation.
+			go func() {
+				nativeCtx, cancel := context.WithTimeout(context.Background(), nativeAutomationTimeout)
+				defer cancel()
+				c.onNativeEvent(nativeCtx, c.installationID, payload)
+			}()
+		}
 		return c.dispatchEventsAPI(ctx, eventsAPI, mentionRe)
 	case socketmode.EventTypeSlashCommand:
 		// ACK first: like Events API envelopes, Slack expires an un-ACKed slash
@@ -224,6 +240,10 @@ func (c *slackChannel) dispatchSlashCommand(cmd slack.SlashCommand, envelopeID s
 type ChannelDeps struct {
 	Decrypt Decrypter
 	Logger  *slog.Logger
+	// OnNativeEvent receives the raw, already-ACKed Events API payload for this
+	// installation so the automation fan-out can share the same provider event
+	// path as managed Slack without coupling the channel adapter to handlers.
+	OnNativeEvent func(ctx context.Context, installationID pgtype.UUID, body []byte)
 	// Slash handles `/issue` and `/new` commands delivered over Socket Mode. Nil
 	// leaves slash-command handling off (the connection still serves messages
 	// and @-mentions); tests that only exercise inbound messages pass nil.
@@ -277,13 +297,15 @@ func newSlackFactory(deps ChannelDeps) channel.Factory {
 			return nil, fmt.Errorf("slack: decrypt bot token: %w", err)
 		}
 		return &slackChannel{
-			appID:     ic.AppID,
-			botUserID: ic.BotUserID,
-			appToken:  appToken,
-			botAPI:    slack.New(botToken),
-			handler:   cfg.Handler,
-			slash:     deps.Slash,
-			logger:    logger,
+			appID:          ic.AppID,
+			botUserID:      ic.BotUserID,
+			appToken:       appToken,
+			botAPI:         slack.New(botToken),
+			handler:        cfg.Handler,
+			installationID: cfg.ID,
+			onNativeEvent:  deps.OnNativeEvent,
+			slash:          deps.Slash,
+			logger:         logger,
 		}, nil
 	}
 }

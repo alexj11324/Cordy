@@ -95,9 +95,9 @@ func TestRunAutomationGetRedactsWebhookCredentialsByDefault(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	out, err := captureStdout(t, func() error {
 		return runAutomationGet(newAutomationGetTestCmd(), []string{automationID})
@@ -167,9 +167,9 @@ func TestRunAutomationGetShowSecretsIsExplicitAndWarns(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newAutomationGetTestCmd()
 	_ = cmd.Flags().Set("show-secrets", "true")
@@ -227,9 +227,9 @@ func TestRunAutomationGetTableOutputDoesNotExposeWebhookCredentials(t *testing.T
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newAutomationGetTestCmd()
 	_ = cmd.Flags().Set("output", "table")
@@ -297,9 +297,9 @@ func TestWebhookTokenHintDoesNotExposeShortToken(t *testing.T) {
 }
 
 func TestRunAutomationGetRejectsShowSecretsWithTableOutput(t *testing.T) {
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1")
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newAutomationGetTestCmd()
 	_ = cmd.Flags().Set("output", "table")
@@ -428,9 +428,9 @@ func TestRunAutomationCreateSendsProjectID(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newAutomationCreateTestCmd()
 	_ = cmd.Flags().Set("title", "Daily planner")
@@ -477,9 +477,9 @@ func TestRunAutomationCreateSendsSubscribers(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newAutomationCreateTestCmd()
 	_ = cmd.Flags().Set("title", "Daily planner")
@@ -521,9 +521,9 @@ func TestRunAutomationUpdateSendsProjectIDChanges(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	t.Run("set project", func(t *testing.T) {
 		cmd := newAutomationUpdateTestCmd()
@@ -585,9 +585,9 @@ func TestRunAutomationUpdateAgentSwitchesAssigneeType(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "mat_test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "mat_test-token")
 
 	cmd := newAutomationUpdateTestCmd()
 	_ = cmd.Flags().Set("agent", "Codex Agent")
@@ -633,9 +633,9 @@ func TestRunAutomationUpdateSendsSubscriberReplacement(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newAutomationUpdateTestCmd()
 	_ = cmd.Flags().Set("subscriber", "Alice")
@@ -668,9 +668,9 @@ func TestRunAutomationUpdateCanClearSubscribers(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newAutomationUpdateTestCmd()
 	_ = cmd.Flags().Set("clear-subscribers", "true")
@@ -687,9 +687,9 @@ func TestRunAutomationUpdateCanClearSubscribers(t *testing.T) {
 }
 
 func TestRunAutomationUpdateRejectsSubscriberAndClear(t *testing.T) {
-	t.Setenv("PATCHBAY_SERVER_URL", "http://127.0.0.1")
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
-	t.Setenv("PATCHBAY_TOKEN", "test-token")
+	t.Setenv("ORVILO_SERVER_URL", "http://127.0.0.1")
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_TOKEN", "test-token")
 
 	cmd := newAutomationUpdateTestCmd()
 	_ = cmd.Flags().Set("subscriber", "Alice")
@@ -783,11 +783,11 @@ func TestRunAutomationTriggerListSurfacesIDs(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
 	// A task-scoped mat_ token so the test also passes inside an agent workdir,
 	// where a daemon task marker makes newAPIClient reject a plain token.
-	t.Setenv("PATCHBAY_TOKEN", "mat_test-token")
+	t.Setenv("ORVILO_TOKEN", "mat_test-token")
 
 	out, err := captureStdout(t, func() error {
 		return runAutomationTriggerList(newAutomationTriggerListTestCmd("table"), []string{automationID})
@@ -852,11 +852,11 @@ func TestRunAutomationTriggerListRedactsWebhookCredentials(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	t.Setenv("PATCHBAY_SERVER_URL", srv.URL)
-	t.Setenv("PATCHBAY_WORKSPACE_ID", "ws-1")
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+	t.Setenv("ORVILO_WORKSPACE_ID", "ws-1")
 	// A task-scoped mat_ token so the test also passes inside an agent workdir,
 	// where a daemon task marker makes newAPIClient reject a plain token.
-	t.Setenv("PATCHBAY_TOKEN", "mat_test-token")
+	t.Setenv("ORVILO_TOKEN", "mat_test-token")
 
 	out, err := captureStdout(t, func() error {
 		return runAutomationTriggerList(newAutomationTriggerListTestCmd("json"), []string{automationID})

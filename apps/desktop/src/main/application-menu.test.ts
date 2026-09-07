@@ -105,8 +105,8 @@ describe("application menu Check for Updates", () => {
 
   it("localizes the item from the OS language", () => {
     expect(checkForUpdatesMenuLabel(["zh-CN"])).toBe("检查更新…");
-    expect(checkForUpdatesMenuLabel(["ja"])).toBe("更新を確認…");
-    expect(checkForUpdatesMenuLabel(["ko-KR"])).toBe("업데이트 확인…");
+    expect(checkForUpdatesMenuLabel(["ja"])).toBe("Check for Updates…");
+    expect(checkForUpdatesMenuLabel(["ko-KR"])).toBe("Check for Updates…");
   });
 
   it("invokes the update check when the item is chosen", async () => {

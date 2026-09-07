@@ -15,12 +15,8 @@ docs=(
   CLI_INSTALL.md
   CLI_AND_DAEMON.md
   apps/docs/content/docs/self-host-quickstart.mdx
-  apps/docs/content/docs/self-host-quickstart.ja.mdx
-  apps/docs/content/docs/self-host-quickstart.ko.mdx
   apps/docs/content/docs/self-host-quickstart.zh.mdx
   apps/docs/content/docs/cli.mdx
-  apps/docs/content/docs/cli.ja.mdx
-  apps/docs/content/docs/cli.ko.mdx
   apps/docs/content/docs/cli.zh.mdx
 )
 

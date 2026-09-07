@@ -157,6 +157,11 @@ type GitHubRepositoriesResponse struct {
 	NextPage     *int                       `json:"next_page"`
 }
 
+type AutomationGitHubCatalogResponse struct {
+	Repositories []GitHubRepositoryResponse `json:"repositories"`
+	MeLogins     []string                   `json:"me_logins"`
+}
+
 func githubInstallationToResponse(i db.GithubInstallation) GitHubInstallationResponse {
 	instID := i.InstallationID
 	return GitHubInstallationResponse{
@@ -734,6 +739,65 @@ func (h *Handler) ListGitHubInstallations(w http.ResponseWriter, r *http.Request
 	})
 }
 
+// GetAutomationGitHubCatalog exposes private repository names only to members
+// who can edit this automation. It also resolves "Me" from personal GitHub App
+// installations connected by the current Patchbay member, never from another
+// workspace member's installation.
+func (h *Handler) GetAutomationGitHubCatalog(w http.ResponseWriter, r *http.Request) {
+	workspaceID := h.resolveWorkspaceID(r)
+	automation, ok := h.loadAutomationInWorkspace(w, r, chi.URLParam(r, "id"), workspaceID)
+	if !ok || !h.requireAutomationWrite(w, r, automation, workspaceID) {
+		return
+	}
+	if !isGitHubRepositoryBrowseConfigured() {
+		writeError(w, http.StatusServiceUnavailable, "github repository browsing is not configured")
+		return
+	}
+	rows, err := h.Queries.ListGitHubInstallationsByWorkspace(r.Context(), automation.WorkspaceID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list github installations")
+		return
+	}
+	repositories := make([]GitHubRepositoryResponse, 0)
+	meLogins := make([]string, 0)
+	seenRepositories := make(map[string]struct{})
+	seenMe := make(map[string]struct{})
+	callerID := parseUUID(requestUserID(r))
+	for _, row := range rows {
+		if row.AccountType == "User" && row.ConnectedByID == callerID {
+			key := strings.ToLower(row.AccountLogin)
+			if _, exists := seenMe[key]; !exists && key != "" {
+				seenMe[key] = struct{}{}
+				meLogins = append(meLogins, row.AccountLogin)
+			}
+		}
+		for page := 1; page <= 100; page++ {
+			response, err := fetchGitHubInstallationRepositories(r.Context(), row.InstallationID, page, 100)
+			if err != nil {
+				slog.Warn("github: load automation repository catalog failed", "automation_id", chi.URLParam(r, "id"), "err", err)
+				writeError(w, http.StatusBadGateway, "failed to list github repositories")
+				return
+			}
+			for _, repository := range response.Repositories {
+				key := strings.ToLower(repository.FullName)
+				if _, exists := seenRepositories[key]; exists {
+					continue
+				}
+				seenRepositories[key] = struct{}{}
+				repositories = append(repositories, repository)
+			}
+			if response.NextPage == nil {
+				break
+			}
+			if page == 100 {
+				writeError(w, http.StatusBadGateway, "github repository catalog exceeded pagination limit")
+				return
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, AutomationGitHubCatalogResponse{Repositories: repositories, MeLogins: meLogins})
+}
+
 // ListGitHubInstallationRepositories returns the repositories accessible to a
 // workspace-bound GitHub App installation. The route is admin-only because
 // private repository names are sensitive. The path takes our installation row
@@ -1042,6 +1106,7 @@ func (h *Handler) HandleGitHubWebhook(w http.ResponseWriter, r *http.Request) {
 		// Acknowledge every event so GitHub doesn't mark the endpoint failing,
 		// but ignore types we don't model.
 	}
+	h.fanoutGitHubAutomations(ctx, event, body, r.Header.Get("X-GitHub-Delivery"))
 	w.WriteHeader(http.StatusAccepted)
 }
 
