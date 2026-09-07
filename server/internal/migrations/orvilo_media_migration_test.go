@@ -37,7 +37,11 @@ INSERT INTO chat_message SELECT description FROM issue;`); err != nil {
 			t.Fatal(err)
 		}
 		// Exercise the actual persisted-media statements without unrelated schema changes.
-		mediaSQL := strings.SplitN(string(data), "ALTER TABLE", 2)[0]
+		start := strings.Index(string(data), "UPDATE issue SET description")
+		if start < 0 {
+			t.Fatal("media migration statements missing")
+		}
+		mediaSQL := strings.SplitN(string(data[start:]), "ALTER TABLE", 2)[0]
 		if _, err := tx.Exec(ctx, mediaSQL); err != nil {
 			t.Fatal(err)
 		}
