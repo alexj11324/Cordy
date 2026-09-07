@@ -16,6 +16,9 @@ func TestAutomationToolsDispatchNotes(t *testing.T) {
 	if !strings.Contains(got, "C123") || !strings.Contains(got, "automatically sends") || !strings.Contains(got, "do not send a duplicate") {
 		t.Fatalf("got %q", got)
 	}
+	if got := AutomationToolsDispatchNotes("automation-id", []byte(`{"memories":{"enabled":false},"slack_send":{"enabled":false}}`)); got != "" {
+		t.Fatalf("disabled legacy tools produced notes: %q", got)
+	}
 	for _, command := range []string{"memory list automation-id", "memory read automation-id", "memory write automation-id", "--revision", "outside the repository"} {
 		if !strings.Contains(got, command) {
 			t.Fatalf("missing %q in %q", command, got)

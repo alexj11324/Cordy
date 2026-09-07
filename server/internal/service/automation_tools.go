@@ -11,10 +11,10 @@ import (
 
 type AutomationToolsConfig struct {
 	Memories *struct {
-		Enabled bool `json:"enabled,omitempty"` // legacy field; presence now enables the tool
+		Enabled *bool `json:"enabled,omitempty"`
 	} `json:"memories,omitempty"`
 	SlackSend *struct {
-		Enabled        bool     `json:"enabled,omitempty"` // legacy field; presence now enables the tool
+		Enabled        *bool    `json:"enabled,omitempty"`
 		Channel        string   `json:"channel,omitempty"`
 		InstallationID string   `json:"installation_id,omitempty"`
 		ChannelIDs     []string `json:"channel_ids,omitempty"`
@@ -24,10 +24,9 @@ type AutomationToolsConfig struct {
 
 var automationSlackChannelID = regexp.MustCompile(`^[CG][A-Z0-9]+$`)
 
-// Tool rows are presence-based. The legacy enabled field is accepted for wire
-// compatibility but no longer gates execution; a saved row is in use until it
-// is removed. A free-text channel hint from older settings does not authorize a
-// native message delivery.
+// Tool rows are presence-based unless an older client explicitly persisted
+// enabled=false. A free-text channel hint from older settings does not
+// authorize a native message delivery.
 func ValidateAutomationTools(raw []byte) error {
 	if len(raw) == 0 {
 		return nil
@@ -36,7 +35,7 @@ func ValidateAutomationTools(raw []byte) error {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("invalid tools configuration: %w", err)
 	}
-	if cfg.SlackSend == nil {
+	if cfg.SlackSend == nil || !automationToolEnabled(cfg.SlackSend.Enabled) {
 		return nil
 	}
 	id, err := util.ParseUUID(cfg.SlackSend.InstallationID)
@@ -62,7 +61,17 @@ func ParseAutomationTools(raw []byte) AutomationToolsConfig {
 		return cfg
 	}
 	_ = json.Unmarshal(raw, &cfg)
+	if cfg.Memories != nil && !automationToolEnabled(cfg.Memories.Enabled) {
+		cfg.Memories = nil
+	}
+	if cfg.SlackSend != nil && !automationToolEnabled(cfg.SlackSend.Enabled) {
+		cfg.SlackSend = nil
+	}
 	return cfg
+}
+
+func automationToolEnabled(enabled *bool) bool {
+	return enabled == nil || *enabled
 }
 
 // AutomationMCPServerAllowlist returns the IDs selected for an automation and

@@ -9,11 +9,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	slackapi "github.com/slack-go/slack"
 
 	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
 	"github.com/patchbay-ai/patchbay/server/internal/util"
 	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
@@ -122,6 +124,11 @@ func (r *AutomationCompletionReactor) reactConfigured(ctx context.Context, works
 	}
 	trigger, err := r.q.GetAutomationTrigger(ctx, run.TriggerID)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// A trigger may be deleted after the run starts. Its completion
+			// reaction is historical, not a delivery failure.
+			return nil
+		}
 		return fmt.Errorf("load automation trigger: %w", err)
 	}
 	if trigger.Provider != "slack" || !trigger.Preset.Valid || trigger.Preset.String != "slack.message" {
@@ -212,16 +219,7 @@ func (r *AutomationCompletionReactor) sendConfiguredSummary(ctx context.Context,
 	if len(automation.Tools) == 0 {
 		return nil
 	}
-	var tools struct {
-		SlackSend *struct {
-			Enabled        bool     `json:"enabled"`
-			InstallationID string   `json:"installation_id"`
-			ChannelIDs     []string `json:"channel_ids"`
-		} `json:"slack_send"`
-	}
-	if err := json.Unmarshal(automation.Tools, &tools); err != nil {
-		return fmt.Errorf("decode automation Slack tool config: %w", err)
-	}
+	tools := service.ParseAutomationTools(automation.Tools)
 	if tools.SlackSend == nil {
 		return nil
 	}
@@ -257,9 +255,16 @@ func (r *AutomationCompletionReactor) sendConfiguredSummary(ctx context.Context,
 	api := r.newAPI(creds)
 	var errs []error
 	for _, channelID := range channels {
+		if hasSlackSummaryDelivery(run.Result, channelID) {
+			continue
+		}
 		if _, _, err := api.PostMessageContext(ctx, channelID,
 			slackapi.MsgOptionText(message, false), slackapi.MsgOptionDisableLinkUnfurl()); err != nil {
 			errs = append(errs, fmt.Errorf("Slack chat.postMessage to %s: %w", channelID, err))
+			continue
+		}
+		if err := r.recordSlackSummaryDelivery(ctx, runID, channelID); err != nil {
+			errs = append(errs, fmt.Errorf("record Slack delivery to %s: %w", channelID, err))
 		}
 	}
 	return errors.Join(errs...)
@@ -286,6 +291,50 @@ func (r *AutomationCompletionReactor) completedRunSummary(ctx context.Context, w
 		}
 	}
 	return "Completed successfully.", nil
+}
+
+func hasSlackSummaryDelivery(result []byte, channelID string) bool {
+	var state struct {
+		Channels []string `json:"slack_summary_deliveries"`
+	}
+	if json.Unmarshal(result, &state) != nil {
+		return false
+	}
+	for _, deliveredChannel := range state.Channels {
+		if deliveredChannel == channelID {
+			return true
+		}
+	}
+	return false
+}
+
+func (r *AutomationCompletionReactor) recordSlackSummaryDelivery(ctx context.Context, runID pgtype.UUID, channelID string) error {
+	if r.recorder == nil {
+		return nil
+	}
+	_, err := r.recorder.Exec(ctx, `
+		UPDATE automation_run
+		SET result = (
+			CASE
+				WHEN result IS NULL OR jsonb_typeof(result) = 'null' THEN '{}'::jsonb
+				WHEN jsonb_typeof(result) = 'object' THEN result
+				ELSE jsonb_build_object('output', result)
+			END
+		) || jsonb_build_object(
+			'slack_summary_deliveries', COALESCE(
+				CASE WHEN jsonb_typeof(result->'slack_summary_deliveries') = 'array' THEN result->'slack_summary_deliveries' END,
+				'[]'::jsonb
+			) || jsonb_build_array($2::text)
+		)
+		WHERE id = $1
+		  AND NOT (
+			COALESCE(
+				CASE WHEN jsonb_typeof(result->'slack_summary_deliveries') = 'array' THEN result->'slack_summary_deliveries' END,
+				'[]'::jsonb
+			) @> jsonb_build_array($2::text)
+		  )
+	`, runID, channelID)
+	return err
 }
 
 func (r *AutomationCompletionReactor) recordDeliveryError(ctx context.Context, runID pgtype.UUID, cause error) {
