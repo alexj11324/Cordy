@@ -157,7 +157,11 @@ require_contains "$out" "stopped"
 
 # Commands launched through env-exec must not inherit the daemon-task identity
 # hints that make human/profile CLI commands reject --profile.
-write_manifest "clean-env-903" "$root_dir" 903
+exec_fixture="$tmp_dir/exec-fixture"
+mkdir -p "$exec_fixture/scripts"
+ln -s "$root_dir/scripts/local-env.sh" "$exec_fixture/scripts/local-env.sh"
+bash "$root_dir/scripts/init-main-env.sh" "$exec_fixture/.env.example"
+write_manifest "clean-env-903" "$exec_fixture" 903
 ORVILO_TASK_CONFIG_ROOT=/task/config \
 ORVILO_TASK_WORKSPACES_ROOT=/task/workspaces \
 ORVILO_WORKSPACES_ROOT=/owner/workspaces \
