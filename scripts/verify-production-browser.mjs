@@ -202,6 +202,11 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
   await setupClerkTestingToken({ context });
   const page = await context.newPage();
   try {
+    const initiated = await context.request.post(
+      `${API_ORIGIN}/api/desktop-handoff/initiate`,
+      { data: { state, code_challenge: codeChallenge, callback_protocol: DESKTOP_CALLBACK_PROTOCOL } },
+    );
+    assert.equal(initiated.status(), 200, "synthetic desktop handoff initiation");
     const registered = await context.request.post(
       `${ACCOUNTS_ORIGIN}/v1/desktop/google/attempt`,
       {

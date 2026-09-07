@@ -19,6 +19,8 @@ services:
       # hosts are internet-routable, so this overlay pins false; provision
       # QA users in the dedicated Clerk app instead of public registration.
       ALLOW_SIGNUP: "false"
+      ALLOWED_EMAILS: ${ALLOWED_EMAILS:?Set the staging QA email allowlist}
+      ALLOWED_EMAIL_DOMAINS: ""
       ORVILO_DESKTOP_BROKER_AUTH_TOKEN: ${ORVILO_DESKTOP_BROKER_AUTH_TOKEN:?Set ORVILO_DESKTOP_BROKER_AUTH_TOKEN}
 
   frontend:
