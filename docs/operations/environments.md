@@ -63,8 +63,11 @@ production.
 
 On macOS, each checkout/channel launches its own cached Electron app bundle
 under `.patchbay-dev/electron/<version>-<arch>/`, leaving the dependency bundle
-and the other channel's native callback registration untouched. Dependency
-upgrades select a new cache path; ordinary starts reuse the existing copy.
+and the other channel's native callback registration untouched. Starting either
+channel also restores leftover Canary/Staging branding on the shared
+`node_modules` `Electron.app` so Launch Services cannot keep dispatching the
+old scheme to that bundle. Dependency upgrades select a new cache path;
+ordinary starts reuse the existing copy.
 
 ### Public (production)
 

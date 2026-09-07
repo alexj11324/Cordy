@@ -181,6 +181,7 @@ test("staging compose overlays never reattach production projects", () => {
   assert.match(stagingBroker, /ORVILO_PRODUCT_ORIGIN: https:\/\/staging\.aspectlylabs\.com/u);
   assert.match(environmentsDoc, /ORVILO_PRODUCT_ORIGIN=https:\/\/staging\.aspectlylabs\.com/u);
   assert.match(environmentsDoc, /renderer port/u);
+  assert.match(environmentsDoc, /\.patchbay-dev\/electron\/<version>-<arch>\//u);
   assert.match(stagingOverride, /\n      ORVILO_DESKTOP_BROKER_AUTH_TOKEN:/u);
   assert.match(stagingOverride, /\n      ORVILO_CLERK_PUBLISHABLE_KEY:/u);
   assert.doesNotMatch(`${stagingOverride}\n${stagingBroker}`, /PATCHBAY_/u);
