@@ -41,6 +41,17 @@ func TestWorkflowGate_TerminalStatuses(t *testing.T) {
 	}
 }
 
+func TestWorkflowGate_ReviewMustKeepDistinctReviewer(t *testing.T) {
+	t.Parallel()
+	executor := &ActorRef{Type: ExecutorAgent, ID: "executor"}
+	for _, reviewer := range []*ActorRef{nil, executor} {
+		got := WorkflowGate(issuestatus.InReview, issuestatus.InReview, executor, reviewer)
+		if got == nil || *got != ReviewHandoffRequired {
+			t.Fatalf("review cannot lose its independent reviewer: got %v", got)
+		}
+	}
+}
+
 func TestValidatePair(t *testing.T) {
 	t.Parallel()
 	if err := ValidatePair(OwnerMember, "id-1", "owner", IsOwnerType); err != "" {

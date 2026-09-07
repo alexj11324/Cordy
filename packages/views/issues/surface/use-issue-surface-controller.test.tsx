@@ -23,6 +23,7 @@ import type {
 import { useIssueSurfaceController } from "./use-issue-surface-controller";
 import { IssueTableExportIntegrityError } from "../components/table-view-model";
 import { statusTableMethodsFromLegacy } from "./status-table-test-api";
+import { issueStatusKeys } from "@patchbay/core/issue-statuses/queries";
 
 function makeIssue(
   overrides: Partial<Issue> & Pick<Issue, "id" | "status">,
@@ -66,7 +67,7 @@ vi.mock("@patchbay/core/hooks", () => ({
 }));
 
 vi.mock("@patchbay/core/issues/mutations", () => ({
-  useUpdateIssue: () => ({ mutate: updateIssueMutate, isPending: false }),
+  useUpdateIssue: () => ({ mutate: updateIssueMutate, mutateAsync: updateIssueMutate, isPending: false }),
   useBatchUpdateIssues: () => ({
     mutateAsync: batchUpdateMutateAsync,
     isPending: false,
@@ -199,6 +200,7 @@ describe("useIssueSurfaceController", () => {
     } as unknown as ApiClient);
     pruneIssueSurfaceViewStates([]);
     updateIssueMutate.mockClear();
+    updateIssueMutate.mockResolvedValue(undefined);
     openModal.mockClear();
     batchUpdateMutateAsync.mockResolvedValue(undefined);
     batchDeleteMutateAsync.mockResolvedValue(undefined);
@@ -491,7 +493,29 @@ describe("useIssueSurfaceController", () => {
     expect(result.current.selection.selectedIds).toEqual(new Set());
   });
 
-  it("delegates drag movement as a server-owned relative intent", () => {
+  it("keeps a dropped card inside an exact custom-status filter", () => {
+    const store = getIssueSurfaceViewStore("project:p1");
+    store.setState({ statusFilters: ["todo", "custom_qa"], hiddenStatusCategories: ["in_review"] });
+    qc.setQueryData(issueStatusKeys.list("ws-1"), { statuses: [{
+      id: "qa", workspace_id: "ws-1", key: "custom_qa", name: "QA",
+      description: "", category: "in_review", color: "#123456",
+      is_system: false, position: 1, archived_at: null,
+      created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+    }], categories: ["todo", "in_review"], total: 1 });
+    const { result } = renderHook(
+      () => useIssueSurfaceController({ scope: { type: "project", projectId: "p1" }, modes: ["board"] }),
+      { wrapper: makeWrapper(qc, "project:p1") },
+    );
+    expect(result.current.droppableHiddenStatuses).toContain("in_review");
+    act(() => result.current.moveIssue("issue-1", {
+      status: "in_review", position: 42, before_id: null, after_id: null,
+    }));
+    expect(updateIssueMutate).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "custom_qa" }),
+    );
+  });
+
+  it("delegates drag movement as a server-owned relative intent", async () => {
     const { result } = renderHook(
       () =>
         useIssueSurfaceController({
@@ -512,7 +536,7 @@ describe("useIssueSurfaceController", () => {
           before_id: "issue-0",
           after_id: "issue-2",
         },
-        onSettled,
+        { onSettled },
       );
     });
 
@@ -527,17 +551,9 @@ describe("useIssueSurfaceController", () => {
           after_id: "issue-2",
         },
       },
-      expect.objectContaining({
-        onError: expect.any(Function),
-        onSettled: expect.any(Function),
-      }),
     );
 
-    const options = updateIssueMutate.mock.calls[0]?.[1] as
-      | { onSettled?: () => void }
-      | undefined;
-    options?.onSettled?.();
-    expect(onSettled).toHaveBeenCalled();
+    await waitFor(() => expect(onSettled).toHaveBeenCalledOnce());
   });
 
   it("exposes surface actions and surface-local selection", async () => {

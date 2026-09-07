@@ -1,5 +1,7 @@
 "use client";
 
+import type { MoveIssueCallbacks } from "../surface/use-issue-surface-actions";
+
 import { issueColumnCategory, issueStatusCategory, statusCategoryOfKey } from "@patchbay/core/issues";
 import { memo, useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
@@ -632,7 +634,7 @@ function SwimLaneViewImpl({
   onMoveIssue: (
     issueId: string,
     updates: SwimLaneMoveUpdates,
-    onSettled?: () => void,
+    callbacks?: MoveIssueCallbacks,
   ) => void;
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
@@ -1297,9 +1299,11 @@ function SwimLaneViewImpl({
           position: newPosition,
           ...getMoveAnchors(finalIds, activeId),
         },
-        () => {
-          isSettlingRef.current = false;
-          setSettleVersion((v) => v + 1);
+        {
+          onSettled: () => {
+            isSettlingRef.current = false;
+            setSettleVersion((v) => v + 1);
+          },
         },
       );
     },

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { hashKey, keepPreviousData, useQuery } from "@tanstack/react-query";
 import { api } from "@patchbay/core/api";
 import type {
@@ -45,9 +46,11 @@ import {
 import type { IssueCreateDefaults } from "./types";
 import {
   useIssueSurfaceActions,
+  type MoveIssueCallbacks,
   type MoveIssueUpdates,
 } from "./use-issue-surface-actions";
 import { useIssueSurfaceData } from "./use-issue-surface-data";
+import { useT } from "../../i18n";
 import {
   useIssueStatusBranches,
   type IssueStatusPagination,
@@ -85,6 +88,8 @@ export interface IssueSurfaceController {
   ganttIssues: Issue[];
   visibleStatuses: IssueStatusCategory[];
   hiddenStatuses: IssueStatusCategory[];
+  /** Hidden rows that are display-hidden, rather than excluded by a status filter. */
+  droppableHiddenStatuses: IssueStatusCategory[];
   /** Exact server counts plus cursor controls for List/status Board. */
   statusPagination?: IssueStatusPagination;
   /** Exact group catalog plus independent row cursors for Assignee/Property
@@ -132,8 +137,8 @@ export interface IssueSurfaceController {
   moveIssue: (
     issueId: string,
     updates: MoveIssueUpdates,
-    onSettled?: () => void,
-  ) => void;
+    callbacks?: MoveIssueCallbacks,
+  ) => boolean;
 }
 
 function issueDateFilterToApiParams(filter: IssueDateFilter | null) {
@@ -204,6 +209,7 @@ export function useIssueSurfaceController({
   createDefaults,
   search = "",
 }: UseIssueSurfaceControllerInput): IssueSurfaceController {
+  const { t } = useT("projects");
   const wsId = useWorkspaceId();
   const queryPlan = useMemo<IssueSurfaceQueryPlan>(
     () => buildIssueSurfaceQueryPlan(scope),
@@ -353,6 +359,14 @@ export function useIssueSurfaceController({
    * loading state is the only honest option.
    */
   const statusFilterUnresolved = statusFilterPending || statusFilterError;
+
+  const droppableHiddenStatuses = useMemo<IssueStatusCategory[]>(() => {
+    if (statusFilters.length === 0) return hiddenStatusCategories;
+    if (statusColumnsForFilters.state !== "resolved") return [];
+    return hiddenStatusCategories.filter((status) =>
+      statusColumnsForFilters.columns.has(status),
+    );
+  }, [hiddenStatusCategories, statusColumnsForFilters, statusFilters]);
 
   // Columns are CATEGORIES. Two independent things narrow them, and conflating
   // them is what let "hide the Backlog column" also drop every custom status in
@@ -868,9 +882,30 @@ export function useIssueSurfaceController({
     return issues;
   }, [tableQuerySpec]);
 
-  const { actions, openCreateIssue, moveIssue } = useIssueSurfaceActions({
+  const { actions, openCreateIssue, moveIssue: commitMoveIssue } = useIssueSurfaceActions({
     createDefaults: resolvedCreateDefaults,
   });
+  const moveIssue = useCallback(
+    (issueId: string, updates: MoveIssueUpdates, callbacks?: MoveIssueCallbacks) => {
+      // Columns name categories; filters name exact status keys. A drop into
+      // filtered QA must write QA, or the card vanishes when the move settles.
+      if (updates.status && statusFilters.length > 0 && !statusFilters.includes(updates.status)) {
+        const target = catalog.activeStatuses.find(
+          (entry) => entry.category === updates.status && statusFilters.includes(entry.key),
+        );
+        if (!target) {
+          toast.error(t(($) => $.detail.toast_move_issue_failed));
+          callbacks?.onError?.();
+          callbacks?.onSettled?.();
+          return false;
+        }
+        updates = { ...updates, status: target.key };
+      }
+      commitMoveIssue(issueId, updates, callbacks);
+      return true;
+    },
+    [catalog.activeStatuses, commitMoveIssue, statusFilters, t],
+  );
 
   const { ganttWorkingScopeIssues: _ganttWorkingScope, ...surfaceData } = data;
 
@@ -882,6 +917,7 @@ export function useIssueSurfaceController({
     allowGantt: allowedModes.has("gantt") && !!projectId,
     ...surfaceData,
     workingAgents,
+    droppableHiddenStatuses,
     hasActiveFilters,
     statusPagination: usesServerStatusSurface
       ? data.statusPagination
