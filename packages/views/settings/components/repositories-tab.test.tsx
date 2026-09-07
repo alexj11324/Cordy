@@ -272,7 +272,7 @@ describe("RepositoriesTab — automatic updates", () => {
   it("imports selected GitHub repositories and deduplicates HTTPS against SSH", async () => {
     workspaceRef.current = {
       ...workspaceRef.current,
-      repos: [{ url: "git@github.com:patchbay-ai/patchbay.git" }],
+			repos: [{ url: "git@github.com:alexj11324/Cordy.git" }],
     };
     githubRef.current = {
       installations: [{ id: "installation-row-1", account_login: "patchbay-ai" }],
@@ -321,7 +321,7 @@ describe("RepositoriesTab — automatic updates", () => {
     await waitFor(() => {
       expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
         repos: [
-          { url: "git@github.com:patchbay-ai/patchbay.git" },
+					{ url: "git@github.com:alexj11324/Cordy.git" },
           {
             url: "https://github.com/patchbay-ai/console.git",
             description: "Console app",

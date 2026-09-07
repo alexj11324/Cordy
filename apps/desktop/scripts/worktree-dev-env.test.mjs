@@ -43,10 +43,10 @@ describe("worktree-dev-env", () => {
   });
 
   it("never reuses 5173 even when the offset is 0", () => {
-    // POSIX cksum("/tmp/orvilo-3030") === 241176000, % 1000 === 0.
-    expect(offsetForPath("/tmp/orvilo-3030")).toBe(0);
-    expect(rendererPortForPath("/tmp/orvilo-3030")).toBe(5174);
-    expect(rendererPortForPath("/tmp/orvilo-3030")).not.toBe(5173);
+		// POSIX cksum("/tmp/orvilo-2125") === 323916000, % 1000 === 0.
+		expect(offsetForPath("/tmp/orvilo-2125")).toBe(0);
+		expect(rendererPortForPath("/tmp/orvilo-2125")).toBe(5174);
+		expect(rendererPortForPath("/tmp/orvilo-2125")).not.toBe(5173);
   });
 
   it("skips 6000, which Chromium refuses to load (ERR_UNSAFE_PORT)", () => {

@@ -114,10 +114,10 @@ func TestFixtureGraphReferencesSeedIssues(t *testing.T) {
 func TestFixtureIDsAreStable(t *testing.T) {
 	t.Parallel()
 
-	if got, want := fixtureID("workspace"), "f2e72563-8d5a-5b92-abcb-65395750092b"; got != want {
+	if got, want := fixtureID("workspace"), "cee623b2-f616-50c2-90dc-764b4a32e55e"; got != want {
 		t.Fatalf("fixtureID(workspace) = %q, want %q", got, want)
 	}
-	if got, want := fixtureID("issue/layout-cleanup"), "e6f37013-0d7c-59be-9731-4e6eeed4e2ba"; got != want {
+	if got, want := fixtureID("issue/layout-cleanup"), "37419265-1775-546a-997e-1148e31fcabf"; got != want {
 		t.Fatalf("fixtureID(issue/layout-cleanup) = %q, want %q", got, want)
 	}
 }
