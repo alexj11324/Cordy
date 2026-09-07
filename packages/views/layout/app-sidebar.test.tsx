@@ -541,4 +541,20 @@ describe("workspace nav — Work Products", () => {
       container.querySelector<HTMLElement>('button[data-href="/acme/work-products"]'),
     ).toBeNull();
   });
+
+  it("keeps Dependency Graph out of the standalone workspace navigation", () => {
+    const { container } = render(<AppSidebar />);
+    expect(
+      container.querySelector<HTMLElement>('button[data-href="/acme/task-graph"]'),
+    ).toBeNull();
+  });
+
+  it("keeps Tasks active while the dependency graph route is open", () => {
+    navigation.current.pathname = "/acme/task-graph";
+    const { container } = render(<AppSidebar />);
+    expect(container.querySelector('button[data-href="/acme/issues"]')).toHaveAttribute(
+      "data-active",
+      "true",
+    );
+  });
 });
