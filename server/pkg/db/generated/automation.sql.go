@@ -2236,7 +2236,12 @@ func (q *Queries) UpdateAutomationLastRunAt(ctx context.Context, id pgtype.UUID)
 
 const updateAutomationRunCompleted = `-- name: UpdateAutomationRunCompleted :one
 UPDATE automation_run
-SET status = 'completed', completed_at = now(), result = $2
+SET status = 'completed', completed_at = now(), result = CASE
+    WHEN result ? 'slack_summary_deliveries' THEN
+        COALESCE($2::jsonb, '{}'::jsonb) ||
+        jsonb_build_object('slack_summary_deliveries', result->'slack_summary_deliveries')
+    ELSE $2::jsonb
+END
 WHERE id = $1
 RETURNING id, automation_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code
 `
@@ -2445,7 +2450,12 @@ UPDATE automation_run
 SET status = 'skipped',
     completed_at = now(),
     failure_reason = $2,
-    result = $3
+    result = CASE
+        WHEN result ? 'slack_summary_deliveries' THEN
+            COALESCE($3::jsonb, '{}'::jsonb) ||
+            jsonb_build_object('slack_summary_deliveries', result->'slack_summary_deliveries')
+        ELSE $3::jsonb
+    END
 WHERE id = $1
 RETURNING id, automation_id, trigger_id, source, status, issue_id, task_id, triggered_at, completed_at, failure_reason, trigger_payload, result, created_at, team_id, planned_at, webhook_delivery_id, quota_reservation_id, reason_code
 `
@@ -2490,7 +2500,12 @@ WITH updated_run AS (
     SET status = $1::text,
         completed_at = now(),
         result = CASE
-            WHEN $1::text = 'completed' THEN $2::jsonb
+            WHEN $1::text = 'completed' THEN CASE
+                WHEN ar.result ? 'slack_summary_deliveries' THEN
+                    COALESCE($2::jsonb, '{}'::jsonb) ||
+                    jsonb_build_object('slack_summary_deliveries', ar.result->'slack_summary_deliveries')
+                ELSE $2::jsonb
+            END
             ELSE ar.result
         END,
         failure_reason = CASE
