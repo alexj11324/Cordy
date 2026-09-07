@@ -67,8 +67,14 @@ func (w *Worker) AccessToken(ctx context.Context, connectionID pgtype.UUID) (str
 	}
 	token, err := w.api.RefreshToken(ctx, string(refreshPlain), w.clientID, w.clientSecret)
 	if err != nil {
-		_, _ = tx.Exec(ctx, `UPDATE linear_connection SET status='reauthorization_required',last_error=$2,updated_at=now() WHERE id=$1`, connectionID, err.Error())
-		_ = tx.Commit(ctx)
+		if linearapi.IsKind(err, linearapi.ErrorInvalidGrant) {
+			if _, updateErr := tx.Exec(ctx, `UPDATE linear_connection SET status='reauthorization_required',last_error=$2,updated_at=now() WHERE id=$1`, connectionID, err.Error()); updateErr != nil {
+				return "", errors.Join(err, updateErr)
+			}
+			if commitErr := tx.Commit(ctx); commitErr != nil {
+				return "", errors.Join(err, commitErr)
+			}
+		}
 		return "", err
 	}
 	if strings.TrimSpace(token.AccessToken) == "" || strings.TrimSpace(token.RefreshToken) == "" || token.ExpiresIn <= 0 {
@@ -274,7 +280,7 @@ func (w *Worker) applyRemote(ctx context.Context, b workerBinding, remote linear
 		if err = tx.Commit(ctx); err != nil {
 			return err
 		}
-		w.publishIssueEvent(issue, "issue:created")
+		w.publishIssueEvent(issue, "issue:created", false)
 		return nil
 	}
 	if linkErr != nil {
@@ -307,7 +313,7 @@ func (w *Worker) applyRemote(ctx context.Context, b workerBinding, remote linear
 		if err = tx.Commit(ctx); err != nil {
 			return err
 		}
-		w.publishIssueEvent(updated, "issue:updated")
+		w.publishIssueEvent(updated, "issue:updated", false)
 		return nil
 	}
 	local := linearSyncLocalSnapshot(ctx, tx, b, issue)
@@ -342,7 +348,8 @@ func (w *Worker) applyRemote(ctx context.Context, b workerBinding, remote linear
 	if ownerErr != nil {
 		return ownerErr
 	}
-	if changed || issue.ProjectID != b.ProjectID {
+	projectChanged := issue.ProjectID != b.ProjectID
+	if changed || projectChanged {
 		issue, err = queries.UpdateIssue(ctx, linearSyncUpdateParams(issue, next, b.ProjectID, ownerType, ownerID))
 		if err != nil {
 			return err
@@ -371,8 +378,8 @@ func (w *Worker) applyRemote(ctx context.Context, b workerBinding, remote linear
 	if err = tx.Commit(ctx); err != nil {
 		return err
 	}
-	if changed {
-		w.publishIssueEvent(issue, "issue:updated")
+	if changed || projectChanged {
+		w.publishIssueEvent(issue, "issue:updated", projectChanged)
 	}
 	return nil
 }

@@ -36,7 +36,7 @@ func NewLinearEventSink(bus *events.Bus) linearsync.EventSink {
 	return &linearEventSink{bus: bus}
 }
 
-func (s *linearEventSink) IssueChanged(issue db.Issue, eventType, actorType, actorID string) {
+func (s *linearEventSink) IssueChanged(issue db.Issue, eventType, actorType, actorID string, projectChanged bool) {
 	if s == nil || s.bus == nil {
 		return
 	}
@@ -45,7 +45,7 @@ func (s *linearEventSink) IssueChanged(issue db.Issue, eventType, actorType, act
 		WorkspaceID: uuidToString(issue.WorkspaceID),
 		ActorType:   actorType,
 		ActorID:     actorID,
-		Payload:     map[string]any{"issue": service.IssueToMap(issue, "")},
+		Payload:     map[string]any{"issue": service.IssueToMap(issue, ""), "project_changed": projectChanged},
 		TaskID:      uuidToString(issue.ID),
 	})
 }

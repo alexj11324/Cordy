@@ -843,7 +843,10 @@ func TestLinearWorkerAppliesRemoteDeletion(t *testing.T) {
 		t.Fatal("issue was not published")
 	}
 	remoteID := linkedRemoteID(t, issueID)
-	f.queueWebhook(t, "remote-delete", webhookPayload(t, "remove", time.Now().UnixMilli(), map[string]any{
+	var publishedAt int64
+	dbfx.QueryRow(t, `SELECT last_remote_event_at_ms FROM linear_issue_link WHERE orvilo_issue_id=$1`, issueID).Scan(&publishedAt)
+	// The delete follows the publish even when both execute in one millisecond.
+	f.queueWebhook(t, "remote-delete", webhookPayload(t, "remove", publishedAt+1, map[string]any{
 		"id": remoteID, "identifier": "ENG-1", "title": "Doomed",
 		"project": map[string]any{"id": "linear-project"}, "team": map[string]any{"id": "linear-team"},
 	}))
@@ -988,11 +991,11 @@ func TestLinearWorkerRefreshesExpiringToken(t *testing.T) {
 	}
 }
 
-// A refresh the provider rejects is not a transient failure: the connection
+// A refresh rejected with invalid_grant is not a transient failure: the connection
 // needs a human to reauthorize, and it has to say so rather than publishing
 // with a credential that will never work again.
 func TestLinearWorkerMarksConnectionForReauthorizationOnRefreshFailure(t *testing.T) {
-	api := &fakeLinearAPI{authErr: errors.New("invalid_grant")}
+	api := &fakeLinearAPI{authErr: &linear.ProviderError{Kind: linear.ErrorInvalidGrant, Status: 400, Message: "invalid_grant"}}
 	f := setupWorker(t, "publish", api)
 	if _, err := testPool.Exec(context.Background(), `UPDATE linear_connection SET token_expires_at=now()-interval '1 minute' WHERE id=$1`, f.connectionID); err != nil {
 		t.Fatal(err)

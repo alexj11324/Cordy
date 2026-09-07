@@ -183,7 +183,9 @@ func classifyHTTPError(status int, body string) error {
 	if status == http.StatusTooManyRequests {
 		kind = ErrorRateLimited
 	}
-	if strings.Contains(lower, "invalid_grant") || strings.Contains(lower, "invalid grant") {
+	// OAuth invalid_grant is a 400 response. A retryable transport status
+	// must not become a permanent credential failure because of its body.
+	if status == http.StatusBadRequest && (strings.Contains(lower, "invalid_grant") || strings.Contains(lower, "invalid grant")) {
 		kind = ErrorInvalidGrant
 	}
 	return &ProviderError{Kind: kind, Status: status, Message: body}

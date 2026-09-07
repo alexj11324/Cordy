@@ -26,7 +26,7 @@ func TestLinearEventSinkPreservesIssueEventEnvelope(t *testing.T) {
 		Status:      "todo",
 		Revision:    7,
 	}
-	NewLinearEventSink(bus).IssueChanged(issue, protocol.EventIssueUpdated, "member", "40000000-0000-0000-0000-000000000004")
+	NewLinearEventSink(bus).IssueChanged(issue, protocol.EventIssueUpdated, "member", "40000000-0000-0000-0000-000000000004", false)
 
 	if got.Type != protocol.EventIssueUpdated || got.WorkspaceID != uuidToString(issue.WorkspaceID) {
 		t.Fatalf("event routing = (%q, %q), want (%q, %q)", got.Type, got.WorkspaceID, protocol.EventIssueUpdated, uuidToString(issue.WorkspaceID))
@@ -47,6 +47,18 @@ func TestLinearEventSinkPreservesIssueEventEnvelope(t *testing.T) {
 	}
 	if rendered["id"] != uuidToString(issue.ID) || rendered["title"] != issue.Title || rendered["revision"] != issue.Revision {
 		t.Fatalf("issue payload lost canonical fields: %#v", rendered)
+	}
+	if payload["project_changed"] != false {
+		t.Fatalf("unchanged project flag = %#v", payload["project_changed"])
+	}
+	issue.ProjectID = parseUUID("50000000-0000-0000-0000-000000000005")
+	issue.Revision++
+	NewLinearEventSink(bus).IssueChanged(issue, protocol.EventIssueUpdated, "system", "00000000-0000-0000-0000-000000000000", true)
+	payload = got.Payload.(map[string]any)
+	rendered = payload["issue"].(map[string]any)
+	projectID, ok := rendered["project_id"].(*string)
+	if payload["project_changed"] != true || !ok || projectID == nil || *projectID != uuidToString(issue.ProjectID) || rendered["revision"] != issue.Revision {
+		t.Fatalf("project move lost cache reconciliation fields: %#v", payload)
 	}
 }
 
