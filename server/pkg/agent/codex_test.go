@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/patchbay-ai/patchbay/server/pkg/redact"
+	"github.com/pelletier/go-toml/v2"
 )
 
 func newTestCodexClient(t *testing.T) (*codexClient, *fakeStdin, []Message) {
@@ -4717,6 +4718,54 @@ func TestEnsureCodexMcpConfigWritesManagedBlock(t *testing.T) {
 	}
 }
 
+func TestRenderCodexMcpServersBlockQuotesComplexServerNames(t *testing.T) {
+	t.Parallel()
+
+	servers := map[string]map[string]string{
+		"microsoft/markitdown":             {"command": "slash"},
+		"vendor.tool":                      {"command": "dot"},
+		"quoted\"name]\n[injected]\npwned": {"command": "quote"},
+	}
+	raw, err := json.Marshal(map[string]any{"mcpServers": servers})
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+
+	block, hasServers, err := renderCodexMcpServersBlock(raw)
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !hasServers {
+		t.Fatal("expected servers to render")
+	}
+
+	var parsed struct {
+		McpServers map[string]struct {
+			Command string `toml:"command"`
+		} `toml:"mcp_servers"`
+		Injected map[string]any `toml:"injected"`
+	}
+	if err := toml.Unmarshal([]byte(block), &parsed); err != nil {
+		t.Fatalf("rendered block must be valid TOML: %v\n%s", err, block)
+	}
+	if parsed.Injected != nil {
+		t.Fatalf("server name escaped its TOML key and injected a table: %#v\n%s", parsed.Injected, block)
+	}
+	if len(parsed.McpServers) != len(servers) {
+		t.Fatalf("parsed %d servers, want %d: %#v\n%s", len(parsed.McpServers), len(servers), parsed.McpServers, block)
+	}
+	for name, server := range servers {
+		wantCommand := server["command"]
+		got, ok := parsed.McpServers[name]
+		if !ok {
+			t.Fatalf("missing exact server name %q after TOML round trip: %#v\n%s", name, parsed.McpServers, block)
+		}
+		if got.Command != wantCommand {
+			t.Fatalf("server %q command = %q, want %q", name, got.Command, wantCommand)
+		}
+	}
+}
+
 func TestEnsureCodexMcpConfigTranslatesRemoteHTTPServer(t *testing.T) {
 	t.Parallel()
 
@@ -4930,7 +4979,7 @@ func TestEnsureCodexMcpConfigIdempotent(t *testing.T) {
 	// output — needed because Prepare and Reuse may both call into this on
 	// the same per-task config.toml across a task's lifetime.
 	tmp := filepath.Join(t.TempDir(), "config.toml")
-	raw := json.RawMessage(`{"mcpServers":{"fetch":{"command":"uvx","args":["a","b"]}}}`)
+	raw := json.RawMessage(`{"mcpServers":{"microsoft/markitdown":{"command":"uvx","args":["a","b"]},"vendor.tool":{"command":"dot"},"quoted\\\"name":{"command":"quote"}}}`)
 
 	if err := ensureCodexMcpConfig(tmp, raw, slog.Default()); err != nil {
 		t.Fatalf("first ensure: %v", err)
@@ -4958,7 +5007,7 @@ func TestEnsureCodexMcpConfigRejectsBadShapes(t *testing.T) {
 		{"server is array", `{"mcpServers":{"x":[1,2]}}`},
 		{"server is string", `{"mcpServers":{"x":"oops"}}`},
 		{"null value inside server", `{"mcpServers":{"x":{"command":null}}}`},
-		{"bad server name", `{"mcpServers":{"has space":{"command":"a"}}}`},
+		{"empty server name", `{"mcpServers":{"":{"command":"a"}}}`},
 	}
 	for _, tc := range cases {
 		tc := tc
