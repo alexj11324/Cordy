@@ -158,6 +158,8 @@ func TestCookieNamesFromEnv(t *testing.T) {
 	}{
 		{"unset", "", "", AuthCookieName, CSRFCookieName},
 		{"whitespace", "  ", "\t", AuthCookieName, CSRFCookieName},
+		{"unsupported custom names", "custom_auth", "custom_csrf", AuthCookieName, CSRFCookieName},
+		{"production explicit", AuthCookieName, CSRFCookieName, AuthCookieName, CSRFCookieName},
 		{"staging", "patchbay_staging_auth", "patchbay_staging_csrf", "patchbay_staging_auth", "patchbay_staging_csrf"},
 		{"hyphen rejected", "patchbay-staging-auth", "patchbay-staging-csrf", AuthCookieName, CSRFCookieName},
 		{"semicolon rejected", "patchbay_auth;evil", "", AuthCookieName, CSRFCookieName},

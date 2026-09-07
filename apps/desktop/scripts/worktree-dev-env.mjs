@@ -76,7 +76,9 @@ export function offsetForPath(path) {
   return cksum(Buffer.from(path)) % OFFSET_MODULO;
 }
 
-export function rendererPortForPath(path) {
+export function rendererPortForPath(path, channel = "development") {
+  // A disjoint 15174–16173 block has no Chromium-restricted ports.
+  if (channel === "staging") return 15174 + offsetForPath(path);
   return avoidRestrictedPort(RENDERER_PORT_BASE + offsetForPath(path));
 }
 
@@ -131,14 +133,16 @@ export function applyWorktreeDevEnv(env, { root, log = false } = {}) {
   const hasPort = Boolean(env.DESKTOP_RENDERER_PORT);
   const hasSuffix = Boolean(env.DESKTOP_APP_SUFFIX);
   const linked = isLinkedWorktree(root);
+  const channel = env.PATCHBAY_DESKTOP_CHANNEL === "staging" ? "staging" : "development";
 
-  if (linked && !hasPort) {
-    env.DESKTOP_RENDERER_PORT = String(rendererPortForPath(root));
+  if (!hasPort && (linked || channel === "staging")) {
+    env.DESKTOP_RENDERER_PORT = String(
+      linked ? rendererPortForPath(root, channel) : 15173,
+    );
   }
   if (linked && !hasSuffix) env.DESKTOP_APP_SUFFIX = appSuffixForPath(root);
   // Callback ownership is not an override knob: letting ambient shell state
   // choose it can make two otherwise isolated checkouts claim one OS scheme.
-  const channel = env.PATCHBAY_DESKTOP_CHANNEL === "staging" ? "staging" : "development";
   env.DESKTOP_CALLBACK_PROTOCOL = callbackProtocolForPath(
     join(root, "apps", "desktop"),
     channel,

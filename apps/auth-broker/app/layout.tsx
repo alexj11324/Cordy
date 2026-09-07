@@ -11,5 +11,5 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const runtime = readAuthBrokerRuntimeConfig();
   const requestHeaders = await headers();
   const locale = resolveAuthLocale(requestHeaders.get("x-patchbay-auth-locale") ?? requestHeaders.get("accept-language"));
-  return <html lang={locale.htmlLang}><body><AuthMessagesProvider locale={locale.locale}><RuntimeClerkProvider publishableKey={runtime.ok ? runtime.config.clerkPublishableKey : ""}>{children}</RuntimeClerkProvider></AuthMessagesProvider></body></html>;
+  return <html lang={locale.htmlLang}><body><AuthMessagesProvider locale={locale.locale}><RuntimeClerkProvider publishableKey={runtime.ok ? runtime.config.clerkPublishableKey : ""} productOrigin={runtime.ok ? runtime.config.productOrigin : ""}>{children}</RuntimeClerkProvider></AuthMessagesProvider></body></html>;
 }

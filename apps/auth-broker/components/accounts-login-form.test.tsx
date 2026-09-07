@@ -82,6 +82,15 @@ beforeEach(() => {
 });
 
 describe("AccountsLoginForm", () => {
+  it("preserves the runtime staging return target through Google login", () => {
+    const url = new URL(buildGoogleLoginUrl(
+      "https://staging.aspectlylabs.com/acme/issues",
+      "https://accounts.staging.aspectlylabs.com",
+      "https://staging.aspectlylabs.com",
+    ));
+    expect(url.origin).toBe("https://accounts.staging.aspectlylabs.com");
+    expect(url.searchParams.get("return_url")).toBe("https://staging.aspectlylabs.com/acme/issues");
+  });
   it("resumes verified OAuth signup requirements instead of starting another email flow", () => {
     mocks.signUp.status = "missing_requirements";
     mocks.signUp.verifications.externalAccount.status = "verified";
