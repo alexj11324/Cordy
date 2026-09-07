@@ -179,7 +179,7 @@ jobs:
           CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
           DEPLOY_HOST: ${{ secrets.STAGING_SSH_HOST }}
           DEPLOY_USER: ${{ secrets.STAGING_SSH_USER }}
-          PATCHBAY_VERIFY_ENV: staging
+          ORVILO_VERIFY_ENV: staging
           SOURCE_SHA: ${{ needs.resolve-source.outputs.sha }}
         run: |
           set -Eeuo pipefail

@@ -70,7 +70,7 @@ test("staging consumes published production images instead of rebuilding", () =>
   assert.match(workflow, /resolve-published-image-records\.mjs/u);
   assert.match(workflow, /verify-staging-deployment\.mjs/u);
   assert.match(workflow, /verify-production-browser\.mjs/u);
-  assert.match(workflow, /PATCHBAY_VERIFY_ENV: staging/u);
+  assert.match(workflow, /ORVILO_VERIFY_ENV: staging/u);
   assert.match(workflow, /browser_auth\.sign_in_ticket/u);
   assert.match(workflow, /browser_auth\.testing_token/u);
 });
@@ -148,8 +148,18 @@ test("staging compose overlays never reattach production projects", () => {
     stagingOverride,
     /CLERK_AUTHORIZED_PARTIES: https:\/\/accounts\.staging\.aspectlylabs\.com,https:\/\/staging\.aspectlylabs\.com/u,
   );
-  assert.match(stagingOverride, /PATCHBAY_APP_URL to https:\/\/staging\.aspectlylabs\.com/u);
+  assert.match(stagingOverride, /ORVILO_APP_URL to https:\/\/staging\.aspectlylabs\.com/u);
   assert.match(stagingOverride, /ANALYTICS_ENVIRONMENT: staging/u);
+  assert.match(stagingOverride, /ALLOW_SIGNUP: "false"/u);
+  for (const key of ["ORVILO_API_ORIGIN", "ORVILO_AUTH_BROKER_ORIGIN", "ORVILO_DESKTOP_BROKER_AUTH_TOKEN", "ORVILO_ORIGIN_AUTH_TOKEN"]) {
+    assert.match(stagingBroker, new RegExp(`\\n      ${key}:`));
+  }
+  assert.match(stagingOverride, /\n      ORVILO_DESKTOP_BROKER_AUTH_TOKEN:/u);
+  assert.match(stagingOverride, /\n      ORVILO_CLERK_PUBLISHABLE_KEY:/u);
+  assert.doesNotMatch(`${stagingOverride}\n${stagingBroker}`, /PATCHBAY_/u);
+  const stagingAccounts = originNginx.split("server_name accounts-origin.staging.aspectlylabs.com;")[1].split("\n}")[0];
+  assert.match(stagingAccounts, /include \/etc\/nginx\/snippets\/orvilo-staging-accounts-origin-auth\.conf;/u);
+  assert.doesNotMatch(stagingAccounts, /snippets\/patchbay-accounts-origin-auth\.conf/u);
   assert.doesNotMatch(stagingOverride, /patchbay\.aspectlylabs\.com/u);
 });
 

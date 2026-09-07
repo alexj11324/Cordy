@@ -23,7 +23,7 @@ const ORIGINS = {
 };
 
 export function hostedBrowserOrigins(
-  env = process.env.PATCHBAY_VERIFY_ENV ?? "production",
+  env = process.env.ORVILO_VERIFY_ENV ?? "production",
 ) {
   const origins = ORIGINS[env];
   if (!origins) {

@@ -14,8 +14,8 @@ SPEC.loader.exec_module(staging_deploy)
 
 def valid_product_env():
     return {
-        "PATCHBAY_PUBLIC_URL": "https://api.staging.aspectlylabs.com",
-        "PATCHBAY_APP_URL": "https://staging.aspectlylabs.com",
+        "ORVILO_PUBLIC_URL": "https://api.staging.aspectlylabs.com",
+        "ORVILO_APP_URL": "https://staging.aspectlylabs.com",
         "FRONTEND_ORIGIN": "https://staging.aspectlylabs.com",
         "BACKEND_PORT": "8211",
         "FRONTEND_PORT": "3111",
@@ -27,11 +27,11 @@ def valid_product_env():
 
 def valid_broker_env():
     return {
-        "PATCHBAY_API_ORIGIN": "https://api.staging.aspectlylabs.com",
-        "PATCHBAY_AUTH_BROKER_ORIGIN": "https://accounts.staging.aspectlylabs.com",
+        "ORVILO_API_ORIGIN": "https://api.staging.aspectlylabs.com",
+        "ORVILO_AUTH_BROKER_ORIGIN": "https://accounts.staging.aspectlylabs.com",
         "CLERK_PUBLISHABLE_KEY": "pk_test_staging",
-        "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN": "a" * 64,
-        "PATCHBAY_ORIGIN_AUTH_TOKEN": "b" * 64,
+        "ORVILO_DESKTOP_BROKER_AUTH_TOKEN": "a" * 64,
+        "ORVILO_ORIGIN_AUTH_TOKEN": "b" * 64,
     }
 
 
@@ -80,13 +80,13 @@ class StagingDeployIsolationTests(unittest.TestCase):
 
     def test_rejects_production_product_urls(self):
         values = valid_product_env()
-        values["PATCHBAY_PUBLIC_URL"] = "https://api.aspectlylabs.com"
+        values["ORVILO_PUBLIC_URL"] = "https://api.aspectlylabs.com"
         with self.assertRaisesRegex(staging_deploy.DeploymentError, "production marker"):
             staging_deploy.reject_production_markers(values, label="staging product")
 
     def test_rejects_mismatched_staging_urls(self):
         values = valid_product_env()
-        values["PATCHBAY_APP_URL"] = "https://patchbay-app.copilothub.ai"
+        values["ORVILO_APP_URL"] = "https://patchbay-app.copilothub.ai"
         with self.assertRaisesRegex(staging_deploy.DeploymentError, "must be"):
             staging_deploy.require_exact(
                 values, staging_deploy.STAGING_URLS, label="staging product"
@@ -132,10 +132,10 @@ class StagingDeployIsolationTests(unittest.TestCase):
             product, broker = deployment.load_secrets()
             self.assertEqual(product["BACKEND_PORT"], "8211")
             self.assertEqual(
-                broker["PATCHBAY_AUTH_BROKER_ORIGIN"],
+                broker["ORVILO_AUTH_BROKER_ORIGIN"],
                 "https://accounts.staging.aspectlylabs.com",
             )
-            self.assertEqual(product["PATCHBAY_CLERK_PUBLISHABLE_KEY"], "pk_test_staging")
+            self.assertEqual(product["ORVILO_CLERK_PUBLISHABLE_KEY"], "pk_test_staging")
 
     def test_ports_and_projects_do_not_overlap_production(self):
         self.assertNotEqual(

@@ -51,13 +51,13 @@ STAGING_PORTS = {
     "FRONTEND_PORT": "3111",
 }
 STAGING_URLS = {
-    "PATCHBAY_PUBLIC_URL": "https://api.staging.aspectlylabs.com",
-    "PATCHBAY_APP_URL": "https://staging.aspectlylabs.com",
+    "ORVILO_PUBLIC_URL": "https://api.staging.aspectlylabs.com",
+    "ORVILO_APP_URL": "https://staging.aspectlylabs.com",
     "FRONTEND_ORIGIN": "https://staging.aspectlylabs.com",
 }
 STAGING_BROKER_URLS = {
-    "PATCHBAY_API_ORIGIN": "https://api.staging.aspectlylabs.com",
-    "PATCHBAY_AUTH_BROKER_ORIGIN": "https://accounts.staging.aspectlylabs.com",
+    "ORVILO_API_ORIGIN": "https://api.staging.aspectlylabs.com",
+    "ORVILO_AUTH_BROKER_ORIGIN": "https://accounts.staging.aspectlylabs.com",
 }
 PRODUCTION_MARKERS = (
     "://api.aspectlylabs.com",
@@ -419,7 +419,7 @@ class StagingDeployment:
         publishable_key = broker.get("CLERK_PUBLISHABLE_KEY")
         if not isinstance(publishable_key, str) or not publishable_key.strip():
             raise DeploymentError("staging auth broker environment must include CLERK_PUBLISHABLE_KEY")
-        product["PATCHBAY_CLERK_PUBLISHABLE_KEY"] = publishable_key.strip()
+        product["ORVILO_CLERK_PUBLISHABLE_KEY"] = publishable_key.strip()
         return product, broker
 
     def bootstrap(self) -> dict[str, Any]:
@@ -460,12 +460,12 @@ class StagingDeployment:
         product, broker = self.load_secrets()
         product_env = os.environ.copy()
         product_env.update(product)
-        product_env["PATCHBAY_BACKEND_IMAGE_REF"] = manifest["images"]["backend"]
-        product_env["PATCHBAY_WEB_IMAGE_REF"] = manifest["images"]["web"]
-        product_env["PATCHBAY_DOCS_IMAGE_REF"] = manifest["images"]["docs"]
+        product_env["ORVILO_BACKEND_IMAGE_REF"] = manifest["images"]["backend"]
+        product_env["ORVILO_WEB_IMAGE_REF"] = manifest["images"]["web"]
+        product_env["ORVILO_DOCS_IMAGE_REF"] = manifest["images"]["docs"]
         broker_env = os.environ.copy()
         broker_env.update(broker)
-        broker_env["PATCHBAY_AUTH_BROKER_IMAGE"] = manifest["images"]["auth-broker"]
+        broker_env["ORVILO_AUTH_BROKER_IMAGE"] = manifest["images"]["auth-broker"]
         return product_env, broker_env
 
     def issue_browser_acceptance_credentials(self) -> dict[str, str]:
@@ -749,13 +749,13 @@ def main() -> int:
     parser.add_argument(
         "--root",
         type=Path,
-        default=Path(os.environ.get("PATCHBAY_STAGING_ROOT", DEFAULT_ROOT)),
+        default=Path(os.environ.get("ORVILO_STAGING_ROOT", DEFAULT_ROOT)),
     )
     parser.add_argument(
         "--static-directory",
         type=Path,
         default=Path(
-            os.environ.get("PATCHBAY_STAGING_STATIC", DEFAULT_STATIC_DIRECTORY)
+            os.environ.get("ORVILO_STAGING_STATIC", DEFAULT_STATIC_DIRECTORY)
         ),
     )
     arguments = parser.parse_args()
