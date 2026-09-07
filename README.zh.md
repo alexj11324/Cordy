@@ -122,7 +122,6 @@ Windows 上先设 `$env:ORVILO_MODE="with-server"`，再跑 PowerShell 安装脚
 **4. 设置执行者。** 建一个任务，把 executor 设成这个智能体。它会自己接手、在你的机器上跑、边做边评论，
 干完把任务挪到审核中。
 
-
 ---
 
 ## 运行时
