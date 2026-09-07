@@ -535,6 +535,25 @@ describe("AutomationDetailPage settings layout", () => {
     }
   });
 
+  it("refreshes immediately when the first active run appears", () => {
+    const initialNow = Date.parse("2026-09-06T12:02:01Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(initialNow);
+    try {
+      const { result, rerender } = renderHook(
+        ({ active }) => useRunHistoryClock(active),
+        { initialProps: { active: false } },
+      );
+      expect(result.current).toBe(initialNow);
+
+      vi.setSystemTime(initialNow + 5 * 60_000);
+      rerender({ active: true });
+      expect(result.current).toBe(initialNow + 5 * 60_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows completion tool delivery errors on the run row", async () => {
     mocks.automationRuns.push({
       id: "run-delivery-failed",
