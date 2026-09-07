@@ -1,38 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Bot,
-  MessageSquare,
-  MoreHorizontal,
-  Plus,
-  Server,
-  Trash2,
-} from "lucide-react";
-import type {
-  Agent,
-  AgentRuntime,
-  MemberWithUser,
-} from "@orvilo/core/types";
+import { Bot, Gauge, MessageSquare, Server } from "lucide-react";
+import type { Agent, AgentRuntime, MemberWithUser } from "@orvilo/core/types";
 import type { AgentPresenceDetail } from "@orvilo/core/agents";
-import {
-  runtimeDisplayLabel,
-  runtimeModelsOptions,
-} from "@orvilo/core/runtimes";
+import { runtimeDisplayLabel, runtimeModelsOptions } from "@orvilo/core/runtimes";
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Input } from "@orvilo/ui/components/ui/input";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@orvilo/ui/components/ui/dropdown-menu";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";
-import { AgentPresenceIndicator } from "./agent-presence-indicator";
+import { AgentProviderAvatar } from "./agent-provider-avatar";
 import { VisibilityBadge } from "./visibility-badge";
 import { findModelCapabilityEntry } from "./inspector/model-capability";
 import {
@@ -45,34 +24,22 @@ export interface AgentIdentityCardProps {
   runtime: AgentRuntime | null;
   owner: MemberWithUser | null;
   presence: AgentPresenceDetail | null;
-  canAssign: boolean;
   canEdit: boolean;
-  canArchive: boolean;
   dmPending: boolean;
   dmHref: string;
-  onDm: (e: React.MouseEvent<HTMLAnchorElement>) => void;
-  onAssign: () => void;
-  onArchive?: () => void;
+  onDm: (event: React.MouseEvent<HTMLAnchorElement>) => void;
   onUpdate: (id: string, data: Record<string, unknown>) => Promise<void>;
 }
 
-/**
- * Compact 320px inspector card — the original right-hand summary chrome,
- * plus avatar/name/presence and DM / assign / edit. Not a page-wide form.
- */
 export function AgentIdentityCard({
   agent,
   runtime,
   owner,
   presence,
-  canAssign,
   canEdit,
-  canArchive,
   dmPending,
   dmHref,
   onDm,
-  onAssign,
-  onArchive,
   onUpdate,
 }: AgentIdentityCardProps) {
   const { t } = useT("agents");
@@ -81,11 +48,9 @@ export function AgentIdentityCard({
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(agent.name);
   const [saving, setSaving] = useState(false);
+  const previousAgentIdRef = useRef(agent.id);
   const modelsQuery = useQuery(
-    runtimeModelsOptions(
-      runtimeOnline ? runtime?.id : null,
-      runtime?.workspace_id,
-    ),
+    runtimeModelsOptions(runtimeOnline ? runtime?.id : null, runtime?.workspace_id),
   );
   const catalogEntry = findModelCapabilityEntry(
     modelsQuery.data?.models ?? [],
@@ -105,9 +70,12 @@ export function AgentIdentityCard({
     .join(" · ");
 
   useEffect(() => {
-    setName(agent.name);
-    setEditing(false);
-  }, [agent.id]);
+    if (previousAgentIdRef.current !== agent.id) {
+      previousAgentIdRef.current = agent.id;
+      setName(agent.name);
+      setEditing(false);
+    }
+  }, [agent.id, agent.name]);
 
   useEffect(() => {
     if (!editing) setName(agent.name);
@@ -132,7 +100,7 @@ export function AgentIdentityCard({
       await onUpdate(agent.id, { name: next });
       setEditing(false);
     } catch {
-      setName(agent.name);
+      // The page reports the error; retain the draft for correction or retry.
     } finally {
       setSaving(false);
     }
@@ -140,54 +108,17 @@ export function AgentIdentityCard({
 
   return (
     <aside className="w-[320px] self-start rounded-xl border border-surface-border bg-surface p-5 shadow-[var(--surface-shadow)] xl:sticky xl:top-6">
-      <div className="flex items-start justify-between gap-2">
-        <h2 className="text-body font-medium">
-          {t(($) => $.overview.agent_context)}
-        </h2>
-        {canEdit ? (
-          <button
-            type="button"
-            disabled={saving || (editing && nameInvalid)}
-            onClick={() => void handleEditToggle()}
-            aria-label={
-              editing
-                ? t(($) => $.detail.done_aria)
-                : t(($) => $.detail.edit_aria)
-            }
-            className="shrink-0 text-caption font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-          >
-            {editing ? t(($) => $.detail.done) : t(($) => $.detail.edit)}
-          </button>
-        ) : null}
-      </div>
-
-      <div className="mt-4 flex items-start gap-3">
-        {editing && canEdit ? (
-          <AvatarUploadControl
-            variant="agent"
-            value={agent.avatar_url ?? null}
-            name={agent.name}
-            size={40}
-            editBadge
-            disabled={saving}
-            ariaLabel={t(($) => $.inspector.change_avatar_aria)}
-            onUploaded={(url) => onUpdate(agent.id, { avatar_url: url })}
-            onEmojiSelected={(value) =>
-              void onUpdate(agent.id, { avatar_url: value })
-            }
-          />
-        ) : (
-          <ActorAvatar
-            actorType="agent"
-            actorId={agent.id}
-            size="lg"
-            profileLink={false}
-            className="ring-1 ring-border"
-          />
-        )}
+      <div className="flex items-start gap-3">
+        <AgentProviderAvatar
+          provider={runtime?.provider}
+          name={agent.name}
+          size="xl"
+          online={presence?.availability === "online"}
+          onlineLabel={t(($) => $.availability.online)}
+        />
         <div className="min-w-0 flex-1">
-          {editing ? (
-            <div>
+          <div className="flex min-w-0 items-center gap-2">
+            {editing ? (
               <Input
                 id="agent-display-name"
                 name="agent-name"
@@ -198,136 +129,113 @@ export function AgentIdentityCard({
                 onChange={(event) => setName(event.target.value)}
                 disabled={saving}
                 aria-invalid={nameInvalid || undefined}
-                className="h-8 text-caption"
+                className="h-8 min-w-0 flex-1 text-caption"
               />
-              {nameInvalid ? (
-                <p className="mt-1 text-caption text-destructive">
-                  {t(($) => $.inspector.rename_required)}
-                </p>
-              ) : null}
-            </div>
-          ) : (
-            <p
-              className="truncate text-body font-medium"
-              data-testid="agent-name-value"
-              title={agent.name}
-            >
-              {agent.name}
-            </p>
-          )}
-          <div className="mt-1">
-            <AgentPresenceIndicator detail={presence} />
+            ) : (
+              <h2
+                className="min-w-0 truncate text-body font-medium"
+                data-testid="agent-name-value"
+                title={agent.name}
+              >
+                {agent.name}
+              </h2>
+            )}
+            {canEdit ? (
+              <button
+                type="button"
+                disabled={saving || (editing && nameInvalid)}
+                onClick={() => void handleEditToggle()}
+                aria-label={
+                  editing
+                    ? t(($) => $.detail.done_aria)
+                    : t(($) => $.detail.edit_aria)
+                }
+                className="shrink-0 text-caption font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                {editing ? t(($) => $.detail.done) : t(($) => $.detail.edit)}
+              </button>
+            ) : null}
           </div>
+          {editing && nameInvalid ? (
+            <p className="mt-1 text-caption text-destructive">
+              {t(($) => $.inspector.rename_required)}
+            </p>
+          ) : null}
         </div>
       </div>
 
-      {!isArchived && (
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={dmPending}
-            className="h-7 px-2 text-caption data-disabled:pointer-events-none data-disabled:opacity-50"
-            render={<AppLink href={dmHref} onClick={onDm} />}
-            nativeButton={false}
-          >
-            <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
-            {t(($) => $.detail.dm)}
-          </Button>
-          {canAssign ? (
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 px-2 text-caption"
-              onClick={onAssign}
-            >
-              <Plus className="h-3.5 w-3.5" aria-hidden="true" />
-              {t(($) => $.detail.assign_work)}
-            </Button>
-          ) : null}
-          {canArchive && onArchive ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={<Button variant="ghost" size="icon-sm" className="h-7 w-7" />}
-                aria-label={t(($) => $.detail.more_actions_aria)}
-              >
-                <MoreHorizontal
-                  className="h-3.5 w-3.5 text-muted-foreground"
-                  aria-hidden="true"
-                />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-auto">
-                <DropdownMenuItem variant="destructive" onClick={onArchive}>
-                  <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                  {t(($) => $.detail.more_archive)}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : null}
-        </div>
-      )}
+      {!isArchived ? (
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={dmPending}
+          className="mt-4 h-7 px-2 text-caption data-disabled:pointer-events-none data-disabled:opacity-50"
+          render={<AppLink href={dmHref} onClick={onDm} />}
+          nativeButton={false}
+        >
+          <MessageSquare className="size-3.5" aria-hidden="true" />
+          {t(($) => $.detail.dm)}
+        </Button>
+      ) : null}
 
       <dl className="mt-5 space-y-3 text-caption">
         {owner ? (
           <SummaryRow label={t(($) => $.inspector.prop_owner)}>
-            <span className="flex min-w-0 items-center gap-1.5">
-              <ActorAvatar
-                actorType="member"
-                actorId={owner.user_id}
-                size="xs"
-              />
-              <span className="truncate text-foreground">{owner.name}</span>
+            <span className="flex min-w-0 items-center gap-2 text-foreground">
+              <ActorAvatar actorType="member" actorId={owner.user_id} size="xs" />
+              <span className="truncate">{owner.name}</span>
             </span>
           </SummaryRow>
         ) : null}
         <SummaryRow label={t(($) => $.overview.access)}>
-          <VisibilityBadge value={agent.visibility} />
+          <VisibilityBadge
+            value={agent.visibility}
+            className="gap-2 text-foreground [&_svg]:size-4"
+          />
         </SummaryRow>
         <SummaryRow label={t(($) => $.inspector.prop_runtime)}>
-          <span className="flex min-w-0 items-center gap-1.5 text-foreground">
-            <span
-              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                runtimeOnline ? "bg-success" : "bg-muted-foreground/40"
-              }`}
-              aria-hidden="true"
-            />
-            <Server
-              className="h-3 w-3 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <span className="truncate">
-              {runtime
+          <SummaryValue
+            icon={<Server />}
+            value={
+              runtime
                 ? runtimeDisplayLabel(runtime)
-                : t(($) => $.pickers.runtime_none)}
-            </span>
-          </span>
+                : t(($) => $.pickers.runtime_none)
+            }
+          />
         </SummaryRow>
         <SummaryRow label={t(($) => $.inspector.prop_model)}>
-          <span className="flex min-w-0 items-center gap-1.5 text-foreground">
-            <Bot
-              className="h-3 w-3 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <span className="truncate">{modelSummary}</span>
-          </span>
+          <SummaryValue icon={<Bot />} value={modelSummary} />
         </SummaryRow>
         <SummaryRow label={t(($) => $.inspector.prop_concurrency)}>
-          <span className="font-mono tabular-nums text-foreground">
-            {agent.max_concurrent_tasks}
-          </span>
+          <SummaryValue
+            icon={<Gauge />}
+            value={String(agent.max_concurrent_tasks)}
+            tabular
+          />
         </SummaryRow>
       </dl>
     </aside>
   );
 }
 
-function SummaryRow({
-  label,
-  children,
+function SummaryValue({
+  icon,
+  value,
+  tabular = false,
 }: {
-  label: string;
-  children: React.ReactNode;
+  icon: React.ReactElement;
+  value: string;
+  tabular?: boolean;
 }) {
+  return (
+    <span className="flex min-w-0 items-center gap-2 text-foreground [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:text-muted-foreground">
+      {icon}
+      <span className={tabular ? "truncate tabular-nums" : "truncate"}>{value}</span>
+    </span>
+  );
+}
+
+function SummaryRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="grid grid-cols-[88px_minmax(0,1fr)] items-center gap-3">
       <dt className="text-muted-foreground">{label}</dt>

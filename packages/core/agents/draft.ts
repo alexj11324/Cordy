@@ -167,7 +167,7 @@ export function deriveDuplicateAccess(
  * they were chosen for, so they ride along only when the copy stays on that
  * exact runtime. When the source runtime is gone, private to somebody else or
  * offline, the draft falls back to another runtime and the three are cleared
- * for the user to pick again — the same rule `patchbay agent copy` already
+ * for the user to pick again — the same rule `orvilo agent copy` already
  * enforces server-side (cmd_agent_copy.go). Before MUL-5390 the fallback kept
  * the source `model` and silently persisted a cross-provider value.
  */
@@ -191,7 +191,7 @@ export function buildDuplicateDraft(
     ...EMPTY_AGENT_DRAFT,
     name: `${source.name}${options.nameSuffix}`,
     conversationStarters: (source.conversation_starters ?? []).map((item) => ({ ...item })),
-    avatarUrl: source.avatar_url ?? null,
+    avatarUrl: null,
     runtimeId: keepsRuntime
       ? (source.runtime_id as string)
       : options.fallbackRuntimeId,
@@ -206,7 +206,7 @@ export function buildDuplicateDraft(
  * Assembles the `POST /api/agents` body. Empty execution overrides are omitted
  * rather than sent as `""` so the runtime resolves its own default, and the
  * duplicate-only fields are the runtime-independent ones (`custom_args`,
- * concurrency) — mirroring `patchbay agent copy`. Description, instructions,
+ * concurrency) — mirroring `orvilo agent copy`. Description, instructions,
  * and per-agent skill IDs are omitted: those surfaces are workspace-shared
  * or unused on create.
  */
@@ -228,7 +228,6 @@ export function buildCreateAgentRequest(options: {
           })),
         }
       : {}),
-    avatar_url: draft.avatarUrl ?? undefined,
     runtime_id: runtimeId,
     model: draft.model.trim() || undefined,
     thinking_level: draft.thinkingLevel.trim() || undefined,

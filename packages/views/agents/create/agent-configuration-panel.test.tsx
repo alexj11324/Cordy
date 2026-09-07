@@ -13,10 +13,6 @@ vi.mock("../components/model-dropdown", () => ({
   ModelDropdown: () => <div data-testid="model-dropdown" />,
 }));
 
-vi.mock("../../common/avatar-upload-control", () => ({
-  AvatarUploadControl: () => <div data-testid="avatar-upload" />,
-}));
-
 vi.mock("../../common/actor-avatar", () => ({
   ActorAvatar: () => null,
 }));
@@ -73,6 +69,9 @@ describe("AgentConfigurationPanel", () => {
     expect(screen.getByText(enAgents.creation_studio.sections.access)).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: enAgents.create_dialog.name_label })).toBeInTheDocument();
     expect(screen.getByTestId("model-dropdown")).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(enAgents.create_dialog.avatar.change_aria),
+    ).not.toBeInTheDocument();
 
     expect(screen.queryByLabelText(enAgents.create_dialog.description_label)).toBeNull();
     expect(screen.queryByText(enAgents.create_dialog.description_label, { exact: true })).toBeNull();

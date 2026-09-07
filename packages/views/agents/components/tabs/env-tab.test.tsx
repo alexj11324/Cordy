@@ -64,12 +64,12 @@ describe("EnvTab", () => {
     updateAgentEnv.mockResolvedValue({ custom_env: {} });
   });
 
-  it("explains purpose, scope, and how to fill values before they are revealed", () => {
+  it("keeps values locked behind the explicit reveal action", () => {
     renderTab();
 
-    expect(
-      screen.getByText(enAgents.tab_body.env.not_revealed_hint),
-    ).toBeInTheDocument();
+    expect(screen.getByText(enAgents.tab_body.env.not_revealed_empty)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /reveal & edit/i })).toBeInTheDocument();
+    expect(screen.queryByText(enAgents.tab_body.env.not_revealed_hint)).not.toBeInTheDocument();
     expect(getAgentEnv).not.toHaveBeenCalled();
   });
 

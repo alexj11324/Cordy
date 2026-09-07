@@ -304,6 +304,8 @@ export interface ChatState {
   isOpen: boolean;
   /** Settings preference: is the floating chat window available at all. */
   floatingChatEnabled: boolean;
+  /** Whether the current Agent detail page has a working replacement DM action. */
+  agentDetailDmAvailable: boolean;
   activeSessionId: string | null;
   selectedAgentId: string | null;
   /** Project context for the next session. Existing sessions remain bound to
@@ -325,6 +327,7 @@ export interface ChatState {
   setOpen: (open: boolean) => void;
   toggle: () => void;
   setFloatingChatEnabled: (enabled: boolean) => void;
+  setAgentDetailDmAvailable: (available: boolean) => void;
   setActiveSession: (id: string | null) => void;
   setSelectedAgentId: (id: string) => void;
   setSelectedProjectId: (id: string | null) => void;
@@ -391,6 +394,7 @@ export function createChatStore(options: ChatStoreOptions) {
   const store = create<ChatState>((set, get) => ({
     isOpen: initialIsOpen,
     floatingChatEnabled: initialFloatingEnabled,
+    agentDetailDmAvailable: false,
     activeSessionId: storage.getItem(wsKey(SESSION_STORAGE_KEY)),
     selectedAgentId: initialAgentId,
     selectedProjectId: storage.getItem(wsKey(PROJECT_STORAGE_KEY)),
@@ -419,6 +423,9 @@ export function createChatStore(options: ChatStoreOptions) {
       // does not linger until the next toggle.
       set(enabled ? { floatingChatEnabled: true } : { floatingChatEnabled: false, isOpen: false });
       if (!enabled) storage.setItem(OPEN_KEY, "false");
+    },
+    setAgentDetailDmAvailable: (available) => {
+      set({ agentDetailDmAvailable: available });
     },
     setActiveSession: (id) => {
       logger.info("setActiveSession", { from: get().activeSessionId, to: id });

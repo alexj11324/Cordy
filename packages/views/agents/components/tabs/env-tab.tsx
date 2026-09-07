@@ -326,19 +326,14 @@ export function EnvTab({
     return (
       <div className="space-y-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1">
-            <p className="flex items-center gap-2 text-body font-medium">
-              <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-              {keyCount > 0
-                ? t(($) => $.tab_body.env.not_revealed_title, {
-                    count: keyCount,
-                  })
-                : t(($) => $.tab_body.env.not_revealed_empty)}
-            </p>
-            <p className="text-caption text-muted-foreground">
-              {t(($) => $.tab_body.env.not_revealed_hint)}
-            </p>
-          </div>
+          <p className="flex items-center gap-2 text-body font-medium">
+            <Lock className="h-3.5 w-3.5 text-muted-foreground" />
+            {keyCount > 0
+              ? t(($) => $.tab_body.env.not_revealed_title, {
+                  count: keyCount,
+                })
+              : t(($) => $.tab_body.env.not_revealed_empty)}
+          </p>
           <Button
             type="button"
             variant="outline"
@@ -364,21 +359,8 @@ export function EnvTab({
   // Editable state — only entered after a successful reveal.
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1 text-caption text-muted-foreground">
-          <p>
-            {t(($) => $.tab_body.env.intro_prefix)}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-micro">
-              {"ANTHROPIC_API_KEY"}
-            </code>
-            {t(($) => $.tab_body.env.intro_separator)}
-            <code className="rounded bg-muted px-1 py-0.5 font-mono text-micro">
-              {"ANTHROPIC_BASE_URL"}
-            </code>
-            {t(($) => $.tab_body.env.intro_suffix)}
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
+      <div className="flex justify-end">
+        <div className="flex items-center gap-2">
           <Button
             type="button"
             variant="outline"
