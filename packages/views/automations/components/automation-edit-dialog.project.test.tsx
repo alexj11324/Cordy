@@ -18,7 +18,9 @@ const mockCreateAutomation = vi.hoisted(() => vi.fn());
 const mockUpdateAutomation = vi.hoisted(() => vi.fn());
 
 vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
-vi.mock("@orvilo/core/paths", () => ({ useCurrentWorkspace: () => ({ name: "Acme" }) }));
+vi.mock("@orvilo/core/paths", () => ({
+  useCurrentWorkspace: () => ({ name: "Acme" }),
+}));
 
 vi.mock("@orvilo/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({
@@ -56,7 +58,9 @@ vi.mock("@orvilo/core/automations/queries", () => ({
 
 vi.mock("@orvilo/core/automations/mutations", () => ({
   useCreateAutomation: () => ({ mutateAsync: mockCreateAutomation }),
-  useCreateAutomationTrigger: () => ({ mutateAsync: vi.fn().mockResolvedValue({ id: "trg-new" }) }),
+  useCreateAutomationTrigger: () => ({
+    mutateAsync: vi.fn().mockResolvedValue({ id: "trg-new" }),
+  }),
   useUpdateAutomation: () => ({ mutateAsync: mockUpdateAutomation }),
   useUpdateAutomationTrigger: () => ({ mutateAsync: vi.fn() }),
 }));
@@ -64,7 +68,13 @@ vi.mock("@orvilo/core/automations/mutations", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 vi.mock("../../editor", () => ({
-  TitleEditor: ({ ref, defaultValue, placeholder, onChange, onSubmit }: any) => {
+  TitleEditor: ({
+    ref,
+    defaultValue,
+    placeholder,
+    onChange,
+    onSubmit,
+  }: any) => {
     const [value, setValue] = useState(defaultValue ?? "");
     const inputRef = useRef<HTMLInputElement>(null);
     useImperativeHandle(ref, () => ({
@@ -88,11 +98,15 @@ vi.mock("../../editor", () => ({
       />
     );
   },
-  ContentEditor: ({ placeholder }: any) => <textarea aria-label="runbook" placeholder={placeholder} />,
+  ContentEditor: ({ placeholder }: any) => (
+    <textarea aria-label="runbook" placeholder={placeholder} />
+  ),
 }));
 
 vi.mock("../../common/actor-avatar", () => ({
-  ActorAvatar: ({ actorId }: { actorId: string }) => <span data-testid="actor-avatar">{actorId}</span>,
+  ActorAvatar: ({ actorId }: { actorId: string }) => (
+    <span data-testid="actor-avatar">{actorId}</span>
+  ),
 }));
 
 vi.mock("./subscriber-multi-select", () => ({
@@ -120,19 +134,23 @@ vi.mock("../../projects/components/project-picker", () => ({
 }));
 
 vi.mock("./pickers/timezone-picker", () => ({
-  TimezonePicker: ({ value }: { value: string }) => <div data-testid="timezone-picker">{value}</div>,
+  TimezonePicker: ({ value }: { value: string }) => (
+    <div data-testid="timezone-picker">{value}</div>
+  ),
 }));
 
-import { AutomationDialog } from "./automation-dialog";
+import { AutomationEditDialog } from "./automation-edit-dialog";
 
 const AUTOMATION_ID = "ap-1";
 
-function renderEditDialog(mode: AutomationExecutionMode, projectId: string | null) {
+function renderEditDialog(
+  mode: AutomationExecutionMode,
+  projectId: string | null,
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return renderWithI18n(
     <QueryClientProvider client={qc}>
-      <AutomationDialog
-        mode="edit"
+      <AutomationEditDialog
         open
         onOpenChange={vi.fn()}
         automationId={AUTOMATION_ID}
@@ -153,27 +171,9 @@ function renderEditDialog(mode: AutomationExecutionMode, projectId: string | nul
   );
 }
 
-function renderCreateDialog() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return renderWithI18n(
-    <QueryClientProvider client={qc}>
-      <AutomationDialog
-        mode="create"
-        open
-        onOpenChange={vi.fn()}
-        initial={{
-          executor_type: "agent",
-          executor_id: "agent-1",
-          execution_mode: "run_only",
-        }}
-      />
-    </QueryClientProvider>,
-  );
-}
-
 const saveButton = () => screen.getByRole("button", { name: "Save" });
 
-describe("AutomationDialog project section", () => {
+describe("AutomationEditDialog project section", () => {
   beforeEach(() => {
     mockCreateAutomation.mockReset().mockResolvedValue({ id: AUTOMATION_ID });
     mockUpdateAutomation.mockReset().mockResolvedValue({ id: AUTOMATION_ID });
@@ -192,7 +192,9 @@ describe("AutomationDialog project section", () => {
     renderEditDialog("run_only", null);
 
     expect(
-      screen.getByText("Also sets where runs execute — the project's repository or local directory"),
+      screen.getByText(
+        "Also sets where runs execute — the project's repository or local directory",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -218,21 +220,10 @@ describe("AutomationDialog project section", () => {
     await user.click(saveButton());
 
     await waitFor(() => expect(mockUpdateAutomation).toHaveBeenCalledTimes(1));
-    expect(mockUpdateAutomation.mock.calls[0]?.[0]).toMatchObject({ project_id: "proj-1" });
-  });
-
-  it("binds a project chosen while creating a run_only automation", async () => {
-    const user = userEvent.setup();
-    renderCreateDialog();
-
-    await user.type(screen.getByLabelText("title"), "Push fleet repo to GitHub");
-    await user.click(screen.getByRole("button", { name: "pick Fleet" }));
-    await user.click(screen.getByRole("button", { name: "Create automation" }));
-
-    await waitFor(() => expect(mockCreateAutomation).toHaveBeenCalledTimes(1));
-    expect(mockCreateAutomation.mock.calls[0]?.[0]).toMatchObject({
-      execution_mode: "run_only",
+    expect(mockUpdateAutomation.mock.calls[0]?.[0]).toMatchObject({
       project_id: "proj-1",
     });
   });
+
+
 });

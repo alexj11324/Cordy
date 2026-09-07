@@ -61,6 +61,11 @@ can run from the same checkout without `EADDRINUSE`, staging callbacks cannot
 open Canary or the packaged production app, and staging cannot leak into
 production.
 
+On macOS, each checkout/channel launches its own cached Electron app bundle
+under `.orvilo-dev/electron/<version>-<arch>/`, leaving the dependency bundle
+and the other channel's native callback registration untouched. Dependency
+upgrades select a new cache path; ordinary starts reuse the existing copy.
+
 ### Public (production)
 
 Packaged Desktop, `pnpm ios:mobile:device:prod:release`, and the default CLI

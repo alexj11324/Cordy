@@ -843,6 +843,16 @@ jobs:
         shell: pwsh
         run: ./scripts/install.ps1.test.ps1
 
+      - name: Setup Node.js for native desktop registration checks
+        if: runner.os == 'macOS'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Verify independent macOS development app bundles
+        if: runner.os == 'macOS'
+        run: node --test apps/desktop/scripts/brand-dev-electron.macos-check.mjs
+
   # Branch protection requires the stable `installer` context. A matrix job
   # reports only `installer (<os>)` contexts, so aggregate the three platform
   # results instead of leaving the required check permanently pending.

@@ -18,7 +18,7 @@ import { TaskGraphPage } from "@orvilo/views/task-graph";
 import { ProjectsPage } from "@orvilo/views/projects/components";
 import { WorkProductDetailPage, WorkProductsPage } from "@orvilo/views/work-products";
 import { DashboardPage } from "@orvilo/views/dashboard";
-import { AutomationsPage } from "@orvilo/views/automations/components";
+import { AutomationsPage, AutomationRunsPage, AutomationCreateSettingsPage } from "@orvilo/views/automations/components";
 import { MyIssuesPage } from "@orvilo/views/my-issues";
 import { SkillsPage } from "@orvilo/views/skills";
 import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
@@ -160,6 +160,16 @@ export const appRoutes: RouteObject[] = [
             path: "automations",
             element: <AutomationsPage />,
             handle: { title: "Automation" },
+          },
+          {
+            path: "automations/new",
+            element: <AutomationCreateSettingsPage />,
+            handle: { title: "New automation" },
+          },
+          {
+            path: "automations/runs",
+            element: <AutomationRunsPage />,
+            handle: { title: "Runs" },
           },
           {
             path: "automations/:id",

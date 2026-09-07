@@ -3,6 +3,11 @@
     "title": "Automation",
     "new_automation": "New automation",
     "start_blank": "Start from scratch",
+    "recommended": {
+      "title": "Add automation",
+      "hint": "Start with a recommended automation, or build one from scratch. These suggestions stay here for your next automation."
+    },
+    "your_automations": "Your automations",
     "table": {
       "name": "Name",
       "agent": "Agent",
@@ -264,6 +269,23 @@
       "summary": "{{count}} skipped runs"
     }
   },
+  "run_history": {
+    "trigger": "Trigger",
+    "model": "Model",
+    "triggered": "Triggered",
+    "tools": "Tools",
+    "status": "Status",
+    "duration": "Duration",
+    "test_run": "Test run",
+    "tools_count": "{{count}} tools",
+    "search": "Search run history",
+    "search_placeholder": "Search runs…",
+    "filter": "Filter run history",
+    "filter_status": "Status",
+    "actions": "Run actions",
+    "open_issue": "Open task",
+    "no_matches": "No runs match your search or filters."
+  },
   "webhook_payload": {
     "label": "Webhook event:",
     "unknown_event": "webhook.received",
@@ -372,9 +394,7 @@
     "toast_add_failed": "Failed to add trigger"
   },
   "dialog": {
-    "sr_create": "New Automation",
     "sr_edit": "Edit Automation",
-    "header_create": "New automation",
     "header_edit": "Edit automation",
     "subtitle": "A recurring AI task",
     "expand": "Expand",
@@ -386,7 +406,6 @@
     "description_placeholder": "# Goal\nWhat should the agent accomplish?\n\n# Context\nWho is this for? Any constraints?\n\n# Steps\n1. …\n2. …",
     "auto_run_hint": "Once saved, runs automatically until paused.",
     "cancel": "Cancel",
-    "create": "Create automation",
     "save": "Save",
     "creating": "Creating...",
     "saving": "Saving...",
@@ -418,12 +437,7 @@
     "trigger_kind_schedule": "Schedule",
     "trigger_kind_webhook": "Webhook",
     "section_webhook": "Webhook",
-    "webhook_help_create": "Orvilo will generate a webhook URL after this automation is created. POST any JSON to that URL to fire it.",
     "webhook_help_edit": "This automation is fired by webhook. Manage the URL (copy / rotate) on the automation's detail page.",
-    "webhook_created_title": "Webhook automation ready",
-    "webhook_created_description": "POST any JSON to the URL below and the automation will fire. Copy it now — you can also find and rotate it on the automation's detail page.",
-    "webhook_created_warning": "Treat this URL like a password. Anyone who has it can trigger the automation.",
-    "webhook_created_done": "Done",
     "event_filter_label": "Event filters",
     "event_filter_docs_link_label": "Learn how event filters work",
     "event_filter_event_placeholder": "e.g. workflow_run",
@@ -752,5 +766,27 @@
       "cancelled": "Cancelled",
       "unsuccessful": "Any unsuccessful result"
     }
+  },
+  "overview": {
+    "mine": "Mine",
+    "team": "Team",
+    "all_runs": "All Runs",
+    "runs": "Runs",
+    "search_automations": "Search automations",
+    "all_statuses": "All statuses",
+    "select_all": "Select all",
+    "previous": "Previous",
+    "next": "Next",
+    "successful_24h": "Successful (24h)",
+    "failed_24h": "Failed (24h)",
+    "successful_7d": "Successful (7d)",
+    "failed_7d": "Failed (7d)",
+    "filter_automations": "Filter automations"
+  },
+  "create_settings": {
+    "memory_after_save": "Create the automation to manage memory files",
+    "provider_after_save": "Configure the connection and event conditions here after creation.",
+    "remove_trigger": "Remove trigger",
+    "draft": "Draft"
   }
 }

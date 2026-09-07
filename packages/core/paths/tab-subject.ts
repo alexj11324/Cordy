@@ -83,6 +83,7 @@ export function parseTabSubject(url: string): TabSubject {
     case "projects":
       return id ? { kind: "project", id } : { kind: "page", page: "projects" };
     case "automations":
+      if (id === "runs" || id === "new") return { kind: "page", page: "automations" };
       return id ? { kind: "automation", id } : { kind: "page", page: "automations" };
     case "agents":
       if (id === "new") return { kind: "flow", flow: "create-agent" };

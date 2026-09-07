@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Prepare this worktree's Electron.app before launch. macOS discovers URL
+// Prepare this worktree/channel's Electron.app before launch. macOS discovers URL
 // schemes and application identity from Info.plist, not app.setName().
 // Every development checkout declares only its path-derived callback scheme.
 // A development build must never claim production orvilo:// or another
@@ -7,8 +7,8 @@
 // https://www.electronjs.org/docs/latest/api/app#appsetasdefaultprotocolclientprotocol-path-args
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
-import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   callbackProtocolForPath,
@@ -99,21 +99,50 @@ export function configureDevPlist(plistPath, identity) {
   return true;
 }
 
-if (process.platform === "darwin" && process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+export function prepareDevBundle(electronBin, appRoot, version, suffix, channel = "development") {
+  const identity = devBundleIdentity(appRoot, suffix, channel);
+  const cacheRoot = resolve(appRoot, "../../.orvilo-dev/electron", `${version}-${process.arch}`);
+  const channelRoot = join(cacheRoot, channel === "staging" ? "staging" : "development");
+  const bundle = join(channelRoot, "Electron.app");
+  if (!existsSync(bundle)) {
+    mkdirSync(cacheRoot, { recursive: true });
+    const temporary = mkdtempSync(join(cacheRoot, ".prepare-"));
+    try {
+      cpSync(resolve(electronBin, "../../.."), join(temporary, "Electron.app"), {
+        recursive: true,
+        verbatimSymlinks: true,
+        mode: constants.COPYFILE_FICLONE,
+      });
+      renameSync(temporary, channelRoot);
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  }
+  configureDevPlist(join(bundle, "Contents", "Info.plist"), identity);
+  return join(bundle, "Contents", "MacOS", "Electron");
+}
+
+export function brandDevElectron(env = process.env) {
   const require = createRequire(import.meta.url);
-  const electronBin = require("electron");
-  const plistPath = resolve(electronBin, "../../Info.plist");
-  const identity = devBundleIdentity(
-    resolve(dirname(fileURLToPath(import.meta.url)), ".."),
-    process.env.DESKTOP_APP_SUFFIX,
-    process.env.ORVILO_DESKTOP_CHANNEL,
+  const moduleRoot = dirname(require.resolve("electron/package.json"));
+  const version = require("electron/package.json").version;
+  const executable = readFileSync(join(moduleRoot, "path.txt"), "utf8").trim();
+  const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+  const identity = devBundleIdentity(appRoot, env.DESKTOP_APP_SUFFIX, env.ORVILO_DESKTOP_CHANNEL);
+  const electronBin = prepareDevBundle(
+    join(moduleRoot, "dist", executable), appRoot, version,
+    env.DESKTOP_APP_SUFFIX, env.ORVILO_DESKTOP_CHANNEL,
   );
-  configureDevPlist(plistPath, identity);
   // Publish the build-time declaration before Electron selects itself as the
   // protocol handler. Each worktree has its own bundle ID and callback scheme,
   // despite the common Electron.app filename.
-  execFileSync("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-f", resolve(plistPath, "../..")]);
+  execFileSync("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-f", resolve(electronBin, "../../..")]);
   console.log(
     `[brand-dev-electron] ${identity.name} (${identity.bundleId}) declares ${identity.callbackProtocol}://`,
   );
+  return electronBin;
+}
+
+if (process.platform === "darwin" && process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  brandDevElectron();
 }

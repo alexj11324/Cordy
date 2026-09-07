@@ -2288,6 +2288,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				r.Post("/", h.CreateAutomation)
 				r.Get("/cron-preview", h.CronPreview)
 				r.Get("/usage", h.GetAutomationQuotaUsage)
+				r.Get("/runs", h.ListWorkspaceAutomationRuns)
 				r.Route("/{id}", func(r chi.Router) {
 					r.Get("/", h.GetAutomation)
 					r.Patch("/", h.UpdateAutomation)

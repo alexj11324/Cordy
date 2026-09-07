@@ -19,7 +19,9 @@ const mockCreateTrigger = vi.hoisted(() => vi.fn());
 const mockUpdateTrigger = vi.hoisted(() => vi.fn());
 
 vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
-vi.mock("@orvilo/core/paths", () => ({ useCurrentWorkspace: () => ({ name: "Acme" }) }));
+vi.mock("@orvilo/core/paths", () => ({
+  useCurrentWorkspace: () => ({ name: "Acme" }),
+}));
 
 vi.mock("@orvilo/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({
@@ -65,7 +67,13 @@ vi.mock("@orvilo/core/automations/mutations", () => ({
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 vi.mock("../../editor", () => ({
-  TitleEditor: ({ ref, defaultValue, placeholder, onChange, onSubmit }: any) => {
+  TitleEditor: ({
+    ref,
+    defaultValue,
+    placeholder,
+    onChange,
+    onSubmit,
+  }: any) => {
     const [value, setValue] = useState(defaultValue ?? "");
     const inputRef = useRef<HTMLInputElement>(null);
     useImperativeHandle(ref, () => ({
@@ -89,11 +97,15 @@ vi.mock("../../editor", () => ({
       />
     );
   },
-  ContentEditor: ({ placeholder }: any) => <textarea aria-label="runbook" placeholder={placeholder} />,
+  ContentEditor: ({ placeholder }: any) => (
+    <textarea aria-label="runbook" placeholder={placeholder} />
+  ),
 }));
 
 vi.mock("../../common/actor-avatar", () => ({
-  ActorAvatar: ({ actorId }: { actorId: string }) => <span data-testid="actor-avatar">{actorId}</span>,
+  ActorAvatar: ({ actorId }: { actorId: string }) => (
+    <span data-testid="actor-avatar">{actorId}</span>
+  ),
 }));
 
 vi.mock("./subscriber-multi-select", () => ({
@@ -101,18 +113,23 @@ vi.mock("./subscriber-multi-select", () => ({
 }));
 
 vi.mock("../../projects/components/project-picker", () => ({
-  ProjectPicker: ({ triggerRender }: { triggerRender: React.ReactElement }) => triggerRender,
+  ProjectPicker: ({ triggerRender }: { triggerRender: React.ReactElement }) =>
+    triggerRender,
 }));
 
 vi.mock("./pickers/timezone-picker", () => ({
-  TimezonePicker: ({ value }: { value: string }) => <div data-testid="timezone-picker">{value}</div>,
+  TimezonePicker: ({ value }: { value: string }) => (
+    <div data-testid="timezone-picker">{value}</div>
+  ),
 }));
 
-import { AutomationDialog } from "./automation-dialog";
+import { AutomationEditDialog } from "./automation-edit-dialog";
 
 const AUTOMATION_ID = "ap-1";
 
-function trigger(overrides: Partial<AutomationTrigger> = {}): AutomationTrigger {
+function trigger(
+  overrides: Partial<AutomationTrigger> = {},
+): AutomationTrigger {
   return {
     id: "trg-1",
     automation_id: AUTOMATION_ID,
@@ -134,8 +151,7 @@ function renderEditDialog(triggers: AutomationTrigger[]) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return renderWithI18n(
     <QueryClientProvider client={qc}>
-      <AutomationDialog
-        mode="edit"
+      <AutomationEditDialog
         open
         onOpenChange={vi.fn()}
         automationId={AUTOMATION_ID}
@@ -157,9 +173,10 @@ function renderEditDialog(triggers: AutomationTrigger[]) {
 }
 
 const saveButton = () => screen.getByRole("button", { name: "Save" });
-const addScheduleButton = () => screen.getByRole("button", { name: "Add schedule" });
+const addScheduleButton = () =>
+  screen.getByRole("button", { name: "Add schedule" });
 
-describe("AutomationDialog schedule section on an automation with no schedule", () => {
+describe("AutomationEditDialog schedule section on an automation with no schedule", () => {
   beforeEach(() => {
     mockUpdateAutomation.mockReset().mockResolvedValue({ id: AUTOMATION_ID });
     mockCreateTrigger.mockReset().mockResolvedValue({ id: "trg-new" });
@@ -170,7 +187,9 @@ describe("AutomationDialog schedule section on an automation with no schedule", 
     renderEditDialog([]);
 
     expect(
-      screen.getByText("No schedule — this automation only runs when triggered manually."),
+      screen.getByText(
+        "No schedule — this automation only runs when triggered manually.",
+      ),
     ).toBeInTheDocument();
     expect(addScheduleButton()).toBeInTheDocument();
     // The editor — and with it the next-run preview that reads as a promise —
@@ -207,7 +226,9 @@ describe("AutomationDialog schedule section on an automation with no schedule", 
       automationId: AUTOMATION_ID,
       kind: "schedule",
     });
-    expect(mockCreateTrigger.mock.calls[0]?.[0].cron_expression).toMatch(/(^|\s)0 9 \* \* \*$/);
+    expect(mockCreateTrigger.mock.calls[0]?.[0].cron_expression).toMatch(
+      /(^|\s)0 9 \* \* \*$/,
+    );
     expect(mockUpdateTrigger).not.toHaveBeenCalled();
   });
 
@@ -227,7 +248,9 @@ describe("AutomationDialog schedule section on an automation with no schedule", 
     const user = userEvent.setup();
     // An api-kind trigger is not a schedule: the panel must offer to create one
     // rather than treat that row as the schedule it is about to overwrite.
-    renderEditDialog([trigger({ kind: "api", cron_expression: null, timezone: null })]);
+    renderEditDialog([
+      trigger({ kind: "api", cron_expression: null, timezone: null }),
+    ]);
 
     await user.click(addScheduleButton());
     await user.click(saveButton());
@@ -237,7 +260,7 @@ describe("AutomationDialog schedule section on an automation with no schedule", 
   });
 });
 
-describe("AutomationDialog schedule section on an automation that has one", () => {
+describe("AutomationEditDialog schedule section on an automation that has one", () => {
   beforeEach(() => {
     mockUpdateAutomation.mockReset().mockResolvedValue({ id: AUTOMATION_ID });
     mockCreateTrigger.mockReset().mockResolvedValue({ id: "trg-new" });
@@ -247,8 +270,12 @@ describe("AutomationDialog schedule section on an automation that has one", () =
   it("shows the stored schedule, not the empty state", () => {
     renderEditDialog([trigger()]);
 
-    expect(screen.queryByRole("button", { name: "Add schedule" })).not.toBeInTheDocument();
-    expect(screen.getByTestId("timezone-picker")).toHaveTextContent("Asia/Shanghai");
+    expect(
+      screen.queryByRole("button", { name: "Add schedule" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("timezone-picker")).toHaveTextContent(
+      "Asia/Shanghai",
+    );
   });
 
   it("does not rewrite a schedule the user never changed", async () => {
