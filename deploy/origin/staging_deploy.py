@@ -415,7 +415,7 @@ class StagingDeployment:
         require_exact(product, STAGING_PORTS, label="staging product")
         require_exact(broker, STAGING_BROKER_URLS, label="staging auth broker")
         cookie_domain = product.get("COOKIE_DOMAIN", "")
-        if "staging.aspectlylabs.com" not in cookie_domain:
+        if cookie_domain.removeprefix(".") != "staging.aspectlylabs.com":
             raise DeploymentError("staging COOKIE_DOMAIN must be scoped to staging.aspectlylabs.com")
         publishable_key = broker.get("CLERK_PUBLISHABLE_KEY")
         if not isinstance(publishable_key, str) or not publishable_key.strip():
