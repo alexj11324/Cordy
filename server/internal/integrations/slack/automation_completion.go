@@ -220,7 +220,7 @@ func (r *AutomationCompletionReactor) sendConfiguredSummary(ctx context.Context,
 		return nil
 	}
 	tools := service.ParseAutomationTools(automation.Tools)
-	if tools.SlackSend == nil {
+	if tools.SlackSend == nil || (tools.SlackSend.Enabled != nil && !*tools.SlackSend.Enabled) {
 		return nil
 	}
 	installationID, err := util.ParseUUID(tools.SlackSend.InstallationID)
