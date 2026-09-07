@@ -1,14 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   Play,
   Clock,
   Trash2,
   Loader2,
   Pencil,
-  ChevronDown,
-  FolderKanban,
   MoreHorizontal,
   Server,
   AlertTriangle,
@@ -20,7 +18,6 @@ import {
   automationDetailOptions,
   automationRunsOptions,
 } from "@patchbay/core/automations/queries";
-import { projectDetailOptions } from "@patchbay/core/projects/queries";
 import type { AutomationTriggerPreset } from "@patchbay/core/automations";
 import {
   useUpdateAutomation,
@@ -37,12 +34,10 @@ import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import { useNavigation, AppLink } from "../../navigation";
-import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Badge } from "@patchbay/ui/components/ui/badge";
 import { Input } from "@patchbay/ui/components/ui/input";
-import { Switch } from "@patchbay/ui/components/ui/switch";
 import { cn } from "@patchbay/ui/lib/utils";
 import { toast } from "sonner";
 import {
@@ -56,12 +51,6 @@ import {
   AlertDialogTitle,
 } from "@patchbay/ui/components/ui/alert-dialog";
 import { formatInTimeZone } from "../../common/format-in-time-zone";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@patchbay/ui/components/ui/tabs";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -87,17 +76,17 @@ import type {
   AutomationTrigger,
 } from "@patchbay/core/types";
 import type { AgentTask } from "@patchbay/core/types/agent";
-import { ContentEditor, ReadonlyContent } from "../../editor";
 import { AgentThreadButton } from "../../agent-thread";
+import { AutomationSettingsPage } from "./automation-settings-page";
 import { AutomationEditDialog } from "./automation-edit-dialog";
 import { runNowToastKind, runNowBlockedKey } from "./run-now-toast";
 import { WebhookDeliveriesSection } from "./webhook-deliveries-section";
-import { ProjectIcon } from "../../projects/components/project-icon";
-import { ProjectPicker } from "../../projects/components/project-picker";
 import { useT } from "../../i18n";
 import { PageHeader } from "../../layout/page-header";
-import { AgentPicker } from "./pickers/agent-picker";
-import { TriggerAddMenu } from "./trigger-add-menu";
+import {
+  AutomationInstructionsCard,
+  AutomationTriggersSection,
+} from "./automation-settings-sections";
 import { TriggerCard } from "./trigger-card";
 import { TriggerScheduleDialog } from "./trigger-schedule-dialog";
 import { AutomationToolsSection } from "./automation-tools-section";
@@ -205,7 +194,9 @@ function RunRow({
   agentId,
   triggers,
   now,
+  automationTitle,
 }: {
+  automationTitle?: string;
   run: AutomationRun;
   agentId: string;
   triggers: AutomationTrigger[];
@@ -248,18 +239,23 @@ function RunRow({
   return (
     <>
       <TableRow data-testid="automation-run-row" className="h-14">
-        <TableCell className="min-w-40 px-5">
+        <TableCell className="min-w-40 max-w-64 px-5">
           <span className="flex min-w-0 items-center gap-2">
             <Clock
               className="size-3.5 shrink-0 text-muted-foreground"
               aria-hidden="true"
             />
             <span className="truncate font-medium">
-              {triggerLabel(run, triggers, t)}
+              {automationTitle ? (
+                <AppLink href={wsPaths.automationDetail(run.automation_id)}>
+                  {automationTitle}
+                </AppLink>
+              ) : (
+                triggerLabel(run, triggers, t)
+              )}
             </span>
           </span>
         </TableCell>
-        <TableCell className="text-muted-foreground">—</TableCell>
         <TableCell className="text-muted-foreground tabular-nums">
           {formatInTimeZone(
             run.triggered_at || run.created_at,
@@ -272,7 +268,10 @@ function RunRow({
           <div className="flex max-w-64 flex-col items-start gap-1">
             <RunStatusBadge status={status} />
             {run.failure_reason ? (
-              <span className="break-words text-caption text-destructive">
+              <span
+                title={run.failure_reason}
+                className="line-clamp-2 whitespace-normal break-words text-caption text-destructive"
+              >
                 {run.failure_reason}
               </span>
             ) : null}
@@ -327,7 +326,7 @@ function RunRow({
       </TableRow>
       {deliveryErrors.length > 0 && (
         <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={7} className="px-5 pb-3 pt-0">
+          <TableCell colSpan={6} className="px-5 pb-3 pt-0">
             <div
               role="alert"
               className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2.5 py-2 text-caption text-destructive"
@@ -347,19 +346,32 @@ function RunRow({
   );
 }
 
-function RunHistoryList({
+export function RunHistoryList({
   runs,
   agentId,
   triggers,
+  toolbarStart,
+  automations,
+  onFiltersChange,
+  beforeTable,
+  loading = false,
 }: {
   runs: AutomationRun[];
   agentId: string;
   triggers: AutomationTrigger[];
+  onFiltersChange?: (search: string, statuses: string[]) => void;
+  loading?: boolean;
+  beforeTable?: ReactNode;
+  toolbarStart?: ReactNode;
+  automations?: Record<string, { title: string; executor_id: string }>;
 }) {
   const { t } = useT("automations");
   const [searchOpen, setSearchOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [statuses, setStatuses] = useState<Set<RunStatus>>(new Set());
+  useEffect(() => {
+    onFiltersChange?.(search, [...statuses]);
+  }, [search, statuses, onFiltersChange]);
   const hasActiveRun = runs.some(
     (run) =>
       !run.completed_at &&
@@ -368,13 +380,15 @@ function RunHistoryList({
   );
   const now = useRunHistoryClock(hasActiveRun);
   const visibleRuns = useMemo(() => {
+    if (onFiltersChange) return runs;
     const needle = search.trim().toLocaleLowerCase();
     return runs.filter((run) => {
       const status = normalizedRunStatus(run.status);
       if (statuses.size > 0 && !statuses.has(status)) return false;
       if (!needle) return true;
       const haystack = [
-        triggerLabel(run, triggers, t),
+        automations?.[run.automation_id]?.title ??
+          triggerLabel(run, triggers, t),
         t(($) => $.run_status[status]),
         run.failure_reason ?? "",
       ]
@@ -382,7 +396,7 @@ function RunHistoryList({
         .toLocaleLowerCase();
       return haystack.includes(needle);
     });
-  }, [runs, search, statuses, t, triggers]);
+  }, [runs, search, statuses, t, triggers, automations, onFiltersChange]);
 
   const toggleStatus = (status: RunStatus) => {
     setStatuses((current) => {
@@ -395,7 +409,8 @@ function RunHistoryList({
 
   return (
     <div className="space-y-3">
-      <div className="flex min-h-8 items-center justify-end gap-1.5">
+      <div className="flex min-h-8 flex-wrap items-center gap-1.5">
+        <div className="mr-auto">{toolbarStart}</div>
         {searchOpen ? (
           <div className="relative w-full max-w-64">
             <Search
@@ -459,14 +474,16 @@ function RunHistoryList({
         </DropdownMenu>
       </div>
 
+      {beforeTable}
       <div className="overflow-hidden rounded-xl border bg-background">
         <Table>
           <TableHeader>
             <TableRow className="hover:bg-transparent">
               <TableHead className="px-5">
-                {t(($) => $.run_history.trigger)}
+                {automations
+                  ? t(($) => $.page.title)
+                  : t(($) => $.run_history.trigger)}
               </TableHead>
-              <TableHead>{t(($) => $.run_history.model)}</TableHead>
               <TableHead>{t(($) => $.run_history.triggered)}</TableHead>
               <TableHead>{t(($) => $.run_history.tools)}</TableHead>
               <TableHead>{t(($) => $.run_history.status)}</TableHead>
@@ -483,15 +500,24 @@ function RunHistoryList({
               <RunRow
                 key={run.id}
                 run={run}
-                agentId={agentId}
+                agentId={
+                  automations?.[run.automation_id]?.executor_id ?? agentId
+                }
+                automationTitle={automations?.[run.automation_id]?.title}
                 triggers={triggers}
                 now={now}
               />
             ))}
-            {visibleRuns.length === 0 ? (
+            {loading ? (
+              <TableRow>
+                <TableCell colSpan={6} className="h-28 px-5">
+                  <Skeleton className="h-4 w-full" />
+                </TableCell>
+              </TableRow>
+            ) : visibleRuns.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell
-                  colSpan={7}
+                  colSpan={6}
                   className="h-28 text-center text-muted-foreground"
                 >
                   {t(($) => $.run_history.no_matches)}
@@ -535,62 +561,32 @@ function InstructionsSection({
   };
 
   return (
-    <section className="space-y-2" data-testid="automation-instructions">
-      <h2 className="text-caption font-medium uppercase tracking-wider text-muted-foreground">
-        {t(($) => $.settings.section_instructions)}
-      </h2>
-      <div className="rounded-lg border bg-background">
-        <div className="automation-instructions h-44 overflow-y-auto overscroll-contain px-4 py-3">
-          {canWrite ? (
-            <ContentEditor
-              value={automation.description ?? ""}
-              placeholder={t(($) => $.dialog.description_placeholder)}
-              onUpdate={persistDescription}
-              debounceMs={1200}
-              flushPendingOnUnmount
-              showBubbleMenu={false}
-            />
-          ) : automation.description ? (
-            <ReadonlyContent content={automation.description} />
-          ) : (
-            <p className="text-label text-muted-foreground">
-              {t(($) => $.dialog.description_placeholder)}
-            </p>
-          )}
-        </div>
-        <div className="flex min-w-0 items-center px-3 pb-2">
-          <AgentPicker
-            assignee={{
-              type: automation.executor_type,
-              id: automation.executor_id,
-            }}
-            disabled={!canWrite || updateAutomation.isPending}
-            onChange={(next) => {
-              if (!canWrite) return;
-              updateAutomation.mutate(
-                {
-                  id: automation.id,
-                  executor_type: next.type,
-                  executor_id: next.id,
-                  // The selected Agent owns its model configuration. Empty is
-                  // the established API sentinel for clearing a legacy
-                  // automation-level override.
-                  model: "",
-                },
-                {
-                  onError: (error) =>
-                    toast.error(
-                      error instanceof Error
-                        ? error.message
-                        : t(($) => $.dialog.toast_update_failed),
-                    ),
-                },
-              );
-            }}
-          />
-        </div>
-      </div>
-    </section>
+    <AutomationInstructionsCard
+      description={automation.description ?? ""}
+      assignee={{ type: automation.executor_type, id: automation.executor_id }}
+      canWrite={canWrite}
+      busy={updateAutomation.isPending}
+      onDescriptionChange={persistDescription}
+      onAssigneeChange={(next) => {
+        if (!canWrite) return;
+        updateAutomation.mutate(
+          {
+            id: automation.id,
+            executor_type: next.type,
+            executor_id: next.id,
+            model: "",
+          },
+          {
+            onError: (error) =>
+              toast.error(
+                error instanceof Error
+                  ? error.message
+                  : t(($) => $.dialog.toast_update_failed),
+              ),
+          },
+        );
+      }}
+    />
   );
 }
 
@@ -618,11 +614,6 @@ export function AutomationDetailPage({
   const deleteAutomation = useDeleteAutomation();
   const triggerAutomation = useTriggerAutomation();
   const createTrigger = useCreateAutomationTrigger();
-  const projectId = data?.automation.project_id ?? null;
-  const { data: project, isLoading: projectLoading } = useQuery({
-    ...projectDetailOptions(wsId, projectId ?? ""),
-    enabled: Boolean(projectId),
-  });
 
   const [detailTab, setDetailTab] = useState<"settings" | "runs">("settings");
   const [triggerDialogOpen, setTriggerDialogOpen] = useState(false);
@@ -781,15 +772,32 @@ export function AutomationDetailPage({
   const hasWebhookTrigger = triggers.some((trig) => trig.kind === "webhook");
   return (
     <div className="flex h-full flex-col">
-      <BreadcrumbHeader
-        segments={[
-          { href: wsPaths.automations(), label: t(($) => $.page.title) },
-        ]}
-        leaf={
-          <span className="min-w-0 truncate text-caption text-muted-foreground">
-            {automation.title}
-          </span>
+      <AutomationSettingsPage
+        title={automation.title}
+        status={automation.status}
+        creatorName={getActorName(
+          automation.created_by_type,
+          automation.created_by_id,
+        )}
+        projectId={automation.project_id ?? null}
+        canWrite={canWrite}
+        busy={updateAutomation.isPending}
+        onToggleStatus={handleToggleStatus}
+        onProjectChange={(projectId) =>
+          updateAutomation.mutate(
+            { id: automationId, project_id: projectId },
+            {
+              onError: (error) =>
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : t(($) => $.dialog.toast_update_failed),
+                ),
+            },
+          )
         }
+        tab={detailTab}
+        onTabChange={setDetailTab}
         actions={
           canWrite ? (
             <>
@@ -856,229 +864,89 @@ export function AutomationDetailPage({
             </>
           ) : null
         }
-      />
-
-      {automation.pause_reason === "agent_runtime_required" && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-caption text-amber-900 dark:text-amber-100">
-          <Server className="size-3.5 shrink-0" />
-          <span className="flex-1">
-            {t(($) => $.detail.paused_runtime_required)}
-          </span>
-          {automation.executor_type === "agent" && (
-            <AppLink
-              href={`${wsPaths.agentDetail(automation.executor_id)}?view=general`}
-              className="font-medium underline underline-offset-2"
-            >
-              {t(($) => $.detail.bind_runtime)}
-            </AppLink>
-          )}
-        </div>
-      )}
-
-      <Tabs
-        value={detailTab}
-        onValueChange={(value) => setDetailTab(value as "settings" | "runs")}
-        className="flex min-h-0 flex-1 flex-col gap-0"
-      >
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-5xl space-y-8 px-4 py-6 sm:px-8 sm:py-8">
-            <header className="space-y-4">
-              <h1
-                data-testid="automation-settings-title"
-                className="text-display-sm font-bold leading-snug tracking-tight text-foreground"
-              >
-                {automation.title}
-              </h1>
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                <div className="flex items-center gap-1.5">
-                  <Switch
-                    size="sm"
-                    checked={automation.status === "active"}
-                    onCheckedChange={handleToggleStatus}
-                    disabled={
-                      automation.status === "archived" ||
-                      !canWrite ||
-                      updateAutomation.isPending
-                    }
-                    aria-label={
-                      automation.status === "active"
-                        ? t(($) => $.detail.pause_aria)
-                        : t(($) => $.detail.activate_aria)
-                    }
-                  />
-                  <span
-                    className={cn(
-                      "text-caption font-medium",
-                      automation.status === "active"
-                        ? "text-emerald-500"
-                        : "text-muted-foreground",
-                    )}
-                  >
-                    {automation.status === "active"
-                      ? t(($) => $.status.active)
-                      : t(($) => $.detail.status_inactive)}
-                  </span>
-                </div>
-                <span aria-hidden className="h-3.5 w-px shrink-0 bg-border" />
-                <ProjectPicker
-                  projectId={automation.project_id ?? null}
-                  disabled={!canWrite || updateAutomation.isPending}
-                  onUpdate={(updates) => {
-                    if (!canWrite || updates.project_id === undefined) return;
-                    updateAutomation.mutate(
-                      {
-                        id: automationId,
-                        project_id: updates.project_id,
-                      },
-                      {
-                        onError: (error) =>
-                          toast.error(
-                            error instanceof Error
-                              ? error.message
-                              : t(($) => $.dialog.toast_update_failed),
-                          ),
-                      },
-                    );
-                  }}
-                  triggerRender={
-                    <button
-                      type="button"
-                      disabled={!canWrite || updateAutomation.isPending}
-                      className="inline-flex h-7 max-w-[14rem] items-center gap-1 rounded-md px-1 text-caption text-muted-foreground hover:bg-accent/30 disabled:pointer-events-none disabled:opacity-50"
-                    >
-                      {projectLoading ? (
-                        <Skeleton className="h-3.5 w-20" />
-                      ) : project ? (
-                        <>
-                          <ProjectIcon project={project} size="sm" />
-                          <span className="truncate text-foreground">
-                            {project.title}
-                          </span>
-                        </>
-                      ) : (
-                        <>
-                          <FolderKanban className="size-3.5 shrink-0" />
-                          <span className="truncate">
-                            {t(($) => $.detail.no_project)}
-                          </span>
-                        </>
-                      )}
-                      <ChevronDown className="size-3 shrink-0" />
-                    </button>
-                  }
-                />
-                <span aria-hidden className="h-3.5 w-px shrink-0 bg-border" />
-                <span className="text-caption text-muted-foreground">
-                  {t(($) => $.detail.created_by_line, {
-                    name: getActorName(
-                      automation.created_by_type,
-                      automation.created_by_id,
-                    ),
-                  })}
-                </span>
-              </div>
-              <TabsList className="h-7 bg-transparent p-0">
-                <TabsTrigger
-                  value="settings"
-                  className="h-7 flex-none rounded-md px-2.5 text-label after:hidden data-active:bg-muted data-active:shadow-none"
+        notice={
+          automation.pause_reason === "agent_runtime_required" && (
+            <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-caption text-amber-900 dark:text-amber-100">
+              <Server className="size-3.5 shrink-0" />
+              <span className="flex-1">
+                {t(($) => $.detail.paused_runtime_required)}
+              </span>
+              {automation.executor_type === "agent" && (
+                <AppLink
+                  href={`${wsPaths.agentDetail(automation.executor_id)}?view=general`}
+                  className="font-medium underline underline-offset-2"
                 >
-                  {t(($) => $.settings.tab_settings)}
-                </TabsTrigger>
-                <TabsTrigger
-                  value="runs"
-                  className="h-7 flex-none rounded-md px-2.5 text-label after:hidden data-active:bg-muted data-active:shadow-none"
-                >
-                  {t(($) => $.settings.tab_runs)}
-                </TabsTrigger>
-              </TabsList>
-            </header>
-
-            <TabsContent value="settings" className="mt-0 max-w-3xl space-y-8">
-              <section className="space-y-2">
-                <h2 className="text-caption font-medium uppercase tracking-wider text-muted-foreground">
-                  {t(($) => $.detail.section_triggers)}
-                </h2>
-                <p className="text-caption text-muted-foreground">
-                  {t(($) => $.settings.trigger_help)}
-                </p>
-                <div
-                  data-testid="automation-triggers-card"
-                  className="divide-y rounded-lg border bg-background"
-                >
-                  {triggers.length === 0 && !canWrite ? (
-                    <p className="px-4 py-6 text-center text-body text-muted-foreground">
-                      {t(($) => $.detail.no_triggers)}
-                    </p>
-                  ) : (
-                    triggers.map((trig) => (
-                      <TriggerCard
-                        key={trig.id}
-                        trigger={trig}
-                        automationId={automationId}
-                        canWrite={canWrite}
-                      />
-                    ))
-                  )}
-                  <div className="px-2 py-1">
-                    <TriggerAddMenu
-                      canWrite={canWrite}
-                      variant="inset"
-                      onPickSchedule={() => setTriggerDialogOpen(true)}
-                      onPickPreset={handlePickPreset}
-                    />
-                  </div>
-                </div>
-              </section>
-
-              <InstructionsSection
-                automation={automation}
-                canWrite={canWrite}
-              />
-
-              <AutomationToolsSection
-                automation={automation}
-                canWrite={canWrite}
-              />
-
-              <WebhookDeliveriesSection
-                automationId={automationId}
-                hasWebhookTrigger={hasWebhookTrigger}
-              />
-            </TabsContent>
-
-            <TabsContent value="runs" className="mt-0 space-y-3">
-              {runsLoading ? (
-                <div className="space-y-1">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <Skeleton key={i} className="h-10 w-full" />
-                  ))}
-                </div>
-              ) : runsError ? (
-                <div className="space-y-3 rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
-                  <p role="status">{t(($) => $.settings.runs_load_failed)}</p>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => void refetchRuns()}
-                  >
-                    {t(($) => $.page.retry)}
-                  </Button>
-                </div>
-              ) : runs.length === 0 ? (
-                <div className="rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
-                  {t(($) => $.detail.no_runs)}
-                </div>
-              ) : (
-                <RunHistoryList
-                  runs={runs}
-                  agentId={automation.executor_id}
-                  triggers={triggers}
-                />
+                  {t(($) => $.detail.bind_runtime)}
+                </AppLink>
               )}
-            </TabsContent>
-          </div>
-        </div>
-      </Tabs>
+            </div>
+          )
+        }
+        inlineRunTabs={!runsLoading && !runsError && runs.length > 0}
+        renderRuns={(tabs) => (
+          <>
+            {runsLoading ? (
+              <div className="space-y-1">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : runsError ? (
+              <div className="space-y-3 rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
+                <p role="status">{t(($) => $.settings.runs_load_failed)}</p>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void refetchRuns()}
+                >
+                  {t(($) => $.page.retry)}
+                </Button>
+              </div>
+            ) : runs.length === 0 ? (
+              <div className="rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
+                {t(($) => $.detail.no_runs)}
+              </div>
+            ) : (
+              <RunHistoryList
+                runs={runs}
+                toolbarStart={tabs}
+                agentId={automation.executor_id}
+                triggers={triggers}
+              />
+            )}
+          </>
+        )}
+      >
+        <AutomationTriggersSection
+          canWrite={canWrite}
+          onPickSchedule={() => setTriggerDialogOpen(true)}
+          onPickPreset={handlePickPreset}
+        >
+          {triggers.length === 0 && !canWrite ? (
+            <p className="px-4 py-6 text-center text-body text-muted-foreground">
+              {t(($) => $.detail.no_triggers)}
+            </p>
+          ) : (
+            triggers.map((trig) => (
+              <TriggerCard
+                key={trig.id}
+                trigger={trig}
+                automationId={automationId}
+                canWrite={canWrite}
+              />
+            ))
+          )}
+        </AutomationTriggersSection>
+
+        <InstructionsSection automation={automation} canWrite={canWrite} />
+
+        <AutomationToolsSection automation={automation} canWrite={canWrite} />
+
+        <WebhookDeliveriesSection
+          automationId={automationId}
+          hasWebhookTrigger={hasWebhookTrigger}
+        />
+      </AutomationSettingsPage>
 
       {/* Mounted only while open, like the edit dialog: otherwise a rejected
           cron leaves scheduleValid=false behind for the next open. */}

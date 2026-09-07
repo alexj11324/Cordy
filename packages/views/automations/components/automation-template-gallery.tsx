@@ -32,7 +32,7 @@ export function AutomationTemplateGallery({
 }: {
   onSelectTemplate: (template: AutomationTemplate) => void;
   onStartBlank: () => void;
-  /** Keep the recommendations above an existing automation list. */
+  /** Keep recommendations available below an existing automation list. */
   persistent?: boolean;
 }) {
   const { t } = useT("automations");
@@ -42,7 +42,7 @@ export function AutomationTemplateGallery({
     <div
       data-testid="automation-template-gallery"
       className={cn(
-        "mx-auto flex w-full max-w-4xl flex-col px-5",
+        "@container mx-auto flex w-full max-w-4xl flex-col px-5",
         persistent ? "py-5" : "py-10",
       )}
     >
@@ -93,7 +93,7 @@ export function AutomationTemplateGallery({
         }}
         className="gap-4"
       >
-        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-transparent p-0">
+        <TabsList className="h-auto w-full flex-wrap justify-start gap-1 bg-transparent p-0 group-data-horizontal/tabs:h-auto">
           {TEMPLATE_CATEGORIES.map((cat) => (
             <TabsTrigger
               key={cat.id}
@@ -112,14 +112,7 @@ export function AutomationTemplateGallery({
 
         {TEMPLATE_CATEGORIES.map((cat) => (
           <TabsContent key={cat.id} value={cat.id} className="mt-1">
-            <div
-              className={cn(
-                "grid gap-3",
-                persistent
-                  ? "grid-flow-col auto-cols-[minmax(220px,1fr)] overflow-x-auto pb-1"
-                  : "grid-cols-1 sm:grid-cols-2",
-              )}
-            >
+            <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2">
               {cat.templateIds.map((id) => (
                 <TemplateCard
                   key={id}

@@ -1,7 +1,7 @@
 {
   "page": {
     "title": "Automation",
-    "new_automation": "Add automation",
+    "new_automation": "New automation",
     "start_blank": "Start from scratch",
     "recommended": {
       "title": "Add automation",
@@ -28,13 +28,6 @@
     "scope_all": "All",
     "no_matches": "No automations match",
     "retry": "Retry"
-  },
-  "create_panel": {
-    "title": "Add automation",
-    "description": "Choose an agent and review the runbook before adding this automation.",
-    "name": "Name",
-    "back": "Back to recommendations",
-    "template_trigger": "The recommended trigger will be added with this automation."
   },
   "status": {
     "active": "Active",
@@ -773,5 +766,27 @@
       "cancelled": "Cancelled",
       "unsuccessful": "Any unsuccessful result"
     }
+  },
+  "overview": {
+    "mine": "Mine",
+    "team": "Team",
+    "all_runs": "All Runs",
+    "runs": "Runs",
+    "search_automations": "Search automations",
+    "all_statuses": "All statuses",
+    "select_all": "Select all",
+    "previous": "Previous",
+    "next": "Next",
+    "successful_24h": "Successful (24h)",
+    "failed_24h": "Failed (24h)",
+    "successful_7d": "Successful (7d)",
+    "failed_7d": "Failed (7d)",
+    "filter_automations": "Filter automations"
+  },
+  "create_settings": {
+    "memory_after_save": "Create the automation to manage memory files",
+    "provider_after_save": "Configure the connection and event conditions here after creation.",
+    "remove_trigger": "Remove trigger",
+    "draft": "Draft"
   }
 }

@@ -18,7 +18,7 @@ import { TaskGraphPage } from "@patchbay/views/task-graph";
 import { ProjectsPage } from "@patchbay/views/projects/components";
 import { WorkProductDetailPage, WorkProductsPage } from "@patchbay/views/work-products";
 import { DashboardPage } from "@patchbay/views/dashboard";
-import { AutomationsPage } from "@patchbay/views/automations/components";
+import { AutomationsPage, AutomationRunsPage, AutomationCreateSettingsPage } from "@patchbay/views/automations/components";
 import { MyIssuesPage } from "@patchbay/views/my-issues";
 import { SkillsPage } from "@patchbay/views/skills";
 import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
@@ -160,6 +160,16 @@ export const appRoutes: RouteObject[] = [
             path: "automations",
             element: <AutomationsPage />,
             handle: { title: "Automation" },
+          },
+          {
+            path: "automations/new",
+            element: <AutomationCreateSettingsPage />,
+            handle: { title: "New automation" },
+          },
+          {
+            path: "automations/runs",
+            element: <AutomationRunsPage />,
+            handle: { title: "Runs" },
           },
           {
             path: "automations/:id",

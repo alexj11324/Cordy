@@ -35,6 +35,8 @@ function workspaceScoped(slug: string) {
     workProducts: () => `${ws}/work-products`,
     workProductDetail: (id: string) => `${ws}/work-products/${encode(id)}`,
     automations: () => `${ws}/automations`,
+    automationRuns: () => `${ws}/automations/runs`,
+    newAutomation: (templateId?: string) => `${ws}/automations/new${templateId ? `?template=${encode(templateId)}` : ""}`,
     automationDetail: (id: string) => `${ws}/automations/${encode(id)}`,
     agents: () => `${ws}/agents`,
     newAgent: () => `${ws}/agents/new`,

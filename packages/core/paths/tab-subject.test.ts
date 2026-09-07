@@ -13,6 +13,8 @@ describe("parseTabSubject", () => {
     ["/acme/projects", { kind: "page", page: "projects" }],
     ["/acme/work-products", { kind: "page", page: "workProducts" }],
     ["/acme/automations", { kind: "page", page: "automations" }],
+    ["/acme/automations/runs", { kind: "page", page: "automations" }],
+    ["/acme/automations/new?template=find_critical_bugs", { kind: "page", page: "automations" }],
     ["/acme/agents", { kind: "page", page: "agents" }],
     ["/acme/teams", { kind: "page", page: "teams" }],
     ["/acme/usage", { kind: "page", page: "usage" }],

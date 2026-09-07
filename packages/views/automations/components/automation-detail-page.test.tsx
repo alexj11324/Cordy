@@ -428,7 +428,6 @@ describe("AutomationDetailPage settings layout", () => {
 
     for (const heading of [
       "Trigger",
-      "Model",
       "Triggered",
       "Tools",
       "Status",

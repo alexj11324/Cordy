@@ -139,7 +139,6 @@ vi.mock("./pickers/timezone-picker", () => ({
   ),
 }));
 
-import { AutomationCreatePanel } from "./automation-create-panel";
 import { AutomationEditDialog } from "./automation-edit-dialog";
 
 const AUTOMATION_ID = "ap-1";
@@ -167,22 +166,6 @@ function renderEditDialog(
         triggers={[]}
         collaborators={[]}
         canManageAccess={false}
-      />
-    </QueryClientProvider>,
-  );
-}
-
-function renderCreateDialog() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return renderWithI18n(
-    <QueryClientProvider client={qc}>
-      <AutomationCreatePanel
-        seed={{
-          title: "Push fleet repo to GitHub",
-          executionMode: "run_only",
-        }}
-        onCancel={vi.fn()}
-        onCreated={vi.fn()}
       />
     </QueryClientProvider>,
   );
@@ -242,21 +225,5 @@ describe("AutomationEditDialog project section", () => {
     });
   });
 
-  it("binds a project chosen while creating a run_only automation", async () => {
-    const user = userEvent.setup();
-    renderCreateDialog();
 
-    await user.click(
-      screen.getByRole("button", { name: /Select agent or team/ }),
-    );
-    await user.click(await screen.findByRole("button", { name: /Scout/ }));
-    await user.click(screen.getByRole("button", { name: "pick Fleet" }));
-    await user.click(screen.getByRole("button", { name: "Add automation" }));
-
-    await waitFor(() => expect(mockCreateAutomation).toHaveBeenCalledTimes(1));
-    expect(mockCreateAutomation.mock.calls[0]?.[0]).toMatchObject({
-      execution_mode: "run_only",
-      project_id: "proj-1",
-    });
-  });
 });
