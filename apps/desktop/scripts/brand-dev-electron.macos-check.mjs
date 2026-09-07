@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { devBundleIdentity, prepareDevBundle } from "./brand-dev-electron.mjs";
+import { configureDevPlist, devBundleIdentity, prepareDevBundle, restoreVendorElectronPlist } from "./brand-dev-electron.mjs";
 
 test("Canary and Staging keep independent native bundle registrations", { skip: process.platform !== "darwin" }, () => {
   const root = mkdtempSync(join(tmpdir(), "desktop-bundles-"));
@@ -33,8 +33,22 @@ test("Canary and Staging keep independent native bundle registrations", { skip: 
     }
     assert.equal(prepareDevBundle(executable, appRoot, "41.0.0", undefined), canary);
     assert.notEqual(prepareDevBundle(executable, appRoot, "42.0.0", undefined), canary);
+
+    const leftover = devBundleIdentity(appRoot);
+    assert.equal(configureDevPlist(join(source, "Info.plist"), leftover), true);
+    assert.equal(restoreVendorElectronPlist(join(source, "Info.plist")), true);
+    const restored = JSON.parse(execFileSync("/usr/bin/plutil", ["-convert", "json", "-o", "-", join(source, "Info.plist")], { encoding: "utf8" }));
+    assert.equal(restored.CFBundleIdentifier, "com.github.Electron");
+    assert.equal(restored.CFBundleURLTypes, undefined);
+    assert.equal(restoreVendorElectronPlist(join(source, "Info.plist")), false);
+    const canaryAfterRestore = JSON.parse(execFileSync("/usr/bin/plutil", ["-convert", "json", "-o", "-", canaryPlist], { encoding: "utf8" }));
+    assert.equal(canaryAfterRestore.CFBundleIdentifier, leftover.bundleId);
+    assert.deepEqual(canaryAfterRestore.CFBundleURLTypes[0].CFBundleURLSchemes, [leftover.callbackProtocol]);
+
     const launcher = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "dev.mjs"), "utf8");
     assert.match(launcher, /process\.env\.ELECTRON_EXEC_PATH = brandDevElectron\(\)/);
+    const brander = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "brand-dev-electron.mjs"), "utf8");
+    assert.match(brander, /restoreVendorElectronPlist\(join\(sourceApp, "Contents", "Info\.plist"\)\)/);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

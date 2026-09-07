@@ -6,7 +6,7 @@
 // checkout's callback.
 // https://www.electronjs.org/docs/latest/api/app#appsetasdefaultprotocolclientprotocol-path-args
 import { createRequire } from "node:module";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { constants, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -99,6 +99,50 @@ export function configureDevPlist(plistPath, identity) {
   return true;
 }
 
+const VENDOR_BUNDLE_ID = "com.github.Electron";
+const VENDOR_BUNDLE_NAME = "Electron";
+const DEV_BUNDLE_ID_PATTERN =
+  /^ai\.orvilo\.desktop\.(canary|staging)\.[a-f0-9]{16}$/;
+const DEV_CALLBACK_SCHEME_PATTERN =
+  /^(orvilo-canary|orvilo-staging)-[a-f0-9]{16}$/;
+const LSREGISTER =
+  "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+
+function detachPlistForWrite(plistPath) {
+  const original = readFileSync(plistPath);
+  unlinkSync(plistPath);
+  writeFileSync(plistPath, original);
+}
+
+export function restoreVendorElectronPlist(plistPath) {
+  if (!existsSync(plistPath)) return false;
+  const id = plistGet(plistPath, "CFBundleIdentifier");
+  const urlName = plistGet(plistPath, "CFBundleURLTypes:0:CFBundleURLName");
+  const scheme = plistGet(plistPath, "CFBundleURLTypes:0:CFBundleURLSchemes:0");
+  const ours =
+    DEV_BUNDLE_ID_PATTERN.test(id) ||
+    DEV_BUNDLE_ID_PATTERN.test(urlName.replace(/\.callback$/u, "")) ||
+    DEV_CALLBACK_SCHEME_PATTERN.test(scheme);
+  if (!ours) return false;
+
+  detachPlistForWrite(plistPath);
+  plistSet(plistPath, "CFBundleName", VENDOR_BUNDLE_NAME);
+  plistSet(plistPath, "CFBundleDisplayName", VENDOR_BUNDLE_NAME);
+  plistSet(plistPath, "CFBundleIdentifier", VENDOR_BUNDLE_ID);
+  if (plistGet(plistPath, "CFBundleURLTypes")) {
+    execFileSync("/usr/libexec/PlistBuddy", ["-c", "Delete :CFBundleURLTypes", plistPath]);
+  }
+  return true;
+}
+
+function unregisterBundle(path) {
+  const result = spawnSync(LSREGISTER, ["-u", path], { encoding: "utf8" });
+  if (result.error) throw result.error;
+  if (result.status !== 0 && !`${result.stdout}${result.stderr}`.includes("-10814")) {
+    throw new Error(`Unable to unregister vendor Electron.app: ${result.stderr}`);
+  }
+}
+
 export function prepareDevBundle(electronBin, appRoot, version, suffix, channel = "development") {
   const identity = devBundleIdentity(appRoot, suffix, channel);
   const cacheRoot = resolve(appRoot, "../../.orvilo-dev/electron", `${version}-${process.arch}`);
@@ -129,14 +173,22 @@ export function brandDevElectron(env = process.env) {
   const executable = readFileSync(join(moduleRoot, "path.txt"), "utf8").trim();
   const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
   const identity = devBundleIdentity(appRoot, env.DESKTOP_APP_SUFFIX, env.ORVILO_DESKTOP_CHANNEL);
+  const sourceBin = join(moduleRoot, "dist", executable);
+  const sourceApp = resolve(sourceBin, "../../..");
   const electronBin = prepareDevBundle(
-    join(moduleRoot, "dist", executable), appRoot, version,
+    sourceBin, appRoot, version,
     env.DESKTOP_APP_SUFFIX, env.ORVILO_DESKTOP_CHANNEL,
   );
+  // Earlier checkouts branded the shared dependency Electron.app. After the
+  // channel copies exist, that leftover identity would still own the callback
+  // scheme in Launch Services.
+  if (restoreVendorElectronPlist(join(sourceApp, "Contents", "Info.plist"))) {
+    unregisterBundle(sourceApp);
+  }
   // Publish the build-time declaration before Electron selects itself as the
-  // protocol handler. Each worktree has its own bundle ID and callback scheme,
-  // despite the common Electron.app filename.
-  execFileSync("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-f", resolve(electronBin, "../../..")]);
+  // protocol handler. Each worktree/channel has its own bundle ID and callback
+  // scheme, despite the common Electron.app filename.
+  execFileSync(LSREGISTER, ["-f", resolve(electronBin, "../../..")]);
   console.log(
     `[brand-dev-electron] ${identity.name} (${identity.bundleId}) declares ${identity.callbackProtocol}://`,
   );

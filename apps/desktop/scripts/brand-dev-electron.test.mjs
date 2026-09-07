@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
-import { configureDevPlist, devBundleIdentity } from "./brand-dev-electron.mjs";
+import { configureDevPlist, devBundleIdentity, restoreVendorElectronPlist } from "./brand-dev-electron.mjs";
 
 describe("macOS development bundle identity", () => {
   it("keeps stable worktree identities distinct from Electron and production", () => {
@@ -36,6 +36,10 @@ describe("macOS development bundle identity", () => {
     expect(staging.bundleId).not.toBe(canary.bundleId);
     expect(staging.callbackProtocol).not.toBe(canary.callbackProtocol);
     expect(staging.name).not.toBe(canary.name);
+  });
+
+  it("does not treat a missing vendor plist as leftover branding", () => {
+    expect(restoreVendorElectronPlist("/no/such/Electron.app/Contents/Info.plist")).toBe(false);
   });
 
   it.runIf(process.platform === "darwin")("repairs an already-branded app missing its native callback without changing its shared inode", () => {
