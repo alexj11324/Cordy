@@ -51,6 +51,7 @@ tmp_env="$(mktemp)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -f "$tmp_env"; rm -rf "$tmp_dir"' EXIT
 sed 's/^FRONTEND_PORT=.*/FRONTEND_PORT=3100/' .env.example >"$tmp_env"
+printf '\nPOSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 24)" >>"$tmp_env"
 printf '\nBACKEND_PORT=9100\nSMTP_FROM_EMAIL=orvilo@example.com\n' >>"$tmp_env"
 printf 'ORVILO_LLM_API_KEY=llm-key-from-env\nORVILO_LLM_BASE_URL=http://gateway.example/v1\nORVILO_LLM_DEFAULT_MODEL=model-from-env\nORVILO_LLM_MAX_RETRIES=3\n' >>"$tmp_env"
 
