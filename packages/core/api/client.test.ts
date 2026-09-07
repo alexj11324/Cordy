@@ -13,7 +13,7 @@ describe("ApiClient desktop handoff", () => {
   it("uses the staging CSRF cookie despite an older production cookie", async () => {
     vi.stubGlobal("document", {
       location: { href: "https://staging.aspectlylabs.com/" },
-      cookie: "patchbay_csrf=production; orvilo_staging_csrf=staging",
+      cookie: "patchbay_csrf=production; patchbay_staging_csrf=staging",
     });
     const state = "s".repeat(43);
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ state, code: `pbd_${"c".repeat(43)}`, callback_protocol: "patchbay" })));

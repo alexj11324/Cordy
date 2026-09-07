@@ -21,6 +21,11 @@ services:
       ALLOW_SIGNUP: "false"
       ALLOWED_EMAILS: ${ALLOWED_EMAILS:?Set the staging QA email allowlist}
       ALLOWED_EMAIL_DOMAINS: ""
+      # Production cookies named patchbay_auth / patchbay_csrf are scoped to
+      # .aspectlylabs.com, so browsers still send them to staging hosts.
+      # Distinct names keep Go's first-match Cookie lookup on the staging JWT.
+      AUTH_COOKIE_NAME: patchbay_staging_auth
+      CSRF_COOKIE_NAME: patchbay_staging_csrf
       ORVILO_DESKTOP_BROKER_AUTH_TOKEN: ${ORVILO_DESKTOP_BROKER_AUTH_TOKEN:?Set ORVILO_DESKTOP_BROKER_AUTH_TOKEN}
 
   frontend:

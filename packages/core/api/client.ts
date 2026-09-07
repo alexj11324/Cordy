@@ -298,6 +298,7 @@ import { type Logger, noopLogger } from "../logger";
 import { createRequestId, createSafeId } from "../utils";
 import { getCurrentSlug } from "../platform/workspace-storage";
 import { parseWithFallback } from "./schema";
+import { readCsrfTokenFromCookieHeader } from "./csrf-cookie";
 import {
   DesktopSessionResponseSchema,
   DesktopHandoffResponseSchema,
@@ -830,14 +831,7 @@ export class ApiClient {
 
   private readCsrfToken(): string | null {
     if (typeof document === "undefined") return null;
-    const hostname = new URL(this.baseUrl || "/", document.location?.href ?? "http://localhost").hostname;
-    const cookieName = hostname === "staging.aspectlylabs.com" || hostname.endsWith(".staging.aspectlylabs.com")
-      ? "orvilo_staging_csrf"
-      : "patchbay_csrf";
-    const match = document.cookie
-      .split("; ")
-      .find((c) => c.startsWith(`${cookieName}=`));
-    return match ? match.split("=")[1] ?? null : null;
+    return readCsrfTokenFromCookieHeader(document.cookie);
   }
 
   private authHeaders(): Record<string, string> {

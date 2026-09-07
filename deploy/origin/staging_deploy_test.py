@@ -116,6 +116,24 @@ class StagingDeployIsolationTests(unittest.TestCase):
             with self.assertRaisesRegex(staging_deploy.DeploymentError, "COOKIE_DOMAIN"):
                 deployment.load_secrets()
 
+    def test_load_secrets_rejects_substring_cookie_domain(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "staging"
+            static_directory = Path(directory) / "static"
+            static_directory.mkdir()
+            deployment = staging_deploy.StagingDeployment(root, static_directory)
+            deployment.initialize_directories()
+            product = valid_product_env()
+            product["COOKIE_DOMAIN"] = "evilstaging.aspectlylabs.com"
+            (deployment.secrets / "product-env.json").write_text(
+                json.dumps(product), encoding="utf-8"
+            )
+            (deployment.secrets / "auth-broker-env.json").write_text(
+                json.dumps(valid_broker_env()), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(staging_deploy.DeploymentError, "COOKIE_DOMAIN"):
+                deployment.load_secrets()
+
     def test_load_secrets_accepts_isolated_staging_snapshot(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "staging"

@@ -15,6 +15,7 @@ const [
   productionWorkflow,
   originNginx,
   stagingOverride,
+  productionOverride,
   stagingDocs,
   stagingBroker,
   stagingGateway,
@@ -27,6 +28,7 @@ const [
   read(".github/workflows/aspectlylabs-production-images.yml"),
   read("deploy/origin/nginx/aspectlylabs-origin.conf"),
   read("deploy/origin/staging-product.override.yml"),
+  read("deploy/origin/production-product.override.yml"),
   read("deploy/origin/staging-docs.compose.yml"),
   read("deploy/origin/staging-auth-broker.compose.yml"),
   read("deploy/origin/staging_deploy.py"),
@@ -162,6 +164,14 @@ test("staging compose overlays never reattach production projects", () => {
   assert.match(stagingOverride, /ALLOW_SIGNUP: "false"/u);
   assert.match(stagingOverride, /ALLOWED_EMAILS: \$\{ALLOWED_EMAILS:\?/u);
   assert.match(stagingOverride, /ALLOWED_EMAIL_DOMAINS: ""/u);
+  assert.match(stagingOverride, /AUTH_COOKIE_NAME: patchbay_staging_auth/u);
+  assert.match(stagingOverride, /CSRF_COOKIE_NAME: patchbay_staging_csrf/u);
+  assert.doesNotMatch(productionOverride, /AUTH_COOKIE_NAME/u);
+  assert.doesNotMatch(productionOverride, /CSRF_COOKIE_NAME/u);
+  assert.match(environmentsDoc, /patchbay_staging_auth/u);
+  assert.match(environmentsDoc, /patchbay_staging_csrf/u);
+  assert.doesNotMatch(stagingOverride, /orvilo_staging_/u);
+  assert.doesNotMatch(environmentsDoc, /orvilo_staging_/u);
   for (const key of ["ORVILO_API_ORIGIN", "ORVILO_AUTH_BROKER_ORIGIN", "ORVILO_DESKTOP_BROKER_AUTH_TOKEN", "ORVILO_ORIGIN_AUTH_TOKEN"]) {
     assert.match(stagingBroker, new RegExp(`\\n      ${key}:`));
   }
