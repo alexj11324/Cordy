@@ -217,6 +217,34 @@ test("staging accounts origin validates its own Worker token", () => {
   assert.match(environmentsDoc, /wrangler secret put ORIGIN_AUTH_TOKEN --env staging/u);
 });
 
+test("staging HTTPS uses a nested-host certificate path", () => {
+  const stagingCert = "/etc/nginx/ssl/staging.aspectlylabs.com/origin.pem";
+  const productionCert = "/etc/nginx/ssl/aspectlylabs.com/origin.pem";
+  for (const serverName of [
+    "staging.aspectlylabs.com",
+    "api.staging.aspectlylabs.com",
+    "accounts-origin.staging.aspectlylabs.com",
+  ]) {
+    const block = originServerBlock(originNginx, serverName);
+    assert.match(block, new RegExp(`ssl_certificate ${stagingCert.replaceAll(".", "\\.")};`, "u"));
+    assert.doesNotMatch(block, new RegExp(productionCert.replaceAll(".", "\\."), "u"));
+  }
+  for (const serverName of [
+    "orvilo.aspectlylabs.com",
+    "api.aspectlylabs.com",
+    "accounts-origin.aspectlylabs.com",
+  ]) {
+    const block = originServerBlock(originNginx, serverName);
+    assert.match(block, new RegExp(`ssl_certificate ${productionCert.replaceAll(".", "\\.")};`, "u"));
+    assert.doesNotMatch(block, /ssl\/staging\.aspectlylabs\.com/u);
+  }
+  assert.match(originNginx, /RFC 2818/u);
+  assert.match(environmentsDoc, /ssl\/staging\.aspectlylabs\.com\/origin\.pem/u);
+  assert.match(environmentsDoc, /openssl x509 -in \/etc\/nginx\/ssl\/staging\.aspectlylabs\.com\/origin\.pem -noout -ext subjectAltName/u);
+  assert.match(environmentsDoc, /\*\.staging\.aspectlylabs\.com/u);
+  assert.match(environmentsDoc, /Do not copy or symlink/u);
+});
+
 test("staging gateway refuses production state", () => {
   assert.ok(installer.indexOf('chown "$deploy_user:$deploy_group" "$secret_file"') < installer.indexOf("--bootstrap"));
   assert.match(installer, /chmod 0600 "\$secret_file"/u);
