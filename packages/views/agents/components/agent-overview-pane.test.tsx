@@ -1,16 +1,13 @@
 // @vitest-environment jsdom
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Agent, AgentRuntime } from "@patchbay/core/types";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
-import {
-  NavigationProvider,
-  type NavigationAdapter,
-} from "../../navigation";
+import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
@@ -26,8 +23,25 @@ vi.mock("./tabs/custom-args-tab", () => ({
 vi.mock("./tabs/integrations-tab", () => ({
   IntegrationsTab: () => <div>integrations-tab</div>,
 }));
+vi.mock("./tabs/runtime-config-tab", () => ({
+  RuntimeConfigTab: ({
+    onDirtyChange,
+  }: {
+    onDirtyChange: (dirty: boolean) => void;
+  }) => <button onClick={() => onDirtyChange(true)}>runtime-config-tab</button>,
+}));
 vi.mock("./agent-detail-inspector", () => ({
-  AgentDetailInspector: () => <div>agent-detail-inspector</div>,
+  AgentDetailInspector: ({
+    onUpdate,
+  }: {
+    onUpdate: (id: string, data: Record<string, unknown>) => Promise<void>;
+  }) => (
+    <button
+      onClick={() => void onUpdate("agent-1", { runtime_id: "runtime-2" })}
+    >
+      agent-detail-inspector
+    </button>
+  ),
 }));
 
 const larkListingRef = vi.hoisted(() => ({
@@ -100,9 +114,9 @@ const baseAgent: Agent = {
   archived_by: null,
 };
 
-function makeRuntime(provider: string): AgentRuntime {
+function makeRuntime(provider: string, id = "runtime-1"): AgentRuntime {
   return {
-    id: "runtime-1",
+    id,
     workspace_id: "ws-1",
     daemon_id: null,
     name: "Runtime",
@@ -122,7 +136,13 @@ function makeRuntime(provider: string): AgentRuntime {
 
 function renderPane(
   runtimes: AgentRuntime[],
-  { canEdit = true }: { canEdit?: boolean } = {},
+  {
+    canEdit = true,
+    onUpdate = vi.fn().mockResolvedValue(undefined),
+  }: {
+    canEdit?: boolean;
+    onUpdate?: (id: string, data: Record<string, unknown>) => Promise<void>;
+  } = {},
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -146,7 +166,7 @@ function renderPane(
             owner={null}
             runtimes={runtimes}
             members={[]}
-            onUpdate={vi.fn().mockResolvedValue(undefined)}
+            onUpdate={onUpdate}
             canEdit={canEdit}
           />
         </QueryClientProvider>
@@ -164,68 +184,116 @@ beforeEach(() => {
 describe("AgentOverviewPane removed agent-local tabs", () => {
   it("does not keep Overview, Work, Capabilities, Skills, or per-agent MCP", () => {
     renderPane([makeRuntime("codex")]);
-    expect(screen.queryByRole("tab", { name: /^Overview$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /^Work$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /^Capabilities$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /^Skills$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /^MCP$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /^Instructions$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: /^MCP Apps$/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /^Overview$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /^Work$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /^Capabilities$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /^Skills$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /^MCP$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /^Instructions$/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: /^MCP Apps$/i }),
+    ).not.toBeInTheDocument();
   });
 });
 
-describe("AgentOverviewPane Integrations tab visibility", () => {
-  it("shows the Integrations tab once the deployment has Lark configured", async () => {
+describe("AgentOverviewPane merged General settings", () => {
+  it("shows configured Lark integrations inside General", async () => {
     larkListingRef.current = { installations: [], configured: true };
     renderPane([makeRuntime("claude")]);
-    expect(
-      await screen.findByRole("tab", { name: /^Integrations$/i }),
-    ).toBeInTheDocument();
-  });
-
-  it("shows the Integrations tab when only Slack is configured (Lark off)", async () => {
-    slackListingRef.current = { installations: [], configured: true };
-    renderPane([makeRuntime("claude")]);
-    expect(
-      await screen.findByRole("tab", { name: /^Integrations$/i }),
-    ).toBeInTheDocument();
-  });
-
-  it("shows the Integrations tab when only Telegram is configured", async () => {
-    telegramListingRef.current = { installations: [], configured: true };
-    renderPane([makeRuntime("claude")]);
-    expect(
-      await screen.findByRole("tab", { name: /^Integrations$/i }),
-    ).toBeInTheDocument();
-  });
-
-  it("hides the Integrations tab when no channel integration is configured", () => {
-    renderPane([makeRuntime("claude")]);
+    expect(await screen.findByText("integrations-tab")).toBeInTheDocument();
     expect(
       screen.queryByRole("tab", { name: /^Integrations$/i }),
     ).not.toBeInTheDocument();
   });
+
+  it("shows configured Slack integrations inside General", async () => {
+    slackListingRef.current = { installations: [], configured: true };
+    renderPane([makeRuntime("claude")]);
+    expect(await screen.findByText("integrations-tab")).toBeInTheDocument();
+  });
+
+  it("shows configured Telegram integrations inside General", async () => {
+    telegramListingRef.current = { installations: [], configured: true };
+    renderPane([makeRuntime("claude")]);
+    expect(await screen.findByText("integrations-tab")).toBeInTheDocument();
+  });
+
+  it("keeps integrations out of General when none are configured", () => {
+    renderPane([makeRuntime("claude")]);
+    expect(screen.queryByText("integrations-tab")).not.toBeInTheDocument();
+  });
 });
 
 describe("AgentOverviewPane Settings navigation", () => {
+  it("uses the shared horizontal Tabs primitives", () => {
+    const { container } = renderPane([makeRuntime("claude")]);
+
+    expect(container.querySelector('[data-slot="tabs"]')).toHaveAttribute(
+      "data-orientation",
+      "horizontal",
+    );
+    expect(
+      container.querySelector('[data-slot="tabs-list"]'),
+    ).toBeInTheDocument();
+    expect(
+      container.querySelector('[data-slot="tabs-content"]'),
+    ).toBeInTheDocument();
+  });
+
   it("gives Access its own settings tab", () => {
     renderPane([makeRuntime("claude")]);
     expect(screen.getByRole("tab", { name: /^Access$/i })).toBeInTheDocument();
   });
+
+  it("only renders General and Access tabs", () => {
+    renderPane([makeRuntime("claude")]);
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    expect(screen.getByText("env-tab")).toBeInTheDocument();
+    expect(screen.getByText("custom-args-tab")).toBeInTheDocument();
+  });
 });
 
-describe("AgentOverviewPane Environment tab visibility", () => {
-  it("shows the Environment tab to someone who can manage the agent", () => {
+describe("AgentOverviewPane Environment visibility", () => {
+  it("shows Environment inside General to someone who can manage the agent", () => {
     renderPane([makeRuntime("claude")]);
-    expect(
-      screen.getByRole("tab", { name: /^Environment$/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByText("env-tab")).toBeInTheDocument();
   });
 
-  it("hides the Environment tab from users who cannot manage the agent", () => {
+  it("hides Environment from users who cannot manage the agent", () => {
     renderPane([makeRuntime("claude")], { canEdit: false });
-    expect(
-      screen.queryByRole("tab", { name: /^Environment$/i }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText("env-tab")).not.toBeInTheDocument();
+  });
+});
+
+describe("AgentOverviewPane dirty runtime configuration", () => {
+  it("asks before switching away from OpenClaw and only applies the update after discard", () => {
+    const onUpdate = vi.fn().mockResolvedValue(undefined);
+    renderPane([makeRuntime("openclaw"), makeRuntime("codex", "runtime-2")], {
+      onUpdate,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "runtime-config-tab" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "agent-detail-inspector" }),
+    );
+
+    expect(onUpdate).not.toHaveBeenCalled();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /discard/i }));
+    expect(onUpdate).toHaveBeenCalledWith("agent-1", {
+      runtime_id: "runtime-2",
+    });
   });
 });

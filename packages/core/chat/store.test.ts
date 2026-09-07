@@ -218,6 +218,13 @@ describe("chat store — draft attachments", () => {
 });
 
 describe("chat store — floating window preference", () => {
+  it("tracks whether Agent detail provides a working replacement DM action", () => {
+    const store = createChatStore({ storage: memStorage() });
+    expect(store.getState().agentDetailDmAvailable).toBe(false);
+    store.getState().setAgentDetailDmAvailable(true);
+    expect(store.getState().agentDetailDmAvailable).toBe(true);
+  });
+
   it("defaults ON when no preference is stored", () => {
     const store = createChatStore({ storage: memStorage() });
     expect(store.getState().floatingChatEnabled).toBe(true);

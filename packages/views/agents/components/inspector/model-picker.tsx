@@ -22,6 +22,7 @@ export function ModelPicker({
     <ModelDropdown
       {...props}
       variant={variant}
+      popoverAlign="end"
       disabled={!canEdit}
       clearUnsupported={false}
     />
