@@ -67,7 +67,7 @@ vi.mock("@patchbay/core/hooks", () => ({
 }));
 
 vi.mock("@patchbay/core/issues/mutations", () => ({
-  useUpdateIssue: () => ({ mutate: updateIssueMutate, isPending: false }),
+  useUpdateIssue: () => ({ mutate: updateIssueMutate, mutateAsync: updateIssueMutate, isPending: false }),
   useBatchUpdateIssues: () => ({
     mutateAsync: batchUpdateMutateAsync,
     isPending: false,
@@ -200,6 +200,7 @@ describe("useIssueSurfaceController", () => {
     } as unknown as ApiClient);
     pruneIssueSurfaceViewStates([]);
     updateIssueMutate.mockClear();
+    updateIssueMutate.mockResolvedValue(undefined);
     openModal.mockClear();
     batchUpdateMutateAsync.mockResolvedValue(undefined);
     batchDeleteMutateAsync.mockResolvedValue(undefined);
@@ -510,11 +511,11 @@ describe("useIssueSurfaceController", () => {
       status: "in_review", position: 42, before_id: null, after_id: null,
     }));
     expect(updateIssueMutate).toHaveBeenCalledWith(
-      expect.objectContaining({ status: "custom_qa" }), expect.anything(),
+      expect.objectContaining({ status: "custom_qa" }),
     );
   });
 
-  it("delegates drag movement as a server-owned relative intent", () => {
+  it("delegates drag movement as a server-owned relative intent", async () => {
     const { result } = renderHook(
       () =>
         useIssueSurfaceController({
@@ -550,17 +551,9 @@ describe("useIssueSurfaceController", () => {
           after_id: "issue-2",
         },
       },
-      expect.objectContaining({
-        onError: expect.any(Function),
-        onSettled: expect.any(Function),
-      }),
     );
 
-    const options = updateIssueMutate.mock.calls[0]?.[1] as
-      | { onSettled?: () => void }
-      | undefined;
-    options?.onSettled?.();
-    expect(onSettled).toHaveBeenCalled();
+    await waitFor(() => expect(onSettled).toHaveBeenCalledOnce());
   });
 
   it("exposes surface actions and surface-local selection", async () => {

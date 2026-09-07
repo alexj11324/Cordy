@@ -92,27 +92,29 @@ export function useIssueSurfaceActions({
       callbacks?: MoveIssueCallbacks,
     ) => {
       const { before_id, after_id, ...optimisticUpdates } = updates;
-      updateIssueMutation.mutate(
-        {
+      // The promise belongs to this move even if navigation unmounts its
+      // observer or a subsequent move replaces it. Per-call mutation options
+      // are discarded in those cases and cannot restore persisted visibility.
+      void updateIssueMutation
+        .mutateAsync({
           id: issueId,
           ...optimisticUpdates,
           move_intent: { before_id, after_id },
-        },
-        {
-          onError: (err) => {
+        })
+        .then(
+          () => callbacks?.onSuccess?.(),
+          (err) => {
             toast.error(
               errorCode(err) === "revision_conflict"
                 ? tIssues(($) => $.revision.conflict)
                 : err instanceof Error && err.message
-                ? err.message
-                : t(($) => $.detail.toast_move_issue_failed),
+                  ? err.message
+                  : t(($) => $.detail.toast_move_issue_failed),
             );
             callbacks?.onError?.();
           },
-          onSuccess: () => callbacks?.onSuccess?.(),
-          onSettled: callbacks?.onSettled,
-        },
-      );
+        )
+        .finally(() => callbacks?.onSettled?.());
     },
     [t, tIssues, updateIssueMutation],
   );
