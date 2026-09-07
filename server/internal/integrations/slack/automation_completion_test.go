@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	slackapi "github.com/slack-go/slack"
@@ -25,6 +26,7 @@ type fakeAutomationCompletionQueries struct {
 	install     db.ChannelInstallation
 	comments    []db.Comment
 	err         error
+	triggerErr  error
 	commentsErr error
 }
 
@@ -37,6 +39,9 @@ func (q fakeAutomationCompletionQueries) GetAutomationRun(context.Context, pgtyp
 }
 
 func (q fakeAutomationCompletionQueries) GetAutomationTrigger(context.Context, pgtype.UUID) (db.AutomationTrigger, error) {
+	if q.triggerErr != nil {
+		return q.trigger, q.triggerErr
+	}
 	return q.trigger, q.err
 }
 
@@ -116,6 +121,20 @@ func TestAutomationCompletionReactorSurfacesProviderErrors(t *testing.T) {
 	}
 }
 
+func TestAutomationCompletionReactorIgnoresDeletedTrigger(t *testing.T) {
+	runID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	triggerID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
+	workspaceID := pgtype.UUID{Bytes: [16]byte{3}, Valid: true}
+	q := fakeAutomationCompletionQueries{
+		run:        db.AutomationRun{ID: runID, TriggerID: triggerID, Status: "completed"},
+		triggerErr: pgx.ErrNoRows,
+	}
+	reactor := NewAutomationCompletionReactor(q, nil, nil, nil)
+	if err := reactor.React(context.Background(), workspaceID, runID); err != nil {
+		t.Fatalf("deleted trigger should be ignored: %v", err)
+	}
+}
+
 func TestAutomationCompletionReactorHonorsNoEmoji(t *testing.T) {
 	runID := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	triggerID := pgtype.UUID{Bytes: [16]byte{2}, Valid: true}
@@ -173,6 +192,27 @@ func TestAutomationCompletionReactorPostsFinalOutputToConfiguredChannels(t *test
 		if body != "Automation completed: Nightly fixer\n\nFixed the race and verified the regression test." {
 			t.Fatalf("posted summary = %q", body)
 		}
+	}
+}
+
+func TestAutomationCompletionReactorSkipsRecordedSlackDelivery(t *testing.T) {
+	runID := mustUUID(t, "11111111-1111-1111-1111-111111111111")
+	automationID := mustUUID(t, "22222222-2222-2222-2222-222222222222")
+	workspaceID := mustUUID(t, "33333333-3333-3333-3333-333333333333")
+	installationID := mustUUID(t, "44444444-4444-4444-4444-444444444444")
+	q := fakeAutomationCompletionQueries{
+		run:        db.AutomationRun{ID: runID, AutomationID: automationID, Status: "completed", Result: []byte(`{"output":"Done","slack_summary_deliveries":["C1"]}`)},
+		automation: db.Automation{ID: automationID, Title: "Notifier", Tools: []byte(`{"slack_send":{"enabled":true,"installation_id":"44444444-4444-4444-4444-444444444444","channel_ids":["C1"]}}`)},
+		install:    db.ChannelInstallation{ID: installationID, WorkspaceID: workspaceID, ChannelType: "slack", Status: "installed", Config: []byte(`{"team_id":"T1","bot_token_encrypted":"eG94Yi10ZXN0"}`)},
+	}
+	recorded := &recordedCompletionReaction{}
+	reactor := NewAutomationCompletionReactor(q, nil, func(ciphertext []byte) ([]byte, error) { return ciphertext, nil }, nil)
+	reactor.newAPI = func(credentials) completionSlackAPI { return recorded }
+	if err := reactor.Complete(context.Background(), workspaceID, runID); err != nil {
+		t.Fatalf("Complete: %v", err)
+	}
+	if len(recorded.channels) != 0 {
+		t.Fatalf("recorded Slack delivery was sent again: %#v", recorded.channels)
 	}
 }
 
