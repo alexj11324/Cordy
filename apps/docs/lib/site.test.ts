@@ -37,7 +37,7 @@ beforeEach(() => {
 });
 
 describe("docsAlternates", () => {
-  it("omits Korean hreflang when no Korean MDX file exists for the page", async () => {
+  it("emits hreflang for the supported locales only", async () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
@@ -50,40 +50,14 @@ describe("docsAlternates", () => {
     });
   });
 
-  it("omits Korean hreflang even when source.getPage returns a page for Korean", async () => {
-    const { docsAlternates } = await import("./site");
-
-    expect(docsAlternates(["agents"]).languages).not.toHaveProperty("ko");
-  });
-
-  it("includes Korean hreflang when a real *.ko.mdx page exists", async () => {
+  it("never emits hreflang for an unsupported locale, even if an MDX file is present", async () => {
     existingDocs.add("agents.ko.mdx");
-    const { docsAlternates } = await import("./site");
-
-    expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://patchbay.aspectlylabs.com/docs/agents",
-      languages: {
-        en: "https://patchbay.aspectlylabs.com/docs/agents",
-        zh: "https://patchbay.aspectlylabs.com/docs/zh/agents",
-        ko: "https://patchbay.aspectlylabs.com/docs/ko/agents",
-        "x-default": "https://patchbay.aspectlylabs.com/docs/agents",
-      },
-    });
-  });
-
-  it("includes Japanese hreflang when a real *.ja.mdx page exists", async () => {
     existingDocs.add("agents.ja.mdx");
     const { docsAlternates } = await import("./site");
 
-    expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://patchbay.aspectlylabs.com/docs/agents",
-      languages: {
-        en: "https://patchbay.aspectlylabs.com/docs/agents",
-        zh: "https://patchbay.aspectlylabs.com/docs/zh/agents",
-        ja: "https://patchbay.aspectlylabs.com/docs/ja/agents",
-        "x-default": "https://patchbay.aspectlylabs.com/docs/agents",
-      },
-    });
+    const { languages } = docsAlternates(["agents"]);
+    expect(languages).not.toHaveProperty("ko");
+    expect(languages).not.toHaveProperty("ja");
   });
 
   it("keeps the locale root alternates limited to real localized MDX pages", async () => {

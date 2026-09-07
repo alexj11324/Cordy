@@ -20,7 +20,6 @@ import {
 import { useModalStore } from "@patchbay/core/modals";
 import { useConfigStore } from "@patchbay/core/config";
 import { isDesktopShell } from "../platform/local-directory";
-import { DISCORD_URL, DiscordIcon } from "./discord";
 import { useT } from "../i18n";
 
 const DOCS_URL = "https://patchbay.aspectlylabs.com/docs";
@@ -96,15 +95,6 @@ export function HelpLauncher({
         >
           <History className="h-3.5 w-3.5" />
           {t(($) => $.help.changelog)}
-          <ArrowUpRight className="size-3 translate-y-px text-faint-foreground" />
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          render={
-            <a href={DISCORD_URL} target="_blank" rel="noopener noreferrer" />
-          }
-        >
-          <DiscordIcon className="h-3.5 w-3.5" />
-          {t(($) => $.help.discord)}
           <ArrowUpRight className="size-3 translate-y-px text-faint-foreground" />
         </DropdownMenuItem>
         <DropdownMenuItem

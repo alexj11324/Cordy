@@ -41,20 +41,17 @@ describe("nameToWorkspaceSlug", () => {
     expect(nameToWorkspaceSlug("银行")).toBe("yinhang");
   });
 
-  // Han characters are shared but their readings are not, so a Japanese or
-  // Korean name must not be read as Mandarin: 東京 is "tokyo", not
-  // "dongjing". An empty field the user fills beats a wrong default they
-  // have to notice and undo.
+  // Han characters are shared but their readings are not, so a kana-bearing
+  // name must not be read as Mandarin: 東京 is "tokyo", not "dongjing". An
+  // empty field the user fills beats a wrong default they have to notice
+  // and undo.
   it("does not romanize names that are not Chinese", () => {
-    // Kana is a certain signal, in any UI language.
+    // Kana is the certain signal.
     expect(nameToWorkspaceSlug("東京チーム")).toBe("");
     expect(nameToWorkspaceSlug("ひらがな会社")).toBe("");
-    // All-kanji names carry no signal, so the reader's locale decides.
-    expect(nameToWorkspaceSlug("東京支社", "ja")).toBe("");
-    expect(nameToWorkspaceSlug("大韓民国", "ko")).toBe("");
-    // …and the same name still romanizes for a Chinese-reading audience.
-    expect(nameToWorkspaceSlug("東京支社", "zh-Hans")).toBe("dongjingzhishe");
-    expect(nameToWorkspaceSlug("蜘蛛侠", "en")).toBe("zhizhuxia");
+    // An all-kanji name carries no such signal, so it still romanizes.
+    expect(nameToWorkspaceSlug("東京支社")).toBe("dongjingzhishe");
+    expect(nameToWorkspaceSlug("蜘蛛侠")).toBe("zhizhuxia");
   });
 
   // Regression: previously fell back to literal "workspace" — caused two

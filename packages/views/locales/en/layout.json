@@ -35,7 +35,6 @@
     "download_desktop": "Desktop app",
     "docs": "Docs",
     "changelog": "Change log",
-    "discord": "Discord",
     "feedback": "Feedback",
     "server_version": "Server version {{version}}"
   },

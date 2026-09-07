@@ -16,19 +16,16 @@ const KANA = /[\u3041-\u3096\u309B-\u30FF\uFF66-\uFF9F]/;
 /**
  * Han characters are shared, their readings are not: 東京 is "dongjing" in
  * Mandarin and "tokyo" in Japanese, and pinyin has nothing useful to say
- * about a Japanese or Korean name. Skip romanization when the text or the
- * reader's own language says the name isn't Chinese — those names fall back
- * to the empty slug the form already handles, which is a blank field the
- * user fills in rather than a wrong reading they have to notice and undo.
+ * about a Japanese name. Kana is the one certain signal that a name is not
+ * Chinese, so a name carrying it falls back to the empty slug the form
+ * already handles — a blank field the user fills in rather than a wrong
+ * reading they have to notice and undo.
  *
- * Kana is a certain signal and works in any UI language; the locale catches
- * all-kanji names, which carry no signal of their own. Neither sees a
- * Japanese all-kanji name typed into a non-Japanese UI — that one still
- * romanizes, and fixing it needs real Japanese romaji (a segmenter plus a
- * reading dictionary), not another heuristic.
+ * An all-kanji Japanese name still romanizes; fixing that needs real
+ * Japanese romaji (a segmenter plus a reading dictionary), not another
+ * heuristic.
  */
-function shouldRomanize(name: string, locale?: SupportedLocale): boolean {
-  if (locale === "ja" || locale === "ko") return false;
+function shouldRomanize(name: string): boolean {
   return !KANA.test(name);
 }
 
@@ -60,19 +57,15 @@ function romanizeHan(name: string): string {
  * collides for the second such workspace on the instance, and neither is
  * true of a romanized name.
  *
- * Only Chinese names romanize: `shouldRomanize` opts out of Japanese and
- * Korean, whose Han characters read differently. Pass the reader's `locale`
- * wherever it is known.
+ * Only Chinese names romanize: `shouldRomanize` opts out of any name
+ * carrying kana, whose Han characters read differently.
  *
  * Still returns empty string for names that romanize to nothing — kana-only,
  * Hangul-only, emoji-only, or any name opted out above — where the form
  * leaves the field empty and asks the user to type one.
  */
-export function nameToWorkspaceSlug(
-  name: string,
-  locale?: SupportedLocale,
-): string {
-  const romanized = shouldRomanize(name, locale) ? romanizeHan(name) : name;
+export function nameToWorkspaceSlug(name: string): string {
+  const romanized = shouldRomanize(name) ? romanizeHan(name) : name;
   return romanized
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")

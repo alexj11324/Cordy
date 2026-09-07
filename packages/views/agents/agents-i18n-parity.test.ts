@@ -2,15 +2,13 @@
 import { describe, expect, it } from "vitest";
 import en from "../locales/en/agents.json";
 import zhHans from "../locales/zh-Hans/agents.json";
-import ja from "../locales/ja/agents.json";
-import ko from "../locales/ko/agents.json";
 import { FAILURE_REASON_I18N_KEYS } from "./components/tabs/task-failure";
 import { taskStatusConfig } from "./config";
 import { availabilityConfig, workloadConfig } from "./presence";
 
-const LOCALES = { en, "zh-Hans": zhHans, ja, ko } as const;
+const LOCALES = { en, "zh-Hans": zhHans } as const;
 
-describe("task failure reason i18n parity across all 4 locales", () => {
+describe("task failure reason i18n parity across all locales", () => {
   const expectedKeys = Object.values(FAILURE_REASON_I18N_KEYS).toSorted();
 
   it("covers every mapped reason with the exact same key set", () => {
@@ -28,7 +26,9 @@ describe("task failure reason i18n parity across all 4 locales", () => {
         locale.task_failure.cancelled_by_system.length,
         `${name}: task_failure.cancelled_by_system is empty`,
       ).toBeGreaterThan(0);
-      for (const [key, label] of Object.entries(locale.task_failure.reasons)) {
+      for (const [key, label] of Object.entries<string>(
+        locale.task_failure.reasons,
+      )) {
         expect(typeof label, `${name}: ${key} is not a string`).toBe("string");
         expect(label.length, `${name}: ${key} is empty`).toBeGreaterThan(0);
       }
