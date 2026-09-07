@@ -52,9 +52,12 @@ type HealthResponse struct {
 	// ActiveTaskCount remains the compatibility/safety count of every claimed
 	// handleTask lifecycle. The additive counters split actual provider
 	// execution from local-directory parking for throughput and diagnostics.
-	ActiveTaskCount       int64 `json:"active_task_count"`
-	RunningTaskCount      int64 `json:"running_task_count"`
-	ResourceWaitTaskCount int64 `json:"resource_wait_task_count"`
+	ActiveTaskCount                 int64 `json:"active_task_count"`
+	RunningTaskCount                int64 `json:"running_task_count"`
+	ResourceWaitTaskCount           int64 `json:"resource_wait_task_count"`
+	PendingTerminalReports          int   `json:"pending_terminal_reports"`
+	OldestTerminalReportSeconds     int64 `json:"oldest_terminal_report_seconds"`
+	TerminalReportPersistenceFailed bool  `json:"terminal_report_persistence_failed"`
 	// Repo maintenance stays a liveness-safe background activity, so health
 	// remains HTTP 200/running. These additive counters explain degraded repo
 	// checkout capacity to operators without exposing local cache paths.
@@ -342,6 +345,12 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 
 			ReloadPendingReason: d.reloadPending(),
 			Workspaces:          wsList,
+		}
+		resp.TerminalReportPersistenceFailed = d.terminalPersistenceFailed.Load()
+		if d.terminalSender != nil {
+			pending, age := d.terminalSender.Stats()
+			resp.PendingTerminalReports = pending
+			resp.OldestTerminalReportSeconds = int64(age.Seconds())
 		}
 		if reporter, ok := d.repoCache.(interface{ Activity() repocache.Activity }); ok {
 			activity := reporter.Activity()

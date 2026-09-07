@@ -1600,8 +1600,17 @@ SET status = 'failed',
     failure_reason = 'runtime_recovery',
     wait_reason = NULL,
     prepare_lease_expires_at = NULL
-WHERE runtime_id = $1 AND status IN ('dispatched', 'running', 'waiting_local_directory')
+WHERE runtime_id = @runtime_id AND status IN ('dispatched', 'running', 'waiting_local_directory')
+  AND NOT (id = ANY(COALESCE(@preserved_task_ids::uuid[], '{}'::uuid[])))
 RETURNING *;
+
+-- name: LockPendingTerminalReportTasksForRuntime :many
+-- Lock listed claims in a stable order before comparing TaskClaimFence in Go.
+-- Runtime scope prevents a caller from preserving or locking another runtime's work.
+SELECT * FROM agent_task_queue
+WHERE runtime_id = @runtime_id AND id = ANY(@task_ids::uuid[])
+ORDER BY id
+FOR UPDATE;
 
 -- name: FailStaleTasks :many
 -- Fails tasks stuck in dispatched/running beyond the given thresholds.
