@@ -81,7 +81,7 @@ export function BuilderSetup({
         </p>
         <div className="mt-6 space-y-4">
           <ModelDropdown
-            inline
+            variant="chip"
             runtimeId={selectedRuntime?.id ?? null}
             runtimeOnline={selectedRuntime?.status === "online"}
             value={draft.model}

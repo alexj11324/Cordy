@@ -197,19 +197,44 @@ func TestAgentServiceTierValidationAndTriState(t *testing.T) {
 		}
 	})
 
-	t.Run("non-Codex runtime rejects tier", func(t *testing.T) {
+	t.Run("unsafe token is still rejected", func(t *testing.T) {
 		body := map[string]any{
 			"name":                 "service-tier-rejected",
 			"runtime_id":           claudeRuntimeID,
 			"visibility":           "private",
 			"max_concurrent_tasks": 1,
-			"service_tier":         "priority",
+			"service_tier":         "../priority",
 		}
 		w := httptest.NewRecorder()
 		testHandler.CreateAgent(w, newRequest(http.MethodPost, "/api/agents", body))
 		if w.Code != http.StatusBadRequest {
-			t.Fatalf("Claude service_tier: expected 400, got %d: %s", w.Code, w.Body.String())
+			t.Fatalf("unsafe Claude service_tier: expected 400, got %d: %s", w.Code, w.Body.String())
 		}
+	})
+
+	t.Run("Claude persists Fast mode token", func(t *testing.T) {
+		body := map[string]any{
+			"name":                 "service-tier-claude-fast",
+			"runtime_id":           claudeRuntimeID,
+			"visibility":           "private",
+			"max_concurrent_tasks": 1,
+			"model":                "claude-opus-5",
+			"service_tier":         "true",
+		}
+		w := httptest.NewRecorder()
+		testHandler.CreateAgent(w, newRequest(http.MethodPost, "/api/agents", body))
+		if w.Code != http.StatusCreated {
+			t.Fatalf("Claude Fast service_tier: expected 201, got %d: %s", w.Code, w.Body.String())
+		}
+		var resp map[string]any
+		_ = json.NewDecoder(w.Body).Decode(&resp)
+		if resp["service_tier"] != "true" {
+			t.Fatalf("service_tier response = %v, want true", resp["service_tier"])
+		}
+		agentID, _ := resp["id"].(string)
+		t.Cleanup(func() {
+			testPool.Exec(ctx, `DELETE FROM agent WHERE id = $1`, agentID)
+		})
 	})
 }
 

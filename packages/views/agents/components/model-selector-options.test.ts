@@ -1,6 +1,10 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { groupModelSelectorOptions } from "./model-selector-options";
+import {
+  groupModelSelectorOptions,
+  serviceTierDisplayName,
+  thinkingLevelDisplayName,
+} from "./model-selector-options";
 const models = [
   { id: "gemini-flash-high", label: "Gemini Flash (High)" },
   { id: "gemini-flash-medium", label: "Gemini Flash (Medium)" },
@@ -28,5 +32,38 @@ describe("Antigravity native effort variants", () => {
     expect(groupModelSelectorOptions(unmatched, "antigravity")).toEqual(
       unmatched,
     );
+  });
+});
+
+describe("catalog display names", () => {
+  const opus = {
+    id: "claude-opus-5",
+    label: "Claude Opus 5",
+    supports_explicit_standard_service_tier: true,
+    service_tiers: [{ id: "true", name: "Fast" }],
+    thinking: {
+      supported_levels: [{ value: "low", label: "Low" }],
+    },
+  };
+
+  it("maps Claude Fast's stored id to the catalog name", () => {
+    expect(serviceTierDisplayName("true", opus, "Standard")).toBe("Fast");
+  });
+
+  it("maps explicit standard without looking up a catalog row", () => {
+    expect(serviceTierDisplayName("default", undefined, "Standard")).toBe(
+      "Standard",
+    );
+  });
+
+  it("keeps an unknown stored id visible instead of inventing a label", () => {
+    expect(serviceTierDisplayName("priority", opus, "Standard")).toBe(
+      "priority",
+    );
+  });
+
+  it("maps a thinking-level id to the catalog label", () => {
+    expect(thinkingLevelDisplayName("low", opus)).toBe("Low");
+    expect(thinkingLevelDisplayName("low", undefined)).toBe("low");
   });
 });

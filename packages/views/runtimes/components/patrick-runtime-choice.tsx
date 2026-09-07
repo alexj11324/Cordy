@@ -92,7 +92,7 @@ export function PatrickRuntimeChoice({
         </div>
       ) : null}
       <ModelDropdown
-        inline
+        variant="chip"
         allowEffort={false}
         provider={selected?.provider}
         runtimes={usableRuntimes}

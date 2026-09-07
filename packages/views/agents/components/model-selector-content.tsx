@@ -26,6 +26,8 @@ import { useT } from "../../i18n";
 import {
   groupModelSelectorOptions,
   nativeEffortLabel,
+  explicitThinkingLevel,
+  explicitServiceTier,
 } from "./model-selector-options";
 import { ModelSpeedColumn } from "./model-speed-column";
 import { buildModelChangeUpdate } from "./inspector/model-change-cleanup";
@@ -130,11 +132,6 @@ export function ModelSelectorContent({
       (item) => item.id === search.trim() || item.label === search.trim(),
     );
   const catalog = modelsQuery.isSuccess ? models : null;
-  const currentChoice = (effort: string): ModelFavorite => ({
-    runtimeId: browsingRuntimeId,
-    model: browsingModel,
-    thinkingLevel: effort,
-  });
   const isFavorite = (choice: ModelFavorite) =>
     favorites.some(
       (item) => modelFavoriteKey(item) === modelFavoriteKey(choice),
@@ -156,15 +153,70 @@ export function ModelSelectorContent({
       }).service_tier ?? serviceTier
     );
   }
-  const browsingChoice = currentChoice(
-    browsingRuntimeId === runtimeId && browsingModel === model
-      ? thinkingLevel
-      : "",
-  );
+
+  function favoriteSpeed(
+    choice: ModelFavorite,
+    selectedEntry: RuntimeModel | undefined,
+    selectedCatalog: RuntimeModel[] | null,
+  ) {
+    const stored = choice.serviceTier ?? "";
+    if (!stored) return compatibleSpeed(choice, selectedCatalog);
+    if (stored === "default") {
+      if (selectedEntry?.supports_explicit_standard_service_tier === true) {
+        return "default";
+      }
+      throw new Error(t(($) => $.model_selector.favorite_unavailable));
+    }
+    if ((selectedEntry?.service_tiers ?? []).some((tier) => tier.id === stored)) {
+      return stored;
+    }
+    throw new Error(t(($) => $.model_selector.favorite_unavailable));
+  }
+
+  function speedLabelFor(choice: ModelFavorite, catalogEntry?: RuntimeModel) {
+    if (!allowSpeed) return "";
+    const stored = choice.serviceTier ?? "";
+    if (!stored) return "";
+    if (stored === "default") {
+      return t(($) => $.pickers.service_tier_standard);
+    }
+    return (
+      catalogEntry?.service_tiers?.find((tier) => tier.id === stored)?.name ??
+      choice.serviceTierLabel ??
+      stored
+    );
+  }
+
+  function combinationLabel(
+    modelLabel: string,
+    effortLabel: string,
+    choice: ModelFavorite,
+    catalogEntry?: RuntimeModel,
+  ) {
+    const extras = [effortLabel, speedLabelFor(choice, catalogEntry)].filter(
+      Boolean,
+    );
+    return extras.length ? `${modelLabel} (${extras.join(" · ")})` : modelLabel;
+  }
+
+  const browsingChoice: ModelFavorite = {
+    runtimeId: browsingRuntimeId,
+    model: browsingModel,
+    thinkingLevel:
+      browsingRuntimeId === runtimeId && browsingModel === model
+        ? thinkingLevel
+        : "",
+  };
   const browsingServiceTier =
     browsingRuntimeId === runtimeId && browsingModel === model
       ? serviceTier
       : compatibleSpeed(browsingChoice, catalog);
+  const currentChoice = (effort: string): ModelFavorite => ({
+    runtimeId: browsingRuntimeId,
+    model: browsingModel,
+    thinkingLevel: effort,
+    serviceTier: allowSpeed ? (browsingServiceTier ?? "") : "",
+  });
 
   async function select(
     choice: ModelFavorite & { serviceTier?: string },
@@ -176,6 +228,11 @@ export function ModelSelectorContent({
     setError("");
     try {
       let selectedCatalog = catalog;
+      let selectedEntry = findModelCapabilityEntry(
+        catalog ?? [],
+        choice.model,
+        runtimes.find((item) => item.id === choice.runtimeId)?.provider ?? "",
+      );
       if (fromFavorite) {
         const target = runtimes.find((item) => item.id === choice.runtimeId);
         if (target?.status !== "online")
@@ -184,7 +241,7 @@ export function ModelSelectorContent({
           runtimeModelsOptions(target.id, target.workspace_id),
         );
         selectedCatalog = result.models;
-        const selectedEntry = findModelCapabilityEntry(
+        selectedEntry = findModelCapabilityEntry(
           result.models,
           choice.model,
           target.provider,
@@ -205,7 +262,9 @@ export function ModelSelectorContent({
         model: choice.model,
         thinkingLevel: choice.thinkingLevel,
         serviceTier: allowSpeed
-          ? (choice.serviceTier ?? compatibleSpeed(choice, selectedCatalog))
+          ? fromFavorite
+            ? favoriteSpeed(choice, selectedEntry, selectedCatalog)
+            : (choice.serviceTier ?? compatibleSpeed(choice, selectedCatalog))
           : serviceTier,
         catalog: selectedCatalog,
       });
@@ -238,13 +297,19 @@ export function ModelSelectorContent({
           (item) => item.id === choice.model,
         );
         toggle({
-          ...choice,
+          runtimeId: choice.runtimeId,
+          model: choice.model,
+          thinkingLevel: choice.thinkingLevel,
+          serviceTier: allowSpeed ? (choice.serviceTier ?? "") : "",
           modelLabel: option?.label ?? choice.modelLabel,
           thinkingLabel: variant
             ? nativeEffortLabel(variant)
             : (option?.thinking?.supported_levels.find(
                 (level) => level.value === choice.thinkingLevel,
               )?.label ?? choice.thinkingLabel),
+          serviceTierLabel: allowSpeed
+            ? speedLabelFor(choice, entry)
+            : undefined,
         });
       }}
       className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -290,14 +355,15 @@ export function ModelSelectorContent({
     >
       <nav
         aria-label={t(($) => $.model_selector.providers)}
-        className="w-16 shrink-0 overflow-y-auto border-r border-border/60 bg-background [scrollbar-width:none]"
+        className="w-11 shrink-0 overflow-y-auto border-r border-border/60 bg-muted/30 [scrollbar-width:none]"
       >
+        <div className="flex flex-col gap-1 p-1">
         <button
           type="button"
           aria-label={t(($) => $.model_selector.favorites)}
           aria-pressed={section === "favorites"}
           className={cn(
-            "flex aspect-square w-full items-center justify-center hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            "flex aspect-square w-full items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
             section === "favorites" &&
               "bg-primary/10 text-accent-foreground hover:bg-primary/15",
           )}
@@ -307,7 +373,7 @@ export function ModelSelectorContent({
             setError("");
           }}
         >
-          <Star className="size-7 fill-current" aria-hidden />
+          <Star className="size-5 fill-current" aria-hidden />
         </button>
         <div className="border-b border-border/70" />
         {runtimes.map((item) => (
@@ -319,14 +385,15 @@ export function ModelSelectorContent({
             aria-pressed={section === item.id}
             onClick={() => showRuntime(item.id)}
             className={cn(
-              "flex aspect-square w-full items-center justify-center hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+              "flex aspect-square w-full items-center justify-center rounded-md hover:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
               section === item.id &&
                 "bg-primary/10 text-accent-foreground hover:bg-primary/15",
             )}
           >
-            <ProviderLogo provider={item.provider} className="size-7" />
+            <ProviderLogo provider={item.provider} className="size-5" />
           </button>
         ))}
+        </div>
       </nav>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border/60 px-3">
@@ -384,7 +451,7 @@ export function ModelSelectorContent({
           >
             {availableFavorites
               .filter((favorite) =>
-                `${favorite.model} ${favorite.modelLabel ?? ""} ${favorite.thinkingLevel} ${favorite.thinkingLabel ?? ""} ${runtimes.find((item) => item.id === favorite.runtimeId)?.name}`
+                `${favorite.model} ${favorite.modelLabel ?? ""} ${favorite.thinkingLevel} ${favorite.thinkingLabel ?? ""} ${favorite.serviceTier ?? ""} ${favorite.serviceTierLabel ?? ""} ${runtimes.find((item) => item.id === favorite.runtimeId)?.name}`
                   .toLowerCase()
                   .includes(needle),
               )
@@ -409,8 +476,18 @@ export function ModelSelectorContent({
                   favorite.thinkingLevel;
                 const selected =
                   modelFavoriteKey(favorite) ===
-                  modelFavoriteKey({ runtimeId, model, thinkingLevel });
-                const label = `${favorite.modelLabel ?? favoriteEntry?.label ?? favorite.model} (${favoriteEffort || t(($) => $.pickers.thinking_default)})`;
+                  modelFavoriteKey({
+                    runtimeId,
+                    model,
+                    thinkingLevel,
+                    serviceTier: allowSpeed ? serviceTier : "",
+                  });
+                const label = combinationLabel(
+                  favorite.modelLabel ?? favoriteEntry?.label ?? favorite.model,
+                  favoriteEffort,
+                  favorite,
+                  favoriteEntry,
+                );
                 return (
                   <div
                     key={modelFavoriteKey(favorite)}
@@ -483,9 +560,39 @@ export function ModelSelectorContent({
                 </div>
               )}
               {!supported ? (
-                <p className="px-2 py-3 text-caption text-muted-foreground">
-                  {t(($) => $.pickers.model_managed_by_runtime)}
-                </p>
+                <div className="px-2 py-5 text-caption text-muted-foreground">
+                  <p>{t(($) => $.model_dropdown.managed_by_runtime_title)}</p>
+                  <p className="mt-2">
+                    {t(($) => $.model_dropdown.managed_by_runtime_hint)}
+                  </p>
+                  <button
+                    type="button"
+                    disabled={saving}
+                    aria-pressed={browsingRuntimeId === runtimeId && !model}
+                    className={cn(
+                      rowClass,
+                      "mt-3 w-full text-foreground",
+                      browsingRuntimeId === runtimeId &&
+                        !model &&
+                        "bg-accent text-accent-foreground ring-1 ring-inset ring-border",
+                    )}
+                    onClick={() =>
+                      void select({
+                        runtimeId: browsingRuntimeId,
+                        model: "",
+                        thinkingLevel: "",
+                        serviceTier: "",
+                      })
+                    }
+                  >
+                    <span className="min-w-0 flex-1">
+                      {t(($) => $.pickers.bind_host_managed_runtime)}
+                    </span>
+                    {browsingRuntimeId === runtimeId && !model && (
+                      <Check aria-hidden className="size-4 shrink-0" />
+                    )}
+                  </button>
+                </div>
               ) : (
                 <>
                   {filtered.map((item) => (
@@ -496,12 +603,38 @@ export function ModelSelectorContent({
                       aria-pressed={browsingOption?.id === item.id}
                       onClick={() => {
                         setBrowsingModel(item.id);
-                        if (!allowEffort && !item.variants)
+                        const nextEntry = findModelCapabilityEntry(
+                          models,
+                          item.id,
+                          runtime?.provider ?? "",
+                        );
+                        const hasEffort =
+                          Boolean(item.variants?.length) ||
+                          (allowEffort &&
+                            (nextEntry?.thinking?.supported_levels.length ??
+                              0) > 0);
+                        if (!hasEffort) {
                           void select({
                             runtimeId: browsingRuntimeId,
                             model: item.id,
-                            thinkingLevel: "",
+                            thinkingLevel: explicitThinkingLevel(
+                              nextEntry,
+                              browsingRuntimeId === runtimeId &&
+                                item.id === model
+                                ? thinkingLevel
+                                : "",
+                            ),
+                            serviceTier: allowSpeed
+                              ? explicitServiceTier(
+                                  nextEntry,
+                                  browsingRuntimeId === runtimeId &&
+                                    item.id === model
+                                    ? serviceTier
+                                    : "",
+                                )
+                              : serviceTier,
                           });
+                        }
                       }}
                       className={cn(
                         rowClass,
@@ -558,33 +691,6 @@ export function ModelSelectorContent({
                     )}
                 </>
               )}
-              <button
-                type="button"
-                disabled={saving}
-                aria-pressed={browsingRuntimeId === runtimeId && !model}
-                className={cn(
-                  rowClass,
-                  "mt-1 w-full border-t border-border text-muted-foreground",
-                  browsingRuntimeId === runtimeId &&
-                    !model &&
-                    "bg-accent text-accent-foreground ring-1 ring-inset ring-border",
-                )}
-                onClick={() =>
-                  void select({
-                    runtimeId: browsingRuntimeId,
-                    model: "",
-                    thinkingLevel: "",
-                    serviceTier: "",
-                  })
-                }
-              >
-                <span className="min-w-0 flex-1">
-                  {t(($) => $.pickers.model_default)}
-                </span>
-                {browsingRuntimeId === runtimeId && !model && (
-                  <Check aria-hidden className="size-4 shrink-0" />
-                )}
-              </button>
             </div>
             <div
               aria-label={t(($) => $.model_selector.effort)}
@@ -595,10 +701,15 @@ export function ModelSelectorContent({
               </p>
               {!allowEffort && !browsingOption?.variants ? (
                 <div className="px-2 py-5 text-caption text-muted-foreground">
-                  <p>{thinkingLevel || t(($) => $.pickers.thinking_default)}</p>
-                  <p className="mt-2">
-                    {t(($) => $.model_selector.effort_inherited)}
+                  <p>
+                    {thinkingLevel ||
+                      t(($) => $.model_selector.effort_inherited)}
                   </p>
+                  {thinkingLevel ? (
+                    <p className="mt-2">
+                      {t(($) => $.model_selector.effort_inherited)}
+                    </p>
+                  ) : null}
                 </div>
               ) : browsingModel && supported ? (
                 <>
@@ -608,23 +719,26 @@ export function ModelSelectorContent({
                         label: nativeEffortLabel(variant),
                         model: variant.id,
                       }))
-                    : [
-                        {
-                          value: "",
-                          label: t(($) => $.pickers.thinking_default),
+                    : allowEffort
+                      ? levels.map((level) => ({
+                          ...level,
                           model: browsingModel,
-                        },
-                        ...(allowEffort
-                          ? levels.map((level) => ({
-                              ...level,
-                              model: browsingModel,
-                            }))
-                          : []),
-                      ]
+                        }))
+                      : []
                   ).map((level) => {
                     const choice = {
                       ...currentChoice(level.value),
                       model: level.model,
+                      serviceTier: allowSpeed
+                        ? explicitServiceTier(
+                            findModelCapabilityEntry(
+                              models,
+                              level.model,
+                              runtime?.provider ?? "",
+                            ),
+                            browsingServiceTier,
+                          )
+                        : serviceTier,
                     };
                     return (
                       <div
@@ -661,7 +775,16 @@ export function ModelSelectorContent({
                         {entry &&
                           star(
                             choice,
-                            `${browsingOption?.label ?? entry.label} (${level.label})`,
+                            combinationLabel(
+                              browsingOption?.label ?? entry.label,
+                              level.label,
+                              choice,
+                              findModelCapabilityEntry(
+                                models,
+                                level.model,
+                                runtime?.provider ?? "",
+                              ),
+                            ),
                           )}
                       </div>
                     );
@@ -680,10 +803,9 @@ export function ModelSelectorContent({
             </div>
             <ModelSpeedColumn
               tiers={entry?.service_tiers ?? []}
-              supportsExplicitStandard={models.some(
-                (candidate) =>
-                  candidate.supports_explicit_standard_service_tier === true,
-              )}
+              supportsExplicitStandard={
+                entry?.supports_explicit_standard_service_tier === true
+              }
               value={allowSpeed ? browsingServiceTier : serviceTier}
               editable={allowSpeed}
               disabled={saving}

@@ -21,6 +21,10 @@ const CODEX_MODELS: RuntimeModelsResult = {
       label: "GPT-5.6 Sol",
       provider: "openai",
       default: true,
+      thinking: {
+        supported_levels: [{ value: "low", label: "Low" }],
+      },
+      service_tiers: [{ id: "priority", name: "Fast" }],
     },
     { id: "gpt-5.6-terra", label: "GPT-5.6 Terra", provider: "openai" },
     { id: "gpt-5.6-luna", label: "GPT-5.6 Luna", provider: "openai" },
@@ -75,18 +79,31 @@ function openDropdown(container: HTMLElement) {
 }
 
 describe("ModelDropdown", () => {
-  it("embeds all four columns without a trigger and saves model plus effort together", async () => {
+  it("shows a compact trigger and opens the four-column picker on click", async () => {
     const onSelection = vi.fn();
     const { container, onChange } = renderDropdown({
-      inline: true,
       onSelection,
+      value: "gpt-5.6-sol",
+      thinkingLevel: "low",
+      serviceTier: "priority",
+      provider: "codex",
     });
-    expect(container.querySelector('[data-slot="popover-trigger"]')).toBeNull();
+    expect(
+      screen.queryByPlaceholderText(enAgents.pickers.model_search_placeholder),
+    ).toBeNull();
+    const trigger = await screen.findByRole("button", { name: /GPT-5\.6 Sol/ });
+    expect(trigger.textContent).toContain("GPT-5.6 Sol");
+    expect(trigger.textContent).toContain("Low");
+    expect(trigger.textContent).toContain("Fast");
+    expect(
+      container.querySelector('[data-slot="popover-trigger"]'),
+    ).toBeTruthy();
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(trigger.querySelector(".rotate-180")).toBeTruthy();
     fireEvent.click(
       await screen.findByRole("button", { name: /^GPT-5.6 Terra/ }),
     );
-    expect(onSelection).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Follow CLI config" }));
     expect(onSelection).toHaveBeenCalledWith({
       runtimeId: "rt-codex",
       model: "gpt-5.6-terra",
@@ -95,7 +112,6 @@ describe("ModelDropdown", () => {
       catalog: CODEX_MODELS.models,
     });
     expect(onChange).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /^GPT-5.6 Terra/ })).toBeTruthy();
   });
   afterEach(() => {
     cleanup();

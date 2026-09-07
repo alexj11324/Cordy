@@ -163,8 +163,8 @@ func taskScopedAuthToken(task Task) (string, error) {
 func taskPatchbayEnvironment(task Task, agentName, token, configRoot, workspacesRoot, serverURL string, healthPort, slot int, tempDir string) map[string]string {
 	return map[string]string{
 		"ORVILO_TOKEN":        token,
-		cli.TaskConfigRootEnv:   configRoot,
-		TaskWorkspacesRootEnv:   workspacesRoot,
+		cli.TaskConfigRootEnv: configRoot,
+		TaskWorkspacesRootEnv: workspacesRoot,
 		"ORVILO_SERVER_URL":   serverURL,
 		"ORVILO_DAEMON_PORT":  strconv.Itoa(healthPort),
 		"ORVILO_WORKSPACE_ID": task.WorkspaceID,
@@ -172,9 +172,9 @@ func taskPatchbayEnvironment(task Task, agentName, token, configRoot, workspaces
 		"ORVILO_AGENT_ID":     task.AgentID,
 		"ORVILO_TASK_ID":      task.ID,
 		"ORVILO_TASK_SLOT":    strconv.Itoa(slot),
-		"TMPDIR":                tempDir,
-		"TMP":                   tempDir,
-		"TEMP":                  tempDir,
+		"TMPDIR":              tempDir,
+		"TMP":                 tempDir,
+		"TEMP":                tempDir,
 	}
 }
 
@@ -6963,11 +6963,12 @@ func resolveTaskModelSelection(
 
 	sel.Model = qualifyTaskModel(provider, sel.Model, capabilityChecksPending, loadCatalog, taskLog)
 
-	// service_tier is catalog-owned and currently Codex-only. As with
-	// thinking_level, stale or incompatible persisted values degrade to the
-	// runtime default instead of failing the task. Catalog lookup errors pass
-	// through so a transient discovery failure does not silently disable a
-	// previously valid user choice.
+	// service_tier is catalog-owned. Codex advertises tiers from
+	// `codex debug models`; ACP runtimes advertise them from session/new.
+	// As with thinking_level, stale or incompatible persisted values degrade
+	// to the runtime default instead of failing the task. Catalog lookup
+	// errors pass through so a transient discovery failure does not silently
+	// disable a previously valid user choice.
 	if sel.ServiceTier != "" {
 		ok, err := agent.ValidateServiceTierWith(loadCatalog, provider, sel.Model, sel.ServiceTier)
 		if err != nil {

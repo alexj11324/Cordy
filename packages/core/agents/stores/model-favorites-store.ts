@@ -9,13 +9,21 @@ export interface ModelFavorite {
   runtimeId: string;
   model: string;
   thinkingLevel: string;
+  /** Empty means inherit / legacy favorites persisted before speed was stored. */
+  serviceTier?: string;
   /** Display snapshots for favorites whose runtime catalog is not loaded yet. */
   modelLabel?: string;
   thinkingLabel?: string;
+  serviceTierLabel?: string;
 }
 
 export function modelFavoriteKey(choice: ModelFavorite): string {
-  return JSON.stringify([choice.runtimeId, choice.model, choice.thinkingLevel]);
+  return JSON.stringify([
+    choice.runtimeId,
+    choice.model,
+    choice.thinkingLevel,
+    choice.serviceTier ?? "",
+  ]);
 }
 
 export const useModelFavoritesStore = create<{

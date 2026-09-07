@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, type ReactNode } from "react";
 import {
-  AGENT_DESCRIPTION_MAX_LENGTH,
   applyDraftModelChange,
   applyDraftRuntimeChange,
   type AgentDraft,
@@ -13,19 +12,17 @@ import { useConfigStore } from "@patchbay/core/config";
 import type { MemberWithUser, RuntimeDevice } from "@patchbay/core/types";
 import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
 import { Input } from "@patchbay/ui/components/ui/input";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { cn } from "@patchbay/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useT } from "../../i18n";
 import {
   SettingsCard,
+  SettingsRow,
   SettingsSection,
 } from "../../settings/components/settings-layout";
-import { CharCounter } from "../components/char-counter";
 import type { ModelSelection } from "../components/model-selector-content";
 import { ModelDropdown } from "../components/model-dropdown";
-import { SkillMultiSelect } from "../components/skill-multi-select";
 import { ConversationStartersEditor } from "../components/conversation-starters-editor";
 
 const PERMISSION_SCOPES: AgentPermissionScope[] = [
@@ -108,85 +105,31 @@ export function AgentConfigurationPanel({
             error={nameError}
             onChange={onNameChange}
           />
-          <DraftFieldRow
-            compact={compact}
-            align="start"
-            label={t(($) => $.create_dialog.description_label)}
-            htmlFor="agent-create-description"
-          >
-            <div>
-              <Textarea
-                id="agent-create-description"
-                name="agent-description"
-                autoComplete="off"
-                aria-label={t(($) => $.create_dialog.description_label)}
-                value={draft.description}
-                onChange={(event) => set("description", event.target.value)}
-                placeholder={t(($) => $.create_dialog.description_placeholder)}
-                rows={compact ? 3 : 4}
-                // The create API rejects >255 characters with a 400. Cap the
-                // input and show the counter so the limit is visible before
-                // submitting, matching the settings page.
-                maxLength={AGENT_DESCRIPTION_MAX_LENGTH}
-                className="resize-y"
-              />
-              <CharCounter
-                length={[...draft.description].length}
-                max={AGENT_DESCRIPTION_MAX_LENGTH}
-              />
-            </div>
-          </DraftFieldRow>
         </SettingsCard>
-      </SettingsSection>
-
-      <SettingsSection
-        title={t(($) => $.creation_studio.sections.behavior)}
-        description={t(($) => $.creation_studio.sections.behavior_hint)}
-      >
-        <SettingsCard>
-          <DraftFieldRow
-            compact
-            label={t(($) => $.create_dialog.instructions.label)}
-            htmlFor="agent-create-instructions"
-          >
-            <Textarea
-              id="agent-create-instructions"
-              name="agent-instructions"
-              autoComplete="off"
-              aria-label={t(($) => $.create_dialog.instructions.label)}
-              value={draft.instructions}
-              onChange={(event) => set("instructions", event.target.value)}
-              placeholder={t(
-                ($) => $.create_dialog.instructions.editor_placeholder,
-              )}
-              rows={compact ? 9 : 12}
-              className="min-h-44 resize-y font-mono text-label leading-6"
-            />
-          </DraftFieldRow>
-          {conversationStartersSupported ? (
+        {conversationStartersSupported ? (
+          <SettingsCard>
             <div className="px-4 py-4">
               <ConversationStartersEditor
                 value={draft.conversationStarters}
                 onChange={(value) => set("conversationStarters", value)}
               />
             </div>
-          ) : null}
-          <div className="px-4 py-4">
-            <SkillMultiSelect
-              selectedIds={draft.skillIds}
-              onChange={(ids) => set("skillIds", ids)}
-            />
-          </div>
-        </SettingsCard>
+          </SettingsCard>
+        ) : null}
       </SettingsSection>
 
       <SettingsSection
         title={t(($) => $.creation_studio.sections.execution)}
         description={t(($) => $.creation_studio.sections.execution_hint)}
       >
-        <div className="space-y-3">
+        <SettingsCard>
+          <SettingsRow
+            label={t(($) => $.model_dropdown.label)}
+            size="none"
+          >
           <ModelDropdown
-            inline
+            showLabel={false}
+            variant="chip"
             runtimeId={selectedRuntime?.id ?? null}
             runtimeOnline={selectedRuntime?.status === "online"}
             value={draft.model}
@@ -215,13 +158,13 @@ export function AgentConfigurationPanel({
             // rebind is in flight would be silently discarded.
             disabled={runtimesLoading || runtimeLocked}
           />
+          </SettingsRow>
           {runtimeSwitchPending && (
-            <p className="mt-2 text-caption text-muted-foreground">
+            <p className="px-4 pb-3 text-caption text-muted-foreground">
               {t(($) => $.creation_studio.builder.switch_runtime_pending)}
             </p>
           )}
-
-        </div>
+        </SettingsCard>
       </SettingsSection>
 
       <SettingsSection

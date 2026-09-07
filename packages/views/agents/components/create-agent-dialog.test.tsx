@@ -322,6 +322,9 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
     expect(payload.visibility).toBe("workspace");
     expect(payload.permission_mode).toBeUndefined();
     expect(payload.invocation_targets).toBeUndefined();
+    expect(payload).not.toHaveProperty("description");
+    expect(payload).not.toHaveProperty("instructions");
+    expect(payload).not.toHaveProperty("skill_ids");
   });
 
   it("submits permission_mode=public_to + workspace target when the flag is ON (default)", async () => {
@@ -404,5 +407,28 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
     expect(payload.invocation_targets).toEqual([
       { target_type: "member", target_id: OTHER },
     ]);
+  });
+
+  it("does not render or submit description, instructions, or skills", async () => {
+    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: false });
+    const mine = makeRuntime({ id: "rt-mine", name: "My Runtime", owner_id: ME });
+    const { onCreate } = renderDialog([mine]);
+
+    expect(screen.queryByText("Description")).toBeNull();
+    expect(screen.queryByText("Instructions")).toBeNull();
+    expect(screen.queryByText("Skills")).toBeNull();
+    expect(screen.queryByText("Add skills from workspace")).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+      target: { value: "Lean Agent" },
+    });
+    fireEvent.click(screen.getByText("Create"));
+    await new Promise((r) => setTimeout(r, 0));
+
+    const payload = onCreate.mock.calls[0]?.[0];
+    expect(payload).toBeDefined();
+    expect(payload).not.toHaveProperty("description");
+    expect(payload).not.toHaveProperty("instructions");
+    expect(payload).not.toHaveProperty("skill_ids");
   });
 });

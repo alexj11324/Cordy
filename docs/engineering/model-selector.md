@@ -1,12 +1,14 @@
 # Model selector and discovery
 
 The shared selector presents execution settings in
-four columns: provider, model, thinking effort, and speed. Agent settings
-embed it directly; concurrency remains a separate settings card. Speed options
+four columns: provider, model, thinking effort, and speed. Surfaces show a
+compact trigger (provider icon, model, effort, speed, and a chevron) and open
+the four-column picker in a popover. Concurrency remains a separate settings
+card. Speed options
 come from the selected model catalog. A provider without advertised tiers shows
-an unavailable state; model-only entry points show inherited speed. Favorites preserve the runtime ID,
-model ID, and thinking effort together. The runtime ID distinguishes separate
-installations/accounts of the same provider.
+an unavailable state; model-only entry points show inherited speed. Favorites preserve the runtime ID, model ID, thinking effort, and speed
+together. The runtime ID distinguishes separate installations/accounts of the
+same provider.
 
 ## Entry points
 
@@ -46,12 +48,25 @@ cached response is immediate; reduced-motion preferences disable rotation.
 - Codex currently invokes `codex debug models --bundled`. This is the installed
   CLI's bundled snapshot, with a static fallback in `server/pkg/agent/models.go`.
 - Claude currently uses a static model list with CLI capability annotation.
+  Fast mode is advertised only for Opus 5 and Opus 4.8 when the installed
+  Claude Code is ≥2.1.205; Execute writes `fastMode` into the task
+  `--settings` JSON. Sonnet/Haiku keep an empty speed column — they do
+  not have a native speed dial.
 - ACP-based runtimes use `session/new` model/configuration responses. Several
   provider adapters have their own fallback or capability restrictions.
 - Antigravity reads its native `agy models` command.
-- Speed is currently implemented on the backend for Codex. The UI displays the
-  speed choices only when the returned catalog supports them or an existing override
-  needs to be cleared. This does not imply other providers lack speed features.
+- Speed is currently implemented on the backend for Codex (`codex debug
+  models`), Claude Code Fast mode, and for ACP runtimes whose Execute path applies
+  `session/set_config_option` (reasonix, hermes/jcode, dim, kimi). Discovery
+  is catalog-driven: a speed-like `configOptions` entry (id/name such as
+  `fast_mode` / `fast-mode` / `service_tier`, or `model_config` whose copy
+  talks about speed/fast — not context size) becomes `service_tiers` on the
+  current model. The UI displays the speed column when that catalog is
+  non-empty. Generic ACP boolean Fast-mode options require the client to
+  advertise `session.configOptions.boolean: {}`; discovery and the
+  ACP-execute initialize handshakes now do that. Copilot/Grok/CodeBuddy
+  discover over ACP but execute through their own CLI, so they are not
+  annotated.
 
 The local GPT-6 omission and config parse failure were traced to terminal Codex
 0.152.0 while the desktop Codex bundle was 0.153.4. After upgrading the standalone
@@ -69,11 +84,16 @@ must be preserved, and responses to `session/set_config_option` replace the full
 configuration state because options can depend on the selected model.
 
 Boolean options in v1 require the client to advertise
-`session.configOptions.boolean: {}`. The current generic ACP discovery handshake
-does not advertise that capability, so it cannot establish that a provider has
-no boolean Fast-mode option. Generic ACP speed discovery and application are
-not implemented by this UI change. Nor does this change replace Codex's bundled
-catalog strategy with account-refreshed discovery.
+`session.configOptions.boolean: {}`. Discovery and the ACP-execute
+initialize handshakes advertise that capability so a boolean Fast-mode
+option can appear in `session/new`. Speed-like options are mapped onto
+`service_tiers` and applied with `session/set_config_option`, using the
+same catalog-driven pattern as thinking effort. Codex keeps its bundled
+`codex debug models` catalog rather than going through ACP.
+
+`model_config` is also used for context size, so only options whose
+id/name/description look like speed, fast, service tier, latency, or
+priority are treated as the speed column.
 
 [ACP v2](https://agentclientprotocol.com/protocol/v2/session-config-options)
 renames the option identifier to `configId` and requires the value shape in
@@ -84,6 +104,9 @@ The T3 Code visual adaptation and retained MIT license are documented in
 [third-party/t3code.md](../../third-party/t3code.md).
 
 Changing speed saves it with the model and thinking effort in one update.
-Favorites still store model and effort, preserving the current speed only when
-compatible on the same runtime. Switching runtimes or choosing runtime defaults
-clears the previous speed override.
+Favorites store runtime, model, thinking effort, and speed together. Restoring
+a favorite reapplies that exact speed when the catalog still advertises it;
+legacy favorites without a stored speed keep a compatible speed on the same
+runtime. Switching runtimes clears the previous speed override. Host-managed
+runtimes (no model catalog) explain that the host chooses the model instead of
+offering a fake "Default" row.

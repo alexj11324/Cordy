@@ -157,6 +157,10 @@
     "runtime_required_toast": "이 에이전트를 실행하기 전에 런타임을 연결하세요.",
     "assign_work": "작업 할당",
     "more_actions_aria": "에이전트 작업",
+    "edit": "편집",
+    "done": "완료",
+    "edit_aria": "에이전트 편집",
+    "done_aria": "에이전트 편집 마치기",
     "updated": "{{when}} 업데이트됨"
   },
   "inspector": {
@@ -220,6 +224,7 @@
     "model_default": "기본값",
     "model_tooltip": "모델 · {{value}}",
     "model_managed_by_runtime": "런타임에서 관리",
+    "bind_host_managed_runtime": "이 런타임 사용(모델 목록 없음)",
     "model_search_placeholder": "모델 ID 검색 또는 입력",
     "model_discovering": "모델 찾는 중...",
     "model_discovery_failed_title": "이 런타임의 모델을 가져오지 못했습니다.",
@@ -230,21 +235,22 @@
     "model_custom_use": "\"{{value}}\" 사용",
     "model_clear": "지우기(제공자 기본값 사용)",
     "model_clear_title": "선택을 지우고 런타임 제공자의 기본값으로 돌아갑니다",
-    "thinking_default": "CLI 설정 따르기",
+    "thinking_choose": "사고 강도 선택",
+    "thinking_default": "사고 강도 선택",
     "thinking_tooltip": "추론 · {{value}}",
-    "thinking_clear": "CLI 설정 따르기",
-    "thinking_clear_title": "재정의를 지우고 추론 수준을 로컬 CLI 설정(claude/codex)에 맡깁니다",
-    "service_tier_default": "런타임 기본값",
+    "thinking_clear": "저장된 사고 강도 제거",
+    "thinking_clear_title": "저장된 사고 강도를 제거합니다",
+    "service_tier_default": "속도 선택",
     "service_tier_standard": "표준",
     "service_tier_standard_description": "기본 속도 및 표준 사용량",
     "service_tier_tooltip": "속도 · {{value}}",
-    "service_tier_clear": "런타임 기본값",
+    "service_tier_clear": "저장된 속도 제거",
     "service_tier_clear_title": "속도 재정의를 지우고 로컬 Codex 설정에 맡깁니다"
   },
   "model_dropdown": {
     "label": "모델",
     "select_runtime_first": "먼저 런타임을 선택하세요",
-    "default_provider": "기본값(제공자)",
+    "default_provider": "모델 미선택",
     "runtime_offline_manual": "런타임 오프라인 - 직접 입력",
     "managed_by_runtime_title": "이 런타임에서 모델 선택을 관리합니다.",
     "managed_by_runtime_hint": "런타임 호스트에서 모델을 설정하세요. 예: Hermes는 자체 설정 파일에서 읽습니다.",
@@ -279,7 +285,7 @@
     "title_create": "에이전트 만들기",
     "title_duplicate": "에이전트 복제",
     "description_create": "워크스페이스에 새 AI 에이전트를 만듭니다.",
-    "description_duplicate": "\"{{name}}\"을(를) 바탕으로 새 에이전트를 만듭니다. 지침, 환경 변수, 스킬이 복사됩니다.",
+    "description_duplicate": "\"{{name}}\"을(를) 바탕으로 새 에이전트를 만듭니다. 런타임, 모델, 접근 권한이 복사됩니다.",
     "name_label": "이름",
     "name_placeholder": "예: 심층 리서치 에이전트",
     "description_label": "설명",
@@ -374,9 +380,9 @@
     "env": {
       "intro_readonly": "에이전트 프로세스가 시작될 때 주입됩니다. 워크스페이스 소유자와 관리자만 값을 읽거나 수정할 수 있으며, 모든 공개와 수정은 워크스페이스 감사 로그에 기록됩니다.",
       "empty_readonly": "설정된 환경 변수가 없습니다.",
-      "intro_prefix": "에이전트 프로세스가 시작될 때 주입됩니다(예: ",
+      "intro_prefix": "이 에이전트의 task가 시작될 때 해당 프로세스에만 주입됩니다. 머신 시스템 환경은 바뀌지 않습니다. 자주 쓰는 키: ",
       "intro_separator": ", ",
-      "intro_suffix": ").",
+      "intro_suffix": ".",
       "bulk_edit_action": "일괄 편집",
       "row_edit_action": "개별 편집",
       "bulk_placeholder": "API_KEY=값\nBASE_URL=https://example.com",
@@ -395,7 +401,7 @@
       "save_failed_toast": "환경 변수를 저장하지 못했습니다",
       "not_revealed_title_other": "변수 {{count}}개 설정됨",
       "not_revealed_empty": "설정된 환경 변수가 없습니다.",
-      "not_revealed_hint": "값은 공개하기 전까지 마스킹됩니다. 모든 공개와 수정은 워크스페이스 감사 로그에 기록됩니다.",
+      "not_revealed_hint": "이 KEY=value는 이 에이전트의 task가 시작될 때 해당 프로세스에만 주입되며 도구, API, 프록시 같은 실행 설정에 쓰입니다. 머신 시스템 환경은 바뀌지 않습니다. 값은 공개하기 전까지 마스킹되며, 모든 공개와 수정은 워크스페이스 감사 로그에 기록됩니다.",
       "reveal_action": "공개하고 수정",
       "revealing": "공개하는 중...",
       "reveal_failed_toast": "환경 변수 값을 불러오지 못했습니다",
@@ -694,7 +700,7 @@
     "owner_label": "소유자",
     "unknown_runtime": "알 수 없는 런타임",
     "model_label": "모델",
-    "model_unset": "런타임 기본값"
+    "model_unset": "모델 미선택"
   },
   "live_peek": {
     "current_issue_label": "현재 작업",
@@ -874,11 +880,11 @@
     },
     "sections": {
       "identity": "기본 정보",
-      "identity_hint": "알아보기 쉬운 이름과 간결한 목적을 지정하세요.",
+      "identity_hint": "알아보기 쉬운 이름과 아바타를 지정하세요.",
       "behavior": "동작 및 기능",
       "behavior_hint": "작업 방식을 정의하고 사용할 워크스페이스 스킬을 추가하세요.",
       "execution": "실행 설정",
-      "execution_hint": "에이전트를 실행할 위치를 선택하고 필요하면 런타임 기본 모델, 추론 수준, 속도를 변경하세요.",
+      "execution_hint": "에이전트를 실행할 위치를 선택하고, 구체적인 모델·추론 수준·속도를 지정하세요.",
       "access": "접근 권한",
       "access_hint": "이 에이전트를 실행할 수 있는 사용자를 설정합니다. 나중에 변경할 수 있습니다."
     },
@@ -961,6 +967,7 @@
     "no_effort": "이 모델에는 사고 강도 옵션이 없습니다.",
     "choose_model": "모델 선택",
     "effort_inherited": "이 화면에서는 모델만 변경합니다. 사고 강도는 기존 에이전트 또는 런타임 설정을 따릅니다.",
-    "refresh": "모델 새로고침"
+    "refresh": "모델 새로고침",
+    "clear_unsupported_speed": "지원되지 않는 속도 {{value}} 제거"
   }
 }

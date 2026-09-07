@@ -7,6 +7,36 @@ import {
 
 describe("model favorites", () => {
   beforeEach(() => useModelFavoritesStore.setState({ favorites: [] }));
+  it("treats missing serviceTier as empty so older persisted favorites still match", () => {
+    expect(
+      modelFavoriteKey({
+        runtimeId: "codex",
+        model: "gpt",
+        thinkingLevel: "low",
+      }),
+    ).toBe(
+      modelFavoriteKey({
+        runtimeId: "codex",
+        model: "gpt",
+        thinkingLevel: "low",
+        serviceTier: "",
+      }),
+    );
+  });
+  it("keeps speed combinations distinct from effort-only favorites", () => {
+    const standard = {
+      runtimeId: "codex",
+      model: "gpt",
+      thinkingLevel: "low",
+      serviceTier: "default",
+    };
+    const fast = { ...standard, serviceTier: "priority" };
+    [standard, fast].forEach(useModelFavoritesStore.getState().toggle);
+    expect(useModelFavoritesStore.getState().favorites).toEqual([
+      standard,
+      fast,
+    ]);
+  });
   it("keeps efforts and runtime accounts distinct and removes only the matching combination", () => {
     const high = {
       runtimeId: "codex-personal",

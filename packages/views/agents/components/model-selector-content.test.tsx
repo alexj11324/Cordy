@@ -50,6 +50,18 @@ const catalogs = {
       label: "Opus",
       thinking: { supported_levels: [{ value: "high", label: "High" }] },
     },
+    {
+      id: "claude-opus-5",
+      label: "Claude Opus 5",
+      supports_explicit_standard_service_tier: true,
+      service_tiers: [{ id: "true", name: "Fast" }],
+      thinking: { supported_levels: [{ value: "high", label: "High" }] },
+    },
+    {
+      id: "claude-sonnet-5",
+      label: "Claude Sonnet 5",
+      thinking: { supported_levels: [{ value: "low", label: "Low" }] },
+    },
   ],
 };
 vi.mock("@patchbay/core/runtimes", () => ({
@@ -93,11 +105,30 @@ function mount(
 beforeEach(() => useModelFavoritesStore.setState({ favorites: [] }));
 afterEach(cleanup);
 describe("four-column model selector", () => {
+  it("matches T3 Code's provider rail: 44px column, 20px glyphs", async () => {
+    mount();
+    const nav = await screen.findByRole("navigation", {
+      name: enAgents.model_selector.providers,
+    });
+    expect(nav.className).toMatch(/\bw-11\b/);
+    const favorites = screen.getByRole("button", {
+      name: enAgents.model_selector.favorites,
+    });
+    expect(favorites.querySelector("svg")?.getAttribute("class")).toMatch(
+      /\bsize-5\b/,
+    );
+    const codex = screen.getByRole("button", {
+      name: "Codex Personal · codex",
+    });
+    expect(codex.querySelector("svg")?.getAttribute("class")).toMatch(
+      /\bsize-5\b/,
+    );
+  });
   it("keeps a stale saved speed visible until the user explicitly clears it", async () => {
     const onSelect = mount(vi.fn(), runtimes, { serviceTier: "retired-fast" });
     await screen.findByText("GPT");
     expect(screen.getByText("retired-fast")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Runtime default" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove unsupported speed retired-fast" }));
     await waitFor(() =>
       expect(onSelect).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -149,6 +180,16 @@ describe("four-column model selector", () => {
     expect(screen.queryByRole("button", { name: /^Fast/ })).toBeNull();
     expect(screen.getByText(enAgents.model_selector.no_speed)).toBeTruthy();
   });
+  it("scopes standard speed to the model that advertised it, not the runtime catalog", async () => {
+    mount(vi.fn(), runtimes, { runtimeId: "claude", model: "opus" });
+    fireEvent.click(await screen.findByText("Claude Opus 5"));
+    expect(screen.getByRole("button", { name: /^Standard/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Fast/ })).toBeTruthy();
+    fireEvent.click(screen.getByText("Claude Sonnet 5"));
+    expect(screen.queryByRole("button", { name: /^Standard/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Fast/ })).toBeNull();
+    expect(screen.getByText(enAgents.model_selector.no_speed)).toBeTruthy();
+  });
   it("offers explicit standard independently from the runtime default", async () => {
     const onSelect = mount();
     fireEvent.click(await screen.findByRole("button", { name: /^Standard/ }));
@@ -189,15 +230,22 @@ describe("four-column model selector", () => {
     fireEvent(icon, new Event("webkitAnimationIteration", { bubbles: true }));
     expect(icon.classList.contains("animate-spin")).toBe(false);
   });
-  it("can switch to a provider that manages its own model", async () => {
+  it("explains a host-managed runtime instead of offering a default model", async () => {
     const onSelect = mount(vi.fn(), [
       ...runtimes,
       { id: "qwenpaw", name: "QwenPaw", provider: "qwenpaw", status: "online" },
     ]);
     fireEvent.click(screen.getByRole("button", { name: "QwenPaw · qwenpaw" }));
-    await screen.findByText(enAgents.pickers.model_managed_by_runtime);
+    await screen.findByText(enAgents.model_dropdown.managed_by_runtime_title);
+    expect(
+      screen.queryByRole("button", {
+        name: enAgents.pickers.model_managed_by_runtime,
+      }),
+    ).toBeNull();
     fireEvent.click(
-      screen.getByRole("button", { name: enAgents.pickers.model_default }),
+      screen.getByRole("button", {
+        name: enAgents.pickers.bind_host_managed_runtime,
+      }),
     );
     await waitFor(() =>
       expect(onSelect).toHaveBeenCalledWith({
@@ -262,21 +310,39 @@ describe("four-column model selector", () => {
   it("stars effort combinations independently and restores a favorite with one click", async () => {
     const onSelect = mount();
     fireEvent.click(
-      await screen.findByRole("button", { name: "Favorite GPT (Low)" }),
+      await screen.findByRole("button", { name: "Favorite GPT (Low · Standard)" }),
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Favorite GPT (Extra high)" }),
+      screen.getByRole("button", { name: "Favorite GPT (Extra high · Standard)" }),
     );
     expect(useModelFavoritesStore.getState().favorites).toHaveLength(2);
     expect(onSelect).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Favorites" }));
-    fireEvent.click(screen.getByText("GPT (Extra high)"));
+    fireEvent.click(screen.getByText("GPT (Extra high · Standard)"));
     await waitFor(() =>
       expect(onSelect).toHaveBeenCalledWith({
         runtimeId: "codex",
         model: "gpt",
         thinkingLevel: "xhigh",
-        serviceTier: "",
+        serviceTier: "default",
+        catalog: catalogs.codex,
+      }),
+    );
+  });
+  it("shows saved speed on favorites and restores that exact tier", async () => {
+    const onSelect = mount(vi.fn(), runtimes, { serviceTier: "priority" });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Favorite GPT (Low · Fast)" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Favorites" }));
+    expect(screen.getByText("GPT (Low · Fast)")).toBeTruthy();
+    fireEvent.click(screen.getByText("GPT (Low · Fast)"));
+    await waitFor(() =>
+      expect(onSelect).toHaveBeenCalledWith({
+        runtimeId: "codex",
+        model: "gpt",
+        thinkingLevel: "low",
+        serviceTier: "priority",
         catalog: catalogs.codex,
       }),
     );

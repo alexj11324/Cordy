@@ -63,10 +63,12 @@ describe("AgentDetailInspector labels", () => {
       />,
     );
 
-    // Sanity check: the profile card actually rendered.
-    expect(screen.getByLabelText("Name")).toBeInTheDocument();
+    // Sanity check: execution settings actually rendered.
+    expect(screen.getByLabelText("Concurrency")).toBeInTheDocument();
 
     expect(screen.queryByTestId("resource-label-picker")).toBeNull();
     expect(screen.queryByText("Labels")).toBeNull();
+    expect(screen.queryByText("Test agent")).toBeNull();
+    expect(screen.queryByTestId("avatar-upload")).toBeNull();
   });
 });

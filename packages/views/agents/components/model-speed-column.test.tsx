@@ -45,7 +45,7 @@ describe("ModelSpeedColumn", () => {
     const onSelect = mount({ tiers: [], value: "retired-fast" });
     expect(screen.getByText("retired-fast")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "retired-fast" })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Runtime default" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove unsupported speed retired-fast" }));
     expect(onSelect).toHaveBeenCalledWith("");
   });
   it("shows an unavailable column without accepting fabricated speed values", () => {

@@ -35,7 +35,7 @@ export function ModelSpeedColumn({
   const selected = available.find((tier) => tier.id === value);
   const inheritedLabel = value
     ? (selected?.name ?? value)
-    : t(($) => $.pickers.service_tier_default);
+    : t(($) => $.model_selector.speed_inherited);
 
   return (
     <div
@@ -57,15 +57,20 @@ export function ModelSpeedColumn({
       ) : (
         <>
           {value && !selected && (
-            <p className="flex items-center gap-2 px-2 py-2 text-caption text-muted-foreground">
+            <button
+              type="button"
+              disabled={disabled}
+              aria-label={t(($) => $.model_selector.clear_unsupported_speed, {
+                value,
+              })}
+              onClick={() => onSelect("")}
+              className="flex w-full min-w-0 items-center gap-2 rounded-md px-2 py-2.5 text-left text-caption hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
               <span className="min-w-0 flex-1 break-words">{value}</span>
               <Check aria-hidden className="size-4 shrink-0" />
-            </p>
+            </button>
           )}
-          {[
-            { id: "", name: t(($) => $.pickers.service_tier_default) },
-            ...available,
-          ].map((tier) => (
+          {available.map((tier) => (
             <button
               key={tier.id}
               type="button"

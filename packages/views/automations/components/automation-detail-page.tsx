@@ -409,7 +409,8 @@ function InstructionsSection({
           </div>
           <div>
             <ModelDropdown
-              inline
+              variant="chip"
+              showLabel={false}
               allowEffort={false}
               provider={runtime?.provider}
               thinkingLevel={thinkingLevel}

@@ -15,45 +15,35 @@ import (
 // `mcpServers` is ever written.
 var mcpServerContainers = [...]string{"mcpServers", "mcp"}
 
-// WorkspaceMcpBinding is one workspace MCP server that an agent has been
-// explicitly given: the name it is mounted under plus its entry.
+// WorkspaceMcpBinding is one workspace MCP library entry to fold into a claim:
+// the name it is mounted under plus its entry.
 type WorkspaceMcpBinding struct {
 	Name   string
 	Config json.RawMessage
 }
 
-// ResolveAgentMcpConfig folds the workspace MCP servers BOUND to an agent into
-// that agent's own mcp_config and returns what the claim should carry. It runs
-// before the per-task overlay (mergeMCPOverlay), so the full precedence chain
-// on a claim is:
+// ResolveAgentMcpConfig folds the given workspace MCP servers into an optional
+// agent overlay and returns what the claim should carry. It runs before the
+// per-task overlay (mergeMCPOverlay).
 //
-//	bound workspace servers  <  agent's own servers  <  per-task overlay
+// The ordinary claim path passes every workspace library entry and a nil
+// overlay, so leftover per-agent mcp_config cannot win name collisions or
+// inject private servers. applyAutomationClaimSettings still passes an
+// allowlisted subset plus a base overlay; empty automation allowlist stays
+// deny-all in that caller.
 //
-// The contract (GH #6062, MUL-5421):
-//
-//   - Only servers explicitly bound to this agent and left enabled are folded
-//     in. A workspace MCP server is a LIBRARY entry, exactly like a workspace
-//     skill: creating one gives it to nobody. Nothing about this layer reaches
-//     an agent implicitly, which is what keeps shared credentials from
-//     spreading to agents no one opted in.
-//
-//   - The agent's own entry WINS on a name collision. Its config is the more
-//     specific statement, and it is the one an agent owner edits directly.
-//
-//   - An agent with no bindings and no config of its own resolves to nil —
-//     "nothing managed" — so its runtime keeps its native MCP inheritance.
+// When an overlay is supplied, that overlay WINS on a name collision. An
+// empty library and empty overlay resolve to nil — "nothing managed" — so
+// the runtime keeps its native MCP inheritance.
 //
 // Shape: the result is NORMALIZED onto the canonical `mcpServers` container,
-// including an agent's legacy top-level `mcp` entries. Normalizing is
+// including an overlay's legacy top-level `mcp` entries. Normalizing is
 // mandatory, not cosmetic: the daemon's runtime merge only falls back to the
 // legacy container when `mcpServers` is ABSENT
-// (`internal/daemon/runtime_mcp.go`), so writing bound servers into
-// `mcpServers` while leaving an agent's legacy entries beside them would make
-// the daemon read the bound set and silently drop the agent's own servers.
+// (`internal/daemon/runtime_mcp.go`).
 //
-// Failure mode: on a malformed agent config the config is returned unchanged
-// along with the error. Binding a shared server must never take away servers
-// the agent runs with today.
+// Failure mode: on a malformed overlay the overlay is returned unchanged
+// along with the error.
 func ResolveAgentMcpConfig(bound []WorkspaceMcpBinding, agentMcpConfig json.RawMessage) (json.RawMessage, error) {
 	if len(bound) == 0 {
 		return passthroughAgentMcpConfig(agentMcpConfig), nil

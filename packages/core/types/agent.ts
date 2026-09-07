@@ -1129,10 +1129,9 @@ export interface RuntimeModelThinking {
   /** Levels the user is allowed to pick for this model. */
   supported_levels: RuntimeModelThinkingLevel[];
   /** Informational: the level the upstream CLI documents as its built-in
-   *  default when no `--effort` flag is passed. Surfaced by the daemon
-   *  but not actively rendered today — Patchbay's empty `thinking_level`
-   *  means "no override; let the local CLI config decide", which may
-   *  itself differ from this value. */
+   *  default when no `--effort` flag is passed. Patchbay persists an
+   *  explicit catalog level when the user picks one; an empty
+   *  `thinking_level` means none has been chosen yet. */
   default_level?: string;
 }
 

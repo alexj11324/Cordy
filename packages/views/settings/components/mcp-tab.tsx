@@ -41,10 +41,9 @@ import {
  *
  * Two things shape this screen and are worth stating up front:
  *
- *  - A server added here is given to NO agent. It is a library entry, exactly
- *    like a workspace skill: an agent owner assigns it on the agent's own MCP
- *    tab, where it also gets a per-agent on/off toggle. Nothing here reaches an
- *    agent implicitly.
+ *  - A server added here is given to every agent in this workspace on its
+ *    next task. There is no per-agent assignment step. Native CLI MCP,
+ *    plugin MCP, and Composio overlays still layer on after this library.
  *  - The stored configuration is WRITE-ONLY. The API returns names and
  *    transports, never urls / commands / headers / env, so there is no
  *    "current value" to prefill and editing a server means supplying its

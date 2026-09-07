@@ -4,14 +4,8 @@ import { useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
-  Bot,
-  Clock3,
   Lock,
-  MessageSquare,
-  MoreHorizontal,
-  Plus,
   Server,
-  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -37,7 +31,7 @@ import {
   memberListOptions,
   workspaceKeys,
 } from "@patchbay/core/workspace/queries";
-import { runtimeDisplayLabel, runtimeListOptions } from "@patchbay/core/runtimes";
+import { runtimeListOptions } from "@patchbay/core/runtimes";
 import { useAgentPermissions } from "@patchbay/core/permissions";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { CapabilityBanner } from "@patchbay/ui/components/common/capability-banner";
@@ -49,21 +43,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@patchbay/ui/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
 import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { AppLink, useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
-import { ActorAvatar } from "../../common/actor-avatar";
-import { AgentPresenceIndicator } from "./agent-presence-indicator";
-import { VisibilityBadge } from "./visibility-badge";
 import { AgentOverviewPane, type DetailTab } from "./agent-overview-pane";
-import { ExpandableDescription } from "../../common/expandable-description";
-import { useT, useTimeAgo } from "../../i18n";
+import { AgentIdentityCard } from "./agent-identity-card";
+import { useT } from "../../i18n";
 
 interface AgentDetailPageProps {
   agentId: string;
@@ -340,21 +325,18 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
-      <DetailHeader
-        agent={agent}
-        runtime={runtime}
-        presence={presence}
-        backHref={paths.agents()}
-        canAssign={canAssign.allowed}
-        canArchive={canEdit.allowed}
-        dmPending={permissionsLoading}
-        dmHref={`${paths.chat()}?agent=${agent.id}`}
-        onDm={handleDm}
-        onAssign={handleAssign}
-        onArchive={
-          agent.system_key ? undefined : () => setConfirmArchive(true)
-        }
-      />
+      <div className="shrink-0 px-4 pt-3 sm:px-6">
+        <div className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
+          <AppLink
+            href={paths.agents()}
+            className="rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {t(($) => $.page.title)}
+          </AppLink>
+          <span aria-hidden="true">/</span>
+          <span className="truncate text-foreground">{agent.name}</span>
+        </div>
+      </div>
 
       {!canEdit.allowed && (
         <div className="px-6 pt-3">
@@ -404,19 +386,40 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
         </div>
       )}
 
-      <div className="flex flex-1 min-h-0 flex-col overflow-hidden">
-        <AgentOverviewPane
-          agent={agent}
-          runtime={runtime}
-          owner={owner}
-          runtimes={runtimes}
-          members={members}
-          onUpdate={handleUpdate}
-          currentUserId={currentUser?.id ?? null}
-          canEdit={canEdit.allowed}
-          navIntent={tabNavIntent}
-          onNavIntentHandled={() => setTabNavIntent(null)}
-        />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden xl:flex-row">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <AgentOverviewPane
+            agent={agent}
+            runtime={runtime}
+            owner={owner}
+            runtimes={runtimes}
+            members={members}
+            onUpdate={handleUpdate}
+            currentUserId={currentUser?.id ?? null}
+            canEdit={canEdit.allowed}
+            navIntent={tabNavIntent}
+            onNavIntentHandled={() => setTabNavIntent(null)}
+          />
+        </div>
+        <div className="shrink-0 overflow-x-auto px-4 pb-6 xl:w-[320px] xl:shrink-0 xl:overflow-y-auto xl:overflow-x-hidden xl:px-0 xl:py-6 xl:pr-6">
+          <AgentIdentityCard
+            agent={agent}
+            runtime={runtime}
+            owner={owner}
+            presence={presence}
+            canAssign={canAssign.allowed}
+            canEdit={canEdit.allowed}
+            canArchive={canEdit.allowed}
+            dmPending={permissionsLoading}
+            dmHref={`${paths.chat()}?agent=${agent.id}`}
+            onDm={handleDm}
+            onAssign={handleAssign}
+            onArchive={
+              agent.system_key ? undefined : () => setConfirmArchive(true)
+            }
+            onUpdate={handleUpdate}
+          />
+        </div>
       </div>
 
       {confirmArchive && (
@@ -465,147 +468,6 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
   );
 }
 
-function DetailHeader({
-  agent,
-  runtime,
-  presence,
-  backHref,
-  canAssign,
-  canArchive,
-  dmPending,
-  dmHref,
-  onDm,
-  onAssign,
-  onArchive,
-}: {
-  agent: Agent;
-  runtime: AgentRuntime | null;
-  presence: AgentPresenceDetail | null;
-  backHref: string;
-  canAssign: boolean;
-  canArchive: boolean;
-  dmPending: boolean;
-  dmHref: string;
-  /** Runs before the link navigates; calls preventDefault when a gate denies
-   *  the chat, which is what stops AppLink from pushing. */
-  onDm: (e: React.MouseEvent<HTMLAnchorElement>) => void;
-  onAssign: () => void;
-  /** Absent for Patchbay's built-in agents, which the server refuses to
-   *  archive — the menu hides the action rather than offering a failure. */
-  onArchive?: () => void;
-}) {
-  const { t } = useT("agents");
-  const timeAgo = useTimeAgo();
-  const isArchived = !!agent.archived_at;
-  const hasMoreActions = !!onArchive;
-
-  return (
-    <header className="shrink-0 border-b bg-background px-4 pb-5 pt-3 sm:px-6">
-      <div className="mx-auto max-w-[1440px]">
-        <div className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
-          <AppLink
-            href={backHref}
-            className="rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {t(($) => $.page.title)}
-          </AppLink>
-          <span aria-hidden="true">/</span>
-          <span className="truncate text-foreground">{agent.name}</span>
-        </div>
-
-        <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="flex min-w-0 items-start gap-4">
-            <ActorAvatar
-              actorType="agent"
-              actorId={agent.id}
-              size="2xl"
-              profileLink={false}
-              className="ring-1 ring-border"
-            />
-            <div className="min-w-0 pt-0.5">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                <h1 className="min-w-0 text-balance text-title-lg font-semibold tracking-tight sm:text-display-sm">
-                  {agent.name}
-                </h1>
-                <AgentPresenceIndicator detail={presence} />
-              </div>
-              <ExpandableDescription>
-                {agent.description ||
-                  t(($) => $.inspector.no_description_placeholder)}
-              </ExpandableDescription>
-              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-caption text-muted-foreground">
-                <span className="inline-flex min-w-0 items-center gap-1.5">
-                  <Bot className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span className="truncate">{agent.model || t(($) => $.pickers.model_default)}</span>
-                </span>
-                <span className="inline-flex min-w-0 items-center gap-1.5">
-                  <Server className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span className="truncate">
-                    {runtime
-                      ? runtimeDisplayLabel(runtime)
-                      : t(($) => $.pickers.runtime_none)}
-                  </span>
-                </span>
-                <VisibilityBadge value={agent.visibility} />
-                <span className="inline-flex items-center gap-1.5">
-                  <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
-                  {t(($) => $.detail.updated, { when: timeAgo(agent.updated_at) })}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-2 self-end lg:self-start">
-            {!isArchived && (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={dmPending}
-                // An anchor never matches `:disabled`, so the base variant's
-                // `disabled:` rules never fire here — Base UI's data-disabled
-                // is what carries the dimmed, inert look.
-                className="data-disabled:pointer-events-none data-disabled:opacity-50"
-                render={<AppLink href={dmHref} onClick={onDm} />}
-                nativeButton={false}
-              >
-                <MessageSquare className="h-4 w-4" aria-hidden="true" />
-                {t(($) => $.detail.dm)}
-              </Button>
-            )}
-            {!isArchived && canAssign && (
-              <Button type="button" size="sm" onClick={onAssign}>
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                {t(($) => $.detail.assign_work)}
-              </Button>
-            )}
-            {!isArchived && canArchive && hasMoreActions ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={<Button variant="ghost" size="icon-sm" />}
-                  aria-label={t(($) => $.detail.more_actions_aria)}
-                >
-                  <MoreHorizontal
-                    className="h-4 w-4 text-muted-foreground"
-                    aria-hidden="true"
-                  />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-auto">
-                  {onArchive && (
-                    <DropdownMenuItem variant="destructive" onClick={onArchive}>
-                      <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                      {t(($) => $.detail.more_archive)}
-                    </DropdownMenuItem>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </header>
-  );
-}
-
 function BackHeader({ paths, title }: { paths: string; title: string }) {
   return (
     <PageHeader>
@@ -623,25 +485,16 @@ function BackHeader({ paths, title }: { paths: string; title: string }) {
 function DetailLoadingSkeleton() {
   return (
     <div className="flex flex-1 min-h-0 flex-col">
-      <div className="shrink-0 border-b px-6 pb-5 pt-3">
+      <div className="shrink-0 px-6 pt-3">
         <Skeleton className="h-4 w-48" />
-        <div className="mt-4 flex items-start gap-4">
-          <Skeleton className="h-14 w-14 rounded-full" />
-          <div className="flex-1 space-y-3">
-            <Skeleton className="h-7 w-64" />
-            <Skeleton className="h-4 w-full max-w-xl" />
-            <Skeleton className="h-4 w-full max-w-lg" />
-          </div>
-        </div>
       </div>
-      <div className="flex flex-1 flex-col p-6">
-        <Skeleton className="h-9 w-96" />
-        <div className="mt-6 grid flex-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="space-y-5">
-            <Skeleton className="h-48 w-full" />
-            <Skeleton className="h-64 w-full" />
-          </div>
-          <Skeleton className="h-96 w-full" />
+      <div className="mt-4 flex min-h-0 flex-1 flex-col xl:flex-row">
+        <div className="min-w-0 flex-1 space-y-4 p-6">
+          <Skeleton className="h-8 w-40" />
+          <Skeleton className="h-64 w-full" />
+        </div>
+        <div className="shrink-0 p-6 xl:w-[320px]">
+          <Skeleton className="h-80 w-full rounded-xl" />
         </div>
       </div>
     </div>
