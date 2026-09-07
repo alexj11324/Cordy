@@ -1070,17 +1070,6 @@ func (s *TaskService) EnqueueDeferredChannelIssueTask(ctx context.Context, issue
 	return s.enqueueIssueTask(ctx, issue, pgtype.UUID{}, false, "", pgtype.UUID{}, pgtype.UUID{}, pgtype.Timestamptz{Time: fireAt, Valid: true})
 }
 
-// createDeferredChannelIssueTaskWithQueries inserts the inert media-gated task
-// through the caller's query handle. IssueService passes its transaction-bound
-// Queries so the issue and task become visible atomically. Composio is
-// intentionally absent from the transaction-scoped service: the task cannot be
-// claimed while deferred, so the optional external overlay is hydrated after
-// commit without holding database locks across a network call.
-func (s *TaskService) createDeferredChannelIssueTaskWithQueries(ctx context.Context, q *db.Queries, issue db.Issue, fireAt time.Time) (db.AgentTaskQueue, error) {
-	txService := &TaskService{Queries: q}
-	return txService.enqueueIssueTask(ctx, issue, pgtype.UUID{}, false, "", pgtype.UUID{}, pgtype.UUID{}, pgtype.Timestamptz{Time: fireAt, Valid: true})
-}
-
 // hydrateDeferredChannelIssueTaskOverlay fills the optional Composio overlay
 // after the issue+task transaction commits. The conditional update refuses to
 // overwrite a comment merge that won the post-commit race and already
@@ -1173,23 +1162,57 @@ func (s *TaskService) enqueueIssueTask(ctx context.Context, issue db.Issue, trig
 }
 
 func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, coalescedCommentIDs []pgtype.UUID, forceFreshSession bool, handoffNote string, actorUserID pgtype.UUID, rerunOfTaskID pgtype.UUID, fireAt pgtype.Timestamptz) (db.AgentTaskQueue, error) {
+	createParams, err := s.prepareIssueTaskWithCommentPlan(ctx, issue, triggerCommentID, coalescedCommentIDs, forceFreshSession, handoffNote, actorUserID, rerunOfTaskID)
+	if err != nil {
+		return db.AgentTaskQueue{}, err
+	}
+	task, err := persistIssueTask(ctx, s.Queries, createParams, fireAt)
+	if err != nil {
+		return db.AgentTaskQueue{}, err
+	}
+
+	slog.Info("task enqueued",
+		"task_id", util.UUIDToString(task.ID),
+		"issue_id", util.UUIDToString(issue.ID),
+		"agent_id", util.UUIDToString(issue.ExecutorID),
+		"force_fresh_session", forceFreshSession,
+	)
+	if fireAt.Valid {
+		return task, nil
+	}
+	// Order matters: broadcast first, notify daemon second. notifyTaskAvailable
+	// kicks an in-process channel that the daemon picks up over HTTP and
+	// claims; the claim path then emits its own task:dispatch. Doing the
+	// queued broadcast afterwards risks the dispatch event reaching clients
+	// before the queued one (rare but unsafe-by-construction). Publishing
+	// in the desired observe-order makes correctness independent of timing.
+	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
+	s.NotifyTaskEnqueued(ctx, task)
+	return task, nil
+}
+
+// prepareIssueTaskWithCommentPlan resolves task inputs without inserting or
+// notifying. A transaction-bound service has no Composio client: callers must
+// prepare that optional network overlay before opening their transaction.
+func (s *TaskService) prepareIssueTaskWithCommentPlan(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, coalescedCommentIDs []pgtype.UUID, forceFreshSession bool, handoffNote string, actorUserID pgtype.UUID, rerunOfTaskID pgtype.UUID) (db.CreateAgentTaskParams, error) {
+	var empty db.CreateAgentTaskParams
 	if !issue.ExecutorID.Valid {
 		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", "issue has no executor")
-		return db.AgentTaskQueue{}, fmt.Errorf("issue has no executor")
+		return empty, fmt.Errorf("issue has no executor")
 	}
 
 	agent, err := s.Queries.GetAgent(ctx, issue.ExecutorID)
 	if err != nil {
 		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", err)
-		return db.AgentTaskQueue{}, fmt.Errorf("load agent: %w", err)
+		return empty, fmt.Errorf("load agent: %w", err)
 	}
 	if agent.ArchivedAt.Valid {
 		slog.Debug("task enqueue skipped: agent is archived", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(agent.ID))
-		return db.AgentTaskQueue{}, fmt.Errorf("agent is archived")
+		return empty, fmt.Errorf("agent is archived")
 	}
 	if !agent.RuntimeID.Valid {
 		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", "agent has no runtime")
-		return db.AgentTaskQueue{}, fmt.Errorf("agent has no runtime")
+		return empty, fmt.Errorf("agent has no runtime")
 	}
 
 	// The issue executor reacting to an agent-authored comment is a
@@ -1203,12 +1226,12 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 	attr, err = s.applyAttributionFallback(ctx, attr, agent)
 	if err != nil {
 		slog.Warn("task enqueue refused: attribution fail-closed", "issue_id", util.UUIDToString(issue.ID), "agent_id", util.UUIDToString(issue.ExecutorID))
-		return db.AgentTaskQueue{}, err
+		return empty, err
 	}
 	originatorUserID := attr.UserID
 	runtimeMCPOverlay := s.buildRuntimeMCPOverlay(ctx, originatorUserID, agent)
 	attrSource, attrDelegatedFrom, attrEvidenceKind, attrEvidenceRef := attributionCreateParams(attr)
-	createParams := db.CreateAgentTaskParams{
+	return db.CreateAgentTaskParams{
 		ID:                   dbid.NewV7(),
 		AgentID:              issue.ExecutorID,
 		RuntimeID:            agent.RuntimeID,
@@ -1232,11 +1255,17 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 		// Stamp the reviewed head so dedup can distinguish this run's target
 		// from a later request against a new HEAD (TEN-356).
 		HeadSha: headShaText(s.ResolveIssueReviewSHA(ctx, issue.ID)),
-	}
+	}, nil
+}
+
+// persistIssueTask writes through the caller's query handle. The caller owns
+// the commit boundary and publishes queued work only after it has committed.
+func persistIssueTask(ctx context.Context, q *db.Queries, createParams db.CreateAgentTaskParams, fireAt pgtype.Timestamptz) (db.AgentTaskQueue, error) {
 	var task db.AgentTaskQueue
+	var err error
 	if fireAt.Valid {
-		task, err = s.Queries.CreateDeferredChannelIssueTask(ctx, db.CreateDeferredChannelIssueTaskParams{
-			ID:                   dbid.NewV7(),
+		task, err = q.CreateDeferredChannelIssueTask(ctx, db.CreateDeferredChannelIssueTaskParams{
+			ID:                   createParams.ID,
 			AgentID:              createParams.AgentID,
 			RuntimeID:            createParams.RuntimeID,
 			IssueID:              createParams.IssueID,
@@ -1262,30 +1291,13 @@ func (s *TaskService) enqueueIssueTaskWithCommentPlan(ctx context.Context, issue
 			FireAt:               fireAt,
 		})
 	} else {
-		task, err = s.Queries.CreateAgentTask(ctx, createParams)
+		task, err = q.CreateAgentTask(ctx, createParams)
 	}
 	if err != nil {
-		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(issue.ID), "error", err)
+		slog.Error("task enqueue failed", "issue_id", util.UUIDToString(createParams.IssueID), "error", err)
 		return db.AgentTaskQueue{}, fmt.Errorf("create task: %w", err)
 	}
 
-	slog.Info("task enqueued",
-		"task_id", util.UUIDToString(task.ID),
-		"issue_id", util.UUIDToString(issue.ID),
-		"agent_id", util.UUIDToString(issue.ExecutorID),
-		"force_fresh_session", forceFreshSession,
-	)
-	if fireAt.Valid {
-		return task, nil
-	}
-	// Order matters: broadcast first, notify daemon second. notifyTaskAvailable
-	// kicks an in-process channel that the daemon picks up over HTTP and
-	// claims; the claim path then emits its own task:dispatch. Doing the
-	// queued broadcast afterwards risks the dispatch event reaching clients
-	// before the queued one (rare but unsafe-by-construction). Publishing
-	// in the desired observe-order makes correctness independent of timing.
-	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
-	s.NotifyTaskEnqueued(ctx, task)
 	return task, nil
 }
 

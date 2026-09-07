@@ -79,6 +79,11 @@ RETURNING issue_counter;
 -- workspace, so this cannot deadlock against it.
 SELECT id FROM workspace WHERE id = $1 FOR UPDATE;
 
+-- name: LockWorkspaceForIssueCreate :one
+-- Fence teardown before taking attachment/source-issue locks. KEY SHARE stays
+-- compatible with the ordinary non-key issue-counter update below.
+SELECT id FROM workspace WHERE id = $1 FOR KEY SHARE;
+
 -- name: LockWorkspaceForChatSessionCreate :one
 -- The creator half of the workspace delete/create protocol (#5219). Every
 -- production path that inserts a chat_session takes this FOR KEY SHARE lock on the
