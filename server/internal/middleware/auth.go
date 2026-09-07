@@ -36,7 +36,7 @@ func rejectTemporarilyDisabledUser(w http.ResponseWriter, r *http.Request, userI
 // Tokens.
 // Token sources (in priority order):
 //  1. Authorization: Bearer <token> header (guest bearer, PAT, or JWT)
-//  2. orvilo_auth HttpOnly cookie (JWT) — requires valid CSRF token for state-changing requests
+//  2. AuthCookie() HttpOnly cookie (JWT) — requires valid CSRF token for state-changing requests
 //
 // Sets X-User-ID and X-User-Email headers on the request for downstream handlers.
 //
@@ -362,7 +362,7 @@ func RevokeGuestOnLogout(queries *db.Queries) func(http.Handler) http.Handler {
 }
 
 // extractToken returns the bearer token and whether it came from a cookie.
-// Priority: Authorization header > orvilo_auth cookie.
+// Priority: Authorization header > AuthCookie() (orvilo_auth by default).
 func extractToken(r *http.Request) (token string, fromCookie bool) {
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 		parts := strings.Fields(authHeader)
@@ -371,7 +371,7 @@ func extractToken(r *http.Request) (token string, fromCookie bool) {
 		}
 	}
 
-	if cookie, err := r.Cookie(auth.SessionCookieName()); err == nil && cookie.Value != "" {
+	if cookie, err := r.Cookie(auth.AuthCookie()); err == nil && cookie.Value != "" {
 		return cookie.Value, true
 	}
 

@@ -3,7 +3,7 @@
 Orvilo follows the same three-environment split Multica uses for clients
 and hosted backends: local development, an internal test stack, and the
 public product. Those three never share a database, Clerk application,
-cookie domain, desktop `userData` directory, mobile bundle id, or CLI
+cookie domain, session cookie names, desktop `userData` directory, mobile bundle id, or CLI
 profile.
 
 ## Environments
@@ -79,7 +79,9 @@ Staging may share the production host, but it must not share runtime state:
 - State directory `/var/lib/orvilo-staging` — never
   `/var/lib/orvilo-production`.
 - A dedicated Clerk application and `staging-smoke@aspectlylabs.com` user.
-- Cookie domain `.staging.aspectlylabs.com`.
+- Cookie domain `.staging.aspectlylabs.com` and cookie names
+  `orvilo_staging_auth` / `orvilo_staging_csrf` (production keeps
+  `orvilo_auth` / `orvilo_csrf`).
 
 The restricted staging gateway is `/usr/local/bin/orvilo-staging-deploy`.
 It refuses production paths, production Compose project names, production
@@ -98,6 +100,17 @@ its Compose project, Secret Manager entry, or smoke user here.
 1. Create DNS for `staging.aspectlylabs.com`, `api.staging.aspectlylabs.com`,
    `accounts.staging.aspectlylabs.com`, and
    `accounts-origin.staging.aspectlylabs.com`.
+   Before enabling those routes, provision an origin TLS certificate whose SANs
+   cover `api.staging.aspectlylabs.com` and
+   `accounts-origin.staging.aspectlylabs.com`. The existing
+   `*.aspectlylabs.com` wildcard does **not** cover these nested names.
+   Because the nginx map shares `/etc/nginx/ssl/aspectlylabs.com/origin.pem`,
+   replace it only with a certificate that also retains every existing
+   production hostname (for example, the existing SANs plus
+   `*.staging.aspectlylabs.com`). Install the matching private key root-owned
+   with mode 0600. Validate nginx configuration and TLS hostname verification
+   for each new origin before enabling traffic; keep Cloudflare Full (strict)
+   validation enabled. Do not work around a missing SAN by disabling TLS checks.
 2. Create a separate Clerk application. Provision
    `staging-smoke@aspectlylabs.com` in that application only.
 3. Create the GitHub Environment `staging` (selected-branch policy: `main`)
@@ -111,8 +124,11 @@ its Compose project, Secret Manager entry, or smoke user here.
    ports above and must not mention production product hosts. Use cookie
    domain `.staging.aspectlylabs.com` so staging sessions are not scoped to
    the public product host. Production cookies on `.aspectlylabs.com` may
-   still be *presented* to the staging hostname by the browser; a separate
-   Clerk application makes those cookies unusable. Generate a staging-only
+   still be *presented* to the staging hostname by the browser; the overlay
+   therefore pins `AUTH_COOKIE_NAME=orvilo_staging_auth` and
+   `CSRF_COOKIE_NAME=orvilo_staging_csrf` so Go does not read the older
+   production JWT first. A separate Clerk application also makes those
+   production cookies unusable. Generate a staging-only
    `ORVILO_ORIGIN_AUTH_TOKEN`; do not copy the production Worker secret.
    Include every required Compose variable, including `CORS_ALLOWED_ORIGINS`,
    `CLERK_JWT_KEY`, `CLERK_ISSUER`, and the matching desktop broker credential
@@ -120,9 +136,6 @@ its Compose project, Secret Manager entry, or smoke user here.
    deployment access. `ALLOWED_EMAILS` may list individual QA addresses; the
    gateway always adds `staging-smoke@aspectlylabs.com`, while the overlay disables
    open signup and domain-wide allowlists.
-   The staging cookie domain selects distinct `orvilo_staging_auth` and
-   `orvilo_staging_csrf` names, so parent-domain production cookies cannot
-   shadow staging login, mutation, WebSocket authentication, or logout.
 5. Install the origin nginx map from `deploy/origin/nginx/aspectlylabs-origin.conf`
    (staging server blocks are in the same file, different ports). Before reloading
    nginx, install a root-owned mode-0600 snippet at
