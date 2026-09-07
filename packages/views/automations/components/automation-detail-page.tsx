@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   Play, Clock, Trash2, CheckCircle2, XCircle, Loader2, Pencil,
   Ban, ChevronDown, ChevronRight, FolderKanban, MoreHorizontal, Server, AlertTriangle,
@@ -8,8 +8,6 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { automationDetailOptions, automationRunsOptions } from "@patchbay/core/automations/queries";
 import { projectDetailOptions } from "@patchbay/core/projects/queries";
-import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
-import { isAgentRuntimeBound } from "@patchbay/core/agents";
 import type { AutomationTriggerPreset } from "@patchbay/core/automations";
 import {
   useUpdateAutomation,
@@ -18,7 +16,6 @@ import {
   useCreateAutomationTrigger,
 } from "@patchbay/core/automations/mutations";
 import { clientErrorMessage, dispatchReasonCode, errorCode } from "@patchbay/core/api";
-import { runtimeListOptions } from "@patchbay/core/runtimes";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useActorName } from "@patchbay/core/workspace/hooks";
@@ -63,7 +60,6 @@ import { ProjectPicker } from "../../projects/components/project-picker";
 import { useT } from "../../i18n";
 import { PageHeader } from "../../layout/page-header";
 import { AgentPicker } from "./pickers/agent-picker";
-import { ModelDropdown } from "../../agents/components/model-dropdown";
 import { TriggerAddMenu } from "./trigger-add-menu";
 import { TriggerCard } from "./trigger-card";
 import { TriggerScheduleDialog } from "./trigger-schedule-dialog";
@@ -261,21 +257,12 @@ function SkippedRunsGroup({
 function InstructionsSection({
   automation,
   canWrite,
-  runtimeId,
-  thinkingLevel,
-  serviceTier,
 }: {
   automation: Automation;
   canWrite: boolean;
-  runtimeId: string | null;
-  thinkingLevel: string;
-  serviceTier: string;
 }) {
   const { t } = useT("automations");
   const updateAutomation = useUpdateAutomation();
-  const wsId = useWorkspaceId();
-  const { data: runtimes = [] } = useQuery(runtimeListOptions(wsId));
-  const runtime = runtimes.find((item) => item.id === runtimeId);
   const lastSaved = useRef(automation.description ?? "");
 
   const persistDescription = (next: string) => {
@@ -318,33 +305,6 @@ function InstructionsSection({
           </p>
         )}
         </div>
-        <div className="space-y-3 border-t px-4 py-3">
-          <div>
-            <p className="text-caption font-medium">{t(($) => $.settings.section_model)}</p>
-            <p className="text-caption text-muted-foreground">
-              {t(($) => $.settings.model_default)}
-            </p>
-          </div>
-          <div>
-            <ModelDropdown
-              variant="chip"
-              showLabel={false}
-              allowEffort={false}
-              provider={runtime?.provider}
-              thinkingLevel={thinkingLevel}
-              serviceTier={serviceTier}
-              runtimes={runtime ? [runtime] : []}
-              runtimeId={runtimeId}
-              runtimeOnline={runtime?.status === "online"}
-              value={automation.model ?? ""}
-              onChange={(model) => {
-                if (!canWrite) return;
-                return updateAutomation.mutateAsync({ id: automation.id, model: model || "" }).then(() => {});
-              }}
-              disabled={!canWrite}
-            />
-          </div>
-        </div>
         <div className="flex min-w-0 items-center px-3 pb-2">
           <AgentPicker
             assignee={{ type: automation.executor_type, id: automation.executor_id }}
@@ -381,8 +341,6 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
 
   const { data, isLoading, isError, refetch } = useQuery(automationDetailOptions(wsId, automationId));
   const { data: runs = [], isLoading: runsLoading, isError: runsError, refetch: refetchRuns } = useQuery(automationRunsOptions(wsId, automationId));
-  const { data: agents = [] } = useQuery(agentListOptions(wsId));
-  const { data: teams = [] } = useQuery(teamListOptions(wsId));
   const updateAutomation = useUpdateAutomation();
   const deleteAutomation = useDeleteAutomation();
   const triggerAutomation = useTriggerAutomation();
@@ -399,17 +357,6 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [runBlockedOpen, setRunBlockedOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  const executorAgentId =
-    data?.automation.executor_type === "team"
-      ? (teams.find((team) => team.id === data.automation.executor_id)?.leader_id ?? null)
-      : (data?.automation.executor_id ?? null);
-  const executorAgent = useMemo(
-    () => (executorAgentId ? agents.find((agent) => agent.id === executorAgentId) ?? null : null),
-    [agents, executorAgentId],
-  );
-  const runtimeId =
-    executorAgent && isAgentRuntimeBound(executorAgent) ? executorAgent.runtime_id : null;
 
   if (isLoading) {
     return (
@@ -753,9 +700,6 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
               <InstructionsSection
                 automation={automation}
                 canWrite={canWrite}
-                runtimeId={runtimeId}
-                thinkingLevel={executorAgent?.thinking_level ?? ""}
-                serviceTier={executorAgent?.service_tier ?? ""}
               />
 
               <AutomationToolsSection automation={automation} canWrite={canWrite} />

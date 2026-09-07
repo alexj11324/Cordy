@@ -46,16 +46,6 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
 }));
 
 vi.mock("@patchbay/core/workspace/queries", () => ({
-  agentListOptions: (wsId: string) => ({
-    queryKey: ["agents", wsId],
-    queryFn: async () => [
-      { id: "agent-1", name: "Scout", archived_at: null, runtime_id: "runtime-1" },
-    ],
-  }),
-  teamListOptions: (wsId: string) => ({
-    queryKey: ["teams", wsId],
-    queryFn: async () => [],
-  }),
   workspaceMcpServersOptions: (wsId: string) => ({
     queryKey: ["mcp", wsId],
     queryFn: async () => [],
@@ -71,17 +61,6 @@ vi.mock("@patchbay/core/projects/queries", () => ({
   projectListOptions: (wsId: string) => ({
     queryKey: ["projects", wsId],
     queryFn: async () => [],
-  }),
-}));
-
-vi.mock("@patchbay/core/runtimes", () => ({
-  runtimeListOptions: () => ({
-    queryKey: ["runtimes"],
-    queryFn: async () => [{ id: "runtime-1", provider: "codex", status: "online" }],
-  }),
-  runtimeModelsOptions: () => ({
-    queryKey: ["runtime-models"],
-    queryFn: async () => ({ models: [], supported: true }),
   }),
 }));
 
