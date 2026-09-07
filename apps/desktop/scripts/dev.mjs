@@ -15,6 +15,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { envWithLocalBins } from "./package.mjs";
+import { brandDevElectron } from "./brand-dev-electron.mjs";
 import {
   applyWorktreeDevEnv,
   repoRootFromScriptDir,
@@ -55,7 +56,10 @@ const node = process.execPath;
 // fails on a cache miss when Go is unavailable.
 process.env.ORVILO_REQUIRE_SOURCE_CLI = "1";
 run(node, [join(here, "prepare-dev-runtime.mjs")]);
-run(node, [join(here, "brand-dev-electron.mjs")]);
+if (process.platform === "darwin") {
+  // electron-vite must launch the same channel-specific bundle we register.
+  process.env.ELECTRON_EXEC_PATH = brandDevElectron();
+}
 
 const isWin = process.platform === "win32";
 // electron-vite's bin lands in apps/desktop/node_modules/.bin under the
