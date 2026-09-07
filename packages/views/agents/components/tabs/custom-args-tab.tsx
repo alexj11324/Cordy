@@ -172,14 +172,8 @@ export function CustomArgsTab({
 
   return (
     <div className="space-y-6">
-      <p className="max-w-2xl text-pretty text-body leading-6 text-muted-foreground">
-        {t(($) => $.tab_body.custom_args.intro)}
-      </p>
-
-      <SettingsSection
-        title={t(($) => $.tab_body.custom_args.arguments_label)}
-        description={t(($) => $.tab_body.custom_args.arguments_description)}
-        action={
+      <div className="space-y-3">
+        <div className="flex justify-end">
           <Button
             type="button"
             variant="outline"
@@ -190,8 +184,7 @@ export function CustomArgsTab({
             <Plus className="size-3.5" aria-hidden="true" />
             {t(($) => $.tab_body.custom_args.add_argument_action)}
           </Button>
-        }
-      >
+        </div>
         <SettingsCard>
           <div className="space-y-2 p-3">
             {entries.length === 0 && editor?.kind !== "add" ? (
@@ -260,7 +253,7 @@ export function CustomArgsTab({
             {editor?.kind === "add" ? renderEditor() : null}
           </div>
         </SettingsCard>
-      </SettingsSection>
+      </div>
 
       {launchCommand ? (
         <SettingsSection title={t(($) => $.tab_body.custom_args.command_preview_label)}>

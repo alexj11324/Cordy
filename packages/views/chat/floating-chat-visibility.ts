@@ -8,11 +8,31 @@
  * where the overlay cannot mount reads as a dead keypress, and then surprises
  * the user with a window that pops open (or vanishes) on the next navigation.
  * An open task Agent panel also owns the corner where the launcher would sit.
+ * Agent detail owns a direct message action in its identity card, so it does
+ * not show a second global launcher.
  */
 export function isFloatingChatRouteSuppressed(
   pathname: string,
   chatPath: string,
   agentThreadPath?: string,
+  agentsPath?: string,
+  agentDetailDmAvailable = false,
 ): boolean {
-  return pathname === agentThreadPath || pathname === chatPath || pathname.startsWith(`${chatPath}/`);
+  const agentDetailSegment = agentsPath
+    ? pathname.slice(`${agentsPath}/`.length)
+    : "";
+  const isAgentDetail =
+    !!agentsPath &&
+    pathname.startsWith(`${agentsPath}/`) &&
+    agentDetailSegment !== "new" &&
+    !agentDetailSegment.startsWith("new/") &&
+    !agentDetailSegment.includes("/") &&
+    agentDetailDmAvailable;
+
+  return (
+    pathname === agentThreadPath ||
+    pathname === chatPath ||
+    pathname.startsWith(`${chatPath}/`) ||
+    isAgentDetail
+  );
 }

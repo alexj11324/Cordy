@@ -18,7 +18,7 @@ import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
-// The DM tests exercise the header action wiring plus the real permission
+// The message tests exercise the header action wiring plus the real permission
 // rules (via auth + member fixtures); the tabbed body and avatar/presence
 // widgets are irrelevant weight, so they're stubbed.
 vi.mock("./agent-overview-pane", () => ({
@@ -53,12 +53,20 @@ const currentUserRef = vi.hoisted(() => ({
   current: { id: "user-1" } as { id: string } | null,
 }));
 const mockToastError = vi.hoisted(() => vi.fn());
-const mockModalOpen = vi.hoisted(() => vi.fn());
 const mockGetAgent = vi.hoisted(() => vi.fn());
 const mockUpdateAgent = vi.hoisted(() => vi.fn());
+const mockSetAgentDetailDmAvailable = vi.hoisted(() => vi.fn());
 
 vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
+}));
+vi.mock("@patchbay/core/chat", () => ({
+  useChatStore: (
+    selector: (state: {
+      setAgentDetailDmAvailable: typeof mockSetAgentDetailDmAvailable;
+    }) => unknown,
+  ) =>
+    selector({ setAgentDetailDmAvailable: mockSetAgentDetailDmAvailable }),
 }));
 vi.mock("@patchbay/core/agents", () => ({
   isAgentRuntimeBound: (agent: {
@@ -133,11 +141,6 @@ vi.mock("@patchbay/core/auth", () => {
   );
   return { useAuthStore };
 });
-vi.mock("@patchbay/core/modals", () => ({
-  useModalStore: Object.assign(vi.fn(), {
-    getState: () => ({ open: mockModalOpen }),
-  }),
-}));
 vi.mock("@patchbay/core/paths", () => ({
   useWorkspacePaths: () => ({
     agents: () => "/acme/agents",
@@ -229,7 +232,7 @@ describe("AgentDetailPage direct-detail fallback", () => {
     renderPage();
 
     expect(
-      await screen.findByRole("button", { name: "Assign work" }),
+      await screen.findByRole("button", { name: "Send message" }),
     ).toBeInTheDocument();
     expect(mockGetAgent).not.toHaveBeenCalled();
   });
@@ -252,7 +255,7 @@ describe("AgentDetailPage direct-detail fallback", () => {
     renderPage();
 
     expect(
-      await screen.findByRole("button", { name: "Assign work" }),
+      await screen.findByRole("button", { name: "Send message" }),
     ).toBeInTheDocument();
     expect(screen.queryByText("Agent not found")).not.toBeInTheDocument();
   });
@@ -281,7 +284,7 @@ describe("AgentDetailPage direct-detail fallback", () => {
     agentsRef.current = [];
     mockGetAgent.mockResolvedValueOnce(baseAgent);
     const { queryClient } = renderPage();
-    await screen.findByRole("button", { name: "Assign work" });
+    await screen.findByRole("button", { name: "Send message" });
 
     mockGetAgent.mockRejectedValue(new ApiError("not found", 404, "Not Found"));
     await act(async () => {
@@ -293,7 +296,7 @@ describe("AgentDetailPage direct-detail fallback", () => {
 
     expect(await screen.findByText("Agent not found")).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Assign work" }),
+      screen.queryByRole("button", { name: "Send message" }),
     ).not.toBeInTheDocument();
   });
 
@@ -301,7 +304,7 @@ describe("AgentDetailPage direct-detail fallback", () => {
     agentsRef.current = [];
     mockGetAgent.mockResolvedValueOnce(baseAgent);
     const { queryClient } = renderPage();
-    await screen.findByRole("button", { name: "Assign work" });
+    await screen.findByRole("button", { name: "Send message" });
 
     mockGetAgent.mockRejectedValue(new ApiError("forbidden", 403, "Forbidden"));
     await act(async () => {
@@ -315,7 +318,7 @@ describe("AgentDetailPage direct-detail fallback", () => {
       await screen.findByText("You don't have access to this agent"),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Assign work" }),
+      screen.queryByRole("button", { name: "Send message" }),
     ).not.toBeInTheDocument();
   });
 
@@ -336,7 +339,7 @@ describe("AgentDetailPage direct-detail fallback", () => {
     agentsRef.current = [];
     mockGetAgent.mockResolvedValueOnce(baseAgent);
     const { queryClient } = renderPage();
-    await screen.findByRole("button", { name: "Assign work" });
+    await screen.findByRole("button", { name: "Send message" });
 
     mockGetAgent.mockRejectedValue(new Error("Network request failed"));
     await act(async () => {
@@ -347,7 +350,7 @@ describe("AgentDetailPage direct-detail fallback", () => {
     });
 
     expect(
-      screen.getByRole("button", { name: "Assign work" }),
+      screen.getByRole("button", { name: "Send message" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByText("Couldn't load this agent"),
@@ -359,7 +362,7 @@ describe("AgentDetailPage direct-detail fallback", () => {
     mockGetAgent.mockResolvedValue(baseAgent);
     mockUpdateAgent.mockImplementation(() => new Promise(() => {}));
     const { queryClient } = renderPage();
-    await screen.findByRole("button", { name: "Assign work" });
+    await screen.findByRole("button", { name: "Send message" });
 
     fireEvent.click(screen.getByRole("button", { name: "update model" }));
 
@@ -370,12 +373,15 @@ describe("AgentDetailPage direct-detail fallback", () => {
   });
 });
 
-describe("AgentDetailPage DM button", () => {
+describe("AgentDetailPage message button", () => {
   it("navigates to the chat deep link when the user can chat with the agent", async () => {
     const { push } = renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "DM" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Send message" }));
     expect(push).toHaveBeenCalledWith("/acme/chat?agent=agent-1");
     expect(mockToastError).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockSetAgentDetailDmAvailable).toHaveBeenLastCalledWith(true),
+    );
   });
 
   it("shows a toast instead of navigating when the user lacks chat access", async () => {
@@ -387,14 +393,15 @@ describe("AgentDetailPage DM button", () => {
     ];
     membersRef.current = [{ user_id: "user-1", role: "admin" }];
     const { push } = renderPage();
-    fireEvent.click(await screen.findByRole("button", { name: "DM" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Send message" }));
     expect(mockToastError).toHaveBeenCalledWith(
       "You don't have access to chat with this agent.",
     );
     expect(push).not.toHaveBeenCalled();
+    expect(mockSetAgentDetailDmAvailable).toHaveBeenLastCalledWith(false);
   });
 
-  it("disables DM while membership is resolving instead of toasting a false deny", async () => {
+  it("disables message while membership is resolving instead of toasting a false deny", async () => {
     // Review P2: a pending member query collapses role to null, which the
     // rules read as not_member — a legitimate public_to+workspace member
     // would get a wrong "no access" toast. Undetermined must disable, not deny.
@@ -402,7 +409,7 @@ describe("AgentDetailPage DM button", () => {
     const { push } = renderPage();
     // The control is an anchor now, so "disabled" is expressed the only way a
     // link can express it: aria-disabled plus removal from the tab order.
-    const dm = await screen.findByRole("button", { name: "DM" });
+    const dm = await screen.findByRole("button", { name: "Send message" });
     expect(dm).toHaveAttribute("aria-disabled", "true");
     expect(dm).toHaveAttribute("tabindex", "-1");
     fireEvent.click(dm);
@@ -410,41 +417,23 @@ describe("AgentDetailPage DM button", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
-  it("hides the DM button on an archived agent", async () => {
+  it("hides the message button on an archived agent", async () => {
     agentsRef.current = [{ ...baseAgent, archived_at: "2026-06-01T00:00:00Z" }];
     renderPage();
     // The archived banner is the signal the page has settled past loading.
     await screen.findByText(/This agent is archived/);
     expect(
-      screen.queryByRole("button", { name: "DM" }),
+      screen.queryByRole("button", { name: "Send message" }),
     ).not.toBeInTheDocument();
+    expect(mockSetAgentDetailDmAvailable).toHaveBeenLastCalledWith(false);
   });
 
-  it("hides the more-actions trigger when no menu actions are available", async () => {
-    // The gate must survive a caller who genuinely CAN archive: an admin
-    // passes `canEditAgent`, so `canArchive` is true. The only thing keeping
-    // the menu empty is the system agent's undefined `onArchive`. Assert the
-    // real aria label (locale `detail.more_actions_aria` = "Agent actions"),
-    // so removing the `hasMoreActions` gate would render the empty shell and
-    // fail this test.
-    agentsRef.current = [{ ...baseAgent, system_key: "patrick" }];
-    membersRef.current = [{ user_id: "user-1", role: "admin" }];
+  it("keeps assignment and archive actions out of the identity card", async () => {
     renderPage();
 
-    await screen.findByRole("button", { name: "Assign work" });
+    await screen.findByRole("button", { name: "Send message" });
+    expect(screen.queryByRole("button", { name: "Assign work" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Agent actions")).not.toBeInTheDocument();
-  });
-
-  it("keeps the more-actions trigger for an editable non-system agent", async () => {
-    // Positive counterpart: an owner of a normal agent has a real archive
-    // action, so the menu trigger must still render. Guards the gate against
-    // over-hiding.
-    agentsRef.current = [{ ...baseAgent, owner_id: "user-1" }];
-    membersRef.current = [{ user_id: "user-1", role: "member" }];
-    renderPage();
-
-    await screen.findByRole("button", { name: "Assign work" });
-    expect(screen.getByLabelText("Agent actions")).toBeInTheDocument();
   });
 
   it("explains an unbound agent and blocks run actions without losing the profile", async () => {
@@ -465,10 +454,9 @@ describe("AgentDetailPage DM button", () => {
       screen.getByRole("button", { name: "Bind runtime" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "DM" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
     expect(mockToastError).toHaveBeenCalledWith(
       "Bind a runtime before running this agent.",
     );
-    expect(mockModalOpen).not.toHaveBeenCalled();
   });
 });

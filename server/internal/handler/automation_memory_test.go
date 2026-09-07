@@ -250,8 +250,14 @@ func TestAutomationMemoryTaskScopeAcrossRuns(t *testing.T) {
 			}
 			dbfx.Exec(t, `UPDATE agent_task_queue SET originator_user_id=$2, accountable_user_id=$2 WHERE id=$1`, taskID, testUserID)
 			dbfx.Exec(t, `UPDATE automation SET tools='{"memories":{"enabled":false}}' WHERE id=$1`, id)
-			if w := request(id, "GET", nil); w.Code != 200 {
-				t.Fatalf("legacy disabled memory row should remain in use: %d", w.Code)
+			if w := request(id, "GET", nil); w.Code != 403 {
+				t.Fatalf("disabled memory must deny task access: %d", w.Code)
+			}
+			if w := request(id, "PUT", map[string]any{"content": "disabled write", "expected_revision": 1}); w.Code != 403 {
+				t.Fatalf("disabled memory must deny task writes: %d", w.Code)
+			}
+			if w := request(id, "DELETE", nil); w.Code != 403 {
+				t.Fatalf("disabled memory must deny task deletion: %d", w.Code)
 			}
 		})
 	}
