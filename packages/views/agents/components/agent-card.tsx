@@ -129,10 +129,7 @@ export function AgentCard({
 }) {
   const { t } = useT("agents");
   const { agent } = row;
-  const subtitle =
-    agent.description.trim() ||
-    agent.model.trim() ||
-    t(($) => $.profile_card.model_unset);
+  const subtitle = agent.model.trim() || t(($) => $.profile_card.model_unset);
 
   return (
     <AgentIdentityCard
