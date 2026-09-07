@@ -22,6 +22,22 @@ const runtimes: ModelSelectorRuntime[] = [
   { id: "codex", name: "Codex Personal", provider: "codex", status: "online" },
   { id: "claude", name: "Claude Work", provider: "claude", status: "online" },
 ];
+const aliasedRuntimes: ModelSelectorRuntime[] = [
+  {
+    id: "codex",
+    name: "Codex (host)",
+    custom_name: "Primary Mac",
+    provider: "codex",
+    status: "online",
+  },
+  {
+    id: "codex-build",
+    name: "Codex (host)",
+    custom_name: "Build Mac",
+    provider: "codex",
+    status: "online",
+  },
+];
 const catalogs = {
   qwenpaw: [],
   codex: [
@@ -64,16 +80,21 @@ const catalogs = {
     },
   ],
 };
-vi.mock("@patchbay/core/runtimes", () => ({
-  runtimeModelsOptions: (id: keyof typeof catalogs | null) => ({
-    queryKey: ["models", id],
-    enabled: Boolean(id),
-    queryFn: async () => ({
-      supported: id !== "qwenpaw",
-      models: id ? catalogs[id] : [],
+vi.mock("@patchbay/core/runtimes", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@patchbay/core/runtimes")>();
+  return {
+    ...actual,
+    runtimeModelsOptions: (id: keyof typeof catalogs | null) => ({
+      queryKey: ["models", id],
+      enabled: Boolean(id),
+      queryFn: async () => ({
+        supported: id !== "qwenpaw",
+        models: id ? catalogs[id] : [],
+      }),
     }),
-  }),
-}));
+  };
+});
 function mount(
   onSelect = vi.fn(),
   options = runtimes,
@@ -118,10 +139,107 @@ describe("four-column model selector", () => {
       /\bsize-5\b/,
     );
     const codex = screen.getByRole("button", {
-      name: "Codex Personal · codex",
+      name: "Codex Personal",
     });
     expect(codex.querySelector("svg")?.getAttribute("class")).toMatch(
       /\bsize-5\b/,
+    );
+  });
+
+  it("uses each runtime custom name in rail identity, selected title, and favorites", async () => {
+    useModelFavoritesStore.setState({
+      favorites: [{ runtimeId: "codex", model: "gpt", thinkingLevel: "low" }],
+    });
+    mount(vi.fn(), aliasedRuntimes, {
+      preferFavorites: false,
+      runtimeId: "codex",
+      model: "gpt",
+      thinkingLevel: "low",
+    });
+
+    const primaryRail = screen.getByRole("button", { name: "Primary Mac (Codex)" });
+    const buildRail = screen.getByRole("button", { name: "Build Mac (Codex)" });
+    expect(primaryRail).toHaveAttribute("title", "Primary Mac (Codex)");
+    expect(buildRail).toHaveAttribute("title", "Build Mac (Codex)");
+    expect(screen.getByText("Primary Mac (Codex)")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Favorites" }));
+    expect(screen.getByText("Primary Mac (Codex)")).toBeInTheDocument();
+  });
+
+  it("keeps the current effort for a same-runtime custom model missing from a successful catalog", async () => {
+    const onSelect = mount(vi.fn(), runtimes, {
+      model: "gpt",
+      thinkingLevel: "high",
+    });
+    await screen.findByText("GPT");
+    const input = screen.getByPlaceholderText(
+      enAgents.pickers.model_search_placeholder,
+    );
+    fireEvent.change(input, { target: { value: "custom-local-build" } });
+    fireEvent.click(await screen.findByText('Use "custom-local-build"'));
+
+    await waitFor(() =>
+      expect(onSelect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtimeId: "codex",
+          model: "custom-local-build",
+          thinkingLevel: "high",
+        }),
+      ),
+    );
+  });
+
+  it("keeps the current effort for a same-runtime custom model while offline", async () => {
+    const offlineRuntime: ModelSelectorRuntime = {
+      ...runtimes[0]!,
+      id: "codex-offline",
+      status: "offline",
+    };
+    const onSelect = mount(vi.fn(), [offlineRuntime], {
+      runtimeId: "codex-offline",
+      model: "existing-model",
+      thinkingLevel: "high",
+      preferFavorites: false,
+    });
+    const input = screen.getByPlaceholderText(
+      enAgents.pickers.model_search_placeholder,
+    );
+    fireEvent.change(input, { target: { value: "offline-custom-model" } });
+    fireEvent.click(await screen.findByText('Use "offline-custom-model"'));
+
+    await waitFor(() =>
+      expect(onSelect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtimeId: "codex-offline",
+          model: "offline-custom-model",
+          thinkingLevel: "high",
+          catalog: null,
+        }),
+      ),
+    );
+  });
+
+  it("clears the effort for a custom model when browsing a different runtime", async () => {
+    const onSelect = mount(vi.fn(), runtimes);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Claude Work" }),
+    );
+    await screen.findByText("Opus");
+    const input = screen.getByPlaceholderText(
+      enAgents.pickers.model_search_placeholder,
+    );
+    fireEvent.change(input, { target: { value: "claude-custom-model" } });
+    fireEvent.click(await screen.findByText('Use "claude-custom-model"'));
+
+    await waitFor(() =>
+      expect(onSelect).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtimeId: "claude",
+          model: "claude-custom-model",
+          thinkingLevel: "",
+        }),
+      ),
     );
   });
   it("keeps a stale saved speed visible until the user explicitly clears it", async () => {
@@ -168,7 +286,7 @@ describe("four-column model selector", () => {
   it("clears speed when switching to a different runtime", async () => {
     const onSelect = mount(vi.fn(), runtimes, { serviceTier: "priority" });
     fireEvent.click(
-      screen.getByRole("button", { name: "Claude Work · claude" }),
+      screen.getByRole("button", { name: "Claude Work" }),
     );
     fireEvent.click(await screen.findByText("Opus"));
     fireEvent.click(screen.getByRole("button", { name: "High" }));
@@ -235,7 +353,7 @@ describe("four-column model selector", () => {
       ...runtimes,
       { id: "qwenpaw", name: "QwenPaw", provider: "qwenpaw", status: "online" },
     ]);
-    fireEvent.click(screen.getByRole("button", { name: "QwenPaw · qwenpaw" }));
+    fireEvent.click(screen.getByRole("button", { name: "QwenPaw" }));
     await screen.findByText(enAgents.model_dropdown.managed_by_runtime_title);
     expect(
       screen.queryByRole("button", {
@@ -268,7 +386,7 @@ describe("four-column model selector", () => {
       },
     ]);
     fireEvent.click(
-      screen.getByRole("button", { name: "Antigravity · antigravity" }),
+      screen.getByRole("button", { name: "Antigravity" }),
     );
     fireEvent.click(await screen.findByText("Gemini"));
     expect(screen.queryByText("Gemini (High)")).toBeNull();
@@ -291,7 +409,7 @@ describe("four-column model selector", () => {
   it("browses provider and model without saving, then submits the exact effort with runtime and model", async () => {
     const onSelect = mount();
     fireEvent.click(
-      screen.getByRole("button", { name: "Claude Work · claude" }),
+      screen.getByRole("button", { name: "Claude Work" }),
     );
     fireEvent.click(await screen.findByText("Opus"));
     expect(onSelect).not.toHaveBeenCalled();

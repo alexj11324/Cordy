@@ -36,13 +36,18 @@ const CODEX_MODELS: RuntimeModelsResult = {
 // daemon's reported error text, so a failure is modelled as a throwing queryFn.
 let discovery: () => Promise<RuntimeModelsResult> = async () => CODEX_MODELS;
 
-vi.mock("@patchbay/core/runtimes", () => ({
-  runtimeModelsOptions: (runtimeId: string | null) => ({
-    enabled: Boolean(runtimeId),
-    queryKey: ["runtime-models", runtimeId, discoveryKey],
-    queryFn: () => discovery(),
-  }),
-}));
+vi.mock("@patchbay/core/runtimes", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("@patchbay/core/runtimes")>();
+  return {
+    ...actual,
+    runtimeModelsOptions: (runtimeId: string | null) => ({
+      enabled: Boolean(runtimeId),
+      queryKey: ["runtime-models", runtimeId, discoveryKey],
+      queryFn: () => discovery(),
+    }),
+  };
+});
 
 // Bumped per test so React Query cannot serve a previous case's cached result.
 let discoveryKey = 0;

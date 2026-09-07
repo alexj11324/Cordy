@@ -12,7 +12,10 @@ import {
   Search,
   Star,
 } from "lucide-react";
-import { runtimeModelsOptions } from "@patchbay/core/runtimes";
+import {
+  runtimeDisplayLabel,
+  runtimeModelsOptions,
+} from "@patchbay/core/runtimes";
 import {
   modelFavoriteKey,
   useModelFavoritesStore,
@@ -35,7 +38,7 @@ import { findModelCapabilityEntry } from "./inspector/model-capability";
 
 export type ModelSelectorRuntime = Pick<
   RuntimeDevice,
-  "id" | "provider" | "name" | "status"
+  "id" | "provider" | "name" | "custom_name" | "status"
 > &
   Partial<Pick<RuntimeDevice, "workspace_id">>;
 export type ModelSelection = ModelFavorite & {
@@ -380,8 +383,8 @@ export function ModelSelectorContent({
           <button
             key={item.id}
             type="button"
-            title={`${item.name} · ${item.provider}`}
-            aria-label={`${item.name} · ${item.provider}`}
+            title={runtimeDisplayLabel(item)}
+            aria-label={runtimeDisplayLabel(item)}
             aria-pressed={section === item.id}
             onClick={() => showRuntime(item.id)}
             className={cn(
@@ -450,11 +453,14 @@ export function ModelSelectorContent({
             aria-label={t(($) => $.model_selector.favorites)}
           >
             {availableFavorites
-              .filter((favorite) =>
-                `${favorite.model} ${favorite.modelLabel ?? ""} ${favorite.thinkingLevel} ${favorite.thinkingLabel ?? ""} ${favorite.serviceTier ?? ""} ${favorite.serviceTierLabel ?? ""} ${runtimes.find((item) => item.id === favorite.runtimeId)?.name}`
+              .filter((favorite) => {
+                const favoriteRuntime = runtimes.find(
+                  (item) => item.id === favorite.runtimeId,
+                );
+                return `${favorite.model} ${favorite.modelLabel ?? ""} ${favorite.thinkingLevel} ${favorite.thinkingLabel ?? ""} ${favorite.serviceTier ?? ""} ${favorite.serviceTierLabel ?? ""} ${favoriteRuntime ? runtimeDisplayLabel(favoriteRuntime) : ""}`
                   .toLowerCase()
-                  .includes(needle),
-              )
+                  .includes(needle);
+              })
               .map((favorite) => {
                 const owner = runtimes.find(
                   (item) => item.id === favorite.runtimeId,
@@ -513,7 +519,7 @@ export function ModelSelectorContent({
                             provider={owner.provider}
                             className="size-3"
                           />
-                          {owner.name}
+                          {runtimeDisplayLabel(owner)}
                         </span>
                       </span>
                       {selected && (
@@ -537,7 +543,7 @@ export function ModelSelectorContent({
               aria-label={t(($) => $.model_dropdown.label)}
             >
               <p className="px-2 py-1 text-micro text-muted-foreground">
-                {runtime?.name}
+                {runtime ? runtimeDisplayLabel(runtime) : null}
               </p>
               {modelsQuery.isLoading && (
                 <p
@@ -668,13 +674,25 @@ export function ModelSelectorContent({
                       type="button"
                       disabled={saving}
                       className={cn(rowClass, "w-full text-primary")}
-                      onClick={() =>
+                      onClick={() => {
+                        const manualModel = search.trim();
+                        const sameRuntime = browsingRuntimeId === runtimeId;
+                        const manualUpdate = buildModelChangeUpdate({
+                          provider: runtime?.provider ?? "",
+                          model: manualModel,
+                          thinkingLevel: sameRuntime ? thinkingLevel : "",
+                          serviceTier: sameRuntime ? serviceTier : "",
+                          catalog,
+                        });
                         void select({
                           runtimeId: browsingRuntimeId,
-                          model: search.trim(),
-                          thinkingLevel: "",
-                        })
-                      }
+                          model: manualModel,
+                          thinkingLevel:
+                            sameRuntime && manualUpdate.thinking_level !== ""
+                              ? thinkingLevel
+                              : "",
+                        });
+                      }}
                     >
                       {t(($) => $.pickers.model_custom_use, {
                         value: search.trim(),

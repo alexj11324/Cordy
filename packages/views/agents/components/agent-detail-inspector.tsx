@@ -24,6 +24,7 @@ import {
   buildModelChangeUpdate,
   type ModelCatalog,
 } from "./inspector/model-change-cleanup";
+import { findModelCapabilityEntry } from "./inspector/model-capability";
 
 interface InspectorProps {
   agent: Agent;
@@ -117,14 +118,39 @@ export function AgentDetailInspector({
               runtimes={runtimes.filter((item) =>
                 isRuntimeUsableForUser(item, currentUserId),
               )}
-              onSelection={({ runtimeId, model, thinkingLevel, serviceTier }) =>
+              onSelection={(selection) => {
+                const sameRuntime = selection.runtimeId === agent.runtime_id;
+                const selectedEntry = sameRuntime
+                  ? findModelCapabilityEntry(
+                      selection.catalog ?? [],
+                      selection.model,
+                      runtime?.provider ?? "",
+                    )
+                  : undefined;
+                const modelChange = sameRuntime
+                  ? buildModelChangeUpdate({
+                      provider: runtime?.provider ?? "",
+                      model: selection.model,
+                      thinkingLevel: agent.thinking_level ?? "",
+                      serviceTier: agent.service_tier ?? "",
+                      catalog: selection.catalog,
+                    })
+                  : null;
+                const keepExistingThinking =
+                  sameRuntime &&
+                  Boolean(selection.model) &&
+                  !selection.thinkingLevel &&
+                  !selectedEntry &&
+                  modelChange?.thinking_level !== "";
                 update({
-                  ...(runtimeId !== agent.runtime_id ? { runtime_id: runtimeId } : {}),
-                  model,
-                  thinking_level: thinkingLevel,
-                  service_tier: serviceTier,
-                })
-              }
+                  ...(sameRuntime ? {} : { runtime_id: selection.runtimeId }),
+                  model: selection.model,
+                  thinking_level: keepExistingThinking
+                    ? agent.thinking_level ?? ""
+                    : selection.thinkingLevel,
+                  service_tier: selection.serviceTier,
+                });
+              }}
               onChange={handleModelChange}
             />
           </SettingsRow>

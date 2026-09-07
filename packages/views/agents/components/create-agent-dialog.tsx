@@ -155,15 +155,25 @@ export function CreateAgentDialog({
   const selectedRuntime = runtimes.find((d) => d.id === selectedRuntimeId) ?? null;
   useEffect(() => {
     if (selectedRuntimeId || runtimesLoading) return;
-    const candidate = runtimes.find((runtime) =>
-      runtime.status === "online" && isRuntimeUsableForUser(runtime, currentUserId),
-    );
+    const candidate = runtimes
+      .filter((runtime) => isRuntimeUsableForUser(runtime, currentUserId))
+      .toSorted((a, b) => {
+        const rank = (runtime: RuntimeDevice) => {
+          const owned =
+            currentUserId !== null && runtime.owner_id === currentUserId;
+          if (owned) return runtime.status === "online" ? 0 : 1;
+          return runtime.status === "online" ? 2 : 3;
+        };
+        return rank(a) - rank(b);
+      })[0];
     if (!candidate) return;
     setSelectedRuntimeId(candidate.id);
-    setModel("");
-    setThinkingLevel("");
-    setServiceTier("");
-  }, [selectedRuntimeId, runtimesLoading, runtimes, currentUserId]);
+    if (candidate.id !== template?.runtime_id) {
+      setModel("");
+      setThinkingLevel("");
+      setServiceTier("");
+    }
+  }, [selectedRuntimeId, runtimesLoading, runtimes, currentUserId, template?.runtime_id]);
   // Defense-in-depth: even if a locked runtime somehow ends up selected
   // (e.g. duplicate of an agent whose template runtime is now locked, and
   // the workspace has no usable fallback), gate Create on it so we don't

@@ -127,19 +127,24 @@ function makeDuplicateSource(runtimeId: string): Agent {
   };
 }
 
-function renderDialog(runtimes: RuntimeDevice[], template?: Agent) {
+function renderDialog(
+  runtimes: RuntimeDevice[],
+  template?: Agent,
+  runtimesLoading = false,
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   const onCreate = vi.fn().mockResolvedValue(undefined);
   const onClose = vi.fn();
-  render(
+  const tree = (nextRuntimes: RuntimeDevice[], nextLoading: boolean) => (
     <I18nProvider locale="en" resources={TEST_RESOURCES}>
       <QueryClientProvider client={queryClient}>
         <WorkspaceSlugProvider slug="test-ws">
         <NavigationProvider value={navigationStub}>
           <CreateAgentDialog
-            runtimes={runtimes}
+            runtimes={nextRuntimes}
+            runtimesLoading={nextLoading}
             members={members}
             currentUserId={ME}
             template={template}
@@ -149,9 +154,15 @@ function renderDialog(runtimes: RuntimeDevice[], template?: Agent) {
         </NavigationProvider>
         </WorkspaceSlugProvider>
       </QueryClientProvider>
-    </I18nProvider>,
+    </I18nProvider>
   );
-  return { onCreate, onClose };
+  const view = render(tree(runtimes, runtimesLoading));
+  return {
+    onCreate,
+    onClose,
+    rerenderRuntimes: (nextRuntimes: RuntimeDevice[], nextLoading = false) =>
+      view.rerender(tree(nextRuntimes, nextLoading)),
+  };
 }
 
 describe("CreateAgentDialog runtime visibility gate", () => {
@@ -226,6 +237,92 @@ describe("CreateAgentDialog runtime visibility gate", () => {
     // first in the input list.
     expect(screen.queryByText("Others Private", { selector: "span.truncate" })).toBeNull();
     expect(screen.getByText("My Runtime", { selector: "span.truncate" })).toBeInTheDocument();
+  });
+
+  it("defaults to the owned online runtime before a shared online runtime", async () => {
+    const sharedOnline = makeRuntime({
+      id: "rt-shared-online",
+      name: "Shared Online",
+      owner_id: OTHER,
+      visibility: "public",
+      status: "online",
+    });
+    const ownedOnline = makeRuntime({
+      id: "rt-owned-online",
+      name: "Owned Online",
+      owner_id: ME,
+      status: "online",
+    });
+    const { onCreate } = renderDialog([sharedOnline, ownedOnline]);
+
+    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+      target: { value: "Preferred Runtime Agent" },
+    });
+    fireEvent.click(screen.getByText("Create"));
+
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ runtime_id: "rt-owned-online" }),
+      ),
+    );
+  });
+
+  it("falls back to the owned offline runtime before a shared online runtime", async () => {
+    const sharedOnline = makeRuntime({
+      id: "rt-shared-online",
+      name: "Shared Online",
+      owner_id: OTHER,
+      visibility: "public",
+      status: "online",
+    });
+    const ownedOffline = makeRuntime({
+      id: "rt-owned-offline",
+      name: "Owned Offline",
+      owner_id: ME,
+      status: "offline",
+    });
+    const { onCreate } = renderDialog([sharedOnline, ownedOffline]);
+
+    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+      target: { value: "Offline Runtime Agent" },
+    });
+    fireEvent.click(screen.getByText("Create"));
+
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({ runtime_id: "rt-owned-offline" }),
+      ),
+    );
+  });
+
+  it("preserves duplicate model settings when the valid source runtime loads asynchronously", async () => {
+    const sourceRuntime = makeRuntime({
+      id: "rt-source",
+      provider: "codex",
+      owner_id: ME,
+      status: "online",
+    });
+    const template = {
+      ...makeDuplicateSource(sourceRuntime.id),
+      model: "gpt-6-astra",
+      thinking_level: "high",
+      service_tier: "priority",
+    };
+    const { onCreate, rerenderRuntimes } = renderDialog([], template, true);
+
+    rerenderRuntimes([sourceRuntime], false);
+    fireEvent.click(screen.getByText("Create"));
+
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runtime_id: sourceRuntime.id,
+          model: template.model,
+          thinking_level: template.thinking_level,
+          service_tier: template.service_tier,
+        }),
+      ),
+    );
   });
 
   it("in duplicate mode, does not pre-fill the source agent's runtime when it's now locked", async () => {
