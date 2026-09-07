@@ -15,7 +15,7 @@ async function fixture() {
     path.join(os.tmpdir(), "production-manifest-"),
   );
   for (const name of NAMES) {
-    const repository = `ghcr.io/alexj11324/patchbay-${name}`;
+    const repository = `ghcr.io/alexj11324/orvilo-${name}`;
     await writeFile(
       path.join(directory, `${name}.json`),
       JSON.stringify({

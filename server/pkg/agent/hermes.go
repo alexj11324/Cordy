@@ -470,7 +470,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		initResult, err := c.request(runCtx, "initialize", map[string]any{
 			"protocolVersion": 1,
 			"clientInfo": map[string]any{
-				"name":    "patchbay-agent-sdk",
+				"name":    "orvilo-agent-sdk",
 				"version": "0.2.0",
 			},
 			"clientCapabilities": map[string]any{},
@@ -1055,7 +1055,7 @@ func (c *hermesClient) handleLine(line string) {
 // edit-approval path offers only ["allow_once","deny"] and rejects
 // anything but exactly "allow_once" (acp_adapter/edit_approval.py), so
 // the previous hardcoded "approve_for_session" silently blocked every
-// file write on the Hermes ACP runtime (GitHub patchbay#5300).
+// file write on the Hermes ACP runtime (GitHub orvilo#5300).
 // selectACPPermissionOption picks an option the agent offered — a safe
 // grant when one exists, otherwise an offered single-use reject to deny
 // just this action — and we fail closed with a protocol error when the
@@ -1266,7 +1266,7 @@ var acpSessionScopedOptionIDs = []string{"allow_session", "approve_for_session"}
 // then returns a protocol error rather than fabricate an outcome).
 //
 // It only ever returns an id the agent actually offered. Per review of
-// GitHub patchbay#5300 it refuses to auto-select a permanent "allow_always"
+// GitHub orvilo#5300 it refuses to auto-select a permanent "allow_always"
 // grant — on Hermes that persists to the runtime owner's on-disk allowlist
 // and would outlive the task (ACP v1 allow_always "remembers the choice").
 // Grant nature is decided purely by the explicit ACP kind, never by the
@@ -2799,7 +2799,7 @@ var acpEchoLogLevels = map[string]bool{"INFO": true, "DEBUG": true}
 // stored message, never as a precondition for *classifying* a line as an
 // error: a real provider failure whose single line happens to exceed this
 // length must still fail the run, not be silently dropped (GitHub
-// patchbay#5862 — do not gate matching on length).
+// orvilo#5862 — do not gate matching on length).
 const acpMaxErrorLineLen = 4096
 
 // newACPProviderErrorSniffer returns a sniffer that tags its messages
@@ -2839,7 +2839,7 @@ func (s *acpProviderErrorSniffer) Write(p []byte) (int, error) {
 		// JSON closes. A complete single-line echo therefore cannot hide a
 		// following bare provider error. Any Python logger prefix also
 		// starts a new record, so non-root ERROR diagnostics remain visible
-		// (GitHub patchbay#5862).
+		// (GitHub orvilo#5862).
 		if m := acpLogRecordPrefixRe.FindStringSubmatch(line); m != nil {
 			s.resetEchoJSON()
 			if acpEchoLogLevels[m[1]] && m[2] == "root" {
@@ -3006,7 +3006,7 @@ func acpTruncateError(msg string) string {
 // Without it, runs that exhaust retries against the upstream LLM
 // (HTTP 429, expired token, …) silently report as "completed"
 // because session/prompt still ends with stopReason=end_turn — see
-// GitHub patchbay#1952.
+// GitHub orvilo#1952.
 func promoteACPResultOnProviderError(finalStatus, finalError, finalOutput string, sniffer *acpProviderErrorSniffer) (string, string) {
 	if finalStatus != "completed" {
 		return finalStatus, finalError

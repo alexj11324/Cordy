@@ -116,7 +116,7 @@ function tryRouteToOtherWorkspace(path: string): boolean {
 }
 
 /**
- * Execute a content link (the `patchbay:navigate` event fired by the shared
+ * Execute a content link (the `orvilo:navigate` event fired by the shared
  * editor/markdown link handler) with the disposition the click resolved to:
  * a plain click navigates in place — the same thing a plain click means on
  * every other internal link — and modifier clicks open a background or

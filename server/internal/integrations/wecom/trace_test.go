@@ -257,7 +257,7 @@ func TestTraceNeverLogsABindingToken(t *testing.T) {
 	// that never answers turns the send into a 5-second timeout and the trace
 	// this test reads is never written.
 	reg.set(inst.ID, conn.autoAck(newWSSender(conn, log)))
-	r := NewOutboundReplier(OutboundReplierConfig{Senders: reg, AppURL: "https://patchbay.example"})
+	r := NewOutboundReplier(OutboundReplierConfig{Senders: reg, AppURL: "https://orvilo.example"})
 	r.binding = fakeBinder{raw: rawToken}
 
 	msg := channel.InboundMessage{Source: channel.Source{
@@ -293,7 +293,7 @@ func TestBindingPromptFitsInsideThePreviewCap(t *testing.T) {
 		t.Fatalf("token length = %d, want the 43 chars Mint produces", len(rawToken))
 	}
 	// Mirrors replier.go sendBindingPrompt.
-	bindURL := "https://patchbay.example" + "/wecom/bind" + "?token=" + url.QueryEscape(rawToken)
+	bindURL := "https://orvilo.example" + "/wecom/bind" + "?token=" + url.QueryEscape(rawToken)
 	upToTokenEnd := "👋 请先绑定你的 Orvilo 账号，才能与我对话：\n" + bindURL
 
 	if n := utf8.RuneCountInString(upToTokenEnd); n > tracePreviewRunes {

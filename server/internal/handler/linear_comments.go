@@ -153,7 +153,7 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 	}
 	defer tx.Rollback(ctx)
 	var issueID pgtype.UUID
-	if err = tx.QueryRow(ctx, `SELECT i.id FROM issue i JOIN linear_issue_link l ON l.patchbay_issue_id=i.id AND l.workspace_id=i.workspace_id JOIN linear_project_binding b ON b.id=l.binding_id WHERE l.binding_id=$1 AND l.linear_issue_id=$2 AND l.sync_status<>'deleted' AND b.status='active' AND b.sync_mode IN ('import','two_way') AND i.workspace_id=$3 FOR UPDATE OF i`, b.ID, remote.Issue.ID, b.WorkspaceID).Scan(&issueID); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT i.id FROM issue i JOIN linear_issue_link l ON l.orvilo_issue_id=i.id AND l.workspace_id=i.workspace_id JOIN linear_project_binding b ON b.id=l.binding_id WHERE l.binding_id=$1 AND l.linear_issue_id=$2 AND l.sync_status<>'deleted' AND b.status='active' AND b.sync_mode IN ('import','two_way') AND i.workspace_id=$3 FOR UPDATE OF i`, b.ID, remote.Issue.ID, b.WorkspaceID).Scan(&issueID); err != nil {
 		return err
 	}
 	var localID pgtype.UUID
@@ -167,7 +167,7 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 	}
 	// The originating system owns its comment edits. This also suppresses the
 	// webhook for our own commentCreate before its local acknowledgement.
-	if origin == "patchbay" || tombstone {
+	if origin == "orvilo" || tombstone {
 		return tx.Commit(ctx)
 	}
 	if remoteTime.Valid && !remote.UpdatedAt.After(remoteTime.Time) {
@@ -182,7 +182,7 @@ func (w *LinearWorker) applyLinearComment(ctx context.Context, b workerBinding, 
 	if deleted && newLink {
 		return tx.Commit(ctx)
 	}
-	if _, err = tx.Exec(ctx, `SELECT set_config('patchbay.linear_remote_apply','on',true)`); err != nil {
+	if _, err = tx.Exec(ctx, `SELECT set_config('orvilo.linear_remote_apply','on',true)`); err != nil {
 		return err
 	}
 	parentID := pgtype.UUID{}
@@ -289,10 +289,10 @@ func (w *LinearWorker) handleCommentOutbox(ctx context.Context, c linearOutboxCl
 		return err
 	}
 	var remoteID, issueID, origin string
-	if err := w.db.QueryRow(ctx, `SELECT cl.linear_comment_id,il.linear_issue_id,cl.origin FROM linear_comment_link cl JOIN linear_issue_link il ON il.binding_id=cl.binding_id AND il.patchbay_issue_id=cl.issue_id AND il.workspace_id=cl.workspace_id WHERE cl.binding_id=$1 AND cl.comment_id=$2 AND cl.workspace_id=$3 AND cl.issue_id=$4 AND il.sync_status<>'deleted'`, b.ID, parseUUID(payload.CommentID), b.WorkspaceID, c.IssueID).Scan(&remoteID, &issueID, &origin); err != nil {
+	if err := w.db.QueryRow(ctx, `SELECT cl.linear_comment_id,il.linear_issue_id,cl.origin FROM linear_comment_link cl JOIN linear_issue_link il ON il.binding_id=cl.binding_id AND il.orvilo_issue_id=cl.issue_id AND il.workspace_id=cl.workspace_id WHERE cl.binding_id=$1 AND cl.comment_id=$2 AND cl.workspace_id=$3 AND cl.issue_id=$4 AND il.sync_status<>'deleted'`, b.ID, parseUUID(payload.CommentID), b.WorkspaceID, c.IssueID).Scan(&remoteID, &issueID, &origin); err != nil {
 		return err
 	}
-	if origin != "patchbay" {
+	if origin != "orvilo" {
 		return nil
 	}
 	remote, found, err := api.FetchComment(ctx, token, remoteID)

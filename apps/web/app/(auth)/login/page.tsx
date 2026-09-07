@@ -43,7 +43,7 @@ function LoginContent() {
   const { isLoaded, isSignedIn } = useAuth();
   const { t } = useT("auth");
   const clerkSessionExchangeReady = useClerkSessionExchangeReady();
-  const patchbayAuthStatus = useAuthStore((state) => state.status);
+  const orviloAuthStatus = useAuthStore((state) => state.status);
   const [error, setError] = useState("");
   const cliCallback = searchParams.get("cli_callback") ?? "";
   const cliState = searchParams.get("cli_state") ?? "";
@@ -79,11 +79,11 @@ function LoginContent() {
   useEffect(() => {
     if (
       isLoaded && isSignedIn && clerkSessionExchangeReady &&
-      patchbayAuthStatus === "authenticated" && !cliCallback && !desktopHandoff
+      orviloAuthStatus === "authenticated" && !cliCallback && !desktopHandoff
     ) {
       window.location.replace(returnUrl);
     }
-  }, [isLoaded, isSignedIn, clerkSessionExchangeReady, patchbayAuthStatus, cliCallback, desktopHandoff, returnUrl]);
+  }, [isLoaded, isSignedIn, clerkSessionExchangeReady, orviloAuthStatus, cliCallback, desktopHandoff, returnUrl]);
 
   if (cliCallback && !validCliCallback) {
     return (
@@ -97,7 +97,7 @@ function LoginContent() {
     validCliCallback &&
     isLoaded &&
     isSignedIn &&
-    patchbayAuthStatus === "authenticated"
+    orviloAuthStatus === "authenticated"
   ) {
     const authorize = async () => {
       setError("");

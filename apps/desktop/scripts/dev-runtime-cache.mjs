@@ -45,7 +45,7 @@ export function defaultDevRuntimeCacheDir({
   }
   return join(
     env.XDG_CACHE_HOME || join(home, ".cache"),
-    "patchbay",
+    "orvilo",
     "dev-runtime",
   );
 }
@@ -74,7 +74,7 @@ export function listGoSourceFiles(repoRoot) {
 
 export function fingerprintFiles(repoRoot, files) {
   const hash = createHash("sha256");
-  hash.update(`patchbay-go-runtime-v${DEV_RUNTIME_CACHE_SCHEMA_VERSION}\0`);
+  hash.update(`orvilo-go-runtime-v${DEV_RUNTIME_CACHE_SCHEMA_VERSION}\0`);
 
   for (const relativePath of [...files].sort()) {
     const absolutePath = join(repoRoot, relativePath);

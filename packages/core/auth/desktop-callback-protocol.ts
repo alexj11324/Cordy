@@ -1,7 +1,7 @@
-export const PRODUCTION_DESKTOP_CALLBACK_PROTOCOL = "patchbay";
+export const PRODUCTION_DESKTOP_CALLBACK_PROTOCOL = "orvilo";
 
 const DEVELOPMENT_PROTOCOL_PATTERN =
-  /^patchbay-canary-[a-f0-9]{16}$/;
+  /^orvilo-canary-[a-f0-9]{16}$/;
 
 export function isDesktopCallbackProtocol(value: string): boolean {
   return (

@@ -217,7 +217,7 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 	// reused link this also gates materialization: we never persist a binding for
 	// a user who has since left the workspace.
 	if _, err := r.q.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-		UserID:      binding.PatchbayUserID,
+		UserID:      binding.OrviloUserID,
 		WorkspaceID: inst.WorkspaceID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -237,7 +237,7 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 		// first message that already wrote it returns the same row.
 		if _, err := r.q.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
 			WorkspaceID:    inst.WorkspaceID,
-			PatchbayUserID: binding.PatchbayUserID,
+			OrviloUserID: binding.OrviloUserID,
 			InstallationID: inst.ID,
 			ChannelType:    string(TypeSlack),
 			ChannelUserID:  senderID,
@@ -246,7 +246,7 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 			return engine.ResolvedIdentity{}, fmt.Errorf("materialize reused slack binding: %w", err)
 		}
 	}
-	return engine.ResolvedIdentity{UserID: binding.PatchbayUserID}, nil
+	return engine.ResolvedIdentity{UserID: binding.OrviloUserID}, nil
 }
 
 // reusableBinding looks for a link the same Slack user already made to ANOTHER

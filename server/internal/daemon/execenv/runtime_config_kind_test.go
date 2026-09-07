@@ -68,7 +68,7 @@ func TestBuildMetaSkillContentBriefContent(t *testing.T) {
 		AgentID:          "eve-1",
 	})
 
-	if !strings.Contains(out, "- `patchbay issue get <id> --output json` — full issue.\n") {
+	if !strings.Contains(out, "- `orvilo issue get <id> --output json` — full issue.\n") {
 		t.Errorf("brief is missing the `issue get` one-liner\n---\n%s", out)
 	}
 	if strings.Contains(out, "Get full issue details.") {
@@ -137,7 +137,7 @@ func TestBuildMetaSkillContentSlimKindMatrix(t *testing.T) {
 		{"## Available Commands", allKinds},
 		{"## Issue Body Formatting", allKinds},
 		{"### Workflow", allKinds},
-		{"## Important: Always Use the `patchbay` CLI", allKinds},
+		{"## Important: Always Use the `orvilo` CLI", allKinds},
 		{"## Output", allKinds},
 		{"## Comment Formatting", issueKinds},
 		{"## Repositories", map[taskKind]bool{
@@ -225,11 +225,11 @@ func TestSlimQuickCreateAvailableCommands(t *testing.T) {
 
 	for _, want := range []string{
 		"## Available Commands",
-		"patchbay issue create --title",
+		"orvilo issue create --title",
 		"--owner-id <uuid>",
 		"--executor-id <uuid>",
 		"--reviewer-id <uuid>",
-		"`patchbay --help`",
+		"`orvilo --help`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("quick_create slim Available Commands missing %q", want)
@@ -237,18 +237,18 @@ func TestSlimQuickCreateAvailableCommands(t *testing.T) {
 	}
 
 	for _, banned := range []string{
-		"patchbay issue get <id>",
-		"patchbay issue comment list <issue-id>",
-		"patchbay issue update <id>",
-		"patchbay issue status <id> <status>",
-		"patchbay issue comment add <issue-id>",
-		"patchbay issue metadata list <issue-id>",
-		"patchbay issue metadata set <issue-id>",
-		"patchbay issue metadata delete <issue-id>",
-		"patchbay issue children <id>",
-		"patchbay repo checkout <url>",
+		"orvilo issue get <id>",
+		"orvilo issue comment list <issue-id>",
+		"orvilo issue update <id>",
+		"orvilo issue status <id> <status>",
+		"orvilo issue comment add <issue-id>",
+		"orvilo issue metadata list <issue-id>",
+		"orvilo issue metadata set <issue-id>",
+		"orvilo issue metadata delete <issue-id>",
+		"orvilo issue children <id>",
+		"orvilo repo checkout <url>",
 		"### Team maintenance",
-		"patchbay team member set-role",
+		"orvilo team member set-role",
 	} {
 		if strings.Contains(out, banned) {
 			t.Errorf("quick_create slim Available Commands should NOT advertise %q (hard guardrails forbid the call)", banned)
@@ -305,9 +305,9 @@ func TestBackgroundTaskSafetySlimHardPins(t *testing.T) {
 		"verify readiness",
 		"URL, logs, and stop instructions",
 		"survival as best-effort, not guaranteed",
-		"Never terminate `patchbay` or `patchbay.exe` by executable name",
+		"Never terminate `orvilo` or `orvilo.exe` by executable name",
 		"exact child PID you started",
-		"`patchbay daemon status --output json`",
+		"`orvilo daemon status --output json`",
 		"never kill it if it is the reported daemon PID",
 	} {
 		if !strings.Contains(out, want) {

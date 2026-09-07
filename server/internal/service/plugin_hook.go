@@ -321,9 +321,9 @@ func (s *PluginService) callHookEndpoint(ctx context.Context, invocation HookInv
 		return nil, err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Patchbay-Timestamp", timestamp)
-	request.Header.Set("X-Patchbay-Signature", hookSignatureVersion+"="+signature)
-	request.Header.Set("X-Patchbay-Plugin-Installation", uuidString(installation.ID))
+	request.Header.Set("X-Orvilo-Timestamp", timestamp)
+	request.Header.Set("X-Orvilo-Signature", hookSignatureVersion+"="+signature)
+	request.Header.Set("X-Orvilo-Plugin-Installation", uuidString(installation.ID))
 	request.Header.Set("User-Agent", "Orvilo-Hooks/1")
 
 	response, err := client.Do(request)
@@ -458,7 +458,7 @@ func (s *PluginService) hookSigningKey(installationID pgtype.UUID) ([]byte, erro
 		return nil, pluginErrf(PluginErrorUnavailable, "hooks are disabled: ORVILO_PLUGIN_SECRET_KEY must decode to 32 bytes")
 	}
 	mac := hmac.New(sha256.New, s.DeploymentKey)
-	mac.Write([]byte("patchbay-plugin-hook-signature:v1:"))
+	mac.Write([]byte("orvilo-plugin-hook-signature:v1:"))
 	mac.Write([]byte(uuidString(installationID)))
 	return mac.Sum(nil), nil
 }

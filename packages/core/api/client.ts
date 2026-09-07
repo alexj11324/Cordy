@@ -817,7 +817,7 @@ export class ApiClient {
     if (typeof document === "undefined") return null;
     const match = document.cookie
       .split("; ")
-      .find((c) => c.startsWith("patchbay_csrf="));
+      .find((c) => c.startsWith("orvilo_csrf="));
     return match ? match.split("=")[1] ?? null : null;
   }
 
@@ -999,7 +999,7 @@ export class ApiClient {
       body: JSON.stringify({
         state,
         code_challenge: codeChallenge,
-        callback_protocol: "patchbay",
+        callback_protocol: "orvilo",
       }),
     });
     const handoff = parseWithFallback(raw, DesktopHandoffResponseSchema, { callback_protocol: "", code: "", state: "" }, {
@@ -1952,8 +1952,8 @@ export class ApiClient {
   }
 
   // ---------------------------------------------------------------------
-  // Cloud Billing — proxies to patchbay-cloud /api/v1/billing/*. The
-  // patchbay-api server stamps X-User-ID and forwards bytes; everything
+  // Cloud Billing — proxies to orvilo-cloud /api/v1/billing/*. The
+  // orvilo-api server stamps X-User-ID and forwards bytes; everything
   // here is upstream-shaped. See packages/core/types/billing.ts for the
   // response field documentation.
   // ---------------------------------------------------------------------
@@ -3095,7 +3095,7 @@ export class ApiClient {
       : "";
     return this.fetch<unknown>(`/api/v1/plugin${request.path}${query}`, {
       method: request.method,
-      headers: { "X-Patchbay-Plugin-Installation": installationId },
+      headers: { "X-Orvilo-Plugin-Installation": installationId },
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
     });
   }
@@ -3116,7 +3116,7 @@ export class ApiClient {
   ): Promise<PluginHookResult> {
     const raw = await this.fetch<unknown>(`/api/v1/plugin/hooks/${encodeURIComponent(hookKey)}`, {
       method: "POST",
-      headers: { "X-Patchbay-Plugin-Installation": installationId },
+      headers: { "X-Orvilo-Plugin-Installation": installationId },
       body: JSON.stringify({ trigger: request.trigger, issue_id: request.issueId, input: request.input }),
     });
     return parseWithFallback(raw, PluginHookResultSchema, {
@@ -4976,10 +4976,10 @@ export class ApiClient {
 
   async deleteLinearMemberBinding(
     workspaceId: string,
-    patchbayUserId: string,
+    orviloUserId: string,
   ): Promise<void> {
     await this.fetch(
-      `/api/workspaces/${workspaceId}/linear/members/${patchbayUserId}`,
+      `/api/workspaces/${workspaceId}/linear/members/${orviloUserId}`,
       { method: "DELETE" },
     );
   }
@@ -5017,7 +5017,7 @@ export class ApiClient {
         workspace_id: "",
         binding_id: "",
         link_id: "",
-        patchbay_issue_id: "",
+        orvilo_issue_id: "",
         linear_issue_id: "",
         linear_identifier: null,
         field: "",

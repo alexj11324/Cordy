@@ -21,7 +21,7 @@ import (
 const (
 	defaultTimeout       = 3 * time.Second
 	maxResponseBodySize  = 64 << 10
-	rateLimitScopeHeader = "X-Patchbay-RateLimit-Scope"
+	rateLimitScopeHeader = "X-Orvilo-RateLimit-Scope"
 
 	RateLimitScopeGlobal    = "global"
 	RateLimitScopeWorkspace = "workspace"

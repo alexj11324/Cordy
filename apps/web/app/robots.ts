@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       allow: ["/docs", "/docs/"],
       disallow: "/",
     },
-    sitemap: "https://patchbay.aspectlylabs.com/docs/sitemap.xml",
+    sitemap: "https://orvilo.aspectlylabs.com/docs/sitemap.xml",
   };
 }

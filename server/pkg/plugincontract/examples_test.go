@@ -28,7 +28,7 @@ func TestShippedExamplesParseAndInstallOnThisHost(t *testing.T) {
 		if !entry.IsDir() {
 			continue
 		}
-		path := filepath.Join(root, entry.Name(), "patchbay.plugin.json")
+		path := filepath.Join(root, entry.Name(), "orvilo.plugin.json")
 		raw, err := os.ReadFile(path)
 		if os.IsNotExist(err) {
 			continue

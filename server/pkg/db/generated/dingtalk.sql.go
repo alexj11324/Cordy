@@ -497,14 +497,14 @@ const listDingTalkUserBindingsForMember = `-- name: ListDingTalkUserBindingsForM
 SELECT installation_id, channel_user_id
 FROM channel_user_binding
 WHERE workspace_id = $1
-  AND patchbay_user_id = $2
+  AND orvilo_user_id = $2
   AND channel_type = 'dingtalk'
 ORDER BY bound_at DESC, id ASC
 `
 
 type ListDingTalkUserBindingsForMemberParams struct {
-	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	OrviloUserID pgtype.UUID `json:"orvilo_user_id"`
 }
 
 type ListDingTalkUserBindingsForMemberRow struct {
@@ -519,7 +519,7 @@ type ListDingTalkUserBindingsForMemberRow struct {
 // installation list is member-visible, so returning every member's staff id
 // here would expose staff ID values more broadly than necessary.
 func (q *Queries) ListDingTalkUserBindingsForMember(ctx context.Context, arg ListDingTalkUserBindingsForMemberParams) ([]ListDingTalkUserBindingsForMemberRow, error) {
-	rows, err := q.db.Query(ctx, listDingTalkUserBindingsForMember, arg.WorkspaceID, arg.PatchbayUserID)
+	rows, err := q.db.Query(ctx, listDingTalkUserBindingsForMember, arg.WorkspaceID, arg.OrviloUserID)
 	if err != nil {
 		return nil, err
 	}

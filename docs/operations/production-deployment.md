@@ -11,8 +11,8 @@ revision. Completion means all of the following are true:
 3. The restricted server gateway accepted that SHA as the current remote
    `main` and deployed the four digests.
 4. The Go API, Web, Docs, and Accounts Auth Broker all report
-   `X-Patchbay-Build: sha-<full-sha>` and
-   `X-Patchbay-Commit: <full-sha>`.
+   `X-Orvilo-Build: sha-<full-sha>` and
+   `X-Orvilo-Commit: <full-sha>`.
 5. `/login` and `/docs` render with HTTP 200 through the public domain; API
    config and readiness routes return 200; the Accounts OAuth entry remains
    reachable.
@@ -66,7 +66,7 @@ secrets:
 The private key must be dedicated to this pipeline. Its public key is installed
 with OpenSSH `restrict` plus a forced command, so it cannot open a shell,
 forward ports, copy files, or choose a server command. The forced command is
-the root-owned `/usr/local/bin/patchbay-production-deploy` gateway.
+the root-owned `/usr/local/bin/orvilo-production-deploy` gateway.
 
 The existing `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` environment secret is supplied
 to the browser verifier. The Clerk secret key stays only in the server's
@@ -87,7 +87,7 @@ sudo deploy/origin/install-production-deploy.sh /path/to/deploy-key.pub
 The installer copies the gateway and static Compose overlays to root-owned
 paths, appends the restricted public-key entry for the deployment user, and
 captures the currently running containers' required environment values into
-mode-0600 JSON under `/var/lib/patchbay-production/secrets`. It never prints
+mode-0600 JSON under `/var/lib/orvilo-production/secrets`. It never prints
 those values. The initial current manifest records the existing image digests
 (falling back to an allow-listed configured tag only when local Docker metadata
 has no digest). Re-running the installer validates and preserves existing
@@ -108,7 +108,7 @@ again.
 
 The server gateway accepts a maximum 64 KiB JSON request. A deployment request
 must name `alexj11324/Cordy`, the exact current 40-character `main` SHA, and <!-- legacy-brand-compat -->
-exactly four allow-listed `ghcr.io/alexj11324/patchbay-*` sha256 references.
+exactly four allow-listed `ghcr.io/alexj11324/orvilo-*` sha256 references.
 Caller-provided commands, paths, Compose options, tags such as `latest`, and
 arbitrary registries are rejected.
 
@@ -121,10 +121,10 @@ mutation, and then updates the existing Compose projects and ports:
 - `cordy632`: Backend on `127.0.0.1:8210`, Web on `127.0.0.1:3110`, retaining <!-- legacy-brand-compat -->
   the existing PostgreSQL and uploads volumes.
 - `cordy`: Docs on `127.0.0.1:4000`. <!-- legacy-brand-compat -->
-- `patchbay-auth-broker`: Broker on `127.0.0.1:43100`.
+- `orvilo-auth-broker`: Broker on `127.0.0.1:43100`.
 
 The source-controlled origin Nginx configuration routes the public
-`patchbay.aspectlylabs.com/docs` path (including its assets and localized
+`orvilo.aspectlylabs.com/docs` path (including its assets and localized
 pages) directly to the Docs service on `127.0.0.1:4000`. This host-level route
 is part of the public deployment contract; it must be installed together with
 the matching `deploy/origin/nginx/aspectlylabs-origin.conf` rather than relying
@@ -156,8 +156,8 @@ including `CLERK_SECRET_KEY`, `CLERK_JWT_KEY`, `CLERK_ISSUER`,
 `ORVILO_DESKTOP_BROKER_AUTH_TOKEN`. The public URL settings are:
 
 - `ORVILO_PUBLIC_URL=https://api.aspectlylabs.com`
-- `ORVILO_APP_URL=https://patchbay.aspectlylabs.com`
-- `FRONTEND_ORIGIN=https://patchbay.aspectlylabs.com`
+- `ORVILO_APP_URL=https://orvilo.aspectlylabs.com`
+- `FRONTEND_ORIGIN=https://orvilo.aspectlylabs.com`
 
 The Accounts broker requires `CLERK_PUBLISHABLE_KEY`,
 `ORVILO_DESKTOP_BROKER_AUTH_TOKEN`, and `ORVILO_ORIGIN_AUTH_TOKEN`.
@@ -180,9 +180,9 @@ are deleted only after a separately reviewed, backed-up volume migration.
 What holds those residuals in place is narrow and worth stating precisely,
 because there is no repository-wide legacy-spelling scanner. The gateway's
 allow-lists reject any repository, registry, or image name outside the four
-pinned `ghcr.io/alexj11324/patchbay-*` entries, and
+pinned `ghcr.io/alexj11324/orvilo-*` entries, and
 `scripts/production-deployment-contract.test.mjs` asserts that neither the
-production workflow nor the origin Nginx map mentions a `patchbay.ai` domain.
+production workflow nor the origin Nginx map mentions a `orvilo.ai` domain.
 Both are enforced by the `production-delivery` CI job. A legacy spelling
 introduced anywhere else in the tree is not caught automatically.
 

@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	invitationActorLimiterKeyPrefix     = "pby:invitation:actor:"
-	invitationWorkspaceLimiterKeyPrefix = "pby:invitation:workspace:"
-	invitationRecipientLimiterKeyPrefix = "pby:invitation:recipient:"
+	invitationActorLimiterKeyPrefix     = "ovy:invitation:actor:"
+	invitationWorkspaceLimiterKeyPrefix = "ovy:invitation:workspace:"
+	invitationRecipientLimiterKeyPrefix = "ovy:invitation:recipient:"
 )
 
 // InvitationRateLimits configures the independent invitation admission gates.

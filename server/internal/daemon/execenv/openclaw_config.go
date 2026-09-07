@@ -570,7 +570,7 @@ func buildPerTaskOpenclawConfig(activePath string, exists bool, snapshotPath str
 	// `gateway.*` shape so OpenClaw's deep-merge $include semantics produce
 	// the right composed config: anything we set here wins over the user's
 	// global, anything we omit inherits from the user's global. Only emit
-	// fields the patchbay admin explicitly populated — zero strings/ints
+	// fields the orvilo admin explicitly populated — zero strings/ints
 	// would override the user's value with junk.
 	if gw := buildGatewayOverride(gateway); gw != nil {
 		cfg["gateway"] = gw

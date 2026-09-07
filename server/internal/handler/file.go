@@ -508,7 +508,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			// chat_history.go:chatHistorySession). X-Task-ID is only trustworthy
 			// when the auth middleware set it from a task-scoped `mat_` token —
 			// that path is also the ONLY one that stamps X-Actor-Source=task_token
-			// and strips a client-forged X-Task-ID. A normal JWT / `pby_` PAT
+			// and strips a client-forged X-Task-ID. A normal JWT / `ovy_` PAT
 			// leaves X-Actor-Source empty and does NOT strip a forged X-Task-ID,
 			// and resolveActor's fallback will accept a real X-Agent-ID +
 			// X-Task-ID pair. So without this gate a member who learns a task ID

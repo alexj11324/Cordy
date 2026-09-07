@@ -34,7 +34,7 @@ Orvilo는 기본적으로 이메일 인증 코드로 로그인하며 Google OAut
 ```dotenv
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
-SMTP_USERNAME=patchbay
+SMTP_USERNAME=orvilo
 SMTP_PASSWORD=<password>
 SMTP_FROM_EMAIL=noreply@example.com
 ```
@@ -102,7 +102,7 @@ ORVILO_DEV_LOGIN=1
 2. Orvilo 프런트엔드의 callback 주소를 **Authorized redirect URIs**에 추가합니다.
 
    ```text
-   https://patchbay.example.com/auth/callback
+   https://orvilo.example.com/auth/callback
    ```
 
 3. 다음을 설정합니다.
@@ -110,7 +110,7 @@ ORVILO_DEV_LOGIN=1
    ```dotenv
    GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
    GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxx
-   GOOGLE_REDIRECT_URI=https://patchbay.example.com/auth/callback
+   GOOGLE_REDIRECT_URI=https://orvilo.example.com/auth/callback
    ```
 
 4. API 서비스를 다시 시작합니다.

@@ -56,7 +56,7 @@ func twoReplicaDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dsn = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)

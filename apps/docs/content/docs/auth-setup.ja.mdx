@@ -34,7 +34,7 @@ Orvilo はデフォルトでメール認証コードによるログインを使�
 ```dotenv
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
-SMTP_USERNAME=patchbay
+SMTP_USERNAME=orvilo
 SMTP_PASSWORD=<password>
 SMTP_FROM_EMAIL=noreply@example.com
 ```
@@ -102,7 +102,7 @@ ORVILO_DEV_LOGIN=1
 2. Orvilo フロントエンドのコールバックアドレスを **Authorized redirect URIs** に追加します:
 
    ```text
-   https://patchbay.example.com/auth/callback
+   https://orvilo.example.com/auth/callback
    ```
 
 3. 次を設定します:
@@ -110,7 +110,7 @@ ORVILO_DEV_LOGIN=1
    ```dotenv
    GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
    GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxx
-   GOOGLE_REDIRECT_URI=https://patchbay.example.com/auth/callback
+   GOOGLE_REDIRECT_URI=https://orvilo.example.com/auth/callback
    ```
 
 4. API サービスを再起動します。

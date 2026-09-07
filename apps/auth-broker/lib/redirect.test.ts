@@ -20,8 +20,8 @@ describe("Accounts return URLs", () => {
 
   it("allows another route on the canonical product origin", () => {
     expect(
-      resolveAccountsReturnUrl("https://patchbay.aspectlylabs.com/acme/issues"),
-    ).toBe("https://patchbay.aspectlylabs.com/acme/issues");
+      resolveAccountsReturnUrl("https://orvilo.aspectlylabs.com/acme/issues"),
+    ).toBe("https://orvilo.aspectlylabs.com/acme/issues");
   });
 
   it("does not let standalone login loop back to the broker", () => {

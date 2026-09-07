@@ -33,7 +33,7 @@ func guestSessionFixture(t *testing.T, status string) (userID, sessionID, token 
 
 	ctx := context.Background()
 	userID = uuid.NewString()
-	email := "guest-session-" + strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-")) + "-" + userID + "@guest.patchbay.invalid"
+	email := "guest-session-" + strings.ToLower(strings.ReplaceAll(t.Name(), "/", "-")) + "-" + userID + "@guest.orvilo.invalid"
 	if _, err := testPool.Exec(ctx, `
 		INSERT INTO "user" (id, name, email, is_guest)
 		VALUES ($1, 'Guest', $2, TRUE)
@@ -73,8 +73,8 @@ func guestRequest(t *testing.T, method, path string, body any, userID string) *h
 }
 
 func TestHashGuestTokenKnownVector(t *testing.T) {
-	if got, want := hashGuestToken("pbg_abc"), "d4125582738e45be0ac496bcf3b314623489a65fedad259ecdcccd500e3b4990"; got != want {
-		t.Fatalf("hashGuestToken(%q) = %q, want %q", "pbg_abc", got, want)
+	if got, want := hashGuestToken("ovg_abc"), "d2e1286c4ff3d6620bb46238360ce3a54c86527ce01512da105291933b513fdd"; got != want {
+		t.Fatalf("hashGuestToken(%q) = %q, want %q", "ovg_abc", got, want)
 	}
 }
 
@@ -261,8 +261,8 @@ func TestCreateGuestAuthFailsClosedWithoutTransactionDependencies(t *testing.T) 
 
 func TestDecodeGuestJSONRejectsUnknownAndTrailingPayloads(t *testing.T) {
 	cases := []string{
-		`{"token":"pbg_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","unexpected":true}`,
-		`{"token":"pbg_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}{"token":"pbg_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`,
+		`{"token":"ovg_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","unexpected":true}`,
+		`{"token":"ovg_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}{"token":"ovg_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}`,
 	}
 	for _, payload := range cases {
 		t.Run(payload[:min(len(payload), 20)], func(t *testing.T) {

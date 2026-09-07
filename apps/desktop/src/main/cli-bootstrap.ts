@@ -10,7 +10,7 @@ import { Readable } from "stream";
 
 import { selectPlatformReleaseAssetName } from "./cli-release-asset";
 
-// Desktop prefers the bundled `patchbay` CLI shipped inside the app for
+// Desktop prefers the bundled `orvilo` CLI shipped inside the app for
 // same-repo builds, but it can also repair or bootstrap a managed copy in
 // userData on first launch when the bundled binary is missing or unusable.
 
@@ -18,7 +18,7 @@ const GITHUB_LATEST_BASE =
   "https://github.com/alexj11324/Cordy/releases/latest/download";
 
 function binaryName(): string {
-  return process.platform === "win32" ? "patchbay.exe" : "patchbay";
+  return process.platform === "win32" ? "orvilo.exe" : "orvilo";
 }
 
 export function managedCliPath(): string {
@@ -102,7 +102,7 @@ async function installFresh(): Promise<string> {
   }
   const url = `${GITHUB_LATEST_BASE}/${assetName}`;
 
-  const workDir = join(tmpdir(), `patchbay-cli-${Date.now()}`);
+  const workDir = join(tmpdir(), `orvilo-cli-${Date.now()}`);
   await mkdir(workDir, { recursive: true });
 
   try {
@@ -144,7 +144,7 @@ async function installFresh(): Promise<string> {
 }
 
 /**
- * Returns the path to a usable `patchbay` binary. If one is already present at
+ * Returns the path to a usable `orvilo` binary. If one is already present at
  * the managed userData location, returns it immediately. Otherwise downloads
  * the latest release asset for the current platform and installs it.
  */

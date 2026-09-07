@@ -49,7 +49,7 @@ func newWaitlistRequest(userID string, body map[string]string) *http.Request {
 }
 
 func TestJoinCloudWaitlistRecordsEmailAndReason(t *testing.T) {
-	userID := newWaitlistTestUser(t, "waitlist-ok@patchbay.ai")
+	userID := newWaitlistTestUser(t, "waitlist-ok@orvilo.ai")
 
 	w := httptest.NewRecorder()
 	req := newWaitlistRequest(userID, map[string]string{
@@ -88,7 +88,7 @@ func TestJoinCloudWaitlistRecordsEmailAndReason(t *testing.T) {
 }
 
 func TestJoinCloudWaitlistAllowsEmptyReason(t *testing.T) {
-	userID := newWaitlistTestUser(t, "waitlist-noreason@patchbay.ai")
+	userID := newWaitlistTestUser(t, "waitlist-noreason@orvilo.ai")
 
 	w := httptest.NewRecorder()
 	req := newWaitlistRequest(userID, map[string]string{
@@ -111,7 +111,7 @@ func TestJoinCloudWaitlistAllowsEmptyReason(t *testing.T) {
 }
 
 func TestJoinCloudWaitlistMissingEmailReturns400(t *testing.T) {
-	userID := newWaitlistTestUser(t, "waitlist-missing@patchbay.ai")
+	userID := newWaitlistTestUser(t, "waitlist-missing@orvilo.ai")
 
 	cases := []map[string]string{
 		{},               // empty body
@@ -131,7 +131,7 @@ func TestJoinCloudWaitlistMissingEmailReturns400(t *testing.T) {
 }
 
 func TestJoinCloudWaitlistRejectsOverlongReason(t *testing.T) {
-	userID := newWaitlistTestUser(t, "waitlist-long@patchbay.ai")
+	userID := newWaitlistTestUser(t, "waitlist-long@orvilo.ai")
 
 	w := httptest.NewRecorder()
 	req := newWaitlistRequest(userID, map[string]string{
@@ -145,7 +145,7 @@ func TestJoinCloudWaitlistRejectsOverlongReason(t *testing.T) {
 }
 
 func TestJoinCloudWaitlistSecondCallOverwrites(t *testing.T) {
-	userID := newWaitlistTestUser(t, "waitlist-overwrite@patchbay.ai")
+	userID := newWaitlistTestUser(t, "waitlist-overwrite@orvilo.ai")
 
 	// First submission.
 	w := httptest.NewRecorder()
@@ -553,7 +553,7 @@ func TestBootstrapOnboardingNoRuntimeCreatesSingleGuideIssue(t *testing.T) {
 	}
 	for _, want := range []string{
 		"Try Orvilo first",
-		"https://patchbay.aspectlylabs.com/docs/install-agent-runtime",
+		"https://orvilo.aspectlylabs.com/docs/install-agent-runtime",
 		"npm i -g @openai/codex",
 	} {
 		if !strings.Contains(description, want) {
@@ -657,7 +657,7 @@ func TestBootstrapOnboardingNoRuntimeUsesChineseGuideForChineseUsers(t *testing.
 	}
 	for _, want := range []string{
 		"先体验项目管理功能",
-		"https://patchbay.aspectlylabs.com/docs/install-agent-runtime",
+		"https://orvilo.aspectlylabs.com/docs/install-agent-runtime",
 		"中文用户建议先装 Kimi CLI",
 		"kimi --version",
 	} {
@@ -714,14 +714,14 @@ func patchOnboardingAs(t *testing.T, h *Handler, userID, questionnaire string) {
 // must move exactly once when source resolves later via the workspace
 // backfill prompt.
 func TestPatchOnboardingSplitsQuestionnaireAndSourceEvents(t *testing.T) {
-	userID := newWaitlistTestUser(t, "onboarding-event-split@patchbay.ai")
+	userID := newWaitlistTestUser(t, "onboarding-event-split@orvilo.ai")
 
 	m := obsmetrics.NewBusinessMetrics()
 	h := *testHandler
 	h.Metrics = m
 
-	const questionnaireCounter = "patchbay_onboarding_questionnaire_submitted_total"
-	const sourceCounter = "patchbay_onboarding_source_submitted_total"
+	const questionnaireCounter = "orvilo_onboarding_questionnaire_submitted_total"
+	const sourceCounter = "orvilo_onboarding_source_submitted_total"
 
 	const inFlow = `{"source":[],"source_other":null,"source_skipped":false,` +
 		`"role":"engineer","role_other":null,"role_skipped":false,` +
@@ -766,7 +766,7 @@ func TestPatchOnboardingSplitsQuestionnaireAndSourceEvents(t *testing.T) {
 // role and use_case skip markers; a backfill Skip writes source's) is
 // a resolution too: both counters move exactly once.
 func TestPatchOnboardingAllSkippedResolvesBothCounters(t *testing.T) {
-	userID := newWaitlistTestUser(t, "onboarding-source-skip@patchbay.ai")
+	userID := newWaitlistTestUser(t, "onboarding-source-skip@orvilo.ai")
 
 	m := obsmetrics.NewBusinessMetrics()
 	h := *testHandler
@@ -777,10 +777,10 @@ func TestPatchOnboardingAllSkippedResolvesBothCounters(t *testing.T) {
 		`"use_case":[],"use_case_other":null,"use_case_skipped":true,"version":2}`
 	patchOnboardingAs(t, &h, userID, skipped)
 
-	if got := counterValue(t, m, "patchbay_onboarding_questionnaire_submitted_total"); got != 1 {
+	if got := counterValue(t, m, "orvilo_onboarding_questionnaire_submitted_total"); got != 1 {
 		t.Fatalf("expected questionnaire counter 1 for all-skip, got %v", got)
 	}
-	if got := counterValue(t, m, "patchbay_onboarding_source_submitted_total"); got != 1 {
+	if got := counterValue(t, m, "orvilo_onboarding_source_submitted_total"); got != 1 {
 		t.Fatalf("expected source counter 1 for an explicit decline, got %v", got)
 	}
 }

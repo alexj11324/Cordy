@@ -16,7 +16,7 @@ import { Button } from "@orvilo/ui/components/ui/button";
 import { Loader2 } from "lucide-react";
 
 function redirectToDesktopHandoff(code: string, state: string): void {
-  const url = new URL("patchbay://auth/callback");
+  const url = new URL("orvilo://auth/callback");
   url.searchParams.set("code", code);
   url.searchParams.set("state", state);
   window.location.href = url.href;
@@ -68,7 +68,7 @@ function CallbackContent() {
         )
       : null;
     // CLI callback params — carried across the Google OAuth round-trip so
-    // headless/WSL2 `patchbay login` can receive the JWT after browser-based
+    // headless/WSL2 `orvilo login` can receive the JWT after browser-based
     // Google auth completes.
     const cliCallbackPart = stateParts.find((p) => p.startsWith("cli_callback:"));
     const cliStatePart = stateParts.find((p) => p.startsWith("cli_state:"));

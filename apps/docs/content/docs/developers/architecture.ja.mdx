@@ -17,7 +17,7 @@ Web / Desktop / Mobile / CLI
   ローカルデーモン ─── AI コーディングツール
 ```
 
-プロダクト利用者向けの説明は [Orvilo の仕組み](/how-patchbay-works)を参照してください。このページではコードの階層構造に焦点を当てます。
+プロダクト利用者向けの説明は [Orvilo の仕組み](/how-orvilo-works)を参照してください。このページではコードの階層構造に焦点を当てます。
 
 ## リポジトリ構成
 
@@ -76,7 +76,7 @@ API レスポンスは `packages/core/api/` の境界で zod schema により解
 | エントリーポイント | 役割 |
 | --- | --- |
 | `server` | HTTP API、WebSocket、スケジューラー、インテグレーション worker を起動 |
-| `patchbay` | CLI とローカルデーモン |
+| `orvilo` | CLI とローカルデーモン |
 | `migrate` | データベース migration を実行 |
 | `backfill_*` | 特定バージョン向けのデータ backfill ツール |
 

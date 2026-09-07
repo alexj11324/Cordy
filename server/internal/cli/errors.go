@@ -136,7 +136,7 @@ func (e *NetworkError) Unwrap() error { return e.Err }
 // UserMessageError attaches a command-specific, user-facing message to an
 // underlying error. FormatError shows Msg verbatim (in preference to the
 // generic kind-based copy it would otherwise derive from a wrapped
-// *NetworkError / *HTTPError), so command-level guidance — e.g. a `patchbay
+// *NetworkError / *HTTPError), so command-level guidance — e.g. a `orvilo
 // login` failure that is more helpful than the generic 401/timeout line — is
 // visible in the default (non-debug) output.
 //
@@ -366,8 +366,8 @@ var kindMessages = map[ErrorKind][2]string{
 		"无法访问 Orvilo 服务器。请检查网络连接。",
 	},
 	KindAuthRequired: {
-		"Your session has expired or you are not signed in. Run `patchbay login` to sign in again. On a self-hosted or non-OAuth setup, ask your administrator for valid credentials.",
-		"登录已过期或尚未登录。请运行 `patchbay login` 重新登录。自托管或非 OAuth 场景请联系管理员获取有效凭证。",
+		"Your session has expired or you are not signed in. Run `orvilo login` to sign in again. On a self-hosted or non-OAuth setup, ask your administrator for valid credentials.",
+		"登录已过期或尚未登录。请运行 `orvilo login` 重新登录。自托管或非 OAuth 场景请联系管理员获取有效凭证。",
 	},
 	KindTaskTokenRejected: {
 		"This task token was rejected and is no longer usable. Stop here: do not retry, and do not fall back to a profile or member credential, because anything done with one would run as that person rather than as this task. Only the runtime that started this task can supply a valid task token.",

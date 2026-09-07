@@ -126,7 +126,7 @@ export const useTeamsViewStore = create<TeamsViewState>()(
       clearFilters: () => set({ filters: EMPTY_TEAM_FILTERS }),
     }),
     {
-      name: "patchbay_teams_view",
+      name: "orvilo_teams_view",
       storage: createJSONStorage(() =>
         createWorkspaceAwareStorage(defaultStorage),
       ),

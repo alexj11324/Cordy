@@ -117,7 +117,7 @@ func startTaskPluginHookMCP(lifetimeCtx context.Context, taskID string, tools []
 	}()
 
 	raw, err := json.Marshal(map[string]any{"mcpServers": map[string]any{
-		"patchbay-plugins": map[string]any{
+		"orvilo-plugins": map[string]any{
 			"type": "http",
 			"url":  "http://" + listener.Addr().String() + handler.path,
 		},
@@ -159,7 +159,7 @@ func (s *pluginHookMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		writePluginHookMCPResult(w, request.ID, map[string]any{
 			"protocolVersion": pluginHookMCPProtocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "patchbay-plugins", "version": "1"},
+			"serverInfo":      map[string]any{"name": "orvilo-plugins", "version": "1"},
 		})
 	case "notifications/initialized":
 		// A notification has no id and takes no reply.

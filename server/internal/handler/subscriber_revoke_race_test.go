@@ -32,7 +32,7 @@ import (
 func TestSubtreeUnsubscribe_LosesToConcurrentRevoke(t *testing.T) {
 	ctx := context.Background()
 
-	email := "subtree-revoke-race@patchbay.test"
+	email := "subtree-revoke-race@orvilo.test"
 	testPool.Exec(ctx, `DELETE FROM "user" WHERE email = $1`, email)
 	var userID string
 	if err := testPool.QueryRow(ctx,

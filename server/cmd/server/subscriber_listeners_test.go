@@ -352,7 +352,7 @@ func TestSubscriberCommentCreated_CommenterSubscribed(t *testing.T) {
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
 
-	commenterEmail := "subscriber-commenter-test@patchbay.ai"
+	commenterEmail := "subscriber-commenter-test@orvilo.ai"
 	commenterID := createTestUser(t, commenterEmail)
 	t.Cleanup(func() { cleanupTestUser(t, commenterEmail) })
 

@@ -13,7 +13,7 @@ import (
 	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
-// mkProfiles creates ~/.patchbay/profiles/<name> for each name under a fresh
+// mkProfiles creates ~/.orvilo/profiles/<name> for each name under a fresh
 // temp HOME and returns that HOME. It also moves the test off the current
 // working directory: inDaemonManagedExecutionContext() detects a daemon task
 // from a workdir marker as well as from env, so a suite running inside a
@@ -24,7 +24,7 @@ func mkProfiles(t *testing.T, names ...string) string {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	for _, name := range names {
-		dir := filepath.Join(home, ".patchbay", "profiles", filepath.FromSlash(name))
+		dir := filepath.Join(home, ".orvilo", "profiles", filepath.FromSlash(name))
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatalf("create profile %q: %v", name, err)
 		}
@@ -65,37 +65,37 @@ func TestRequireKnownProfile(t *testing.T) {
 	})
 
 	t.Run("existing profile passes", func(t *testing.T) {
-		mkProfiles(t, "dev", "desktop-api.patchbay.ai")
-		if err := requireKnownProfile("desktop-api.patchbay.ai"); err != nil {
+		mkProfiles(t, "dev", "desktop-api.orvilo.ai")
+		if err := requireKnownProfile("desktop-api.orvilo.ai"); err != nil {
 			t.Fatalf("requireKnownProfile = %v, want nil", err)
 		}
 	})
 
 	t.Run("unknown profile lists the known ones sorted", func(t *testing.T) {
-		mkProfiles(t, "prod", "dev", "desktop-api.patchbay.ai")
+		mkProfiles(t, "prod", "dev", "desktop-api.orvilo.ai")
 
-		err := requireKnownProfile("desktop-api.patchbay")
+		err := requireKnownProfile("desktop-api.orvilo")
 		var unknown *unknownProfileError
 		if !errors.As(err, &unknown) {
 			t.Fatalf("requireKnownProfile = %v, want *unknownProfileError", err)
 		}
-		if unknown.Profile != "desktop-api.patchbay" {
+		if unknown.Profile != "desktop-api.orvilo" {
 			t.Fatalf("Profile = %q, want the name the user passed", unknown.Profile)
 		}
-		want := []string{"desktop-api.patchbay.ai", "dev", "prod"}
+		want := []string{"desktop-api.orvilo.ai", "dev", "prod"}
 		if strings.Join(unknown.Known, ",") != strings.Join(want, ",") {
 			t.Fatalf("Known = %v, want %v (sorted)", unknown.Known, want)
 		}
 		msg := unknown.Error()
 		// The whole point of #6694: the message must name the typo AND the
 		// real profile, so the fix is visible without further digging.
-		if !strings.Contains(msg, `"desktop-api.patchbay"`) || !strings.Contains(msg, "desktop-api.patchbay.ai") {
+		if !strings.Contains(msg, `"desktop-api.orvilo"`) || !strings.Contains(msg, "desktop-api.orvilo.ai") {
 			t.Fatalf("error message %q must name both the bad profile and the known ones", msg)
 		}
 	})
 
-	// Regression: profile names may contain separators. `patchbay --profile
-	// team/dev config set ...` creates ~/.patchbay/profiles/team/dev, so
+	// Regression: profile names may contain separators. `orvilo --profile
+	// team/dev config set ...` creates ~/.orvilo/profiles/team/dev, so
 	// validating against a flat top-level listing would reject a profile the
 	// same CLI had just created, and suggest its parent "team" instead.
 	t.Run("nested profile created by the CLI is accepted", func(t *testing.T) {
@@ -145,7 +145,7 @@ func TestRequireKnownProfile(t *testing.T) {
 		if len(unknown.Known) != 0 {
 			t.Fatalf("Known = %v, want empty", unknown.Known)
 		}
-		if !strings.Contains(unknown.Error(), "patchbay login --profile staging") {
+		if !strings.Contains(unknown.Error(), "orvilo login --profile staging") {
 			t.Fatalf("error message %q should tell the user how to create it", unknown.Error())
 		}
 	})
@@ -154,10 +154,10 @@ func TestRequireKnownProfile(t *testing.T) {
 func TestDaemonStatusUnknownProfile(t *testing.T) {
 	t.Run("text mode fails without touching stdout", func(t *testing.T) {
 		clearDaemonTaskEnv(t)
-		mkProfiles(t, "desktop-api.patchbay.ai")
+		mkProfiles(t, "desktop-api.orvilo.ai")
 
 		out, err := captureStdout(t, func() error {
-			return runDaemonStatus(daemonStatusCmdFor(t, "desktop-api.patchbay", ""), nil)
+			return runDaemonStatus(daemonStatusCmdFor(t, "desktop-api.orvilo", ""), nil)
 		})
 		var unknown *unknownProfileError
 		if !errors.As(err, &unknown) {
@@ -170,10 +170,10 @@ func TestDaemonStatusUnknownProfile(t *testing.T) {
 
 	t.Run("json mode prints one document and exits non-zero", func(t *testing.T) {
 		clearDaemonTaskEnv(t)
-		mkProfiles(t, "desktop-api.patchbay.ai", "dev")
+		mkProfiles(t, "desktop-api.orvilo.ai", "dev")
 
 		out, err := captureStdout(t, func() error {
-			return runDaemonStatus(daemonStatusCmdFor(t, "desktop-api.patchbay", "json"), nil)
+			return runDaemonStatus(daemonStatusCmdFor(t, "desktop-api.orvilo", "json"), nil)
 		})
 		// errSilent keeps the stderr copy away while still exiting non-zero.
 		if !errors.Is(err, errSilent) {
@@ -194,10 +194,10 @@ func TestDaemonStatusUnknownProfile(t *testing.T) {
 		if payload.Status != "unknown_profile" {
 			t.Fatalf("status = %q, want unknown_profile", payload.Status)
 		}
-		if payload.Profile != "desktop-api.patchbay" {
+		if payload.Profile != "desktop-api.orvilo" {
 			t.Fatalf("profile = %q, want the name the user passed", payload.Profile)
 		}
-		want := []string{"desktop-api.patchbay.ai", "dev"}
+		want := []string{"desktop-api.orvilo.ai", "dev"}
 		if strings.Join(payload.KnownProfiles, ",") != strings.Join(want, ",") {
 			t.Fatalf("known_profiles = %v, want %v", payload.KnownProfiles, want)
 		}
@@ -251,7 +251,7 @@ func TestDaemonStatusNestedProfileStillProbes(t *testing.T) {
 	}
 }
 
-// The default profile owns ~/.patchbay directly and has no profiles/ entry, so
+// The default profile owns ~/.orvilo directly and has no profiles/ entry, so
 // it must never be validated — scripts calling plain `daemon status` are the
 // most common caller and must be untouched.
 func TestDaemonStatusDefaultProfileNeverValidated(t *testing.T) {
@@ -305,9 +305,9 @@ func TestDaemonLifecycleCommandsRejectUnknownProfile(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			clearDaemonTaskEnv(t)
-			mkProfiles(t, "desktop-api.patchbay.ai")
+			mkProfiles(t, "desktop-api.orvilo.ai")
 
-			cmd := daemonStatusCmdFor(t, "desktop-api.patchbay", "")
+			cmd := daemonStatusCmdFor(t, "desktop-api.orvilo", "")
 			cmd.Flags().Bool("follow", false, "")
 			cmd.Flags().Int("lines", 50, "")
 

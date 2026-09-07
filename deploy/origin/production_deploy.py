@@ -27,23 +27,23 @@ from urllib.request import Request, urlopen
 SCHEMA_VERSION = 1
 REPOSITORY = "alexj11324/Cordy"  # legacy-brand-compat: current GitHub repository identity
 REPOSITORY_URL = "https://github.com/alexj11324/Cordy.git"  # legacy-brand-compat
-DEFAULT_ROOT = Path("/var/lib/patchbay-production")
-DEFAULT_STATIC_DIRECTORY = Path("/usr/local/share/patchbay-production")
+DEFAULT_ROOT = Path("/var/lib/orvilo-production")
+DEFAULT_STATIC_DIRECTORY = Path("/usr/local/share/orvilo-production")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 WORKFLOW_RUN_ID_RE = re.compile(r"^[1-9][0-9]{0,19}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 COMPOSE_VARIABLE_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)")
 EXPECTED_IMAGE_REPOSITORIES = {
-    "backend": "ghcr.io/alexj11324/patchbay-backend",
-    "web": "ghcr.io/alexj11324/patchbay-web",
-    "docs": "ghcr.io/alexj11324/patchbay-docs",
-    "auth-broker": "ghcr.io/alexj11324/patchbay-auth-broker",
+    "backend": "ghcr.io/alexj11324/orvilo-backend",
+    "web": "ghcr.io/alexj11324/orvilo-web",
+    "docs": "ghcr.io/alexj11324/orvilo-docs",
+    "auth-broker": "ghcr.io/alexj11324/orvilo-auth-broker",
 }
 BOOTSTRAP_CONTAINERS = {
     "backend": "cordy632-backend-1",  # legacy-brand-compat: existing production project
     "web": "cordy632-frontend-1",  # legacy-brand-compat: existing production project
     "docs": "cordy-docs-1",  # legacy-brand-compat: existing production project
-    "auth-broker": "patchbay-auth-broker-broker-1",
+    "auth-broker": "orvilo-auth-broker-broker-1",
 }
 PRODUCTION_SMOKE_USER_EMAIL = "production-smoke@aspectlylabs.com"
 
@@ -585,13 +585,13 @@ class ProductionDeployment:
                     if response.status >= 400:
                         raise DeploymentError(f"{url} returned HTTP {response.status}")
                     if expected_build is not None:
-                        actual = response.headers.get("X-Patchbay-Build")
+                        actual = response.headers.get("X-Orvilo-Build")
                         if actual != expected_build:
                             raise DeploymentError(
                                 f"{url} reported build {actual!r}, expected {expected_build!r}"
                             )
                     if expected_commit is not None:
-                        actual = response.headers.get("X-Patchbay-Commit")
+                        actual = response.headers.get("X-Orvilo-Commit")
                         if actual != expected_commit:
                             raise DeploymentError(
                                 f"{url} reported commit {actual!r}, expected {expected_commit!r}"
@@ -662,6 +662,17 @@ class ProductionDeployment:
                 "patchbay-auth-broker",
                 "-f",
                 str(release / "deploy/origin/auth-broker.compose.yml"),
+                "down",
+                "--remove-orphans",
+            ],
+            env=broker_env,
+        )
+        self.compose(
+            [
+                "--project-name",
+                "orvilo-auth-broker",
+                "-f",
+                str(release / "deploy/origin/auth-broker.compose.yml"),
                 "up",
                 "-d",
                 "--no-deps",
@@ -675,7 +686,7 @@ class ProductionDeployment:
 
         is_bootstrap = manifest.get("bootstrap") is True
         expected = None if is_bootstrap else f"sha-{source_sha}"
-        public_host_headers = {"Host": "patchbay.aspectlylabs.com", "X-Forwarded-Proto": "https"}
+        public_host_headers = {"Host": "orvilo.aspectlylabs.com", "X-Forwarded-Proto": "https"}
         self.probe(
             "http://127.0.0.1:8210/readyz",
             expected_build=expected,

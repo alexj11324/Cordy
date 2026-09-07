@@ -24,7 +24,7 @@ export const BRIDGE_PROTOCOL_VERSION = 2;
  * creates this port; the trusted wrapper transfers its peer to the host only
  * after the launch challenge and navigation policy have passed.
  */
-export const BRIDGE_PORT_GLOBAL = "__patchbayPluginBridgePortV2";
+export const BRIDGE_PORT_GLOBAL = "__orviloPluginBridgePortV2";
 
 /** Design tokens the host pushes so a surface matches the product it sits in. */
 export type ThemeTokens = Record<string, string>;

@@ -65,7 +65,7 @@ func TestRunLoginTokenAutoWatchesDiscoveredWorkspaces(t *testing.T) {
 	t.Setenv("ORVILO_DAEMON_PORT", "20032")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer pby_test_token" {
+		if r.Header.Get("Authorization") != "Bearer ovy_test_token" {
 			t.Fatalf("Authorization = %q, want bearer token", r.Header.Get("Authorization"))
 		}
 		switch {
@@ -87,7 +87,7 @@ func TestRunLoginTokenAutoWatchesDiscoveredWorkspaces(t *testing.T) {
 	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 
 	cmd := newLoginTestCmd()
-	if err := cmd.Flags().Set("token", "pby_test_token"); err != nil {
+	if err := cmd.Flags().Set("token", "ovy_test_token"); err != nil {
 		t.Fatalf("set token: %v", err)
 	}
 	if err := cmd.Flags().Set("profile", "jcode"); err != nil {
@@ -108,7 +108,7 @@ func TestRunLoginTokenAutoWatchesDiscoveredWorkspaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadCLIConfig: %v", err)
 	}
-	if cfg.Token != "pby_test_token" || cfg.ServerURL != srv.URL || cfg.WorkspaceID != "ws-1" {
+	if cfg.Token != "ovy_test_token" || cfg.ServerURL != srv.URL || cfg.WorkspaceID != "ws-1" {
 		t.Fatalf("config = %#v, want token, server URL, and first workspace", cfg)
 	}
 }

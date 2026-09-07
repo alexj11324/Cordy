@@ -22,12 +22,12 @@ import (
 	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
-// loginTokenPrefixes are the token prefixes `patchbay login --token` accepts.
-// The CLI used to hardcode `pby_` only, which made it impossible to log in
+// loginTokenPrefixes are the token prefixes `orvilo login --token` accepts.
+// The CLI used to hardcode `ovy_` only, which made it impossible to log in
 // with an Orvilo Cloud Node PAT (`mcn_`) even though the server happily
 // authenticates both kinds. Keep this list in sync with the prefix branches
 // in server/internal/middleware/auth.go.
-var loginTokenPrefixes = []string{"pby_", auth.CloudPATPrefix}
+var loginTokenPrefixes = []string{"ovy_", auth.CloudPATPrefix}
 
 // validateLoginTokenPrefix returns nil if token starts with one of the
 // CLI-recognised PAT prefixes, or an error describing the accepted set.
@@ -43,7 +43,7 @@ func validateLoginTokenPrefix(token string) error {
 
 var authCmd = &cobra.Command{
 	Use:   "auth",
-	Short: "Authenticate patchbay with Orvilo",
+	Short: "Authenticate orvilo with Orvilo",
 }
 
 var authStatusCmd = &cobra.Command{
@@ -97,7 +97,7 @@ func resolveAppURL(cmd *cobra.Command) string {
 	if err == nil && cfg.AppURL != "" {
 		return strings.TrimRight(cfg.AppURL, "/")
 	}
-	fmt.Fprintln(os.Stderr, "No app URL configured. Run 'patchbay setup' first.")
+	fmt.Fprintln(os.Stderr, "No app URL configured. Run 'orvilo setup' first.")
 	os.Exit(1)
 	return "" // unreachable
 }
@@ -127,7 +127,7 @@ func runAuthLogin(cmd *cobra.Command, args []string) error {
 	}
 	if cmd.Flags().Changed("token") {
 		tokenFlag, _ := cmd.Flags().GetString("token")
-		// `--token pby_xxx` (space form) is what users actually type — that's
+		// `--token ovy_xxx` (space form) is what users actually type — that's
 		// the form from the docs and from #1994. NoOptDefVal prevents pflag
 		// from consuming the next arg as the flag value, so it lands here as
 		// a positional. Promote it to the token value.
@@ -331,7 +331,7 @@ func runAuthLoginBrowser(cmd *cobra.Command) error {
 		"expires_in_days": expiresInDays,
 	}, &patResp)
 	if err != nil {
-		return cli.WithUserMessage("Sign-in did not complete: the server could not issue an access token for the CLI. Run `patchbay login` again.", err)
+		return cli.WithUserMessage("Sign-in did not complete: the server could not issue an access token for the CLI. Run `orvilo login` again.", err)
 	}
 
 	// Verify the PAT works.
@@ -341,7 +341,7 @@ func runAuthLoginBrowser(cmd *cobra.Command) error {
 		Email string `json:"email"`
 	}
 	if err := patClient.GetJSON(ctx, "/api/me", &me); err != nil {
-		return cli.WithUserMessage("Sign-in did not complete: the server did not accept the new credential. Run `patchbay login` again.", err)
+		return cli.WithUserMessage("Sign-in did not complete: the server did not accept the new credential. Run `orvilo login` again.", err)
 	}
 
 	// Save to config. Reset workspace data on every login — the user or
@@ -444,7 +444,7 @@ func runAuthLoginToken(cmd *cobra.Command, providedToken string) error {
 		Email string `json:"email"`
 	}
 	if err := client.GetJSON(ctx, "/api/me", &me); err != nil {
-		return cli.WithUserMessage("Could not sign in with that token — make sure it is valid and not expired, then run `patchbay login --token <token>` again.", err)
+		return cli.WithUserMessage("Could not sign in with that token — make sure it is valid and not expired, then run `orvilo login --token <token>` again.", err)
 	}
 
 	profile := resolveProfile(cmd)
@@ -475,7 +475,7 @@ func runAuthStatus(cmd *cobra.Command, _ []string) error {
 	serverURL := resolveServerURL(cmd)
 
 	if token == "" {
-		fmt.Fprintln(os.Stderr, "Not authenticated. Run 'patchbay login' to authenticate.")
+		fmt.Fprintln(os.Stderr, "Not authenticated. Run 'orvilo login' to authenticate.")
 		return nil
 	}
 
@@ -489,7 +489,7 @@ func runAuthStatus(cmd *cobra.Command, _ []string) error {
 		Email string `json:"email"`
 	}
 	if err := client.GetJSON(ctx, "/api/me", &me); err != nil {
-		fmt.Fprintf(os.Stderr, "Token is invalid or expired: %v\nRun 'patchbay login' to re-authenticate.\n", err)
+		fmt.Fprintf(os.Stderr, "Token is invalid or expired: %v\nRun 'orvilo login' to re-authenticate.\n", err)
 		return nil
 	}
 

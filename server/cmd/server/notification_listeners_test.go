@@ -86,7 +86,7 @@ func TestNotification_IssueCreated_RolesNotified(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	ownerEmail := "notif-owner-created@patchbay.ai"
+	ownerEmail := "notif-owner-created@orvilo.ai"
 	ownerID := createTestUser(t, ownerEmail)
 	t.Cleanup(func() { cleanupTestUser(t, ownerEmail) })
 	executorID := "00000000-0000-0000-0000-0000000000e1"
@@ -257,11 +257,11 @@ func TestNotification_StatusChanged(t *testing.T) {
 	bus := newNotificationBus(t, queries)
 
 	// Create two extra users as subscribers
-	sub1Email := "notif-sub1-status@patchbay.ai"
+	sub1Email := "notif-sub1-status@orvilo.ai"
 	sub1ID := createTestUser(t, sub1Email)
 	t.Cleanup(func() { cleanupTestUser(t, sub1Email) })
 
-	sub2Email := "notif-sub2-status@patchbay.ai"
+	sub2Email := "notif-sub2-status@orvilo.ai"
 	sub2ID := createTestUser(t, sub2Email)
 	t.Cleanup(func() { cleanupTestUser(t, sub2Email) })
 
@@ -337,11 +337,11 @@ func TestNotification_StatusChanged_Muted(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	mutedEmail := "notif-muted-status@patchbay.ai"
+	mutedEmail := "notif-muted-status@orvilo.ai"
 	mutedID := createTestUser(t, mutedEmail)
 	t.Cleanup(func() { cleanupTestUser(t, mutedEmail) })
 
-	normalEmail := "notif-normal-status@patchbay.ai"
+	normalEmail := "notif-normal-status@orvilo.ai"
 	normalID := createTestUser(t, normalEmail)
 	t.Cleanup(func() { cleanupTestUser(t, normalEmail) })
 
@@ -397,11 +397,11 @@ func TestNotification_CommentCreated(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	commenterEmail := "notif-commenter@patchbay.ai"
+	commenterEmail := "notif-commenter@orvilo.ai"
 	commenterID := createTestUser(t, commenterEmail)
 	t.Cleanup(func() { cleanupTestUser(t, commenterEmail) })
 
-	sub1Email := "notif-sub1-comment@patchbay.ai"
+	sub1Email := "notif-sub1-comment@orvilo.ai"
 	sub1ID := createTestUser(t, sub1Email)
 	t.Cleanup(func() { cleanupTestUser(t, sub1Email) })
 
@@ -477,13 +477,13 @@ func TestNotification_SystemCommentSkipsInboxAndMentions(t *testing.T) {
 	bus := newNotificationBus(t, queries)
 
 	// Subscriber on the issue who would normally receive new_comment.
-	subEmail := "notif-system-comment-sub@patchbay.ai"
+	subEmail := "notif-system-comment-sub@orvilo.ai"
 	subID := createTestUser(t, subEmail)
 	t.Cleanup(func() { cleanupTestUser(t, subEmail) })
 
 	// A second member whose UUID we will smuggle into the system-comment
 	// body as a fake mention to prove the listener does not parse it.
-	targetEmail := "notif-system-comment-target@patchbay.ai"
+	targetEmail := "notif-system-comment-target@orvilo.ai"
 	targetID := createTestUser(t, targetEmail)
 	t.Cleanup(func() { cleanupTestUser(t, targetEmail) })
 
@@ -571,15 +571,15 @@ func TestNotification_OwnerChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	oldOwnerEmail := "notif-old-owner@patchbay.ai"
+	oldOwnerEmail := "notif-old-owner@orvilo.ai"
 	oldOwnerID := createTestUser(t, oldOwnerEmail)
 	t.Cleanup(func() { cleanupTestUser(t, oldOwnerEmail) })
 
-	newOwnerEmail := "notif-new-owner@patchbay.ai"
+	newOwnerEmail := "notif-new-owner@orvilo.ai"
 	newOwnerID := createTestUser(t, newOwnerEmail)
 	t.Cleanup(func() { cleanupTestUser(t, newOwnerEmail) })
 
-	bystanderEmail := "notif-bystander@patchbay.ai"
+	bystanderEmail := "notif-bystander@orvilo.ai"
 	bystanderID := createTestUser(t, bystanderEmail)
 	t.Cleanup(func() { cleanupTestUser(t, bystanderEmail) })
 
@@ -670,7 +670,7 @@ func TestNotification_ExecutorChanged(t *testing.T) {
 
 	oldID := "00000000-0000-0000-0000-0000000000e2"
 	newID := "00000000-0000-0000-0000-0000000000e3"
-	bystanderEmail := "notif-executor-bystander@patchbay.ai"
+	bystanderEmail := "notif-executor-bystander@orvilo.ai"
 	bystanderID := createTestUser(t, bystanderEmail)
 	t.Cleanup(func() { cleanupTestUser(t, bystanderEmail) })
 
@@ -856,7 +856,7 @@ func TestNotification_PriorityChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	sub1Email := "notif-sub1-priority@patchbay.ai"
+	sub1Email := "notif-sub1-priority@orvilo.ai"
 	sub1ID := createTestUser(t, sub1Email)
 	t.Cleanup(func() { cleanupTestUser(t, sub1Email) })
 
@@ -922,7 +922,7 @@ func TestNotification_DueDateChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	sub1Email := "notif-sub1-duedate@patchbay.ai"
+	sub1Email := "notif-sub1-duedate@orvilo.ai"
 	sub1ID := createTestUser(t, sub1Email)
 	t.Cleanup(func() { cleanupTestUser(t, sub1Email) })
 
@@ -984,7 +984,7 @@ func TestNotification_StartDateChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	sub1Email := "notif-sub1-startdate@patchbay.ai"
+	sub1Email := "notif-sub1-startdate@orvilo.ai"
 	sub1ID := createTestUser(t, sub1Email)
 	t.Cleanup(func() { cleanupTestUser(t, sub1Email) })
 
@@ -1045,7 +1045,7 @@ func TestNotification_ParentBubble_StatusChanged(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	parentSubEmail := "notif-parent-sub-status@patchbay.ai"
+	parentSubEmail := "notif-parent-sub-status@orvilo.ai"
 	parentSubID := createTestUser(t, parentSubEmail)
 	t.Cleanup(func() { cleanupTestUser(t, parentSubEmail) })
 
@@ -1108,11 +1108,11 @@ func TestNotification_ParentBubble_NewCommentSuppressed(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	commenterEmail := "notif-parent-bubble-commenter@patchbay.ai"
+	commenterEmail := "notif-parent-bubble-commenter@orvilo.ai"
 	commenterID := createTestUser(t, commenterEmail)
 	t.Cleanup(func() { cleanupTestUser(t, commenterEmail) })
 
-	parentSubEmail := "notif-parent-sub-comment@patchbay.ai"
+	parentSubEmail := "notif-parent-sub-comment@orvilo.ai"
 	parentSubID := createTestUser(t, parentSubEmail)
 	t.Cleanup(func() { cleanupTestUser(t, parentSubEmail) })
 
@@ -1160,7 +1160,7 @@ func TestNotification_ParentBubble_PriorityChangeSuppressed(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	parentSubEmail := "notif-parent-sub-priority@patchbay.ai"
+	parentSubEmail := "notif-parent-sub-priority@orvilo.ai"
 	parentSubID := createTestUser(t, parentSubEmail)
 	t.Cleanup(func() { cleanupTestUser(t, parentSubEmail) })
 
@@ -1268,7 +1268,7 @@ func TestNotification_StatusChange_ArchivesStaleTaskFailed(t *testing.T) {
 	queries := db.New(testPool)
 	bus := newNotificationBus(t, queries)
 
-	subEmail := "notif-archive-task-failed-sub@patchbay.ai"
+	subEmail := "notif-archive-task-failed-sub@orvilo.ai"
 	subID := createTestUser(t, subEmail)
 	t.Cleanup(func() { cleanupTestUser(t, subEmail) })
 

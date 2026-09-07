@@ -18,15 +18,15 @@ func TestCLIConfig_BackwardCompat_OldFileLoadsWithNilBackends(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	// Write a 4-field config exactly as the historical daemon would have.
-	cfgDir := filepath.Join(tmp, ".patchbay")
+	cfgDir := filepath.Join(tmp, ".orvilo")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	historical := `{
   "server_url": "https://api.aspectlylabs.com",
-  "app_url": "https://patchbay.aspectlylabs.com",
+  "app_url": "https://orvilo.aspectlylabs.com",
   "workspace_id": "ws-123",
-  "token": "pby_abcdef"
+  "token": "ovy_abcdef"
 }`
 	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(historical), 0o600); err != nil {
 		t.Fatal(err)
@@ -40,7 +40,7 @@ func TestCLIConfig_BackwardCompat_OldFileLoadsWithNilBackends(t *testing.T) {
 	if cfg.ServerURL != "https://api.aspectlylabs.com" {
 		t.Errorf("ServerURL: got %q, want historical value", cfg.ServerURL)
 	}
-	if cfg.Token != "pby_abcdef" {
+	if cfg.Token != "ovy_abcdef" {
 		t.Errorf("Token: got %q, want historical value", cfg.Token)
 	}
 	if cfg.Backends != nil {
@@ -59,13 +59,13 @@ func TestCLIConfig_BackwardCompat_NilBackendsOmittedFromJSON(t *testing.T) {
 
 	cfg := CLIConfig{
 		ServerURL: "https://api.aspectlylabs.com",
-		Token:     "pby_xyz",
+		Token:     "ovy_xyz",
 	}
 	if err := SaveCLIConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmp, ".patchbay", "config.json"))
+	data, err := os.ReadFile(filepath.Join(tmp, ".orvilo", "config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestCLIConfig_OpenClawOverride_RoundTrip(t *testing.T) {
 
 	original := CLIConfig{
 		ServerURL: "https://api.aspectlylabs.com",
-		Token:     "pby_xyz",
+		Token:     "ovy_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{
 				BinaryPath: "/opt/openclaw-prod/bin/openclaw",
@@ -132,7 +132,7 @@ func TestCLIConfig_OpenClawOverride_PartialFieldsOmitted(t *testing.T) {
 
 	cfg := CLIConfig{
 		ServerURL: "https://api.aspectlylabs.com",
-		Token:     "pby_xyz",
+		Token:     "ovy_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{
 				StateDir: "/var/lib/openclaw-prod",
@@ -144,7 +144,7 @@ func TestCLIConfig_OpenClawOverride_PartialFieldsOmitted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmp, ".patchbay", "config.json"))
+	data, err := os.ReadFile(filepath.Join(tmp, ".orvilo", "config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,9 +177,9 @@ func TestCLIConfig_ProfileCommandOverrides_RoundTrip(t *testing.T) {
 
 	original := CLIConfig{
 		ServerURL:   "https://api.aspectlylabs.com",
-		AppURL:      "https://patchbay.aspectlylabs.com",
+		AppURL:      "https://orvilo.aspectlylabs.com",
 		WorkspaceID: "ws-123",
-		Token:       "pby_xyz",
+		Token:       "ovy_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{StateDir: "/var/lib/openclaw-prod"},
 		},
@@ -234,12 +234,12 @@ func TestCLIConfig_ProfileCommandOverrides_OmittedWhenEmpty(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	cfg := CLIConfig{ServerURL: "https://api.aspectlylabs.com", Token: "pby_xyz"}
+	cfg := CLIConfig{ServerURL: "https://api.aspectlylabs.com", Token: "ovy_xyz"}
 	if err := SaveCLIConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmp, ".patchbay", "config.json"))
+	data, err := os.ReadFile(filepath.Join(tmp, ".orvilo", "config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,13 +259,13 @@ func TestCLIConfig_UnknownFieldsArePreserved(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	cfgDir := filepath.Join(tmp, ".patchbay")
+	cfgDir := filepath.Join(tmp, ".orvilo")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	withFutureField := `{
   "server_url": "https://api.aspectlylabs.com",
-  "token": "pby_xyz",
+  "token": "ovy_xyz",
   "backends": {
     "openclaw": {"state_dir": "/x", "future_setting": "keep me"},
     "future_backend_xyz": {"some_setting": "preserve me"}
@@ -303,7 +303,7 @@ func TestCLIConfig_StaleWritersMergeIndependentChanges(t *testing.T) {
 	if err := SaveCLIConfig(CLIConfig{
 		ServerURL:   "https://api.example.test",
 		WorkspaceID: "workspace-old",
-		Token:       "pby_old",
+		Token:       "ovy_old",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestCLIConfig_StaleWritersMergeIndependentChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first.Token = "pby_new"
+	first.Token = "ovy_new"
 	second.WorkspaceID = "workspace-new"
 	if err := SaveCLIConfig(first); err != nil {
 		t.Fatal(err)
@@ -329,7 +329,7 @@ func TestCLIConfig_StaleWritersMergeIndependentChanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if merged.Token != "pby_new" {
+	if merged.Token != "ovy_new" {
 		t.Errorf("concurrent token change lost: %q", merged.Token)
 	}
 	if merged.WorkspaceID != "workspace-new" {
@@ -348,7 +348,7 @@ func TestCLIConfig_StaleWriterPreservesConcurrentDesktopMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := `{"action":"set_credentials","profile":"` + profile + `","server_url":"https://api.example.test","token":"pby_desktop","user_id":"user-1"}`
+	request := `{"action":"set_credentials","profile":"` + profile + `","server_url":"https://api.example.test","token":"ovy_desktop","user_id":"user-1"}`
 	if err := RunDesktopProfileHelper(strings.NewReader(request)); err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +362,7 @@ func TestCLIConfig_StaleWriterPreservesConcurrentDesktopMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	document := readTestConfigDocument(t, path)
-	if document["token"] != "pby_desktop" || document["desktop_user_id"] != "user-1" {
+	if document["token"] != "ovy_desktop" || document["desktop_user_id"] != "user-1" {
 		t.Fatalf("Desktop credentials lost after stale CLI save: %#v", document)
 	}
 	if document["device_name"] != "workstation" {
@@ -411,15 +411,15 @@ func TestCLIConfig_DaemonKnobs_RoundTrip(t *testing.T) {
 
 func TestCLIConfig_TaskRootOverridesOwnerHome(t *testing.T) {
 	ownerHome := t.TempDir()
-	taskRoot := filepath.Join(t.TempDir(), "task-patchbay")
+	taskRoot := filepath.Join(t.TempDir(), "task-orvilo")
 	t.Setenv("HOME", ownerHome)
 	t.Setenv("ORVILO_TASK_CONFIG_ROOT", taskRoot)
 
-	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
+	ownerPath := filepath.Join(ownerHome, ".orvilo", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"token\": \"pby_owner_sentinel\"\n}\n")
+	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"token\": \"ovy_owner_sentinel\"\n}\n")
 	if err := os.WriteFile(ownerPath, ownerBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -480,14 +480,14 @@ func TestCLIConfig_NoTaskRootKeepsInteractiveHomeResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CLIConfigPathForProfile: %v", err)
 	}
-	want := filepath.Join(home, ".patchbay", "profiles", "dev", "config.json")
+	want := filepath.Join(home, ".orvilo", "profiles", "dev", "config.json")
 	if path != want {
 		t.Fatalf("path = %q, want interactive path %q", path, want)
 	}
 }
 
 func TestCLIConfig_TaskRootRejectsProfilePathTraversal(t *testing.T) {
-	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-orvilo"))
 
 	for _, profile := range []string{".", "..", "../owner", "nested/profile", filepath.Join(string(filepath.Separator), "owner")} {
 		if path, err := CLIConfigPathForProfile(profile); err == nil {
@@ -500,7 +500,7 @@ func TestCLIConfig_TaskRootRejectsProfilePathTraversal(t *testing.T) {
 }
 
 func TestCLIConfig_TaskRootMustBeAbsolute(t *testing.T) {
-	t.Setenv("ORVILO_TASK_CONFIG_ROOT", "relative/task-patchbay")
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", "relative/task-orvilo")
 
 	if _, err := CLIConfigPath(); err == nil || !strings.Contains(err.Error(), "must be an absolute path") {
 		t.Fatalf("CLIConfigPath error = %v, want absolute path validation", err)
@@ -517,7 +517,7 @@ func TestCLIConfig_OpenClawCLITimeout_RoundTrip(t *testing.T) {
 
 	original := CLIConfig{
 		ServerURL: "https://api.aspectlylabs.com",
-		Token:     "pby_xyz",
+		Token:     "ovy_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{CLITimeout: "45s"},
 		},

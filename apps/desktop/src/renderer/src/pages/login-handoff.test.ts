@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@orvilo/core/api";
 import { cancelDesktopLogin, completeDesktopHandoff, createDesktopLoginUrl, hostedDesktopHandoffApiUrl } from "./login-handoff";
 
-const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
+const PENDING_HANDOFF_KEY = "orvilo_desktop_login_handoff";
 
 function pendingHandoff(): {
   state: string;
@@ -55,7 +55,7 @@ describe("desktop auth handoff", () => {
     const initiate = vi.fn().mockResolvedValue({ registered: true });
 
     const url = await createDesktopLoginUrl(
-      "https://patchbay.example/",
+      "https://orvilo.example/",
       initiate,
     );
     const parsed = new URL(url);
@@ -83,7 +83,7 @@ describe("desktop auth handoff", () => {
       initiate,
       {
         sessionApiUrl: "http://localhost:8080/",
-        callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+        callbackProtocol: "orvilo-canary-5718c47b86bf9ece",
         initiateHosted,
       },
     );
@@ -95,7 +95,7 @@ describe("desktop auth handoff", () => {
     expect(initiateHosted).toHaveBeenCalledWith(
       parsed.searchParams.get("state"),
       parsed.searchParams.get("code_challenge"),
-      "patchbay-canary-5718c47b86bf9ece",
+      "orvilo-canary-5718c47b86bf9ece",
     );
   });
 
@@ -109,7 +109,7 @@ describe("desktop auth handoff", () => {
         vi.fn().mockResolvedValue({ registered: true }),
         {
           sessionApiUrl: "http://localhost:8080",
-          callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+          callbackProtocol: "orvilo-canary-5718c47b86bf9ece",
           initiateHosted,
         },
       ),
@@ -125,7 +125,7 @@ describe("desktop auth handoff", () => {
         vi.fn().mockResolvedValue({ registered: true }),
         {
           sessionApiUrl: "http://localhost:8080",
-          callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+          callbackProtocol: "orvilo-canary-5718c47b86bf9ece",
         },
       ),
     ).rejects.toThrow("Hosted desktop handoff is unavailable");
@@ -137,7 +137,7 @@ describe("desktop auth handoff", () => {
       vi.fn().mockResolvedValue({ registered: true }),
       {
         sessionApiUrl: "http://localhost:8080",
-        callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+        callbackProtocol: "orvilo-canary-5718c47b86bf9ece",
         initiateHosted: vi.fn().mockResolvedValue({ registered: true }),
       },
     );
@@ -178,7 +178,7 @@ describe("desktop auth handoff", () => {
   it("redeems once and makes a replay a no-op after clearing the verifier", async () => {
     const initiate = vi.fn().mockResolvedValue({ registered: true });
     const url = await createDesktopLoginUrl(
-      "https://patchbay.example",
+      "https://orvilo.example",
       initiate,
     );
     const state = new URL(url).searchParams.get("state");
@@ -190,17 +190,17 @@ describe("desktop auth handoff", () => {
     const dependencies = { redeem, login, recoverPersistedToken };
 
     await expect(
-      completeDesktopHandoff("pbd_one-time-code", state, dependencies),
+      completeDesktopHandoff("ovd_one-time-code", state, dependencies),
     ).resolves.toEqual({ acknowledged: true, authenticated: true });
     expect(redeem).toHaveBeenCalledWith(
-      "pbd_one-time-code",
+      "ovd_one-time-code",
       expect.stringMatching(/^[A-Za-z0-9_-]{43}$/),
     );
     expect(login).toHaveBeenCalledWith("native-jwt");
     expect(localStorage.getItem(PENDING_HANDOFF_KEY)).toBeNull();
 
     await expect(
-      completeDesktopHandoff("pbd_one-time-code", state, dependencies),
+      completeDesktopHandoff("ovd_one-time-code", state, dependencies),
     ).resolves.toEqual({ acknowledged: true, authenticated: false });
     expect(redeem).toHaveBeenCalledTimes(1);
   });
@@ -208,7 +208,7 @@ describe("desktop auth handoff", () => {
   it("drops a terminal redeem failure so a consumed or expired code is not retried", async () => {
     const initiate = vi.fn().mockResolvedValue({ registered: true });
     const url = await createDesktopLoginUrl(
-      "https://patchbay.example",
+      "https://orvilo.example",
       initiate,
     );
     const state = new URL(url).searchParams.get("state");
@@ -221,7 +221,7 @@ describe("desktop auth handoff", () => {
       );
 
     await expect(
-      completeDesktopHandoff("pbd_consumed-code", state, {
+      completeDesktopHandoff("ovd_consumed-code", state, {
         redeem,
         login: vi.fn(),
         recoverPersistedToken: vi.fn(),

@@ -28,7 +28,7 @@ const (
 	DefaultTokenURL     = "https://api.linear.app/oauth/token"
 	DefaultRevokeURL    = "https://api.linear.app/oauth/revoke"
 	OAuthScope          = "read,write,issues:create,app:assignable"
-	patchbayMarker      = "[patchbay:issue="
+	orviloMarker      = "[orvilo:issue="
 	maxResponseBytes    = 4 << 20
 	maxIssuePages       = 500
 	maxImportIssues     = 50_000
@@ -79,7 +79,7 @@ type IssueInput struct {
 	TeamID, ProjectID, Title, Description, StateID string
 	AssigneeID                                     *string
 	DueDate                                        *string
-	PatchbayIssueID                                string
+	OrviloIssueID                                string
 	Priority                                       int
 	ClearAssignee                                  bool
 }
@@ -713,7 +713,7 @@ func (c *HTTPClient) DryRunCounts(ctx context.Context, token, projectID, teamID 
 }
 
 func inputMap(in IssueInput, create bool) map[string]any {
-	description := DescriptionWithOrviloMarker(in.Description, in.PatchbayIssueID)
+	description := DescriptionWithOrviloMarker(in.Description, in.OrviloIssueID)
 	m := map[string]any{"title": in.Title, "description": description, "priority": in.Priority, "dueDate": in.DueDate}
 	if create {
 		m["teamId"], m["projectId"] = in.TeamID, in.ProjectID
@@ -807,7 +807,7 @@ func (c *HTTPClient) DeleteIssue(ctx context.Context, token, id string) error {
 }
 
 func OrviloIssueMarker(issueID string) string {
-	return patchbayMarker + strings.TrimSpace(issueID) + "]"
+	return orviloMarker + strings.TrimSpace(issueID) + "]"
 }
 
 func DescriptionWithOrviloMarker(description, issueID string) string {
@@ -823,7 +823,7 @@ func DescriptionWithOrviloMarker(description, issueID string) string {
 
 func StripOrviloIssueMarker(description string) string {
 	for {
-		start := strings.Index(description, patchbayMarker)
+		start := strings.Index(description, orviloMarker)
 		if start < 0 {
 			return strings.TrimSpace(description)
 		}
@@ -835,12 +835,12 @@ func StripOrviloIssueMarker(description string) string {
 	}
 }
 
-func PatchbayIssueIDFromDescription(description string) string {
-	start := strings.Index(description, patchbayMarker)
+func OrviloIssueIDFromDescription(description string) string {
+	start := strings.Index(description, orviloMarker)
 	if start < 0 {
 		return ""
 	}
-	value := description[start+len(patchbayMarker):]
+	value := description[start+len(orviloMarker):]
 	end := strings.IndexByte(value, ']')
 	if end < 0 {
 		return ""

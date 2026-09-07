@@ -80,7 +80,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://patchbay.aspectlylabs.com"),
+  metadataBase: new URL("https://orvilo.aspectlylabs.com"),
   title: {
     default: SITE_TITLE,
     template: TITLE_TEMPLATE,
@@ -114,8 +114,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    site: "@patchbay_hq",
-    creator: "@patchbay_hq",
+    site: "@OrviloAI",
+    creator: "@OrviloAI",
   },
   alternates: {
     canonical: "/",

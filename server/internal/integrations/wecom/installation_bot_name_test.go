@@ -46,7 +46,7 @@ func setupBotName(t *testing.T) (context.Context, *pgxpool.Pool, *InstallationSe
 	}
 	exec(`INSERT INTO workspace (id, name, slug, description) VALUES ($1, 'wecom bot name', 'wecom-bot-name', '') ON CONFLICT (id) DO NOTHING`, wcNameWS)
 	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider)
-VALUES ($1, $2, 'wecom bot name runtime', 'local', 'patchbay_daemon') ON CONFLICT (id) DO NOTHING`, wcNameRuntime, wcNameWS)
+VALUES ($1, $2, 'wecom bot name runtime', 'local', 'orvilo_daemon') ON CONFLICT (id) DO NOTHING`, wcNameRuntime, wcNameWS)
 	exec(`INSERT INTO agent (id, workspace_id, name, runtime_mode, runtime_id)
 VALUES ($1, $2, 'wecom bot name agent', 'local', $3) ON CONFLICT (id) DO NOTHING`, wcNameAgent, wcNameWS, wcNameRuntime)
 	t.Cleanup(clean)

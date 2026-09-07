@@ -388,7 +388,7 @@ func createIssueInForeignWorkspace(t *testing.T) string {
 
 	var ownerID string
 	if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Foreign Owner', $1) RETURNING id`,
-		"foreign-plugin-"+testUserID+"@patchbay.test").Scan(&ownerID); err != nil {
+		"foreign-plugin-"+testUserID+"@orvilo.test").Scan(&ownerID); err != nil {
 		t.Fatalf("seed foreign user: %v", err)
 	}
 	var workspaceID string

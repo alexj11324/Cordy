@@ -33,7 +33,7 @@ func TestPlatformPiInvocation_RewritesCmdLauncherToPowerShellCommand(t *testing.
 	args := []string{
 		"-p",
 		"--mode", "json",
-		"--session", `C:\Users\X\.patchbay\pi-sessions\20260528T040000.jsonl`,
+		"--session", `C:\Users\X\.orvilo\pi-sessions\20260528T040000.jsonl`,
 		multiLinePrompt,
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))

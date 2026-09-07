@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const DesktopProfileHelperArg = "--patchbay-private-desktop-profile"
+const DesktopProfileHelperArg = "--orvilo-private-desktop-profile"
 
 type desktopProfileRequest struct {
 	Action    string `json:"action"`

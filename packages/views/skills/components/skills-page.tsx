@@ -182,7 +182,7 @@ function PageHeaderBar({
       count={totalCount}
       description={t(($) => $.page.tagline)}
       learnMore={{
-        href: "https://patchbay.aspectlylabs.com/docs/skills",
+        href: "https://orvilo.aspectlylabs.com/docs/skills",
         label: t(($) => $.page.learn_more),
       }}
       actions={

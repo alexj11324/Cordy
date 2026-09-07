@@ -119,7 +119,7 @@ describe("TranscriptButton", () => {
 
     act(() => {
       window.dispatchEvent(
-        new CustomEvent("patchbay:navigate", {
+        new CustomEvent("orvilo:navigate", {
           detail: { path: "/acme/inbox?issue=MUL-123" },
         }),
       );

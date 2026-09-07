@@ -106,7 +106,7 @@ func (h *Handler) CreateAgentBuilderSession(w http.ResponseWriter, r *http.Reque
 
 	builder, err := qtx.CreateAgentBuilder(r.Context(), db.CreateAgentBuilderParams{
 		WorkspaceID:  workspaceUUID,
-		Name:         fmt.Sprintf(".patchbay-agent-builder-%s", flowID),
+		Name:         fmt.Sprintf(".orvilo-agent-builder-%s", flowID),
 		RuntimeMode:  runtime.RuntimeMode,
 		RuntimeID:    runtime.ID,
 		OwnerID:      ownerUUID,

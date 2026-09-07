@@ -271,7 +271,7 @@ func TestCreateIssue_RunOnlyAutomationLeaderAssignsPrivateWorker(t *testing.T) {
 					// user, so it runs BEFORE the user delete) to keep the FK
 					// from stranding the row.
 					outsiderID := dbfx.User(t, "MUL-6691 Outsider",
-						fmt.Sprintf("mul6691-outsider-%s@patchbay.test", workerID))
+						fmt.Sprintf("mul6691-outsider-%s@orvilo.test", workerID))
 					dbfx.Exec(t, `UPDATE agent SET owner_id = $1 WHERE id = $2`, outsiderID, workerID)
 					t.Cleanup(func() {
 						dbfx.Exec(t, `UPDATE agent SET owner_id = $1 WHERE id = $2`, ownerID, workerID)

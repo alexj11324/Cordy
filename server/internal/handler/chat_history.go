@@ -23,8 +23,8 @@ import (
 // ChatChannelHistoryReader reads a chat session's bound IM-channel history. The
 // Slack reader (slack.History) satisfies it; a future platform registers its
 // own. Two operations back the two agent commands: ChannelOverview is the
-// channel table-of-contents (`patchbay chat history`), Thread reads one thread's
-// messages (`patchbay chat thread [id]`). Both are scoped server-side to the
+// channel table-of-contents (`orvilo chat history`), Thread reads one thread's
+// messages (`orvilo chat thread [id]`). Both are scoped server-side to the
 // session's own channel (MUL-3871).
 type ChatChannelHistoryReader interface {
 	ChannelOverview(ctx context.Context, chatSessionID pgtype.UUID, opts channel.HistoryOptions) (channel.HistoryPage, error)
@@ -45,9 +45,9 @@ type ChatChannelHistoryResponse struct {
 	Note string `json:"note,omitempty"`
 }
 
-// GetChatChannelHistory serves `patchbay chat history` — the channel overview:
+// GetChatChannelHistory serves `orvilo chat history` — the channel overview:
 // recent top-level messages, each thread tagged with its id + reply count (no
-// thread contents). The agent drills into a thread with `patchbay chat thread`.
+// thread contents). The agent drills into a thread with `orvilo chat thread`.
 //
 // A chat session that is NOT backed by an IM channel has no channel overview to
 // read — its history is the chat_message table itself (web chat, Feishu). For
@@ -79,7 +79,7 @@ func (h *Handler) GetChatChannelHistory(w http.ResponseWriter, r *http.Request) 
 
 // chatMessageHistory reads a chat session's own stored transcript (chat_message)
 // as a channel.HistoryPage, oldest-first, honoring the shared ?limit / ?before
-// paging contract. It backs `patchbay chat history` for sessions with no IM
+// paging contract. It backs `orvilo chat history` for sessions with no IM
 // channel (web chat, Feishu, WeCom, DingTalk), whose history lives only in
 // Orvilo — there is no platform to read back. It pages through the same
 // (created_at, id) cursor the frontend's message list uses, so an agent can walk
@@ -195,7 +195,7 @@ func transcriptAuthor(role channel.HistoryRole) string {
 	return "User"
 }
 
-// GetChatThread serves `patchbay chat thread [id]` — one thread's messages. With
+// GetChatThread serves `orvilo chat thread [id]` — one thread's messages. With
 // ?id it reads that specific thread; without, the thread the session is in. The
 // channel stays server-pinned to the session, so the id is only a within-channel
 // locator.
@@ -216,7 +216,7 @@ func (h *Handler) GetChatThread(w http.ResponseWriter, r *http.Request) {
 // chatHistorySession authorizes the request and returns the caller's own chat
 // session. It is authorized by the task-scoped token alone: middleware stamps
 // the token's task into X-Actor-Source=task_token + X-Task-ID (a normal JWT /
-// pby_ PAT leaves X-Actor-Source empty and does NOT strip a client-forged
+// ovy_ PAT leaves X-Actor-Source empty and does NOT strip a client-forged
 // X-Task-ID), so requiring the task-token actor is load-bearing — without it a
 // member could forge X-Task-ID and read another session's history.
 type chatHistoryScope struct {

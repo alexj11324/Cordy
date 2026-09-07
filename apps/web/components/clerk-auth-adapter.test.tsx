@@ -91,7 +91,7 @@ describe("ClerkAuthAdapter", () => {
     getToken.mockReset().mockResolvedValue("clerk-session-token");
     loginWithClerk.mockReset().mockImplementation(async () => {
       authState.current.status = "authenticated";
-      return { id: "patchbay-user" };
+      return { id: "orvilo-user" };
     });
     logout.mockReset().mockResolvedValue(undefined);
     setAuthState.mockReset();
@@ -106,7 +106,7 @@ describe("ClerkAuthAdapter", () => {
     loginWithClerk
       .mockImplementationOnce(async () => {
         authState.current.status = "authenticated";
-        return { id: "patchbay-user-a" };
+        return { id: "orvilo-user-a" };
       })
       .mockImplementationOnce(() => secondExchange);
 

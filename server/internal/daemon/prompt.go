@@ -20,7 +20,7 @@ func sessionContinuityNoticeFor(task Task) string {
 		return execenv.SessionContinuityNoticeChannelHistory
 	}
 	// Every other chat session that persists a transcript (web chat, Feishu,
-	// WeCom, DingTalk) reads it back via `patchbay chat history`; Slack alone
+	// WeCom, DingTalk) reads it back via `orvilo chat history`; Slack alone
 	// reads the live channel. Only a surface that never stored a transcript
 	// falls through to Unrecoverable — see SurfacePersistsTranscript.
 	if execenv.SurfacePersistsTranscript(task.ChatChannelType) {
@@ -185,8 +185,8 @@ func buildActiveSiblingRunsBlock(currentIssueID string, runs []ActiveSiblingRunD
 	var b strings.Builder
 	b.WriteString("## Active sibling runs\n\n")
 	b.WriteString("This agent has other in-flight issue tasks. Before starting overlapping code or PR work, check this issue's comment history for a claim or handoff")
-	fmt.Fprintf(&b, " (`patchbay issue comment list %s --roots-only --summary --compact --output json`)", currentIssueID)
-	b.WriteString(" and inspect relevant siblings with the `run-messages` commands below — coordinate with existing work instead of opening a second PR. For writes that only record an executor or status of work already underway, use `--no-start` on `patchbay issue assign`/`update`/`status`.\n\n")
+	fmt.Fprintf(&b, " (`orvilo issue comment list %s --roots-only --summary --compact --output json`)", currentIssueID)
+	b.WriteString(" and inspect relevant siblings with the `run-messages` commands below — coordinate with existing work instead of opening a second PR. For writes that only record an executor or status of work already underway, use `--no-start` on `orvilo issue assign`/`update`/`status`.\n\n")
 	for _, run := range runs {
 		issueLabel := run.IssueIdentifier
 		if issueLabel == "" {
@@ -202,7 +202,7 @@ func buildActiveSiblingRunsBlock(currentIssueID string, runs []ActiveSiblingRunD
 		if title != "" {
 			fmt.Fprintf(&b, ": %s", title)
 		}
-		fmt.Fprintf(&b, "; inspect: `patchbay issue run-messages %s`\n", run.TaskID)
+		fmt.Fprintf(&b, "; inspect: `orvilo issue run-messages %s`\n", run.TaskID)
 	}
 	b.WriteString("\n")
 	return b.String()
@@ -259,8 +259,8 @@ func buildPromptBody(task Task, provider string) string {
 		b.WriteString("You were handed this issue with a handoff note. Treat it as the executor setter's scoping instruction for this run; follow it before doing anything broader, and do not reply to it as if it were a comment:\n\n")
 		fmt.Fprintf(&b, "> %s\n\n", task.HandoffNote)
 	}
-	fmt.Fprintf(&b, "Start by running `patchbay issue get %s --output json` to understand your task, then complete it.\n", task.IssueID)
-	fmt.Fprintf(&b, "For comment history, follow the rule in your runtime workflow file (executor-triggered tasks treat the read as mandatory). Scan the threads first with `patchbay issue comment list %s --roots-only --summary --compact --output json`, then expand only what matters with `--thread <thread-id> --tail 30`. For `--since` incremental polling, pagination, and folding, see `patchbay issue comment list --help`.\n", task.IssueID)
+	fmt.Fprintf(&b, "Start by running `orvilo issue get %s --output json` to understand your task, then complete it.\n", task.IssueID)
+	fmt.Fprintf(&b, "For comment history, follow the rule in your runtime workflow file (executor-triggered tasks treat the read as mandatory). Scan the threads first with `orvilo issue comment list %s --roots-only --summary --compact --output json`, then expand only what matters with `--thread <thread-id> --tail 30`. For `--since` incremental polling, pagination, and folding, see `orvilo issue comment list --help`.\n", task.IssueID)
 	return b.String()
 }
 
@@ -275,15 +275,15 @@ func buildAgentThreadPrompt(task Task) string {
 
 // buildQuickCreatePrompt constructs a prompt for quick-create tasks. The
 // user typed a single natural-language sentence in the create-issue modal;
-// the agent's job is to translate it into one `patchbay issue create` CLI
+// the agent's job is to translate it into one `orvilo issue create` CLI
 // invocation, using its judgment to decide whether fetching referenced URLs
 // would produce a better issue. No issue exists yet, so the agent must NOT
-// call `patchbay issue get` or attempt to comment — there's nothing to read
+// call `orvilo issue get` or attempt to comment — there's nothing to read
 // or reply to.
 func buildQuickCreatePrompt(task Task) string {
 	var b strings.Builder
 	b.WriteString("You are running as a quick-create assistant for an Orvilo workspace.\n\n")
-	b.WriteString("A user captured the following input via the quick-create modal. There is NO existing issue. Your job is to create a well-formed issue from this input with a single `patchbay issue create` command.\n\n")
+	b.WriteString("A user captured the following input via the quick-create modal. There is NO existing issue. Your job is to create a well-formed issue from this input with a single `orvilo issue create` command.\n\n")
 	if len(task.QuickCreateSourceContext) > 0 {
 		b.WriteString("New sub-issue instruction:\n\n")
 		fmt.Fprintf(&b, "> %s\n\n", task.QuickCreatePrompt)
@@ -304,7 +304,7 @@ func buildQuickCreatePrompt(task Task) string {
 	// description — the core optimization
 	b.WriteString("- **description**: The description is the executing agent's primary context. Aim for high fidelity — they should grasp the user's intent as if they had read the raw input themselves. Use a two-section structure:\n\n")
 	b.WriteString("  1. **User request** — Faithfully restate what the user wants in their own words. Preserve specific names, identifiers, file paths, code snippets, and technical terms verbatim. Strip non-spec material before writing it (this is removal, not paraphrasing): verbal routing wrappers about creating the issue or routing it (e.g. \"create an issue\", \"分配给 X\", \"让 @X 处理\") and pure conversational fillers (e.g. \"对吧？\"). When in doubt, keep it.\n\n")
-	b.WriteString("     CC exception: `patchbay issue create` has no `--subscriber` flag, and the platform auto-subscribes members whose `[@Name](mention://member/<uuid>)` link appears in the description. When the user wrote \"cc @Y\", strip the verbal \"cc\" wrapper from the User request body and append a final `CC: <mention link(s)>` line to the description so the cc routing still fires.\n\n")
+	b.WriteString("     CC exception: `orvilo issue create` has no `--subscriber` flag, and the platform auto-subscribes members whose `[@Name](mention://member/<uuid>)` link appears in the description. When the user wrote \"cc @Y\", strip the verbal \"cc\" wrapper from the User request body and append a final `CC: <mention link(s)>` line to the description so the cc routing still fires.\n\n")
 	b.WriteString("  2. **Context** — include ONLY when the input cited external resources AND you successfully fetched them AND they produced verifiable facts worth recording. Summarize facts only (e.g. \"PR #45 changes auth to JWT\"), not interpretation or unsolicited reference implementations. If you have nothing factual to add, omit the section entirely — never use it as an apology log for resources you could not fetch.\n\n")
 	b.WriteString("  Hard rules: never invent requirements, implementation details, or acceptance criteria the user did not express; never reduce multi-sentence input to a single vague sentence; never echo the title.\n\n")
 	b.WriteString("  Passing the description: a short, single-line body with no code, quotes, backticks, `$()`, or other special characters may go inline via `--description \"...\"`. Anything multi-line, or containing code snippets / file paths / quotes / backticks / `$()` / special characters, or otherwise long — which quick-create descriptions usually are — MUST be written to `./description.md` and passed with `--description-file ./description.md`; passing rich text inline lets the shell rewrite or truncate it (MUL-2904). That file MUST live inside your current working directory (e.g. `./description.md`) — never `/tmp` or any machine-shared path, where a different run may have left a stale file that would silently become this issue's description. If the file write fails for any reason, stop and fix it; never run `--description-file` against a file whose write did not succeed.\n\n")
@@ -318,7 +318,7 @@ func buildQuickCreatePrompt(task Task) string {
 
 	// explicit issue roles
 	b.WriteString("- **owner / executor**:\n")
-	b.WriteString("    - When the user names someone (\"assign to X\" / \"@X\"), call `patchbay workspace member list --output json`, `patchbay agent list --output json`, and `patchbay team list --output json` and find the matching entity by display name. A member is the accountable owner: pass `--owner-id <user_id>` (or `--owner <name>`). An agent or team is the execution target: pass `--executor-id <id>` (or `--executor <name>`). A team executor routes work to its leader, who then delegates. UUID flags are preferred because they stay exact when names overlap. On no match or ambiguity, do NOT pass a role flag; instead append a final line to the description: `Unrecognized routing target: X`.\n")
+	b.WriteString("    - When the user names someone (\"assign to X\" / \"@X\"), call `orvilo workspace member list --output json`, `orvilo agent list --output json`, and `orvilo team list --output json` and find the matching entity by display name. A member is the accountable owner: pass `--owner-id <user_id>` (or `--owner <name>`). An agent or team is the execution target: pass `--executor-id <id>` (or `--executor <name>`). A team executor routes work to its leader, who then delegates. UUID flags are preferred because they stay exact when names overlap. On no match or ambiguity, do NOT pass a role flag; instead append a final line to the description: `Unrecognized routing target: X`.\n")
 	b.WriteString("    - Treat bare @-routing as an owner/executor directive even when the user did not write the English word \"assign\". This includes Chinese imperatives like `让 @独立团 review 这个 PR`, `给 @X 处理`, or `交给 @X`; strip the leading `@`/`＠` before matching display names. Do not keep that routing wrapper or `@Name` in the description unless it is a true CC-style notification. If the matched entity is a team, pass the team's `id` as `--executor-id`, not the leader agent's id.\n")
 	agentID := ""
 	agentName := ""
@@ -379,10 +379,10 @@ func buildQuickCreatePrompt(task Task) string {
 
 	// output format
 	b.WriteString("Output format:\n")
-	b.WriteString("- Run exactly one `patchbay issue create --output json` invocation. Do not retry for any reason — even on non-zero exit. The issue may already exist; another attempt would create a duplicate.\n")
+	b.WriteString("- Run exactly one `orvilo issue create --output json` invocation. Do not retry for any reason — even on non-zero exit. The issue may already exist; another attempt would create a duplicate.\n")
 	b.WriteString("- Parse the JSON response to read the created issue's `identifier` (preferred) or `id` (fallback). Do not scrape human output and do not assume any workspace issue prefix such as `MUL-`; workspaces can use custom prefixes.\n")
 	b.WriteString("- After success, print exactly one line: `Created <identifier-or-id>: <title>` and exit. No commentary, no follow-up tool calls.\n")
-	b.WriteString("- Do NOT call `patchbay issue get` or `patchbay issue comment add` — there is no issue to query or comment on.\n")
+	b.WriteString("- Do NOT call `orvilo issue get` or `orvilo issue comment add` — there is no issue to query or comment on.\n")
 	b.WriteString("- On CLI error or JSON parse error, exit with the error as the only output. The platform writes a failure notification automatically.\n")
 	return b.String()
 }
@@ -445,7 +445,7 @@ func buildCommentPrompt(task Task, provider string) string {
 				b.WriteString(":\n")
 				fmt.Fprintf(&b, "  > %s\n", strings.ReplaceAll(strings.TrimSpace(cc.Content), "\n", "\n  > "))
 			}
-			fmt.Fprintf(&b, "\nIf you need the surrounding discussion for any of them, fetch its thread with `patchbay issue comment list %s --thread <thread-id> --tail 30 --compact --output json` using the thread id shown above.\n\n", task.IssueID)
+			fmt.Fprintf(&b, "\nIf you need the surrounding discussion for any of them, fetch its thread with `orvilo issue comment list %s --thread <thread-id> --tail 30 --compact --output json` using the thread id shown above.\n\n", task.IssueID)
 		} else if len(task.CoalescedCommentIDs) > 0 {
 			// MUL-5442: this fallback used to send the agent at `--recent 30`.
 			// That flag caps THREADS, not comments, and every returned thread
@@ -476,17 +476,17 @@ func buildCommentPrompt(task Task, provider string) string {
 			fmt.Fprintf(&b, "This run also covers %d earlier comment(s) posted before it started — you must read and address every one of them, not just the one above: %s. They may be in DIFFERENT threads, so do not assume they share the triggering thread.\n\n",
 				len(task.CoalescedCommentIDs), strings.Join(task.CoalescedCommentIDs, ", "))
 			if task.NewCommentsSince != "" {
-				fmt.Fprintf(&b, "Start with `patchbay issue comment list %s --since %s --compact --output json`. Treat that as a candidate window, not a guarantee — it also carries unrelated comments, and a retried run can carry ids older than the window. Check every id above against the result.\n\n",
+				fmt.Fprintf(&b, "Start with `orvilo issue comment list %s --since %s --compact --output json`. Treat that as a candidate window, not a guarantee — it also carries unrelated comments, and a retried run can carry ids older than the window. Check every id above against the result.\n\n",
 					task.IssueID, task.NewCommentsSince)
 			}
-			fmt.Fprintf(&b, "Fetch each id you still need directly: `patchbay issue comment list %s --thread <comment-id> --tail 30 --compact --output json`. `--thread` accepts a reply id, not just a thread root, so you do not need to know which thread the comment lives in. If it is older than those 30 replies, page back with the `Next reply cursor` values (`--before` / `--before-id`) until it appears. Do not finish this turn until every id above is accounted for.\n\n",
+			fmt.Fprintf(&b, "Fetch each id you still need directly: `orvilo issue comment list %s --thread <comment-id> --tail 30 --compact --output json`. `--thread` accepts a reply id, not just a thread root, so you do not need to know which thread the comment lives in. If it is older than those 30 replies, page back with the `Next reply cursor` values (`--before` / `--before-id`) until it appears. Do not finish this turn until every id above is accounted for.\n\n",
 				task.IssueID)
 		}
 		if taskIsTeamLeader(task) {
-			fmt.Fprintf(&b, "⚠️ **Team leader no_action rule:** If you decide no action is needed, call `patchbay team activity %s no_action --reason \"...\"` and EXIT. DO NOT post any comment — not even one that says \"no action needed\" or \"exiting silently\". The team activity call records your decision; a comment is redundant noise. The comment prohibition is conditional on that call SUCCEEDING: if it exits non-zero, your decision has no trace anywhere, so post exactly ONE short comment stating the outcome and the error instead of exiting silently. That failure comment is this turn's only comment — it does not license a second one.\n\n", task.IssueID)
+			fmt.Fprintf(&b, "⚠️ **Team leader no_action rule:** If you decide no action is needed, call `orvilo team activity %s no_action --reason \"...\"` and EXIT. DO NOT post any comment — not even one that says \"no action needed\" or \"exiting silently\". The team activity call records your decision; a comment is redundant noise. The comment prohibition is conditional on that call SUCCEEDING: if it exits non-zero, your decision has no trace anywhere, so post exactly ONE short comment stating the outcome and the error instead of exiting silently. That failure comment is this turn's only comment — it does not license a second one.\n\n", task.IssueID)
 		}
 	}
-	fmt.Fprintf(&b, "Start by running `patchbay issue get %s --output json` to understand your task, then decide how to proceed.\n\n", task.IssueID)
+	fmt.Fprintf(&b, "Start by running `orvilo issue get %s --output json` to understand your task, then decide how to proceed.\n\n", task.IssueID)
 	// Comment-reading pointer. Warm path with new comments: issue-wide
 	// since-delta count, but steer the agent to read the triggering thread
 	// first. Warm resumed path with no new comments: the trigger is already
@@ -500,7 +500,7 @@ func buildCommentPrompt(task Task, provider string) string {
 	} else if cold := execenv.BuildColdCommentsHint(task.IssueID, task.TriggerCommentID, task.TriggerThreadID); cold != "" {
 		b.WriteString(cold)
 	} else {
-		fmt.Fprintf(&b, "Read the discussion: scan with `patchbay issue comment list %s --roots-only --summary --compact --output json`, then expand what matters with `--thread <thread-id> --tail 30`.\n\n", task.IssueID)
+		fmt.Fprintf(&b, "Read the discussion: scan with `orvilo issue comment list %s --roots-only --summary --compact --output json`, then expand what matters with `--thread <thread-id> --tail 30`.\n\n", task.IssueID)
 	}
 	// Reply routing. When this run coalesced comments spanning MORE THAN ONE
 	// root thread, answer each thread in its own thread instead of dumping one
@@ -607,11 +607,11 @@ func buildChatPrompt(task Task) string {
 	// channel conversation. A web-only chat session gets no such block — its
 	// history is the Orvilo chat_session the agent already resumes.
 	//
-	// The history half: `patchbay chat history` is served by handler/chat_history.go,
+	// The history half: `orvilo chat history` is served by handler/chat_history.go,
 	// which reads the live channel for Slack and falls back to the stored
 	// chat_message transcript for every other surface — so Slack, Feishu, WeCom
 	// and DingTalk can all read the conversation back. Slack additionally has
-	// `patchbay chat thread` (thread expansion); the transcript surfaces have no
+	// `orvilo chat thread` (thread expansion); the transcript surfaces have no
 	// thread reader, so they get the transcript command without the thread
 	// drill-down (MUL-4899).
 	//
@@ -632,19 +632,19 @@ func buildChatPrompt(task Task) string {
 		fmt.Fprintf(&b, "You are operating inside a %s conversation — not the Orvilo web app. Never look in Orvilo issues or comments for this conversation.\n", platform)
 		if task.ChatChannelType == execenv.ChannelTypeSlack {
 			fmt.Fprintf(&b, "This conversation and its history live in %s, NOT in Orvilo. The message below may be only what triggered you. Read the conversation with:\n", platform)
-			b.WriteString("- `patchbay chat history --output json` — the channel overview: recent top-level messages, each thread tagged with a `thread_id` and `reply_count`. It does NOT expand thread contents.\n")
-			b.WriteString("- `patchbay chat thread [<thread_id>] --output json` — read one thread's messages; omit the id to read the thread you are in, or pass a `thread_id` from the overview to read a specific thread.\n")
+			b.WriteString("- `orvilo chat history --output json` — the channel overview: recent top-level messages, each thread tagged with a `thread_id` and `reply_count`. It does NOT expand thread contents.\n")
+			b.WriteString("- `orvilo chat thread [<thread_id>] --output json` — read one thread's messages; omit the id to read the thread you are in, or pass a `thread_id` from the overview to read a specific thread.\n")
 			if task.ChatInThread {
-				b.WriteString("You were @mentioned inside a thread: start with `patchbay chat thread` to read it; if you need the wider channel, run `patchbay chat history` and open a specific thread with `patchbay chat thread <thread_id>`.\n")
+				b.WriteString("You were @mentioned inside a thread: start with `orvilo chat thread` to read it; if you need the wider channel, run `orvilo chat history` and open a specific thread with `orvilo chat thread <thread_id>`.\n")
 			} else {
-				b.WriteString("You were @mentioned at the channel top level: start with `patchbay chat history` to see the channel, then read a specific thread's contents with `patchbay chat thread <thread_id>`.\n")
+				b.WriteString("You were @mentioned at the channel top level: start with `orvilo chat history` to see the channel, then read a specific thread's contents with `orvilo chat thread <thread_id>`.\n")
 			}
 			// These reads are the agent's private context-gathering; narrating them
 			// into a chat reply reads as noise (the user reported every reply being
 			// prefixed with "我先读取…"). Tell the agent to keep them out of its answer.
 			b.WriteString("Do these reads SILENTLY as an internal step — they are how you gather context, not part of your answer.\n")
 		} else if execenv.SurfacePersistsTranscript(task.ChatChannelType) {
-			fmt.Fprintf(&b, "The conversation happens in %s, and Orvilo stores a transcript of it. The message below may be only what triggered you — read it back with `patchbay chat history` when you need earlier context that is not below.\n", platform)
+			fmt.Fprintf(&b, "The conversation happens in %s, and Orvilo stores a transcript of it. The message below may be only what triggered you — read it back with `orvilo chat history` when you need earlier context that is not below.\n", platform)
 		} else {
 			fmt.Fprintf(&b, "This conversation and its history live in %s, NOT in Orvilo, and Orvilo has no history reader for it. Work from the context already provided to you below — no command can fetch more of this conversation. If you genuinely need earlier context that is not here, ask the user for it rather than guessing.\n", platform)
 		}
@@ -688,7 +688,7 @@ func buildChatPrompt(task Task) string {
 	// the CLI. We deliberately do NOT inline the URL: chat attachments
 	// live behind a signed CDN with a short TTL, so by the time the agent
 	// has finished thinking the URL embedded in the markdown body may
-	// have expired. `patchbay attachment download <id>` re-signs at click
+	// have expired. `orvilo attachment download <id>` re-signs at click
 	// time and is the only reliable path.
 	if len(task.ChatMessageAttachments) > 0 {
 		b.WriteString("\nAttachments on this message:\n")
@@ -699,8 +699,8 @@ func buildChatPrompt(task Task) string {
 				fmt.Fprintf(&b, "- id=%s filename=%q\n", a.ID, a.Filename)
 			}
 		}
-		b.WriteString("Use `patchbay attachment download <id>` to fetch each file locally before referring to it.\n")
-		b.WriteString("When creating an issue that should preserve one of these attachments, pass `--attachment-id <id>` to `patchbay issue create` in addition to keeping the attachment markdown inline.\n")
+		b.WriteString("Use `orvilo attachment download <id>` to fetch each file locally before referring to it.\n")
+		b.WriteString("When creating an issue that should preserve one of these attachments, pass `--attachment-id <id>` to `orvilo issue create` in addition to keeping the attachment markdown inline.\n")
 	}
 	// Outbound attachments: how the agent puts an image/file INTO its reply.
 	// This is the DELIVERY layer of the channel policy, and it has three
@@ -722,11 +722,11 @@ func buildChatPrompt(task Task) string {
 	// line below, which means one must be emitted on every turn.
 	switch {
 	case task.ChatChannelType == "":
-		b.WriteString("\nTo include a file or image you produced in your reply, run `patchbay attachment upload <local-path>`. The file binds to your reply automatically and appears as an attachment card below it even if you paste nothing. The command also returns a `markdown` snippet you may paste on its own line to place the item where you want it (files render as a card, images inline).\n")
+		b.WriteString("\nTo include a file or image you produced in your reply, run `orvilo attachment upload <local-path>`. The file binds to your reply automatically and appears as an attachment card below it even if you paste nothing. The command also returns a `markdown` snippet you may paste on its own line to place the item where you want it (files render as a card, images inline).\n")
 	case execenv.ChannelCarriesFiles(task.ChatChannelType, task.ChatChannelDeliversFiles):
-		fmt.Fprintf(&b, "\nTo include a file or image you produced in your reply, run `patchbay attachment upload <local-path>`. It binds to your reply and Orvilo sends it into the %s conversation as a separate message right after your text — there is no way to place it inline, so write your reply to read correctly with the file arriving after it.\n", channelDisplayName(task.ChatChannelType))
+		fmt.Fprintf(&b, "\nTo include a file or image you produced in your reply, run `orvilo attachment upload <local-path>`. It binds to your reply and Orvilo sends it into the %s conversation as a separate message right after your text — there is no way to place it inline, so write your reply to read correctly with the file arriving after it.\n", channelDisplayName(task.ChatChannelType))
 	default:
-		fmt.Fprintf(&b, "\nThis reply is delivered to %s as text. You cannot attach a file to it: `patchbay attachment upload` binds to an Orvilo chat reply, which this is not. If you produce a file, describe it in words — never write its local path as a link, and never upload it and then write as though it arrived.\n", channelDisplayName(task.ChatChannelType))
+		fmt.Fprintf(&b, "\nThis reply is delivered to %s as text. You cannot attach a file to it: `orvilo attachment upload` binds to an Orvilo chat reply, which this is not. If you produce a file, describe it in words — never write its local path as a link, and never upload it and then write as though it arrived.\n", channelDisplayName(task.ChatChannelType))
 	}
 	return b.String()
 }
@@ -766,7 +766,7 @@ func buildAutomationPrompt(task Task) string {
 		b.WriteString("No additional automation instructions were provided. Inspect the automation configuration before proceeding.\n\n")
 	}
 	if task.AutomationID != "" {
-		fmt.Fprintf(&b, "Start by running `patchbay automation get %s --output json` if you need the full automation configuration, then complete the instructions above.\n", task.AutomationID)
+		fmt.Fprintf(&b, "Start by running `orvilo automation get %s --output json` if you need the full automation configuration, then complete the instructions above.\n", task.AutomationID)
 	} else {
 		b.WriteString("Complete the instructions above.\n")
 	}
@@ -793,7 +793,7 @@ const teamBriefingMarker = "## Team Operating Protocol"
 // The role used to be inferred by sniffing Instructions for the briefing's
 // first heading, which made detection depend on user-writable Markdown: any
 // ordinary agent whose own instructions happened to contain that heading was
-// promoted to leader and handed the leader rules (mandatory `patchbay team
+// promoted to leader and handed the leader rules (mandatory `orvilo team
 // activity`, silent no_action exit).
 //
 // The capability gate is load-bearing, not ceremony. Servers without it split

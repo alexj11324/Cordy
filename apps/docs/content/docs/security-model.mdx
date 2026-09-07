@@ -25,7 +25,7 @@ So Orvilo does not pretend to be the boundary. Put one around it.
 
 Pick whichever fits your infrastructure — they are listed from lightest to strongest:
 
-1. **Dedicated Unix user.** Create a `patchbay` user, give it only the repositories and credentials the agents need, and run the daemon as that user. Your own account stays untouched.
+1. **Dedicated Unix user.** Create a `orvilo` user, give it only the repositories and credentials the agents need, and run the daemon as that user. Your own account stays untouched.
 2. **Container.** Run the daemon in a container with only the mounts and secrets the agents need.
 3. **Virtual machine.** Full isolation, at the cost of provisioning a machine.
 
@@ -35,7 +35,7 @@ Whichever you choose, treat the credentials reachable from that environment as c
 
 These are real, but they are conveniences and blast-radius reduction — not a security boundary against a task that actively tries to escape:
 
-- **Per-task working directory.** Each task gets its own workdir under `~/patchbay_workspaces/`, so concurrent tasks do not collide on the same checkout.
+- **Per-task working directory.** Each task gets its own workdir under `~/orvilo_workspaces/`, so concurrent tasks do not collide on the same checkout.
 - **Per-task agent state.** Codex tasks get a task-scoped `CODEX_HOME` holding config, sessions, and skills, so per-task settings do not pollute your `~/.codex/`.
 - **Task-scoped API tokens.** The `ORVILO_TOKEN` handed to a task is bound to that agent and that task by the server, so a task cannot act as you or as another agent through the Orvilo API.
 
@@ -53,7 +53,7 @@ On Linux, Codex tasks previously ran under the `workspace-write` sandbox with a 
 The daemon logs the effective sandbox mode at warn level when a task starts unsandboxed:
 
 ```bash
-patchbay daemon logs --lines 200 | grep "codex sandbox"
+orvilo daemon logs --lines 200 | grep "codex sandbox"
 ```
 
-To confirm the effective Codex configuration, read the managed block in the task's `config.toml` under the task's `CODEX_HOME` — the section between the `# BEGIN patchbay-managed` and `# END patchbay-managed` markers is written by the daemon on every run.
+To confirm the effective Codex configuration, read the managed block in the task's `config.toml` under the task's `CODEX_HOME` — the section between the `# BEGIN orvilo-managed` and `# END orvilo-managed` markers is written by the daemon on every run.

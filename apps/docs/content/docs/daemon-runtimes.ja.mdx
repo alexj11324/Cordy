@@ -31,20 +31,20 @@ Orvilo Desktop を使う場合、アプリがデーモンを自動的に起動�
 Web、リモートのコンピュータ、ヘッドレス環境では、先に [Orvilo CLI をインストール](/cli)してから実行します。
 
 ```bash
-patchbay daemon start
+orvilo daemon start
 ```
 
 デーモンはデフォルトでバックグラウンドで動きます。よく使うコマンド:
 
 | コマンド | 役割 |
 | --- | --- |
-| `patchbay daemon status` | デーモンと接続の状態を表示する |
-| `patchbay daemon logs -f` | ログを追跡表示する |
-| `patchbay daemon restart` | デーモンを再起動し、ローカルツールを再検出する |
-| `patchbay daemon stop` | デーモンを停止する |
-| `patchbay daemon start --foreground` | デバッグ用に現在のターミナルで実行する |
+| `orvilo daemon status` | デーモンと接続の状態を表示する |
+| `orvilo daemon logs -f` | ログを追跡表示する |
+| `orvilo daemon restart` | デーモンを再起動し、ローカルツールを再検出する |
+| `orvilo daemon stop` | デーモンを停止する |
+| `orvilo daemon start --foreground` | デバッグ用に現在のターミナルで実行する |
 
-作業の作業ディレクトリを別のディスクに置くには、`patchbay config set workspaces_root <path>` で現在のプロファイルにルートを保存するか、`daemon start` または `daemon restart` に `--workspaces-root <path>` を渡します。フラグは `ORVILO_WORKSPACES_ROOT` より優先され、環境変数はプロファイル設定より優先されます。ルートを変更しても既存の作業ディレクトリは移動されません。
+作業の作業ディレクトリを別のディスクに置くには、`orvilo config set workspaces_root <path>` で現在のプロファイルにルートを保存するか、`daemon start` または `daemon restart` に `--workspaces-root <path>` を渡します。フラグは `ORVILO_WORKSPACES_ROOT` より優先され、環境変数はプロファイル設定より優先されます。ルートを変更しても既存の作業ディレクトリは移動されません。
 
 起動時、デーモンは `PATH` 上の対応する AI コーディングツールを検出し、あなたが接続を許可されているワークスペースにランタイムを登録します。ツールをインストールまたはログインした直後の場合は、デーモンを再起動すると再検出されます。
 
@@ -101,13 +101,13 @@ patchbay daemon start
 Desktop が起動したデーモンが、ターミナルでは実行できるコマンドを見つけられない場合は、現在のコンピュータに絶対パスを設定できます。
 
 ```bash
-patchbay runtime profile set-path <profile-id> --path /absolute/path/to/command
+orvilo runtime profile set-path <profile-id> --path /absolute/path/to/command
 ```
 
 パスの上書きを解除するには:
 
 ```bash
-patchbay runtime profile unset-path <profile-id>
+orvilo runtime profile unset-path <profile-id>
 ```
 
 プロファイルの変更は、それ以降に取得される作業にのみ影響します。プロファイルを削除する前に、対応するランタイムにまだ紐づいているアクティブなエージェントを先に処理してください。あるコンピュータ上のランタイムインスタンスだけを削除してもプロファイルは消えず、実行中のデーモンが再登録します。
@@ -116,11 +116,11 @@ patchbay runtime profile unset-path <profile-id>
 
 次の順に確認します。
 
-1. `patchbay daemon status` を実行し、デーモンが起動していることを確認する。
-2. `patchbay daemon logs -f` を実行し、ログイン、ネットワーク、ツール検出のエラーを確認する。
+1. `orvilo daemon status` を実行し、デーモンが起動していることを確認する。
+2. `orvilo daemon logs -f` を実行し、ログイン、ネットワーク、ツール検出のエラーを確認する。
 3. 同じ実行環境で `command -v <ツールコマンド>` を実行し、デーモンがコマンドを見つけられることを確認する。
 4. Orvilo の**ランタイム**ページを開き、対象のコンピュータと対応する AI コーディングツールがオンラインと表示されているか確認する。
-5. ツールのインストール直後、パスの変更直後、プロファイルの更新直後は `patchbay daemon restart` を実行する。
+5. ツールのインストール直後、パスの変更直後、プロファイルの更新直後は `orvilo daemon restart` を実行する。
 
 それでも解決しない場合は[トラブルシューティング](/troubleshooting)を参照してください。
 

@@ -158,8 +158,8 @@ func ValidateTarget(rawDatabaseURL string, enabled bool) error {
 		return fmt.Errorf("development seed refuses non-loopback database host %q", host)
 	}
 	database := strings.TrimPrefix(u.Path, "/")
-	if database != "patchbay" && !strings.HasPrefix(database, "patchbay_") {
-		return fmt.Errorf("development seed refuses database %q; expected patchbay or patchbay_*", database)
+	if database != "orvilo" && !strings.HasPrefix(database, "orvilo_") {
+		return fmt.Errorf("development seed refuses database %q; expected orvilo or orvilo_*", database)
 	}
 	return nil
 }
@@ -375,7 +375,7 @@ func verifyFixtureRows(ctx context.Context, tx pgx.Tx, workspaceID pgtype.UUID, 
 }
 
 func fixtureID(name string) string {
-	return uuid.NewSHA1(fixtureNamespace, []byte("patchbay/dev-fixtures/v1/"+name)).String()
+	return uuid.NewSHA1(fixtureNamespace, []byte("orvilo/dev-fixtures/v1/"+name)).String()
 }
 
 func pgUUID(value string) pgtype.UUID {

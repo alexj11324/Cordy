@@ -1155,7 +1155,7 @@ func stripSurroundingQuotes(s string) (string, bool) {
 // writeMcpConfigToTemp writes MCP config JSON to a temporary file and returns
 // its path. The caller is responsible for removing it via cleanupMcpConfigTemp.
 func writeMcpConfigToTemp(raw json.RawMessage) (string, error) {
-	dir, err := os.MkdirTemp("", "patchbay-mcp-*")
+	dir, err := os.MkdirTemp("", "orvilo-mcp-*")
 	if err != nil {
 		return "", fmt.Errorf("create mcp config temp dir: %w", err)
 	}
@@ -1177,7 +1177,7 @@ func cleanupMcpConfigTemp(path string) {
 		return
 	}
 	dir := filepath.Dir(path)
-	if strings.HasPrefix(filepath.Base(dir), "patchbay-mcp-") {
+	if strings.HasPrefix(filepath.Base(dir), "orvilo-mcp-") {
 		_ = os.RemoveAll(dir)
 		return
 	}

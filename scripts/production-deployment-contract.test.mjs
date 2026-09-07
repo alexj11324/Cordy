@@ -121,8 +121,8 @@ test("all four services expose matching build and commit fingerprints", () => {
     assert.match(dockerfile, /NEXT_PUBLIC_COMMIT_SHA/u);
   }
   for (const config of [webConfig, docsConfig, brokerConfig]) {
-    assert.match(config, /X-Patchbay-Build/u);
-    assert.match(config, /X-Patchbay-Commit/u);
+    assert.match(config, /X-Orvilo-Build/u);
+    assert.match(config, /X-Orvilo-Commit/u);
   }
   assert.match(deployGateway, /expected_commit/u);
 });
@@ -142,15 +142,15 @@ test("deployment is serialized, protected, and Go-only", () => {
 test("public routing uses the Aspectly Labs product domains", () => {
   for (const domain of [
     "api.aspectlylabs.com",
-    "patchbay.aspectlylabs.com",
+    "orvilo.aspectlylabs.com",
     "accounts.aspectlylabs.com",
   ]) {
     assert.match(`${workflow}\n${originNginx}`, new RegExp(domain.replaceAll(".", "\\."), "u"));
   }
-  assert.doesNotMatch(`${workflow}\n${originNginx}`, /patchbay\.ai/u);
+  assert.doesNotMatch(`${workflow}\n${originNginx}`, /orvilo\.ai/u);
   assert.match(
     originNginx,
-    /server_name patchbay\.aspectlylabs\.com;[\s\S]*location \^~ \/docs\//u,
+    /server_name orvilo\.aspectlylabs\.com;[\s\S]*location \^~ \/docs\//u,
   );
   assert.match(
     originNginx,
@@ -158,11 +158,11 @@ test("public routing uses the Aspectly Labs product domains", () => {
   );
   assert.match(
     originNginx,
-    /proxy_set_header X-Patchbay-Origin-Auth \$http_x_patchbay_origin_auth;/u,
+    /proxy_set_header X-Orvilo-Origin-Auth \$http_x_orvilo_origin_auth;/u,
   );
   assert.match(
     originNginx,
-    /proxy_set_header X-Patchbay-Desktop-Broker-Auth "";/u,
+    /proxy_set_header X-Orvilo-Desktop-Broker-Auth "";/u,
   );
 });
 
@@ -182,7 +182,7 @@ test("the deployed Web Clerk provider is runtime-configured and accepts both bro
   );
   assert.match(
     productionOverride,
-    /CLERK_AUTHORIZED_PARTIES: https:\/\/accounts\.aspectlylabs\.com,https:\/\/patchbay\.aspectlylabs\.com/u,
+    /CLERK_AUTHORIZED_PARTIES: https:\/\/accounts\.aspectlylabs\.com,https:\/\/orvilo\.aspectlylabs\.com/u,
   );
   assert.match(productionOverride, /ORVILO_CLERK_PUBLISHABLE_KEY/u);
   assert.match(

@@ -8,10 +8,10 @@ import { Callout } from "fumadocs-ui/components/callout";
 まず、問題がどの層で起きているかを切り分けます。Orvilo サービス、デーモン、ランタイム、AI コーディングツールのどれかです。多くの場合、次のコマンドだけで最初の有効なエラーが見つかります:
 
 ```bash
-patchbay version
-patchbay auth status
-patchbay daemon status --output json
-patchbay daemon logs --lines 100
+orvilo version
+orvilo auth status
+orvilo daemon status --output json
+orvilo daemon logs --lines 100
 ```
 
 セルフホストインスタンスでは、サービスを直接確認することもできます:
@@ -28,9 +28,9 @@ curl -i https://api.example.com/readyz
 まず次を実行します:
 
 ```bash
-patchbay auth status
-patchbay daemon status --output json
-patchbay daemon logs --lines 100
+orvilo auth status
+orvilo daemon status --output json
+orvilo daemon logs --lines 100
 ```
 
 よくある原因:
@@ -44,14 +44,14 @@ patchbay daemon logs --lines 100
 再ログインしてデーモンを再起動します:
 
 ```bash
-patchbay login
-patchbay daemon restart
+orvilo login
+orvilo daemon restart
 ```
 
-セルフホストのデプロイでは、さらに**実行用コンピューター**から API の `/health` をリクエストしてください。サーバー本体でのテストでは、実行用コンピューター側の DNS、TLS、ファイアウォールの問題は見えません。アドレスを変更する場合は `patchbay setup self-host` を再実行するか、現在のプロファイルの `server_url` を確認します:
+セルフホストのデプロイでは、さらに**実行用コンピューター**から API の `/health` をリクエストしてください。サーバー本体でのテストでは、実行用コンピューター側の DNS、TLS、ファイアウォールの問題は見えません。アドレスを変更する場合は `orvilo setup self-host` を再実行するか、現在のプロファイルの `server_url` を確認します:
 
 ```bash
-patchbay config show
+orvilo config show
 ```
 
 ## タスクの実行が始まらない
@@ -70,12 +70,12 @@ patchbay config show
 エージェントはデフォルトで最大 6 件、1 つのデーモンはデフォルトで最大 20 件の作業を同時に実行します。上限に達すると、新しい作業は実行中のものが終わるまでキューに残ります。ランタイムがオフラインの間も作業はキューに残り続け、そのランタイムが再接続猶予を超えてハートビートを停止し、かつ作業自身も同じ時間待った場合にのみ失敗します。取り込み中のランタイムの後ろに長い待ち行列ができても待ち時間を理由に失効することはなく、すでにオフラインのマシンへルーティングした場合も復帰させるための猶予がまるまる 1 回分残ります。
 
 ```bash
-patchbay daemon status --output json
-patchbay agent get <agent-id>
-patchbay issue runs <issue-id>
+orvilo daemon status --output json
+orvilo agent get <agent-id>
+orvilo issue runs <issue-id>
 ```
 
-ランタイム一覧に期待するツールが表示されない場合は、まず同じシステムアカウントと `PATH` でツールが実行でき、ログイン済みであることを確認してから、`patchbay daemon restart` を実行してください。
+ランタイム一覧に期待するツールが表示されない場合は、まず同じシステムアカウントと `PATH` でツールが実行でき、ログイン済みであることを確認してから、`orvilo daemon restart` を実行してください。
 
 ### `waiting_local_directory` ステータス
 
@@ -83,7 +83,7 @@ patchbay issue runs <issue-id>
 
 この待機はディレクトリの `in_place`（「直接」）モードにのみ存在します。ディレクトリが git リポジトリであれば、リソースを `worktree`（「並行」）に切り替えるとキューそのものがなくなります。各作業が自分のワークツリーを受け取り、成果をブランチとして返すため、どの作業も待ちません。[プロジェクトリソース](/project-resources#作業がディレクトリを共有する方法)を参照してください。
 
-そうでなければ、通常は前の作業が終わるのを待つだけで十分です。前の作業が固まっている場合は、その実行ログから停止するか、現在のエージェントに別のローカルディレクトリを選んでください。このディレクトリの排他はデーモンがメモリ内で管理しており、ディスクにロックファイルは書き込まれません。ロック状態が異常だと疑われる場合は `patchbay daemon restart` で解放されます。手動で削除すべきファイルはありません。
+そうでなければ、通常は前の作業が終わるのを待つだけで十分です。前の作業が固まっている場合は、その実行ログから停止するか、現在のエージェントに別のローカルディレクトリを選んでください。このディレクトリの排他はデーモンがメモリ内で管理しており、ディスクにロックファイルは書き込まれません。ロック状態が異常だと疑われる場合は `orvilo daemon restart` で解放されます。手動で削除すべきファイルはありません。
 
 ## AI コーディングツールが起動しない
 
@@ -120,7 +120,7 @@ docker compose -f docker-compose.selfhost.yml up -d
 
 完全なリバースプロキシの例は[セルフホストクイックスタート](/self-host-quickstart#3-アクセス方法を選ぶ)を参照してください。
 
-## `patchbay setup` がサーバーに到達できないと報告する
+## `orvilo setup` がサーバーに到達できないと報告する
 
 CLI の到達確認は `<server-url>/health` に GET を送り、200 を要求します。backend はこのパスを提供します。現在の web リリースは `/health` を backend へ転送しますが、古いリリースはそうではないため、すべてのトラフィックを古い frontend へ転送するリバースプロキシでは 404 が返り、CLI は稼働中のサーバーを到達不能と誤判定します。
 
@@ -211,21 +211,21 @@ netstat -ano | findstr :8080       # Windows
 
 | コンポーネント | 確認方法 |
 | --- | --- |
-| バックグラウンドのデーモン | `patchbay daemon logs --lines 100` |
-| デーモンログのリアルタイム追跡 | `patchbay daemon logs --follow` |
-| デフォルトプロファイルのログファイル | `~/.patchbay/daemon.log` |
-| デフォルトプロファイルの起動・クラッシュログ | `~/.patchbay/daemon.err.log` |
-| 名前付きプロファイル | `~/.patchbay/profiles/<name>/` 配下の対応するログ |
+| バックグラウンドのデーモン | `orvilo daemon logs --lines 100` |
+| デーモンログのリアルタイム追跡 | `orvilo daemon logs --follow` |
+| デフォルトプロファイルのログファイル | `~/.orvilo/daemon.log` |
+| デフォルトプロファイルの起動・クラッシュログ | `~/.orvilo/daemon.err.log` |
+| 名前付きプロファイル | `~/.orvilo/profiles/<name>/` 配下の対応するログ |
 | Docker backend | `docker compose -f docker-compose.selfhost.yml logs -f backend` |
 | ブラウザ | 開発者ツールの Console と Network |
 
-どのファイルが現在有効なログかは、デーモンを起動したプロファイルによって決まります。以前のデーモンが残した古いログもそのまま読めてしまうため、誤ったファイルを調べてしまいがちです。当て推量でファイルを開かないでください: `patchbay daemon logs` は内容を流す前に、解決した絶対パスを表示します。名前付きプロファイルのログを読むときは `--profile <name>` を付けます。
+どのファイルが現在有効なログかは、デーモンを起動したプロファイルによって決まります。以前のデーモンが残した古いログもそのまま読めてしまうため、誤ったファイルを調べてしまいがちです。当て推量でファイルを開かないでください: `orvilo daemon logs` は内容を流す前に、解決した絶対パスを表示します。名前付きプロファイルのログを読むときは `--profile <name>` を付けます。
 
 デーモンの起動過程を直接観察したい場合は、フォアグラウンドで実行します:
 
 ```bash
-patchbay daemon stop
-patchbay daemon start --foreground
+orvilo daemon stop
+orvilo daemon start --foreground
 ```
 
 それでも特定できない場合は、[GitHub Issues](https://github.com/alexj11324/Cordy/issues) で既存の問題を検索するか、新しい issue を提出してください。

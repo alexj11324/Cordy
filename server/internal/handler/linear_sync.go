@@ -106,7 +106,7 @@ func linearSyncOwnerForLocal(ctx context.Context, tx pgx.Tx, b workerBinding, is
 		return nil
 	}
 	var linearUserID string
-	if err := tx.QueryRow(ctx, `SELECT linear_user_id FROM linear_member_binding WHERE workspace_id=$1 AND connection_id=$2 AND patchbay_user_id=$3`, b.WorkspaceID, b.ConnectionID, issue.OwnerID).Scan(&linearUserID); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT linear_user_id FROM linear_member_binding WHERE workspace_id=$1 AND connection_id=$2 AND orvilo_user_id=$3`, b.WorkspaceID, b.ConnectionID, issue.OwnerID).Scan(&linearUserID); err != nil {
 		return nil
 	}
 	if strings.TrimSpace(linearUserID) == "" {
@@ -174,14 +174,14 @@ func linearSyncOwnerPatch(ctx context.Context, tx pgx.Tx, b workerBinding, value
 	if remoteID == "" {
 		return pgtype.Text{}, pgtype.UUID{}, nil
 	}
-	var patchbayUserID pgtype.UUID
-	if err := tx.QueryRow(ctx, `SELECT patchbay_user_id FROM linear_member_binding WHERE workspace_id=$1 AND connection_id=$2 AND linear_user_id=$3`, b.WorkspaceID, b.ConnectionID, remoteID).Scan(&patchbayUserID); err != nil {
+	var orviloUserID pgtype.UUID
+	if err := tx.QueryRow(ctx, `SELECT orvilo_user_id FROM linear_member_binding WHERE workspace_id=$1 AND connection_id=$2 AND linear_user_id=$3`, b.WorkspaceID, b.ConnectionID, remoteID).Scan(&orviloUserID); err != nil {
 		// Unknown remote owners are preserved in the common snapshot. Clearing
 		// the local owner here would turn an unmapped provider identity into a
 		// destructive local mutation.
 		return current.OwnerType, current.OwnerID, nil
 	}
-	return pgtype.Text{String: "member", Valid: true}, patchbayUserID, nil
+	return pgtype.Text{String: "member", Valid: true}, orviloUserID, nil
 }
 
 func linearSyncUpdateParams(issue db.Issue, next map[string]any, projectID pgtype.UUID, ownerType pgtype.Text, ownerID pgtype.UUID) db.UpdateIssueParams {
@@ -222,7 +222,7 @@ func (w *LinearWorker) applyRemote(ctx context.Context, b workerBinding, remote 
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `SELECT set_config('patchbay.linear_remote_apply','on',true)`); err != nil {
+	if _, err = tx.Exec(ctx, `SELECT set_config('orvilo.linear_remote_apply','on',true)`); err != nil {
 		return err
 	}
 	queries := db.New(tx)
@@ -230,7 +230,7 @@ func (w *LinearWorker) applyRemote(ctx context.Context, b workerBinding, remote 
 	if errors.Is(linkErr, pgx.ErrNoRows) {
 		// A remote project move can change the matching binding. Locate the
 		// existing link through the connection and rebind it atomically.
-		linkErr = tx.QueryRow(ctx, `SELECT l.id,l.workspace_id,l.binding_id,l.patchbay_issue_id,l.linear_issue_id,l.linear_identifier,l.last_common_snapshot,l.remote_updated_at,l.last_remote_event_at_ms,l.last_remote_event_id,l.sync_status,l.created_at,l.updated_at FROM linear_issue_link l JOIN linear_project_binding old_b ON old_b.id=l.binding_id WHERE old_b.connection_id=$1 AND l.linear_issue_id=$2 AND l.sync_status<>'deleted' ORDER BY l.updated_at DESC LIMIT 1 FOR UPDATE`, b.ConnectionID, remote.ID).Scan(&link.ID, &link.WorkspaceID, &link.BindingID, &link.PatchbayIssueID, &link.LinearIssueID, &link.LinearIdentifier, &link.LastCommonSnapshot, &link.RemoteUpdatedAt, &link.LastRemoteEventAtMs, &link.LastRemoteEventID, &link.SyncStatus, &link.CreatedAt, &link.UpdatedAt)
+		linkErr = tx.QueryRow(ctx, `SELECT l.id,l.workspace_id,l.binding_id,l.orvilo_issue_id,l.linear_issue_id,l.linear_identifier,l.last_common_snapshot,l.remote_updated_at,l.last_remote_event_at_ms,l.last_remote_event_id,l.sync_status,l.created_at,l.updated_at FROM linear_issue_link l JOIN linear_project_binding old_b ON old_b.id=l.binding_id WHERE old_b.connection_id=$1 AND l.linear_issue_id=$2 AND l.sync_status<>'deleted' ORDER BY l.updated_at DESC LIMIT 1 FOR UPDATE`, b.ConnectionID, remote.ID).Scan(&link.ID, &link.WorkspaceID, &link.BindingID, &link.OrviloIssueID, &link.LinearIssueID, &link.LinearIdentifier, &link.LastCommonSnapshot, &link.RemoteUpdatedAt, &link.LastRemoteEventAtMs, &link.LastRemoteEventID, &link.SyncStatus, &link.CreatedAt, &link.UpdatedAt)
 	}
 	if errors.Is(linkErr, pgx.ErrNoRows) {
 		if remote.Deleted {
@@ -260,7 +260,7 @@ func (w *LinearWorker) applyRemote(ctx context.Context, b workerBinding, remote 
 			return originErr
 		}
 		base, _ := json.Marshal(linearSyncRemoteSnapshot(b, remote))
-		link, err = queries.CreateLinearIssueLink(ctx, db.CreateLinearIssueLinkParams{ID: parseUUID(uuid.NewString()), WorkspaceID: b.WorkspaceID, BindingID: b.ID, PatchbayIssueID: issue.ID, LinearIssueID: remote.ID, LinearIdentifier: remote.Identifier, LastCommonSnapshot: base, RemoteUpdatedAt: pgtype.Timestamptz{Time: remote.UpdatedAt, Valid: !remote.UpdatedAt.IsZero()}, LastRemoteEventAtMs: pgtype.Int8{Int64: eventAt, Valid: eventAt > 0}, LastRemoteEventID: pgtype.Text{String: eventID, Valid: true}})
+		link, err = queries.CreateLinearIssueLink(ctx, db.CreateLinearIssueLinkParams{ID: parseUUID(uuid.NewString()), WorkspaceID: b.WorkspaceID, BindingID: b.ID, OrviloIssueID: issue.ID, LinearIssueID: remote.ID, LinearIdentifier: remote.Identifier, LastCommonSnapshot: base, RemoteUpdatedAt: pgtype.Timestamptz{Time: remote.UpdatedAt, Valid: !remote.UpdatedAt.IsZero()}, LastRemoteEventAtMs: pgtype.Int8{Int64: eventAt, Valid: eventAt > 0}, LastRemoteEventID: pgtype.Text{String: eventID, Valid: true}})
 		if err != nil {
 			return err
 		}
@@ -285,7 +285,7 @@ func (w *LinearWorker) applyRemote(ctx context.Context, b workerBinding, remote 
 	if eventAt > 0 && link.LastRemoteEventAtMs.Valid && eventAt <= link.LastRemoteEventAtMs.Int64 {
 		return tx.Commit(ctx)
 	}
-	issue, err := queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: link.PatchbayIssueID, WorkspaceID: b.WorkspaceID})
+	issue, err := queries.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: link.OrviloIssueID, WorkspaceID: b.WorkspaceID})
 	if err != nil {
 		return err
 	}
@@ -317,7 +317,7 @@ func (w *LinearWorker) applyRemote(ctx context.Context, b workerBinding, remote 
 			rawBase, _ := json.Marshal(base[field])
 			rawLocal, _ := json.Marshal(local[field])
 			rawRemote, _ := json.Marshal(incoming[field])
-			if err = queries.CreateLinearSyncConflict(ctx, db.CreateLinearSyncConflictParams{ID: parseUUID(uuid.NewString()), WorkspaceID: b.WorkspaceID, BindingID: b.ID, LinkID: link.ID, PatchbayIssueID: issue.ID, LinearIssueID: remote.ID, Field: field, BaseValue: rawBase, LocalValue: rawLocal, RemoteValue: rawRemote, SourceEventID: eventID, SourceEventAtMs: pgtype.Int8{Int64: eventAt, Valid: eventAt > 0}}); err != nil {
+			if err = queries.CreateLinearSyncConflict(ctx, db.CreateLinearSyncConflictParams{ID: parseUUID(uuid.NewString()), WorkspaceID: b.WorkspaceID, BindingID: b.ID, LinkID: link.ID, OrviloIssueID: issue.ID, LinearIssueID: remote.ID, Field: field, BaseValue: rawBase, LocalValue: rawLocal, RemoteValue: rawRemote, SourceEventID: eventID, SourceEventAtMs: pgtype.Int8{Int64: eventAt, Valid: eventAt > 0}}); err != nil {
 				return err
 			}
 			next[field] = local[field]
@@ -371,14 +371,14 @@ func (w *LinearWorker) applyRemote(ctx context.Context, b workerBinding, remote 
 }
 
 func linearSyncLocalIssueInput(ctx context.Context, tx pgx.Tx, b workerBinding, issue db.Issue) (linearapi.IssueInput, error) {
-	input := linearapi.IssueInput{TeamID: b.TeamID.String, ProjectID: b.LinearProjectID, Title: issue.Title, Description: linearapi.StripOrviloIssueMarker(issue.Description.String), Priority: localPriority(issue.Priority), StateID: stateForLocal(b, issue.Status), PatchbayIssueID: uuidToString(issue.ID)}
+	input := linearapi.IssueInput{TeamID: b.TeamID.String, ProjectID: b.LinearProjectID, Title: issue.Title, Description: linearapi.StripOrviloIssueMarker(issue.Description.String), Priority: localPriority(issue.Priority), StateID: stateForLocal(b, issue.Status), OrviloIssueID: uuidToString(issue.ID)}
 	if issue.DueDate.Valid {
 		due := issue.DueDate.Time.Format("2006-01-02")
 		input.DueDate = &due
 	}
 	if issue.OwnerID.Valid && issue.OwnerType.Valid && issue.OwnerType.String == "member" {
 		var linearUserID string
-		if err := tx.QueryRow(ctx, `SELECT linear_user_id FROM linear_member_binding WHERE workspace_id=$1 AND connection_id=$2 AND patchbay_user_id=$3`, b.WorkspaceID, b.ConnectionID, issue.OwnerID).Scan(&linearUserID); err != nil {
+		if err := tx.QueryRow(ctx, `SELECT linear_user_id FROM linear_member_binding WHERE workspace_id=$1 AND connection_id=$2 AND orvilo_user_id=$3`, b.WorkspaceID, b.ConnectionID, issue.OwnerID).Scan(&linearUserID); err != nil {
 			return input, errors.New("Linear owner is not mapped to a Linear user")
 		}
 		input.AssigneeID = &linearUserID
@@ -427,7 +427,7 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 	if err != nil && c.EventType != "issue_deleted" {
 		return err
 	}
-	link, linkErr := queries.GetLinearIssueLinkByLocal(ctx, db.GetLinearIssueLinkByLocalParams{WorkspaceID: b.WorkspaceID, BindingID: b.ID, PatchbayIssueID: c.IssueID})
+	link, linkErr := queries.GetLinearIssueLinkByLocal(ctx, db.GetLinearIssueLinkByLocalParams{WorkspaceID: b.WorkspaceID, BindingID: b.ID, OrviloIssueID: c.IssueID})
 	if c.EventType == "issue_deleted" {
 		if errors.Is(linkErr, pgx.ErrNoRows) {
 			return nil
@@ -469,7 +469,7 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 			if err = w.applyRemote(ctx, b, remote, "prepush:"+c.EventType+":"+uuidToString(c.ID), remote.UpdatedAt.UnixMilli()); err != nil {
 				return err
 			}
-			link, linkErr = queries.GetLinearIssueLinkByLocal(ctx, db.GetLinearIssueLinkByLocalParams{WorkspaceID: b.WorkspaceID, BindingID: b.ID, PatchbayIssueID: c.IssueID})
+			link, linkErr = queries.GetLinearIssueLinkByLocal(ctx, db.GetLinearIssueLinkByLocalParams{WorkspaceID: b.WorkspaceID, BindingID: b.ID, OrviloIssueID: c.IssueID})
 			if linkErr != nil {
 				return linkErr
 			}
@@ -502,7 +502,7 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 				return listErr
 			}
 			for _, candidate := range listed {
-				if linearapi.PatchbayIssueIDFromDescription(candidate.Description) == uuidToString(c.IssueID) {
+				if linearapi.OrviloIssueIDFromDescription(candidate.Description) == uuidToString(c.IssueID) {
 					remote = candidate
 					break
 				}
@@ -533,14 +533,14 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `SELECT set_config('patchbay.linear_remote_apply','on',true)`); err != nil {
+	if _, err = tx.Exec(ctx, `SELECT set_config('orvilo.linear_remote_apply','on',true)`); err != nil {
 		return err
 	}
 	qtx := db.New(tx)
 	snapshot, _ := json.Marshal(linearSyncLocalSnapshot(ctx, tx, b, issue))
 	remoteTime := pgtype.Timestamptz{Time: remote.UpdatedAt, Valid: true}
 	if errors.Is(linkErr, pgx.ErrNoRows) {
-		link, err = qtx.CreateLinearIssueLink(ctx, db.CreateLinearIssueLinkParams{ID: parseUUID(uuid.NewString()), WorkspaceID: b.WorkspaceID, BindingID: b.ID, PatchbayIssueID: c.IssueID, LinearIssueID: remote.ID, LinearIdentifier: remote.Identifier, LastCommonSnapshot: snapshot, RemoteUpdatedAt: remoteTime, LastRemoteEventAtMs: pgtype.Int8{Int64: remote.UpdatedAt.UnixMilli(), Valid: true}, LastRemoteEventID: pgtype.Text{String: "local:" + uuidToString(c.ID), Valid: true}})
+		link, err = qtx.CreateLinearIssueLink(ctx, db.CreateLinearIssueLinkParams{ID: parseUUID(uuid.NewString()), WorkspaceID: b.WorkspaceID, BindingID: b.ID, OrviloIssueID: c.IssueID, LinearIssueID: remote.ID, LinearIdentifier: remote.Identifier, LastCommonSnapshot: snapshot, RemoteUpdatedAt: remoteTime, LastRemoteEventAtMs: pgtype.Int8{Int64: remote.UpdatedAt.UnixMilli(), Valid: true}, LastRemoteEventID: pgtype.Text{String: "local:" + uuidToString(c.ID), Valid: true}})
 		if err != nil {
 			return err
 		}

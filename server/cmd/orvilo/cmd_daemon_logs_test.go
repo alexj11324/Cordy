@@ -69,7 +69,7 @@ func seedDaemonLog(t *testing.T, path string) {
 
 // The default profile and a named one resolve to different files, and only the
 // named-profile layout was missing from the docs — a Desktop install logs to
-// ~/.patchbay/profiles/<name>/daemon.log while ~/.patchbay/daemon.log may still
+// ~/.orvilo/profiles/<name>/daemon.log while ~/.orvilo/daemon.log may still
 // hold a readable, stale log from an earlier default-profile daemon (#6038).
 func TestDaemonLogSourcePathResolvesPerProfile(t *testing.T) {
 	t.Run("default profile", func(t *testing.T) {
@@ -79,20 +79,20 @@ func TestDaemonLogSourcePathResolvesPerProfile(t *testing.T) {
 		if err != nil {
 			t.Fatalf("daemonLogSourcePath(\"\") = %v, want nil", err)
 		}
-		want := filepath.Join(home, ".patchbay", "daemon.log")
+		want := filepath.Join(home, ".orvilo", "daemon.log")
 		if got != want {
 			t.Fatalf("daemonLogSourcePath(\"\") = %q, want %q", got, want)
 		}
 	})
 
 	t.Run("named profile", func(t *testing.T) {
-		home := mkProfiles(t, "desktop-api.patchbay.ai")
+		home := mkProfiles(t, "desktop-api.orvilo.ai")
 
-		got, err := daemonLogSourcePath("desktop-api.patchbay.ai")
+		got, err := daemonLogSourcePath("desktop-api.orvilo.ai")
 		if err != nil {
 			t.Fatalf("daemonLogSourcePath = %v, want nil", err)
 		}
-		want := filepath.Join(home, ".patchbay", "profiles", "desktop-api.patchbay.ai", "daemon.log")
+		want := filepath.Join(home, ".orvilo", "profiles", "desktop-api.orvilo.ai", "daemon.log")
 		if got != want {
 			t.Fatalf("daemonLogSourcePath = %q, want %q", got, want)
 		}
@@ -126,13 +126,13 @@ func TestRunDaemonLogsAnnouncesResolvedPath(t *testing.T) {
 	}{
 		{"default profile", "", "default", 50, false},
 		{"default profile with lines", "", "default", 100, false},
-		{"named profile", "desktop-api.patchbay.ai", "desktop-api.patchbay.ai", 50, false},
-		{"named profile following", "desktop-api.patchbay.ai", "desktop-api.patchbay.ai", 50, true},
+		{"named profile", "desktop-api.orvilo.ai", "desktop-api.orvilo.ai", 50, false},
+		{"named profile following", "desktop-api.orvilo.ai", "desktop-api.orvilo.ai", 50, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			clearDaemonTaskEnv(t)
-			mkProfiles(t, "desktop-api.patchbay.ai")
+			mkProfiles(t, "desktop-api.orvilo.ai")
 
 			wantPath, err := daemonLogSourcePath(tc.profile)
 			if err != nil {
@@ -172,7 +172,7 @@ func TestRunDaemonLogsAnnouncesResolvedPath(t *testing.T) {
 	}
 }
 
-// The announcement goes to stderr, so `patchbay daemon logs | grep ...` and a
+// The announcement goes to stderr, so `orvilo daemon logs | grep ...` and a
 // redirect to a file keep seeing log content only.
 func TestRunDaemonLogsAnnouncementDoesNotPolluteStdout(t *testing.T) {
 	clearDaemonTaskEnv(t)
@@ -202,20 +202,20 @@ func TestRunDaemonLogsAnnouncementDoesNotPolluteStdout(t *testing.T) {
 // for the profile that was asked for, not the default profile's.
 func TestRunDaemonLogsMissingFileNamesProfilePath(t *testing.T) {
 	clearDaemonTaskEnv(t)
-	home := mkProfiles(t, "desktop-api.patchbay.ai")
+	home := mkProfiles(t, "desktop-api.orvilo.ai")
 
 	// A readable log for the DEFAULT profile exists — the exact trap from
 	// #6038. The error must still point at the requested profile's path.
-	seedDaemonLog(t, filepath.Join(home, ".patchbay", "daemon.log"))
+	seedDaemonLog(t, filepath.Join(home, ".orvilo", "daemon.log"))
 
-	cmd, errOut := daemonLogsCmdFor(t, "desktop-api.patchbay.ai", 50, false)
+	cmd, errOut := daemonLogsCmdFor(t, "desktop-api.orvilo.ai", 50, false)
 	rec := stubTailLog(t, errOut)
 
 	err := runDaemonLogs(cmd, nil)
 	if err == nil {
 		t.Fatal("runDaemonLogs = nil, want the missing-log-file error")
 	}
-	want := filepath.Join(home, ".patchbay", "profiles", "desktop-api.patchbay.ai", "daemon.log")
+	want := filepath.Join(home, ".orvilo", "profiles", "desktop-api.orvilo.ai", "daemon.log")
 	if !strings.Contains(err.Error(), want) {
 		t.Errorf("error = %q, want it to name %q", err, want)
 	}

@@ -89,7 +89,7 @@ var canonicalRank = func() map[string]int {
 var ErrUnknownStatus = errors.New("unknown issue status")
 
 // keyPattern mirrors the issue_status.key CHECK constraint. Keys are lowercase
-// so `patchbay issue status <id> human_review` is unambiguous to type.
+// so `orvilo issue status <id> human_review` is unambiguous to type.
 var keyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_]{0,31}$`)
 
 // Querier is the slice of the generated query set this package needs. Taking an
@@ -151,7 +151,7 @@ func ValidateKey(key string) (string, error) {
 const maxKeyLen = 32
 
 // slugify reduces a display name to the ASCII key alphabet, returning "" when
-// nothing survives. Lowercase because `patchbay issue status <id> human_review`
+// nothing survives. Lowercase because `orvilo issue status <id> human_review`
 // has to be unambiguous to type; runs of everything else collapse to a single
 // underscore so "Gate — Approved!" does not become "gate___approved".
 func slugify(name string) string {

@@ -25,7 +25,7 @@ recent top-level messages, and for each thread its thread_id, reply_count, and
 latest_reply. It does NOT expand thread contents — it is the table of contents.
 
 To read a specific thread's messages, take a thread_id from here and run
-"patchbay chat thread <thread_id>".
+"orvilo chat thread <thread_id>".
 
 It is the SAME command regardless of which channel the conversation came from,
 and it reads only the conversation you are currently running for — it cannot
@@ -40,7 +40,7 @@ var chatThreadCmd = &cobra.Command{
 	Long: `Read the messages of a single thread.
 
 With no id, read the thread you are currently in (the one you were @mentioned in).
-With an id — a thread_id from "patchbay chat history" — read that specific thread.
+With an id — a thread_id from "orvilo chat history" — read that specific thread.
 Either way the thread is within the channel you are in; you cannot read another
 channel.`,
 	Args: cobra.MaximumNArgs(1),

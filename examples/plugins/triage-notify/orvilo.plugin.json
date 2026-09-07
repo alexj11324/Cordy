@@ -1,12 +1,12 @@
 {
   "manifest_version": 1,
-  "key": "ai.patchbay.triage-notify",
+  "key": "ai.orvilo.triage-notify",
   "name": "Triage Notify",
   "description": "Sends an issue to an external triage service and writes its answer back as a comment. Also demonstrates a no-side-effect Hook that Orvilo wakes every five minutes.",
   "version": "1.1.0",
   "author": {
-    "name": "patchbay",
-    "url": "https://patchbay.aspectlylabs.com"
+    "name": "orvilo",
+    "url": "https://orvilo.aspectlylabs.com"
   },
   "scopes": [
     "issues:read",

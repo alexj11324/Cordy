@@ -16,8 +16,8 @@ import { isImeComposing } from "@orvilo/core/utils";
 // editors without fighting ProseMirror.
 // ---------------------------------------------------------------------------
 
-const HIGHLIGHT_NAME = "patchbay-find";
-const ACTIVE_HIGHLIGHT_NAME = "patchbay-find-active";
+const HIGHLIGHT_NAME = "orvilo-find";
+const ACTIVE_HIGHLIGHT_NAME = "orvilo-find-active";
 
 // Feature detection, evaluated lazily per call site. On browsers without the
 // CSS Custom Highlight API the bar still opens and navigates, it just paints

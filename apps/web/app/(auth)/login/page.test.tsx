@@ -199,7 +199,7 @@ describe("LoginPage", () => {
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
     authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
     authStoreState.current = { status: "authenticated" };
-    issueCliToken.mockResolvedValue({ token: "patchbay-native-token" });
+    issueCliToken.mockResolvedValue({ token: "orvilo-native-token" });
 
     render(<LoginPage />);
     fireEvent.click(
@@ -211,7 +211,7 @@ describe("LoginPage", () => {
     await waitFor(() => expect(issueCliToken).toHaveBeenCalledOnce());
     expect(redirectToCliCallback).toHaveBeenCalledWith(
       "http://localhost:43821/callback",
-      "patchbay-native-token",
+      "orvilo-native-token",
       "opaque-state",
     );
     expect(authState.current.getToken).not.toHaveBeenCalled();
@@ -259,7 +259,7 @@ describe("LoginPage", () => {
 
   it("automatically hands a signed-in desktop session to the Orvilo app", async () => {
     search.current =
-      "platform=desktop&code_challenge=challenge-value&state=opaque-state&callback_protocol=patchbay-canary-attacker";
+      "platform=desktop&code_challenge=challenge-value&state=opaque-state&callback_protocol=orvilo-canary-attacker";
     authState.current = {
       isLoaded: true,
       isSignedIn: true,
@@ -267,7 +267,7 @@ describe("LoginPage", () => {
     };
     authStoreState.current = { status: "authenticated" };
     completeDesktopAuthHandoff.mockResolvedValue({
-      callback_protocol: "patchbay-canary-login-fix-123",
+      callback_protocol: "orvilo-canary-login-fix-123",
       code: "desktop-handoff-code",
     });
 
@@ -283,7 +283,7 @@ describe("LoginPage", () => {
     expect(redirectToDesktopApp).toHaveBeenCalledWith(
       "desktop-handoff-code",
       "opaque-state",
-      "patchbay-canary-login-fix-123",
+      "orvilo-canary-login-fix-123",
     );
   });
 

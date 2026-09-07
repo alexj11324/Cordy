@@ -47,7 +47,7 @@ import (
 // call returns a structured "app type not supported" error, this code
 // surfaces the code+msg directly so the Hub's backoff loop logs the
 // real reason instead of looping silently. The smoke test path is
-// `patchbay` -> register a PersonalAgent -> enable WS -> watch logs.
+// `orvilo` -> register a PersonalAgent -> enable WS -> watch logs.
 type HTTPConnectionTokenFetcher struct {
 	cfg HTTPConnectionTokenConfig
 }

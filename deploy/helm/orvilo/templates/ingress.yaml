@@ -2,9 +2,9 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "patchbay.frontend.fullname" . }}
+  name: {{ include "orvilo.frontend.fullname" . }}
   labels:
-    {{- include "patchbay.labels" . | nindent 4 }}
+    {{- include "orvilo.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
   {{- with .Values.ingress.annotations }}
   annotations:
@@ -20,7 +20,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "patchbay.frontend.fullname" . }}
+                name: {{ include "orvilo.frontend.fullname" . }}
                 port:
                   number: 3000
   {{- with .Values.ingress.tls }}
@@ -31,9 +31,9 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: {{ include "patchbay.backend.fullname" . }}
+  name: {{ include "orvilo.backend.fullname" . }}
   labels:
-    {{- include "patchbay.labels" . | nindent 4 }}
+    {{- include "orvilo.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend
   {{- with .Values.ingress.annotations }}
   annotations:
@@ -49,7 +49,7 @@ spec:
             pathType: Prefix
             backend:
               service:
-                name: {{ include "patchbay.backend.fullname" . }}
+                name: {{ include "orvilo.backend.fullname" . }}
                 port:
                   number: 8080
   {{- with .Values.ingress.tls }}

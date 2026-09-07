@@ -57,7 +57,7 @@ function renderPage(handoffFailed = false, onBack?: () => Promise<void>) {
           apiUrl: "https://api.aspectlylabs.com",
         },
       },
-      callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+      callbackProtocol: "orvilo-canary-5718c47b86bf9ece",
       openExternal: mocks.openExternal,
     },
   });
@@ -111,7 +111,7 @@ describe("DesktopLoginPage", () => {
       expect(mocks.initiateDesktopAuthHandoff).toHaveBeenCalledWith(
         "state-1",
         "challenge-1",
-        "patchbay-canary-5718c47b86bf9ece",
+        "orvilo-canary-5718c47b86bf9ece",
       );
     });
     expect(mocks.createDesktopLoginUrl).toHaveBeenCalledWith(
@@ -120,7 +120,7 @@ describe("DesktopLoginPage", () => {
       {
         sessionApiUrl: undefined,
         locale: "en",
-        callbackProtocol: "patchbay-canary-5718c47b86bf9ece",
+        callbackProtocol: "orvilo-canary-5718c47b86bf9ece",
         initiateHosted: undefined,
       },
     );

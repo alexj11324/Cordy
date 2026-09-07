@@ -93,7 +93,7 @@ func createTestUserAndMember(t *testing.T, role string) string {
 	if err := testPool.QueryRow(ctx,
 		`INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id`,
 		fmt.Sprintf("sharelink-test-%d", seq),
-		fmt.Sprintf("sharelink-test-%d@patchbay.ai", seq),
+		fmt.Sprintf("sharelink-test-%d@orvilo.ai", seq),
 	).Scan(&userID); err != nil {
 		t.Fatalf("create share-link test user: %v", err)
 	}

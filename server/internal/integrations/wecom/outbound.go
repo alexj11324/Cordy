@@ -383,7 +383,7 @@ func (o *Outbound) tryDeliverInbox(ctx context.Context, item map[string]any, rec
 	}
 	binding, err := o.q.FindChannelBindingForMember(ctx, db.FindChannelBindingForMemberParams{
 		WorkspaceID:    workspaceID,
-		PatchbayUserID: recipientID,
+		OrviloUserID: recipientID,
 		ChannelType:    channelTypeWecom,
 	})
 	if err != nil {

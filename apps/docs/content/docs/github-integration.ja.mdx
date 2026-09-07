@@ -35,7 +35,7 @@ GitHub 連携が読み取るのは、インストール時に許可されたリ�
 |---|---|
 | GitHub 連携 | メインスイッチ。無効にすると下の 3 項目は機能しなくなりますが、GitHub App の接続は解除されません。 |
 | PR サイドバー | 紐づいた pull request をタスクの詳細画面に表示します。 |
-| Co-authored-by | エージェントが作成する commit に `Co-authored-by: patchbay-agent <github@aspectlylabs.com>` を追加します。 |
+| Co-authored-by | エージェントが作成する commit に `Co-authored-by: orvilo-agent <github@aspectlylabs.com>` を追加します。 |
 | PR の自動紐づけ | PR のブランチ名、タイトル、本文からタスク番号を検出します。 |
 | **PR カード → CI とマージ可否** | 紐づいた各 PR について、Orvilo は認証済みの GitHub API スナップショットを取得し、その **CI ステータス**と**マージ可否**をカードにミラーリングします（下記の **PR カードに表示される内容** を参照）。 |
 
@@ -112,7 +112,7 @@ GitHub の **Developer settings → GitHub Apps** で App を作成し、次の�
 
 | フィールド | 値 |
 |---|---|
-| Homepage URL | Orvilo のフロントエンド URL。例: `https://patchbay.example.com` |
+| Homepage URL | Orvilo のフロントエンド URL。例: `https://orvilo.example.com` |
 | Callback URL | 空欄 |
 | Setup URL | `https://<api-host>/api/github/setup`。**Redirect on update** を有効にする |
 | Webhook URL | `https://<api-host>/api/webhooks/github` |
@@ -141,12 +141,12 @@ Orvilo で CI を表示しない場合は、Checks と Commit statuses の権限
 
 ### 2. 環境変数を設定する
 
-App の公開 URL から slug を確認します。たとえば `https://github.com/apps/patchbay-acme` の slug は `patchbay-acme` です。
+App の公開 URL から slug を確認します。たとえば `https://github.com/apps/orvilo-acme` の slug は `orvilo-acme` です。
 
 ```dotenv
-GITHUB_APP_SLUG=patchbay-acme
+GITHUB_APP_SLUG=orvilo-acme
 GITHUB_WEBHOOK_SECRET=<webhook secret entered when creating the App>
-FRONTEND_ORIGIN=https://patchbay.example.com
+FRONTEND_ORIGIN=https://orvilo.example.com
 ```
 
 `GITHUB_APP_SLUG` と `GITHUB_WEBHOOK_SECRET` のいずれかがない場合、接続ボタンは無効になり、webhook エンドポイントもイベントを拒否します。

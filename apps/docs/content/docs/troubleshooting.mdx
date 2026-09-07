@@ -8,10 +8,10 @@ import { Callout } from "fumadocs-ui/components/callout";
 First work out which layer the problem lives in: the Orvilo service, the daemon, the runtime, or the AI coding tool. These commands are usually enough to surface the first meaningful error:
 
 ```bash
-patchbay version
-patchbay auth status
-patchbay daemon status --output json
-patchbay daemon logs --lines 100
+orvilo version
+orvilo auth status
+orvilo daemon status --output json
+orvilo daemon logs --lines 100
 ```
 
 Self-hosted instances can also check the service directly:
@@ -28,9 +28,9 @@ curl -i https://api.example.com/readyz
 Run these first:
 
 ```bash
-patchbay auth status
-patchbay daemon status --output json
-patchbay daemon logs --lines 100
+orvilo auth status
+orvilo daemon status --output json
+orvilo daemon logs --lines 100
 ```
 
 Common causes include:
@@ -44,14 +44,14 @@ Common causes include:
 Sign in again and restart the daemon:
 
 ```bash
-patchbay login
-patchbay daemon restart
+orvilo login
+orvilo daemon restart
 ```
 
-Self-hosted deployments should also request the API's `/health` from the **executing computer** — testing on the server itself cannot expose DNS, TLS, or firewall problems on the executing computer's side. To change the address, rerun `patchbay setup self-host`, or check the current profile's `server_url`:
+Self-hosted deployments should also request the API's `/health` from the **executing computer** — testing on the server itself cannot expose DNS, TLS, or firewall problems on the executing computer's side. To change the address, rerun `orvilo setup self-host`, or check the current profile's `server_url`:
 
 ```bash
-patchbay config show
+orvilo config show
 ```
 
 ## Issue does not start executing
@@ -70,12 +70,12 @@ Open the issue's **execution log** and check the task's current status and what 
 An agent runs at most 6 tasks concurrently by default; a single daemon runs at most 20. At the limit, new tasks stay in the queue until a running one finishes. Tasks also keep queueing while the runtime is offline; they only fail once that runtime has stopped heartbeating for longer than the reconnect grace and the task has itself waited that long, so a long queue behind a busy runtime is never expired for waiting, and assigning work to a machine that is already offline still leaves a full grace to bring it back.
 
 ```bash
-patchbay daemon status --output json
-patchbay agent get <agent-id>
-patchbay issue runs <issue-id>
+orvilo daemon status --output json
+orvilo agent get <agent-id>
+orvilo issue runs <issue-id>
 ```
 
-If the runtime list is missing an expected tool, first confirm the tool runs and is signed in under the same system account and `PATH`, then run `patchbay daemon restart`.
+If the runtime list is missing an expected tool, first confirm the tool runs and is signed in under the same system account and `PATH`, then run `orvilo daemon restart`.
 
 ### `waiting_local_directory` status
 
@@ -83,7 +83,7 @@ This means another in-flight task is using the same local directory. Orvilo wait
 
 This wait only exists in the directory's `in_place` ("Direct") mode. If the directory is a git repository, switching the resource to `worktree` ("Parallel") removes the queue altogether: each task gets its own worktree and hands its work back as a branch, so nothing waits on anything. See [Project resources](/project-resources#how-tasks-share-the-directory).
 
-Otherwise you just wait for the earlier task to finish. If it is stuck, stop it from its execution log, or pick a different local directory for the current agent. This directory mutex lives in the daemon's memory — no lock file is written to disk. If you suspect stale lock state, `patchbay daemon restart` releases it; there is nothing to delete manually.
+Otherwise you just wait for the earlier task to finish. If it is stuck, stop it from its execution log, or pick a different local directory for the current agent. This directory mutex lives in the daemon's memory — no lock file is written to disk. If you suspect stale lock state, `orvilo daemon restart` releases it; there is nothing to delete manually.
 
 ## AI coding tool fails to start
 
@@ -120,7 +120,7 @@ docker compose -f docker-compose.selfhost.yml up -d
 
 For a complete reverse-proxy example, see the [self-host quickstart](/self-host-quickstart#3-choose-how-to-access).
 
-## `patchbay setup` reports the server is not reachable
+## `orvilo setup` reports the server is not reachable
 
 The CLI reachability probe GETs `<server-url>/health` and needs a 200. The backend serves this path. Current web releases forward `/health` to the backend, but older ones do not — a reverse proxy that forwards everything to such an older frontend returns 404, and the CLI concludes the server is down while the stack is healthy.
 
@@ -211,21 +211,21 @@ If it is another Orvilo checkout, run `make stop` in that directory first. Other
 
 | Component | How to view |
 | --- | --- |
-| Background daemon | `patchbay daemon logs --lines 100` |
-| Follow daemon logs live | `patchbay daemon logs --follow` |
-| Default profile's log file | `~/.patchbay/daemon.log` |
-| Default profile's startup or crash log | `~/.patchbay/daemon.err.log` |
-| Named profiles | the matching logs under `~/.patchbay/profiles/<name>/` |
+| Background daemon | `orvilo daemon logs --lines 100` |
+| Follow daemon logs live | `orvilo daemon logs --follow` |
+| Default profile's log file | `~/.orvilo/daemon.log` |
+| Default profile's startup or crash log | `~/.orvilo/daemon.err.log` |
+| Named profiles | the matching logs under `~/.orvilo/profiles/<name>/` |
 | Docker backend | `docker compose -f docker-compose.selfhost.yml logs -f backend` |
 | Browser | Console and Network in the developer tools |
 
-Which of those files is the live one depends on the profile the daemon was started with, and a stale log from an earlier daemon still reads perfectly — the easiest way to debug the wrong file. Don't open one by guess: `patchbay daemon logs` prints the absolute path it resolved before streaming it. Add `--profile <name>` to read a named profile's log.
+Which of those files is the live one depends on the profile the daemon was started with, and a stale log from an earlier daemon still reads perfectly — the easiest way to debug the wrong file. Don't open one by guess: `orvilo daemon logs` prints the absolute path it resolved before streaming it. Add `--profile <name>` to read a named profile's log.
 
 To observe the daemon's startup directly, run it in the foreground instead:
 
 ```bash
-patchbay daemon stop
-patchbay daemon start --foreground
+orvilo daemon stop
+orvilo daemon start --foreground
 ```
 
 If you still cannot pin it down, search existing issues or file a new one on [GitHub Issues](https://github.com/alexj11324/Cordy/issues).

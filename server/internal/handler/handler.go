@@ -93,7 +93,7 @@ type Config struct {
 	// ORVILO_VCS_INTEGRATION_ENABLED; the self-host compose defaults it on.
 	VCSIntegrationEnabled bool
 	// PublicURL is the absolute base URL the API is reachable at from the
-	// public internet, with no trailing slash (e.g. "https://patchbay.aspectlylabs.com").
+	// public internet, with no trailing slash (e.g. "https://orvilo.aspectlylabs.com").
 	// Used to build webhook_url responses and the fixed Remote MCP OAuth
 	// callback URI — never to decide request identity, routing, or workspace
 	// scope. Empty when unset; webhook clients can fall back to their own origin,
@@ -115,7 +115,7 @@ type Config struct {
 	// webhook limiter from being bypassed by a spoofed XFF on deployments
 	// without a header-stripping reverse proxy in front.
 	TrustedProxies []netip.Prefix
-	// CloudURL enables the SaaS-only patchbay-cloud connection when set. Empty
+	// CloudURL enables the SaaS-only orvilo-cloud connection when set. Empty
 	// keeps self-hosted deployments explicit: Cloud endpoints return 503 instead
 	// of attempting to dial a hard-coded private service.
 	CloudURL                 string
@@ -340,7 +340,7 @@ type Handler struct {
 	DingTalkInstall *dingtalk.InstallService
 	// DingTalkBindingTokens mints and redeems the single-use account-link tokens.
 	DingTalkBindingTokens *dingtalk.BindingTokenService
-	// SlackHistory backs the agent-facing `patchbay chat history` command: it
+	// SlackHistory backs the agent-facing `orvilo chat history` command: it
 	// reads a chat session's bound Slack conversation on demand (MUL-3871). Nil
 	// unless Slack is configured; GetChatChannelHistory then reports "no channel
 	// integration". A future platform satisfies the same reader interface.
@@ -381,7 +381,7 @@ type Handler struct {
 	// DEPLOYMENT, carry a file the agent produced the last hop into the
 	// conversation. It answers the claim response's
 	// chat_channel_delivers_files, which the agent's PER-TURN prompt turns into
-	// either "run `patchbay attachment upload`" or "describe the file in words"
+	// either "run `orvilo attachment upload`" or "describe the file in words"
 	// (daemon/prompt.go). Not the brief: the brief is the prompt cache prefix and
 	// this is a per-turn verdict, so stating it there made one session render two
 	// briefs (MUL-5377).

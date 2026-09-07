@@ -37,17 +37,17 @@ server/cmd/orvilo/cmd_team.go
 Commands:
 
 ```bash
-patchbay team list
-patchbay team get <team-id>
-patchbay team create
-patchbay team update <team-id>
-patchbay team delete <team-id>
-patchbay team activity <issue-id> <outcome>
+orvilo team list
+orvilo team get <team-id>
+orvilo team create
+orvilo team update <team-id>
+orvilo team delete <team-id>
+orvilo team activity <issue-id> <outcome>
 
-patchbay team member list <team-id>
-patchbay team member add <team-id>
-patchbay team member remove <team-id>
-patchbay team member set-role <team-id>
+orvilo team member list <team-id>
+orvilo team member add <team-id>
+orvilo team member remove <team-id>
+orvilo team member set-role <team-id>
 ```
 
 Use `--help` for exact flags before writes.
@@ -118,7 +118,7 @@ Contracts:
 - agent member roster rows list assigned workspace skills via
   `loadTeamMemberSkillNames` (ListAgentSkillNamesByAgentIDs) and
   `agentSkillsRosterSegment` — "skills: a, b" or
-  "no skills assigned"; builtin patchbay-* skills are excluded and human
+  "no skills assigned"; builtin orvilo-* skills are excluded and human
   members carry no skills segment (team_briefing.go renderMemberRow);
 - no traced behavior injects `instructions` into every team member.
 
@@ -278,7 +278,7 @@ Contracts:
   ungated path; any future invocation gate must be added to BOTH together.
 - parent status is not auto-advanced by the barrier: the system comment asks the
   leader to continue or — when the overall goal is met — run
-  `patchbay issue status <parent-id> in_review`. The Team Operating Protocol's
+  `orvilo issue status <parent-id> in_review`. The Team Operating Protocol's
   standing "Own the parent issue status" responsibility (present exactly when
   the issue is assigned to this team) states the same expectation; the system
   comment marks the wrap-up moment. Since MUL-6417 the write itself needs no

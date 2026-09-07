@@ -142,7 +142,7 @@ MCP 설정에는 token이 포함될 수 있으며 저장 및 표시 규칙은 �
 ## CLI로 만들기
 
 ```bash
-patchbay agent create \
+orvilo agent create \
   --name "Frontend Reviewer" \
   --runtime-id <runtime-id> \
   --description "프런트엔드 Pull Request 검토" \
@@ -154,7 +154,7 @@ patchbay agent create \
 비슷한 설정의 에이전트가 이미 있다면 바로 복사할 수 있습니다.
 
 ```bash
-patchbay agent copy <agent-id>
+orvilo agent copy <agent-id>
 ```
 
 기본적으로 같은 런타임으로 복사됩니다. 다른 런타임으로 바꾸려면 `--runtime-id`를 추가하고 `--model`도 함께 지정해야 합니다. 환경 변수, MCP 설정, `runtime_config`는 절대 복사되지 않지만 런타임 연결 자체는 유지됩니다. 전체 인수는 [CLI 사용](/cli)을 참고하세요.

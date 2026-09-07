@@ -53,11 +53,11 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: [
           {
-            key: "X-Patchbay-Build",
+            key: "X-Orvilo-Build",
             value: process.env.NEXT_PUBLIC_APP_VERSION || "dev",
           },
           {
-            key: "X-Patchbay-Commit",
+            key: "X-Orvilo-Commit",
             value: process.env.NEXT_PUBLIC_COMMIT_SHA || "unknown",
           },
         ],

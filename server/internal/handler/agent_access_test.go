@@ -62,14 +62,14 @@ func privateAgentTestFixture(t *testing.T) (agentID, ownerID, memberID string) {
 	ctx := context.Background()
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email)
-		VALUES ('Private Agent Owner', 'private-agent-owner@patchbay.test')
+		VALUES ('Private Agent Owner', 'private-agent-owner@orvilo.test')
 		RETURNING id
 	`).Scan(&ownerID); err != nil {
 		t.Fatalf("create owner user: %v", err)
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
-			`DELETE FROM "user" WHERE email = 'private-agent-owner@patchbay.test'`)
+			`DELETE FROM "user" WHERE email = 'private-agent-owner@orvilo.test'`)
 	})
 
 	if _, err := testPool.Exec(ctx, `
@@ -81,14 +81,14 @@ func privateAgentTestFixture(t *testing.T) (agentID, ownerID, memberID string) {
 
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email)
-		VALUES ('Plain Member', 'plain-member@patchbay.test')
+		VALUES ('Plain Member', 'plain-member@orvilo.test')
 		RETURNING id
 	`).Scan(&memberID); err != nil {
 		t.Fatalf("create plain member user: %v", err)
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
-			`DELETE FROM "user" WHERE email = 'plain-member@patchbay.test'`)
+			`DELETE FROM "user" WHERE email = 'plain-member@orvilo.test'`)
 	})
 
 	if _, err := testPool.Exec(ctx, `
@@ -398,14 +398,14 @@ func TestMentionAgent_RejectsCrossWorkspaceAgentUUID(t *testing.T) {
 	var foreignWorkspaceID, foreignUserID, foreignRuntimeID, foreignAgentID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email)
-		VALUES ('Foreign Owner', 'cross-ws-foreign@patchbay.test')
+		VALUES ('Foreign Owner', 'cross-ws-foreign@orvilo.test')
 		RETURNING id
 	`).Scan(&foreignUserID); err != nil {
 		t.Fatalf("create foreign user: %v", err)
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
-			`DELETE FROM "user" WHERE email = 'cross-ws-foreign@patchbay.test'`)
+			`DELETE FROM "user" WHERE email = 'cross-ws-foreign@orvilo.test'`)
 	})
 
 	if err := testPool.QueryRow(ctx, `

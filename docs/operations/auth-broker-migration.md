@@ -30,8 +30,8 @@ The browser registers the hosted attempt, completes fresh Clerk sign-in, and
 submits its Clerk session only to the same-origin Accounts completion endpoint.
 The broker authenticates its request to the hosted Go API.
 
-For local mode, Go mints a `pbl_` identity grant. Accounts returns only that code
-and state through `patchbay://auth/callback`. Electron supplies its saved
+For local mode, Go mints a `ovl_` identity grant. Accounts returns only that code
+and state through `orvilo://auth/callback`. Electron supplies its saved
 verifier and state to its configured local API. With
 `ORVILO_HOSTED_DESKTOP_IDENTITY=1` (enabled by local development scripts),
 that API claims its unexpired initiation row in a transaction and exchanges
@@ -44,7 +44,7 @@ it never returns a production session. Local user mapping and initiation
 consumption commit together before a local session is returned. If a consumed
 remote grant cannot be committed locally, the user starts a fresh login.
 
-Production `pbd_` and local `pbl_` codes hash their complete prefixed value and
+Production `ovd_` and local `ovl_` codes hash their complete prefixed value and
 are rejected by the other purpose's exchange. Production leaves the local
 identity consumer disabled. No Clerk bearer, PKCE verifier, API address, or
 session token belongs in the browser callback. Legacy `session_api` URLs are

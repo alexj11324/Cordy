@@ -292,7 +292,7 @@ function handleDeepLink(url: string): void {
       return;
     }
 
-    // patchbay://invite/<invitationId>
+    // orvilo://invite/<invitationId>
     // Dispatched from the web invite page when the user chooses "Open in
     // desktop app". The renderer opens the invite overlay — no tab, no
     // route persistence, so deep-linking the same invite twice stays safe.
@@ -646,13 +646,13 @@ function createIssueWindow(context: IssueWindowContext): void {
 // without fighting for the shared single-instance lock. The suffix is
 // appended to the app name + userData path, so each worktree gets its own
 // lock file. Default (no env var) keeps behavior unchanged — the common
-// single-worktree case still lands at "Patchbay Canary".
+// single-worktree case still lands at "Orvilo Canary".
 const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
-  ? `Patchbay Canary ${process.env.DESKTOP_APP_SUFFIX}`
-  : "Patchbay Canary";
+  ? `Orvilo Canary ${process.env.DESKTOP_APP_SUFFIX}`
+  : "Orvilo Canary";
 
 if (is.dev || previewIdentity) {
-  app.setName(previewIdentity?.name ?? DEV_APP_NAME.replace("Patchbay", "Orvilo"));
+  app.setName(previewIdentity?.name ?? DEV_APP_NAME);
   app.setPath("userData", join(app.getPath("appData"), previewIdentity?.dataName ?? DEV_APP_NAME));
 } else {
   // Pin the production app name in code. Electron's Linux WM_CLASS is set
@@ -661,8 +661,7 @@ if (is.dev || previewIdentity) {
   // to "Orvilo", but anchoring it here makes WM_CLASS ↔ StartupWMClass
   // (declared in electron-builder.yml) survive a regression in
   // productName / the build pipeline. Must run before requestSingleInstanceLock().
-  // Keep existing sessions and settings in the pre-rebrand directory.
-  app.setPath("userData", join(app.getPath("appData"), "Patchbay"));
+  app.setPath("userData", join(app.getPath("appData"), "Orvilo"));
   app.setName("Orvilo");
 }
 
@@ -743,7 +742,7 @@ if (!gotTheLock) {
     });
 
     electronApp.setAppUserModelId(
-      is.dev ? "ai.patchbay.desktop.dev" : "ai.patchbay.desktop",
+      is.dev ? "ai.orvilo.desktop.dev" : "ai.orvilo.desktop",
     );
 
     installApplicationMenu(previewIdentity ? undefined : async () => {

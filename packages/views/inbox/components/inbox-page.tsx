@@ -289,7 +289,7 @@ export function InboxPage() {
   ]);
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "patchbay_inbox_layout",
+    id: "orvilo_inbox_layout",
   });
 
   const isCompact = useIsCompact();
@@ -690,7 +690,7 @@ export function InboxPage() {
         key={detailItem.issue_id}
         issueId={detailItem.issue_id}
         defaultSidebarOpen={false}
-        layoutId="patchbay_inbox_issue_detail_layout"
+        layoutId="orvilo_inbox_issue_detail_layout"
         highlightCommentId={detailItem.details?.comment_id ?? undefined}
         highlightRequestToken={highlightRequestToken}
         leadingAction={compactBackAction}

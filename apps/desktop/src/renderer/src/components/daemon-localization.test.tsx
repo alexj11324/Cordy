@@ -59,8 +59,8 @@ describe("Desktop daemon localization with real zh-Hans resources", () => {
         "登录时启动守护进程。应用打开期间，它会同时监控自动启动和手动启动的守护进程。",
       ),
     ).toBeInTheDocument();
-    const command = screen.getByText("patchbay daemon stop");
-    expect(command.closest("p")).toHaveTextContent(/patchbay daemon stop。$/);
+    const command = screen.getByText("orvilo daemon stop");
+    expect(command.closest("p")).toHaveTextContent(/orvilo daemon stop。$/);
   });
 
   it("renders repeated log messages with straight double quotes", async () => {

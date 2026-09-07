@@ -307,7 +307,7 @@ func prepareCodexHomeWithOpts(codexHome string, opts CodexHomeOptions, logger *s
 	}
 
 	// Disable Codex native auto-memory inside daemon-managed task sessions
-	// so cross-task and cross-workspace context leaks (patchbay#3130) cannot
+	// so cross-task and cross-workspace context leaks (orvilo#3130) cannot
 	// happen via `codex-home/memories/` or `~/.codex/memories/`. See
 	// codex_memory.go for the full rationale and escape hatch.
 	if err := ensureCodexMemoryConfig(filepath.Join(codexHome, "config.toml"), logger); err != nil {
@@ -357,7 +357,7 @@ var codexSessionStateGlobs = []string{
 // shares that volume (making resume-rollout hard links zero-copy) but is never
 // enumerated by a plain `codex` run, keeping Orvilo task history out of the
 // user's own thread list.
-const codexSessionStoreRoot = "patchbay-sessions"
+const codexSessionStoreRoot = "orvilo-sessions"
 
 // codexSessionStoreDir returns the persistent, per-(agent, issue) Codex sessions
 // store for key, rooted on the shared Codex home's volume. It survives across
@@ -430,7 +430,7 @@ func sanitizePathSegment(s string) string {
 }
 
 // PruneCodexSessionStores reclaims per-issue Codex session stores under the
-// shared home's patchbay-sessions root that have not been touched within
+// shared home's orvilo-sessions root that have not been touched within
 // retention, bounding the lifetime of the conversation history each one holds.
 //
 // The stores deliberately live outside the task-scoped envRoot the task GC

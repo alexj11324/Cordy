@@ -46,7 +46,7 @@ func newProjectResourceUpdateTestCmd() *cobra.Command {
 }
 
 // TestBuildResourceRefFromFlagsGithubMergesHint pins the nit fix from MUL-2662
-// review round 2: `patchbay project resource update <p> <r> --default-branch-hint x`
+// review round 2: `orvilo project resource update <p> <r> --default-branch-hint x`
 // must rebuild the full github_repo payload by merging the existing `url` —
 // otherwise the server sees `{default_branch_hint: "x"}` and 400s.
 func TestBuildResourceRefFromFlagsGithubMergesHint(t *testing.T) {

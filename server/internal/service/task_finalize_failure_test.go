@@ -86,7 +86,7 @@ func dispatchedCommentTaskFixture(t *testing.T, ctx context.Context, pool *pgxpo
 	suffix := time.Now().UnixNano()
 
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ($1,$2) RETURNING id`,
-		"Finalize Fail Test", fmt.Sprintf("finalize-fail-%d@patchbay.ai", suffix)).Scan(&userID); err != nil {
+		"Finalize Fail Test", fmt.Sprintf("finalize-fail-%d@orvilo.ai", suffix)).Scan(&userID); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	if err := pool.QueryRow(ctx, `INSERT INTO workspace (name, slug, description, issue_prefix) VALUES ($1,$2,$3,$4) RETURNING id`,

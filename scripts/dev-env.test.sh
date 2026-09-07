@@ -60,10 +60,10 @@ ENV_FILE=.env.example
 OFFSET=$offset
 BACKEND_PORT=$((18080 + offset))
 FRONTEND_PORT=$((13000 + offset))
-DB_NAME=patchbay_dev_env_test_$offset
-DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay_dev_env_test_$offset?sslmode=disable
+DB_NAME=orvilo_dev_env_test_$offset
+DATABASE_URL=postgres://orvilo:orvilo@localhost:5432/orvilo_dev_env_test_$offset?sslmode=disable
 PROFILE=$profile
-WORKSPACES_ROOT=$(printf '%q' "$ORVILO_DEV_WORKSPACES_PARENT/patchbay_workspaces_$profile")
+WORKSPACES_ROOT=$(printf '%q' "$ORVILO_DEV_WORKSPACES_PARENT/orvilo_workspaces_$profile")
 DESKTOP_RENDERER_PORT=$((5174 + offset))
 DESKTOP_APP_SUFFIX=$name
 EOF
@@ -165,7 +165,7 @@ ORVILO_WORKSPACES_ROOT=/owner/workspaces \
     test -z "${ORVILO_TASK_CONFIG_ROOT:-}" &&
     test -z "${ORVILO_TASK_WORKSPACES_ROOT:-}" &&
     test "$ORVILO_WORKSPACES_ROOT" = "$1"
-  ' _ "$ORVILO_DEV_WORKSPACES_PARENT/patchbay_workspaces_dev-dev-env-test-903" \
+  ' _ "$ORVILO_DEV_WORKSPACES_PARENT/orvilo_workspaces_dev-dev-env-test-903" \
   > "$out" 2>&1 || fail "env-exec leaked daemon task identity or owner workspaces root"
 
 # A health response without process identity is never proof that the process is

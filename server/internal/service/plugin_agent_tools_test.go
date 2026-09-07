@@ -11,7 +11,7 @@ import (
 // tool list, so the names have to be distinguishable in it.
 func TestPluginToolNameNamespacesByPlugin(t *testing.T) {
 	first := PluginToolName("com.example.triage", "summarize")
-	second := PluginToolName("ai.patchbay.release", "summarize")
+	second := PluginToolName("ai.orvilo.release", "summarize")
 	if first == second {
 		t.Fatalf("two plugins' hooks collapsed to one tool name: %q", first)
 	}

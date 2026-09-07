@@ -183,7 +183,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/patchbay-backend
+          images: ghcr.io/${{ github.repository_owner }}/orvilo-backend
           labels: |
             org.opencontainers.image.title=Orvilo Backend
             org.opencontainers.image.description=Orvilo self-hosted backend
@@ -213,7 +213,7 @@ jobs:
           build-args: |
             VERSION=${{ needs.verify.outputs.tag_name }}
             COMMIT=${{ needs.verify.outputs.commit_sha }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/patchbay-backend,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/orvilo-backend,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -250,7 +250,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/patchbay-backend
+          images: ghcr.io/${{ github.repository_owner }}/orvilo-backend
           flavor: |
             latest=false
           tags: |
@@ -270,12 +270,12 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/patchbay-backend@sha256:%s ' *)
+            $(printf 'ghcr.io/${{ github.repository_owner }}/orvilo-backend@sha256:%s ' *)
 
       - name: Inspect image
         run: |
           docker buildx imagetools inspect \
-            ghcr.io/${{ github.repository_owner }}/patchbay-backend:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/orvilo-backend:${{ steps.meta.outputs.version }}
 
   docker-web-build:
     needs: verify
@@ -303,7 +303,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/patchbay-web
+          images: ghcr.io/${{ github.repository_owner }}/orvilo-web
           labels: |
             org.opencontainers.image.title=Orvilo Web
             org.opencontainers.image.description=Orvilo self-hosted web frontend
@@ -333,7 +333,7 @@ jobs:
           build-args: |
             REMOTE_API_URL=http://backend:8080
             NEXT_PUBLIC_APP_VERSION=${{ needs.verify.outputs.tag_name }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/patchbay-web,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/orvilo-web,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -370,7 +370,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/patchbay-web
+          images: ghcr.io/${{ github.repository_owner }}/orvilo-web
           flavor: |
             latest=false
           tags: |
@@ -390,12 +390,12 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/patchbay-web@sha256:%s ' *)
+            $(printf 'ghcr.io/${{ github.repository_owner }}/orvilo-web@sha256:%s ' *)
 
       - name: Inspect image
         run: |
           docker buildx imagetools inspect \
-            ghcr.io/${{ github.repository_owner }}/patchbay-web:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/orvilo-web:${{ steps.meta.outputs.version }}
 
   docker-auth-broker-build:
     needs: verify
@@ -421,7 +421,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker
+          images: ghcr.io/${{ github.repository_owner }}/orvilo-auth-broker
           labels: |
             org.opencontainers.image.title=Orvilo Auth Broker
             org.opencontainers.image.description=Orvilo accounts authentication broker
@@ -446,7 +446,7 @@ jobs:
           cache-from: type=gha,scope=release-auth-broker-${{ env.PLATFORM_PAIR }}
           cache-to: type=gha,mode=max,scope=release-auth-broker-${{ env.PLATFORM_PAIR }}
           build-args: NEXT_PUBLIC_APP_VERSION=${{ needs.verify.outputs.tag_name }}
-          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/orvilo-auth-broker,push-by-digest=true,name-canonical=true,push=true
       - name: Export digest
         run: |
           mkdir -p /tmp/digests
@@ -479,7 +479,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker
+          images: ghcr.io/${{ github.repository_owner }}/orvilo-auth-broker
           flavor: latest=false
           tags: |
             type=raw,value=latest,enable=${{ needs.verify.outputs.is_stable == 'true' }}
@@ -496,9 +496,9 @@ jobs:
         run: |
           docker buildx imagetools create \
             $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
-            $(printf 'ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker@sha256:%s ' *)
+            $(printf 'ghcr.io/${{ github.repository_owner }}/orvilo-auth-broker@sha256:%s ' *)
       - name: Inspect image
-        run: docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker:${{ steps.meta.outputs.version }}
+        run: docker buildx imagetools inspect ghcr.io/${{ github.repository_owner }}/orvilo-auth-broker:${{ steps.meta.outputs.version }}
 
   helm-chart:
     needs: [verify, docker-backend-merge, docker-web-merge, docker-auth-broker-merge]
@@ -508,7 +508,7 @@ jobs:
       group: release-helm-chart-${{ github.ref }}
       cancel-in-progress: true
     env:
-      CHART_DIR: deploy/helm/patchbay
+      CHART_DIR: deploy/helm/orvilo
       OCI_REGISTRY: oci://ghcr.io/${{ github.repository_owner }}/charts
     steps:
       - name: Checkout
@@ -538,10 +538,10 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username "${{ github.actor }}" --password-stdin
 
       - name: Push chart to GHCR
-        run: helm push ".chart-packages/patchbay-${CHART_VERSION}.tgz" "$OCI_REGISTRY"
+        run: helm push ".chart-packages/orvilo-${CHART_VERSION}.tgz" "$OCI_REGISTRY"
 
       - name: Verify published chart
-        run: helm show chart "$OCI_REGISTRY/patchbay" --version "$CHART_VERSION"
+        run: helm show chart "$OCI_REGISTRY/orvilo" --version "$CHART_VERSION"
 
   # Build the Desktop installers for Linux, Windows, and macOS. They are
   # uploaded to the staged draft only after every backend, web, and chart gate
@@ -723,9 +723,9 @@ jobs:
           const arch = process.env.ARCH;
           if (!target || !arch) throw new Error("Desktop target and arch are required");
           const dist = resolve("dist");
-          const stage = join(process.env.RUNNER_TEMP, `patchbay-desktop-${target}-${arch}`);
-          const manifestName = `patchbay-desktop-${target}-${arch}-manifest.json`;
-          const assetPattern = /^(?:latest.*\.ya?ml|patchbay-desktop-(?!.*\.__uninstaller\.).+\.(?:7z|AppImage|deb|dmg|exe|rpm|zip|blockmap))$/i;
+          const stage = join(process.env.RUNNER_TEMP, `orvilo-desktop-${target}-${arch}`);
+          const manifestName = `orvilo-desktop-${target}-${arch}-manifest.json`;
+          const assetPattern = /^(?:latest.*\.ya?ml|orvilo-desktop-(?!.*\.__uninstaller\.).+\.(?:7z|AppImage|deb|dmg|exe|rpm|zip|blockmap))$/i;
 
           rmSync(stage, { recursive: true, force: true });
           mkdirSync(stage, { recursive: true });
@@ -774,7 +774,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.target }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/patchbay-desktop-${{ matrix.target }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/orvilo-desktop-${{ matrix.target }}-${{ matrix.arch }}
           if-no-files-found: error
           retention-days: 1
 
@@ -852,7 +852,7 @@ jobs:
             return files;
           }
 
-          const manifests = walk(root).filter((file) => /patchbay-desktop-(linux|win|mac)-(all|x64|arm64)-manifest\.json$/.test(basename(file)));
+          const manifests = walk(root).filter((file) => /orvilo-desktop-(linux|win|mac)-(all|x64|arm64)-manifest\.json$/.test(basename(file)));
           if (manifests.length !== expectedVariants.size) {
             throw new Error(`Expected ${expectedVariants.size} desktop manifests, found ${manifests.length}`);
           }
@@ -954,7 +954,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: homebrew-cask
-          path: dist/homebrew/Casks/patchbay.rb
+          path: dist/homebrew/Casks/orvilo.rb
           if-no-files-found: error
 
       - name: Verify staged release is still a draft at the verified commit
@@ -1018,7 +1018,7 @@ jobs:
 
       - name: Publish stable Homebrew cask
         env:
-          CASK_PATH: ${{ runner.temp }}/homebrew-cask/patchbay.rb
+          CASK_PATH: ${{ runner.temp }}/homebrew-cask/orvilo.rb
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
         shell: bash

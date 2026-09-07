@@ -20,7 +20,7 @@ func newTaskClaimRacePool(t *testing.T) *pgxpool.Pool {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dbURL = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -141,7 +141,7 @@ func createClaimCapacityFixture(t *testing.T, ctx context.Context, pool *pgxpool
 	t.Helper()
 
 	suffix := time.Now().UnixNano()
-	email := fmt.Sprintf("claim-capacity-%d@patchbay.ai", suffix)
+	email := fmt.Sprintf("claim-capacity-%d@orvilo.ai", suffix)
 	slug := fmt.Sprintf("claim-capacity-%d", suffix)
 
 	var userID string

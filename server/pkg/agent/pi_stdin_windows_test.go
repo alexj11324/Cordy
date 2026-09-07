@@ -67,9 +67,9 @@ func runPiRPCHelper() {
 		line := scanner.Text()
 		switch {
 		case strings.Contains(line, `"get_state"`):
-			fmt.Println(`{"id":"patchbay-state","type":"response","command":"get_state","success":true,"data":{"model":{"id":"reasoning-model","provider":"provider","reasoning":true,"thinkingLevelMap":{"xhigh":"xhigh","max":"max"}},"thinkingLevel":"max"}}`)
+			fmt.Println(`{"id":"orvilo-state","type":"response","command":"get_state","success":true,"data":{"model":{"id":"reasoning-model","provider":"provider","reasoning":true,"thinkingLevelMap":{"xhigh":"xhigh","max":"max"}},"thinkingLevel":"max"}}`)
 		case strings.Contains(line, `"get_available_models"`):
-			fmt.Println(`{"id":"patchbay-models","type":"response","command":"get_available_models","success":true,"data":{"models":[{"id":"reasoning-model","provider":"provider","reasoning":true,"thinkingLevelMap":{"xhigh":"xhigh","max":"max"}}]}}`)
+			fmt.Println(`{"id":"orvilo-models","type":"response","command":"get_available_models","success":true,"data":{"models":[{"id":"reasoning-model","provider":"provider","reasoning":true,"thinkingLevelMap":{"xhigh":"xhigh","max":"max"}}]}}`)
 		}
 	}
 }

@@ -20,6 +20,6 @@ describe("CliInstallInstructions", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByText("patchbay setup")).toHaveClass(...ligatureClasses);
+    expect(screen.getByText("orvilo setup")).toHaveClass(...ligatureClasses);
   });
 });

@@ -33,7 +33,7 @@ import (
 //
 // This file makes memory an agent-scoped store Orvilo owns:
 //
-//	<patchbay profile dir>/hermes-state/<agent>/<hermes profile>/memories
+//	<orvilo profile dir>/hermes-state/<agent>/<hermes profile>/memories
 //
 // linked into the per-task overlay. Memory then survives across tasks and issues
 // for the same agent, never touches the user's home, and is invisible to other

@@ -216,7 +216,7 @@ func TestCommentEnqueueRaceDifferentHeadNotCoalesced(t *testing.T) {
 	var prID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO github_pull_request (workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, pr_created_at, pr_updated_at, head_sha)
-		VALUES ($1, 1, 'patchbay-ai', 'patchbay', 999313, 'review PR', 'open', 'https://example.test/pr', now(), now(), $2)
+		VALUES ($1, 1, 'patchbay-ai', 'orvilo', 999313, 'review PR', 'open', 'https://example.test/pr', now(), now(), $2)
 		RETURNING id
 	`, testWorkspaceID, dupRaceHeadB).Scan(&prID); err != nil {
 		t.Fatalf("seed PR: %v", err)
@@ -385,7 +385,7 @@ func TestCommentEnqueueRaceQueuedWinnerReattributesOriginator(t *testing.T) {
 
 	// A second member M2 authors the losing comment.
 	var m2 string
-	if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Race M2', 'race-m2-999315@patchbay.test') RETURNING id`).Scan(&m2); err != nil {
+	if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Race M2', 'race-m2-999315@orvilo.test') RETURNING id`).Scan(&m2); err != nil {
 		t.Fatalf("create M2 user: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, m2) })
@@ -450,7 +450,7 @@ func TestCommentEnqueueRaceNewerDifferentHeadNotDeferred(t *testing.T) {
 	var prID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO github_pull_request (workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, pr_created_at, pr_updated_at, head_sha)
-		VALUES ($1, 1, 'patchbay-ai', 'patchbay', 999317, 'review PR', 'open', 'https://example.test/pr', now(), now(), $2)
+		VALUES ($1, 1, 'patchbay-ai', 'orvilo', 999317, 'review PR', 'open', 'https://example.test/pr', now(), now(), $2)
 		RETURNING id
 	`, testWorkspaceID, dupRaceHeadB).Scan(&prID); err != nil {
 		t.Fatalf("seed PR: %v", err)
@@ -531,7 +531,7 @@ func TestCommentEnqueueRaceMixedCoveringAndNewerNotDeferred(t *testing.T) {
 	var prID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO github_pull_request (workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, pr_created_at, pr_updated_at, head_sha)
-		VALUES ($1, 1, 'patchbay-ai', 'patchbay', 999318, 'review PR', 'open', 'https://example.test/pr', now(), now(), $2)
+		VALUES ($1, 1, 'patchbay-ai', 'orvilo', 999318, 'review PR', 'open', 'https://example.test/pr', now(), now(), $2)
 		RETURNING id
 	`, testWorkspaceID, dupRaceHeadB).Scan(&prID); err != nil {
 		t.Fatalf("seed PR: %v", err)
@@ -647,7 +647,7 @@ func seedDupRacePR(t *testing.T, issueID string, prNumber int) {
 	var prID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO github_pull_request (workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, pr_created_at, pr_updated_at, head_sha)
-		VALUES ($1, 1, 'patchbay-ai', 'patchbay', $2, 'review PR', 'open', 'https://example.test/pr', now(), now(), $3)
+		VALUES ($1, 1, 'patchbay-ai', 'orvilo', $2, 'review PR', 'open', 'https://example.test/pr', now(), now(), $3)
 		RETURNING id
 	`, testWorkspaceID, prNumber, dupRaceHeadB).Scan(&prID); err != nil {
 		t.Fatalf("seed PR: %v", err)

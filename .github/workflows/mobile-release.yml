@@ -127,7 +127,7 @@ jobs:
       - name: Validate mobile app config
         working-directory: apps/mobile
         env:
-          CONFIG_JSON: ${{ runner.temp }}/patchbay-mobile-config.json
+          CONFIG_JSON: ${{ runner.temp }}/orvilo-mobile-config.json
         run: |
           set -euo pipefail
           pnpm exec expo config --type public --json > "$CONFIG_JSON"
@@ -150,7 +150,7 @@ jobs:
       - name: Build iOS production artifact
         working-directory: apps/mobile
         env:
-          BUILD_JSON: ${{ runner.temp }}/patchbay-ios-build.json
+          BUILD_JSON: ${{ runner.temp }}/orvilo-ios-build.json
         run: |
           set -euo pipefail
           pnpm dlx eas-cli@latest build \

@@ -38,10 +38,10 @@ func TestEveryWecomCounterActuallyCounts(t *testing.T) {
 
 	seen := gatherWecomValues(t, reg)
 	for _, want := range []string{
-		"patchbay_wecom_connect_failures_total",
-		"patchbay_wecom_auth_failures_total",
-		"patchbay_wecom_inbound_callbacks_total",
-		"patchbay_wecom_inbound_queue_blocked_total",
+		"orvilo_wecom_connect_failures_total",
+		"orvilo_wecom_auth_failures_total",
+		"orvilo_wecom_inbound_callbacks_total",
+		"orvilo_wecom_inbound_queue_blocked_total",
 	} {
 		if seen[want] != 1 {
 			t.Errorf("%s = %v, want 1 — the counter is wired to nothing", want, seen[want])
@@ -66,10 +66,10 @@ func TestAuthAndConnectFailuresAreSeparateSeries(t *testing.T) {
 	m.RecordConnectFailure()
 
 	seen := gatherWecomValues(t, reg)
-	if got := seen["patchbay_wecom_auth_failures_total"]; got != 2 {
+	if got := seen["orvilo_wecom_auth_failures_total"]; got != 2 {
 		t.Errorf("auth failures = %v, want 2", got)
 	}
-	if got := seen["patchbay_wecom_connect_failures_total"]; got != 1 {
+	if got := seen["orvilo_wecom_connect_failures_total"]; got != 1 {
 		t.Errorf("connect failures = %v, want 1", got)
 	}
 }
@@ -126,11 +126,11 @@ func TestTheRegistryExposesTheWecomCounters(t *testing.T) {
 		t.Fatalf("gather: %v", err)
 	}
 	for _, f := range families {
-		if f.GetName() == "patchbay_wecom_auth_failures_total" {
+		if f.GetName() == "orvilo_wecom_auth_failures_total" {
 			return
 		}
 	}
-	t.Fatal("patchbay_wecom_auth_failures_total is not on the registry the metrics server scrapes")
+	t.Fatal("orvilo_wecom_auth_failures_total is not on the registry the metrics server scrapes")
 }
 
 func gatherWecomValues(t *testing.T, reg prometheus.Gatherer) map[string]float64 {
@@ -196,25 +196,25 @@ func TestWecomOutboundMetricsAreExported(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"patchbay_wecom_outbound_delivered_total",
-		"patchbay_wecom_outbound_dropped_total",
-		"patchbay_wecom_outbound_skipped_total",
-		"patchbay_wecom_outbound_attachment_delivered_total",
-		"patchbay_wecom_outbound_attachment_dropped_total",
-		"patchbay_wecom_outbound_attachment_delivery_shed_total",
-		"patchbay_wecom_outbound_unconfirmed_total",
-		"patchbay_wecom_outbound_attachment_unconfirmed_total",
+		"orvilo_wecom_outbound_delivered_total",
+		"orvilo_wecom_outbound_dropped_total",
+		"orvilo_wecom_outbound_skipped_total",
+		"orvilo_wecom_outbound_attachment_delivered_total",
+		"orvilo_wecom_outbound_attachment_dropped_total",
+		"orvilo_wecom_outbound_attachment_delivery_shed_total",
+		"orvilo_wecom_outbound_unconfirmed_total",
+		"orvilo_wecom_outbound_attachment_unconfirmed_total",
 	} {
 		if !seen[want] {
 			t.Errorf("%s was not exported", want)
 		}
 	}
 	for name, want := range map[string]string{
-		"patchbay_wecom_outbound_dropped_total/reason":                "no_live_connection",
-		"patchbay_wecom_outbound_skipped_total/reason":                "origin_not_channel",
-		"patchbay_wecom_outbound_attachment_dropped_total/reason":     "platform_refused",
-		"patchbay_wecom_outbound_unconfirmed_total/reason":            "ack_timeout",
-		"patchbay_wecom_outbound_attachment_unconfirmed_total/reason": "write_attempted",
+		"orvilo_wecom_outbound_dropped_total/reason":                "no_live_connection",
+		"orvilo_wecom_outbound_skipped_total/reason":                "origin_not_channel",
+		"orvilo_wecom_outbound_attachment_dropped_total/reason":     "platform_refused",
+		"orvilo_wecom_outbound_unconfirmed_total/reason":            "ack_timeout",
+		"orvilo_wecom_outbound_attachment_unconfirmed_total/reason": "write_attempted",
 	} {
 		if labels[name] != want {
 			t.Errorf("%s = %q, want %q", name, labels[name], want)

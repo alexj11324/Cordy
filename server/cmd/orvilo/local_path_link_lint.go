@@ -131,7 +131,7 @@ func classifyLocalPathTarget(target string) string {
 //
 // deliveryHint is the caller's own fix instruction. It is a parameter rather
 // than a constant because the right answer differs per command, and one of them
-// is a trap: `patchbay issue update` has no --attachment flag, so a shared
+// is a trap: `orvilo issue update` has no --attachment flag, so a shared
 // "pass --attachment" message would send the agent to an argument that does not
 // exist and turn one failure into two.
 func guardLocalPathLinks(body, field, deliveryHint string) error {

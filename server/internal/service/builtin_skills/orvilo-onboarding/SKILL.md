@@ -2,7 +2,7 @@
 name: orvilo-onboarding
 description: "Use when a product-authored kickoff starts or resumes Patrick's interactive onboarding for an Orvilo workspace. The opening greeting has already been sent; carry the member from their first message to one real, confirmed, issue-based execution and a clear handoff."
 user-invocable: false
-allowed-tools: Bash(patchbay *)
+allowed-tools: Bash(orvilo *)
 ---
 
 # Onboard a member with Patrick
@@ -64,7 +64,7 @@ over asking at all. Everything still flows through "Preview and confirm".
   - The profile block carries `Member IANA timezone`. When it holds a zone,
     quote the whole time in the preview — "every day at 09:00 Asia/Shanghai",
     not "every morning at 09:00" — and pass that zone to
-    `patchbay automation trigger-add --timezone <IANA>`.
+    `orvilo automation trigger-add --timezone <IANA>`.
   - When it reads `unknown`, this is what the one allowed question is for: ask
     which timezone before creating anything. Do not create the trigger without
     `--timezone`; omitting the flag schedules the digest in **UTC**, so a

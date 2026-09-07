@@ -136,9 +136,9 @@ describe("browser runtime URLs", () => {
   it("keeps a non-/api path prefix so prefix-mounted backends still work", () => {
     expect(
       resolveBrowserApiBaseUrl({
-        NEXT_PUBLIC_API_URL: "https://app.example.com/patchbay",
+        NEXT_PUBLIC_API_URL: "https://app.example.com/orvilo",
       }),
-    ).toBe("https://app.example.com/patchbay");
+    ).toBe("https://app.example.com/orvilo");
   });
 
   it("does not mistake an `api` host for an /api path suffix", () => {
@@ -273,9 +273,9 @@ describe("runtimeRewriteDestination", () => {
   it("maps docs paths to the runtime docs origin", () => {
     expect(
       runtimeRewriteDestination("/docs/zh/agents", {
-        DOCS_URL: "http://patchbay-docs:3000",
+        DOCS_URL: "http://orvilo-docs:3000",
       }),
-    ).toBe("http://patchbay-docs:3000/docs/zh/agents");
+    ).toBe("http://orvilo-docs:3000/docs/zh/agents");
   });
 
   it("maps the CLI health probe to the runtime API origin", () => {

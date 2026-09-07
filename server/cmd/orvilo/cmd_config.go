@@ -15,7 +15,7 @@ import (
 
 var configCmd = &cobra.Command{
 	Use:   "config",
-	Short: "Manage configuration for patchbay",
+	Short: "Manage configuration for orvilo",
 	RunE:  runConfigShow,
 }
 

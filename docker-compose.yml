@@ -1,12 +1,12 @@
-name: patchbay
+name: orvilo
 
 services:
   postgres:
     image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_DB: patchbay
-      POSTGRES_USER: ${POSTGRES_USER:-patchbay}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-patchbay}
+      POSTGRES_DB: orvilo
+      POSTGRES_USER: ${POSTGRES_USER:-orvilo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orvilo}
     ports:
       - "127.0.0.1:5432:5432"
     volumes:

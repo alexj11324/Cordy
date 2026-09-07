@@ -44,7 +44,7 @@ describe("AuthShell", () => {
     );
     expect(screen.getByText("Login")).toBeInTheDocument();
     expect(screen.getByText(/Sofia Davis/)).toBeInTheDocument();
-    expect(screen.getByTestId("patchbay-mark")).toHaveAttribute(
+    expect(screen.getByTestId("orvilo-mark")).toHaveAttribute(
       "src",
       "/icons/icon.svg",
     );

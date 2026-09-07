@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	reclaimCheckSchedulePrefix = "pby:claim:runtime:reclaim-schedule:"
-	reclaimCheckBackstopPrefix = "pby:claim:runtime:reclaim-backstop:"
+	reclaimCheckSchedulePrefix = "ovy:claim:runtime:reclaim-schedule:"
+	reclaimCheckBackstopPrefix = "ovy:claim:runtime:reclaim-backstop:"
 	reclaimCheckRetryBatchSize = 256
 
 	// The backstop remains at or below the PostgreSQL recovery window so a

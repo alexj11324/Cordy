@@ -19,12 +19,12 @@ import (
 var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Configure the CLI, authenticate, and start the daemon",
-	Long: `Configures the CLI to connect to Orvilo Cloud (patchbay.aspectlylabs.com), then
+	Long: `Configures the CLI to connect to Orvilo Cloud (orvilo.aspectlylabs.com), then
 authenticates via browser and starts the agent daemon.
 
 If a configuration already exists, you will be prompted before overwriting.
 
-Use 'patchbay setup self-host' to connect to a self-hosted server instead.
+Use 'orvilo setup self-host' to connect to a self-hosted server instead.
 
 If you run this command over SSH on a remote machine, keep the localhost
 callback and follow the SSH tunnel hint printed during browser login. If your
@@ -32,21 +32,21 @@ browser can reach this CLI directly on a private network address, pass
 --callback-host <host-or-ip>.
 
 Use --profile to create an isolated configuration for a separate environment:
-  patchbay setup self-host --profile staging --server-url https://api-staging.co`,
+  orvilo setup self-host --profile staging --server-url https://api-staging.co`,
 	RunE: runSetupCloud,
 }
 
 var setupCloudCmd = &cobra.Command{
 	Use:   "cloud",
-	Short: "Configure the CLI for Orvilo Cloud (patchbay.aspectlylabs.com)",
-	Long: `Explicitly configures the CLI to connect to Orvilo Cloud (patchbay.aspectlylabs.com).
+	Short: "Configure the CLI for Orvilo Cloud (orvilo.aspectlylabs.com)",
+	Long: `Explicitly configures the CLI to connect to Orvilo Cloud (orvilo.aspectlylabs.com).
 
 If you run this command over SSH on a remote machine, keep the localhost
 callback and follow the SSH tunnel hint printed during browser login. If your
 browser can reach this CLI directly on a private network address, pass
 --callback-host <host-or-ip>.
 
-This is equivalent to running 'patchbay setup' without a subcommand.`,
+This is equivalent to running 'orvilo setup' without a subcommand.`,
 	RunE: runSetupCloud,
 }
 
@@ -63,9 +63,9 @@ If you run this command from a different machine than the server, also pass
 the OAuth login flow can return the token to the CLI.
 
 Examples:
-  patchbay setup self-host
-  patchbay setup self-host --server-url https://api.internal.co --app-url https://app.internal.co
-  patchbay setup self-host --port 9090 --frontend-port 4000`,
+  orvilo setup self-host
+  orvilo setup self-host --server-url https://api.internal.co --app-url https://app.internal.co
+  orvilo setup self-host --port 9090 --frontend-port 4000`,
 	RunE: runSetupSelfHost,
 }
 
@@ -161,7 +161,7 @@ func runSetupCloud(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	fmt.Fprintln(os.Stderr, "Configured for Orvilo Cloud (https://patchbay.aspectlylabs.com).")
+	fmt.Fprintln(os.Stderr, "Configured for Orvilo Cloud (https://orvilo.aspectlylabs.com).")
 	fmt.Fprintf(os.Stderr, "  server_url: %s\n", cfg.ServerURL)
 	fmt.Fprintf(os.Stderr, "  app_url:    %s\n", cfg.AppURL)
 	printConfigLocation(profile)
@@ -192,7 +192,7 @@ func runSetupSelfHost(cmd *cobra.Command, args []string) error {
 	//
 	// Honor ORVILO_SERVER_URL / ORVILO_APP_URL when the matching flag is not
 	// set — consistent with the rest of the CLI (resolveServerURL) and with the
-	// env vars documented on the root --server-url flag and in `patchbay --help`.
+	// env vars documented on the root --server-url flag and in `orvilo --help`.
 	// Before this, setup self-host read only the flags, so a self-hoster who set
 	// ORVILO_SERVER_URL still got the localhost default and an "unreachable"
 	// error (GitHub #3912).
@@ -238,7 +238,7 @@ func runSetupSelfHost(cmd *cobra.Command, args []string) error {
 	if !reachable {
 		fmt.Fprintf(os.Stderr, "\n⚠ Server at %s is not reachable.\n", serverURL)
 		fmt.Fprintln(os.Stderr, "  Your existing configuration was left unchanged.")
-		fmt.Fprintln(os.Stderr, "  Verify the URL, then re-run 'patchbay setup self-host' once it's reachable.")
+		fmt.Fprintln(os.Stderr, "  Verify the URL, then re-run 'orvilo setup self-host' once it's reachable.")
 		return nil
 	}
 
@@ -298,7 +298,7 @@ func dispatchDaemonAfterSetup(
 			if activeTasks == 1 {
 				taskLabel = "task"
 			}
-			restartCmd := "patchbay daemon restart"
+			restartCmd := "orvilo daemon restart"
 			if profile := resolveProfile(cmd); profile != "" {
 				restartCmd += " --profile " + profile
 			}

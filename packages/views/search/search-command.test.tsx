@@ -94,7 +94,7 @@ const {
   mockSetTheme: vi.fn(),
   mockTheme: { current: "system" as "light" | "dark" | "system" },
   mockPathname: { current: "/ws-test/issues" as string },
-  mockGetShareableUrl: vi.fn((p: string) => `https://app.patchbay/${p}`),
+  mockGetShareableUrl: vi.fn((p: string) => `https://app.orvilo/${p}`),
   mockMembers: {
     current: [] as Array<{
       id: string;
@@ -318,7 +318,7 @@ describe("SearchCommand", () => {
     mockSetTheme.mockReset();
     mockTheme.current = "system";
     mockPathname.current = "/ws-test/issues";
-    mockGetShareableUrl.mockReset().mockImplementation((p: string) => `https://app.patchbay/${p}`);
+    mockGetShareableUrl.mockReset().mockImplementation((p: string) => `https://app.orvilo/${p}`);
     mockMembers.current = [];
     mockOpenModal.mockReset();
     mockToastSuccess.mockReset();
@@ -465,7 +465,7 @@ describe("SearchCommand", () => {
     fireEvent.click(settingsItem, { metaKey: true });
 
     expect(open).toHaveBeenCalledWith(
-      "https://app.patchbay//ws-test/settings",
+      "https://app.orvilo//ws-test/settings",
       "_blank",
       "noopener,noreferrer",
     );
@@ -485,7 +485,7 @@ describe("SearchCommand", () => {
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
 
     expect(open).toHaveBeenCalledWith(
-      "https://app.patchbay//ws-test/settings",
+      "https://app.orvilo//ws-test/settings",
       "_blank",
       "noopener,noreferrer",
     );
@@ -640,7 +640,7 @@ describe("SearchCommand", () => {
     await user.click(linkItem);
 
     expect(mockGetShareableUrl).toHaveBeenCalledWith("/ws-test/issues/issue-1");
-    expect(mockClipboardWrite).toHaveBeenCalledWith("https://app.patchbay//ws-test/issues/issue-1");
+    expect(mockClipboardWrite).toHaveBeenCalledWith("https://app.orvilo//ws-test/issues/issue-1");
     expect(mockToastSuccess).toHaveBeenCalledWith("Link copied");
 
     // Reopen palette and test identifier copy

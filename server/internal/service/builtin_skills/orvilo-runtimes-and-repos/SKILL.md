@@ -2,7 +2,7 @@
 name: orvilo-runtimes-and-repos
 description: "Use when an Orvilo runtime or daemon misbehaves: agent not running, task not claimed, runtime offline, workdir or session reuse, repository checkout."
 user-invocable: false
-allowed-tools: Bash(patchbay *)
+allowed-tools: Bash(orvilo *)
 ---
 
 # Orvilo Runtimes and Repos
@@ -12,9 +12,9 @@ allowed-tools: Bash(patchbay *)
 For "agent did not run" or "repo checkout failed", read the chain before changing anything:
 
 ```bash
-patchbay agent get <agent-id> --output json
-patchbay runtime list --output json
-patchbay repo checkout <repo-url>
+orvilo agent get <agent-id> --output json
+orvilo runtime list --output json
+orvilo repo checkout <repo-url>
 ```
 
 Runtime and repo commands affect active agent execution. Do not restart daemons, update runtimes, or check out arbitrary repos just to test.
@@ -31,21 +31,21 @@ The chain is:
 4. daemon polls/claims the task;
 5. server returns task context, repos, project resources, prior session/workdir hints, and task token;
 6. daemon prepares a workdir and launches the provider CLI;
-7. `patchbay repo checkout` talks to the local daemon, not directly to GitHub.
+7. `orvilo repo checkout` talks to the local daemon, not directly to GitHub.
 
 ## CLI
 
 ```bash
-patchbay runtime list --output json
-patchbay runtime usage <runtime-id> --output json
-patchbay runtime activity <runtime-id> --output json
-patchbay runtime update <runtime-id> --target-version <version> --output json
-patchbay runtime delete <runtime-id>
-patchbay repo checkout <url>
-patchbay repo checkout <url> --ref <branch-or-sha>
+orvilo runtime list --output json
+orvilo runtime usage <runtime-id> --output json
+orvilo runtime activity <runtime-id> --output json
+orvilo runtime update <runtime-id> --target-version <version> --output json
+orvilo runtime delete <runtime-id>
+orvilo repo checkout <url>
+orvilo repo checkout <url> --ref <branch-or-sha>
 ```
 
-`runtime update` and `runtime delete` are writes. Starting a runtime update is limited to its owner or a workspace owner/admin; the original initiator may keep polling that specific in-flight request if their admin role changes. `runtime delete` removes a runtime registration; if active agents are still bound, it refuses unless the user explicitly passes `--cascade`, which unbinds those agents and cancels their queued/running tasks before deleting the runtime. Unbinding keeps the agents and everything they own — instructions, skills, chats, labels, channel installations, automations and task history — and only clears `agent.runtime_id`; an unbound agent cannot run until it is bound to a runtime again (`patchbay agent update <id> --runtime-id <runtime-id>`), and every trigger path refuses it with `agent_runtime_required`. `repo checkout` creates a dedicated branch in the task working directory. Most runtimes use a linked worktree; Linux and Windows Codex use task-local Git metadata so a task can stage and commit without making the shared `.repos` cache writable.
+`runtime update` and `runtime delete` are writes. Starting a runtime update is limited to its owner or a workspace owner/admin; the original initiator may keep polling that specific in-flight request if their admin role changes. `runtime delete` removes a runtime registration; if active agents are still bound, it refuses unless the user explicitly passes `--cascade`, which unbinds those agents and cancels their queued/running tasks before deleting the runtime. Unbinding keeps the agents and everything they own — instructions, skills, chats, labels, channel installations, automations and task history — and only clears `agent.runtime_id`; an unbound agent cannot run until it is bound to a runtime again (`orvilo agent update <id> --runtime-id <runtime-id>`), and every trigger path refuses it with `agent_runtime_required`. `repo checkout` creates a dedicated branch in the task working directory. Most runtimes use a linked worktree; Linux and Windows Codex use task-local Git metadata so a task can stage and commit without making the shared `.repos` cache writable.
 
 `repo checkout` requires both `ORVILO_DAEMON_PORT` and the injected task-scoped `ORVILO_TOKEN`; it is intended to run inside the active daemon task and from that task's workdir (or a descendant). The local daemon authenticates the token against its active-task registry, derives workspace/task/agent identity itself, and rejects a caller-supplied workdir outside that task. If either variable is absent, you are not in the normal agent checkout path. When a project `github_repo` resource has `resource_ref.ref`, `repo checkout <url>` uses that ref by default for the current task; an explicit `repo checkout <url> --ref <branch-or-sha>` overrides it.
 
@@ -70,7 +70,7 @@ Check in this order:
 1. Was a task supposed to be created? Inspect issue/comment/automation context.
 2. Is the issue executor an agent or team? A team routes to its leader.
 3. Is the agent archived or bound to a runtime the actor cannot use?
-4. Is the runtime online? `patchbay runtime list --output json`.
+4. Is the runtime online? `orvilo runtime list --output json`.
 5. Did the daemon heartbeat recently? Runtime `last_seen_at` is the visible clue.
 6. Did the task get claimed or is it stuck pending/running/waiting for local directory?
 7. If repo checkout failed, classify it after checking whether repo context was

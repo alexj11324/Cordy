@@ -11,7 +11,7 @@ Before an agent can execute, the computer that runs it needs at least one [suppo
 
 ## 1. Sign in and open your workspace
 
-Sign in on the web ([patchbay.aspectlylabs.com](https://patchbay.aspectlylabs.com)) or with [Orvilo Desktop](https://github.com/alexj11324/Cordy/releases/latest). Email verification codes and Google are both supported.
+Sign in on the web ([orvilo.aspectlylabs.com](https://orvilo.aspectlylabs.com)) or with [Orvilo Desktop](https://github.com/alexj11324/Cordy/releases/latest). Email verification codes and Google are both supported.
 
 - **Desktop**: can connect this computer automatically.
 - **Web**: connect from the command line in the next step.
@@ -27,17 +27,17 @@ Agents execute work on the computers you connect. Open **Configure → Runtimes*
 
   ```bash
   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
-  patchbay setup
+  orvilo setup
   ```
 
   **Windows PowerShell**
 
   ```powershell
   irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
-  patchbay setup
+  orvilo setup
   ```
 
-  `patchbay setup` opens a browser to complete sign-in, then leaves the daemon running in the background. Once the daemon is online, the dialog usually detects the computer within a minute.
+  `orvilo setup` opens a browser to complete sign-in, then leaves the daemon running in the background. Once the daemon is online, the dialog usually detects the computer within a minute.
 
 **Success check**: an online computer appears in the runtime list.
 
@@ -82,8 +82,8 @@ After submitting, open the issue: the execution log shows the run status, and th
 
 | Symptom | Check first |
 |---|---|
-| No runtime found | Confirm the AI coding tool is installed and runs in a terminal. On Desktop, click **Refresh**; on the CLI path, rerun `patchbay setup`. |
-| Runtime shows offline | Keep Desktop open; on the CLI path, run `patchbay daemon status`, and `patchbay daemon start` if it is not running. |
+| No runtime found | Confirm the AI coding tool is installed and runs in a terminal. On Desktop, click **Refresh**; on the CLI path, rerun `orvilo setup`. |
+| Runtime shows offline | Keep Desktop open; on the CLI path, run `orvilo daemon status`, and `orvilo daemon start` if it is not running. |
 | Issue stays queued | Confirm the runtime the agent uses is online. When a runtime hits its concurrency limit, new tasks keep queueing. |
 
 For more cases, see [Troubleshooting](/troubleshooting).
@@ -91,5 +91,5 @@ For more cases, see [Troubleshooting](/troubleshooting).
 ## Next steps
 
 - [Core concepts](/concepts) — meet all of Orvilo's core objects in three minutes.
-- [How Orvilo works](/how-patchbay-works) — how issues, agents, runtimes, and each run relate.
+- [How Orvilo works](/how-orvilo-works) — how issues, agents, runtimes, and each run relate.
 - [Put agents to work](/triggering-agents) — beyond setting an executor: @-mentions, chat, and Automations.

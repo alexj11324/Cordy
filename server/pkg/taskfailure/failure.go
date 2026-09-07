@@ -13,7 +13,7 @@
 // stored failure_reason is already refined when the row is first
 // persisted, and so server / daemon / cloud share a single source of
 // truth for the canonical values. PR1 of the Grafana board plan
-// ([MUL-2946](https://patchbay/issues/MUL-2946)). Subsequent PRs use
+// ([MUL-2946](https://orvilo/issues/MUL-2946)). Subsequent PRs use
 // AllReasons() to pre-warm the Prometheus failure_reason label set.
 //
 // The canonical values fall into two groups:

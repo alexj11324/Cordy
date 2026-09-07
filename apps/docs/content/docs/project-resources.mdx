@@ -16,7 +16,7 @@ Two resource types are supported today:
 
 ## How resources enter a run
 
-When an agent works an issue inside the project, Orvilo adds the project name, project description, and resource list to the run's context, and writes `.patchbay/project/resources.json` into the working directory.
+When an agent works an issue inside the project, Orvilo adds the project name, project description, and resource list to the run's context, and writes `.orvilo/project/resources.json` into the working directory.
 
 The workspace's linked repository list is always included in the run context. Repositories linked to the project additionally specify the code and default ref this body of work uses.
 
@@ -84,7 +84,7 @@ What the agent sees, and what you get back:
 - **Nothing is silently dropped.** Anything the agent leaves uncommitted is committed to that branch before the worktree is removed, including when the task fails partway. In the rare case that commit itself cannot be made — for example a repo with `commit.gpgSign` and no signing key available to the runtime — the worktree is deliberately kept instead of removed, the task is reported as failed, and `git worktree list` in your repo points at the directory holding the work.
 - **A task that changes nothing leaves nothing behind.** Its branch is deleted rather than left as an empty entry in `git branch` — unless it is the issue's branch carrying earlier runs' work, which always survives.
 
-Because the worktree lives in the runtime's workspace directory, it is reclaimed on the normal cleanup schedule. Two things persist in your repo: the branch, and one hidden ref per branch under `refs/patchbay/local-state/` recording who owns it and what your directory looked like when it was last continued. The hidden refs never appear in `git branch`; list them with `git for-each-ref refs/patchbay`. Orvilo deletes each one with its branch, and drops any whose branch you deleted yourself the next time a task runs on that repo — or you can remove them at once with `git for-each-ref --format='%(refname)' refs/patchbay | xargs -n1 git update-ref -d`.
+Because the worktree lives in the runtime's workspace directory, it is reclaimed on the normal cleanup schedule. Two things persist in your repo: the branch, and one hidden ref per branch under `refs/orvilo/local-state/` recording who owns it and what your directory looked like when it was last continued. The hidden refs never appear in `git branch`; list them with `git for-each-ref refs/orvilo`. Orvilo deletes each one with its branch, and drops any whose branch you deleted yourself the next time a task runs on that repo — or you can remove them at once with `git for-each-ref --format='%(refname)' refs/orvilo | xargs -n1 git update-ref -d`.
 
 <Callout type="warn">
 **Self-hosted operators:** isolation for this mode is enforced by the server (at save time and again when a runtime claims each task), so a runtime downgraded at any point is caught. The combination that is *not* caught is rolling the server back to a build that predates this feature while runtimes that do not implement the mode are still connected — an old server has no gate, and such a runtime ignores `execution_mode` and would run the task in place. Do not roll the server back past this release while `worktree` resources exist unless every runtime on those machines is up to date.
@@ -96,7 +96,7 @@ Worktree mode covers git repositories. A plain non-git directory still runs seri
 
 ## What gets written during a run
 
-Beyond the code changes the agent makes, the runtime may also write into the directory the instruction files the current AI coding tool needs, plus `.patchbay/project/resources.json`. Add them to `.gitignore` if you do not want them under version control.
+Beyond the code changes the agent makes, the runtime may also write into the directory the instruction files the current AI coding tool needs, plus `.orvilo/project/resources.json`. Add them to `.gitignore` if you do not want them under version control.
 
 Orvilo never deletes a linked local directory when cleaning up run environments. The agent's changes to the directory are the same kind of changes as running an AI coding tool in your terminal yourself, and need the same review.
 
@@ -104,36 +104,36 @@ Orvilo never deletes a linked local directory when cleaning up run environments.
 
 ```bash
 # Link a repository when creating a project
-patchbay project create \
+orvilo project create \
   --title "Agent UX" \
   --repo https://github.com/alexj11324/Cordy
 
 # List and add resources
-patchbay project resource list <project-id>
-patchbay project resource add <project-id> \
+orvilo project resource list <project-id>
+orvilo project resource add <project-id> \
   --type github_repo \
   --url https://github.com/alexj11324/Cordy \
   --ref main
 
 # Link a local directory on a specific daemon
-patchbay project resource add <project-id> \
+orvilo project resource add <project-id> \
   --type local_directory \
   --local-path /absolute/path/to/repo \
   --daemon-id <daemon-id>
 
 # Link a local git repo and let tasks run concurrently in their own worktrees
-patchbay project resource add <project-id> \
+orvilo project resource add <project-id> \
   --type local_directory \
   --local-path /absolute/path/to/repo \
   --daemon-id <daemon-id> \
   --execution-mode worktree
 
 # Switch an existing local directory between modes
-patchbay project resource update <project-id> <resource-id> --execution-mode worktree
-patchbay project resource update <project-id> <resource-id> --execution-mode in_place
+orvilo project resource update <project-id> <resource-id> --execution-mode worktree
+orvilo project resource update <project-id> <resource-id> --execution-mode in_place
 
 # Remove a resource
-patchbay project resource remove <project-id> <resource-id>
+orvilo project resource remove <project-id> <resource-id>
 ```
 
 Resource changes affect tasks created afterwards; they do not rewrite records of runs that already ended.

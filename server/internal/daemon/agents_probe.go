@@ -18,7 +18,7 @@ import (
 // This is pure discovery: no version detection and no minimum-version gate
 // (detectBuiltinRuntimes owns those, per registration round). The result is
 // therefore the machine's *availability* set, which is exactly what
-// /health.agents reports and what `patchbay daemon probe-runtimes` prints.
+// /health.agents reports and what `orvilo daemon probe-runtimes` prints.
 //
 // It is called once from LoadConfig at startup and again from the periodic
 // workspace sync (refreshAgentAvailability), so a CLI the user installs while
@@ -231,7 +231,7 @@ func ProbeLocalAgents() map[string]AgentEntry {
 func probeDshOrviloProfile(executablePath string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, executablePath, "--profile", "patchbay", "--probe")
+	cmd := exec.CommandContext(ctx, executablePath, "--profile", "orvilo", "--probe")
 	cmd.WaitDelay = time.Second
 	output, err := cmd.Output()
 	if err != nil {

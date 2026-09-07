@@ -31,20 +31,20 @@ With Orvilo Desktop, the app starts the daemon automatically — no extra comman
 On the web, a remote computer, or a headless environment, [install the Orvilo CLI](/cli) first, then run:
 
 ```bash
-patchbay daemon start
+orvilo daemon start
 ```
 
 The daemon runs in the background by default. Common commands:
 
 | Command | Purpose |
 | --- | --- |
-| `patchbay daemon status` | Show daemon and connection status |
-| `patchbay daemon logs -f` | Follow the logs |
-| `patchbay daemon restart` | Restart the daemon and re-detect local tools |
-| `patchbay daemon stop` | Stop the daemon |
-| `patchbay daemon start --foreground` | Run in the current terminal, for debugging |
+| `orvilo daemon status` | Show daemon and connection status |
+| `orvilo daemon logs -f` | Follow the logs |
+| `orvilo daemon restart` | Restart the daemon and re-detect local tools |
+| `orvilo daemon stop` | Stop the daemon |
+| `orvilo daemon start --foreground` | Run in the current terminal, for debugging |
 
-To place task workspaces on another disk, persist a root for the current profile with `patchbay config set workspaces_root <path>`, or pass `--workspaces-root <path>` to `daemon start` or `daemon restart`. The flag overrides `ORVILO_WORKSPACES_ROOT`, which overrides the profile config. Existing task directories are not moved when the root changes.
+To place task workspaces on another disk, persist a root for the current profile with `orvilo config set workspaces_root <path>`, or pass `--workspaces-root <path>` to `daemon start` or `daemon restart`. The flag overrides `ORVILO_WORKSPACES_ROOT`, which overrides the profile config. Existing task directories are not moved when the root changes.
 
 On startup, the daemon detects supported AI coding tools on `PATH` and registers runtimes for the workspaces you are allowed to connect. If a tool was just installed or signed in, restart the daemon to detect it again.
 
@@ -118,13 +118,13 @@ Two more consequences worth knowing:
 If a Desktop-launched daemon cannot find a command your terminal can run, set an absolute path for the current computer:
 
 ```bash
-patchbay runtime profile set-path <profile-id> --path /absolute/path/to/command
+orvilo runtime profile set-path <profile-id> --path /absolute/path/to/command
 ```
 
 Remove the path override:
 
 ```bash
-patchbay runtime profile unset-path <profile-id>
+orvilo runtime profile unset-path <profile-id>
 ```
 
 Editing a profile only affects tasks claimed afterwards. Before deleting a profile, deal with the active agents still bound to its runtimes. Deleting only the runtime instance on one computer does not delete the profile — a running daemon will re-register it.
@@ -133,11 +133,11 @@ Editing a profile only affects tasks claimed afterwards. Before deleting a profi
 
 Check in this order:
 
-1. Run `patchbay daemon status` to confirm the daemon is running.
-2. Run `patchbay daemon logs -f` to look for login, network, or tool-detection errors.
+1. Run `orvilo daemon status` to confirm the daemon is running.
+2. Run `orvilo daemon logs -f` to look for login, network, or tool-detection errors.
 3. Run `command -v <tool-command>` in the same environment to confirm the daemon can find it.
 4. Open Orvilo's **Runtimes** page and check whether the target computer and the matching AI coding tool show as online.
-5. After a tool install, a path change, or a profile update, run `patchbay daemon restart`.
+5. After a tool install, a path change, or a profile update, run `orvilo daemon restart`.
 
 If the problem persists, see [Troubleshooting](/troubleshooting).
 

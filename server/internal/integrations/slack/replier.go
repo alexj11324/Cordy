@@ -66,7 +66,7 @@ type OutboundReplierConfig struct {
 	Binding bindingMinter
 	Decrypt Decrypter
 	// AppURL is the Orvilo web app host the user clicks into to redeem the
-	// binding token (e.g. https://patchbay.example). It comes from ORVILO_APP_URL
+	// binding token (e.g. https://orvilo.example). It comes from ORVILO_APP_URL
 	// (falling back to FRONTEND_ORIGIN) and is intentionally separate from
 	// ORVILO_PUBLIC_URL, which is the backend/API public URL used for webhook and
 	// daemon-facing endpoints — the bind page (/slack/bind) is served by the web

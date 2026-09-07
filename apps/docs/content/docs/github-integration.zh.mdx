@@ -35,7 +35,7 @@ GitHub 集成只读取安装时授权的仓库，不会提交代码、评论或 
 |---|---|
 | GitHub 集成 | 总开关。关闭后，下面三项不再生效，但不会断开 GitHub App。 |
 | PR 侧栏 | 在任务详情中显示关联的 pull request。 |
-| Co-authored-by | 在智能体创建的 commit 中加入 `Co-authored-by: patchbay-agent <github@aspectlylabs.com>`。 |
+| Co-authored-by | 在智能体创建的 commit 中加入 `Co-authored-by: orvilo-agent <github@aspectlylabs.com>`。 |
 | 自动关联 PR | 从 PR 的分支名、标题和正文中识别任务编号。 |
 | **PR 卡片 → CI 与可合并性** | 对每个关联的 PR，Orvilo 从 GitHub API 拉取一份经鉴权的快照，把它的 **CI 状态**和**可合并性**镜像到卡片上（见下方 **PR 卡片展示什么**）。 |
 
@@ -113,7 +113,7 @@ Orvilo Cloud 无需执行本节。自托管需要先创建自己的 GitHub App�
 
 | 字段 | 值 |
 |---|---|
-| Homepage URL | Orvilo 前端地址，例如 `https://patchbay.example.com` |
+| Homepage URL | Orvilo 前端地址，例如 `https://orvilo.example.com` |
 | Callback URL | 留空 |
 | Setup URL | `https://<api-host>/api/github/setup`，并启用 **Redirect on update** |
 | Webhook URL | `https://<api-host>/api/webhooks/github` |
@@ -142,12 +142,12 @@ Repository permissions：
 
 ### 2. 配置环境变量
 
-从 App 的公开地址取得 slug。例如 `https://github.com/apps/patchbay-acme` 的 slug 是 `patchbay-acme`。
+从 App 的公开地址取得 slug。例如 `https://github.com/apps/orvilo-acme` 的 slug 是 `orvilo-acme`。
 
 ```dotenv
-GITHUB_APP_SLUG=patchbay-acme
+GITHUB_APP_SLUG=orvilo-acme
 GITHUB_WEBHOOK_SECRET=<创建 App 时填写的 webhook secret>
-FRONTEND_ORIGIN=https://patchbay.example.com
+FRONTEND_ORIGIN=https://orvilo.example.com
 ```
 
 `GITHUB_APP_SLUG` 和 `GITHUB_WEBHOOK_SECRET` 缺少任意一个时，连接按钮会被禁用，webhook 接口也会拒绝处理事件。

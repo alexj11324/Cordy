@@ -22,7 +22,7 @@ const noneMarker = "(none)"
 
 // headerTimelineTruncated mirrors handler.HeaderTimelineTruncated. Declared as
 // a literal rather than imported because the CLI does not depend on the
-// handler package (same convention as the X-Patchbay-Next-Before cursors in
+// handler package (same convention as the X-Orvilo-Next-Before cursors in
 // `issue comment list`). Value is a comma-separated kind list: "activity",
 // "comment", or "activity,comment".
 const headerTimelineTruncated = "X-Timeline-Truncated"
@@ -57,13 +57,13 @@ read, because the transition you are looking for may be the one that fell off.
 
 Examples:
   # How long has MUL-123 been in its current status?
-  patchbay issue timeline MUL-123 --action status_changed
+  orvilo issue timeline MUL-123 --action status_changed
 
   # Every state change, no comment bodies
-  patchbay issue timeline MUL-123 --activity-only --output json
+  orvilo issue timeline MUL-123 --activity-only --output json
 
   # What changed since yesterday?
-  patchbay issue timeline MUL-123 --since 2026-08-19T00:00:00Z`,
+  orvilo issue timeline MUL-123 --since 2026-08-19T00:00:00Z`,
 	Args: exactArgs(1),
 	RunE: runIssueTimeline,
 }

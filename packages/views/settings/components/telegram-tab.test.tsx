@@ -143,7 +143,7 @@ describe("TelegramAgentBindButton", () => {
     await userEvent.click(screen.getByTestId("telegram-agent-connect"));
     await userEvent.click(await screen.findByTestId("telegram-docs-link"));
     expect(mockOpenExternal).toHaveBeenCalledWith(
-      "https://patchbay.aspectlylabs.com/docs/telegram-bot-integration",
+      "https://orvilo.aspectlylabs.com/docs/telegram-bot-integration",
     );
   });
 

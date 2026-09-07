@@ -72,14 +72,14 @@ executor 是[团队](/teams)时，同样的规则适用：Orvilo 入队的是队
 ## 使用 CLI
 
 ```bash
-patchbay issue assign MUL-42 --to "Agent name"
-patchbay issue assign MUL-42 --to-id <agent-uuid> --no-start
-patchbay issue update MUL-42 --owner-id <member-uuid> --reviewer-id <member-or-agent-or-team-uuid>
-patchbay issue status MUL-42 in_progress --no-start
-patchbay issue assign MUL-42 --unassign
+orvilo issue assign MUL-42 --to "Agent name"
+orvilo issue assign MUL-42 --to-id <agent-uuid> --no-start
+orvilo issue update MUL-42 --owner-id <member-uuid> --reviewer-id <member-or-agent-or-team-uuid>
+orvilo issue status MUL-42 in_progress --no-start
+orvilo issue assign MUL-42 --unassign
 ```
 
-脚本中用 `--to-id <uuid>` 可避免同名对象匹配错误。UUID 通过 `patchbay agent list --output json` 或 `patchbay workspace member list --output json` 查看。
+脚本中用 `--to-id <uuid>` 可避免同名对象匹配错误。UUID 通过 `orvilo agent list --output json` 或 `orvilo workspace member list --output json` 查看。
 
 如果设置 executor 只用于记录执行对象、不应创建新 task（例如同一智能体已在另一次执行中处理该任务），请使用 `--no-start`。`issue update` 和 `issue status` 同样支持这个 flag。如果只记录角色的流程同时修改 executor 和状态，两条命令都要传入该 flag；抑制 executor 变更不会自动抑制后续状态变更触发的 task。
 

@@ -95,7 +95,7 @@ func TestQuickCreateFailure_DoesNotSubscribeRequester(t *testing.T) {
 }
 
 // TestQuickCreateFailure_SurfacesAgentOutput locks in the fix for GH #5885: when
-// a quick-create agent's `patchbay issue create` call fails (e.g. the active-
+// a quick-create agent's `orvilo issue create` call fails (e.g. the active-
 // duplicate guard rejects it), the failure inbox must carry the agent's real
 // final output — which the prompt requires to be the CLI error — instead of the
 // opaque "agent finished without creating an issue".

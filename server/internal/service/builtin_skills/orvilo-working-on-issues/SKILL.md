@@ -2,7 +2,7 @@
 name: orvilo-working-on-issues
 description: "Use when acting on an Orvilo issue beyond what the brief covers: PR linking vs close intent, reading a linked PR's real state, metadata keys, status-change side effects, sub-issue todo vs backlog."
 user-invocable: false
-allowed-tools: Bash(patchbay *), Bash(git *), Bash(gh *)
+allowed-tools: Bash(orvilo *), Bash(git *), Bash(gh *)
 ---
 
 # Working on Orvilo issues
@@ -23,7 +23,7 @@ same gate and they read different fields.
 
 **Linking** scans the PR **title, body, OR branch** for a routable issue key
 (`PREFIX-NUMBER`, e.g. `MUL-2759`). Each match writes an issue ↔ PR link row.
-This is the link that `patchbay issue pull-requests` reads back — but see the
+This is the link that `orvilo issue pull-requests` reads back — but see the
 reference-only rule below: a key that appears **only** as a bare mention in the
 body is linked yet hidden from that list.
 
@@ -53,7 +53,7 @@ records close intent; on merge, that close intent can move the linked issue to
 **Reference-only links (hidden from the PR list).** A key that appears **only**
 as a bare mention in the body — no closing keyword, and not in the title or
 branch — still writes a link row, but the row is flagged `reference_only` and
-**excluded from `patchbay issue pull-requests`** (and the issue's right-side PR
+**excluded from `orvilo issue pull-requests`** (and the issue's right-side PR
 list in the UI). This keeps passing mentions like `Related MUL-2759` or
 `Follow up in MUL-2759` from surfacing an unrelated PR as if it were working on
 that issue. To make a PR show up for an issue, put the key in the title, the
@@ -93,7 +93,7 @@ from branch names, GitHub search, memory, or `pr_url` metadata (which can be
 stale).
 
 ```bash
-patchbay issue pull-requests <issue-id> --output json
+orvilo issue pull-requests <issue-id> --output json
 ```
 
 Returns `{"pull_requests": [...]}`. Each element exposes:
@@ -141,8 +141,8 @@ attempt counts, or agent IDs; or other single-run details such as
 files touched and investigation notes — those belong in the result comment.
 
 ```bash
-patchbay issue metadata set <issue-id> --key <key> --value <value>
-patchbay issue metadata delete <issue-id> --key <stale-key>
+orvilo issue metadata set <issue-id> --key <key> --value <value>
+orvilo issue metadata delete <issue-id> --key <stale-key>
 ```
 
 `--value` is JSON-parsed by default (bool/number are sniffed); pass `--type
@@ -156,15 +156,15 @@ metadata: values are validated against the definition (select options, date
 format, http(s) URL, member reference), visible in the issue sidebar, and
 addressed by name.
 
-- Read what exists before writing: `patchbay property list` shows the catalog;
-  `patchbay issue property list <issue-id>` shows values set on the issue.
+- Read what exists before writing: `orvilo property list` shows the catalog;
+  `orvilo issue property list <issue-id>` shows values set on the issue.
 - Set values by property name and option name — the CLI translates to ids:
 
 ```bash
-patchbay issue property set <issue-id> --name Environment --value staging
-patchbay issue property set <issue-id> --name Platforms --value "iOS,Android"
-patchbay issue property set <issue-id> --name Reviewer --value Bohan
-patchbay issue property unset <issue-id> --name Environment
+orvilo issue property set <issue-id> --name Environment --value staging
+orvilo issue property set <issue-id> --name Platforms --value "iOS,Android"
+orvilo issue property set <issue-id> --name Reviewer --value Bohan
+orvilo issue property unset <issue-id> --name Environment
 ```
 
 - A validation error lists the legal options — fix the value and retry.
@@ -236,9 +236,9 @@ already underway and the write only records ownership or progress, pass
 does not suppress a later status update:
 
 ```bash
-patchbay issue assign <issue-id> --to-id <agent-id> --no-start
-patchbay issue update <issue-id> --executor-id <agent-id> --no-start
-patchbay issue status <issue-id> in_progress --no-start
+orvilo issue assign <issue-id> --to-id <agent-id> --no-start
+orvilo issue update <issue-id> --executor-id <agent-id> --no-start
+orvilo issue status <issue-id> in_progress --no-start
 ```
 
 Before self-assigning, check the target issue's comment history for an existing
@@ -257,14 +257,14 @@ agent at create time; `backlog` sets the executor without triggering.
 Parallel children — all start now:
 
 ```bash
-patchbay issue create --title "..." --parent <issue-id> --executor <agent> --status todo
+orvilo issue create --title "..." --parent <issue-id> --executor <agent> --status todo
 ```
 
 Strictly serial children — park later steps, promote one at a time:
 
 ```bash
-patchbay issue create --title "Step 2: ..." --parent <issue-id> --executor <agent> --status backlog
-patchbay issue status <child-id> todo   # promote when the previous step is truly done
+orvilo issue create --title "Step 2: ..." --parent <issue-id> --executor <agent> --status backlog
+orvilo issue status <child-id> todo   # promote when the previous step is truly done
 ```
 
 Creating every serial step as `todo` enqueues the whole chain at once.
@@ -285,18 +285,18 @@ wakes the parent executor, who then decides whether to promote the next stage's
 
 ```bash
 # Stage 1 runs now; later stages parked until promoted
-patchbay issue create --title "Research A" --parent <id> --executor <agent> --stage 1 --status todo
-patchbay issue create --title "Research B" --parent <id> --executor <agent> --stage 1 --status todo
-patchbay issue create --title "Build"      --parent <id> --executor <agent> --stage 2 --status backlog
-patchbay issue create --title "Ship"       --parent <id> --executor <agent> --stage 3 --status backlog
+orvilo issue create --title "Research A" --parent <id> --executor <agent> --stage 1 --status todo
+orvilo issue create --title "Research B" --parent <id> --executor <agent> --stage 1 --status todo
+orvilo issue create --title "Build"      --parent <id> --executor <agent> --stage 2 --status backlog
+orvilo issue create --title "Ship"       --parent <id> --executor <agent> --stage 3 --status backlog
 ```
 
 When both Stage 1 sub-issues finish you (the parent executor) are woken with a
 "Stage 1 complete" comment. Inspect the layout, then promote the next stage:
 
 ```bash
-patchbay issue children <parent-id>             # sub-issues grouped by stage
-patchbay issue status <stage-2-child-id> todo   # promote when its deps are met
+orvilo issue children <parent-id>             # sub-issues grouped by stage
+orvilo issue status <stage-2-child-id> todo   # promote when its deps are met
 ```
 
 `issue children --output json` reports per-stage `done` counts. A workspace may
@@ -322,14 +322,14 @@ Serial / phased sub-issues (don't start the whole chain at once):
 
 ```bash
 # incorrect — all fire immediately, no ordering
-patchbay issue create --title "Step 2" --parent <issue-id> --executor <agent> --status todo
-patchbay issue create --title "Step 3" --parent <issue-id> --executor <agent> --status todo
+orvilo issue create --title "Step 2" --parent <issue-id> --executor <agent> --status todo
+orvilo issue create --title "Step 3" --parent <issue-id> --executor <agent> --status todo
 
 # correct — stage them; Stage 1 runs, later stages park and are promoted as
 # each stage's barrier closes
-patchbay issue create --title "Step 1" --parent <issue-id> --executor <agent> --stage 1 --status todo
-patchbay issue create --title "Step 2" --parent <issue-id> --executor <agent> --stage 2 --status backlog
-patchbay issue create --title "Step 3" --parent <issue-id> --executor <agent> --stage 3 --status backlog
+orvilo issue create --title "Step 1" --parent <issue-id> --executor <agent> --stage 1 --status todo
+orvilo issue create --title "Step 2" --parent <issue-id> --executor <agent> --stage 2 --status backlog
+orvilo issue create --title "Step 3" --parent <issue-id> --executor <agent> --stage 3 --status backlog
 ```
 
 ## References

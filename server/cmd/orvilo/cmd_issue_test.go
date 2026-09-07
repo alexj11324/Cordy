@@ -1009,7 +1009,7 @@ func TestResolveIssueRef(t *testing.T) {
 	t.Run("full UUID resolves locally with zero HTTP requests", func(t *testing.T) {
 		// A full UUID is self-identifying — the resolver used to GET
 		// /api/issues/<uuid> just to learn the id it already had, and
-		// agents pay that per `patchbay issue …` call during run
+		// agents pay that per `orvilo issue …` call during run
 		// bootstrap (GH #7017). Any HTTP call here means the local
 		// resolve regressed.
 		var hits []string
@@ -2048,8 +2048,8 @@ func TestPickActorFromFlags(t *testing.T) {
 // memberOrAgentKinds because their target schema rejects teams
 // (subscriber: server/internal/handler/handler.go:414;
 // project: server/migrations/034_projects.up.sql:10). Without this gating,
-// `patchbay issue subscriber add --user "<TeamName>"` or
-// `patchbay project create --lead "<TeamName>"` would resolve to
+// `orvilo issue subscriber add --user "<TeamName>"` or
+// `orvilo project create --lead "<TeamName>"` would resolve to
 // (team, ...) and surface as a 500/403 server-side instead of a clean
 // CLI-side resolution error.
 func TestPickActorFromFlagsMemberOrAgentKinds(t *testing.T) {
@@ -2721,8 +2721,8 @@ func TestRunIssueCommentList_ThreadTailPassesThroughAndPrintsReplyCursor(t *test
 			gotQuery = r.URL.Query()
 			// Emit a cursor so we can prove the CLI labels it "reply"
 			// when the call was a --thread + --tail combo.
-			w.Header().Set("X-Patchbay-Next-Before", "2026-01-01T00:00:00.000000001Z")
-			w.Header().Set("X-Patchbay-Next-Before-Id", "00000000-0000-0000-0000-000000000999")
+			w.Header().Set("X-Orvilo-Next-Before", "2026-01-01T00:00:00.000000001Z")
+			w.Header().Set("X-Orvilo-Next-Before-Id", "00000000-0000-0000-0000-000000000999")
 			w.Write([]byte("[]"))
 			return
 		}
@@ -2777,8 +2777,8 @@ func TestRunIssueCommentList_RecentStillLabelsCursorAsThread(t *testing.T) {
 			})
 			return
 		}
-		w.Header().Set("X-Patchbay-Next-Before", "2026-01-01T00:00:00.000000001Z")
-		w.Header().Set("X-Patchbay-Next-Before-Id", "00000000-0000-0000-0000-000000000777")
+		w.Header().Set("X-Orvilo-Next-Before", "2026-01-01T00:00:00.000000001Z")
+		w.Header().Set("X-Orvilo-Next-Before-Id", "00000000-0000-0000-0000-000000000777")
 		w.Write([]byte("[]"))
 	}))
 	defer srv.Close()
@@ -3276,11 +3276,11 @@ func TestIssueReadCommandsUseInjectedTaskToken(t *testing.T) {
 	t.Setenv("ORVILO_WORKSPACE_ID", "ws-task")
 	t.Setenv("ORVILO_TASK_CONFIG_ROOT", t.TempDir())
 
-	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
+	ownerPath := filepath.Join(ownerHome, ".orvilo", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(ownerPath, []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"workspace_id\": \"owner-workspace-sentinel\",\n  \"token\": \"pby_owner_sentinel\"\n}\n"), 0o600); err != nil {
+	if err := os.WriteFile(ownerPath, []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"workspace_id\": \"owner-workspace-sentinel\",\n  \"token\": \"ovy_owner_sentinel\"\n}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -3343,11 +3343,11 @@ func TestIssueReadCommandsFailClosedWithoutTaskToken(t *testing.T) {
 	t.Setenv("ORVILO_WORKSPACE_ID", "ws-task")
 	t.Setenv("ORVILO_TASK_CONFIG_ROOT", t.TempDir())
 
-	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
+	ownerPath := filepath.Join(ownerHome, ".orvilo", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(ownerPath, []byte("{\n  \"token\": \"pby_owner_sentinel\"\n}\n"), 0o600); err != nil {
+	if err := os.WriteFile(ownerPath, []byte("{\n  \"token\": \"ovy_owner_sentinel\"\n}\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -4200,7 +4200,7 @@ func TestRunIssueCommentListCompactWiring(t *testing.T) {
 }
 
 // TestIsTerminalChildIssue pins the stage-progress terminal test used by
-// `patchbay issue children --output json`. Since MUL-6243 a workspace can define
+// `orvilo issue children --output json`. Since MUL-6243 a workspace can define
 // custom statuses, so counting only the literal done/cancelled would report
 // wrong progress to an agent reading the stage summary.
 func TestIsTerminalChildIssue(t *testing.T) {

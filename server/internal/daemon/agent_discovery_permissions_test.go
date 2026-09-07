@@ -72,7 +72,7 @@ func TestInstallDiscoveryRefreshesAndSkipsHookWrappers(t *testing.T) {
 	if len(resolveAgentsFromInstallPaths([]string{name})) != 0 {
 		t.Fatal("unexpected initial executable")
 	}
-	hook := filepath.Join(home, ".patchbay", "hooks", name)
+	hook := filepath.Join(home, ".orvilo", "hooks", name)
 	writeExecStub(t, hook)
 	if err := os.MkdirAll(first, 0o755); err != nil {
 		t.Fatal(err)

@@ -23,7 +23,7 @@ export async function reauthenticateDaemon(
   t: DaemonTranslator,
 ): Promise<void> {
   const user = useAuthStore.getState().user;
-  const token = localStorage.getItem("patchbay_token");
+  const token = localStorage.getItem("orvilo_token");
   if (!user || !token) {
     // No usable session at all — the standard recovery is the login page.
     useAuthStore.getState().logout();

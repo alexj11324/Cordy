@@ -1,10 +1,10 @@
 {
   "manifest_version": 1,
-  "key": "ai.patchbay.hello-panel",
+  "key": "ai.orvilo.hello-panel",
   "name": "Hello Panel",
   "description": "The reference surface: reads the current issue, posts a comment, and stores a per-member note.",
   "version": "1.0.0",
-  "author": { "name": "patchbay", "url": "https://patchbay.aspectlylabs.com" },
+  "author": { "name": "orvilo", "url": "https://orvilo.aspectlylabs.com" },
   "scopes": ["issues:read", "comments:write", "storage:user"],
   "contributes": {
     "surfaces": [

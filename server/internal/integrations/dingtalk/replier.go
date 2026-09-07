@@ -68,7 +68,7 @@ type OutboundReplierConfig struct {
 	Decrypt Decrypter
 	Client  *Client
 	// AppURL is the Orvilo web app host the user clicks into to redeem the
-	// binding token (e.g. https://patchbay.example). The bind page (/dingtalk/bind)
+	// binding token (e.g. https://orvilo.example). The bind page (/dingtalk/bind)
 	// is served by the web app, so the link must point at the app host, not the
 	// API host. Mirrors the Slack replier's AppURL.
 	AppURL      string

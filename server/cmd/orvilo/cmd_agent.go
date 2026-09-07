@@ -86,7 +86,7 @@ var agentSkillsCmd = &cobra.Command{
 
 // Agent env subcommands. Live behind a dedicated `agent env` group because
 // they're the ONLY post-creation path for reading or writing
-// custom_env values — `patchbay agent list / get / update` no longer
+// custom_env values — `orvilo agent list / get / update` no longer
 // expose env on the wire. Each call hits the audited
 // `/api/agents/{id}/env` endpoint. See MUL-2600.
 
@@ -190,7 +190,7 @@ func init() {
 	agentUpdateCmd.Flags().String("service-tier", "", "New Codex execution speed: default = explicit Standard when supported by the daemon's installed Codex CLI; a catalog tier such as priority = explicit Fast. Pass an empty string to clear and inherit local Codex configuration.")
 	agentUpdateCmd.Flags().String("custom-args", "", "New custom CLI arguments as JSON array. For model selection prefer --model; some providers (codex app-server, openclaw) reject --model in custom_args.")
 	// custom_env is intentionally NOT part of `agent update`. Use
-	// `patchbay agent env set <id>` — that path admits the agent owner or a
+	// `orvilo agent env set <id>` — that path admits the agent owner or a
 	// workspace owner/admin, denies agent actors, and writes a persisted
 	// audit trail.
 	//
@@ -270,7 +270,7 @@ func newAPIClient(cmd *cobra.Command) (*cli.APIClient, error) {
 	serverURL := resolveServerURL(cmd)
 	workspaceID := resolveWorkspaceID(cmd)
 	if serverURL == "" {
-		return nil, fmt.Errorf("server URL not set: use --server-url flag, ORVILO_SERVER_URL env, or 'patchbay config set server_url <url>'")
+		return nil, fmt.Errorf("server URL not set: use --server-url flag, ORVILO_SERVER_URL env, or 'orvilo config set server_url <url>'")
 	}
 
 	client := cli.NewAPIClient(serverURL, workspaceID, token)
@@ -286,7 +286,7 @@ func newAPIClient(cmd *cobra.Command) (*cli.APIClient, error) {
 
 const (
 	defaultCloudServerURL = "https://api.aspectlylabs.com"
-	defaultCloudAppURL    = "https://patchbay.aspectlylabs.com"
+	defaultCloudAppURL    = "https://orvilo.aspectlylabs.com"
 )
 
 func tryResolveServerURL(cmd *cobra.Command) string {
@@ -337,14 +337,14 @@ func resolveServerURL(cmd *cobra.Command) string {
 }
 
 func missingServerConfigMessage() string {
-	return fmt.Sprintf("No server configured. Run 'patchbay setup' first%s.", daemonPortOnlyContextHint())
+	return fmt.Sprintf("No server configured. Run 'orvilo setup' first%s.", daemonPortOnlyContextHint())
 }
 
 func resolveHumanServerURL(cmd *cobra.Command) string {
 	if val := tryResolveHumanServerURL(cmd); val != "" {
 		return val
 	}
-	fmt.Fprintln(os.Stderr, "No server configured. Run 'patchbay setup' first.")
+	fmt.Fprintln(os.Stderr, "No server configured. Run 'orvilo setup' first.")
 	os.Exit(1)
 	return "" // unreachable
 }
@@ -375,7 +375,7 @@ func inAgentExecutionContext() bool {
 // a defense-in-depth marker for subprocesses that lose ORVILO_AGENT_ID or
 // ORVILO_TASK_ID but still run under the daemon environment. In this context
 // workspace and token must come from daemon-provided env; falling back to
-// user-global ~/.patchbay/config.json can make agent writes land as a member.
+// user-global ~/.orvilo/config.json can make agent writes land as a member.
 func inDaemonManagedExecutionContext() bool {
 	return inAgentExecutionContext() || os.Getenv("ORVILO_DAEMON_PORT") != "" || hasDaemonTaskContextMarker()
 }
@@ -502,7 +502,7 @@ func requireWorkspaceID(cmd *cobra.Command) (string, error) {
 		if inDaemonManagedExecutionContext() {
 			return "", fmt.Errorf("workspace_id is required: ORVILO_WORKSPACE_ID must be set by the daemon in agent execution context (no fallback to user config)")
 		}
-		return "", fmt.Errorf("workspace_id is required: use --workspace-id flag, set ORVILO_WORKSPACE_ID env, or run 'patchbay config set workspace_id <id>'")
+		return "", fmt.Errorf("workspace_id is required: use --workspace-id flag, set ORVILO_WORKSPACE_ID env, or run 'orvilo config set workspace_id <id>'")
 	}
 	return id, nil
 }
@@ -802,7 +802,7 @@ func runAgentUpdate(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(body) == 0 {
-		return fmt.Errorf("no fields to update; use --name, --description, --instructions, --runtime-id, --runtime-config, --model, --thinking-level, --service-tier, --custom-args, --mcp-config, --visibility, --status, or --max-concurrent-tasks (env vars now live behind `patchbay agent env set <id>`)")
+		return fmt.Errorf("no fields to update; use --name, --description, --instructions, --runtime-id, --runtime-config, --model, --thinking-level, --service-tier, --custom-args, --mcp-config, --visibility, --status, or --max-concurrent-tasks (env vars now live behind `orvilo agent env set <id>`)")
 	}
 
 	ctx, cancel := cli.APIContext(context.Background())

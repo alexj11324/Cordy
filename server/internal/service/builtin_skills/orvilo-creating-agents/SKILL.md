@@ -1,8 +1,8 @@
 ---
 name: orvilo-creating-agents
-description: "Use when creating, inspecting, or debugging an Orvilo agent definition via the `patchbay agent` CLI or POST /api/agents. Not for assigning issues to agents that already exist, and not for runtime task prompts."
+description: "Use when creating, inspecting, or debugging an Orvilo agent definition via the `orvilo agent` CLI or POST /api/agents. Not for assigning issues to agents that already exist, and not for runtime task prompts."
 user-invocable: false
-allowed-tools: Bash(patchbay *)
+allowed-tools: Bash(orvilo *)
 ---
 
 # Creating Orvilo agents
@@ -18,9 +18,9 @@ backed by `file:line` in `references/creating-agents-source-map.md`.
 These commands read state and have no side effects:
 
 ```bash
-patchbay agent get <agent-id> --output json      # full persisted agent record
-patchbay agent skills list <agent-id> --output json   # current skill bindings
-patchbay agent env get <agent-id> --output json  # plaintext env (agent owner or ws owner/admin; agents denied)
+orvilo agent get <agent-id> --output json      # full persisted agent record
+orvilo agent skills list <agent-id> --output json   # current skill bindings
+orvilo agent env get <agent-id> --output json  # plaintext env (agent owner or ws owner/admin; agents denied)
 ```
 
 An agent can also be **unbound**: `runtime_id` is `NULL` (served as `""` with
@@ -37,7 +37,7 @@ it again. Unbound is orthogonal to archived.
 ## Core model
 
 An agent is a workspace-scoped row (table `agent`). Creation is a single
-`POST /api/agents` (`patchbay agent create`). At task claim time the daemon
+`POST /api/agents` (`orvilo agent create`). At task claim time the daemon
 re-reads the agent row and assembles the runtime payload — so the persisted
 fields, not the create-time output, are what the agent runs on.
 
@@ -56,7 +56,7 @@ Two distinct text fields, often confused:
 Minimum create call (`--name` and `--runtime-id` are both required):
 
 ```bash
-patchbay agent create --name <name> --runtime-id <runtime-id> \
+orvilo agent create --name <name> --runtime-id <runtime-id> \
   --description "<short catalog summary>" \
   --instructions "<runtime behavior contract>" \
   --output json
@@ -83,7 +83,7 @@ will find it.
 
 ## Copying an agent
 
-`patchbay agent copy <source-agent-id>` forks an existing agent's portable
+`orvilo agent copy <source-agent-id>` forks an existing agent's portable
 configuration into a brand-new agent, leaving the source untouched. It is the
 CLI/headless equivalent of the web "Duplicate" action. No dedicated server API
 is involved: `runAgentCopy` reads the source with `GET /api/agents/<id>`, then
@@ -92,8 +92,8 @@ the bindings attach in the SAME create transaction (unlike `agent create`, which
 binds nothing). The mutation is therefore a single atomic create.
 
 ```bash
-patchbay agent copy <source-agent-id> --name "My Agent (copy)"   # same runtime
-patchbay agent copy <source-agent-id> --runtime-id <target> --model <model>  # cross-runtime fork
+orvilo agent copy <source-agent-id> --name "My Agent (copy)"   # same runtime
+orvilo agent copy <source-agent-id> --runtime-id <target> --model <model>  # cross-runtime fork
 ```
 
 - Copied by default without a dedicated override flag: `conversation_starters`.
@@ -234,8 +234,8 @@ using its stdin or 0600 file input where possible.
 secrets out of shell history and the process list:
 
 ```bash
-patchbay agent create --name <name> --runtime-id <runtime-id> --custom-env-stdin --output json
-patchbay agent create --name <name> --runtime-id <runtime-id> --custom-env-file <0600-json> --output json
+orvilo agent create --name <name> --runtime-id <runtime-id> --custom-env-stdin --output json
+orvilo agent create --name <name> --runtime-id <runtime-id> --custom-env-file <0600-json> --output json
 ```
 
 `--custom-env-stdin` reads the JSON object from stdin; `--custom-env-file`
@@ -249,14 +249,14 @@ Read-side facts (these are the wrong assumptions to avoid):
   list/get/create/update` and WS events return only `has_custom_env` (bool) and
   `custom_env_key_count` (int).
 - Reading plaintext values requires the dedicated `GET /api/agents/{id}/env`
-  endpoint (`patchbay agent env get`). It is gated to the **agent's own human
+  endpoint (`orvilo agent env get`). It is gated to the **agent's own human
   owner** or a workspace **owner/admin**, and **agent actors are denied**
   regardless of the backing member's role — a running agent cannot read another
   agent's secrets, not even one its own human owns.
 - Writing values after creation does NOT go through `agent update`. The generic
   update handler rejects any `custom_env` field with a 400 ("use PUT
   /api/agents/{id}/env"). Plaintext env writes are handled by
-  `PUT /api/agents/{id}/env` (`patchbay agent env set`), which carries the same
+  `PUT /api/agents/{id}/env` (`orvilo agent env set`), which carries the same
   gate and writes an audit row.
 
 ### mcp_config
@@ -267,9 +267,9 @@ API tokens — and offers the same three input channels as `custom_env`, on BOTH
 `agent create` and `agent update`:
 
 ```bash
-patchbay agent create --name <name> --runtime-id <runtime-id> --mcp-config-file <0600-json> --output json
-patchbay agent update <agent-id> --mcp-config-stdin --output json
-patchbay agent update <agent-id> --mcp-config 'null'   # clears the config
+orvilo agent create --name <name> --runtime-id <runtime-id> --mcp-config-file <0600-json> --output json
+orvilo agent update <agent-id> --mcp-config-stdin --output json
+orvilo agent update <agent-id> --mcp-config 'null'   # clears the config
 ```
 
 `--mcp-config-stdin` / `--mcp-config-file` keep the value out of shell history
@@ -293,15 +293,15 @@ Provider support is not uniform: Qwen Code accepts a managed `mcp_config` throug
 #### Workspace MCP servers
 
 A workspace keeps a LIBRARY of MCP servers (workspace Settings → MCP, or
-`patchbay workspace mcp list|add|update|remove`). Adding one there gives it to
+`orvilo workspace mcp list|add|update|remove`). Adding one there gives it to
 NO agent — same shape as a workspace skill. It reaches an agent only when
 someone assigns it:
 
 ```bash
-patchbay workspace mcp list --output table        # find the server id
-patchbay agent mcp add <agent-id> <server-id>     # give it to one agent
-patchbay agent mcp disable <agent-id> <server-id> # stop sending it, keep the assignment
-patchbay agent mcp remove <agent-id> <server-id>  # take it away
+orvilo workspace mcp list --output table        # find the server id
+orvilo agent mcp add <agent-id> <server-id>     # give it to one agent
+orvilo agent mcp disable <agent-id> <server-id> # stop sending it, keep the assignment
+orvilo agent mcp remove <agent-id> <server-id>  # take it away
 ```
 
 At claim time the effective set is:
@@ -332,8 +332,8 @@ call after the agent exists. Two distinct verbs:
   the given ids (`PUT /api/agents/{id}/skills`); `--skill-ids ''` clears all.
 
 ```bash
-patchbay agent skills add <agent-id> --skill-ids <skill-id> --output json
-patchbay agent skills list <agent-id> --output json
+orvilo agent skills add <agent-id> --skill-ids <skill-id> --output json
+orvilo agent skills list <agent-id> --output json
 ```
 
 At claim time the daemon assembles the agent's skills as workspace-bound skills
@@ -349,12 +349,12 @@ Read-only (safe): `agent get`, `agent skills list`, `agent env get`.
 
 State-changing (require an explicit instruction — do not run speculatively):
 
-- `patchbay agent create` — inserts a new agent row.
-- `patchbay agent copy` — inserts a new agent row (a fork of an existing agent);
+- `orvilo agent create` — inserts a new agent row.
+- `orvilo agent copy` — inserts a new agent row (a fork of an existing agent);
   the source is left untouched.
-- `patchbay agent skills add` / `set` — mutate bindings (`set` is destructive:
+- `orvilo agent skills add` / `set` — mutate bindings (`set` is destructive:
   it drops bindings not in the new list).
-- `patchbay agent env set` — overwrites the full `custom_env` map and writes an
+- `orvilo agent env set` — overwrites the full `custom_env` map and writes an
   audit row.
 
 ## Common wrong assumptions

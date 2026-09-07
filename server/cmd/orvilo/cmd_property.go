@@ -14,8 +14,8 @@ import (
 	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
-// patchbay property {list|get|create|update|archive|unarchive} — workspace
-// custom property definitions, and patchbay issue property {list|set|unset} —
+// orvilo property {list|get|create|update|archive|unarchive} — workspace
+// custom property definitions, and orvilo issue property {list|set|unset} —
 // typed values on a single issue. See server/internal/handler/property.go
 // for the validation contract (9 types, 20 active definitions/workspace,
 // owner/admin-only definition management, agents rejected on definition
@@ -72,12 +72,12 @@ var propertyCreateCmd = &cobra.Command{
 	Long: `Create a property definition. Types: text, number, select, multi_select,
 date, checkbox, url, actor, multi_actor. Select types take repeatable --option
 flags:
-  patchbay property create --name Severity --type select \
+  orvilo property create --name Severity --type select \
       --option "Critical:#ef4444" --option "Major:#f59e0b" --option "Minor:#6b7280"
 The ":#rrggbb" color suffix is optional.
 
 The actor types hold workspace members; they take no options:
-  patchbay property create --name Reviewer --type actor`,
+  orvilo property create --name Reviewer --type actor`,
 	Args: exactArgs(0),
 	RunE: runPropertyCreate,
 }

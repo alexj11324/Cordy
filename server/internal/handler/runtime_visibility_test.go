@@ -89,14 +89,14 @@ func runtimeVisibilityFixture(t *testing.T) (runtimeID, runtimeOwnerID, plainMem
 
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email)
-		VALUES ('Runtime Owner', 'runtime-owner@patchbay.test')
+		VALUES ('Runtime Owner', 'runtime-owner@orvilo.test')
 		RETURNING id
 	`).Scan(&runtimeOwnerID); err != nil {
 		t.Fatalf("create runtime owner user: %v", err)
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
-			`DELETE FROM "user" WHERE email = 'runtime-owner@patchbay.test'`)
+			`DELETE FROM "user" WHERE email = 'runtime-owner@orvilo.test'`)
 	})
 
 	if _, err := testPool.Exec(ctx, `
@@ -108,14 +108,14 @@ func runtimeVisibilityFixture(t *testing.T) (runtimeID, runtimeOwnerID, plainMem
 
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email)
-		VALUES ('Plain Runtime Member', 'plain-runtime-member@patchbay.test')
+		VALUES ('Plain Runtime Member', 'plain-runtime-member@orvilo.test')
 		RETURNING id
 	`).Scan(&plainMemberID); err != nil {
 		t.Fatalf("create plain member user: %v", err)
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
-			`DELETE FROM "user" WHERE email = 'plain-runtime-member@patchbay.test'`)
+			`DELETE FROM "user" WHERE email = 'plain-runtime-member@orvilo.test'`)
 	})
 
 	if _, err := testPool.Exec(ctx, `

@@ -23,7 +23,7 @@ afterEach(async () => {
 });
 
 async function createSandbox() {
-  sandbox = await mkdtemp(join(tmpdir(), "patchbay-dev-runtime-"));
+  sandbox = await mkdtemp(join(tmpdir(), "orvilo-dev-runtime-"));
   return sandbox;
 }
 
@@ -42,7 +42,7 @@ describe("Go development runtime cache", () => {
         home: "/home/dev",
         env: { XDG_CACHE_HOME: "/cache" },
       }),
-    ).toBe("/cache/patchbay/dev-runtime");
+    ).toBe("/cache/orvilo/dev-runtime");
   });
 
   it("normalizes the three supported Go targets", () => {
@@ -95,8 +95,8 @@ describe("Go development runtime cache", () => {
   it("stores, checksum-validates and stages an exact source artifact", async () => {
     const root = await createSandbox();
     const cacheRoot = join(root, "cache");
-    const sourceBinary = join(root, "built", "patchbay");
-    const destinationBinary = join(root, "worktree", "bin", "patchbay");
+    const sourceBinary = join(root, "built", "orvilo");
+    const destinationBinary = join(root, "worktree", "bin", "orvilo");
     await mkdir(join(root, "built"), { recursive: true });
     await writeFile(sourceBinary, "fixture Go CLI");
     await chmod(sourceBinary, 0o755);
@@ -112,7 +112,7 @@ describe("Go development runtime cache", () => {
     await storeDevRuntime({
       ...identity,
       sourceBinary,
-      binaryName: "patchbay",
+      binaryName: "orvilo",
     });
     const cached = await stageCachedDevRuntime({
       ...identity,
@@ -122,7 +122,7 @@ describe("Go development runtime cache", () => {
     expect(cached).not.toBeNull();
     expect(await readFile(destinationBinary, "utf8")).toBe("fixture Go CLI");
     expect(await readFile(`${destinationBinary}.sha256`, "utf8")).toMatch(
-      new RegExp("^[a-f0-9]{64}\\s{2}patchbay\\n$", "u"),
+      new RegExp("^[a-f0-9]{64}\\s{2}orvilo\\n$", "u"),
     );
     const manifest = JSON.parse(
       await readFile(`${destinationBinary}.dev-manifest.json`, "utf8"),

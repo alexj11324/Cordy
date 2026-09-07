@@ -23,7 +23,7 @@ describe("hardenExistingDesktopProfiles", () => {
   it.skipIf(process.platform === "win32")(
     "repairs every Desktop-owned profile without touching ordinary CLI profiles",
     async () => {
-      const root = await fixtureRoot("patchbay-profile-migrate-");
+      const root = await fixtureRoot("orvilo-profile-migrate-");
       const desktop = join(root, "desktop-api.example.com");
       const ordinary = join(root, "work");
       await mkdir(desktop, { recursive: true, mode: 0o755 });
@@ -48,7 +48,7 @@ describe("hardenExistingDesktopProfiles", () => {
   );
 
   it("ignores a missing profiles root", async () => {
-    const root = await fixtureRoot("patchbay-profile-missing-");
+    const root = await fixtureRoot("orvilo-profile-missing-");
     expect(await hardenExistingDesktopProfiles(join(root, "profiles"))).toBe(0);
   });
 });

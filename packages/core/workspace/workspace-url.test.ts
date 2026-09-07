@@ -3,17 +3,17 @@ import { workspaceUrlHost } from "./workspace-url";
 
 describe("workspaceUrlHost", () => {
   it("returns the host of a full app URL", () => {
-    expect(workspaceUrlHost("https://patchbay.example.com")).toBe(
-      "patchbay.example.com",
+    expect(workspaceUrlHost("https://orvilo.example.com")).toBe(
+      "orvilo.example.com",
     );
   });
 
   it("ignores scheme, path, and trailing slash", () => {
-    expect(workspaceUrlHost("https://patchbay.example.com/")).toBe(
-      "patchbay.example.com",
+    expect(workspaceUrlHost("https://orvilo.example.com/")).toBe(
+      "orvilo.example.com",
     );
-    expect(workspaceUrlHost("http://patchbay.example.com/app/onboarding")).toBe(
-      "patchbay.example.com",
+    expect(workspaceUrlHost("http://orvilo.example.com/app/onboarding")).toBe(
+      "orvilo.example.com",
     );
   });
 
@@ -22,16 +22,16 @@ describe("workspaceUrlHost", () => {
   });
 
   it("accepts a bare host without a scheme", () => {
-    expect(workspaceUrlHost("patchbay.example.com")).toBe("patchbay.example.com");
-    expect(workspaceUrlHost("patchbay.example.com/path")).toBe(
-      "patchbay.example.com",
+    expect(workspaceUrlHost("orvilo.example.com")).toBe("orvilo.example.com");
+    expect(workspaceUrlHost("orvilo.example.com/path")).toBe(
+      "orvilo.example.com",
     );
   });
 
   it("falls back to the brand host when no app URL is configured", () => {
-    expect(workspaceUrlHost("")).toBe("patchbay.aspectlylabs.com");
-    expect(workspaceUrlHost("   ")).toBe("patchbay.aspectlylabs.com");
-    expect(workspaceUrlHost(null)).toBe("patchbay.aspectlylabs.com");
-    expect(workspaceUrlHost(undefined)).toBe("patchbay.aspectlylabs.com");
+    expect(workspaceUrlHost("")).toBe("orvilo.aspectlylabs.com");
+    expect(workspaceUrlHost("   ")).toBe("orvilo.aspectlylabs.com");
+    expect(workspaceUrlHost(null)).toBe("orvilo.aspectlylabs.com");
+    expect(workspaceUrlHost(undefined)).toBe("orvilo.aspectlylabs.com");
   });
 });

@@ -11,7 +11,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
 
-[Web App](https://patchbay.aspectlylabs.com) · [Docs](https://patchbay.aspectlylabs.com/docs) · [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Download](https://github.com/alexj11324/Cordy/releases/latest) · [Self-Hosting](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/OrviloAI)
+[Web App](https://orvilo.aspectlylabs.com) · [Docs](https://orvilo.aspectlylabs.com/docs) · [Quickstart](https://orvilo.aspectlylabs.com/docs/cloud-quickstart) · [Download](https://github.com/alexj11324/Cordy/releases/latest) · [Self-Hosting](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/OrviloAI)
 
 **English | [简体中文](README.zh.md)**
 
@@ -60,36 +60,36 @@ don't put secrets there that must never leave the machine.
 ## What's in the box
 
 **Work tracking that agents are native to.** Issues with owner/executor/reviewer as separate
-roles, [projects](https://patchbay.aspectlylabs.com/docs/projects) that bind the repos and
-docs a run needs, and [review gates](https://patchbay.aspectlylabs.com/docs/issues) so output
+roles, [projects](https://orvilo.aspectlylabs.com/docs/projects) that bind the repos and
+docs a run needs, and [review gates](https://orvilo.aspectlylabs.com/docs/issues) so output
 lands in review rather than in `main`.
 
 **Agents as configuration, not processes.** An
-[agent](https://patchbay.aspectlylabs.com/docs/agents) is a name, instructions, a model, a set
-of [skills](https://patchbay.aspectlylabs.com/docs/skills), an access scope, and a runtime —
-idle until triggered. Group them into [teams](https://patchbay.aspectlylabs.com/docs/teams)
+[agent](https://orvilo.aspectlylabs.com/docs/agents) is a name, instructions, a model, a set
+of [skills](https://orvilo.aspectlylabs.com/docs/skills), an access scope, and a runtime —
+idle until triggered. Group them into [teams](https://orvilo.aspectlylabs.com/docs/teams)
 with an agent leader that routes work to the rest.
 
 **Four ways to start work.** Set an executor, @-mention, open a
-[chat](https://patchbay.aspectlylabs.com/docs/chat), or schedule an
-[automation](https://patchbay.aspectlylabs.com/docs/automations) on cron or an external event.
+[chat](https://orvilo.aspectlylabs.com/docs/chat), or schedule an
+[automation](https://orvilo.aspectlylabs.com/docs/automations) on cron or an external event.
 
-**Receipts for everything.** The [execution log](https://patchbay.aspectlylabs.com/docs/tasks)
+**Receipts for everything.** The [execution log](https://orvilo.aspectlylabs.com/docs/tasks)
 replays every tool call, command, and error with timestamps; token usage is broken out per run
-and per agent; failures [retry or stop and say why](https://patchbay.aspectlylabs.com/docs/tasks#failures-and-automatic-retries).
+and per agent; failures [retry or stop and say why](https://orvilo.aspectlylabs.com/docs/tasks#failures-and-automatic-retries).
 
 **Your infrastructure, end to end.** [Self-host](SELF_HOSTING.md) via Docker Compose or Helm,
-point it at [GitHub, GitLab, Gitea, or Forgejo](https://patchbay.aspectlylabs.com/docs/vcs-integration)
+point it at [GitHub, GitLab, Gitea, or Forgejo](https://orvilo.aspectlylabs.com/docs/vcs-integration)
 including self-hosted instances, and split teams across
-[workspaces](https://patchbay.aspectlylabs.com/docs/workspaces) with `owner`/`admin`/`member`
-[roles](https://patchbay.aspectlylabs.com/docs/members-roles).
+[workspaces](https://orvilo.aspectlylabs.com/docs/workspaces) with `owner`/`admin`/`member`
+[roles](https://orvilo.aspectlylabs.com/docs/members-roles).
 
-**Where your team already is.** [Slack and Lark](https://patchbay.aspectlylabs.com/docs/channels)
+**Where your team already is.** [Slack and Lark](https://orvilo.aspectlylabs.com/docs/channels)
 are first-party; DingTalk, WeCom, and Telegram are
-[community-maintained](https://patchbay.aspectlylabs.com/docs/community-maintained). Web,
+[community-maintained](https://orvilo.aspectlylabs.com/docs/community-maintained). Web,
 macOS, Windows, and Linux clients share one workspace; the
 [iOS app](apps/mobile/README.md) builds from source today and is not on the App Store yet.
-Every surface is scriptable through the [CLI and API](https://patchbay.aspectlylabs.com/docs/cli).
+Every surface is scriptable through the [CLI and API](https://orvilo.aspectlylabs.com/docs/cli).
 
 ## Read this before you point it at your laptop
 
@@ -110,12 +110,12 @@ to be the boundary — **you put one around it**, in increasing order of strengt
 What Orvilo *does* isolate is blast radius, not escape: per-task working directories, per-task
 agent state so runs don't pollute your `~/.codex/`, and task-scoped API tokens that can't act
 as you or as another agent. Full detail, including the one Windows exception:
-[Security model](https://patchbay.aspectlylabs.com/docs/security-model).
+[Security model](https://orvilo.aspectlylabs.com/docs/security-model).
 
 ## Get started
 
 The fastest path needs no terminal — sign in to the
-[web app](https://patchbay.aspectlylabs.com), or install
+[web app](https://orvilo.aspectlylabs.com), or install
 [Orvilo Desktop](https://github.com/alexj11324/Cordy/releases/latest), which registers the
 computer it runs on as a runtime and detects the coding CLIs already installed there.
 
@@ -127,8 +127,8 @@ Then, in four steps: **connect a computer** (Runtimes → *Add a computer*, past
 commands it gives you), **create an agent** (Agents → *New agent*, or let *Build with AI*
 write the config from a description), **file an issue**, and **set that agent as its
 executor**. Full walkthrough in the
-[Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) and
-[Tutorial](https://patchbay.aspectlylabs.com/docs/tutorial).
+[Quickstart](https://orvilo.aspectlylabs.com/docs/cloud-quickstart) and
+[Tutorial](https://orvilo.aspectlylabs.com/docs/tutorial).
 
 <details>
 <summary><b>Self-hosting the whole stack</b></summary>
@@ -137,7 +137,7 @@ executor**. Full walkthrough in the
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
-patchbay setup self-host
+orvilo setup self-host
 ```
 
 Windows: set `$env:ORVILO_MODE="with-server"`, then
@@ -163,8 +163,8 @@ dropdown rather than a migration.
 
 Plus 18 more — Grok, Trae, Kiro, CodeBuddy, DeepSeek Harness, MiniMax Code, Qoder, and others —
 for 26 in total. Full list and setup:
-[Install an agent runtime](https://patchbay.aspectlylabs.com/docs/install-agent-runtime) ·
-[Providers](https://patchbay.aspectlylabs.com/docs/providers)
+[Install an agent runtime](https://orvilo.aspectlylabs.com/docs/install-agent-runtime) ·
+[Providers](https://orvilo.aspectlylabs.com/docs/providers)
 
 ## Architecture
 
@@ -224,13 +224,13 @@ We ship most weekdays, so `main` moves fast. Pull often.
 
 | I want to… | Read |
 | --- | --- |
-| Get an agent doing something today | [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Tutorial](https://patchbay.aspectlylabs.com/docs/tutorial) |
-| Understand how the pieces fit | [Core concepts](https://patchbay.aspectlylabs.com/docs/concepts) |
+| Get an agent doing something today | [Quickstart](https://orvilo.aspectlylabs.com/docs/cloud-quickstart) · [Tutorial](https://orvilo.aspectlylabs.com/docs/tutorial) |
+| Understand how the pieces fit | [Core concepts](https://orvilo.aspectlylabs.com/docs/concepts) |
 | Contribute code | [CONTRIBUTING.md](CONTRIBUTING.md) — environments, workflow, testing, troubleshooting |
 | Run it on my own infrastructure | [SELF_HOSTING.md](SELF_HOSTING.md), then [SELF_HOSTING_ADVANCED.md](SELF_HOSTING_ADVANCED.md) and [SELF_HOSTING_AI.md](SELF_HOSTING_AI.md) |
 | Install and drive the CLI or daemon | [CLI_INSTALL.md](CLI_INSTALL.md), then [CLI_AND_DAEMON.md](CLI_AND_DAEMON.md) |
-| Connect Git hosts and chat tools | [GitHub](https://patchbay.aspectlylabs.com/docs/github-integration) · [Self-hosted Git](https://patchbay.aspectlylabs.com/docs/vcs-integration) · [Channels](https://patchbay.aspectlylabs.com/docs/channels) |
-| Work out why an agent is stuck | [Tasks](https://patchbay.aspectlylabs.com/docs/tasks) · [Troubleshooting](https://patchbay.aspectlylabs.com/docs/troubleshooting) |
+| Connect Git hosts and chat tools | [GitHub](https://orvilo.aspectlylabs.com/docs/github-integration) · [Self-hosted Git](https://orvilo.aspectlylabs.com/docs/vcs-integration) · [Channels](https://orvilo.aspectlylabs.com/docs/channels) |
+| Work out why an agent is stuck | [Tasks](https://orvilo.aspectlylabs.com/docs/tasks) · [Troubleshooting](https://orvilo.aspectlylabs.com/docs/troubleshooting) |
 | Have an AI agent work in this repo | [AGENTS.md](AGENTS.md), then [CLAUDE.md](CLAUDE.md) |
 | Cut a release | [.github/RELEASING.md](.github/RELEASING.md) |
 

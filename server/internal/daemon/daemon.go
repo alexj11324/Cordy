@@ -105,7 +105,7 @@ const (
 var pendingWorkHintMinInterval = time.Second
 
 // repoCheckoutModeFor picks the Git metadata layout for a task's
-// `patchbay repo checkout`. Under Codex's workspace-write sandbox a linked
+// `orvilo repo checkout`. Under Codex's workspace-write sandbox a linked
 // worktree's gitdir resolves into the shared cache and stays read-only even
 // when the task workdir is an explicit writable root, so `git add` /
 // `git commit` fail from inside the checkout — Linux hit this in
@@ -540,7 +540,7 @@ type Daemon struct {
 	// the cache that is up to two uncached `brew --prefix` forks per tick.
 	brewTargetOnce sync.Once
 	brewInstall    bool        // resolved once: was this binary installed via brew?
-	brewTarget     string      // "<prefix>/bin/patchbay" when brewInstall and the prefix resolved
+	brewTarget     string      // "<prefix>/bin/orvilo" when brewInstall and the prefix resolved
 	updating       atomic.Bool // prevents concurrent update attempts
 	// activeTasks is the ownership-safe count of tasks currently in handleTask.
 	// It deliberately includes preparation and local-directory waiters because
@@ -554,7 +554,7 @@ type Daemon struct {
 	runningTasks      atomic.Int64
 	resourceWaitTasks atomic.Int64
 	ready             atomic.Bool // false until preflight completes; gates /health status (starting -> running)
-	// reloadPendingReason explains why a confirmed patchbay version change hasn't
+	// reloadPendingReason explains why a confirmed orvilo version change hasn't
 	// restarted the daemon yet (a task was running at the barrier check). Set
 	// and cleared by trySelfReload, read by /health. Diagnostic only.
 	reloadPendingReason atomic.Pointer[string]
@@ -903,7 +903,7 @@ type healedAgent struct {
 //     the normal (never-healed) case: a live pinned binary is never
 //     second-guessed even if PATH now points elsewhere.
 //   - Pinned Path gone and no live heal -> re-resolve entry.Command once
-//     (preserving the ~/.patchbay/hooks exclusion and the login-shell fallback).
+//     (preserving the ~/.orvilo/hooks exclusion and the login-shell fallback).
 //     Before adopting the re-resolved binary it is version-detected and run
 //     through the same minimum-version gate registration applies. This
 //     reproduces exactly what a daemon restart would resolve, so it is no less
@@ -2098,9 +2098,9 @@ func (d *Daemon) resolveAuth() error {
 		return fmt.Errorf("load CLI config: %w", err)
 	}
 	if cfg.Token == "" {
-		loginHint := "'patchbay login'"
+		loginHint := "'orvilo login'"
 		if d.cfg.Profile != "" {
-			loginHint = fmt.Sprintf("'patchbay login --profile %s'", d.cfg.Profile)
+			loginHint = fmt.Sprintf("'orvilo login --profile %s'", d.cfg.Profile)
 		}
 		d.logger.Warn("not authenticated — run " + loginHint + " to authenticate, then restart the daemon")
 		return fmt.Errorf("not authenticated: run %s first", loginHint)
@@ -2802,7 +2802,7 @@ func (d *Daemon) appendProfileRuntimes(ctx context.Context, workspaceID string, 
 			continue
 		}
 		// Resolve the executable to launch for this profile. A per-machine
-		// path override (MUL-3284, `patchbay runtime profile set-path`) wins
+		// path override (MUL-3284, `orvilo runtime profile set-path`) wins
 		// over the PATH lookup when it is set AND points at a real
 		// executable — this is how an operator pins a profile to a binary
 		// that isn't on the daemon's PATH, or selects between multiple
@@ -3057,7 +3057,7 @@ func (d *Daemon) workspaceCoAuthoredByEnabled(workspaceID string) bool {
 //
 // It's safe to call with the workspace's own repos — duplicates are
 // idempotent. Called from runTask before the agent spawns so
-// `patchbay repo checkout` accepts project-only URLs without an extra round
+// `orvilo repo checkout` accepts project-only URLs without an extra round
 // trip back to GetWorkspaceRepos (which doesn't carry project resources).
 func (d *Daemon) registerTaskRepos(workspaceID, taskID string, repos []RepoData) {
 	if len(repos) == 0 {
@@ -3709,7 +3709,7 @@ const DefaultTokenRenewalInterval = 3 * 24 * time.Hour
 // preflightAuth runs the two auth-sensitive startup steps in their
 // required order: a synchronous PAT renewal first, then the initial
 // workspace sync. The order matters — running tryRenewToken before any
-// other API call is what surfaces a user-actionable "run patchbay login"
+// other API call is what surfaces a user-actionable "run orvilo login"
 // WARN when the PAT is already revoked or expired. If we let the
 // workspace sync go first, its 401 would short-circuit Run before the
 // renewal loop's first tick ever fires, and the operator would see only
@@ -3765,9 +3765,9 @@ func (d *Daemon) tryRenewToken(ctx context.Context) {
 	resp, err := d.client.RenewToken(reqCtx)
 	if err != nil {
 		if isUnauthorizedError(err) {
-			loginHint := "'patchbay login'"
+			loginHint := "'orvilo login'"
 			if d.cfg.Profile != "" {
-				loginHint = fmt.Sprintf("'patchbay login --profile %s'", d.cfg.Profile)
+				loginHint = fmt.Sprintf("'orvilo login --profile %s'", d.cfg.Profile)
 			}
 			d.logger.Warn("auth token rejected by server — run "+loginHint+" to re-authenticate, then restart the daemon", "error", err)
 			return
@@ -4921,7 +4921,7 @@ func (d *Daemon) triggerRestart() bool {
 // restartTargetBinary resolves the path a restart would re-exec.
 //
 // For brew installs it keeps the stable symlink path (e.g.
-// /opt/homebrew/bin/patchbay) so the restarted daemon picks up the new Cellar
+// /opt/homebrew/bin/orvilo) so the restarted daemon picks up the new Cellar
 // version automatically: on Linux os.Executable() reads /proc/self/exe, which
 // the kernel resolves to the Cellar path, and brew cleanup deletes that path
 // after an upgrade. For non-brew installs it resolves to the absolute path of
@@ -4944,9 +4944,9 @@ func (d *Daemon) restartTargetBinary() (string, error) {
 			return
 		}
 		if brewPrefix := getBrewPrefix(); brewPrefix != "" {
-			d.brewTarget = filepath.Join(brewPrefix, "bin", "patchbay")
+			d.brewTarget = filepath.Join(brewPrefix, "bin", "orvilo")
 		} else if prefix := matchKnownBrewPrefix(newBin); prefix != "" {
-			d.brewTarget = filepath.Join(prefix, "bin", "patchbay")
+			d.brewTarget = filepath.Join(prefix, "bin", "orvilo")
 		}
 	})
 	if d.brewInstall {
@@ -6089,10 +6089,10 @@ func providerNeedsInlineSystemPrompt(provider string) bool {
 // back to a fresh Prepare (GitHub #3854).
 //
 // Pi and OMP are the exception. Their opaque session id is an absolute JSONL
-// path under ~/.patchbay/pi-sessions, and the backend passes that path directly
+// path under ~/.orvilo/pi-sessions, and the backend passes that path directly
 // to --session. The transcript remains resumable when only the task workdir
 // changes, so binding it to workdir reuse discards healthy conversation history
-// and forces the model to reconstruct it through `patchbay chat history`.
+// and forces the model to reconstruct it through `orvilo chat history`.
 //
 // A matching workdir is not sufficient on its own. Hermes keys its sessions to
 // HERMES_HOME — the per-task overlay under envRoot — not to the cwd, and the
@@ -7026,7 +7026,7 @@ func resolveTaskModelSelection(
 //
 // agent.model holds whatever was persisted, and for gateway-style providers a
 // bare model id is itself slash-shaped (`claude/claude-opus-5` under provider
-// `patchbay-anthropic`), so the delimiter cannot tell a missing provider from a
+// `orvilo-anthropic`), so the delimiter cannot tell a missing provider from a
 // present one — only the catalog knows (GH #7300).
 //
 // It reads the catalog for two distinct reasons, and neither is "because we
@@ -7107,7 +7107,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// claimed task belongs to a project with github_repo resources the server
 	// has already narrowed it to project repos only. Make sure those URLs are
 	// in the per-workspace allowlist and the local cache, otherwise
-	// `patchbay repo checkout` would reject project-only URLs that aren't also
+	// `orvilo repo checkout` would reject project-only URLs that aren't also
 	// bound at the workspace level.
 	d.registerTaskRepos(task.WorkspaceID, task.ID, task.Repos)
 	defer d.clearTaskRepoRefs(task.WorkspaceID, task.ID)
@@ -7175,7 +7175,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 
 	// Prepare isolated execution environment.
 	// Repos are passed as metadata only — the agent checks them out on demand
-	// via `patchbay repo checkout <url>`.
+	// via `orvilo repo checkout <url>`.
 	taskCtx := execenv.TaskContextForEnv{
 		IssueID:             task.IssueID,
 		TriggerCommentID:    task.TriggerCommentID,
@@ -7759,7 +7759,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 				cleanupErr = cerr
 				d.logger.Warn("execenv: cleanup runtime config failed", "error", cerr)
 			}
-			// Excise the sidecar tree (.agent_context/, .patchbay/,
+			// Excise the sidecar tree (.agent_context/, .orvilo/,
 			// provider-specific .claude/skills/ etc.) that Prepare wrote
 			// into the user's repo. Without this pass the user's tree
 			// accumulates one directory layer per task — see MUL-2784.
@@ -7830,7 +7830,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// server-side state machine dispatched (or waiting_local_directory) →
 	// running. Calling StartTask before Prepare/Reuse let any consumer
 	// that read status==running and resolved
-	// /patchbay_workspaces/{ws}/{short-id}/workdir hit FileNotFoundError in
+	// /orvilo_workspaces/{ws}/{short-id}/workdir hit FileNotFoundError in
 	// the microsecond window before os.MkdirAll ran.
 	//
 	// On error we return early so handleTask's existing FailTask +
@@ -7896,7 +7896,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	prompt := BuildPrompt(task, provider, promptOptions...)
 
 	// Pass task-scoped auth credentials and context so the spawned agent CLI
-	// can call the Orvilo API and the local daemon (e.g. `patchbay repo checkout`).
+	// can call the Orvilo API and the local daemon (e.g. `orvilo repo checkout`).
 	// ORVILO_TASK_SLOT is allocated from the daemon-wide concurrency pool, not
 	// per-agent. When one daemon hosts multiple agents, slots index shared
 	// daemon-level resources such as GPUs.
@@ -7918,7 +7918,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	if task.AutomationID != "" {
 		agentEnv["ORVILO_AUTOMATION_ID"] = task.AutomationID
 	}
-	// Quick-create marker — when set, the patchbay CLI's `issue create`
+	// Quick-create marker — when set, the orvilo CLI's `issue create`
 	// command stamps the new issue with origin_type=quick_create +
 	// origin_id=<task_id> so the completion handler can find it
 	// deterministically (see GetIssueByOrigin).
@@ -7932,10 +7932,10 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			}
 		}
 	}
-	// Ensure the patchbay CLI is on PATH inside the agent's environment.
+	// Ensure the orvilo CLI is on PATH inside the agent's environment.
 	// Some runtimes (e.g. Codex) run in an isolated sandbox that may not
 	// inherit the daemon's PATH. Prepend the directory of the running
-	// patchbay binary so that `patchbay` commands in the agent always resolve.
+	// orvilo binary so that `orvilo` commands in the agent always resolve.
 	if selfBin, err := resolveSelfExecutable(); err == nil {
 		binDir := filepath.Dir(selfBin)
 		agentEnv["PATH"] = binDir + string(os.PathListSeparator) + os.Getenv("PATH")
@@ -8152,7 +8152,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// identity/persona + skills + project context) so the backend prepends the
 	// same payload that file-based runtimes pick up from disk. Without this,
 	// these providers silently miss the workflow section and never call
-	// `patchbay issue status` / `patchbay issue comment add`, leaving issues
+	// `orvilo issue status` / `orvilo issue comment add`, leaving issues
 	// stuck in `todo`.
 	//
 	// Hermes and Kiro are intentionally excluded: their ACP sessions start in
@@ -9594,7 +9594,7 @@ func sanitizeAgentEnv(customEnv map[string]string) map[string]string {
 // service.ResumeUnsafeFailure, taskfailure.Classify, and the ILIKE/regex guards
 // in pkg/db/queries/agent.sql (GetLastTaskSession / GetLastChatTaskSession).
 // TestAnnotationCannotChangeMachineDecisions pins that.
-const hermesProviderUnconfiguredHint = " [patchbay] hermes did not read the HERMES_HOME your shell uses: " +
+const hermesProviderUnconfiguredHint = " [orvilo] hermes did not read the HERMES_HOME your shell uses: " +
 	"this task ran against a per-task overlay, seeded from the home the daemon process resolved. " +
 	"The daemon log line \"hermes home resolved\" for this task names that source home — if your hermes " +
 	"config lives somewhere else, set HERMES_HOME in the agent's custom_env to point at it."

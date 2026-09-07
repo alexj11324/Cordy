@@ -196,7 +196,7 @@ function storageApi(scope: "workspace" | "user") {
 
 let cachedContext: PluginContext | null = null;
 
-export const patchbay = {
+export const orvilo = {
   context: {
     /** Who is looking, where, and which issue this surface is mounted on. */
     async get(force = false): Promise<PluginContext> {
@@ -249,7 +249,7 @@ export const patchbay = {
      * `ui` trigger.
      */
     async invoke(hookKey: string, input?: unknown): Promise<HookResult> {
-      const issue = (await patchbay.context.get()).issue;
+      const issue = (await orvilo.context.get()).issue;
       return bridge.request<HookResult>("POST", `/hooks/${encodeURIComponent(hookKey)}`, {
         trigger: "ui",
         issue_id: issue?.id,
@@ -271,11 +271,11 @@ export const patchbay = {
 };
 
 async function requireIssueId(): Promise<string> {
-  const context = await patchbay.context.get();
+  const context = await orvilo.context.get();
   if (!context.issue) {
     throw new OrviloPluginError(400, "This surface is not mounted on an issue; pass an issue id explicitly.");
   }
   return context.issue.id;
 }
 
-export default patchbay;
+export default orvilo;

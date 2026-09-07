@@ -2,7 +2,7 @@
 name: orvilo-projects-and-resources
 description: "Use when creating, inspecting, updating, or debugging Orvilo projects and their resources (github_repo, local_directory)."
 user-invocable: false
-allowed-tools: Bash(patchbay *)
+allowed-tools: Bash(orvilo *)
 ---
 
 # Orvilo Projects and Resources
@@ -12,9 +12,9 @@ allowed-tools: Bash(patchbay *)
 Projects are durable context containers. Resources attached to a project can affect future agent tasks.
 
 ```bash
-patchbay project list --output json
-patchbay project get <project-id> --output json
-patchbay project resource list <project-id> --output json
+orvilo project list --output json
+orvilo project get <project-id> --output json
+orvilo project resource list <project-id> --output json
 ```
 
 Project resources are mutated through project resource commands/endpoints. Issue
@@ -22,9 +22,9 @@ comments do not create durable project resources.
 
 ## Core model
 
-A project groups work and carries durable resources. A resource is not just display metadata; it is context later injected into task briefs and `.patchbay/project/resources.json`.
+A project groups work and carries durable resources. A resource is not just display metadata; it is context later injected into task briefs and `.orvilo/project/resources.json`.
 
-A project's `description` is also durable context: when an issue (or a quick-create task) is bound to a project, the project description is injected into the agent's brief under `## Project Context` and written to `.patchbay/project/resources.json` as `project_description`. Use it for project-wide rules/context that should apply to every task in the project.
+A project's `description` is also durable context: when an issue (or a quick-create task) is bound to a project, the project description is injected into the agent's brief under `## Project Context` and written to `.orvilo/project/resources.json` as `project_description`. Use it for project-wide rules/context that should apply to every task in the project.
 
 Common resource types:
 
@@ -35,23 +35,23 @@ Common resource types:
 ## CLI
 
 ```bash
-patchbay project list --output json
-patchbay project get <project-id> --output json
-patchbay project create --title "<title>" --repo <github-url> --output json
-patchbay project create --title "<title>" --start-date 2026-03-01 --due-date 2026-03-31 --output json
-patchbay project update <project-id> --title "<title>" --output json
-patchbay project update <project-id> --due-date 2026-04-15 --output json
-patchbay project update <project-id> --start-date "" --output json   # clear the start date
-patchbay project status <project-id> in_progress --output json
-patchbay project resource list <project-id> --output json
-patchbay project resource add <project-id> --type github_repo --url <github-url> --output json
-patchbay project resource add <project-id> --type github_repo --url <github-url> --ref <branch-or-sha> --output json
-patchbay project resource add <project-id> --type local_directory --local-path <abs-path> --daemon-id <daemon-id> --output json
-patchbay project resource add <project-id> --type local_directory --local-path <abs-path> --daemon-id <daemon-id> --execution-mode worktree --output json
-patchbay project resource update <project-id> <resource-id> --execution-mode in_place --output json
-patchbay project resource update <project-id> <resource-id> --url <new-github-url> --output json
-patchbay project resource update <project-id> <resource-id> --ref <branch-or-sha> --output json
-patchbay project resource remove <project-id> <resource-id> --output json
+orvilo project list --output json
+orvilo project get <project-id> --output json
+orvilo project create --title "<title>" --repo <github-url> --output json
+orvilo project create --title "<title>" --start-date 2026-03-01 --due-date 2026-03-31 --output json
+orvilo project update <project-id> --title "<title>" --output json
+orvilo project update <project-id> --due-date 2026-04-15 --output json
+orvilo project update <project-id> --start-date "" --output json   # clear the start date
+orvilo project status <project-id> in_progress --output json
+orvilo project resource list <project-id> --output json
+orvilo project resource add <project-id> --type github_repo --url <github-url> --output json
+orvilo project resource add <project-id> --type github_repo --url <github-url> --ref <branch-or-sha> --output json
+orvilo project resource add <project-id> --type local_directory --local-path <abs-path> --daemon-id <daemon-id> --output json
+orvilo project resource add <project-id> --type local_directory --local-path <abs-path> --daemon-id <daemon-id> --execution-mode worktree --output json
+orvilo project resource update <project-id> <resource-id> --execution-mode in_place --output json
+orvilo project resource update <project-id> <resource-id> --url <new-github-url> --output json
+orvilo project resource update <project-id> <resource-id> --ref <branch-or-sha> --output json
+orvilo project resource remove <project-id> <resource-id> --output json
 ```
 
 `--execution-mode` decides how tasks share a `local_directory`. `in_place` (default) runs the agent in the user's
@@ -60,7 +60,7 @@ git worktree of that repo, so tasks run concurrently and each delivers its work 
 instead of editing the working copy. Every task of one conversation shares that branch — `agent/<agent>/<issue>` for
 an issue, `agent/<agent>/chat-<session>` for a chat — and each turn's worktree starts from the previous turn's work
 rather than from `HEAD`; a task with no conversation behind it gets `agent/<agent>/<task>`. Continuation is decided by
-an ownership record (`refs/patchbay/local-state/<branch>`, which holds the owning conversation, the snapshot of the
+an ownership record (`refs/orvilo/local-state/<branch>`, which holds the owning conversation, the snapshot of the
 user's directory the branch already carries, and the branch tip it was recorded at), never by the branch name. A
 same-named branch the user created — or one that no longer contains the recorded commit, i.e. deleted and recreated or
 force-moved — is left alone and the task falls back to `agent/<agent>/<issue>-<id>`. A turn replays only what the user changed since that snapshot; when those
@@ -84,7 +84,7 @@ For `github_repo`, non-JSON `--ref` sets `resource_ref.ref`, the default checkou
 A project has no `MUL-123`-style identifier, so writing its title as prose
 produces dead text — there is nothing for the reader's client to autolink. Use
 the mention-link form instead, with the project UUID from
-`patchbay project list --output json`:
+`orvilo project list --output json`:
 
     [Roadmap](mention://project/<project-id>)
 
@@ -103,13 +103,13 @@ pasted URL is handed to the system browser and takes the reader out of the app.
 
 Add/update a project resource when the user asks for durable project context: "把这个 GitHub repo 绑到项目上", "以后都用这个 repo", "agent 总是拿不到这个项目的仓库", or "这个项目要在我的本地目录里跑".
 
-Project resources are durable and affect future tasks. `patchbay repo checkout`
+Project resources are durable and affect future tasks. `orvilo repo checkout`
 is task-local checkout state.
 
 ## Debugging wrong context
 
-1. `patchbay project get <project-id> --output json`.
-2. `patchbay project resource list <project-id> --output json`.
+1. `orvilo project get <project-id> --output json`.
+2. `orvilo project resource list <project-id> --output json`.
 3. Check `github_repo.resource_ref.url`, optional `ref`, `default_branch_hint`, and `local_directory.resource_ref.daemon_id`.
 4. Updating resources is a durable mutation. After an update, listing the
    resource is the verification path.

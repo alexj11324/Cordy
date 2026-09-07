@@ -53,7 +53,7 @@ const maxStarterPromptLen = 2 * 1024
 const (
 	onboardingAssistantName       = "Orvilo Helper"
 	onboardingIssueTitle          = "Start here: learn Orvilo with Orvilo Helper"
-	onboardingAgentCreationSource = "patchbay_helper"
+	onboardingAgentCreationSource = "orvilo_helper"
 
 	// noRuntimeIssueTitle MUST match the pre-v3 service constant so
 	// LockAndFindActiveDuplicate dedupes correctly across desktop versions.
@@ -75,15 +75,15 @@ const onboardingAssistantInstructions = `You are Orvilo Helper, the built-in AI 
 
 Orvilo is an open-source, AI-native team workspace (source: https://github.com/alexj11324/Cordy). The core idea: AI agents are treated as real teammates — they execute issues on a kanban-style board, comment in threads, change status, and run code, exactly like human members. You can also chat directly with agents (chat), group them into teams, and run scheduled or triggered automation (automation).
 
-For concept details (workspace / issue / project / agent / runtime / skill / team / automation / inbox / chat session): fetch https://patchbay.aspectlylabs.com/docs via WebFetch — that's authoritative. For the "why" or implementation, fetch the GitHub repo above. Never paraphrase concepts from memory.
+For concept details (workspace / issue / project / agent / runtime / skill / team / automation / inbox / chat session): fetch https://orvilo.aspectlylabs.com/docs via WebFetch — that's authoritative. For the "why" or implementation, fetch the GitHub repo above. Never paraphrase concepts from memory.
 
 For ANY product-usage problem the user runs into (bug, unclear behavior, missing feature, improvement idea), suggest they file an issue at https://github.com/alexj11324/Cordy/issues — that's the official feedback channel.
 
 ## What you can do
 
-Your toolbox is the ` + "`patchbay`" + ` CLI. It's already on your PATH and authenticated as the workspace owner.
+Your toolbox is the ` + "`orvilo`" + ` CLI. It's already on your PATH and authenticated as the workspace owner.
 
-Your full capability surface = whatever ` + "`patchbay --help`" + ` shows. Run ` + "`patchbay --help`" + ` first, then ` + "`patchbay <command> --help`" + ` for any subcommand; use ` + "`--output json`" + ` for structured data. The CLI is your manifest — never invent commands or flags.
+Your full capability surface = whatever ` + "`orvilo --help`" + ` shows. Run ` + "`orvilo --help`" + ` first, then ` + "`orvilo <command> --help`" + ` for any subcommand; use ` + "`--output json`" + ` for structured data. The CLI is your manifest — never invent commands or flags.
 
 A few things you can actually do (non-exhaustive — ` + "`--help`" + ` is the source of truth):
 - Create issues, post comments
@@ -522,7 +522,7 @@ func enNoRuntimeIssueDescription() string {
 		"",
 		"## Install your first agent runtime",
 		"",
-		"Full guide: https://patchbay.aspectlylabs.com/docs/install-agent-runtime",
+		"Full guide: https://orvilo.aspectlylabs.com/docs/install-agent-runtime",
 		"",
 		"For English users, the fastest first path is Codex:",
 		"",
@@ -535,7 +535,7 @@ func enNoRuntimeIssueDescription() string {
 		"   which codex",
 		"   codex --version",
 		"5. Restart the Orvilo daemon:",
-		"   patchbay daemon restart",
+		"   orvilo daemon restart",
 		"   If you use the desktop app, restarting the app is enough.",
 		"6. Return to Runtimes and refresh. You should see a Codex runtime online.",
 		"7. Create your first agent from that runtime, then assign an issue to the agent and set status to todo.",
@@ -565,7 +565,7 @@ func zhNoRuntimeIssueDescription() string {
 		"",
 		"## 安装第一个 Agent 运行时",
 		"",
-		"完整文档：https://patchbay.aspectlylabs.com/docs/install-agent-runtime",
+		"完整文档：https://orvilo.aspectlylabs.com/docs/install-agent-runtime",
 		"",
 		"中文用户建议先装 Kimi CLI：",
 		"",
@@ -579,7 +579,7 @@ func zhNoRuntimeIssueDescription() string {
 		"   kimi",
 		"4. 首次启动后输入 /login，按提示完成 Kimi Code 或 API key 配置。",
 		"5. 重启 Orvilo 守护进程：",
-		"   patchbay daemon restart",
+		"   orvilo daemon restart",
 		"   如果你用桌面端，重启 app 即可。",
 		"6. 回到 Runtimes 页面刷新。你应该能看到一个在线的 Kimi 运行时。",
 		"7. 用这个运行时创建第一个智能体，再把一个 issue 分配给它，并把状态切到 todo。",

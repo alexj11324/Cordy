@@ -433,7 +433,7 @@ func TestWorktreeModeDeliversBranchWithoutSidecars(t *testing.T) {
 	if !strings.Contains(files, "real-change.txt") {
 		t.Errorf("branch is missing the agent's work:\n%s", files)
 	}
-	for _, sidecar := range []string{".agent_context", ".patchbay", "CLAUDE.md"} {
+	for _, sidecar := range []string{".agent_context", ".orvilo", "CLAUDE.md"} {
 		if strings.Contains(files, sidecar) {
 			t.Errorf("sidecar %q leaked into the delivered branch:\n%s", sidecar, files)
 		}
@@ -525,18 +525,18 @@ func TestFinalizeKeepsWorktreeWhenCommitFails(t *testing.T) {
 	}
 }
 
-// An in_place task on the same directory leaves .agent_context/ and .patchbay/
+// An in_place task on the same directory leaves .agent_context/ and .orvilo/
 // in the user's tree while it runs. A concurrent worktree snapshot sees them as
 // untracked files; copying them would hand this task another issue's brief and
 // commit it to the branch.
 func TestPrepareLocalWorktreeSkipsOrviloSidecars(t *testing.T) {
 	repo := newTestRepo(t)
 	writeFile(t, filepath.Join(repo, ".agent_context", "issue_context.md"), "OTHER issue's brief\n")
-	writeFile(t, filepath.Join(repo, ".patchbay", "project", "resources.json"), "{}\n")
+	writeFile(t, filepath.Join(repo, ".orvilo", "project", "resources.json"), "{}\n")
 	// An in_place resource may point at a SUBDIRECTORY of this repo, in which
 	// case its sidecars sit below that subdirectory, not at the repo root.
 	writeFile(t, filepath.Join(repo, "services", "api", ".agent_context", "issue_context.md"), "yet another issue's brief\n")
-	writeFile(t, filepath.Join(repo, "services", "api", ".patchbay", "task.json"), "{}\n")
+	writeFile(t, filepath.Join(repo, "services", "api", ".orvilo", "task.json"), "{}\n")
 	writeFile(t, filepath.Join(repo, "real-untracked.txt"), "user's own file\n")
 	writeFile(t, filepath.Join(repo, "services", "api", "notes.txt"), "user's nested file\n")
 
@@ -546,14 +546,14 @@ func TestPrepareLocalWorktreeSkipsOrviloSidecars(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(wt.Path, ".agent_context")); !os.IsNotExist(err) {
 		t.Error("another task's .agent_context was copied into this worktree")
 	}
-	if _, err := os.Stat(filepath.Join(wt.Path, ".patchbay")); !os.IsNotExist(err) {
-		t.Error("another task's .patchbay was copied into this worktree")
+	if _, err := os.Stat(filepath.Join(wt.Path, ".orvilo")); !os.IsNotExist(err) {
+		t.Error("another task's .orvilo was copied into this worktree")
 	}
 	if _, err := os.Stat(filepath.Join(wt.Path, "services", "api", ".agent_context")); !os.IsNotExist(err) {
 		t.Error("a subdirectory task's .agent_context was copied into this worktree")
 	}
-	if _, err := os.Stat(filepath.Join(wt.Path, "services", "api", ".patchbay")); !os.IsNotExist(err) {
-		t.Error("a subdirectory task's .patchbay was copied into this worktree")
+	if _, err := os.Stat(filepath.Join(wt.Path, "services", "api", ".orvilo")); !os.IsNotExist(err) {
+		t.Error("a subdirectory task's .orvilo was copied into this worktree")
 	}
 	if got := readFile(t, filepath.Join(wt.Path, "real-untracked.txt")); got != "user's own file\n" {
 		t.Errorf("the user's own untracked file was not replayed: %q", got)
@@ -788,7 +788,7 @@ func prepareTurnAs(localPath, conversationKey, taskID string, owner branchOwner)
 // mustTempDir gives a prepare its own env root outside t.TempDir, for the
 // helpers that do not carry a *testing.T. Cleaned up with the test process.
 func mustTempDir() string {
-	dir, err := os.MkdirTemp("", "patchbay-worktree-env")
+	dir, err := os.MkdirTemp("", "orvilo-worktree-env")
 	if err != nil {
 		panic(err)
 	}
@@ -1374,7 +1374,7 @@ func TestPrepareLocalWorktreePrunesSnapshotsOfDeletedBranches(t *testing.T) {
 func TestCaptureUserSnapshotExcludesOrviloSidecars(t *testing.T) {
 	repo := newTestRepo(t)
 	writeFile(t, filepath.Join(repo, ".agent_context", "brief.md"), "another task's brief\n")
-	writeFile(t, filepath.Join(repo, "sub", ".patchbay", "state.json"), "{}\n")
+	writeFile(t, filepath.Join(repo, "sub", ".orvilo", "state.json"), "{}\n")
 	writeFile(t, filepath.Join(repo, "real.txt"), "the user's file\n")
 
 	head := gitRun(t, repo, "rev-parse", "HEAD")
@@ -1383,7 +1383,7 @@ func TestCaptureUserSnapshotExcludesOrviloSidecars(t *testing.T) {
 		t.Fatalf("captureUserSnapshot: %v", err)
 	}
 	listed := gitRun(t, repo, "ls-tree", "-r", "--name-only", snapshot)
-	for _, unwanted := range []string{".agent_context/brief.md", "sub/.patchbay/state.json"} {
+	for _, unwanted := range []string{".agent_context/brief.md", "sub/.orvilo/state.json"} {
 		if strings.Contains(listed, unwanted) {
 			t.Errorf("snapshot carries the sidecar %s:\n%s", unwanted, listed)
 		}

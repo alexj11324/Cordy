@@ -16,12 +16,12 @@ test("desktop release staging selects installers and updater metadata only", asy
     "win-x64/win-unpacked/Orvilo.exe",
     "win-x64/win-unpacked/resources/elevate.exe",
     "win-arm64/win-arm64-unpacked/Orvilo.exe",
-    "win-x64/patchbay-desktop-0.2.7-windows-x64.__uninstaller.exe",
-    "win-x64/patchbay-desktop-0.2.7-windows-x64.exe",
-    "win-x64/patchbay-desktop-0.2.7-windows-x64.exe.blockmap",
+    "win-x64/orvilo-desktop-0.2.7-windows-x64.__uninstaller.exe",
+    "win-x64/orvilo-desktop-0.2.7-windows-x64.exe",
+    "win-x64/orvilo-desktop-0.2.7-windows-x64.exe.blockmap",
     "win-x64/latest.yml",
-    "win-arm64/patchbay-desktop-0.2.7-windows-arm64.exe",
-    "win-arm64/patchbay-desktop-0.2.7-windows-arm64.exe.blockmap",
+    "win-arm64/orvilo-desktop-0.2.7-windows-arm64.exe",
+    "win-arm64/orvilo-desktop-0.2.7-windows-arm64.exe.blockmap",
     "win-arm64/latest-arm64.yml",
   ];
 
@@ -33,10 +33,10 @@ test("desktop release staging selects installers and updater metadata only", asy
   assert.deepEqual(selected, [
     "latest-arm64.yml",
     "latest.yml",
-    "patchbay-desktop-0.2.7-windows-arm64.exe",
-    "patchbay-desktop-0.2.7-windows-arm64.exe.blockmap",
-    "patchbay-desktop-0.2.7-windows-x64.exe",
-    "patchbay-desktop-0.2.7-windows-x64.exe.blockmap",
+    "orvilo-desktop-0.2.7-windows-arm64.exe",
+    "orvilo-desktop-0.2.7-windows-arm64.exe.blockmap",
+    "orvilo-desktop-0.2.7-windows-x64.exe",
+    "orvilo-desktop-0.2.7-windows-x64.exe.blockmap",
   ]);
   assert.equal(new Set(selected).size, selected.length);
 });

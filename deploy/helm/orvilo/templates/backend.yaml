@@ -3,9 +3,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "patchbay.backend.fullname" . }}-uploads
+  name: {{ include "orvilo.backend.fullname" . }}-uploads
   labels:
-    {{- include "patchbay.labels" . | nindent 4 }}
+    {{- include "orvilo.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend
 spec:
   accessModes:
@@ -21,9 +21,9 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "patchbay.backend.fullname" . }}
+  name: {{ include "orvilo.backend.fullname" . }}
   labels:
-    {{- include "patchbay.labels" . | nindent 4 }}
+    {{- include "orvilo.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend
 spec:
   # The backend entrypoint runs migrations before starting. Concurrent
@@ -35,7 +35,7 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: patchbay
+      app.kubernetes.io/name: orvilo
       app.kubernetes.io/instance: {{ .Release.Name }}
       app.kubernetes.io/component: backend
   template:
@@ -53,7 +53,7 @@ spec:
         # reflects the actual Secret and rolls pods on rotation.
         checksum/secret: {{ (lookup "v1" "Secret" .Release.Namespace .Values.existingSecret).data | toYaml | sha256sum }}
       labels:
-        {{- include "patchbay.labels" . | nindent 8 }}
+        {{- include "orvilo.labels" . | nindent 8 }}
         app.kubernetes.io/component: backend
     spec:
       containers:
@@ -71,7 +71,7 @@ spec:
           {{- if not .Values.postgres.external.enabled }}
           env:
             - name: DATABASE_URL
-              value: {{ include "patchbay.databaseUrl" . | quote }}
+              value: {{ include "orvilo.databaseUrl" . | quote }}
           {{- end }}
           {{- if .Values.backend.uploads.persistence.enabled }}
           volumeMounts:
@@ -118,20 +118,20 @@ spec:
       volumes:
         - name: uploads
           persistentVolumeClaim:
-            claimName: {{ include "patchbay.backend.fullname" . }}-uploads
+            claimName: {{ include "orvilo.backend.fullname" . }}-uploads
       {{- end }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "patchbay.backend.fullname" . }}
+  name: {{ include "orvilo.backend.fullname" . }}
   labels:
-    {{- include "patchbay.labels" . | nindent 4 }}
+    {{- include "orvilo.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: patchbay
+    app.kubernetes.io/name: orvilo
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: backend
   ports:
@@ -140,7 +140,7 @@ spec:
       name: http
 {{- if .Values.frontend.compatibility.backendAlias }}
 ---
-# DNS alias for legacy patchbay-web images that baked
+# DNS alias for legacy orvilo-web images that baked
 # REMOTE_API_URL=http://backend:8080 at build time. Current images resolve
 # frontend.config.remoteApiUrl at runtime and do not need this Service.
 #
@@ -154,9 +154,9 @@ kind: Service
 metadata:
   name: backend
   labels:
-    {{- include "patchbay.labels" . | nindent 4 }}
+    {{- include "orvilo.labels" . | nindent 4 }}
     app.kubernetes.io/component: backend-alias
 spec:
   type: ExternalName
-  externalName: {{ printf "%s.%s.svc.cluster.local" (include "patchbay.backend.fullname" .) .Release.Namespace }}
+  externalName: {{ printf "%s.%s.svc.cluster.local" (include "orvilo.backend.fullname" .) .Release.Namespace }}
 {{- end }}

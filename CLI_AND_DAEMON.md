@@ -1,13 +1,13 @@
 # CLI and Agent Daemon Guide
 
-The `patchbay` CLI connects your local machine to Orvilo. It handles authentication, workspace management, issue tracking, and runs the agent daemon that executes AI tasks locally.
+The `orvilo` CLI connects your local machine to Orvilo. It handles authentication, workspace management, issue tracking, and runs the agent daemon that executes AI tasks locally.
 
 ## Installation
 
 ### Homebrew (macOS/Linux)
 
 ```bash
-brew install alexj11324/tap/patchbay
+brew install alexj11324/tap/orvilo
 ```
 
 ### Build from Source
@@ -16,46 +16,46 @@ brew install alexj11324/tap/patchbay
 git clone https://github.com/alexj11324/Cordy.git
 cd Cordy
 make build
-cp server/bin/patchbay /usr/local/bin/patchbay
+cp server/bin/orvilo /usr/local/bin/orvilo
 ```
 
 ### Update
 
 ```bash
-brew upgrade alexj11324/tap/patchbay
+brew upgrade alexj11324/tap/orvilo
 ```
 
 For install script or manual installs, use:
 
 ```bash
-patchbay update
+orvilo update
 ```
 
-`patchbay update` auto-detects your installation method and upgrades accordingly.
+`orvilo update` auto-detects your installation method and upgrades accordingly.
 
 ## Quick Start
 
 ```bash
 # One-command setup: configure, authenticate, and start the daemon
-patchbay setup
+orvilo setup
 
 # For self-hosted (local) deployments:
-patchbay setup self-host
+orvilo setup self-host
 ```
 
 Or step by step:
 
 ```bash
 # 1. Authenticate (opens browser for login)
-patchbay login
+orvilo login
 
 # 2. Start the agent daemon
-patchbay daemon start
+orvilo daemon start
 
 # 3. Done — agents in your watched workspaces can now execute tasks on your machine
 ```
 
-`patchbay login` automatically discovers all workspaces you belong to and adds them to the daemon watch list.
+`orvilo login` automatically discovers all workspaces you belong to and adds them to the daemon watch list.
 
 ## Dependency graph plans
 
@@ -64,10 +64,10 @@ hard prerequisites. The server validates the role-specific fields, derives
 waves, and creates the child issues, graph nodes, and edges atomically:
 
 ```bash
-patchbay issue dependency-graph get MUL-123 --output table
-patchbay issue dependency-graph apply MUL-123 \
+orvilo issue dependency-graph get MUL-123 --output table
+orvilo issue dependency-graph apply MUL-123 \
   --idempotency-key plan-mul-123-v1 --plan-file ./dependency-plan.json
-cat dependency-plan.json | patchbay issue dependency-graph apply MUL-123 \
+cat dependency-plan.json | orvilo issue dependency-graph apply MUL-123 \
   --idempotency-key plan-mul-123-v1 --plan-stdin --output json
 ```
 
@@ -84,7 +84,7 @@ plan rather than creating duplicate child issues. Graph mutations publish
 ### Browser Login
 
 ```bash
-patchbay login
+orvilo login
 ```
 
 Opens your browser for OAuth authentication, creates a 90-day personal access token, and auto-configures your workspaces.
@@ -92,7 +92,7 @@ Opens your browser for OAuth authentication, creates a 90-day personal access to
 ### Token Login
 
 ```bash
-patchbay login --token <pby_...>
+orvilo login --token <ovy_...>
 ```
 
 Authenticate using a personal access token directly. Useful for headless environments. Pass `--token=` with an empty value to be prompted interactively (so the token never lands in shell history).
@@ -100,7 +100,7 @@ Authenticate using a personal access token directly. Useful for headless environ
 ### Check Status
 
 ```bash
-patchbay auth status
+orvilo auth status
 ```
 
 Shows your current server, user, and token validity.
@@ -108,7 +108,7 @@ Shows your current server, user, and token validity.
 ### Logout
 
 ```bash
-patchbay auth logout
+orvilo auth logout
 ```
 
 Removes the stored authentication token.
@@ -120,51 +120,51 @@ The daemon is the local agent runtime. It detects available AI CLIs on your mach
 ### Start
 
 ```bash
-patchbay daemon start
+orvilo daemon start
 ```
 
 By default, the daemon runs in the background and writes its log into the state
-directory of the profile it was started with — **not always `~/.patchbay/`**:
+directory of the profile it was started with — **not always `~/.orvilo/`**:
 
 | Profile | State directory |
 | --- | --- |
-| Default (no `--profile`) | `~/.patchbay/` |
-| Named (`--profile <name>`) | `~/.patchbay/profiles/<name>/` |
+| Default (no `--profile`) | `~/.orvilo/` |
+| Named (`--profile <name>`) | `~/.orvilo/profiles/<name>/` |
 
 That directory holds `daemon.log` (the log), `daemon.pid` (the background
 daemon's PID), and `daemon.err.log` (raw crash output; near-empty on a healthy
 daemon, since normal logging goes to `daemon.log`).
 
 The Desktop app runs its own named profile, so on a machine that has ever run
-both, `~/.patchbay/daemon.log` and `~/.patchbay/profiles/<name>/daemon.log` both
+both, `~/.orvilo/daemon.log` and `~/.orvilo/profiles/<name>/daemon.log` both
 exist and both read as plausible logs — only one is being written to. Don't
-guess: `patchbay daemon logs` prints the absolute path it resolved (see
+guess: `orvilo daemon logs` prints the absolute path it resolved (see
 [Logs](#logs)).
 
 To run in the foreground (useful for debugging):
 
 ```bash
-patchbay daemon start --foreground
+orvilo daemon start --foreground
 ```
 
 #### Following a replaced binary
 
 A CLI-launched daemon periodically compares its own compile-time version against
-the `--version` output of the `patchbay` binary it would re-exec. When they differ
-— `brew upgrade patchbay`, a re-download, a local `make build` — it waits for any
+the `--version` output of the `orvilo` binary it would re-exec. When they differ
+— `brew upgrade orvilo`, a re-download, a local `make build` — it waits for any
 running task to finish, then restarts into the new binary. A running task is
 never interrupted; if the daemon is busy the restart is deferred to the next
-check, and `patchbay daemon status` shows why it's still on the old version.
+check, and `orvilo daemon status` shows why it's still on the old version.
 
 This is separate from the GitHub self-update poller: disabling that does not stop
 the daemon from following a binary you installed yourself. To turn it off:
 
 ```bash
-ORVILO_DAEMON_AUTO_RELOAD=0 patchbay daemon start
+ORVILO_DAEMON_AUTO_RELOAD=0 orvilo daemon start
 # or
-patchbay daemon start --no-auto-reload
+orvilo daemon start --no-auto-reload
 # or persist it
-patchbay config set disable_auto_reload true
+orvilo config set disable_auto_reload true
 ```
 
 Agent CLIs (codex, claude, ...) are handled differently: when one of them is
@@ -178,14 +178,14 @@ CLI's lifecycle.
 ### Stop
 
 ```bash
-patchbay daemon stop
+orvilo daemon stop
 ```
 
 ### Status
 
 ```bash
-patchbay daemon status
-patchbay daemon status --output json
+orvilo daemon status
+orvilo daemon status --output json
 ```
 
 Shows PID, uptime, detected agents, and watched workspaces.
@@ -193,18 +193,18 @@ Shows PID, uptime, detected agents, and watched workspaces.
 ### Logs
 
 ```bash
-patchbay daemon logs              # Last 50 lines
-patchbay daemon logs -f           # Follow (tail -f)
-patchbay daemon logs -n 100       # Last 100 lines
-patchbay daemon logs --profile staging
+orvilo daemon logs              # Last 50 lines
+orvilo daemon logs -f           # Follow (tail -f)
+orvilo daemon logs -n 100       # Last 100 lines
+orvilo daemon logs --profile staging
 ```
 
 Every run first prints the absolute path it resolved, so you always know which
 profile's log you are looking at:
 
 ```
-$ patchbay daemon logs -n 100
-Reading /Users/you/.patchbay/profiles/desktop-mbp/daemon.log (profile: desktop-mbp)
+$ orvilo daemon logs -n 100
+Reading /Users/you/.orvilo/profiles/desktop-mbp/daemon.log (profile: desktop-mbp)
 ...
 ```
 
@@ -212,13 +212,13 @@ That line goes to stderr, before the tail starts — so it also shows up under
 `-f`, and piping or redirecting the command still yields log content only:
 
 ```bash
-patchbay daemon logs -n 500 | grep ERROR   # the path line is not in the pipe
+orvilo daemon logs -n 500 | grep ERROR   # the path line is not in the pipe
 ```
 
 Without `--profile`, the default profile's log is read. If it doesn't exist the
 command says so and names the path it looked for, which is the fastest way to
 find out that the daemon you care about is running on a different profile —
-`patchbay daemon status --profile <name>` confirms which one is live.
+`orvilo daemon status --profile <name>` confirms which one is live.
 
 ### Supported Agents
 
@@ -250,7 +250,7 @@ The daemon auto-detects these AI CLIs on your PATH:
 | [Qwen Code](https://github.com/QwenLM/qwen-code) | `qwen` | Alibaba Qwen Code (`qwen -p` with stream-json) |
 | [QwenPaw](https://github.com/agentscope-ai/QwenPaw) | `qwenpaw` | QwenPaw ACP coding agent (ACP via `qwenpaw acp`; model is fixed by its own configuration) |
 | [MiniMax Code](https://github.com/MiniMax-AI/minimax-code) | `mcode` | MiniMax Code ACP coding agent (ACP via `mcode acp`; model is managed by MCode) |
-| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | `dsh` | DeepSeek Harness (`dsh --profile patchbay --stdio`; requires the Orvilo runtime profile to be installed; reads AGENTS.md and .dsh/skills/) |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | `dsh` | DeepSeek Harness (`dsh --profile orvilo --stdio`; requires the Orvilo runtime profile to be installed; reads AGENTS.md and .dsh/skills/) |
 
 You need at least one installed. The daemon registers each detected CLI as an available runtime.
 
@@ -281,7 +281,7 @@ Daemon behavior is configured via flags or environment variables:
 | Daemon ID | `--daemon-id` | `ORVILO_DAEMON_ID` | hostname |
 | Device name | `--device-name` | `ORVILO_DAEMON_DEVICE_NAME` | hostname |
 | Runtime name | `--runtime-name` | `ORVILO_AGENT_RUNTIME_NAME` | `Local Agent` |
-| Workspaces root | — | `ORVILO_WORKSPACES_ROOT` | `~/patchbay_workspaces` |
+| Workspaces root | — | `ORVILO_WORKSPACES_ROOT` | `~/orvilo_workspaces` |
 | GC enabled | — | `ORVILO_GC_ENABLED` | `true` (set `false`/`0` to disable) |
 | GC scan interval | — | `ORVILO_GC_INTERVAL` | `2h` |
 | GC TTL (done/cancelled issues) | — | `ORVILO_GC_TTL` | `24h` |
@@ -293,7 +293,7 @@ Daemon behavior is configured via flags or environment variables:
 | GC repo maintenance | — | `ORVILO_GC_REPO_MAINTENANCE_ENABLED` | `true` (set `false`/`0` to disable heavy Git maintenance only) |
 | GC Hermes memory TTL (per-agent `memories/`) | — | `ORVILO_GC_HERMES_MEMORY_TTL` | `2160h` (90d; set `0` to disable) |
 | GC Hermes session TTL (per-conversation `state.db`) | — | `ORVILO_GC_HERMES_SESSION_TTL` | `336h` (14d; set `0` to disable) |
-| GC task temp legacy TTL (pre-lock `patchbay-task-*`) | — | `ORVILO_GC_TASK_TEMP_LEGACY_TTL` | `0` (disabled; set a duration to opt in) |
+| GC task temp legacy TTL (pre-lock `orvilo-task-*`) | — | `ORVILO_GC_TASK_TEMP_LEGACY_TTL` | `0` (disabled; set a duration to opt in) |
 
 #### Workspace garbage collection
 
@@ -313,11 +313,11 @@ The daemon periodically scans `ORVILO_WORKSPACES_ROOT` and applies several disk-
 
 - **Hermes session store reclamation** — a conversation's Hermes transcript (`state.db`) lives at `<profile dir>/hermes-sessions/<agent-id>/<hermes-profile>/<conversation>/`, outside any task directory, so a follow-up turn can resume it (see [Hermes agent memory](#hermes-agent-memory)). A store untouched for `ORVILO_GC_HERMES_SESSION_TTL` is removed. The default matches the Codex session store rather than the memory store above: these hold full transcripts, and reclaiming an idle one costs a thread that starts fresh (with a continuity notice), not an agent that forgot what it learned. A store a running task holds is never reclaimed.
 - **Hermes memory store reclamation** — a Hermes agent's long-term memory (`memories/`) lives at `<profile dir>/hermes-state/<agent-id>/<hermes-profile>/`, outside any task directory, so it survives across tasks and issues (see [Hermes agent memory](#hermes-agent-memory)). A store untouched for `ORVILO_GC_HERMES_MEMORY_TTL` is removed, giving a deleted agent's memory an eventual-reclamation guarantee. The default is deliberately long: these are a handful of markdown files, and reclaiming one is user-visible amnesia rather than a cache miss. A store a running task holds is never reclaimed.
-- **Task temp dir reclamation** — every task gets a private temp directory (`patchbay-task-*`) under the system temp base (`/tmp`, or `ORVILO_AGENT_TEMP_BASE`), exported to the agent as `TMPDIR`/`TMP`/`TEMP`. It is removed when the run ends, but that removal never happens when the daemon is killed and does not succeed while a file inside is still open — common on Windows, where an open handle makes the delete fail outright. These directories live outside `ORVILO_WORKSPACES_ROOT`, so nothing else reclaimed them and whatever the end-of-run removal missed accumulated forever. Every GC cycle now sweeps the temp base. Liveness is decided by the directory's `.task_lock` — the same OS advisory lock an env root uses, which the kernel releases when the holding process dies — not by age: a directory still in use is never removed however old it is, including one owned by a different daemon sharing the same temp base, and a directory whose owner is gone is removed on the next cycle however new it is. Directories left by a daemon predating that lock carry no lock file, so nothing can be proven about them and age is the only signal available. Reclaiming those is an operator's explicit decision: `ORVILO_GC_TASK_TEMP_LEGACY_TTL` defaults to `0`, which leaves them in place. Set it to a duration only once you know no pre-lock daemon is still running tasks on this machine — a task may legitimately run for weeks (there is no default agent timeout), a daemon on another profile can still be on the old binary, and every daemon on the machine shares one temp base, so a TTL here can delete a `TMPDIR` that is still in use. Each GC cycle logs how many such directories it left alone. Even with a TTL set, a directory holding no task content is never reclaimed on age — an old empty leftover, or a shell left by a daemon that died between creating the directory and publishing its lock — because holding no content is exactly what a directory currently being published looks like, and deleting one of those would take the `TMPDIR` of a task that is starting. Those shells are a few bytes each. Only entries carrying the `patchbay-task-` prefix are ever considered — the temp base itself is usually shared with other programs — and a directory this sweep cannot read is never touched.
+- **Task temp dir reclamation** — every task gets a private temp directory (`orvilo-task-*`) under the system temp base (`/tmp`, or `ORVILO_AGENT_TEMP_BASE`), exported to the agent as `TMPDIR`/`TMP`/`TEMP`. It is removed when the run ends, but that removal never happens when the daemon is killed and does not succeed while a file inside is still open — common on Windows, where an open handle makes the delete fail outright. These directories live outside `ORVILO_WORKSPACES_ROOT`, so nothing else reclaimed them and whatever the end-of-run removal missed accumulated forever. Every GC cycle now sweeps the temp base. Liveness is decided by the directory's `.task_lock` — the same OS advisory lock an env root uses, which the kernel releases when the holding process dies — not by age: a directory still in use is never removed however old it is, including one owned by a different daemon sharing the same temp base, and a directory whose owner is gone is removed on the next cycle however new it is. Directories left by a daemon predating that lock carry no lock file, so nothing can be proven about them and age is the only signal available. Reclaiming those is an operator's explicit decision: `ORVILO_GC_TASK_TEMP_LEGACY_TTL` defaults to `0`, which leaves them in place. Set it to a duration only once you know no pre-lock daemon is still running tasks on this machine — a task may legitimately run for weeks (there is no default agent timeout), a daemon on another profile can still be on the old binary, and every daemon on the machine shares one temp base, so a TTL here can delete a `TMPDIR` that is still in use. Each GC cycle logs how many such directories it left alone. Even with a TTL set, a directory holding no task content is never reclaimed on age — an old empty leftover, or a shell left by a daemon that died between creating the directory and publishing its lock — because holding no content is exactly what a directory currently being published looks like, and deleting one of those would take the `TMPDIR` of a task that is starting. Those shells are a few bytes each. Only entries carrying the `orvilo-task-` prefix are ever considered — the temp base itself is usually shared with other programs — and a directory this sweep cannot read is never touched.
 
 Configured patterns are basename-only — entries containing `/` or `\` are silently dropped — and `.git` subtrees are never descended into. The managed Codex cache is matched by its exact relative path, so a repository's own `.sandbox-bin` is not removed unless an operator explicitly adds that basename to `ORVILO_GC_ARTIFACT_PATTERNS`. The default list (`node_modules`, `.next`, `.turbo`) is intentionally narrow; extend it per deployment if your repos consistently produce other regenerable directories (for example, `ORVILO_GC_ARTIFACT_PATTERNS=node_modules,.next,.turbo,target,__pycache__`). To disable artifact cleanup entirely, including the managed Codex cache, set `ORVILO_GC_ARTIFACT_TTL=0`.
 
-`patchbay daemon disk-usage` reports the `.repos` footprint on its own line rather than folding it into the per-task totals — every task in a workspace checks out from that shared cache, so attributing it to individual task directories would double-count it. Note that the repo cache is reclaimed on the schedule above and not by any per-issue status change, so it is normal for it to persist after every task directory is gone.
+`orvilo daemon disk-usage` reports the `.repos` footprint on its own line rather than folding it into the per-task totals — every task in a workspace checks out from that shared cache, so attributing it to individual task directories would double-count it. Note that the repo cache is reclaimed on the schedule above and not by any per-issue status change, so it is normal for it to persist after every task directory is gone.
 
 Agent-specific overrides:
 
@@ -376,7 +376,7 @@ Agent-specific overrides:
 | `ORVILO_DSH_PATH` | Custom path to the `dsh` binary |
 | `ORVILO_DSH_MODEL` | Override the DeepSeek Harness model used (a model id from the dsh catalog, e.g. `deepseek-official/deepseek-chat`) |
 
-If a previously generated `~/.patchbay/hooks` wrapper is first on `PATH` and calls the same command name again, the daemon skips that hooks directory during built-in agent discovery and records the real binary path behind it. If your interactive shell still recurses when you run `claude`, `codex`, or `hermes` manually, remove the hooks entry from your shell startup file or replace the wrapper body with an absolute `exec /path/to/real-binary "$@"`.
+If a previously generated `~/.orvilo/hooks` wrapper is first on `PATH` and calls the same command name again, the daemon skips that hooks directory during built-in agent discovery and records the real binary path behind it. If your interactive shell still recurses when you run `claude`, `codex`, or `hermes` manually, remove the hooks entry from your shell startup file or replace the wrapper body with an absolute `exec /path/to/real-binary "$@"`.
 
 The daemon launches Qoder and Qoder CN as `qodercli --yolo --acp` and `qoderclicn --yolo --acp`, respectively, matching their ACP “bypass permissions” mode so tool runs do not block on interactive approval in headless runs.
 The daemon launches Qwen Code as `qwen -p <prompt> --output-format stream-json`. It writes the task brief to `QWEN.md`; when an agent has managed `mcp_config`, the daemon writes a 0600 per-run JSON file and passes it through `--mcp-config <path>`, then removes it after the process exits. A null config preserves Qwen Code native MCP settings.
@@ -425,25 +425,25 @@ When connecting to a self-hosted Orvilo instance, the easiest approach is:
 
 ```bash
 # One command — configures for localhost, authenticates, starts daemon
-patchbay setup self-host
+orvilo setup self-host
 
 # Or for on-premise with custom domains:
-patchbay setup self-host --server-url https://api.example.com --app-url https://app.example.com
+orvilo setup self-host --server-url https://api.example.com --app-url https://app.example.com
 ```
 
 Or configure manually:
 
 ```bash
 # Set URLs individually
-patchbay config set server_url http://localhost:8080
-patchbay config set app_url http://localhost:3000
+orvilo config set server_url http://localhost:8080
+orvilo config set app_url http://localhost:3000
 
 # For production with TLS:
-# patchbay config set server_url https://api.example.com
-# patchbay config set app_url https://app.example.com
+# orvilo config set server_url https://api.example.com
+# orvilo config set app_url https://app.example.com
 
-patchbay login
-patchbay daemon start
+orvilo login
+orvilo daemon start
 ```
 
 ### Profiles
@@ -452,16 +452,16 @@ Profiles let you run multiple daemons on the same machine — for example, one f
 
 ```bash
 # Set up a staging profile
-patchbay setup self-host --profile staging --server-url https://api-staging.example.com --app-url https://staging.example.com
+orvilo setup self-host --profile staging --server-url https://api-staging.example.com --app-url https://staging.example.com
 
 # Start its daemon
-patchbay daemon start --profile staging
+orvilo daemon start --profile staging
 
 # Default profile runs separately
-patchbay daemon start
+orvilo daemon start
 ```
 
-Each profile gets its own config directory (`~/.patchbay/profiles/<name>/`), daemon state, health port, and workspace root. Daemon state means that profile's own `daemon.log`, `daemon.err.log`, and `daemon.pid` live in that directory too — see [Start](#start) for the layout, and pass `--profile <name>` to `daemon status` / `daemon logs` to act on it.
+Each profile gets its own config directory (`~/.orvilo/profiles/<name>/`), daemon state, health port, and workspace root. Daemon state means that profile's own `daemon.log`, `daemon.err.log`, and `daemon.pid` live in that directory too — see [Start](#start) for the layout, and pass `--profile <name>` to `daemon status` / `daemon logs` to act on it.
 
 ## Workspaces
 
@@ -471,18 +471,18 @@ Every command runs against a single workspace. The CLI resolves which one in thi
 
 1. `--workspace-id <id>` flag on the command
 2. `ORVILO_WORKSPACE_ID` environment variable
-3. The default workspace stored in your current profile (set by `patchbay workspace switch` or `patchbay login`)
+3. The default workspace stored in your current profile (set by `orvilo workspace switch` or `orvilo login`)
 
-`patchbay workspace switch <id|slug>` is the day-to-day way to change the default workspace. For scripting and headless setups where you don't want any stored state, prefer the `--workspace-id` flag or the env variable. `patchbay config set workspace_id <id>` is the low-level equivalent of `switch` (it writes the same setting but skips the access check).
+`orvilo workspace switch <id|slug>` is the day-to-day way to change the default workspace. For scripting and headless setups where you don't want any stored state, prefer the `--workspace-id` flag or the env variable. `orvilo config set workspace_id <id>` is the low-level equivalent of `switch` (it writes the same setting but skips the access check).
 
 If you need full isolation between organizations or accounts — separate tokens, separate daemons, separate config dirs — use `--profile <name>` instead. Each profile keeps its own default workspace.
 
 ### List Workspaces
 
 ```bash
-patchbay workspace list
-patchbay workspace list --full-id
-patchbay workspace list --output json
+orvilo workspace list
+orvilo workspace list --full-id
+orvilo workspace list --output json
 ```
 
 The current default workspace is marked with `*`. Table output shows short UUID prefixes — pass `--full-id` when you need the canonical UUIDs.
@@ -490,8 +490,8 @@ The current default workspace is marked with `*`. Table output shows short UUID 
 ### Switch Default Workspace
 
 ```bash
-patchbay workspace switch <workspace-id>
-patchbay workspace switch <slug>
+orvilo workspace switch <workspace-id>
+orvilo workspace switch <slug>
 ```
 
 Verifies you have access to the workspace, then sets it as the default for the current profile. Subsequent commands without `--workspace-id` and `ORVILO_WORKSPACE_ID` target this workspace. Pair `--profile` if you want to change a non-default profile's workspace.
@@ -499,16 +499,16 @@ Verifies you have access to the workspace, then sets it as the default for the c
 ### Get Details
 
 ```bash
-patchbay workspace get <workspace-id>
-patchbay workspace get <workspace-id> --output json
+orvilo workspace get <workspace-id>
+orvilo workspace get <workspace-id> --output json
 ```
 
-Passing no `<workspace-id>` resolves to the current default workspace, so `patchbay workspace get` doubles as "what workspace am I on?".
+Passing no `<workspace-id>` resolves to the current default workspace, so `orvilo workspace get` doubles as "what workspace am I on?".
 
 ### List Members
 
 ```bash
-patchbay workspace member list <workspace-id>
+orvilo workspace member list <workspace-id>
 ```
 
 ## Issues
@@ -516,14 +516,14 @@ patchbay workspace member list <workspace-id>
 ### List Issues
 
 ```bash
-patchbay issue list
-patchbay issue list --status in_progress
-patchbay issue list --priority urgent --executor "Agent Name"
-patchbay issue list --executor-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
-patchbay issue list --full-id
-patchbay issue list --limit 20 --output json
-patchbay issue list --status todo --sort position       # board order (the default)
-patchbay issue list --sort created_at --direction desc  # newest first
+orvilo issue list
+orvilo issue list --status in_progress
+orvilo issue list --priority urgent --executor "Agent Name"
+orvilo issue list --executor-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+orvilo issue list --full-id
+orvilo issue list --limit 20 --output json
+orvilo issue list --status todo --sort position       # board order (the default)
+orvilo issue list --sort created_at --direction desc  # newest first
 ```
 
 Table output shows a routable issue `KEY` such as `MUL-123`; copy that key into follow-up commands like `issue get`, `issue comment list`, `issue status`, or `--parent`. Add `--full-id` when you need canonical UUIDs. Available filters: `--status`, `--priority`, `--owner` / `--owner-id`, `--executor` / `--executor-id`, `--project`, `--metadata`, `--limit`. An owner is a workspace member; an executor is an agent or team. Use the role-specific ID flags for unambiguous filtering when names overlap.
@@ -533,31 +533,31 @@ Results come back in board order (`position`, ascending) by default. Pass `--sor
 Use `--metadata key=value` (repeatable; combined with AND) to filter by per-issue metadata. The value is JSON-parsed: `true`/`false` become bool, numbers become numbers, anything else is a string. Wrap as `'"42"'` to force a string when the value would otherwise sniff as a number:
 
 ```bash
-patchbay issue list --metadata pipeline_status=waiting_review
-patchbay issue list --metadata pr_number=482 --metadata is_blocked=true
+orvilo issue list --metadata pipeline_status=waiting_review
+orvilo issue list --metadata pr_number=482 --metadata is_blocked=true
 ```
 
 ### Get Issue
 
 ```bash
-patchbay issue get <id>
-patchbay issue get <id> --output json
+orvilo issue get <id>
+orvilo issue get <id> --output json
 ```
 
 ### Create Issue
 
 ```bash
-patchbay issue create --title "Fix login bug" --description "..." --priority high --executor "Lambda"
-patchbay issue create --title "Fix login bug" --executor-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+orvilo issue create --title "Fix login bug" --description "..." --priority high --executor "Lambda"
+orvilo issue create --title "Fix login bug" --executor-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
 ```
 
-Flags: `--title` (required), `--description`, `--status`, `--priority`, `--owner` / `--owner-id`, `--executor` / `--executor-id`, `--reviewer` / `--reviewer-id`, `--parent`, `--project`, `--due-date`. The owner must be a workspace member; the executor must be an agent or team; the reviewer may be a member, agent, or team. Use role-specific ID flags when scripting against the IDs returned by `patchbay workspace member list --output json` / `patchbay agent list --output json`.
+Flags: `--title` (required), `--description`, `--status`, `--priority`, `--owner` / `--owner-id`, `--executor` / `--executor-id`, `--reviewer` / `--reviewer-id`, `--parent`, `--project`, `--due-date`. The owner must be a workspace member; the executor must be an agent or team; the reviewer may be a member, agent, or team. Use role-specific ID flags when scripting against the IDs returned by `orvilo workspace member list --output json` / `orvilo agent list --output json`.
 
 ### Update Issue
 
 ```bash
-patchbay issue update <id> --title "New title" --priority urgent
-patchbay issue update <id> --position 4.5
+orvilo issue update <id> --title "New title" --priority urgent
+orvilo issue update <id> --position 4.5
 ```
 
 `--position` sets the raw ordering value within the board column (lower sorts first). For relative moves, `issue reorder` is easier because it works out the value for you.
@@ -567,10 +567,10 @@ patchbay issue update <id> --position 4.5
 Move an issue within its current status column. The new ordering value is computed the same way the board's drag-and-drop computes it, so the CLI and UI agree on where the issue lands.
 
 ```bash
-patchbay issue reorder <id> --top              # top of its status column
-patchbay issue reorder <id> --bottom           # bottom of its status column
-patchbay issue reorder <id> --before <other>   # directly above another issue in the same column
-patchbay issue reorder <id> --after  <other>   # directly below another issue in the same column
+orvilo issue reorder <id> --top              # top of its status column
+orvilo issue reorder <id> --bottom           # bottom of its status column
+orvilo issue reorder <id> --before <other>   # directly above another issue in the same column
+orvilo issue reorder <id> --after  <other>   # directly below another issue in the same column
 ```
 
 Pick exactly one of `--top`, `--bottom`, `--before`, or `--after`. Reorder stays inside the issue's current column, so `--before` / `--after` must name an issue in that same column. To move an issue to a different column, change its status first with `issue status`, then reorder within the new column.
@@ -578,9 +578,9 @@ Pick exactly one of `--top`, `--bottom`, `--before`, or `--after`. Reorder stays
 ### Assign Issue
 
 ```bash
-patchbay issue assign <id> --to "Lambda"
-patchbay issue assign <id> --to-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
-patchbay issue assign <id> --unassign
+orvilo issue assign <id> --to "Lambda"
+orvilo issue assign <id> --to-id 5fb87ac7-23b5-4a7a-81fa-ed295a54545d
+orvilo issue assign <id> --unassign
 ```
 
 Pass `--to-id <uuid>` to assign by canonical UUID (mutually exclusive with `--to`); useful when names overlap across members and agents.
@@ -588,7 +588,7 @@ Pass `--to-id <uuid>` to assign by canonical UUID (mutually exclusive with `--to
 ### Change Status
 
 ```bash
-patchbay issue status <id> in_progress
+orvilo issue status <id> in_progress
 ```
 
 Valid statuses: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`, `cancelled`.
@@ -599,49 +599,49 @@ Valid statuses: `backlog`, `todo`, `in_progress`, `in_review`, `done`, `blocked`
 # List comments — flat timeline, chronological. Hard cap of 2000 rows; on
 # long-running issues prefer one of the thread-aware reads below to keep
 # context windows tight.
-patchbay issue comment list <issue-id>
+orvilo issue comment list <issue-id>
 
 # Single thread (root + every descendant). Anchor may be the root itself
 # or any reply inside the thread — the server walks up to the root.
-patchbay issue comment list <issue-id> --thread <comment-id>
+orvilo issue comment list <issue-id> --thread <comment-id>
 
 # Single thread, capped to the N most recent replies. The thread root is
 # always included (even with --tail 0), so an agent landing on a long
 # thread keeps the "what is this about" context without dragging hundreds
 # of replies into its prompt.
-patchbay issue comment list <issue-id> --thread <comment-id> --tail 30
+orvilo issue comment list <issue-id> --thread <comment-id> --tail 30
 
 # Scroll older replies inside the same thread. --before / --before-id are
 # the reply cursor that the previous response emitted on stderr as
 # `Next reply cursor: --before <ts> --before-id <reply-id>`.
-patchbay issue comment list <issue-id> --thread <comment-id> --tail 30 \
+orvilo issue comment list <issue-id> --thread <comment-id> --tail 30 \
     --before <ts> --before-id <reply-id>
 
 # Most recently active threads (root + every descendant), grouped by
 # thread. Returns N complete conversational arcs, oldest-active first so
 # the freshest thread sits closest to "now" in an agent prompt.
-patchbay issue comment list <issue-id> --recent 10
+orvilo issue comment list <issue-id> --recent 10
 
 # Scroll older threads. Under --recent, --before / --before-id are a
 # THREAD cursor (thread last_activity_at + root id), emitted on stderr as
 # `Next thread cursor: --before <ts> --before-id <root-id>`.
-patchbay issue comment list <issue-id> --recent 10 \
+orvilo issue comment list <issue-id> --recent 10 \
     --before <ts> --before-id <root-id>
 
 # Incremental polling. Combines with --thread or --recent; filters out
 # replies created on or before <ts> from the page (the thread root is
 # exempt so the agent always gets context).
-patchbay issue comment list <issue-id> --thread <comment-id> --tail 30 \
+orvilo issue comment list <issue-id> --thread <comment-id> --tail 30 \
     --since <RFC3339-timestamp>
 
 # Add a comment
-patchbay issue comment add <issue-id> --content "Looks good, merging now"
+orvilo issue comment add <issue-id> --content "Looks good, merging now"
 
 # Reply to a specific comment
-patchbay issue comment add <issue-id> --parent <comment-id> --content "Thanks!"
+orvilo issue comment add <issue-id> --parent <comment-id> --content "Thanks!"
 
 # Delete a comment
-patchbay issue comment delete <comment-id>
+orvilo issue comment delete <comment-id>
 ```
 
 **`--before` / `--before-id` semantics depend on the paging mode**, by
@@ -654,8 +654,8 @@ design — same flag, different scope:
 
 Outside those two modes (`--thread` without `--tail`, or no `--thread`
 and no `--recent`) the cursor flags are rejected so they cannot silently
-no-op. The server emits the cursor headers (`X-Patchbay-Next-Before` /
-`X-Patchbay-Next-Before-Id`) only when an older page actually exists —
+no-op. The server emits the cursor headers (`X-Orvilo-Next-Before` /
+`X-Orvilo-Next-Before-Id`) only when an older page actually exists —
 exact-boundary pages (e.g. `--tail 3` on a thread with exactly 3
 replies) intentionally return no cursor so callers stop paginating.
 
@@ -675,42 +675,42 @@ The bar for writing is high: pin a value only when it is materially important to
 
 ```bash
 # List every key on an issue
-patchbay issue metadata list <issue-id>
+orvilo issue metadata list <issue-id>
 
 # Read a single key
-patchbay issue metadata get <issue-id> --key pipeline_status
+orvilo issue metadata get <issue-id> --key pipeline_status
 
 # Write a single key — value auto-typed (true/false → bool, numbers → number, else string)
-patchbay issue metadata set <issue-id> --key pipeline_status --value waiting_review
-patchbay issue metadata set <issue-id> --key pr_number --value 482
-patchbay issue metadata set <issue-id> --key is_blocked --value true
+orvilo issue metadata set <issue-id> --key pipeline_status --value waiting_review
+orvilo issue metadata set <issue-id> --key pr_number --value 482
+orvilo issue metadata set <issue-id> --key is_blocked --value true
 
 # Force a specific type when sniffing would pick the wrong one
-patchbay issue metadata set <issue-id> --key code --value 42 --type string
+orvilo issue metadata set <issue-id> --key code --value 42 --type string
 
 # Remove a key
-patchbay issue metadata delete <issue-id> --key pipeline_status
+orvilo issue metadata delete <issue-id> --key pipeline_status
 ```
 
-All writes are single-key atomic — concurrent agents writing different keys do not lose each other's updates. To query, use `patchbay issue list --metadata key=value` (see *List Issues* above).
+All writes are single-key atomic — concurrent agents writing different keys do not lose each other's updates. To query, use `orvilo issue list --metadata key=value` (see *List Issues* above).
 
 ### Subscribers
 
 ```bash
 # List subscribers of an issue
-patchbay issue subscriber list <issue-id>
+orvilo issue subscriber list <issue-id>
 
 # Subscribe yourself to an issue
-patchbay issue subscriber add <issue-id>
+orvilo issue subscriber add <issue-id>
 
 # Subscribe another member or agent by name
-patchbay issue subscriber add <issue-id> --user "Lambda"
+orvilo issue subscriber add <issue-id> --user "Lambda"
 
 # Unsubscribe yourself
-patchbay issue subscriber remove <issue-id>
+orvilo issue subscriber remove <issue-id>
 
 # Unsubscribe another member or agent
-patchbay issue subscriber remove <issue-id> --user "Lambda"
+orvilo issue subscriber remove <issue-id> --user "Lambda"
 ```
 
 Subscribers receive notifications about issue activity (new comments, status changes, etc.). Without `--user`, the command acts on the caller.
@@ -719,21 +719,21 @@ Subscribers receive notifications about issue activity (new comments, status cha
 
 ```bash
 # List all execution runs for an issue
-patchbay issue runs <issue-id>
-patchbay issue runs <issue-id> --full-id
-patchbay issue runs <issue-id> --output json
+orvilo issue runs <issue-id>
+orvilo issue runs <issue-id> --full-id
+orvilo issue runs <issue-id> --output json
 
 # View messages for a specific execution run
-patchbay issue run-messages <task-id>
-patchbay issue run-messages <short-task-id> --issue <issue-id>
-patchbay issue run-messages <task-id> --output json
+orvilo issue run-messages <task-id>
+orvilo issue run-messages <short-task-id> --issue <issue-id>
+orvilo issue run-messages <task-id> --output json
 
 # Incremental fetch (only messages after a given sequence number)
-patchbay issue run-messages <task-id> --since 42 --output json
+orvilo issue run-messages <task-id> --since 42 --output json
 
 # Aggregated token usage for an issue (sum across all its task runs)
-patchbay issue usage <issue-id>
-patchbay issue usage <issue-id> --output json
+orvilo issue usage <issue-id>
+orvilo issue usage <issue-id> --output json
 ```
 
 The `usage` command returns the aggregated token usage for an issue, summed across all of its task runs: input tokens, output tokens, cache read/write tokens, and the run count (`task_count`). It wraps `GET /api/issues/<id>/usage` — the same figures the issue detail view shows. Use `--output json` to feed billing/cost tooling.
@@ -748,9 +748,9 @@ belongs to a workspace and can optionally have a lead (member or agent).
 ### List Projects
 
 ```bash
-patchbay project list
-patchbay project list --status in_progress
-patchbay project list --output json
+orvilo project list
+orvilo project list --status in_progress
+orvilo project list --output json
 ```
 
 Available filters: `--status`.
@@ -758,14 +758,14 @@ Available filters: `--status`.
 ### Get Project
 
 ```bash
-patchbay project get <id>
-patchbay project get <id> --output json
+orvilo project get <id>
+orvilo project get <id> --output json
 ```
 
 ### Create Project
 
 ```bash
-patchbay project create --title "2026 Week 16 Sprint" --icon "🏃" --lead "Lambda"
+orvilo project create --title "2026 Week 16 Sprint" --icon "🏃" --lead "Lambda"
 ```
 
 Flags: `--title` (required), `--description`, `--status`, `--icon`, `--lead`, `--start-date`, `--due-date`. Dates are calendar days (`YYYY-MM-DD`).
@@ -773,9 +773,9 @@ Flags: `--title` (required), `--description`, `--status`, `--icon`, `--lead`, `-
 ### Update Project
 
 ```bash
-patchbay project update <id> --title "New title" --status in_progress
-patchbay project update <id> --lead "Lambda"
-patchbay project update <id> --due-date 2026-04-15
+orvilo project update <id> --title "New title" --status in_progress
+orvilo project update <id> --lead "Lambda"
+orvilo project update <id> --due-date 2026-04-15
 ```
 
 Flags: `--title`, `--description`, `--status`, `--icon`, `--lead`, `--start-date`, `--due-date`. For the date flags, pass an empty string (e.g. `--start-date ""`) to clear the date.
@@ -783,7 +783,7 @@ Flags: `--title`, `--description`, `--status`, `--icon`, `--lead`, `--start-date
 ### Change Status
 
 ```bash
-patchbay project status <id> in_progress
+orvilo project status <id> in_progress
 ```
 
 Valid statuses: `planned`, `in_progress`, `paused`, `completed`, `cancelled`.
@@ -791,7 +791,7 @@ Valid statuses: `planned`, `in_progress`, `paused`, `completed`, `cancelled`.
 ### Delete Project
 
 ```bash
-patchbay project delete <id>
+orvilo project delete <id>
 ```
 
 ### Associating Issues with Projects
@@ -800,35 +800,35 @@ Use the `--project` flag on `issue create` / `issue update` to attach an issue t
 project, or on `issue list` to filter issues by project:
 
 ```bash
-patchbay issue create --title "Login bug" --project <project-id>
-patchbay issue update <issue-id> --project <project-id>
-patchbay issue list --project <project-id>
+orvilo issue create --title "Login bug" --project <project-id>
+orvilo issue update <issue-id> --project <project-id>
+orvilo issue list --project <project-id>
 ```
 
 ## Setup
 
 ```bash
 # One-command setup for Orvilo Cloud: configure, authenticate, and start the daemon
-patchbay setup
+orvilo setup
 
 # For local self-hosted deployments
-patchbay setup self-host
+orvilo setup self-host
 
 # Custom ports
-patchbay setup self-host --port 9090 --frontend-port 4000
+orvilo setup self-host --port 9090 --frontend-port 4000
 
 # On-premise with custom domains
-patchbay setup self-host --server-url https://api.example.com --app-url https://app.example.com
+orvilo setup self-host --server-url https://api.example.com --app-url https://app.example.com
 ```
 
-`patchbay setup` configures the CLI, opens your browser for authentication, and starts the daemon — all in one step. Use `patchbay setup self-host` to connect to a self-hosted server instead of Orvilo Cloud.
+`orvilo setup` configures the CLI, opens your browser for authentication, and starts the daemon — all in one step. Use `orvilo setup self-host` to connect to a self-hosted server instead of Orvilo Cloud.
 
 ## Configuration
 
 ### View Config
 
 ```bash
-patchbay config show
+orvilo config show
 ```
 
 Shows config file path, server URL, app URL, and default workspace.
@@ -836,12 +836,12 @@ Shows config file path, server URL, app URL, and default workspace.
 ### Set Values
 
 ```bash
-patchbay config set server_url https://api.example.com
-patchbay config set app_url https://app.example.com
-patchbay config set workspace_id <workspace-id>
+orvilo config set server_url https://api.example.com
+orvilo config set app_url https://app.example.com
+orvilo config set workspace_id <workspace-id>
 ```
 
-`config set workspace_id <id>` is the low-level interface — it writes the value verbatim without checking that the workspace exists or that you have access. Prefer `patchbay workspace switch <id|slug>` for day-to-day workspace changes; it does both checks before saving.
+`config set workspace_id <id>` is the low-level interface — it writes the value verbatim without checking that the workspace exists or that you have access. Prefer `orvilo workspace switch <id|slug>` for day-to-day workspace changes; it does both checks before saving.
 
 ## Automation Commands
 
@@ -850,9 +850,9 @@ Automations are scheduled/triggered automations that dispatch agent tasks (eithe
 ### List Automations
 
 ```bash
-patchbay automation list
-patchbay automation list --full-id
-patchbay automation list --status active --output json
+orvilo automation list
+orvilo automation list --full-id
+orvilo automation list --status active --output json
 ```
 
 Automation table IDs are short UUID prefixes; follow-up automation commands accept copied prefixes when they are unique in the current workspace. Use `--full-id` to print canonical UUIDs.
@@ -860,8 +860,8 @@ Automation table IDs are short UUID prefixes; follow-up automation commands acce
 ### Get Automation Details
 
 ```bash
-patchbay automation get <id>
-patchbay automation get <id> --output json   # includes triggers
+orvilo automation get <id>
+orvilo automation get <id> --output json   # includes triggers
 ```
 
 In JSON output `triggers` is a **top-level key alongside `automation`**, not nested
@@ -872,18 +872,18 @@ The table output shows only the automation's own fields, not its triggers.
 ### Create / Update / Delete
 
 ```bash
-patchbay automation create \
+orvilo automation create \
   --title "Nightly bug triage" \
   --description "Scan todo issues and prioritize." \
   --agent "Lambda" \
   --mode create_issue \
   --subscriber "Alice"
 
-patchbay automation update <id> --status paused
-patchbay automation update <id> --description "New prompt"
-patchbay automation update <id> --subscriber "Alice" --subscriber "Bob"
-patchbay automation update <id> --clear-subscribers
-patchbay automation delete <id>
+orvilo automation update <id> --status paused
+orvilo automation update <id> --description "New prompt"
+orvilo automation update <id> --subscriber "Alice" --subscriber "Bob"
+orvilo automation update <id> --clear-subscribers
+orvilo automation delete <id>
 ```
 
 `--mode` accepts `create_issue` (creates a new issue on each run and assigns it to the agent) or `run_only` (enqueues a direct agent task without creating an issue). `--agent` accepts either a name or UUID.
@@ -892,24 +892,24 @@ patchbay automation delete <id>
 ### Manual Trigger
 
 ```bash
-patchbay automation trigger <id>            # Fires the automation once, returns the run
+orvilo automation trigger <id>            # Fires the automation once, returns the run
 ```
 
 ### Run History
 
 ```bash
-patchbay automation runs <id>
-patchbay automation runs <id> --limit 50 --output json
+orvilo automation runs <id>
+orvilo automation runs <id> --limit 50 --output json
 ```
 
 ### Schedule Triggers
 
 ```bash
-patchbay automation trigger-list <automation-id>              # ids, kind, schedule, next run
-patchbay automation trigger-list <automation-id> --full-id    # canonical UUIDs
-patchbay automation trigger-add <automation-id> --cron "0 9 * * 1-5" --timezone "America/New_York"
-patchbay automation trigger-update <automation-id> <trigger-id> --enabled=false
-patchbay automation trigger-delete <automation-id> <trigger-id>
+orvilo automation trigger-list <automation-id>              # ids, kind, schedule, next run
+orvilo automation trigger-list <automation-id> --full-id    # canonical UUIDs
+orvilo automation trigger-add <automation-id> --cron "0 9 * * 1-5" --timezone "America/New_York"
+orvilo automation trigger-update <automation-id> <trigger-id> --enabled=false
+orvilo automation trigger-delete <automation-id> <trigger-id>
 ```
 
 `trigger-list` is the way to obtain the `<trigger-id>` that `trigger-update`,
@@ -925,9 +925,9 @@ also defines an `api` kind, which is not surfaced here.
 ## Other Commands
 
 ```bash
-patchbay version              # Show CLI version and commit hash
-patchbay update               # Update to latest version
-patchbay agent list           # List agents in the current workspace
+orvilo version              # Show CLI version and commit hash
+orvilo update               # Update to latest version
+orvilo agent list           # List agents in the current workspace
 ```
 
 ## Output Formats
@@ -938,8 +938,8 @@ Most commands support `--output` with two formats:
 - `json` — structured JSON (useful for scripting and automation)
 
 ```bash
-patchbay issue list --output json
-patchbay daemon status --output json
+orvilo issue list --output json
+orvilo daemon status --output json
 ```
 
 ## Error Messages
@@ -958,7 +958,7 @@ layer.) The underlying detail is still available on demand (see `--debug`).
   connection refused, TLS) and HTTP status failures (401/403/404/409/400·422/
   429/5xx) are each rendered as one clear sentence with a next step — for
   example a timeout suggests checking the network or raising
-  `ORVILO_HTTP_TIMEOUT`, and a 401 tells you to run `patchbay login`.
+  `ORVILO_HTTP_TIMEOUT`, and a 401 tells you to run `orvilo login`.
 - **Server-provided validation messages are preserved.** For a 400/422 that
   carries a message from the server, that message is shown verbatim
   (`Invalid request: <server message>`); only when there is none do you get the
@@ -974,7 +974,7 @@ precedence order), messages switch to **Chinese**. No flag is needed; set the
 locale as usual:
 
 ```bash
-LANG=zh_CN.UTF-8 patchbay issue get MUL-9999   # 错误信息显示为中文
+LANG=zh_CN.UTF-8 orvilo issue get MUL-9999   # 错误信息显示为中文
 ```
 
 ### Exit codes
@@ -991,7 +991,7 @@ The process exit code is tiered so scripts can branch on the failure class:
 | `5` | validation (HTTP 400, 422) |
 
 ```bash
-patchbay issue get MUL-9999
+orvilo issue get MUL-9999
 if [ $? -eq 4 ]; then echo "no such issue"; fi
 ```
 
@@ -1003,8 +1003,8 @@ and the raw server body — underneath the friendly message. Use it when you nee
 to file a bug or understand exactly what the server returned:
 
 ```bash
-patchbay issue list --debug
-ORVILO_DEBUG=1 patchbay issue update MUL-1234 --title "x"
+orvilo issue list --debug
+ORVILO_DEBUG=1 orvilo issue update MUL-1234 --title "x"
 ```
 
 ### Request timeout
@@ -1015,7 +1015,7 @@ API requests use a default timeout of 30 seconds. Override it with
 always at least this value, so raising it takes effect across all commands.
 
 ```bash
-ORVILO_HTTP_TIMEOUT=60s patchbay issue list
+ORVILO_HTTP_TIMEOUT=60s orvilo issue list
 ```
 
 ### Stall detection (skill commands)
@@ -1036,7 +1036,7 @@ this path too, as the no-progress budget — it keeps meaning "the longest I wil
 wait for this server", not "the longest this download may take".
 
 ```bash
-ORVILO_HTTP_STALL_TIMEOUT=45s patchbay skill get <id>
+ORVILO_HTTP_STALL_TIMEOUT=45s orvilo skill get <id>
 ```
 
 Every other command still uses the total-elapsed timeout above. Stall detection
@@ -1045,7 +1045,7 @@ mechanism itself is not skill-specific.
 
 ### Skill payload size
 
-`patchbay skill get` and `patchbay skill files list` return **metadata only** by
+`orvilo skill get` and `orvilo skill files list` return **metadata only** by
 default — path, byte size and content hash for each file, plus the size and
 hash of the SKILL.md body. Sizes are what tell you which file makes a skill
 large, and they stay available no matter how large it gets.
@@ -1053,8 +1053,8 @@ large, and they stay available no matter how large it gets.
 Pass `--with-content` when you actually need the bodies:
 
 ```bash
-patchbay skill files list <id>                  # paths and sizes
-patchbay skill files list <id> --with-content   # bodies inlined
+orvilo skill files list <id>                  # paths and sizes
+orvilo skill files list <id> --with-content   # bodies inlined
 ```
 
 On the API, both endpoints accept `?include=content` and `?include=metadata`.

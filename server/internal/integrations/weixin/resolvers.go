@@ -128,14 +128,14 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 		return engine.ResolvedIdentity{}, engine.ErrSenderUnbound
 	}
 	if _, err := r.q.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-		UserID: binding.PatchbayUserID, WorkspaceID: inst.WorkspaceID,
+		UserID: binding.OrviloUserID, WorkspaceID: inst.WorkspaceID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return engine.ResolvedIdentity{}, engine.ErrSenderNotMember
 		}
 		return engine.ResolvedIdentity{}, err
 	}
-	return engine.ResolvedIdentity{UserID: binding.PatchbayUserID}, nil
+	return engine.ResolvedIdentity{UserID: binding.OrviloUserID}, nil
 }
 
 type deduper struct{ q *db.Queries }

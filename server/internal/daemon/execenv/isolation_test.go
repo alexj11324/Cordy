@@ -30,7 +30,7 @@ func preparationHelperTestCommand() []string {
 
 // TestPreparationHelperProcess is both a no-op parent-side test and the child
 // entry point used by isolation tests. Keeping it in the package test binary
-// exercises the same stdin/stdout protocol as the real patchbay helper.
+// exercises the same stdin/stdout protocol as the real orvilo helper.
 func TestPreparationHelperProcess(t *testing.T) {
 	if len(os.Args) == 0 || os.Args[len(os.Args)-1] != preparationHelperTestMode {
 		return
@@ -111,7 +111,7 @@ func TestPreparationHelperRoundTripsProjectResources(t *testing.T) {
 	}
 	defer env.Cleanup(true)
 
-	data, err := os.ReadFile(filepath.Join(env.WorkDir, ".patchbay", "project", "resources.json"))
+	data, err := os.ReadFile(filepath.Join(env.WorkDir, ".orvilo", "project", "resources.json"))
 	if err != nil {
 		t.Fatalf("read project resources: %v", err)
 	}

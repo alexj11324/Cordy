@@ -49,13 +49,13 @@ function buildScript(token: string): string {
   return `<script>
 (function(){
   var TOKEN = ${JSON.stringify(safeToken)};
-  var MARK = "__patchbay";
+  var MARK = "__orvilo";
   function docHeight() {
     var de = document.documentElement;
     return Math.max(de.scrollHeight, document.body ? document.body.scrollHeight : 0);
   }
   function post(msg) {
-    msg.__patchbay = MARK;
+    msg.__orvilo = MARK;
     msg.token = TOKEN;
     try { parent.postMessage(msg, "*"); } catch (_) {}
   }
@@ -144,7 +144,7 @@ function buildScript(token: string): string {
   // -- parent -> child messages -------------------------------------------
   window.addEventListener("message", function (e) {
     var d = e.data;
-    if (!d || d.__patchbay !== MARK || d.token !== TOKEN) return;
+    if (!d || d.__orvilo !== MARK || d.token !== TOKEN) return;
     if (d.kind === "restore" && typeof d.y === "number") {
       beginRestore(d.y);
     } else if (d.kind === "request-sync") {

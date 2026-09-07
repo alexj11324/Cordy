@@ -81,7 +81,7 @@ export type LinearMemberBinding = {
   id: string;
   workspace_id: string;
   connection_id: string;
-  patchbay_user_id: string;
+  orvilo_user_id: string;
   linear_user_id: string;
   created_at: string;
   updated_at: string;
@@ -93,7 +93,7 @@ export type ListLinearMemberBindingsResponse = {
 
 export type SaveLinearMemberBindingRequest = {
   connection_id: string;
-  patchbay_user_id: string;
+  orvilo_user_id: string;
   linear_user_id: string;
 };
 
@@ -102,7 +102,7 @@ export type LinearSyncConflict = {
   workspace_id: string;
   binding_id: string;
   link_id: string;
-  patchbay_issue_id: string;
+  orvilo_issue_id: string;
   linear_issue_id: string;
   linear_identifier: string | null;
   field: string;
@@ -129,7 +129,7 @@ export type ResolveLinearSyncConflictRequest = {
 };
 
 export type LinearDryRunResponse = {
-  patchbay_project_id: string;
+  orvilo_project_id: string;
   linear_project_id: string;
   sync_mode: string;
   initial_source_of_truth: string | null;
@@ -161,13 +161,13 @@ export type LinearSyncMode =
   | "not_synced"
   | (string & {});
 
-export type LinearInitialSource = "linear" | "patchbay" | (string & {});
+export type LinearInitialSource = "linear" | "orvilo" | (string & {});
 
 export type LinearProjectBinding = {
   id: string;
   workspace_id: string;
   connection_id: string;
-  patchbay_project_id: string;
+  orvilo_project_id: string;
   linear_project_id: string;
   linear_team_id: string | null;
   status: LinearBindingStatus;
@@ -188,7 +188,7 @@ export type ListLinearBindingsResponse = {
 
 export type SaveLinearProjectBindingRequest = {
   connection_id: string;
-  patchbay_project_id: string;
+  orvilo_project_id: string;
   linear_project_id: string;
   linear_team_id?: string | null;
   status?: LinearBindingStatus;

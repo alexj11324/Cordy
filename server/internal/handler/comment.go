@@ -368,7 +368,7 @@ const (
 //
 // Both values must be set together so the cursor can tie-break entries
 // landing in the same microsecond. The cursor for the next page is
-// emitted via the X-Patchbay-Next-Before / X-Patchbay-Next-Before-Id
+// emitted via the X-Orvilo-Next-Before / X-Orvilo-Next-Before-Id
 // response headers.
 //
 // Combination rules (kept narrow on purpose — Elon flagged the matrix risk):
@@ -674,8 +674,8 @@ func (h *Handler) ListComments(w http.ResponseWriter, r *http.Request) {
 	// body so the default flat-array response shape — which the desktop UI
 	// and existing callers depend on — is unchanged.
 	if result.NextBefore != "" && result.NextBeforeID != "" {
-		w.Header().Set("X-Patchbay-Next-Before", result.NextBefore)
-		w.Header().Set("X-Patchbay-Next-Before-Id", result.NextBeforeID)
+		w.Header().Set("X-Orvilo-Next-Before", result.NextBefore)
+		w.Header().Set("X-Orvilo-Next-Before-Id", result.NextBeforeID)
 	}
 	if result.CommentsTruncated {
 		w.Header().Set(HeaderCommentsTruncated, "true")

@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	dshProfile         = "patchbay"
+	dshProfile         = "orvilo"
 	dshProtocolVersion = 1
 	dshCancelGrace     = 3 * time.Second
 	dshTerminateGrace  = 2 * time.Second
@@ -248,7 +248,7 @@ func (b *dshBackend) Execute(ctx context.Context, prompt string, opts ExecOption
 
 	requestID := b.cfg.TaskID
 	if requestID == "" {
-		requestID = "patchbay-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+		requestID = "orvilo-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	}
 	command := dshExecuteCommand{
 		Version: dshProtocolVersion, Type: "execute", RequestID: requestID,

@@ -66,7 +66,7 @@ func WithDaemonContext(ctx context.Context, workspaceID, daemonID string) contex
 // Both caches are optional. When non-nil:
 //   - daemonCache short-circuits the daemon_token DB lookup on the mdt_ path
 //   - patCache short-circuits the PAT DB lookup AND the last_used_at update
-//     on the pby_ fallback path. This is the same cache shared with the
+//     on the ovy_ fallback path. This is the same cache shared with the
 //     regular Auth middleware, so a single hot PAT used by both human CLI
 //     and a daemon converges on one DB round-trip per AuthCacheTTL window.
 //
@@ -189,8 +189,8 @@ func DaemonAuth(queries *db.Queries, patCache *auth.PATCache, daemonCache *auth.
 				return
 			}
 
-			// Fallback: PAT tokens ("pby_" prefix).
-			if strings.HasPrefix(tokenString, "pby_") {
+			// Fallback: PAT tokens ("ovy_" prefix).
+			if strings.HasPrefix(tokenString, "ovy_") {
 				hash := auth.HashToken(tokenString)
 
 				if userID, ok := patCache.Get(r.Context(), hash); ok {

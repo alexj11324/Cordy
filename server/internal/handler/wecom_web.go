@@ -35,7 +35,7 @@ const wecomBodyLimit = 16 * 1024
 // interface exists so the body ceiling can be pinned in a test without a live
 // channel_binding_token table.
 type WecomBindingRedeemer interface {
-	RedeemAndBind(ctx context.Context, raw string, patchbayUserID pgtype.UUID) (wecom.RedeemedBindingToken, error)
+	RedeemAndBind(ctx context.Context, raw string, orviloUserID pgtype.UUID) (wecom.RedeemedBindingToken, error)
 }
 
 // WecomInstallationResponse is the wire shape for a wecom installation

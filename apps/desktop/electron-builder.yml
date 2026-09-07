@@ -1,4 +1,4 @@
-appId: ai.patchbay.desktop
+appId: ai.orvilo.desktop
 productName: Orvilo
 directories:
   buildResources: build
@@ -33,7 +33,7 @@ extraResources:
 protocols:
   - name: Orvilo
     schemes:
-      - patchbay
+      - orvilo
 asarUnpack:
   - resources/**
 mac:
@@ -45,16 +45,16 @@ mac:
     - zip
   # Hardcoded name avoids the `@orvilo/desktop-*` subdirectory that
   # `${name}` produces for scoped package names.
-  # Naming scheme: patchbay-desktop-<version>-<platform>-<arch>.<ext>
+  # Naming scheme: orvilo-desktop-<version>-<platform>-<arch>.<ext>
   # so the filename alone surfaces kind, version, platform, and CPU arch.
-  artifactName: patchbay-desktop-${version}-mac-${arch}.${ext}
+  artifactName: orvilo-desktop-${version}-mac-${arch}.${ext}
   # Notarize via notarytool. Requires APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD
   # + APPLE_TEAM_ID env vars at package time. Non-mac contributors are
   # unaffected because `pnpm package` already requires the Developer ID
   # signing cert — notarization is a strict superset.
   notarize: true
 dmg:
-  artifactName: patchbay-desktop-${version}-mac-${arch}.${ext}
+  artifactName: orvilo-desktop-${version}-mac-${arch}.${ext}
 linux:
   # Override the Linux executable name to avoid leaking the scoped npm
   # package name (`@orvilo/desktop`) into the installed binary, the
@@ -69,10 +69,10 @@ linux:
   # and fall back to the theme's default app icon (the Settings gear on
   # Yaru).
   #
-  # `patchbay-desktop` (not `patchbay`) so the deb/rpm/AppImage package never
-  # installs this Electron binary as `/usr/bin/patchbay`. The Go CLI is a
+  # `orvilo-desktop` (not `orvilo`) so the deb/rpm/AppImage package never
+  # installs this Electron binary as `/usr/bin/orvilo`. The Go CLI is a
   # separate artifact (see CLI_INSTALL.md) that agents and scripts expect
-  # to find at `patchbay` on PATH; when both packages are installed on the
+  # to find at `orvilo` on PATH; when both packages are installed on the
   # same box, a plain electron-builder default collides the two under one
   # name. Whichever installs later — or wins the PATH lookup order — silently
   # shadows the other. Hitting the Electron binary from a CLI call is the
@@ -81,7 +81,7 @@ linux:
   # returned nothing rather than "wrong binary" (github.com/patchbay-ai/patchbay/issues/5481).
   # `StartupWMClass=Orvilo` (productName-derived) is unaffected by this
   # rename — it comes from `app.getName()`, not `executableName`.
-  executableName: patchbay-desktop
+  executableName: orvilo-desktop
   # Pin StartupWMClass to the WM_CLASS Electron emits on X11. Electron
   # derives WM_CLASS from `app.getName()`, which reads the *packaged*
   # ASAR's `package.json` — `productName` if present, otherwise `name`.
@@ -111,7 +111,7 @@ linux:
     - AppImage
     - deb
     - rpm
-  artifactName: patchbay-desktop-${version}-linux-${arch}.${ext}
+  artifactName: orvilo-desktop-${version}-linux-${arch}.${ext}
 rpm:
   # Disable RPM build-id symlinks. Electron apps embed the upstream Electron
   # binary, whose GNU build-id is identical across every app shipping the same
@@ -123,7 +123,7 @@ rpm:
 win:
   target:
     - nsis
-  artifactName: patchbay-desktop-${version}-windows-${arch}.${ext}
+  artifactName: orvilo-desktop-${version}-windows-${arch}.${ext}
 publish:
   provider: github
   owner: alexj11324

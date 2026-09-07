@@ -84,7 +84,7 @@ const runtimeOfflineCodeNotExecutable = "not_executable"
 //
 // The lookup carries the connection to read on plus the source label the
 // runtime read is attributed to (MUL-6884), so each admission path stays
-// distinguishable in patchbay_agent_runtime_lookup_total.
+// distinguishable in orvilo_agent_runtime_lookup_total.
 //
 // err is non-nil only on DB lookup failure for the runtime row. Callers that
 // treat a transient DB error as "do not skip" (the automation admission gate)

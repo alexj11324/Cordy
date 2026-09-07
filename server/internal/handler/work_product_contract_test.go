@@ -15,13 +15,13 @@ func TestParseGitHubPRURLRequiresCanonicalPullRequestPath(t *testing.T) {
 			name:   "canonical URL with suffix",
 			url:    " https://github.com/Acme/Orvilo/pull/42?tab=files ",
 			owner:  "acme",
-			repo:   "patchbay",
+			repo:   "orvilo",
 			number: 42,
 			wantOK: true,
 		},
-		{name: "non GitHub host", url: "https://gitlab.com/acme/patchbay/-/merge_requests/42"},
-		{name: "issue URL", url: "https://github.com/acme/patchbay/issues/42"},
-		{name: "zero number", url: "https://github.com/acme/patchbay/pull/0"},
+		{name: "non GitHub host", url: "https://gitlab.com/acme/orvilo/-/merge_requests/42"},
+		{name: "issue URL", url: "https://github.com/acme/orvilo/issues/42"},
+		{name: "zero number", url: "https://github.com/acme/orvilo/pull/0"},
 		{name: "missing repository", url: "https://github.com/acme/pull/42"},
 	}
 	for _, tt := range tests {

@@ -6,7 +6,7 @@ on:
   pull_request:
     # The migration stack is #727 -> #728 -> #729; the upper layers target
     # migration branches, not main, and must run the same quality gates.
-    branches: [main, feat/go-mainline-patchbay, fix/go-front-align-727]
+    branches: [main, feat/go-mainline-orvilo, fix/go-front-align-727]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -477,13 +477,13 @@ jobs:
       postgres:
         image: pgvector/pgvector:pg17
         env:
-          POSTGRES_DB: patchbay
-          POSTGRES_USER: patchbay
-          POSTGRES_PASSWORD: patchbay
+          POSTGRES_DB: orvilo
+          POSTGRES_USER: orvilo
+          POSTGRES_PASSWORD: ${{ github.run_id }}
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U patchbay -d patchbay"
+          --health-cmd "pg_isready -U orvilo -d orvilo"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
@@ -497,7 +497,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     env:
-      DATABASE_URL: postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
+      DATABASE_URL: postgres://orvilo:${{ github.run_id }}@localhost:5432/orvilo?sslmode=disable
       # Wires up the RedisLocalSkill*_test.go suite. Distinct from REDIS_URL
       # (which would flip the server binary itself onto the Redis-backed
       # realtime relay + request stores); the tests talk to this Redis

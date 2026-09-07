@@ -23,11 +23,11 @@ var attachmentDownloadCmd = &cobra.Command{
 	Short: "Download an attachment to a local file",
 	Long:  "Download an attachment by its ID to a local file.",
 	Example: `  # Download an image attachment to the current directory
-  $ patchbay attachment download abc123
+  $ orvilo attachment download abc123
 
   # Download to a directory inside the working directory (keep agent
   # downloads out of /tmp and other machine-shared paths, MUL-4252)
-  $ patchbay attachment download abc123 -o ./attachments`,
+  $ orvilo attachment download abc123 -o ./attachments`,
 	Args: exactArgs(1),
 	RunE: runAttachmentDownload,
 }
@@ -47,7 +47,7 @@ own line to place the item: files use !file[name](url) (a card), images use
 The task id is read from ORVILO_TASK_ID (set by the daemon inside a task);
 override it with --task when needed.`,
 	Example: `  # Attach an image to the current chat reply
-  $ patchbay attachment upload ./chart.png`,
+  $ orvilo attachment upload ./chart.png`,
 	Args: exactArgs(1),
 	RunE: runAttachmentUpload,
 }

@@ -226,7 +226,7 @@ func (h *Handler) findOrCreateUserWithQueries(ctx context.Context, queries *db.Q
 const signupSourceMaxLen = 512
 
 func signupSourceFromRequest(r *http.Request) string {
-	c, err := r.Cookie("patchbay_signup_source")
+	c, err := r.Cookie("orvilo_signup_source")
 	if err != nil || c == nil {
 		return ""
 	}

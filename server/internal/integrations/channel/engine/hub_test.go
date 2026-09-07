@@ -99,7 +99,7 @@ func TestHubSelectionCommandsAndStoredChoice(t *testing.T) {
 		{"hello", uid(1), false, false},
 		{"/agents", uid(1), true, false},
 		{"/agents 2", uid(2), true, true},
-		{"/agent@patchbay reviewer", uid(2), true, true},
+		{"/agent@orvilo reviewer", uid(2), true, true},
 		{"/agents " + util.UUIDToString(uid(2)), uid(2), true, true},
 		{"/agents 0", uid(1), true, false},
 		{"/agents missing", uid(1), true, false},

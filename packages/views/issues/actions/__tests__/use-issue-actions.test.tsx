@@ -99,7 +99,7 @@ vi.mock("../../../navigation", () => ({
     hash: "",
     back: vi.fn(),
     replace: vi.fn(),
-    getShareableUrl: (p: string) => `https://app.patchbay.com${p}`,
+    getShareableUrl: (p: string) => `https://app.orvilo.com${p}`,
   }),
 }));
 
@@ -276,7 +276,7 @@ describe("useIssueActions", () => {
     });
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      "https://app.patchbay.com/test/issues/TES-1",
+      "https://app.orvilo.com/test/issues/TES-1",
     );
   });
 
@@ -291,7 +291,7 @@ describe("useIssueActions", () => {
     });
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
-      "https://app.patchbay.com/test/issues/issue-1",
+      "https://app.orvilo.com/test/issues/issue-1",
     );
   });
 

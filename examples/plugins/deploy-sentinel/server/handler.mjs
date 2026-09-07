@@ -163,8 +163,8 @@ const server = createServer(tlsOptions(), async (req, res) => {
 
   const verified = verifySignature(
     rawBody,
-    req.headers["x-patchbay-signature"],
-    req.headers["x-patchbay-timestamp"],
+    req.headers["x-orvilo-signature"],
+    req.headers["x-orvilo-timestamp"],
   );
   if (!verified.ok) {
     console.warn(`refused ${req.url}: ${verified.reason}`);

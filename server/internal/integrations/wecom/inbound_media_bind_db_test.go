@@ -44,7 +44,7 @@ func mediaBindTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dsn = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)
@@ -90,7 +90,7 @@ func seedMediaBindFixture(t *testing.T, pool *pgxpool.Pool) mediaBindFixture {
 	var runtimeID pgtype.UUID
 
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id`,
-		"wecom media bind", fmt.Sprintf("wecom-media-bind-%d@patchbay.test", suffix)).Scan(&f.userID); err != nil {
+		"wecom media bind", fmt.Sprintf("wecom-media-bind-%d@orvilo.test", suffix)).Scan(&f.userID); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	t.Cleanup(func() {
@@ -114,7 +114,7 @@ func seedMediaBindFixture(t *testing.T, pool *pgxpool.Pool) mediaBindFixture {
 	}
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, owner_id)
-		VALUES ($1, $2, 'local', 'patchbay_daemon', $3) RETURNING id`,
+		VALUES ($1, $2, 'local', 'orvilo_daemon', $3) RETURNING id`,
 		f.workspaceID, fmt.Sprintf("wecom-bind-runtime-%d", suffix), f.userID).Scan(&runtimeID); err != nil {
 		t.Fatalf("create runtime: %v", err)
 	}
@@ -133,7 +133,7 @@ func seedMediaBindFixture(t *testing.T, pool *pgxpool.Pool) mediaBindFixture {
 		t.Fatalf("create installation: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `
-		INSERT INTO channel_user_binding (workspace_id, patchbay_user_id, installation_id, channel_type, channel_user_id)
+		INSERT INTO channel_user_binding (workspace_id, orvilo_user_id, installation_id, channel_type, channel_user_id)
 		VALUES ($1, $2, $3, 'wecom', $4)`,
 		f.workspaceID, f.userID, f.installationID, f.senderID); err != nil {
 		t.Fatalf("create user binding: %v", err)

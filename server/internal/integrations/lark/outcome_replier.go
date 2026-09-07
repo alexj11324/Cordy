@@ -91,7 +91,7 @@ type LarkOutcomeReplier struct {
 	bindingSvc   BindingTokenMinter
 	credentials  CredentialsResolver
 	queries      OutcomeReplierQueries
-	appURL       string // e.g. https://patchbay.example, trailing slash trimmed
+	appURL       string // e.g. https://orvilo.example, trailing slash trimmed
 	bindingPath  string // path component of the binding URL, default "/lark/bind"
 	noticeHeader string // header text used by the offline/archived cards
 	log          *slog.Logger
@@ -99,7 +99,7 @@ type LarkOutcomeReplier struct {
 
 // OutcomeReplierConfig wires the production replier. AppURL is the Orvilo web
 // app host the user clicks into to redeem the binding token or open an issue
-// (e.g. https://patchbay.example). It comes from ORVILO_APP_URL and is
+// (e.g. https://orvilo.example). It comes from ORVILO_APP_URL and is
 // intentionally separate from ORVILO_PUBLIC_URL, which is the backend/API
 // public URL used for webhook and daemon-facing endpoints. Empty means the
 // binding flow can only log the open_id, not produce a clickable card. The

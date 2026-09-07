@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveAuthLocale } from "./lib/auth-locale";
 
-const ORIGIN_AUTH_HEADER = "x-patchbay-origin-auth";
+const ORIGIN_AUTH_HEADER = "x-orvilo-origin-auth";
 
 export function proxy(request: NextRequest) {
   if (request.nextUrl.pathname === "/healthz" || request.nextUrl.pathname === "/readyz") return NextResponse.next();
@@ -10,11 +10,11 @@ export function proxy(request: NextRequest) {
   const valid = /^[a-f0-9]{64}$/.test(expected) && constantTimeEqual(supplied, expected);
   if (!valid) return new NextResponse("Not Found\n", { status: 404, headers: { "cache-control": "no-store", "content-type": "text/plain; charset=utf-8" } });
   const headers = new Headers(request.headers);
-  headers.set("x-patchbay-auth-locale", resolveAuthLocale(
+  headers.set("x-orvilo-auth-locale", resolveAuthLocale(
     request.nextUrl.searchParams.get("locale") ?? request.headers.get("accept-language"),
   ).locale);
   headers.delete(ORIGIN_AUTH_HEADER);
-  headers.delete("x-patchbay-desktop-broker-auth");
+  headers.delete("x-orvilo-desktop-broker-auth");
   return NextResponse.next({ request: { headers } });
 }
 

@@ -20,7 +20,7 @@ test("onboarding — welcome → about you (answer path)", async ({ page }) => {
   const token = api.getToken();
 
   await page.addInitScript((t) => {
-    localStorage.setItem("patchbay_token", t);
+    localStorage.setItem("orvilo_token", t);
   }, token);
   await page.goto("/onboarding", { waitUntil: "domcontentloaded" });
   await waitForPageText(page, "Continue on web");
@@ -80,7 +80,7 @@ test("onboarding — one skip clears the whole questionnaire step", async ({ pag
   await api.login(`skip-${Date.now()}@localhost`, "Skipper");
   const token = api.getToken();
 
-  await page.addInitScript((t) => localStorage.setItem("patchbay_token", t), token);
+  await page.addInitScript((t) => localStorage.setItem("orvilo_token", t), token);
   await page.goto("/onboarding", { waitUntil: "domcontentloaded" });
   await waitForPageText(page, "Continue on web");
 
@@ -97,7 +97,7 @@ test("onboarding — one skip clears the whole questionnaire step", async ({ pag
 test("onboarding — zh-Hans renders Chinese labels", async ({ page, context, baseURL }) => {
   await context.addCookies([
     {
-      name: "patchbay-locale",
+      name: "orvilo-locale",
       value: "zh-Hans",
       url: baseURL ?? "http://localhost:3000",
     },
@@ -106,7 +106,7 @@ test("onboarding — zh-Hans renders Chinese labels", async ({ page, context, ba
   await api.login(`zh-${Date.now()}@localhost`, "中文用户");
   const token = api.getToken();
 
-  await page.addInitScript((t) => localStorage.setItem("patchbay_token", t), token);
+  await page.addInitScript((t) => localStorage.setItem("orvilo_token", t), token);
   await page.goto("/onboarding", { waitUntil: "domcontentloaded" });
   await waitForPageText(page, "在 web 端继续");
 

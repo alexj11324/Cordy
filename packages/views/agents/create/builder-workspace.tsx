@@ -76,7 +76,7 @@ export function BuilderWorkspace({
 }) {
   const { t } = useT("agents");
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "patchbay_agent_builder_layout",
+    id: "orvilo_agent_builder_layout",
   });
 
   // Resuming: the conversation already runs somewhere, and only the server

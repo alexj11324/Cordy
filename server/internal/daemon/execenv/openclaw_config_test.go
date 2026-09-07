@@ -1538,7 +1538,7 @@ func TestPrepareEnvironmentNonOpenclawSkipsConfig(t *testing.T) {
 
 // ── Gateway endpoint pinning (issue #3260) ──
 //
-// When a patchbay agent is configured for gateway-mode openclaw and the
+// When a orvilo agent is configured for gateway-mode openclaw and the
 // runtime_config carries a Gateway endpoint, the per-task wrapper must pin
 // that endpoint in its `gateway` block. OpenClaw deep-merges sibling object
 // keys after $include, so the wrapper's `gateway.*` settings override

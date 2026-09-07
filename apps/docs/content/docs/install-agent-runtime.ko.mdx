@@ -55,7 +55,7 @@ QwenPaw를 사용할 때는 QwenPaw 자체 설정에서 공급자와 모델을 �
 
 MiniMax Code를 사용하려면 지원되는 Node.js 버전(`>=22.19 <23` 또는 `>=24 <27`)을 설치한 뒤 `npm install --global @minimax-ai/code@latest`를 실행하세요. npm 전역 설치는 `mcode`를 npm의 전역 실행 파일 디렉터리에 추가합니다. `command -v mcode` 또는 `Get-Command mcode`에서 찾지 못하면 해당 디렉터리를 `PATH`에 추가하세요. 그다음 `mcode login`을 실행합니다. 모델은 MiniMax Code가 관리하며 Orvilo는 ACP를 통해 이를 덮어쓸 수 없습니다.
 
-DeepSeek Harness를 사용하려면 Node.js 20+를 설치하고 `npm install -g @deepseek-ai/dsh`를 실행한 뒤 Orvilo 런타임 프로필을 추가하세요(`dsh plugin --profile patchbay add <bundle>`). 데몬은 `dsh --profile patchbay --probe`가 성공한 경우에만 DeepSeek Harness를 등록합니다. 데몬을 시작하기 전에 `DEEPSEEK_API_KEY`를 설정(또는 dsh 자체 설정에 저장)하세요.
+DeepSeek Harness를 사용하려면 Node.js 20+를 설치하고 `npm install -g @deepseek-ai/dsh`를 실행한 뒤 Orvilo 런타임 프로필을 추가하세요(`dsh plugin --profile orvilo add <bundle>`). 데몬은 `dsh --profile orvilo --probe`가 성공한 경우에만 DeepSeek Harness를 등록합니다. 데몬을 시작하기 전에 `DEEPSEEK_API_KEY`를 설정(또는 dsh 자체 설정에 저장)하세요.
 
 로그인 자격 증명은 도구가 로컬에 저장합니다. Orvilo는 Claude, Codex, Cursor 또는 다른 CLI의 로그인 token을 받지 않습니다.
 
@@ -88,13 +88,13 @@ Get-Command <command>
 CLI로 데몬을 시작합니다.
 
 ```bash
-patchbay daemon start
+orvilo daemon start
 ```
 
 데몬이 이미 실행 중이고 새 도구를 설치했다면 다시 시작합니다.
 
 ```bash
-patchbay daemon restart
+orvilo daemon restart
 ```
 
 Orvilo Desktop을 사용한다면 앱을 종료한 뒤 다시 열면 됩니다.
@@ -111,7 +111,7 @@ Orvilo Desktop을 사용한다면 앱을 종료한 뒤 다시 열면 됩니다.
 
 1. 터미널에서 도구 자체를 실행해 설치와 로그인이 모두 완료되었는지 확인합니다.
 2. `command -v` 또는 `Get-Command`로 실제 명령 이름과 경로를 확인합니다.
-3. `patchbay daemon logs -f`를 실행해 버전, 경로, 인증 오류를 확인합니다.
+3. `orvilo daemon logs -f`를 실행해 버전, 경로, 인증 오류를 확인합니다.
 4. 데몬을 다시 시작해 현재 환경을 다시 읽게 합니다.
 5. **런타임** 페이지로 돌아가 컴퓨터와 도구가 모두 온라인인지 확인합니다.
 

@@ -22,7 +22,7 @@ export interface PatrickRuntimeSelection {
  *
  * `layout` exists because the presentation genuinely differs, not because the
  * logic does. The CLI dialog lists machines because that is the moment they
- * appear one at a time after `patchbay setup`, and a collapsed dropdown hides
+ * appear one at a time after `orvilo setup`, and a collapsed dropdown hides
  * exactly the feedback that dialog is there to give.
  */
 export function PatrickRuntimeChoice({

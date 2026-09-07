@@ -54,7 +54,7 @@ func TestDaemonAlive(t *testing.T) {
 func TestDaemonLocalCommandsFailClosedInTaskContext(t *testing.T) {
 	t.Setenv("ORVILO_AGENT_ID", "agent-test")
 	t.Setenv("ORVILO_TASK_ID", "task-test")
-	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-orvilo"))
 
 	cases := map[string]func() error{
 		"probe-runtimes": func() error { return runDaemonProbeRuntimes(daemonProbeRuntimesCmd, nil) },
@@ -102,7 +102,7 @@ func TestDaemonProbeRuntimesLocalDoesNotLoadOrviloProfile(t *testing.T) {
 	if got.ProbeResult != "success" || got.RuntimeCount != 0 {
 		t.Fatalf("local probe = %+v, want successful empty probe", got)
 	}
-	if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".patchbay")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".orvilo")); !os.IsNotExist(err) {
 		t.Fatalf("local probe touched Orvilo home: stat error=%v", err)
 	}
 }
@@ -215,7 +215,7 @@ func TestPrintDaemonStatusExplainsDeferredRestart(t *testing.T) {
 		t.Errorf("status output = %q, want no restart row when nothing is pending", idle.String())
 	}
 
-	base["reload_pending_reason"] = "patchbay binary on disk reports 0.3.8, running 0.3.7"
+	base["reload_pending_reason"] = "orvilo binary on disk reports 0.3.8, running 0.3.7"
 	var pending bytes.Buffer
 	printDaemonStatusReport(&pending, "Daemon", base)
 	if !strings.Contains(pending.String(), "0.3.8") {
@@ -260,29 +260,29 @@ func TestPrintDaemonStatusOmitsVersionWhenMissing(t *testing.T) {
 }
 
 // TestRequireDaemonAuth pins the fail-fast contract for `daemon start`: a
-// user who never ran `patchbay login` must get an immediate, actionable error
+// user who never ran `orvilo login` must get an immediate, actionable error
 // from the parent process instead of a 45s health poll against a child that
 // already died with "not authenticated".
 func TestRequireDaemonAuth(t *testing.T) {
 	t.Run("not logged in", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
 		err := requireDaemonAuth("")
-		if err == nil || !strings.Contains(err.Error(), "patchbay login") {
-			t.Fatalf("requireDaemonAuth() = %v, want error mentioning 'patchbay login'", err)
+		if err == nil || !strings.Contains(err.Error(), "orvilo login") {
+			t.Fatalf("requireDaemonAuth() = %v, want error mentioning 'orvilo login'", err)
 		}
 	})
 
 	t.Run("not logged in with profile", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
 		err := requireDaemonAuth("staging")
-		if err == nil || !strings.Contains(err.Error(), "patchbay login --profile staging") {
+		if err == nil || !strings.Contains(err.Error(), "orvilo login --profile staging") {
 			t.Fatalf("requireDaemonAuth(staging) = %v, want error mentioning profile login hint", err)
 		}
 	})
 
 	t.Run("authenticated", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
-		if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "pby_test_token"}); err != nil {
+		if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "ovy_test_token"}); err != nil {
 			t.Fatalf("SaveCLIConfig: %v", err)
 		}
 		if err := requireDaemonAuth(""); err != nil {
@@ -311,7 +311,7 @@ func TestDaemonStartBackgroundUnauthenticatedFailsFast(t *testing.T) {
 	err := runDaemonStart(cmd, nil)
 	elapsed := time.Since(start)
 
-	if err == nil || !strings.Contains(err.Error(), "patchbay login --profile authtest-fail-fast") {
+	if err == nil || !strings.Contains(err.Error(), "orvilo login --profile authtest-fail-fast") {
 		t.Fatalf("runDaemonStart() = %v, want not-logged-in error with login hint", err)
 	}
 	if elapsed > 10*time.Second {
@@ -383,12 +383,12 @@ func TestDaemonStartupFailureError(t *testing.T) {
 	t.Run("token rejected", func(t *testing.T) {
 		t.Parallel()
 		logPath := writeLog(t, "daemon.log", `18:29:58.416 INF authenticated component=daemon
-18:29:58.425 WRN auth token rejected by server — run 'patchbay login' to re-authenticate component=daemon error="POST /api/tokens/current/renew returned 401: {\"error\":\"invalid token\"}"
+18:29:58.425 WRN auth token rejected by server — run 'orvilo login' to re-authenticate component=daemon error="POST /api/tokens/current/renew returned 401: {\"error\":\"invalid token\"}"
 list workspaces: GET /api/workspaces returned 401: {"error":"invalid token"}
 `)
 		err := daemonStartupFailureError(daemonStartupLogs{logPath: logPath}, nil, "", "http://localhost:8080")
 		msg := err.Error()
-		if !strings.Contains(msg, "rejected your login token") || !strings.Contains(msg, "patchbay login") {
+		if !strings.Contains(msg, "rejected your login token") || !strings.Contains(msg, "orvilo login") {
 			t.Fatalf("error = %q, want token-rejected reason with login hint", msg)
 		}
 		if strings.Contains(msg, "component=daemon") {
@@ -400,7 +400,7 @@ list workspaces: GET /api/workspaces returned 401: {"error":"invalid token"}
 		t.Parallel()
 		logPath := writeLog(t, "daemon.log", "WRN auth token rejected by server error=\"returned 401\"\n")
 		err := daemonStartupFailureError(daemonStartupLogs{logPath: logPath}, nil, "staging", "http://localhost:8080")
-		if !strings.Contains(err.Error(), "patchbay login --profile staging") {
+		if !strings.Contains(err.Error(), "orvilo login --profile staging") {
 			t.Fatalf("error = %q, want profile-scoped login hint", err)
 		}
 	})
@@ -475,7 +475,7 @@ func TestDaemonStartBackgroundReportsEarlyChildExit(t *testing.T) {
 	t.Cleanup(func() { daemonExecutable = orig })
 
 	const profile = "child-exit-test"
-	if err := cli.SaveCLIConfigForProfile(cli.CLIConfig{Token: "pby_fake"}, profile); err != nil {
+	if err := cli.SaveCLIConfigForProfile(cli.CLIConfig{Token: "ovy_fake"}, profile); err != nil {
 		t.Fatalf("SaveCLIConfigForProfile: %v", err)
 	}
 
@@ -514,7 +514,7 @@ func TestDaemonRestartUnauthenticatedFailsBeforeStopping(t *testing.T) {
 	stopped := fakeRunningDaemon(t, profile)
 
 	err := runDaemonRestart(newRestartTestCmd(t, profile), nil)
-	if err == nil || !strings.Contains(err.Error(), "patchbay login --profile restart-authtest") {
+	if err == nil || !strings.Contains(err.Error(), "orvilo login --profile restart-authtest") {
 		t.Fatalf("runDaemonRestart() = %v, want not-logged-in error with login hint", err)
 	}
 	select {
@@ -578,7 +578,7 @@ func TestDaemonRestartRejectedTokenFailsBeforeStopping(t *testing.T) {
 	}))
 	defer api.Close()
 
-	if err := cli.SaveCLIConfigForProfile(cli.CLIConfig{Token: "pby_revoked", ServerURL: api.URL}, profile); err != nil {
+	if err := cli.SaveCLIConfigForProfile(cli.CLIConfig{Token: "ovy_revoked", ServerURL: api.URL}, profile); err != nil {
 		t.Fatalf("SaveCLIConfigForProfile: %v", err)
 	}
 
@@ -588,7 +588,7 @@ func TestDaemonRestartRejectedTokenFailsBeforeStopping(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "rejected your login token") {
 		t.Fatalf("runDaemonRestart() = %v, want token-rejected error", err)
 	}
-	if !strings.Contains(err.Error(), "patchbay login --profile restart-401test") {
+	if !strings.Contains(err.Error(), "orvilo login --profile restart-401test") {
 		t.Fatalf("runDaemonRestart() = %v, want profile login hint", err)
 	}
 	select {
@@ -616,7 +616,7 @@ func TestDaemonRestartUnreachableServerFailsBeforeStopping(t *testing.T) {
 	deadURL := "http://" + ln.Addr().String()
 	ln.Close()
 
-	if err := cli.SaveCLIConfigForProfile(cli.CLIConfig{Token: "pby_fake", ServerURL: deadURL}, profile); err != nil {
+	if err := cli.SaveCLIConfigForProfile(cli.CLIConfig{Token: "ovy_fake", ServerURL: deadURL}, profile); err != nil {
 		t.Fatalf("SaveCLIConfigForProfile: %v", err)
 	}
 
@@ -685,23 +685,23 @@ func TestPrintDiskUsageOtherRootsHintSuggestsProfilesWithTasks(t *testing.T) {
 
 	var out bytes.Buffer
 	printDiskUsageOtherRootsHint(&out, daemon.DiskUsageReport{
-		WorkspacesRoot: filepath.Join(home, "patchbay_workspaces"),
+		WorkspacesRoot: filepath.Join(home, "orvilo_workspaces"),
 	}, "", "", false)
 
 	got := out.String()
 	if !strings.Contains(got, "Other workspace roots contain task directories:") {
 		t.Fatalf("hint output = %q, want profile suggestion header", got)
 	}
-	if !strings.Contains(got, "patchbay --profile two-tasks daemon disk-usage") {
+	if !strings.Contains(got, "orvilo --profile two-tasks daemon disk-usage") {
 		t.Fatalf("hint output = %q, want two-tasks profile command", got)
 	}
-	if !strings.Contains(got, "patchbay --profile one-task daemon disk-usage") {
+	if !strings.Contains(got, "orvilo --profile one-task daemon disk-usage") {
 		t.Fatalf("hint output = %q, want one-task profile command", got)
 	}
-	if !strings.Contains(got, "patchbay --profile 'space profile' daemon disk-usage") {
+	if !strings.Contains(got, "orvilo --profile 'space profile' daemon disk-usage") {
 		t.Fatalf("hint output = %q, want shell-quoted profile command", got)
 	}
-	if !strings.Contains(got, "patchbay daemon disk-usage --all-profiles") {
+	if !strings.Contains(got, "orvilo daemon disk-usage --all-profiles") {
 		t.Fatalf("hint output = %q, want --all-profiles tip", got)
 	}
 	if strings.Contains(got, "(0 task") {
@@ -726,12 +726,12 @@ func TestPrintDiskUsageOtherRootsHintFiresWhenCurrentRootNonEmpty(t *testing.T) 
 
 	var out bytes.Buffer
 	printDiskUsageOtherRootsHint(&out, daemon.DiskUsageReport{
-		WorkspacesRoot: filepath.Join(home, "patchbay_workspaces"),
+		WorkspacesRoot: filepath.Join(home, "orvilo_workspaces"),
 		TotalTaskCount: 7, // current root is NOT empty
 	}, "", "", false)
 
 	got := out.String()
-	if !strings.Contains(got, "patchbay --profile desktop-host daemon disk-usage") {
+	if !strings.Contains(got, "orvilo --profile desktop-host daemon disk-usage") {
 		t.Fatalf("hint output = %q, want desktop-host suggestion even with a non-empty current root", got)
 	}
 }
@@ -745,11 +745,11 @@ func TestPrintDiskUsageOtherRootsHintSuggestsDefaultFromNamedProfile(t *testing.
 
 	var out bytes.Buffer
 	printDiskUsageOtherRootsHint(&out, daemon.DiskUsageReport{
-		WorkspacesRoot: filepath.Join(home, "patchbay_workspaces_named"),
+		WorkspacesRoot: filepath.Join(home, "orvilo_workspaces_named"),
 	}, "named", "", false)
 
 	got := out.String()
-	if !strings.Contains(got, "patchbay daemon disk-usage  #") {
+	if !strings.Contains(got, "orvilo daemon disk-usage  #") {
 		t.Fatalf("hint output = %q, want default profile command", got)
 	}
 }
@@ -766,14 +766,14 @@ func TestPrintDiskUsageOtherRootsHintUsesProfileConfig(t *testing.T) {
 
 	var out bytes.Buffer
 	printDiskUsageOtherRootsHint(&out, daemon.DiskUsageReport{
-		WorkspacesRoot: filepath.Join(home, "patchbay_workspaces"),
+		WorkspacesRoot: filepath.Join(home, "orvilo_workspaces"),
 	}, "", "", false)
 
 	got := out.String()
 	if !strings.Contains(got, customRoot) {
 		t.Fatalf("hint output = %q, want configured root %q", got, customRoot)
 	}
-	if strings.Contains(got, filepath.Join(home, "patchbay_workspaces_custom")) {
+	if strings.Contains(got, filepath.Join(home, "orvilo_workspaces_custom")) {
 		t.Fatalf("hint output = %q, must not suggest the profile's old default root", got)
 	}
 }
@@ -801,7 +801,7 @@ func TestEnumerateDiskUsageRoots(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv("ORVILO_WORKSPACES_ROOT", "")
 
-	// Two profiles configured under ~/.patchbay/profiles, but only one has its
+	// Two profiles configured under ~/.orvilo/profiles, but only one has its
 	// workspaces root created on disk; the other (never-run) profile is skipped.
 	mkdirProfile(t, home, "desktop-host")
 	mkdirProfile(t, home, "never-ran")
@@ -816,10 +816,10 @@ func TestEnumerateDiskUsageRoots(t *testing.T) {
 	if len(roots) != 2 {
 		t.Fatalf("roots = %+v, want default + desktop-host only", roots)
 	}
-	if roots[0].Profile != "" || roots[0].Root != filepath.Join(home, "patchbay_workspaces") {
+	if roots[0].Profile != "" || roots[0].Root != filepath.Join(home, "orvilo_workspaces") {
 		t.Fatalf("roots[0] = %+v, want default root first", roots[0])
 	}
-	if roots[1].Profile != "desktop-host" || roots[1].Root != filepath.Join(home, "patchbay_workspaces_desktop-host") {
+	if roots[1].Profile != "desktop-host" || roots[1].Root != filepath.Join(home, "orvilo_workspaces_desktop-host") {
 		t.Fatalf("roots[1] = %+v, want desktop-host root", roots[1])
 	}
 }
@@ -828,13 +828,13 @@ func TestPrintAggregateDiskUsageShowsRootsAndGrandTotal(t *testing.T) {
 	agg := daemon.AggregateDiskUsageReport{
 		Roots: []daemon.RootDiskUsage{
 			{Profile: "", Report: daemon.DiskUsageReport{
-				WorkspacesRoot: "/home/u/patchbay_workspaces",
+				WorkspacesRoot: "/home/u/orvilo_workspaces",
 				Tasks:          []daemon.TaskDiskUsage{{WorkspaceShort: "ws0", TaskShort: "t0", SizeBytes: 100}},
 				TotalTaskCount: 1,
 				TotalSizeBytes: 100,
 			}},
 			{Profile: "desktop-host", Report: daemon.DiskUsageReport{
-				WorkspacesRoot: "/home/u/patchbay_workspaces_desktop-host",
+				WorkspacesRoot: "/home/u/orvilo_workspaces_desktop-host",
 				Tasks:          []daemon.TaskDiskUsage{{WorkspaceShort: "ws1", TaskShort: "t1", SizeBytes: 900}},
 				TotalTaskCount: 1,
 				TotalSizeBytes: 900,
@@ -854,7 +854,7 @@ func TestPrintAggregateDiskUsageShowsRootsAndGrandTotal(t *testing.T) {
 	if !strings.Contains(got, "[default]") || !strings.Contains(got, "[desktop-host]") {
 		t.Fatalf("output = %q, want per-root section labels", got)
 	}
-	if !strings.Contains(got, "/home/u/patchbay_workspaces_desktop-host") {
+	if !strings.Contains(got, "/home/u/orvilo_workspaces_desktop-host") {
 		t.Fatalf("output = %q, want desktop root path", got)
 	}
 	if !strings.Contains(got, "Grand total:") || !strings.Contains(got, "across 2 task(s) in 2 root(s)") {
@@ -879,20 +879,20 @@ func valueColumn(t *testing.T, line string) int {
 
 func mkdirProfile(t *testing.T, home, profile string) {
 	t.Helper()
-	if err := os.MkdirAll(filepath.Join(home, ".patchbay", "profiles", profile), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(home, ".orvilo", "profiles", profile), 0o755); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func writeDiskUsageTaskFile(t *testing.T, home, profile, workspaceID, taskID, rel string) {
 	t.Helper()
-	path := filepath.Join(home, "patchbay_workspaces_"+profile, workspaceID, taskID, rel)
+	path := filepath.Join(home, "orvilo_workspaces_"+profile, workspaceID, taskID, rel)
 	writeDiskUsageFile(t, path)
 }
 
 func writeDefaultDiskUsageTaskFile(t *testing.T, home, workspaceID, taskID, rel string) {
 	t.Helper()
-	path := filepath.Join(home, "patchbay_workspaces", workspaceID, taskID, rel)
+	path := filepath.Join(home, "orvilo_workspaces", workspaceID, taskID, rel)
 	writeDiskUsageFile(t, path)
 }
 
@@ -912,7 +912,7 @@ func writeDiskUsageFile(t *testing.T, path string) {
 // The daemon's auto-reload check runs `<binary> --version` and parses the result
 // back into a version string it compares against its own compile-time version
 // (MUL-3269). That only works while cobra's version template keeps rendering
-// "patchbay <version> ..." as its first line — a reasonable-looking edit here
+// "orvilo <version> ..." as its first line — a reasonable-looking edit here
 // would leave the daemon reading a version that never matches, restarting on
 // every check, and nothing else in the suite would notice.
 func TestVersionTemplateMatchesDaemonProbe(t *testing.T) {

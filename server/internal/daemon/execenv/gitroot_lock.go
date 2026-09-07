@@ -45,7 +45,7 @@ const (
 	// Git ignores files it does not know about under $GIT_DIR, and nothing
 	// here is visible from a working tree — `git status` never sees it, and
 	// `git ls-files --others` cannot list it.
-	gitRootLockFileName = "patchbay-worktree.lock"
+	gitRootLockFileName = "orvilo-worktree.lock"
 
 	// gitRootLockPoll is the retry interval while waiting. flock has no
 	// portable timed variant, so the wait is a poll over the non-blocking

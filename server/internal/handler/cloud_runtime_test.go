@@ -42,7 +42,7 @@ func useCloudRuntimeProxy(t *testing.T, proxy cloudRuntimeProxy) {
 
 // TestCreateCloudRuntimeNodeForwardsBody is the post-MUL-2671 happy
 // path for CreateCloudRuntimeNode: the handler no longer reads, asks
-// for, or auto-generates an pby_ PAT — Cloud now mints its own
+// for, or auto-generates an ovy_ PAT — Cloud now mints its own
 // node-scoped mcn_ PAT during /api/v1/nodes and ships it to the EC2
 // instance via SSM. Orvilo-api just forwards the request body and
 // the caller's user_id; there is no PAT plumbing on this endpoint.

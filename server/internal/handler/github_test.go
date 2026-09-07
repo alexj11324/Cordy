@@ -311,7 +311,7 @@ func TestStateRoundTripWithRepositoryReturnTarget(t *testing.T) {
 }
 
 func TestGitHubConnectRepositoryReturnTarget(t *testing.T) {
-	t.Setenv("GITHUB_APP_SLUG", "patchbay-test")
+	t.Setenv("GITHUB_APP_SLUG", "orvilo-test")
 	t.Setenv("GITHUB_WEBHOOK_SECRET", "test-secret-123")
 	wsID := "11111111-2222-3333-4444-555555555555"
 
@@ -354,7 +354,7 @@ func TestGitHubConnectRepositoryReturnTarget(t *testing.T) {
 
 func TestGitHubSetupCallbackRepositoryReturnTarget(t *testing.T) {
 	t.Setenv("GITHUB_WEBHOOK_SECRET", "test-secret-123")
-	t.Setenv("FRONTEND_ORIGIN", "https://app.patchbay.test/")
+	t.Setenv("FRONTEND_ORIGIN", "https://app.orvilo.test/")
 	wsID := "11111111-2222-3333-4444-555555555555"
 	state, err := signStateForReturn(wsID, githubReturnToRepositories)
 	if err != nil {
@@ -371,7 +371,7 @@ func TestGitHubSetupCallbackRepositoryReturnTarget(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("GitHubSetupCallback: got %d, want 302", rec.Code)
 	}
-	if got := rec.Header().Get("Location"); got != "https://app.patchbay.test/settings?tab=repositories&github_error=bad_installation_id" {
+	if got := rec.Header().Get("Location"); got != "https://app.orvilo.test/settings?tab=repositories&github_error=bad_installation_id" {
 		t.Fatalf("redirect = %q, want repository settings error", got)
 	}
 }
@@ -1847,7 +1847,7 @@ func TestGitHubRoutes_RoleGating(t *testing.T) {
 	mkUser := func(t *testing.T, label string) string {
 		t.Helper()
 		var id string
-		email := fmt.Sprintf("github-routes-%s-%s@patchbay.ai", slug, label)
+		email := fmt.Sprintf("github-routes-%s-%s@orvilo.ai", slug, label)
 		dbfx.QueryRow(t, `
 INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id
 `, "GHR "+label, email).Scan(&id)

@@ -1,12 +1,12 @@
 {
   "manifest_version": 1,
-  "key": "ai.patchbay.schedule-pulse",
+  "key": "ai.orvilo.schedule-pulse",
   "name": "Schedule Pulse",
   "description": "A scheduled Hook that Orvilo wakes every five minutes. Each unique delivery is recorded once in workspace storage, including when the host retries.",
   "version": "1.0.0",
   "author": {
-    "name": "patchbay",
-    "url": "https://patchbay.aspectlylabs.com"
+    "name": "orvilo",
+    "url": "https://orvilo.aspectlylabs.com"
   },
   "scopes": [
     "storage:workspace",

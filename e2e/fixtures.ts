@@ -11,7 +11,7 @@ import pg from "pg";
 // back to localhost. dotenv sets unset-vs-empty both as "" — treating them
 // the same matches user intent.
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || `http://localhost:${process.env.PORT || "8080"}`;
-const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable";
+const DATABASE_URL = process.env.DATABASE_URL ?? "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable";
 
 interface TestWorkspace {
   id: string;

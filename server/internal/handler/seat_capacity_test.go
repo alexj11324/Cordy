@@ -263,7 +263,7 @@ func TestCapacityConsumeFailsClosedWhenCloudIsUnavailable(t *testing.T) {
 
 func TestAcceptInvitationRejectsUnavailableReservedCapacity(t *testing.T) {
 	ctx := context.Background()
-	email := "strict-capacity-invite-" + uuid.NewString() + "@patchbay.ai"
+	email := "strict-capacity-invite-" + uuid.NewString() + "@orvilo.ai"
 	userID := dbfx.User(t, "Strict Capacity Invitee", email)
 	invitationID := dbfx.Insert(t, "workspace_invitation", testutil.Cols{
 		"workspace_id":    testWorkspaceID,
@@ -312,7 +312,7 @@ func TestSeatCapacityWorkspaceDeletionSettlesOverlappingInvitationIntent(t *test
 	invitationID := uuid.MustParse(dbfx.Insert(t, "workspace_invitation", testutil.Cols{
 		"workspace_id":  testWorkspaceID,
 		"inviter_id":    testUserID,
-		"invitee_email": uuid.NewString() + "@patchbay.ai",
+		"invitee_email": uuid.NewString() + "@orvilo.ai",
 		"role":          "member",
 		"status":        "pending",
 		"expires_at":    testutil.Raw("now() + interval '1 day'"),
@@ -353,7 +353,7 @@ func TestSeatCapacityWorkspaceDeletionCannotRegressConcurrentConfirm(t *testing.
 	invitationID := uuid.MustParse(dbfx.Insert(t, "workspace_invitation", testutil.Cols{
 		"workspace_id":  testWorkspaceID,
 		"inviter_id":    testUserID,
-		"invitee_email": uuid.NewString() + "@patchbay.ai",
+		"invitee_email": uuid.NewString() + "@orvilo.ai",
 		"role":          "member",
 		"status":        "pending",
 		"expires_at":    testutil.Raw("now() + interval '1 day'"),

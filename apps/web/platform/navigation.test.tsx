@@ -1,5 +1,5 @@
 /**
- * MUL-5208 — the web half of the `patchbay:navigate` bridge.
+ * MUL-5208 — the web half of the `orvilo:navigate` bridge.
  *
  * Shared content (comments, chat, issue descriptions) fires this event whenever
  * a link resolves to an in-app destination, including an absolute URL on this
@@ -27,7 +27,7 @@ import { useNavigation, type NavigationAdapter } from "@orvilo/views/navigation"
 
 function navigate(path: string) {
   window.dispatchEvent(
-    new CustomEvent("patchbay:navigate", { detail: { path } }),
+    new CustomEvent("orvilo:navigate", { detail: { path } }),
   );
 }
 
@@ -61,7 +61,7 @@ describe("WebNavigationProvider internal link bridge", () => {
   it("ignores an event without a path", () => {
     render(<WebNavigationProvider>{null}</WebNavigationProvider>);
 
-    window.dispatchEvent(new CustomEvent("patchbay:navigate", { detail: {} }));
+    window.dispatchEvent(new CustomEvent("orvilo:navigate", { detail: {} }));
 
     expect(router.push).not.toHaveBeenCalled();
   });

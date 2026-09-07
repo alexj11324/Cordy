@@ -65,7 +65,7 @@ beforeEach(async () => {
   ctx.ipcHandlers.clear();
   ctx.windowsBySender.clear();
   ctx.windowsBySender.set(mainSender, mainWindow);
-  const directory = await mkdtemp(join(tmpdir(), "patchbay-guest-session-"));
+  const directory = await mkdtemp(join(tmpdir(), "orvilo-guest-session-"));
   temporaryDirectories.push(directory);
   ctx.userDataPath = directory;
   onCloudMode = vi.fn<() => Promise<void>>(async () => {});

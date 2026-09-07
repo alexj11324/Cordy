@@ -11,11 +11,11 @@
 // that it happened at all.
 
 const pending = new Map();
-const port = globalThis.__patchbayPluginBridgePortV2;
+const port = globalThis.__orviloPluginBridgePortV2;
 let sequence = 0;
 
 if (!(port instanceof MessagePort)) throw new Error("Orvilo surface bridge is unavailable");
-delete globalThis.__patchbayPluginBridgePortV2;
+delete globalThis.__orviloPluginBridgePortV2;
 port.onmessage = (message) => {
   const payload = message.data;
   if (payload?.kind === "theme") return applyTheme(payload.theme);

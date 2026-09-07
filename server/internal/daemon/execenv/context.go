@@ -16,12 +16,12 @@ import (
 
 // TaskContextMarkerRelPath is a non-secret marker the daemon writes under the
 // task workdir. The CLI uses it as a fallback daemon-task signal when a child
-// sandbox strips all ORVILO_* env vars before invoking `patchbay`.
-const TaskContextMarkerRelPath = ".patchbay/daemon_task_context.json"
+// sandbox strips all ORVILO_* env vars before invoking `orvilo`.
+const TaskContextMarkerRelPath = ".orvilo/daemon_task_context.json"
 
 // TaskContextMarkerManagedBy is the marker discriminator the CLI checks before
 // treating TaskContextMarkerRelPath as daemon-owned.
-const TaskContextMarkerManagedBy = "patchbay-daemon-task"
+const TaskContextMarkerManagedBy = "orvilo-daemon-task"
 
 type taskContextMarkerFile struct {
 	ManagedBy     string `json:"managed_by"`
@@ -31,9 +31,9 @@ type taskContextMarkerFile struct {
 }
 
 // EnsureWorkspacesRootMarker writes a persistent daemon-task marker at
-// {workspacesRoot}/.patchbay/daemon_task_context.json.
+// {workspacesRoot}/.orvilo/daemon_task_context.json.
 //
-// The per-workdir marker only protects `patchbay` invocations whose cwd is
+// The per-workdir marker only protects `orvilo` invocations whose cwd is
 // inside the workdir, because the CLI discovers markers by walking *up* from
 // cwd. A sandboxed subprocess that lost every ORVILO_* env var and escaped
 // to the workdir's parent directory sits above that marker, finds no daemon
@@ -207,7 +207,7 @@ func writeContextFiles(workDir, provider string, ctx TaskContextForEnv, manifest
 func writeTaskContextMarker(workDir string, ctx TaskContextForEnv, manifest *sidecarManifest) error {
 	dir := filepath.Dir(filepath.Join(workDir, TaskContextMarkerRelPath))
 	if err := recordMkdirAll(dir, 0o755, manifest); err != nil {
-		return fmt.Errorf("create .patchbay dir: %w", err)
+		return fmt.Errorf("create .orvilo dir: %w", err)
 	}
 	// The sidecar manifest removes this marker on normal local_directory
 	// cleanup. If a crash leaves it behind, the CLI intentionally treats it
@@ -277,19 +277,19 @@ func (p ProjectResourceForEnv) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// writeProjectResources writes .patchbay/project/resources.json into the
+// writeProjectResources writes .orvilo/project/resources.json into the
 // working directory when the task carries project context. The file is
 // always written when a project is attached (even with zero resources) so
 // agents can rely on its presence as a signal that a project exists.
 //
-// manifest, when non-nil, is populated with the .patchbay/project chain
+// manifest, when non-nil, is populated with the .orvilo/project chain
 // of created directories and the resources.json file so CleanupSidecars
 // can undo them on local_directory teardown.
 func writeProjectResources(workDir string, ctx TaskContextForEnv, manifest *sidecarManifest) error {
 	if ctx.ProjectID == "" && len(ctx.ProjectResources) == 0 {
 		return nil
 	}
-	dir := filepath.Join(workDir, ".patchbay", "project")
+	dir := filepath.Join(workDir, ".orvilo", "project")
 	if err := recordMkdirAll(dir, 0o755, manifest); err != nil {
 		return err
 	}
@@ -308,7 +308,7 @@ func writeProjectResources(workDir string, ctx TaskContextForEnv, manifest *side
 		return err
 	}
 	if err := recordWriteFile(filepath.Join(dir, "resources.json"), data, 0o644, manifest); err != nil {
-		// .patchbay/project/resources.json is Orvilo-owned and a
+		// .orvilo/project/resources.json is Orvilo-owned and a
 		// pre-existing path is almost certainly user content the
 		// manifest must not destroy. The runtime brief already lists
 		// every project resource so the agent runs fine without the
@@ -938,7 +938,7 @@ func sanitizeSkillName(name string) string {
 //
 // When an Orvilo skill's natural slug collides with a user-installed
 // skill at the same path, we allocate a collision-free sibling slug
-// (e.g. `issue-review-patchbay`) and write there instead. Provider-native
+// (e.g. `issue-review-orvilo`) and write there instead. Provider-native
 // discovery still picks it up because every subdir under skillsDir is a
 // distinct skill; the user's original directory stays bit-for-bit
 // intact. Without this fallback writeSkillFiles would have to either
@@ -1037,7 +1037,7 @@ func renderIssueContext(provider string, ctx TaskContextForEnv) string {
 	}
 
 	b.WriteString("## Quick Start\n\n")
-	fmt.Fprintf(&b, "Run `patchbay issue get %s --output json` to fetch the full issue details.\n\n", ctx.IssueID)
+	fmt.Fprintf(&b, "Run `orvilo issue get %s --output json` to fetch the full issue details.\n\n", ctx.IssueID)
 
 	return b.String()
 }
@@ -1077,9 +1077,9 @@ func renderAutomationContext(ctx TaskContextForEnv) string {
 	}
 
 	b.WriteString("## Quick Start\n\n")
-	b.WriteString("This is a run-only automation task with no Orvilo issue attached. Do not run `patchbay issue get` unless the automation instructions explicitly ask you to create or update an issue.\n\n")
+	b.WriteString("This is a run-only automation task with no Orvilo issue attached. Do not run `orvilo issue get` unless the automation instructions explicitly ask you to create or update an issue.\n\n")
 	if ctx.AutomationID != "" {
-		fmt.Fprintf(&b, "Run `patchbay automation get %s --output json` if you need the full automation configuration.\n\n", ctx.AutomationID)
+		fmt.Fprintf(&b, "Run `orvilo automation get %s --output json` if you need the full automation configuration.\n\n", ctx.AutomationID)
 	}
 	if strings.TrimSpace(ctx.AutomationDescription) != "" {
 		b.WriteString("## Automation Instructions\n\n")

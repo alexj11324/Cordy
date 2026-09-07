@@ -42,7 +42,7 @@ func TestPluginRateLimitIsPerCredentialAndUsesStableProblem(t *testing.T) {
 		t.Fatalf("different credential shared budget: status=%d", response.Code)
 	}
 
-	keys, err := rdb.Keys(context.Background(), "pby:ratelimit:plugin:*").Result()
+	keys, err := rdb.Keys(context.Background(), "ovy:ratelimit:plugin:*").Result()
 	if err != nil {
 		t.Fatalf("list limiter keys: %v", err)
 	}

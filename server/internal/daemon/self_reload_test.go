@@ -26,7 +26,7 @@ func newSelfReloadTestDaemon(t *testing.T, runningVersion string) (*Daemon, *ato
 		resolveSelfExecutable = origResolve
 		isBrewInstall = origBrew
 	})
-	binary := filepath.Join(t.TempDir(), "patchbay")
+	binary := filepath.Join(t.TempDir(), "orvilo")
 	resolveSelfExecutable = func() (string, error) { return binary, nil }
 	isBrewInstall = func() bool { return false }
 
@@ -39,7 +39,7 @@ func newSelfReloadTestDaemon(t *testing.T, runningVersion string) (*Daemon, *ato
 	return d, &restartCalls
 }
 
-// stubSelfVersion makes the `patchbay --version` probe report version (or fail).
+// stubSelfVersion makes the `orvilo --version` probe report version (or fail).
 func stubSelfVersion(t *testing.T, version string, err error) *atomic.Int32 {
 	t.Helper()
 	orig := detectSelfVersion
@@ -361,12 +361,12 @@ func TestParseSelfVersion(t *testing.T) {
 	}{
 		{
 			name: "release build template",
-			raw:  "patchbay 0.3.7 (commit: abc1234, built: 2026-07-29T10:00:00Z)\ngo: go1.26.1, os/arch: darwin/arm64\n",
+			raw:  "orvilo 0.3.7 (commit: abc1234, built: 2026-07-29T10:00:00Z)\ngo: go1.26.1, os/arch: darwin/arm64\n",
 			want: "0.3.7",
 		},
 		{
 			name: "dev build from git describe",
-			raw:  "patchbay v0.3.7-42-gabcdef0-dirty (commit: abcdef0, built: unknown)\n",
+			raw:  "orvilo v0.3.7-42-gabcdef0-dirty (commit: abcdef0, built: unknown)\n",
 			want: "v0.3.7-42-gabcdef0-dirty",
 		},
 		{

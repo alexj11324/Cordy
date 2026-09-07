@@ -2,7 +2,7 @@ export function resolveSafeRedirectUrl(raw: string | null): string {
   if (!raw) return "/";
 
   if (raw.startsWith("/") && !raw.startsWith("//")) {
-    const url = new URL(raw, "https://patchbay.invalid");
+    const url = new URL(raw, "https://orvilo.invalid");
     return `${url.pathname}${url.search}${url.hash}` || "/";
   }
 

@@ -109,13 +109,13 @@ func TestClaimTaskChatCompletePointerSkipsSessionFallbackQuery(t *testing.T) {
 	seenRolloutQuery := false
 	for _, family := range families {
 		switch family.GetName() {
-		case "patchbay_chat_claim_session_fallback_needed_total":
+		case "orvilo_chat_claim_session_fallback_needed_total":
 			if len(family.Metric) != 1 || family.Metric[0].GetCounter().GetValue() != 0 {
 				t.Fatalf("complete pointer unexpectedly needed session fallback: %v", family)
 			}
-		case "patchbay_chat_claim_session_fallback_result_total":
+		case "orvilo_chat_claim_session_fallback_result_total":
 			t.Fatalf("complete pointer unexpectedly emitted a session fallback result: %v", family)
-		case "patchbay_chat_claim_resume_query_duration_seconds":
+		case "orvilo_chat_claim_resume_query_duration_seconds":
 			for _, metric := range family.Metric {
 				for _, label := range metric.Label {
 					if label.GetName() != "query" {
@@ -215,13 +215,13 @@ func TestClaimTaskChatInputLoadFailureSkipsResumeQueries(t *testing.T) {
 	}
 	for _, family := range families {
 		switch family.GetName() {
-		case "patchbay_chat_claim_session_fallback_needed_total":
+		case "orvilo_chat_claim_session_fallback_needed_total":
 			if len(family.Metric) != 1 || family.Metric[0].GetCounter().GetValue() != 0 {
 				t.Fatalf("input load failure unexpectedly needed session fallback: %v", family)
 			}
-		case "patchbay_chat_claim_session_fallback_result_total":
+		case "orvilo_chat_claim_session_fallback_result_total":
 			t.Fatalf("input load failure unexpectedly emitted a session fallback result: %v", family)
-		case "patchbay_chat_claim_resume_query_duration_seconds":
+		case "orvilo_chat_claim_resume_query_duration_seconds":
 			t.Fatalf("input load failure unexpectedly ran a resume-history query: %v", family)
 		}
 	}

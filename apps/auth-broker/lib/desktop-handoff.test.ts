@@ -27,10 +27,10 @@ describe("desktop handoff", () => {
     expect(binding?.local).toBe(true);
     expect(binding?.query).toContain("session_mode=local");
     expect(binding?.query).not.toContain("session_api");
-    expect(buildDesktopCallbackUrl(`pbl_${"c".repeat(43)}`, "s".repeat(43), "patchbay"))
-      .toContain("patchbay://auth/callback?");
-    expect(buildDesktopCallbackUrl(`pbl_${"c".repeat(43)}`, "s".repeat(43), "patchbay-canary-5718c47b86bf9ece"))
-      .toContain("patchbay-canary-5718c47b86bf9ece://auth/callback?");
+    expect(buildDesktopCallbackUrl(`ovl_${"c".repeat(43)}`, "s".repeat(43), "orvilo"))
+      .toContain("orvilo://auth/callback?");
+    expect(buildDesktopCallbackUrl(`ovl_${"c".repeat(43)}`, "s".repeat(43), "orvilo-canary-5718c47b86bf9ece"))
+      .toContain("orvilo-canary-5718c47b86bf9ece://auth/callback?");
   });
 
   it.each(["http://localhost:8080", "http://127.0.0.1:19080", "https://evil.example"])(
@@ -54,7 +54,7 @@ describe("desktop handoff", () => {
       ),
     ).toBeNull();
     expect(() =>
-      buildDesktopCallbackUrl(`pbd_${"c".repeat(43)}`, "s".repeat(43), "https"),
+      buildDesktopCallbackUrl(`ovd_${"c".repeat(43)}`, "s".repeat(43), "https"),
     ).toThrow();
   });
 });

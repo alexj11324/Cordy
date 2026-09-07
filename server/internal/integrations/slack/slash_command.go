@@ -29,7 +29,7 @@ import (
 // itself. It takes the invoker's natural-language description as a prompt and
 // enqueues a quick-create task against the installation's agent — the very same
 // pipeline as the web "quick create" modal (TaskService.EnqueueQuickCreateTask).
-// The agent turns the prompt into a well-formed `patchbay issue create` in the
+// The agent turns the prompt into a well-formed `orvilo issue create` in the
 // background, so the issue gets a proper title + structured description instead
 // of the raw one-liner the user typed. Because creation is asynchronous, the
 // command replies with a PRIVATE (ephemeral) acknowledgement via the command's
@@ -440,7 +440,7 @@ func (p *SlashCommandProcessor) resolveUser(ctx context.Context, inst engine.Res
 		return pgtype.UUID{}, err
 	}
 	if _, err := p.q.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-		UserID:      binding.PatchbayUserID,
+		UserID:      binding.OrviloUserID,
 		WorkspaceID: inst.WorkspaceID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -448,7 +448,7 @@ func (p *SlashCommandProcessor) resolveUser(ctx context.Context, inst engine.Res
 		}
 		return pgtype.UUID{}, err
 	}
-	return binding.PatchbayUserID, nil
+	return binding.OrviloUserID, nil
 }
 
 // bindingText mints a single-use binding token and returns a "link your account"

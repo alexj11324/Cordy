@@ -1,6 +1,6 @@
 // Package execenv manages isolated per-task execution environments for the daemon.
 // Each task gets its own directory with injected context files. Repositories are
-// checked out on demand by the agent via `patchbay repo checkout`.
+// checked out on demand by the agent via `orvilo repo checkout`.
 package execenv
 
 import (
@@ -37,7 +37,7 @@ type ProjectResourceForEnv struct {
 
 // PrepareParams holds all inputs needed to set up an execution environment.
 type PrepareParams struct {
-	WorkspacesRoot  string // base path for all envs (e.g., ~/patchbay_workspaces)
+	WorkspacesRoot  string // base path for all envs (e.g., ~/orvilo_workspaces)
 	WorkspaceID     string // workspace UUID — stable identity and path suffix
 	WorkspaceSlug   string // human-readable workspace path prefix
 	TaskID          string // task UUID — stable identity and path suffix
@@ -285,7 +285,7 @@ type Environment struct {
 	LocalDirectory bool
 	// OrviloConfigRoot is the private per-task config directory exported to
 	// child CLI invocations. It prevents implicit discovery of the daemon
-	// owner's ~/.patchbay profile without changing the provider-facing HOME.
+	// owner's ~/.orvilo profile without changing the provider-facing HOME.
 	OrviloConfigRoot string
 	// LocalWorktree is set when the task runs in worktree mode against a
 	// local_directory resource. The daemon calls Finalize on it after the
@@ -409,7 +409,7 @@ func readablePathSegment(label, fallback, id string) string {
 
 // Prepare creates an isolated execution environment for a task.
 // The workdir starts empty (no repo checkouts). The agent checks out repos
-// on demand via `patchbay repo checkout <url>`.
+// on demand via `orvilo repo checkout <url>`.
 func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	if params.WorkspacesRoot == "" {
 		return nil, fmt.Errorf("execenv: workspaces root is required")
@@ -505,11 +505,11 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 			return nil, fmt.Errorf("execenv: create directory %s: %w", dir, err)
 		}
 	}
-	patchbayConfigRoot := filepath.Join(envRoot, "patchbay-config")
-	if err := os.MkdirAll(patchbayConfigRoot, 0o700); err != nil {
+	orviloConfigRoot := filepath.Join(envRoot, "orvilo-config")
+	if err := os.MkdirAll(orviloConfigRoot, 0o700); err != nil {
 		return nil, fmt.Errorf("execenv: create task-local Orvilo config directory: %w", err)
 	}
-	if err := os.Chmod(patchbayConfigRoot, 0o700); err != nil {
+	if err := os.Chmod(orviloConfigRoot, 0o700); err != nil {
 		return nil, fmt.Errorf("execenv: restrict task-local Orvilo config directory: %w", err)
 	}
 
@@ -559,7 +559,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 		WorkDir:          workDir,
 		LocalDirectory:   params.LocalWorkDir != "",
 		LocalWorktree:    localWorktree,
-		OrviloConfigRoot: patchbayConfigRoot,
+		OrviloConfigRoot: orviloConfigRoot,
 		logger:           logger,
 		lockFile:         lockFile,
 	}
@@ -590,7 +590,7 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	// In place only. Worktree mode discards the whole worktree on failure just
 	// above, and a cloud envRoot is wiped wholesale by the GC — only the
 	// local_directory flow writes into a directory that outlives the task and
-	// belongs to the user, where a leftover marker disables every patchbay
+	// belongs to the user, where a leftover marker disables every orvilo
 	// command in that directory tree until someone removes it by hand.
 	if params.LocalWorkDir != "" {
 		defer func() {
@@ -842,7 +842,7 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 		logger:         logger,
 	}
 	if env.RootDir != "" {
-		env.OrviloConfigRoot = filepath.Join(env.RootDir, "patchbay-config")
+		env.OrviloConfigRoot = filepath.Join(env.RootDir, "orvilo-config")
 		if err := os.MkdirAll(env.OrviloConfigRoot, 0o700); err != nil {
 			logger.Warn("execenv: restore task-local Orvilo config directory failed; forcing fresh prepare", "error", err)
 			return nil
@@ -857,8 +857,8 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 	// On reuse the workdir still holds the prior run's issue_context.md and
 	// skill directories; without clearing them first, writeSkillFiles sees
 	// its own earlier output occupying the canonical slug and falls back to
-	// a collision-free sibling (issue-review, issue-review-patchbay,
-	// issue-review-patchbay-2, …), accumulating a fresh duplicate on every
+	// a collision-free sibling (issue-review, issue-review-orvilo,
+	// issue-review-orvilo-2, …), accumulating a fresh duplicate on every
 	// re-dispatch to the same issue. allocateCollisionFreeSkillDir exists to
 	// dodge *user*-owned skill dirs (the local_directory flow), not our own
 	// prior writes, so we undo them via the prior manifest first and let the
@@ -872,7 +872,7 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 	//      CleanupSidecars alone can't do this — it preserves any recorded dir
 	//      the agent populated (correct on the local_directory teardown path),
 	//      which would otherwise keep the canonical slug occupied and push the
-	//      refresh back to issue-review-patchbay.
+	//      refresh back to issue-review-orvilo.
 	//   2. CleanupSidecars rolls back the remaining sidecar files
 	//      (issue_context.md, project resources) and the manifest itself.
 	//
@@ -1151,7 +1151,7 @@ const managedEnvProvenanceFile = ".managed_env.json"
 
 // ManagedEnvProvenanceManagedBy discriminates a managed-env provenance file
 // the daemon wrote from any lookalike JSON that happens to share the path.
-const ManagedEnvProvenanceManagedBy = "patchbay-daemon-managed-env"
+const ManagedEnvProvenanceManagedBy = "orvilo-daemon-managed-env"
 
 // ManagedEnvProvenance is persisted to .managed_env.json inside the env root at
 // Prepare time (NOT on completion, unlike .gc_meta.json). It records that this

@@ -559,7 +559,7 @@ func (c *wecomChannel) pingLoop(ctx context.Context, sender *wsSender, log *slog
 // back on the length heuristic used by internal-customer-service (chat ids
 // are ≥33 chars, userids are shorter), which is stable in practice.
 //
-// The Channel is not the primary outbound path in the patchbay engine — the
+// The Channel is not the primary outbound path in the orvilo engine — the
 // EventChatDone subscriber and the OutboundReplier handle most sends — but
 // Channel.Send is still the contract that lets the engine deliver ad-hoc
 // replies, so we implement it here for parity with feishuChannel /

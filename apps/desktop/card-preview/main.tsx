@@ -89,7 +89,7 @@ function Preview() {
     <main className={dark ? "dark preview" : "preview"}>
       <div className="preview-shell">
         <p className="text-caption tracking-widest text-muted-foreground">
-          PATCHBAY / LOCAL PREVIEW
+          ORVILO / LOCAL PREVIEW
         </p>
         <h1 className="mt-3 text-title font-semibold">卡片状态预览</h1>
         <p className="mt-2 text-body text-muted-foreground">

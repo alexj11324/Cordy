@@ -165,7 +165,7 @@ type CachedRepo struct {
 
 // Cache manages bare git clones for workspace repositories.
 type Cache struct {
-	root   string // base directory for all caches (e.g. ~/patchbay_workspaces/.repos)
+	root   string // base directory for all caches (e.g. ~/orvilo_workspaces/.repos)
 	logger *slog.Logger
 	// repoLocks maps bare repo path → dedicated mutex. Any mutating operation
 	// on a given bare repo (clone, fetch, worktree add, ref update) must
@@ -427,7 +427,7 @@ func (c *Cache) BarePath(workspaceID, url string) string {
 // out in months. atime is worse: noatime is common on Linux and Windows
 // disables it by default. So the signal has to be written explicitly, at the
 // one place that means a repo was really used — CreateWorktree.
-const lastUsedFile = ".patchbay_last_used"
+const lastUsedFile = ".orvilo_last_used"
 
 // MarkUsed records that this bare repo was just used for a checkout. Callers
 // must already hold the repo lock. Best-effort: a failed stamp only risks the
@@ -945,9 +945,9 @@ func (c *Cache) CreateWorktreeContext(ctx context.Context, params WorktreeParams
 }
 
 const (
-	isolatedCheckoutConfigKey   = "patchbay.checkout-mode"
+	isolatedCheckoutConfigKey   = "orvilo.checkout-mode"
 	isolatedCheckoutConfigValue = "isolated"
-	isolatedCacheRemoteName     = "patchbay-cache"
+	isolatedCacheRemoteName     = "orvilo-cache"
 )
 
 // createOrUpdateIsolatedCheckout keeps Git metadata inside the task workdir.
@@ -1558,22 +1558,22 @@ func bareHeadBranchContext(ctx context.Context, barePath string) string {
 	return ref
 }
 
-// patchbayHookMarker is a sentinel comment embedded in every prepare-commit-msg
+// orviloHookMarker is a sentinel comment embedded in every prepare-commit-msg
 // hook installed by the daemon. removeCoAuthoredByHook uses it to recognize
 // hooks it owns so it never deletes a hook installed by the user or another
 // tool. Do not change without bumping the recognition logic.
-const patchbayHookMarker = "# patchbay:prepare-commit-msg:co-authored-by"
+const orviloHookMarker = "# orvilo:prepare-commit-msg:co-authored-by"
 
 // daemonInstalledHookSignatures lists substrings that identify a
 // prepare-commit-msg hook as one the daemon installed. removeCoAuthoredByHook
 // treats a hook as Orvilo-owned if its content contains ANY of these
 // substrings. The list deliberately includes the legacy comment that the
-// daemon used before patchbayHookMarker existed, so disabling the toggle on
+// daemon used before orviloHookMarker existed, so disabling the toggle on
 // existing installations still cleans up old hooks seeded by previous daemon
 // versions. Add to this list — never remove from it — so future tweaks to
 // prepareCommitMsgHook keep recognizing every previously-shipped variant.
 var daemonInstalledHookSignatures = []string{
-	patchbayHookMarker,
+	orviloHookMarker,
 	"# Installed by the Orvilo daemon.",
 }
 
@@ -1584,7 +1584,7 @@ var daemonInstalledHookSignatures = []string{
 // commits under the current value. Without it the decision would be frozen
 // into the hook file at checkout time (MUL-6921).
 const (
-	coAuthoredByStateFile     = ".patchbay_co_authored_by"
+	coAuthoredByStateFile     = ".orvilo_co_authored_by"
 	coAuthoredByStateEnabled  = "1"
 	coAuthoredByStateDisabled = "0"
 )
@@ -1824,7 +1824,7 @@ fi
 `, shellSingleQuoted(filepath.ToSlash(statePath)))
 	}
 	return `#!/bin/sh
-# patchbay:prepare-commit-msg:co-authored-by
+# orvilo:prepare-commit-msg:co-authored-by
 # Orvilo: add Co-authored-by trailer for the Orvilo Agent.
 # Installed by the Orvilo daemon. Do not edit — it will be overwritten.
 
@@ -1836,7 +1836,7 @@ case "$COMMIT_SOURCE" in
   merge|squash) exit 0 ;;
 esac
 
-` + gate + `TRAILER="Co-authored-by: patchbay-agent <github@aspectlylabs.com>"
+` + gate + `TRAILER="Co-authored-by: orvilo-agent <github@aspectlylabs.com>"
 
 # Don't add if already present.
 if grep -qF "$TRAILER" "$COMMIT_MSG_FILE"; then
@@ -1892,7 +1892,7 @@ func installCoAuthoredByHookContext(ctx context.Context, worktreePath, statePath
 // script, and this path rewrites hooks in repos with checkouts live on them.
 func writeHookFile(hookPath, contents string) error {
 	dir := filepath.Dir(hookPath)
-	tmp, err := os.CreateTemp(dir, ".patchbay-hook-*")
+	tmp, err := os.CreateTemp(dir, ".orvilo-hook-*")
 	if err != nil {
 		return err
 	}

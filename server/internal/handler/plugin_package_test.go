@@ -153,7 +153,7 @@ func surfaceScript(t *testing.T, installationID, surfaceKey string) (*httptest.R
 	if documentRecorder.Code != http.StatusOK {
 		t.Fatalf("serve hosted surface: status=%d body=%s", documentRecorder.Code, documentRecorder.Body.String())
 	}
-	encoded := regexp.MustCompile(`id="patchbay-surface-code">([^<]+)</script>`).FindStringSubmatch(documentRecorder.Body.String())
+	encoded := regexp.MustCompile(`id="orvilo-surface-code">([^<]+)</script>`).FindStringSubmatch(documentRecorder.Body.String())
 	if len(encoded) != 2 {
 		t.Fatal("hosted surface did not contain stored code")
 	}

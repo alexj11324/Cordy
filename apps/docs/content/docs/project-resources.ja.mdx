@@ -16,7 +16,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## リソースが実行に入る仕組み
 
-エージェントがプロジェクト内のタスクを処理するとき、Orvilo はプロジェクト名、プロジェクトの説明、リソース一覧を実行コンテキストに追加し、作業ディレクトリに `.patchbay/project/resources.json` を書き込みます。
+エージェントがプロジェクト内のタスクを処理するとき、Orvilo はプロジェクト名、プロジェクトの説明、リソース一覧を実行コンテキストに追加し、作業ディレクトリに `.orvilo/project/resources.json` を書き込みます。
 
 ワークスペースに紐づくリポジトリ一覧は、常に実行コンテキストに含まれます。プロジェクトに紐づくリポジトリは、それに加えて、この一連の作業で使うコードとデフォルトの ref を指定します。
 
@@ -84,7 +84,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 - **黙って失われるものはありません。** エージェントが未コミットのまま残した変更は、ワークツリーが削除される前にそのブランチへコミットされます。**作業が途中で失敗した場合も同様です。** ごくまれにそのコミット自体が実行できない場合 — 例えば `commit.gpgSign` が有効で、ランタイムが署名鍵を利用できないリポジトリ — ワークツリーは削除されずに意図的に保持され、作業は失敗として報告されます。あなたのリポジトリで `git worktree list` を実行すると、その変更を保持しているディレクトリが表示されます。
 - **何も変更しなかった作業は、何も残しません。** そのブランチは `git branch` に空の項目として残らず、削除されます。ただし、それまでの実行の成果を持つタスクのブランチは常に残ります。
 
-ワークツリーはランタイムのワークスペースディレクトリ内にあるため、通常のクリーンアップ周期で回収されます。あなたのリポジトリに残るのは 2 つ、ブランチと、ブランチごとの隠しref（`refs/patchbay/local-state/` 配下）です。後者はそのブランチの所有者と、最後に引き継いだ時点のあなたのディレクトリの内容を記録します。隠しrefは `git branch` には現れません。`git for-each-ref refs/patchbay` で一覧できます。Orvilo はブランチと一緒に削除し、あなたが自分で消したブランチのrefは、そのリポジトリで次に作業が動くときに片付けます。`git for-each-ref --format='%(refname)' refs/patchbay | xargs -n1 git update-ref -d` で一括削除もできます。
+ワークツリーはランタイムのワークスペースディレクトリ内にあるため、通常のクリーンアップ周期で回収されます。あなたのリポジトリに残るのは 2 つ、ブランチと、ブランチごとの隠しref（`refs/orvilo/local-state/` 配下）です。後者はそのブランチの所有者と、最後に引き継いだ時点のあなたのディレクトリの内容を記録します。隠しrefは `git branch` には現れません。`git for-each-ref refs/orvilo` で一覧できます。Orvilo はブランチと一緒に削除し、あなたが自分で消したブランチのrefは、そのリポジトリで次に作業が動くときに片付けます。`git for-each-ref --format='%(refname)' refs/orvilo | xargs -n1 git update-ref -d` で一括削除もできます。
 
 <Callout type="warn">
 **セルフホスト運用者向け:** このモードの分離はサーバー側で強制されます（リソース保存時と、ランタイムが各作業を取得する時点の二重チェック）。そのため、ランタイムをいつダウングレードしても検出されます。検出できない唯一の組み合わせは、このモードを実装していないランタイムが接続されたまま、サーバーをこの機能より前のビルドへロールバックすることです — 古いサーバーにはこのゲートがなく、そうしたランタイムは `execution_mode` を無視して作業を元のディレクトリで直接実行してしまいます。`worktree` リソースが存在する間は、対象マシンのランタイムがすべて最新でない限り、サーバーをこのリリースより前へロールバックしないでください。
@@ -96,7 +96,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 実行中に書き込まれるもの
 
-エージェントによるコードの変更のほかに、ランタイムは、現在の AI コーディングツールが必要とする指示ファイルと `.patchbay/project/resources.json` をディレクトリに書き込むことがあります。バージョン管理に含めたくない場合は `.gitignore` に追加してください。
+エージェントによるコードの変更のほかに、ランタイムは、現在の AI コーディングツールが必要とする指示ファイルと `.orvilo/project/resources.json` をディレクトリに書き込むことがあります。バージョン管理に含めたくない場合は `.gitignore` に追加してください。
 
 Orvilo が実行環境をクリーンアップするとき、紐づけたローカルディレクトリを削除することはありません。エージェントによるこのディレクトリへの変更は、あなたがターミナルで AI コーディングツールを直接実行したときの変更と同じ性質のものであり、同じようにレビューが必要です。
 
@@ -104,37 +104,37 @@ Orvilo が実行環境をクリーンアップするとき、紐づけたロー�
 
 ```bash
 # プロジェクト作成時にリポジトリを紐づける
-patchbay project create \
+orvilo project create \
   --title "Agent UX" \
   --repo https://github.com/alexj11324/Cordy
 
 # リソースの一覧表示と追加
-patchbay project resource list <project-id>
-patchbay project resource add <project-id> \
+orvilo project resource list <project-id>
+orvilo project resource add <project-id> \
   --type github_repo \
   --url https://github.com/alexj11324/Cordy \
   --ref main
 
 # 特定のデーモン上のローカルディレクトリを紐づける
-patchbay project resource add <project-id> \
+orvilo project resource add <project-id> \
   --type local_directory \
   --local-path /absolute/path/to/repo \
   --daemon-id <daemon-id>
 
 # ローカル git リポジトリを紐づけ、作業を各自のワークツリーで並行実行させる
-patchbay project resource add <project-id> \
+orvilo project resource add <project-id> \
   --type local_directory \
   --local-path /absolute/path/to/repo \
   --daemon-id <daemon-id> \
   --execution-mode worktree
 
 # 既存のローカルディレクトリのモードを切り替える
-patchbay project resource update <project-id> <resource-id> --execution-mode worktree
-patchbay project resource update <project-id> <resource-id> --execution-mode in_place
+orvilo project resource update <project-id> <resource-id> --execution-mode worktree
+orvilo project resource update <project-id> <resource-id> --execution-mode in_place
 
 
 # リソースを削除する
-patchbay project resource remove <project-id> <resource-id>
+orvilo project resource remove <project-id> <resource-id>
 ```
 
 リソースの変更は、その後に作成される作業に反映されます。すでに終了した実行の記録が書き換えられることはありません。

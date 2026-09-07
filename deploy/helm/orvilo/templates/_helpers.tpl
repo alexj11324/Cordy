@@ -1,8 +1,8 @@
 {{/*
 Common labels for all resources.
 */}}
-{{- define "patchbay.labels" -}}
-app.kubernetes.io/name: patchbay
+{{- define "orvilo.labels" -}}
+app.kubernetes.io/name: orvilo
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
@@ -10,17 +10,17 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | 
 
 {{/*
 Per-component resource names. Using Release.Name keeps the same name we used
-under the kustomize layout when installed as `helm install patchbay ...`.
+under the kustomize layout when installed as `helm install orvilo ...`.
 */}}
-{{- define "patchbay.backend.fullname" -}}
+{{- define "orvilo.backend.fullname" -}}
 {{ .Release.Name }}-backend
 {{- end -}}
 
-{{- define "patchbay.frontend.fullname" -}}
+{{- define "orvilo.frontend.fullname" -}}
 {{ .Release.Name }}-frontend
 {{- end -}}
 
-{{- define "patchbay.postgres.fullname" -}}
+{{- define "orvilo.postgres.fullname" -}}
 {{ .Release.Name }}-postgres
 {{- end -}}
 
@@ -30,6 +30,6 @@ The $(VAR) syntax is resolved by the kubelet from the container's env, so
 POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB must also be loaded into env
 on the same container (see envFrom on the backend Deployment).
 */}}
-{{- define "patchbay.databaseUrl" -}}
-postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "patchbay.postgres.fullname" . }}:5432/$(POSTGRES_DB)?sslmode=disable
+{{- define "orvilo.databaseUrl" -}}
+postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@{{ include "orvilo.postgres.fullname" . }}:5432/$(POSTGRES_DB)?sslmode=disable
 {{- end -}}

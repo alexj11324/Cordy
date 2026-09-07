@@ -14,14 +14,14 @@ import (
 	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
-// Tests for `patchbay issue metadata list` 404-degradation behavior, plus
+// Tests for `orvilo issue metadata list` 404-degradation behavior, plus
 // regression coverage that get / set / delete keep real error semantics so
 // we don't lose signal when the user actually depends on the metadata
 // endpoint working.
 //
 // Background: GitHub issue patchbay-ai/patchbay#3711 — on self-hosted
 // backends that pre-date the per-issue metadata route, agent runtime
-// bootstrap calls `patchbay issue metadata list <issue> --output json`
+// bootstrap calls `orvilo issue metadata list <issue> --output json`
 // best-effort and any non-zero exit was being escalated by the Hermes
 // provider into a failed agent run. The fix is to treat a 404 from
 // /api/issues/{id}/metadata as "this server has no metadata yet" and

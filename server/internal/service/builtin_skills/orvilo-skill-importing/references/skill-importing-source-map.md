@@ -2,7 +2,7 @@
 
 Evidence layer for `orvilo-skill-importing`. Every behavioral claim in `SKILL.md`
 maps to a real code path below with `file:line`. Paths are relative to the repo
-root (`patchbay/`).
+root (`orvilo/`).
 
 Re-derive before trusting: line numbers drift. To re-verify a single anchor,
 `grep` the symbol and read its surroundings, e.g.:
@@ -49,7 +49,7 @@ archive path (below); a JSON body keeps the URL flow. Both converge on the share
 | Per-entry size-capped read | `server/internal/handler/skill_import_archive.go:234` |
 | Tests (parser units + handler multipart create/skip/reject) | `server/internal/handler/skill_import_archive_test.go` |
 
-## CLI: `patchbay skill import --url` / `--file`
+## CLI: `orvilo skill import --url` / `--file`
 
 | Behavior | File:line |
 |---|---|

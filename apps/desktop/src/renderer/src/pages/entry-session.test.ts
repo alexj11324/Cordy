@@ -21,7 +21,7 @@ describe("desktop workspace entry", () => {
   it("activates workspace mode before creating Guest credentials", async () => {
     const ipc = bridge();
     ipc.enableCloudMode.mockImplementation(async () => {
-      expect(localStorage.getItem("patchbay_token")).toBeNull();
+      expect(localStorage.getItem("orvilo_token")).toBeNull();
       return { ok: true };
     });
     await startWorkspaceGuest({
@@ -29,11 +29,11 @@ describe("desktop workspace entry", () => {
       storage: localStorage, bridge: ipc,
     });
     expect(ipc.switchGuestToCloud).not.toHaveBeenCalled();
-    expect(localStorage.getItem("patchbay_token")).toBe("guest-token");
+    expect(localStorage.getItem("orvilo_token")).toBe("guest-token");
   });
 
   it("restores existing credentials if the mode transition fails", async () => {
-    localStorage.setItem("patchbay_token", "previous");
+    localStorage.setItem("orvilo_token", "previous");
     const ipc = bridge();
     const create = vi.fn();
     ipc.enableCloudMode.mockResolvedValue({ ok: false, reason: "unavailable" });
@@ -41,7 +41,7 @@ describe("desktop workspace entry", () => {
       create,
       storage: localStorage, bridge: ipc,
     })).rejects.toThrow("unavailable");
-    expect(localStorage.getItem("patchbay_token")).toBe("previous");
+    expect(localStorage.getItem("orvilo_token")).toBe("previous");
     expect(create).not.toHaveBeenCalled();
   });
 
@@ -52,6 +52,6 @@ describe("desktop workspace entry", () => {
       storage: localStorage, bridge: ipc,
     })).rejects.toThrow("offline");
     expect(ipc.enableCloudMode).toHaveBeenCalledOnce();
-    expect(localStorage.getItem("patchbay_token")).toBeNull();
+    expect(localStorage.getItem("orvilo_token")).toBeNull();
   });
 });

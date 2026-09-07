@@ -3,13 +3,13 @@
 # -----------------------------------------------------------------------------
 images:
   backend:
-    repository: ghcr.io/alexj11324/patchbay-backend
+    repository: ghcr.io/alexj11324/orvilo-backend
     # Empty defaults to Chart.appVersion. Released OCI charts set appVersion to
     # the Git tag (for example v0.3.5), so installs use matching app images.
     tag: ""
     pullPolicy: IfNotPresent
   frontend:
-    repository: ghcr.io/alexj11324/patchbay-web
+    repository: ghcr.io/alexj11324/orvilo-web
     # Empty defaults to Chart.appVersion. Set explicitly to override.
     tag: ""
     pullPolicy: IfNotPresent
@@ -22,7 +22,7 @@ images:
 # Pre-created Secret with sensitive values. Create it before `helm install`:
 #
 # Built-in postgres (default):
-#   kubectl -n <namespace> create secret generic patchbay-secrets \
+#   kubectl -n <namespace> create secret generic orvilo-secrets \
 #     --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
 #     --from-literal=POSTGRES_PASSWORD="$(openssl rand -hex 16)" \
 #     --from-literal=RESEND_API_KEY="" \
@@ -32,9 +32,9 @@ images:
 #
 # External postgres (postgres.external.enabled=true):
 #   Replace POSTGRES_PASSWORD with DATABASE_URL pointing at your external cluster.
-#   kubectl -n <namespace> create secret generic patchbay-secrets \
+#   kubectl -n <namespace> create secret generic orvilo-secrets \
 #     --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
-#     --from-literal=DATABASE_URL="postgres://user:pass@host:5432/patchbay?sslmode=require" \
+#     --from-literal=DATABASE_URL="postgres://user:pass@host:5432/orvilo?sslmode=require" \
 #     --from-literal=RESEND_API_KEY="" \
 #     --from-literal=GOOGLE_CLIENT_SECRET="" \
 #     --from-literal=CLOUDFRONT_PRIVATE_KEY="" \
@@ -43,7 +43,7 @@ images:
 # The chart references this Secret by name; it does not template it, so real
 # values never need to land in git.
 # -----------------------------------------------------------------------------
-existingSecret: patchbay-secrets
+existingSecret: orvilo-secrets
 
 # -----------------------------------------------------------------------------
 # PostgreSQL
@@ -55,8 +55,8 @@ postgres:
   # Add DATABASE_URL to your existingSecret pointing at the external cluster.
   external:
     enabled: false
-  database: patchbay
-  user: patchbay
+  database: orvilo
+  user: orvilo
   persistence:
     size: 10Gi
     # Leave empty to use the cluster's default StorageClass.
@@ -118,8 +118,8 @@ backend:
     # precedence so existing deployments keep their pgx connection behavior.
     databaseConnectTimeout: 5s
     appEnv: production
-    appUrl: http://patchbay.dev.lan
-    frontendOrigin: http://patchbay.dev.lan
+    appUrl: http://orvilo.dev.lan
+    frontendOrigin: http://orvilo.dev.lan
     corsAllowedOrigins: ""
     cookieDomain: ""
     # Keep the self-hosted empty-value sentinel aligned with Compose. Replace
@@ -144,17 +144,17 @@ backend:
     linearInstallationFoundation: true
     linearPullImportEnabled: true
     linearPushEnabled: false
-    # Managed patchbay-cloud connection. Empty keeps self-hosting independent.
+    # Managed orvilo-cloud connection. Empty keeps self-hosting independent.
     # Fleet, Billing, entitlement policy and strict seat capacity share it.
     cloud:
       url: ""
     googleClientId: ""
-    googleRedirectUri: http://patchbay.dev.lan/auth/callback
+    googleRedirectUri: http://orvilo.dev.lan/auth/callback
     s3Bucket: ""
     s3Region: us-west-2
     cloudfrontDomain: ""
     cloudfrontKeyPairId: ""
-    localUploadBaseUrl: http://api.patchbay.dev.lan
+    localUploadBaseUrl: http://api.orvilo.dev.lan
   resources:
     requests:
       cpu: 100m
@@ -185,7 +185,7 @@ frontend:
     # default same-origin frontend proxy.
     publicApiUrl: ""
     publicWsUrl: ""
-  # Compatibility shim for legacy patchbay-web images built before runtime
+  # Compatibility shim for legacy orvilo-web images built before runtime
   # URL rewrites. New images do not need this unprefixed Service.
   compatibility:
     # When true the chart creates an ExternalName Service literally named
@@ -212,9 +212,9 @@ ingress:
   className: traefik
   annotations: {}
   frontend:
-    host: patchbay.dev.lan
+    host: orvilo.dev.lan
   backend:
-    host: api.patchbay.dev.lan
+    host: api.orvilo.dev.lan
   # tls:
-  #   - hosts: [patchbay.dev.lan, api.patchbay.dev.lan]
-  #     secretName: patchbay-tls
+  #   - hosts: [orvilo.dev.lan, api.orvilo.dev.lan]
+  #     secretName: orvilo-tls

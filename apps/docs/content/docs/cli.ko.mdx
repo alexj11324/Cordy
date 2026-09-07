@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/insta
 Homebrew가 설치되어 있다면 다음 명령도 사용할 수 있습니다.
 
 ```bash
-brew install alexj11324/tap/patchbay
+brew install alexj11324/tap/orvilo
 ```
 
 **Windows PowerShell**
@@ -30,7 +30,7 @@ irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 
 설치 성공 여부를 확인합니다.
 
 ```bash
-patchbay version
+orvilo version
 ```
 
 ## 처음 연결
@@ -38,13 +38,13 @@ patchbay version
 Orvilo Cloud 연결:
 
 ```bash
-patchbay setup
+orvilo setup
 ```
 
 자체 호스팅 인스턴스 연결:
 
 ```bash
-patchbay setup self-host \
+orvilo setup self-host \
   --server-url https://api.example.com \
   --app-url https://app.example.com
 ```
@@ -52,14 +52,14 @@ patchbay setup self-host \
 `setup`은 서비스 주소를 저장하고 브라우저를 열어 로그인을 완료한 뒤 데몬을 시작합니다. 완료 후 다음을 확인하세요.
 
 ```bash
-patchbay auth status
-patchbay daemon status
+orvilo auth status
+orvilo daemon status
 ```
 
-다른 설정을 덮어쓰지 않고 로그인만 다시 하려면 `patchbay login`을 실행합니다. 브라우저가 없는 환경에서는 Web 설정에서 개인 액세스 토큰을 먼저 만든 뒤 다음을 입력합니다.
+다른 설정을 덮어쓰지 않고 로그인만 다시 하려면 `orvilo login`을 실행합니다. 브라우저가 없는 환경에서는 Web 설정에서 개인 액세스 토큰을 먼저 만든 뒤 다음을 입력합니다.
 
 ```bash
-patchbay login --token
+orvilo login --token
 ```
 
 명령이 터미널에서 token 붙여넣기를 요청하므로 전체 값이 shell history에 남지 않습니다.
@@ -69,8 +69,8 @@ patchbay login --token
 기본 워크스페이스를 나열하고 전환합니다.
 
 ```bash
-patchbay workspace list
-patchbay workspace switch <slug>
+orvilo workspace list
+orvilo workspace switch <slug>
 ```
 
 이후 명령은 이 워크스페이스를 사용합니다. 한 번의 명령에서 `--workspace-id`로 임시 덮어쓸 수 있고 `ORVILO_WORKSPACE_ID`를 설정할 수도 있습니다.
@@ -78,63 +78,63 @@ patchbay workspace switch <slug>
 멤버 초대:
 
 ```bash
-patchbay workspace member invite teammate@example.com
-patchbay workspace member invite admin@example.com --role admin
+orvilo workspace member invite teammate@example.com
+orvilo workspace member invite admin@example.com --role admin
 ```
 
 ## 자주 사용하는 태스크 작업
 
 ```bash
 # 확인 및 검색
-patchbay issue list
-patchbay issue get MUL-123
-patchbay issue search "로그인 실패"
+orvilo issue list
+orvilo issue get MUL-123
+orvilo issue search "로그인 실패"
 
 # 생성 및 수정
-patchbay issue create --title "로그인 실패 수정"
-patchbay issue status MUL-123 in_progress
-patchbay issue assign MUL-123 --to "Backend Agent"
+orvilo issue create --title "로그인 실패 수정"
+orvilo issue status MUL-123 in_progress
+orvilo issue assign MUL-123 --to "Backend Agent"
 
 # 댓글 및 실행 기록
-patchbay issue comment list MUL-123
-patchbay issue comment add MUL-123 --content "회귀 테스트를 먼저 확인해 주세요"
-patchbay issue runs MUL-123
+orvilo issue comment list MUL-123
+orvilo issue comment add MUL-123 --content "회귀 테스트를 먼저 확인해 주세요"
+orvilo issue runs MUL-123
 ```
 
 긴 설명이나 댓글은 stdin에서 읽어 줄바꿈과 따옴표 처리를 피할 수 있습니다.
 
 ```bash
-patchbay issue create --title "업그레이드 안내" --description-stdin < notes.md
-patchbay issue comment add MUL-123 --content-stdin < review.md
+orvilo issue create --title "업그레이드 안내" --description-stdin < notes.md
+orvilo issue comment add MUL-123 --content-stdin < review.md
 ```
 
 특정 실행의 메시지를 확인하거나 작업을 중지합니다.
 
 ```bash
-patchbay issue run-messages <task-id> --issue MUL-123
-patchbay issue cancel-task <task-id> --issue MUL-123
+orvilo issue run-messages <task-id> --issue MUL-123
+orvilo issue cancel-task <task-id> --issue MUL-123
 ```
 
 ## 에이전트와 스킬
 
 ```bash
-patchbay agent list
-patchbay agent get <agent-id>
-patchbay agent create --help
-patchbay agent update <agent-id> --help
+orvilo agent list
+orvilo agent get <agent-id>
+orvilo agent create --help
+orvilo agent update <agent-id> --help
 
-patchbay skill list
-patchbay skill get <skill-id>
-patchbay skill import --url <skill-url>
-patchbay agent skills add <agent-id> --skill-ids <skill-id>
+orvilo skill list
+orvilo skill get <skill-id>
+orvilo skill import --url <skill-url>
+orvilo agent skills add <agent-id> --skill-ids <skill-id>
 ```
 
 가져올 때 같은 이름의 스킬이 있으면 기본적으로 중지하고 기존 내용을 수정하지 않습니다. 의도에 맞는 방식을 선택하세요.
 
 ```bash
-patchbay skill import --url <skill-url> --on-conflict overwrite
-patchbay skill import --url <skill-url> --on-conflict rename
-patchbay skill import --url <skill-url> --on-conflict skip
+orvilo skill import --url <skill-url> --on-conflict overwrite
+orvilo skill import --url <skill-url> --on-conflict rename
+orvilo skill import --url <skill-url> --on-conflict skip
 ```
 
 `overwrite`는 스킬 생성자만 사용할 수 있으며 기존 ID와 에이전트 연결을 유지합니다.
@@ -142,19 +142,19 @@ patchbay skill import --url <skill-url> --on-conflict skip
 ## 데몬과 런타임
 
 ```bash
-patchbay daemon start
-patchbay daemon stop
-patchbay daemon restart
-patchbay daemon status --output json
-patchbay daemon logs --follow
+orvilo daemon start
+orvilo daemon stop
+orvilo daemon restart
+orvilo daemon status --output json
+orvilo daemon logs --follow
 
-patchbay runtime list
-patchbay runtime rename <runtime-id> "Office Mac"
-patchbay runtime usage <runtime-id>
-patchbay runtime activity <runtime-id>
+orvilo runtime list
+orvilo runtime rename <runtime-id> "Office Mac"
+orvilo runtime usage <runtime-id>
+orvilo runtime activity <runtime-id>
 ```
 
-활성 에이전트가 계속 연결된 런타임을 삭제하면 명령이 기본적으로 거부됩니다. `patchbay runtime delete <id> --cascade`는 에이전트의 런타임 연결을 해제하고 설정과 기록을 보존하며 활성 작업을 취소합니다.
+활성 에이전트가 계속 연결된 런타임을 삭제하면 명령이 기본적으로 거부됩니다. `orvilo runtime delete <id> --cascade`는 에이전트의 런타임 연결을 해제하고 설정과 기록을 보존하며 활성 작업을 취소합니다.
 
 실행 메커니즘과 사용자 지정 profile은 [데몬과 런타임](/daemon-runtimes)을 참고하세요.
 
@@ -176,7 +176,7 @@ patchbay runtime activity <runtime-id>
 | `config` | 현재 CLI profile의 로컬 설정 확인 또는 변경 |
 | `update`, `version` | CLI 업데이트 또는 버전 확인 |
 
-`patchbay chat`은 **에이전트가 현재 처리 중인 외부 채팅 대화**를 읽으며 주로 채팅 연동의 에이전트가 사용합니다. 워크스페이스의 임의 대화를 탐색하는 일반 명령이 아닙니다.
+`orvilo chat`은 **에이전트가 현재 처리 중인 외부 채팅 대화**를 읽으며 주로 채팅 연동의 에이전트가 사용합니다. 워크스페이스의 임의 대화를 탐색하는 일반 명령이 아닙니다.
 
 ## ID와 출력 형식
 
@@ -187,29 +187,29 @@ patchbay runtime activity <runtime-id>
 많은 명령이 구조화 출력을 지원합니다.
 
 ```bash
-patchbay issue list --output json
-patchbay agent list --output json
+orvilo issue list --output json
+orvilo agent list --output json
 ```
 
-스크립트에서는 터미널용 표를 parsing하지 말고 JSON 출력을 사용하세요. 각 명령이 지원하는 출력 형식과 pagination 인수는 `patchbay <command> --help`를 기준으로 확인합니다.
+스크립트에서는 터미널용 표를 parsing하지 말고 JSON 출력을 사용하세요. 각 명령이 지원하는 출력 형식과 pagination 인수는 `orvilo <command> --help`를 기준으로 확인합니다.
 
 ## Profile과 설정
 
-기본 설정은 `~/.patchbay/config.json`에 저장됩니다. `--profile <name>`을 사용하면 별도의 서비스 주소, token, 기본 워크스페이스, 데몬 상태를 격리할 수 있습니다.
+기본 설정은 `~/.orvilo/config.json`에 저장됩니다. `--profile <name>`을 사용하면 별도의 서비스 주소, token, 기본 워크스페이스, 데몬 상태를 격리할 수 있습니다.
 
 ```bash
-patchbay setup self-host --profile staging \
+orvilo setup self-host --profile staging \
   --server-url https://api.staging.example.com \
   --app-url https://app.staging.example.com
 
-patchbay issue list --profile staging
+orvilo issue list --profile staging
 ```
 
-이름 있는 profile은 `~/.patchbay/profiles/<name>/config.json`에 저장됩니다. 현재 값을 확인합니다.
+이름 있는 profile은 `~/.orvilo/profiles/<name>/config.json`에 저장됩니다. 현재 값을 확인합니다.
 
 ```bash
-patchbay config show
-patchbay config show --profile staging
+orvilo config show
+orvilo config show --profile staging
 ```
 
 <Callout type="warning">
@@ -218,7 +218,7 @@ CLI 설정 파일에는 사용자를 대신해 Orvilo에 접근할 수 있는 to
 
 ## 명령 참조
 
-다음 표는 현재의 모든 최상위 명령을 CLI 자체 그룹 순서로 정리합니다. 모든 명령은 전역 flag `--server-url`, `--workspace-id`, `--profile`, `--debug`를 허용합니다. `--output`은 명령별로 등록되는 flag이며 기본 형식은 명령에 따라 다릅니다. `list` 계열은 기본적으로 표를 사용하고 `get`, `create` 계열은 주로 JSON을 사용합니다. 전체 인수는 `patchbay <command> --help`를 기준으로 확인하세요.
+다음 표는 현재의 모든 최상위 명령을 CLI 자체 그룹 순서로 정리합니다. 모든 명령은 전역 flag `--server-url`, `--workspace-id`, `--profile`, `--debug`를 허용합니다. `--output`은 명령별로 등록되는 flag이며 기본 형식은 명령에 따라 다릅니다. `list` 계열은 기본적으로 표를 사용하고 `get`, `create` 계열은 주로 JSON을 사용합니다. 전체 인수는 `orvilo <command> --help`를 기준으로 확인하세요.
 
 ### Core
 
@@ -262,7 +262,7 @@ CLI 설정 파일에는 사용자를 대신해 Orvilo에 접근할 수 있는 to
 | | `runs <id>` | 실행 기록 확인 | |
 | | `trigger-add/trigger-update/trigger-delete/trigger-rotate-url` | 일정 및 webhook 트리거 관리 | |
 | `workspace` | `list/get/create/update/switch` | 워크스페이스 관리. `switch`는 현재 profile의 기본 워크스페이스 설정 | |
-| | `mcp list/add/update/remove` | 워크스페이스의 MCP 서버 라이브러리를 관리 | 쓰기는 owner/admin 전용. 여기에 추가한 서버는 어떤 에이전트에도 할당되지 않으며 `patchbay agent mcp add`로 할당합니다. `list`는 이름과 transport만 표시하고, 저장된 항목은 쓰기 전용이라 어떤 역할에도 반환되지 않습니다. `--server-config-file` / `--server-config-stdin`은 토큰이 셸 기록에 남지 않게 합니다 |
+| | `mcp list/add/update/remove` | 워크스페이스의 MCP 서버 라이브러리를 관리 | 쓰기는 owner/admin 전용. 여기에 추가한 서버는 어떤 에이전트에도 할당되지 않으며 `orvilo agent mcp add`로 할당합니다. `list`는 이름과 transport만 표시하고, 저장된 항목은 쓰기 전용이라 어떤 역할에도 반환되지 않습니다. `--server-config-file` / `--server-config-stdin`은 토큰이 셸 기록에 남지 않게 합니다 |
 | | `member list/invite <email>` | 멤버 확인 및 초대 전송 | `invite`: `--role`(member 또는 admin, 기본 member) |
 | `repo` | `list/add/remove/checkout` | 워크스페이스 저장소 관리 및 로컬 checkout | `--url`(반복 가능). `checkout`: `--ref` |
 | `skill` | `list/get/create/update/delete` | 스킬 관리 | |
@@ -304,10 +304,10 @@ CLI 설정 파일에는 사용자를 대신해 Orvilo에 접근할 수 있는 to
 부모 태스크를 하드 선행 조건이 있는 여러 작업으로 나눌 때는 typed plan을 사용하세요.
 
 ```bash
-patchbay issue dependency-graph get MUL-123 --output table
-patchbay issue dependency-graph apply MUL-123 \
+orvilo issue dependency-graph get MUL-123 --output table
+orvilo issue dependency-graph apply MUL-123 \
   --idempotency-key plan-mul-123-v1 --plan-file ./dependency-plan.json
-cat dependency-plan.json | patchbay issue dependency-graph apply MUL-123 \
+cat dependency-plan.json | orvilo issue dependency-graph apply MUL-123 \
   --idempotency-key plan-mul-123-v1 --plan-stdin --output json
 ```
 

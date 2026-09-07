@@ -80,7 +80,7 @@ func TestGetSkill_IncludesContent(t *testing.T) {
 
 // TestListAgentSkills_OmitsContent: same constraint for the agent-scoped
 // listing — gpt-boy review of the original fix flagged this as a sister case
-// because `patchbay agent skills list` follows the same shape rules.
+// because `orvilo agent skills list` follows the same shape rules.
 func TestListAgentSkills_OmitsContent(t *testing.T) {
 	agentID := createHandlerTestAgent(t, "Handler Skill Summary Test", nil)
 	skillID := insertHandlerTestSkill(t, "agent-skill-omits-content", strings.Repeat("b", 1024))

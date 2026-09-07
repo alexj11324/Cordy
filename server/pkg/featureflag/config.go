@@ -116,7 +116,7 @@ func parseRulesYAML(data []byte) (map[string]Rule, error) {
 	return out, nil
 }
 
-// NewServiceFromEnv constructs a Service wired with the standard patchbay
+// NewServiceFromEnv constructs a Service wired with the standard orvilo
 // config sources, in order of decreasing precedence:
 //
 //  1. EnvProvider (FF_<KEY> overrides — Ops kill switches, fastest path).

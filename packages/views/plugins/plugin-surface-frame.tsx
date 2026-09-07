@@ -77,13 +77,13 @@ export function PluginSurfaceFrame({ wsId, installation, surface, issueId, class
     if (!frame || !surfaceDocument) return () => bridge.close();
     const onMessage = (event: MessageEvent) => {
       const type = (event.data as { type?: string } | null)?.type;
-      if (type !== "patchbay:plugin-surface-error" &&
-          type !== "patchbay:plugin-surface-navigated" &&
-          type !== "patchbay:plugin-surface-navigation-blocked") return;
+      if (type !== "orvilo:plugin-surface-error" &&
+          type !== "orvilo:plugin-surface-navigated" &&
+          type !== "orvilo:plugin-surface-navigation-blocked") return;
       // Same window-identity rule as the bridge: without it any frame on the
       // page could light up the failure banner on every other panel.
       if (!frame.contentWindow || event.source !== frame.contentWindow) return;
-      if (type === "patchbay:plugin-surface-error") setFailedSurfaceInstance(surfaceInstance);
+      if (type === "orvilo:plugin-surface-error") setFailedSurfaceInstance(surfaceInstance);
       else setNavigatedSurfaceInstance(surfaceInstance);
     };
     // Terminal events and the bridge are both armed before srcdoc is assigned,

@@ -92,7 +92,7 @@ backend コンテナは起動のたびにデータベースの migration を実�
 
 ### ローカルアクセス
 
-[http://localhost:3000](http://localhost:3000) をそのまま開きます。後で `patchbay setup self-host` を実行するときも、URL を渡す必要はありません。
+[http://localhost:3000](http://localhost:3000) をそのまま開きます。後で `orvilo setup self-host` を実行するときも、URL を渡す必要はありません。
 
 ### リモートアクセス
 
@@ -141,8 +141,8 @@ api.example.com {
 すべてのトラフィックを**単一オリジン**（1 つのドメイン、または 1 台のホストに 1 つのポートで、小規模サーバーで一般的な構成）で扱いたい場合は、デーモンが依存するパスを backend に明示的に転送し、残りを frontend に任せます:
 
 ```text
-patchbay.example.com {
-    # CLI の到達確認: `patchbay setup` は <server-url>/health に GET を送り 200 を要求する。
+orvilo.example.com {
+    # CLI の到達確認: `orvilo setup` は <server-url>/health に GET を送り 200 を要求する。
     # 古い frontend はこのパスを転送しないため、backend に直接ルーティングする
     handle /health {
         reverse_proxy 127.0.0.1:8080
@@ -170,7 +170,7 @@ patchbay.example.com {
 }
 ```
 
-単一オリジンでは、2 つの URL をどちらもそこに向けます（`.env` の `FRONTEND_ORIGIN` と `ORVILO_APP_URL`、および `patchbay setup self-host` の `--server-url` と `--app-url`）。
+単一オリジンでは、2 つの URL をどちらもそこに向けます（`.env` の `FRONTEND_ORIGIN` と `ORVILO_APP_URL`、および `orvilo setup self-host` の `--server-url` と `--app-url`）。
 
 Caddy が TLS 証明書を取得し、WebSocket を転送します。`.env` を変更したら、`up -d` でコンテナを作り直して新しい設定を反映します。
 
@@ -234,23 +234,23 @@ irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 
 Orvilo サービスがこのコンピュータでも動いている場合は、次を実行します。
 
 ```bash
-patchbay setup self-host
+orvilo setup self-host
 ```
 
 Orvilo サービスが別のマシンで動いている場合は、先ほど設定した 2 つの URL を渡します。
 
 ```bash
-patchbay setup self-host \
+orvilo setup self-host \
   --server-url https://api.example.com \
   --app-url https://app.example.com
 ```
 
-このコマンドはまず `<server-url>/health` を確認し、次にブラウザを開いてログインを完了します。ログイン後はローカルに認証情報を保存し、デーモンを起動します。このステップで `Server not reachable` エラーが出る場合、`/health` のプローブが 200 を取得できなかったことを意味します: プロキシがすべてのトラフィックをこのパスを転送しない古い frontend に向けているか、プロキシが `/health` を backend にルーティングしていないか、あるいは DNS・TLS・ファイアウォール・タイムアウト・backend からの 5xx といったより下位の障害です。詳細は[トラブルシューティング](/troubleshooting#patchbay-setup-がサーバーに到達できないと報告する)を参照してください。
+このコマンドはまず `<server-url>/health` を確認し、次にブラウザを開いてログインを完了します。ログイン後はローカルに認証情報を保存し、デーモンを起動します。このステップで `Server not reachable` エラーが出る場合、`/health` のプローブが 200 を取得できなかったことを意味します: プロキシがすべてのトラフィックをこのパスを転送しない古い frontend に向けているか、プロキシが `/health` を backend にルーティングしていないか、あるいは DNS・TLS・ファイアウォール・タイムアウト・backend からの 5xx といったより下位の障害です。詳細は[トラブルシューティング](/troubleshooting#orvilo-setup-がサーバーに到達できないと報告する)を参照してください。
 
 接続状態を確認します。
 
 ```bash
-patchbay daemon status
+orvilo daemon status
 ```
 
 正常であれば、出力に次が表示されます。
@@ -267,7 +267,7 @@ Orvilo に戻ります。ランタイム一覧にオンラインのランタイ�
 
 ## よく使う管理コマンド
 
-以下のコマンドはすべて `patchbay` リポジトリのディレクトリで実行します。
+以下のコマンドはすべて `orvilo` リポジトリのディレクトリで実行します。
 
 ```bash
 # 状態を確認する
@@ -332,18 +332,18 @@ migration は前方向のみで巻き戻せないため、大事な環境をア�
 
 ```bash
 docker compose -f docker-compose.selfhost.yml exec -T postgres \
-  pg_dump -U patchbay patchbay > patchbay-backup.sql && gzip patchbay-backup.sql
+  pg_dump -U orvilo orvilo > orvilo-backup.sql && gzip orvilo-backup.sql
 ```
 
 <Callout type="warning">
 **`pg_dump` を直接 `gzip` にパイプしないでください。** シェルはパイプラインの**最後**のコマンドの終了ステータスを返すため、`pg_dump … | gzip > backup.sql.gz` はダンプが失敗しても `0` で終了し、形式としては完全に正当な、中身が空の20バイトのアーカイブが残ります。先にファイルへリダイレクトすれば `pg_dump` 自身の終了ステータスが効くようになり、`&&` は実際に成功したダンプだけを圧縮します。
 </Callout>
 
-`POSTGRES_USER` / `POSTGRES_DB` を `patchbay` のデフォルトから変更している場合は、`.env` の値に置き換えてください。データは `patchbay_pgdata` という名前付きボリュームにあり、`docker compose down` では消えませんが、`down -v` では消えます。
+`POSTGRES_USER` / `POSTGRES_DB` を `orvilo` のデフォルトから変更している場合は、`.env` の値に置き換えてください。データは `orvilo_pgdata` という名前付きボリュームにあり、`docker compose down` では消えませんが、`down -v` では消えます。
 
 ### migration は自動で実行されます
 
-[ステップ1](#1-patchbay-を起動する)と同じく、バックエンドコンテナはトラフィックを受け付ける前に起動時に `./migrate up` を実行します（`docker/entrypoint.sh`）。個別のアップグレードコマンドはありません — 新しいイメージを立ち上げること自体が migration のステップです。様子を見るには:
+[ステップ1](#1-orvilo-を起動する)と同じく、バックエンドコンテナはトラフィックを受け付ける前に起動時に `./migrate up` を実行します（`docker/entrypoint.sh`）。個別のアップグレードコマンドはありません — 新しいイメージを立ち上げること自体が migration のステップです。様子を見るには:
 
 ```bash
 docker compose -f docker-compose.selfhost.yml logs -f backend
@@ -366,7 +366,7 @@ HTTP 200 かつ両方のチェックが `ok` でない場合、新しいバー�
 
 Helm には独自のアップグレード経路があります。values ファイルで `images.backend.tag` / `images.frontend.tag` に目的のリリースを設定し、`helm upgrade` を実行してください。タグを変えると Pod スペックが変わるため、Kubernetes が新しいイメージを取得して Deployment をロールします — これが確実な経路です。
 
-`kubectl -n patchbay rollout restart` はそれ単体ではアップグレードになりません。チャートは `pullPolicy: IfNotPresent` を同梱しているため（`deploy/helm/patchbay/values.yaml`）、そのタグをすでにキャッシュしているノードでは古いイメージが再利用され、restart しても何も変わりません — `ORVILO_IMAGE_TAG` の固定と同種の落とし穴です。浮動タグでこの方法を使いたい場合は、先に `images.backend.pullPolicy` / `images.frontend.pullPolicy` を `Always` に設定してください。リポジトリの [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) を参照してください。
+`kubectl -n orvilo rollout restart` はそれ単体ではアップグレードになりません。チャートは `pullPolicy: IfNotPresent` を同梱しているため（`deploy/helm/orvilo/values.yaml`）、そのタグをすでにキャッシュしているノードでは古いイメージが再利用され、restart しても何も変わりません — `ORVILO_IMAGE_TAG` の固定と同種の落とし穴です。浮動タグでこの方法を使いたい場合は、先に `images.backend.pullPolicy` / `images.frontend.pullPolicy` を `Always` に設定してください。リポジトリの [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) を参照してください。
 
 <Callout type="warning">
 `docker compose down` は `pgdata` と `backend_uploads` を保持します。`-v` を付けると、データベースを含むこれらのボリュームが削除されます。インスタンスを消去するつもりがない限り、`docker compose down -v` を実行しないでください。
@@ -378,9 +378,9 @@ Helm には独自のアップグレード経路があります。values ファ�
 |---|---|
 | `/readyz` が `ok` を返さない | `docker compose -f docker-compose.selfhost.yml logs backend postgres` を実行する。 |
 | 認証コードが届かない | コードを一度リクエストし、backend のログで `Verification code` を探す。 |
-| `setup self-host` が server に到達できないと報告する | 実行用コンピュータから `https://api.example.com/health` をリクエストし、DNS、TLS、リバースプロキシがすべて到達可能か確認する。404 が返る場合、プロキシが `/health` をこのパスを転送しない古い web リリースに向けているため、backend へ直接ルーティングすること（[トラブルシューティング](/troubleshooting#patchbay-setup-がサーバーに到達できないと報告する)）。 |
-| デーモンが `Agents` を表示しない | AI コーディングツールが `PATH` にありログイン済みであることを確認し、`patchbay daemon restart` を実行する。 |
-| タスクがキューにとどまり続ける | `patchbay daemon status` を実行し、デーモンが起動していてワークスペースに接続していることを確認する。 |
+| `setup self-host` が server に到達できないと報告する | 実行用コンピュータから `https://api.example.com/health` をリクエストし、DNS、TLS、リバースプロキシがすべて到達可能か確認する。404 が返る場合、プロキシが `/health` をこのパスを転送しない古い web リリースに向けているため、backend へ直接ルーティングすること（[トラブルシューティング](/troubleshooting#orvilo-setup-がサーバーに到達できないと報告する)）。 |
+| デーモンが `Agents` を表示しない | AI コーディングツールが `PATH` にありログイン済みであることを確認し、`orvilo daemon restart` を実行する。 |
+| タスクがキューにとどまり続ける | `orvilo daemon status` を実行し、デーモンが起動していてワークスペースに接続していることを確認する。 |
 
 その他のケースは[トラブルシューティング](/troubleshooting)を参照してください。
 

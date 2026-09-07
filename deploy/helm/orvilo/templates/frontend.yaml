@@ -1,23 +1,23 @@
 {{- $frontendImageTag := default .Chart.AppVersion .Values.images.frontend.tag -}}
-{{- $remoteApiUrl := default (printf "http://%s:8080" (include "patchbay.backend.fullname" .)) .Values.frontend.config.remoteApiUrl -}}
+{{- $remoteApiUrl := default (printf "http://%s:8080" (include "orvilo.backend.fullname" .)) .Values.frontend.config.remoteApiUrl -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "patchbay.frontend.fullname" . }}
+  name: {{ include "orvilo.frontend.fullname" . }}
   labels:
-    {{- include "patchbay.labels" . | nindent 4 }}
+    {{- include "orvilo.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
 spec:
   replicas: {{ .Values.frontend.replicas }}
   selector:
     matchLabels:
-      app.kubernetes.io/name: patchbay
+      app.kubernetes.io/name: orvilo
       app.kubernetes.io/instance: {{ .Release.Name }}
       app.kubernetes.io/component: frontend
   template:
     metadata:
       labels:
-        {{- include "patchbay.labels" . | nindent 8 }}
+        {{- include "orvilo.labels" . | nindent 8 }}
         app.kubernetes.io/component: frontend
     spec:
       containers:
@@ -64,14 +64,14 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "patchbay.frontend.fullname" . }}
+  name: {{ include "orvilo.frontend.fullname" . }}
   labels:
-    {{- include "patchbay.labels" . | nindent 4 }}
+    {{- include "orvilo.labels" . | nindent 4 }}
     app.kubernetes.io/component: frontend
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: patchbay
+    app.kubernetes.io/name: orvilo
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: frontend
   ports:

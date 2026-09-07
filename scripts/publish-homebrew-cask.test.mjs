@@ -6,7 +6,7 @@ import {
   publishHomebrewCask,
 } from "./publish-homebrew-cask.mjs";
 
-const cask = (version, marker = "") => `cask "patchbay" do
+const cask = (version, marker = "") => `cask "orvilo" do
   version "${version}"
   sha256 "${marker || version}"
 end

@@ -27,7 +27,7 @@ Xcode や実機の開発環境がまだ設定されていない場合は、先�
 
 ```bash
 git clone https://github.com/alexj11324/Cordy.git
-cd patchbay
+cd Cordy
 pnpm install
 ```
 
@@ -52,7 +52,7 @@ Apple Developer Program アカウントで署名すると有効期間が長く�
 Xcode が `No matching provisioning profiles found` と報告する場合、デフォルトの bundle identifier があなたの Apple ID に属していない可能性があります。自分が管理する逆ドメイン名に切り替えて再ビルドしてください:
 
 ```bash
-export EXPO_BUNDLE_IDENTIFIER_PROD=com.yourname.patchbay
+export EXPO_BUNDLE_IDENTIFIER_PROD=com.yourname.orvilo
 pnpm ios:mobile:device:prod:release
 ```
 

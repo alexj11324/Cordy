@@ -17,7 +17,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// `patchbay runtime profile ...` — custom runtime profiles (MUL-3284)
+// `orvilo runtime profile ...` — custom runtime profiles (MUL-3284)
 //
 // A runtime profile lets a workspace declare a custom agent runtime built on
 // top of a supported protocol family (the routing backend) but launched via a

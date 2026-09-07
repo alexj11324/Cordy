@@ -888,8 +888,8 @@ func parseUUIDLoose(s string) (pgtype.UUID, error) {
 
 // claimProjectContext is the project-scoped context a daemon claim exposes to
 // the agent: the project identity the prompt names, the resource manifest
-// execenv materializes into .patchbay/project/resources.json, and the repo list
-// `patchbay repo checkout` reads.
+// execenv materializes into .orvilo/project/resources.json, and the repo list
+// `orvilo repo checkout` reads.
 type claimProjectContext struct {
 	ProjectID   string
 	Title       string
@@ -987,7 +987,7 @@ func (h *Handler) resolveClaimProjectContext(ctx context.Context, projectID, wor
 }
 
 // projectResourcesForClaim maps resource rows onto the claim wire shape and
-// lifts github_repo resources into the repo list so `patchbay repo checkout` and
+// lifts github_repo resources into the repo list so `orvilo repo checkout` and
 // the meta-skill render them as the task's repos.
 func projectResourcesForClaim(rows []db.ProjectResource) ([]ProjectResourceData, []RepoData) {
 	if len(rows) == 0 {

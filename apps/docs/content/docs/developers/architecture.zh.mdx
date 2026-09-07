@@ -17,7 +17,7 @@ Web / Desktop / Mobile / CLI
  本机守护进程 ─── AI 编程工具
 ```
 
-面向产品用户的解释见 [Orvilo 的工作方式](/how-patchbay-works)。本页关注代码如何分层。
+面向产品用户的解释见 [Orvilo 的工作方式](/how-orvilo-works)。本页关注代码如何分层。
 
 ## 仓库结构
 
@@ -76,7 +76,7 @@ API 返回值在 `packages/core/api/` 边界通过 zod schema 解析。已安装
 | 入口 | 作用 |
 | --- | --- |
 | `server` | 启动 HTTP API、WebSocket、调度器和集成 worker |
-| `patchbay` | CLI 与本机守护进程 |
+| `orvilo` | CLI 与本机守护进程 |
 | `migrate` | 执行数据库 migration |
 | `backfill_*` | 特定版本的数据回填工具 |
 

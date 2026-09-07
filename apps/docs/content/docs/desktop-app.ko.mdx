@@ -33,7 +33,7 @@ Orvilo Desktop은 macOS, Windows, Linux에서 사용할 수 있습니다. Web �
 설치 후 Web 버전과 같은 이메일로 로그인합니다. 로그인하면 Desktop이 내장 Orvilo CLI를 시작하고 로컬에 설치된 AI 코딩 도구를 감지합니다.
 
 <Callout type="info">
-Desktop 내장 CLI는 앱이 런타임을 관리할 때만 사용합니다. 터미널에서 `patchbay issue` 같은 명령도 실행하려면 [빠른 시작 2단계](/cloud-quickstart#2-컴퓨터-연결)에 따라 CLI를 별도로 설치하세요.
+Desktop 내장 CLI는 앱이 런타임을 관리할 때만 사용합니다. 터미널에서 `orvilo issue` 같은 명령도 실행하려면 [빠른 시작 2단계](/cloud-quickstart#2-컴퓨터-연결)에 따라 CLI를 별도로 설치하세요.
 </Callout>
 
 ## 데스크톱 탭
@@ -49,7 +49,7 @@ Desktop은 워크스페이스마다 탭을 따로 저장합니다. 예를 들어
 로그인하면 Desktop이 현재 Orvilo 서비스 전용 CLI profile을 만들고 이 profile로 데몬을 시작합니다. profile은 다음 위치에 있습니다.
 
 ```text
-~/.patchbay/profiles/desktop-<host>/
+~/.orvilo/profiles/desktop-<host>/
 ```
 
 터미널에서 사용하는 기본 profile을 읽거나 덮어쓰지 않습니다. 다른 데몬을 직접 동시에 시작하면 Orvilo에는 각각 별도 런타임으로 표시됩니다.
@@ -70,13 +70,13 @@ Desktop 설정에서 실행 상태와 로그를 확인할 수 있습니다. 도�
 
 ## 자체 호스팅 인스턴스 연결
 
-Desktop은 기본적으로 Orvilo Cloud에 연결됩니다. 자체 호스팅 인스턴스에 연결하려면 사용자 디렉터리의 `.patchbay` 안에 `desktop.json`을 만듭니다.
+Desktop은 기본적으로 Orvilo Cloud에 연결됩니다. 자체 호스팅 인스턴스에 연결하려면 사용자 디렉터리의 `.orvilo` 안에 `desktop.json`을 만듭니다.
 
 | 플랫폼 | 경로 |
 | --- | --- |
-| macOS | `/Users/<사용자>/.patchbay/desktop.json` |
-| Linux | `/home/<사용자>/.patchbay/desktop.json` |
-| Windows | `C:\Users\<사용자>\.patchbay\desktop.json` |
+| macOS | `/Users/<사용자>/.orvilo/desktop.json` |
+| Linux | `/home/<사용자>/.orvilo/desktop.json` |
+| Windows | `C:\Users\<사용자>\.orvilo\desktop.json` |
 
 위 경로는 기본 위치입니다. 홈 디렉터리를 옮겼거나 리디렉션한 경우에는 실제 경로를 사용하세요.
 
@@ -88,7 +88,7 @@ Desktop은 기본적으로 Orvilo Cloud에 연결됩니다. 자체 호스팅 인
 ```
 
 <Callout type="warning">
-이 파일은 CLI의 `~/.patchbay/config.json`과 **다른 파일**이며 키 이름도 다릅니다. CLI는 `server_url`을, Desktop은 `apiUrl`을 사용합니다. Desktop은 CLI 설정을 읽지 않고 `~/.patchbay/profiles/desktop-<host>/` 아래에 별도의 daemon 프로필을 관리합니다. `config.json`을 수정해도 Desktop이 연결하는 서버는 바뀌지 않습니다.
+이 파일은 CLI의 `~/.orvilo/config.json`과 **다른 파일**이며 키 이름도 다릅니다. CLI는 `server_url`을, Desktop은 `apiUrl`을 사용합니다. Desktop은 CLI 설정을 읽지 않고 `~/.orvilo/profiles/desktop-<host>/` 아래에 별도의 daemon 프로필을 관리합니다. `config.json`을 수정해도 Desktop이 연결하는 서버는 바뀌지 않습니다.
 </Callout>
 
 `apiUrl`은 backend의 공개 주소로 필수이며 `http` 또는 `https`를 사용해야 합니다. 다음 두 주소는 생략할 수 있으며 Desktop이 자동으로 추론합니다.
@@ -126,13 +126,13 @@ Desktop은 브라우저와 실행 컴퓨터에서 모두 접근할 수 있는 �
 
 Windows에서는 편집기의 두 가지 기본 동작 때문에 Desktop이 사용할 수 없는 파일이 조용히 만들어집니다.
 
-- **메모장이 `.txt`를 덧붙입니다.** `desktop.json`으로 저장해도 실제로는 `desktop.json.txt`가 될 수 있으며, Desktop은 이를 파일이 없는 것으로 처리합니다. 파일 탐색기에서 파일 확장명 표시를 켜거나 저장 대화 상자에서 *모든 파일*을 선택하세요. 실제 파일 이름을 확인하려면 PowerShell에서 `Get-ChildItem "$env:USERPROFILE\.patchbay" -Filter "desktop.json*"`를 실행하세요. `Name` 열이 정확히 `desktop.json`이어야 합니다.
+- **메모장이 `.txt`를 덧붙입니다.** `desktop.json`으로 저장해도 실제로는 `desktop.json.txt`가 될 수 있으며, Desktop은 이를 파일이 없는 것으로 처리합니다. 파일 탐색기에서 파일 확장명 표시를 켜거나 저장 대화 상자에서 *모든 파일*을 선택하세요. 실제 파일 이름을 확인하려면 PowerShell에서 `Get-ChildItem "$env:USERPROFILE\.orvilo" -Filter "desktop.json*"`를 실행하세요. `Name` 열이 정확히 `desktop.json`이어야 합니다.
 - **PowerShell 리디렉션은 UTF-16이나 BOM을 씁니다.** `> desktop.json`과 `Out-File`은 파싱할 수 없는 인코딩을 만들 수 있으며, 설정 오류로 나타납니다.
 
 두 가지를 모두 피하려면 PowerShell에서 한 번에 파일을 만듭니다.
 
 ```powershell
-$dir = "$env:USERPROFILE\.patchbay"
+$dir = "$env:USERPROFILE\.orvilo"
 New-Item -ItemType Directory -Force $dir | Out-Null
 $json = @'
 {
@@ -148,7 +148,7 @@ $json = @'
 **증상**: Windows 보안이 `Trojan:Script/Wacatac.B!ml` 같은 위협을 보고하고 Desktop 설치 경로 안의 파일을 격리합니다. 격리되는 대상은 보통 앱 실행 파일이 아니라 함께 포함된 CLI입니다.
 
 ```text
-C:\Users\<사용자>\AppData\Local\Programs\@patchbaydesktop\resources\app.asar.unpacked\resources\bin\patchbay.exe
+C:\Users\<사용자>\AppData\Local\Programs\@orvilodesktop\resources\app.asar.unpacked\resources\bin\orvilo.exe
 ```
 
 **오탐입니다.** `!ml` 접미사는 이 판정이 악성코드 시그니처 일치가 아니라 Defender의 머신러닝 휴리스틱에서 나왔다는 뜻입니다. Orvilo의 Windows 빌드는 아직 Authenticode 코드 서명을 하지 않았고, 갓 배포된 서명 없는 바이너리가 백그라운드 프로세스를 띄우고 네트워크 연결을 여는 형태는 이런 휴리스틱이 가장 의심스럽게 평가하는 프로필입니다. 모든 Windows 산출물은 이 저장소의 공개 소스에서 GitHub Actions로 빌드됩니다.
@@ -156,7 +156,7 @@ C:\Users\<사용자>\AppData\Local\Programs\@patchbaydesktop\resources\app.asar.
 **직접 검증할 수 있습니다** — 모든 GitHub 릴리스에는 CLI 아카이브 전체를 포함한 `checksums.txt`가 함께 게시됩니다.
 
 ```powershell
-Get-FileHash .\patchbay-cli-<version>-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\orvilo-cli-<version>-windows-amd64.zip -Algorithm SHA256
 ```
 
 출력된 해시를 [최신 릴리스](https://github.com/alexj11324/Cordy/releases/latest)의 `checksums.txt` 해당 줄과 비교하세요.
@@ -165,7 +165,7 @@ Get-FileHash .\patchbay-cli-<version>-windows-amd64.zip -Algorithm SHA256
 
 1. **격리된 파일 복원** — Windows 보안 → *바이러스 및 위협 방지* → *보호 기록* → Orvilo 항목 선택 → *작업* → *복원*.
 2. **제외 항목 추가** (다시 격리되지 않도록) — *바이러스 및 위협 방지* → *설정 관리* → *제외* → *제외 추가 또는 제거* → *폴더*에서 다음 두 경로를 모두 추가합니다.
-   - `%LOCALAPPDATA%\Programs\@patchbaydesktop`
+   - `%LOCALAPPDATA%\Programs\@orvilodesktop`
    - `%APPDATA%\Orvilo`
 
    두 경로 모두 필요합니다. 포함된 CLI가 사라지면 Desktop이 대체 바이너리를 `%APPDATA%\Orvilo\bin`에 내려받기 때문에, 설치 폴더만 제외하면 새로 받은 파일이 다시 격리되는 상황이 반복됩니다.

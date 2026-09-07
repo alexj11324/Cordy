@@ -79,13 +79,13 @@ describe("ConnectRemoteDialog", () => {
   it("uses cloud setup commands by default", () => {
     const { baseElement } = renderDialog();
 
-    expect(baseElement).toHaveTextContent("patchbay setup");
-    expect(baseElement).not.toHaveTextContent("patchbay setup self-host");
+    expect(baseElement).toHaveTextContent("orvilo setup");
+    expect(baseElement).not.toHaveTextContent("orvilo setup self-host");
     expect(baseElement).toHaveTextContent(
-      "patchbay config set server_url https://api.aspectlylabs.com",
+      "orvilo config set server_url https://api.aspectlylabs.com",
     );
     expect(baseElement).toHaveTextContent(
-      "patchbay config set app_url https://patchbay.aspectlylabs.com",
+      "orvilo config set app_url https://orvilo.aspectlylabs.com",
     );
   });
 
@@ -96,13 +96,13 @@ describe("ConnectRemoteDialog", () => {
     });
 
     expect(baseElement).toHaveTextContent(
-      "patchbay setup self-host --server-url https://api.example.com --app-url https://app.example.com",
+      "orvilo setup self-host --server-url https://api.example.com --app-url https://app.example.com",
     );
     expect(baseElement).toHaveTextContent(
-      "patchbay config set server_url https://api.example.com",
+      "orvilo config set server_url https://api.example.com",
     );
     expect(baseElement).toHaveTextContent(
-      "patchbay config set app_url https://app.example.com",
+      "orvilo config set app_url https://app.example.com",
     );
   });
 
@@ -110,7 +110,7 @@ describe("ConnectRemoteDialog", () => {
     const { baseElement } = renderDialog();
 
     const setupCode = Array.from(baseElement.querySelectorAll("code")).find((node) =>
-      node.textContent?.includes("patchbay setup"),
+      node.textContent?.includes("orvilo setup"),
     );
 
     expect(setupCode).toHaveClass(...ligatureClasses);
@@ -120,7 +120,7 @@ describe("ConnectRemoteDialog", () => {
     const { baseElement } = renderDialog();
 
     const tokenCode = Array.from(baseElement.querySelectorAll("code")).find((node) =>
-      node.textContent?.includes("patchbay login --token <YOUR_TOKEN>"),
+      node.textContent?.includes("orvilo login --token <YOUR_TOKEN>"),
     );
 
     expect(tokenCode).toHaveClass(...ligatureClasses);
@@ -129,7 +129,7 @@ describe("ConnectRemoteDialog", () => {
   it("transitions from setup instructions to the connected state", async () => {
     const { baseElement } = renderDialog();
 
-    expect(baseElement).toHaveTextContent("patchbay setup");
+    expect(baseElement).toHaveTextContent("orvilo setup");
     act(() => {
       wsEventState.handler?.({ runtime_id: "rt-test" });
     });
@@ -140,6 +140,6 @@ describe("ConnectRemoteDialog", () => {
         screen.getByRole("button", { name: "Create an agent" }),
       ).toBeInTheDocument();
     });
-    expect(baseElement).not.toHaveTextContent("patchbay setup");
+    expect(baseElement).not.toHaveTextContent("orvilo setup");
   });
 });

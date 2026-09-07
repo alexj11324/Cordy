@@ -20,7 +20,7 @@ func newConfigTestCmd() *cobra.Command {
 
 func TestRunConfigSetPersistsSupportedKeysInProfile(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	workspacesRoot := filepath.Join(t.TempDir(), "patchbay-dev")
+	workspacesRoot := filepath.Join(t.TempDir(), "orvilo-dev")
 
 	cmd := newConfigTestCmd()
 	_ = cmd.Flags().Set("profile", "dev")
@@ -96,17 +96,17 @@ func TestRunConfigShowIncludesProfileAndDefaults(t *testing.T) {
 
 func TestRunConfigCommandsUseTaskLocalConfigWithoutTouchingOwner(t *testing.T) {
 	ownerHome := t.TempDir()
-	taskRoot := filepath.Join(t.TempDir(), "task-patchbay")
+	taskRoot := filepath.Join(t.TempDir(), "task-orvilo")
 	t.Setenv("HOME", ownerHome)
 	t.Setenv("ORVILO_AGENT_ID", "agent-test")
 	t.Setenv("ORVILO_TASK_ID", "task-test")
 	t.Setenv("ORVILO_TASK_CONFIG_ROOT", taskRoot)
 
-	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
+	ownerPath := filepath.Join(ownerHome, ".orvilo", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"workspace_id\": \"owner-workspace-sentinel\",\n  \"token\": \"pby_owner_sentinel\"\n}\n")
+	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"workspace_id\": \"owner-workspace-sentinel\",\n  \"token\": \"ovy_owner_sentinel\"\n}\n")
 	if err := os.WriteFile(ownerPath, ownerBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestRunConfigCommandsUseTaskLocalConfigWithoutTouchingOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runConfigShow: %v", err)
 	}
-	for _, forbidden := range []string{ownerHome, "https://owner.invalid", "owner-workspace-sentinel", "pby_owner_sentinel"} {
+	for _, forbidden := range []string{ownerHome, "https://owner.invalid", "owner-workspace-sentinel", "ovy_owner_sentinel"} {
 		if strings.Contains(out, forbidden) {
 			t.Fatalf("task config output exposed owner sentinel %q:\n%s", forbidden, out)
 		}
@@ -155,11 +155,11 @@ func TestRunConfigCommandsFailClosedWithoutTaskRoot(t *testing.T) {
 	t.Setenv("ORVILO_TASK_ID", "task-test")
 	t.Setenv("ORVILO_TASK_CONFIG_ROOT", "")
 
-	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
+	ownerPath := filepath.Join(ownerHome, ".orvilo", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"token\": \"pby_owner_sentinel\"\n}\n")
+	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"token\": \"ovy_owner_sentinel\"\n}\n")
 	if err := os.WriteFile(ownerPath, ownerBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestApplyConfigSetSupportsDaemonKeys(t *testing.T) {
 	t.Parallel()
 
 	cfg := cli.CLIConfig{}
-	workspacesRoot := filepath.Join(t.TempDir(), "patchbay")
+	workspacesRoot := filepath.Join(t.TempDir(), "orvilo")
 	pairs := []struct{ key, val string }{
 		{"device_name", "vm-1-custom-name"},
 		{"runtime_name", "worker-a"},
@@ -239,10 +239,10 @@ func TestApplyConfigSetNormalizesWorkspacesRoot(t *testing.T) {
 	t.Chdir(cwd)
 
 	cfg := cli.CLIConfig{}
-	if err := applyConfigSet(&cfg, "workspaces_root", filepath.Join("data", "patchbay")); err != nil {
+	if err := applyConfigSet(&cfg, "workspaces_root", filepath.Join("data", "orvilo")); err != nil {
 		t.Fatalf("applyConfigSet: %v", err)
 	}
-	want := filepath.Join(cwd, "data", "patchbay")
+	want := filepath.Join(cwd, "data", "orvilo")
 	if cfg.WorkspacesRoot != want {
 		t.Fatalf("WorkspacesRoot = %q, want absolute path %q", cfg.WorkspacesRoot, want)
 	}

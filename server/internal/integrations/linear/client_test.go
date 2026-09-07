@@ -38,7 +38,7 @@ func TestHTTPClientOAuthUsesPKCEAndRejectsIncompleteTokens(t *testing.T) {
 
 func TestOrviloIssueMarkerRoundTrip(t *testing.T) {
 	description := DescriptionWithOrviloMarker("body", "issue-1")
-	if PatchbayIssueIDFromDescription(description) != "issue-1" {
+	if OrviloIssueIDFromDescription(description) != "issue-1" {
 		t.Fatalf("marker=%q", description)
 	}
 	if got := StripOrviloIssueMarker(description); got != "body" {

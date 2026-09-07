@@ -162,7 +162,7 @@ func TestGetConfigExposesMessagingSetupOwnership(t *testing.T) {
 	})
 
 	t.Run("official cloud defaults to managed setup", func(t *testing.T) {
-		t.Setenv("ORVILO_APP_URL", "https://patchbay.aspectlylabs.com")
+		t.Setenv("ORVILO_APP_URL", "https://orvilo.aspectlylabs.com")
 		t.Setenv("ORVILO_MESSAGING_MODE", "")
 		cfg := fetch(t).Messaging
 		if cfg.Mode != "managed" || !cfg.SetupWritable {
@@ -240,7 +240,7 @@ func TestRequireMessagingSetupWritable(t *testing.T) {
 	})
 
 	t.Run("managed mode permits app writes", func(t *testing.T) {
-		t.Setenv("ORVILO_APP_URL", "https://patchbay.aspectlylabs.com")
+		t.Setenv("ORVILO_APP_URL", "https://orvilo.aspectlylabs.com")
 		t.Setenv("ORVILO_MESSAGING_MODE", "managed")
 		if !requireMessagingSetupWritable(httptest.NewRecorder()) {
 			t.Fatal("managed messaging should permit setup writes")
@@ -301,7 +301,7 @@ func TestGetConfigHonorsVCSIntegrationSwitch(t *testing.T) {
 func TestGetConfigUsesAppURLForSameOriginDaemonSetup(t *testing.T) {
 	t.Setenv("ORVILO_DAEMON_SERVER_URL", "")
 	t.Setenv("ORVILO_PUBLIC_URL", "")
-	t.Setenv("ORVILO_APP_URL", "https://patchbay.internal.example/")
+	t.Setenv("ORVILO_APP_URL", "https://orvilo.internal.example/")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -315,10 +315,10 @@ func TestGetConfigUsesAppURLForSameOriginDaemonSetup(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
 		t.Fatalf("decode config: %v", err)
 	}
-	if cfg.DaemonServerURL != "https://patchbay.internal.example" {
+	if cfg.DaemonServerURL != "https://orvilo.internal.example" {
 		t.Fatalf("daemon_server_url: want same-origin URL, got %q", cfg.DaemonServerURL)
 	}
-	if cfg.DaemonAppURL != "https://patchbay.internal.example" {
+	if cfg.DaemonAppURL != "https://orvilo.internal.example" {
 		t.Fatalf("daemon_app_url: want app URL, got %q", cfg.DaemonAppURL)
 	}
 }
@@ -327,7 +327,7 @@ func TestGetConfigUsesFrontendOriginForSameOriginDaemonSetup(t *testing.T) {
 	t.Setenv("ORVILO_DAEMON_SERVER_URL", "")
 	t.Setenv("ORVILO_PUBLIC_URL", "")
 	t.Setenv("ORVILO_APP_URL", "")
-	t.Setenv("FRONTEND_ORIGIN", "https://patchbay.internal.example/")
+	t.Setenv("FRONTEND_ORIGIN", "https://orvilo.internal.example/")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -341,10 +341,10 @@ func TestGetConfigUsesFrontendOriginForSameOriginDaemonSetup(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {
 		t.Fatalf("decode config: %v", err)
 	}
-	if cfg.DaemonServerURL != "https://patchbay.internal.example" {
+	if cfg.DaemonServerURL != "https://orvilo.internal.example" {
 		t.Fatalf("daemon_server_url: want same-origin URL, got %q", cfg.DaemonServerURL)
 	}
-	if cfg.DaemonAppURL != "https://patchbay.internal.example" {
+	if cfg.DaemonAppURL != "https://orvilo.internal.example" {
 		t.Fatalf("daemon_app_url: want frontend origin, got %q", cfg.DaemonAppURL)
 	}
 }
@@ -352,7 +352,7 @@ func TestGetConfigUsesFrontendOriginForSameOriginDaemonSetup(t *testing.T) {
 func TestGetConfigOmitsOfficialCloudDaemonSetup(t *testing.T) {
 	t.Setenv("ORVILO_PUBLIC_URL", "https://api.aspectlylabs.com")
 	t.Setenv("ORVILO_APP_URL", "")
-	t.Setenv("FRONTEND_ORIGIN", "https://patchbay.aspectlylabs.com")
+	t.Setenv("FRONTEND_ORIGIN", "https://orvilo.aspectlylabs.com")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -376,17 +376,17 @@ func TestGetConfigOmitsOfficialCloudDaemonSetup(t *testing.T) {
 
 // TestGetConfigOmitsCloudDaemonSetupWithoutPublicURL reproduces the production
 // regression behind the broken "Add a computer" command: the official cloud
-// frontend is patchbay.aspectlylabs.com, but the deployment does not set ORVILO_PUBLIC_URL to
+// frontend is orvilo.aspectlylabs.com, but the deployment does not set ORVILO_PUBLIC_URL to
 // the api host. Previously this fell through to the same-origin branch and
-// emitted daemon_server_url=https://patchbay.aspectlylabs.com, which the dialog turned into
-// `patchbay setup self-host --server-url https://patchbay.aspectlylabs.com` — pointing the
+// emitted daemon_server_url=https://orvilo.aspectlylabs.com, which the dialog turned into
+// `orvilo setup self-host --server-url https://orvilo.aspectlylabs.com` — pointing the
 // daemon's backend at the frontend (no /health, no WebSocket proxy). The
 // official cloud must be recognised by its frontend host alone so the daemon
-// setup URLs are omitted and the dialog falls back to `patchbay setup`.
+// setup URLs are omitted and the dialog falls back to `orvilo setup`.
 func TestGetConfigOmitsCloudDaemonSetupWithoutPublicURL(t *testing.T) {
 	t.Setenv("ORVILO_PUBLIC_URL", "")
 	t.Setenv("ORVILO_APP_URL", "")
-	t.Setenv("FRONTEND_ORIGIN", "https://patchbay.aspectlylabs.com")
+	t.Setenv("FRONTEND_ORIGIN", "https://orvilo.aspectlylabs.com")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	w := httptest.NewRecorder()
@@ -412,7 +412,7 @@ func TestGetConfigOmitsCloudDaemonSetupWithoutPublicURL(t *testing.T) {
 // cloud frontend when it is configured through ORVILO_APP_URL.
 func TestGetConfigOmitsCloudDaemonSetupForConfiguredAppURL(t *testing.T) {
 	t.Setenv("ORVILO_PUBLIC_URL", "")
-	t.Setenv("ORVILO_APP_URL", "https://patchbay.aspectlylabs.com")
+	t.Setenv("ORVILO_APP_URL", "https://orvilo.aspectlylabs.com")
 	t.Setenv("FRONTEND_ORIGIN", "")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
@@ -494,7 +494,7 @@ func TestGetConfigExposesServerVersion(t *testing.T) {
 	defer func() { testHandler.cfg = origCfg }()
 
 	// Self-hosted frontend origin: the version row is meant for these deployments.
-	t.Setenv("ORVILO_APP_URL", "https://patchbay.self-hosted.example")
+	t.Setenv("ORVILO_APP_URL", "https://orvilo.self-hosted.example")
 	t.Setenv("FRONTEND_ORIGIN", "")
 
 	testHandler.cfg.ServerVersion = ""
@@ -524,7 +524,7 @@ func TestGetConfigExposesServerVersion(t *testing.T) {
 }
 
 // TestGetConfigOmitsServerVersionOnOfficialCloud verifies the build version is
-// suppressed on the managed cloud (frontend host patchbay.aspectlylabs.com) even when the
+// suppressed on the managed cloud (frontend host orvilo.aspectlylabs.com) even when the
 // binary is stamped, while a self-hosted frontend origin still reports it. The
 // managed cloud is continuously deployed, so its users don't need the row.
 func TestGetConfigOmitsServerVersionOnOfficialCloud(t *testing.T) {
@@ -534,8 +534,8 @@ func TestGetConfigOmitsServerVersionOnOfficialCloud(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 
-	// Official cloud: frontend host patchbay.aspectlylabs.com -> version omitted.
-	t.Setenv("ORVILO_APP_URL", "https://patchbay.aspectlylabs.com")
+	// Official cloud: frontend host orvilo.aspectlylabs.com -> version omitted.
+	t.Setenv("ORVILO_APP_URL", "https://orvilo.aspectlylabs.com")
 	t.Setenv("FRONTEND_ORIGIN", "")
 	w := httptest.NewRecorder()
 	testHandler.GetConfig(w, req)
@@ -548,7 +548,7 @@ func TestGetConfigOmitsServerVersionOnOfficialCloud(t *testing.T) {
 	}
 
 	// Self-hosted: operator's own frontend origin -> version reported.
-	t.Setenv("ORVILO_APP_URL", "https://patchbay.self-hosted.example")
+	t.Setenv("ORVILO_APP_URL", "https://orvilo.self-hosted.example")
 	w = httptest.NewRecorder()
 	testHandler.GetConfig(w, req)
 	if err := json.Unmarshal(w.Body.Bytes(), &cfg); err != nil {

@@ -39,7 +39,7 @@ func reclaimTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dsn = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)
@@ -87,7 +87,7 @@ func seedReclaimOwners(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	}
 	exec(`INSERT INTO workspace (id, name, slug, description) VALUES ($1, 'wecom reclaim', 'wecom-reclaim', '') ON CONFLICT (id) DO NOTHING`, wcRclWS)
 	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider)
-VALUES ($1, $2, 'wecom reclaim runtime', 'local', 'patchbay_daemon') ON CONFLICT (id) DO NOTHING`, wcRclRuntime, wcRclWS)
+VALUES ($1, $2, 'wecom reclaim runtime', 'local', 'orvilo_daemon') ON CONFLICT (id) DO NOTHING`, wcRclRuntime, wcRclWS)
 	for _, a := range []string{wcRclAgentA, wcRclAgentB} {
 		exec(`INSERT INTO agent (id, workspace_id, name, runtime_mode, runtime_id)
 VALUES ($1, $2, $3, 'local', $4) ON CONFLICT (id) DO NOTHING`, a, wcRclWS, "wecom reclaim "+a, wcRclRuntime)

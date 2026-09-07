@@ -24,7 +24,7 @@ var (
 var debugFlag bool
 
 var rootCmd = &cobra.Command{
-	Use:           "patchbay",
+	Use:           "orvilo",
 	Short:         "Orvilo CLI — local agent runtime and management tool",
 	Long:          "Work seamlessly with Orvilo from the command line.",
 	SilenceUsage:  true,
@@ -33,7 +33,7 @@ var rootCmd = &cobra.Command{
 
 func init() {
 	rootCmd.Version = fmt.Sprintf("%s (commit: %s, built: %s)\ngo: %s, os/arch: %s/%s", version, commit, date, runtime.Version(), runtime.GOOS, runtime.GOARCH)
-	rootCmd.SetVersionTemplate("patchbay {{.Version}}\n")
+	rootCmd.SetVersionTemplate("orvilo {{.Version}}\n")
 
 	// Tag every CLI HTTP request with this binary's build version so the
 	// server can split logs/metrics by client version.

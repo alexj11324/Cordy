@@ -35,7 +35,7 @@ import (
 // only happens for agents with a managed mcp_config.
 const (
 	// openclawDiscoveryCacheFile is the per-profile cache file name. It sits
-	// in the profile directory (~/.patchbay[/profiles/<name>]) so every task on
+	// in the profile directory (~/.orvilo[/profiles/<name>]) so every task on
 	// this daemon shares one entry.
 	openclawDiscoveryCacheFile = "openclaw-discovery-cache.json"
 
@@ -142,7 +142,7 @@ func resolveOpenclawBinPath(bin string) string {
 }
 
 // openclawProfileCacheDir resolves the directory this daemon profile shares
-// across tasks (~/.patchbay, or ~/.patchbay/profiles/<name>). A resolution
+// across tasks (~/.orvilo, or ~/.orvilo/profiles/<name>). A resolution
 // failure only disables caching — preparation still works, it just pays the
 // CLI cost every time.
 func openclawProfileCacheDir(profile string, logger *slog.Logger) string {

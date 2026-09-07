@@ -138,7 +138,7 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 	// but pruning stops a stale binding from lingering across a remove/re-add.
 	if err := qtx.DeleteChannelUserBindingsByWorkspaceMember(ctx, db.DeleteChannelUserBindingsByWorkspaceMemberParams{
 		WorkspaceID:    workspaceID,
-		PatchbayUserID: userID,
+		OrviloUserID: userID,
 	}); err != nil {
 		return empty, err
 	}

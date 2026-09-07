@@ -87,7 +87,7 @@ func WriteProblem(w http.ResponseWriter, r *http.Request, status int, code, deta
 	}
 	id := requestID(r)
 	payload := Problem{
-		Type:      "urn:patchbay:problem:" + code,
+		Type:      "urn:orvilo:problem:" + code,
 		Title:     title,
 		Status:    status,
 		Code:      code,

@@ -51,7 +51,7 @@ Your responsibilities, in order:
      typing a plain "@name" will not trigger anyone.
 3. **Record your evaluation.** After every trigger — whether you delegated,
    decided no action is needed, or encountered an error — record it:
-   ` + "`" + `patchbay team activity <issue-id> <outcome> --reason "<short reason>"` + "`" + `
+   ` + "`" + `orvilo team activity <issue-id> <outcome> --reason "<short reason>"` + "`" + `
    Outcome values: ` + "`" + `action` + "`" + ` (you delegated or acted),
    ` + "`" + `no_action` + "`" + ` (you evaluated and decided nothing is needed),
    ` + "`" + `failed` + "`" + ` (you hit an error).
@@ -100,7 +100,7 @@ const teamParentStatusOwned = `6. **Own the parent issue status.** This issue's 
    ` + "`" + `in_progress` + "`" + ` and keep it there while members work — a successful
    dispatch is not completion. On later turns, do not flip status for
    routine progress updates. When you confirm the overall goal is met, run
-   ` + "`" + `patchbay issue status <issue-id> in_review` + "`" + ` — this responsibility is
+   ` + "`" + `orvilo issue status <issue-id> in_review` + "`" + ` — this responsibility is
    itself the standing instruction that authorizes that change, so do it even
    when no comment asked you to. Leave ` + "`" + `done` + "`" + ` to a human reviewer or
    existing integrations (for example a PR with close intent that merges).`
@@ -114,7 +114,7 @@ const teamParentStatusNotOwned = `6. **Do NOT change this issue's status.** This
    team — you were pulled in by an @mention (or this is a quick-create turn,
    where the issue does not exist yet). Its status belongs to its own
    executor. Answer, delegate, or escalate as usual, but never run
-   ` + "`" + `patchbay issue status` + "`" + ` on it, no matter how complete the work looks
+   ` + "`" + `orvilo issue status` + "`" + ` on it, no matter how complete the work looks
    to you.`
 
 const teamOperatingProtocolHardRules = `Hard rules:
@@ -136,7 +136,7 @@ const teamOperatingProtocolHardRules = `Hard rules:
 - If the team has no member capable of the task, post a comment
   explaining the gap (and @mention the issue's reporter if possible)
   rather than silently doing the work.
-- ALWAYS call ` + "`" + `patchbay team activity` + "`" + ` before ending your turn —
+- ALWAYS call ` + "`" + `orvilo team activity` + "`" + ` before ending your turn —
   even when the outcome is no_action. If it errors on a turn where you
   posted no comment, leave one short comment instead; never let an
   evaluation end with no record at all, and never post a second comment

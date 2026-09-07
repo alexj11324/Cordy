@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const HANDOFF_VALUE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/u;
-const DESKTOP_CODE_PATTERN = /^pbd_[A-Za-z0-9_-]{43}$/u;
+const DESKTOP_CODE_PATTERN = /^ovd_[A-Za-z0-9_-]{43}$/u;
 
-export const PRODUCT_ORIGIN = "https://patchbay.aspectlylabs.com";
+export const PRODUCT_ORIGIN = "https://orvilo.aspectlylabs.com";
 export const API_ORIGIN = "https://api.aspectlylabs.com";
 export const ACCOUNTS_ORIGIN = "https://accounts.aspectlylabs.com";
 
@@ -77,8 +77,8 @@ export function requireBuildHeaders(headers, sourceSha, label) {
   const expectedBuild = `sha-${sha}`;
   const get = (name) =>
     typeof headers?.get === "function" ? headers.get(name) : headers?.[name];
-  const build = get("x-patchbay-build");
-  const commit = get("x-patchbay-commit");
+  const build = get("x-orvilo-build");
+  const commit = get("x-orvilo-commit");
   if (build !== expectedBuild) {
     throw new Error(
       `${label} reported build ${build ?? "<missing>"}, expected ${expectedBuild}`,
@@ -130,7 +130,7 @@ export function requireDesktopCompletion(payload) {
     !payload ||
     typeof payload !== "object" ||
     !DESKTOP_CODE_PATTERN.test(payload.code) ||
-    payload.callback_protocol !== "patchbay"
+    payload.callback_protocol !== "orvilo"
   ) {
     throw new Error("Accounts broker returned an invalid desktop completion");
   }

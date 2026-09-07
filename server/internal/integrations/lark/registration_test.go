@@ -110,8 +110,8 @@ func TestRegistrationClient_Begin_HappyPath(t *testing.T) {
 	if q.Get("tp") != "sdk" {
 		t.Errorf("qr tp=%q want sdk", q.Get("tp"))
 	}
-	if !strings.HasPrefix(q.Get("source"), "go-sdk/patchbay") {
-		t.Errorf("qr source=%q want go-sdk/patchbay", q.Get("source"))
+	if !strings.HasPrefix(q.Get("source"), "go-sdk/orvilo") {
+		t.Errorf("qr source=%q want go-sdk/orvilo", q.Get("source"))
 	}
 	// The name preset pre-fills the Lark PersonalAgent creation form so
 	// the bot defaults to "<agent> - Orvilo" rather than the

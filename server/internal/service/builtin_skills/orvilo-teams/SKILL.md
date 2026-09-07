@@ -2,7 +2,7 @@
 name: orvilo-teams
 description: "Use when creating, inspecting, updating, assigning to, or debugging an Orvilo team, including how leader routing picks who runs."
 user-invocable: false
-allowed-tools: Bash(patchbay *)
+allowed-tools: Bash(orvilo *)
 ---
 
 # Orvilo Teams
@@ -12,11 +12,11 @@ allowed-tools: Bash(patchbay *)
 If debugging why a team did or did not run, inspect first:
 
 ```bash
-patchbay issue get <issue-id> --output json
-patchbay team get <team-id> --output json
-patchbay team member list <team-id> --output json
-patchbay issue comment list <issue-id> --roots-only --summary --output json
-patchbay issue comment list <issue-id> --thread <thread-id> --tail 30 --output json
+orvilo issue get <issue-id> --output json
+orvilo team get <team-id> --output json
+orvilo team member list <team-id> --output json
+orvilo issue comment list <issue-id> --roots-only --summary --output json
+orvilo issue comment list <issue-id> --thread <thread-id> --tail 30 --output json
 ```
 
 The two comment reads are a sequence: scan the roots first, then open the threads that look relevant — mention triggers, failure reasons, and user instructions usually live in the replies, which the roots scan never returns.
@@ -24,10 +24,10 @@ The two comment reads are a sequence: scan the roots first, then open the thread
 If the command shape is unclear, check help instead of guessing:
 
 ```bash
-patchbay team --help
-patchbay team member --help
-patchbay issue update --help
-patchbay issue comment add --help
+orvilo team --help
+orvilo team member --help
+orvilo issue update --help
+orvilo issue comment add --help
 ```
 
 Do not assign, comment, mention, update, delete, or record team activity just
@@ -53,26 +53,26 @@ Important consequences:
 Team commands:
 
 ```bash
-patchbay team list --output json
-patchbay team get <team-id> --output json
-patchbay team create --name <name> --leader <agent-name-or-id> --output json
-patchbay team update <team-id> --instructions "<leader coordination policy>" --output json
-patchbay team delete <team-id>
+orvilo team list --output json
+orvilo team get <team-id> --output json
+orvilo team create --name <name> --leader <agent-name-or-id> --output json
+orvilo team update <team-id> --instructions "<leader coordination policy>" --output json
+orvilo team delete <team-id>
 ```
 
 Member commands:
 
 ```bash
-patchbay team member list <team-id> --output json
-patchbay team member add <team-id> --member-id <id> --type agent|member --role <role> --output json
-patchbay team member remove <team-id> --member-id <id> --type agent|member
-patchbay team member set-role <team-id> --member-id <id> --member-type agent|member --role <role> --output json
+orvilo team member list <team-id> --output json
+orvilo team member add <team-id> --member-id <id> --type agent|member --role <role> --output json
+orvilo team member remove <team-id> --member-id <id> --type agent|member
+orvilo team member set-role <team-id> --member-id <id> --member-type agent|member --role <role> --output json
 ```
 
 Team leader evaluation command:
 
 ```bash
-patchbay team activity <issue-id> action|no_action|failed --reason "<why>" --output json
+orvilo team activity <issue-id> action|no_action|failed --reason "<why>" --output json
 ```
 
 `activity` is a write: it records the leader's evaluation decision on an issue.
@@ -95,10 +95,10 @@ outcome instead, and only when this turn has not already commented: on the
 Issue/comment commands often needed with teams:
 
 ```bash
-patchbay issue get <issue-id> --output json
-patchbay issue update <issue-id> --help
-patchbay issue comment list <issue-id> --roots-only --summary --output json
-patchbay issue comment add <issue-id> --help
+orvilo issue get <issue-id> --output json
+orvilo issue update <issue-id> --help
+orvilo issue comment list <issue-id> --roots-only --summary --output json
+orvilo issue comment add <issue-id> --help
 ```
 
 Comment reads stay bounded — the scan-then-expand sequence from the quick
@@ -161,7 +161,7 @@ Roster entries include member name, member type, mention markdown, and non-empty
 role. For agent members the roster also lists their assigned skills
 (`skills: a, b`, or `no skills assigned` when the agent has none) so the leader
 can delegate by capability instead of guessing from the role label; human
-members carry no skills segment. Builtin `patchbay-*` skills are not listed —
+members carry no skills segment. Builtin `orvilo-*` skills are not listed —
 only the workspace skills explicitly attached to the agent. Archived agent
 members are skipped from the briefing roster.
 
@@ -263,7 +263,7 @@ These actions can trigger agent work or mutate durable state:
 - commenting on a team-assigned issue;
 - mentioning a team;
 - creating or triggering team-assigned automations;
-- recording team activity with `patchbay team activity`;
+- recording team activity with `orvilo team activity`;
 - deleting/archive team.
 
 Do not perform side-effecting actions as tests unless the user explicitly
@@ -286,7 +286,7 @@ authorizes them.
   wakes the leader with an explicit ask (including `in_review` when wrapping up).
 - Getting the leader briefing does NOT imply status authority. A team
   `@`-mentioned into an issue assigned to someone else is a guest: roster and
-  delegation rules yes, `patchbay issue status` no.
+  delegation rules yes, `orvilo issue status` no.
 
 ## References
 

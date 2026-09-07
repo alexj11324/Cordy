@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	AuthCookieName      = "patchbay_auth"
-	CSRFCookieName      = "patchbay_csrf"
+	AuthCookieName      = "orvilo_auth"
+	CSRFCookieName      = "orvilo_csrf"
 	defaultAuthTokenTTL = 30 * 24 * time.Hour // 30 days
 )
 

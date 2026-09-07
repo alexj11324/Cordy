@@ -356,7 +356,7 @@ func TestBuildClaudeArgsUsesStrictMCPForManagedConfig(t *testing.T) {
 func TestBuildClaudeArgsIgnoresSystemPrompt(t *testing.T) {
 	t.Parallel()
 
-	const brief = "the entire patchbay runtime brief"
+	const brief = "the entire orvilo runtime brief"
 	args := buildClaudeArgs(ExecOptions{SystemPrompt: brief}, slog.Default())
 	if slices.Contains(args, "--append-system-prompt") {
 		t.Fatalf("unexpected --append-system-prompt in args: %v", args)
@@ -1306,7 +1306,7 @@ func TestBuildClaudeArgsExtraArgsBeforeCustomArgsAndFiltersBoth(t *testing.T) {
 
 func TestBuildClaudeArgsManagedSkillSettingsWins(t *testing.T) {
 	args := buildClaudeArgs(ExecOptions{
-		ClaudeSettingsPath: "/tmp/patchbay-claude-settings.json",
+		ClaudeSettingsPath: "/tmp/orvilo-claude-settings.json",
 		ExtraArgs:          []string{"--settings", "/tmp/default.json"},
 		CustomArgs:         []string{"--settings=/tmp/agent.json", "--max-turns", "7"},
 	}, slog.Default())
@@ -1314,7 +1314,7 @@ func TestBuildClaudeArgsManagedSkillSettingsWins(t *testing.T) {
 	if strings.Contains(joined, "default.json") || strings.Contains(joined, "agent.json") {
 		t.Fatalf("competing settings args were not filtered: %v", args)
 	}
-	if !strings.Contains(joined, "--settings /tmp/patchbay-claude-settings.json") {
+	if !strings.Contains(joined, "--settings /tmp/orvilo-claude-settings.json") {
 		t.Fatalf("managed settings missing: %v", args)
 	}
 	if !strings.Contains(joined, "--max-turns 7") {

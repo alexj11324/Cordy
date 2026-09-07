@@ -72,7 +72,7 @@ describe("sub-issue display store", () => {
 
   it("migrates the legacy assignee display preference to executor", async () => {
     localStorage.setItem(
-      "patchbay_sub_issue_display",
+      "orvilo_sub_issue_display",
       JSON.stringify({
         state: {
           rowProperties: {

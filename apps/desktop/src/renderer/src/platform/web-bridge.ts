@@ -106,7 +106,7 @@ export function installWebDesktopBridge(): boolean {
     reportAuthSession: (_userId: string | null) => undefined,
     // Browser Vite hosts have no native deep-link receiver. The canonical
     // handoff is delivered only by Electron's main/preload bridge through
-    // patchbay://auth/callback; this host must never accept an HTTP callback.
+    // orvilo://auth/callback; this host must never accept an HTTP callback.
     onAuthHandoff: (
       _callback: (payload: { code: string; state: string }) => boolean | Promise<boolean>,
     ) => noopUnsubscribe(),

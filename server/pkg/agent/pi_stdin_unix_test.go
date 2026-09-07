@@ -120,7 +120,7 @@ printf '%%s\n' '{"type":"turn_end","message":{"role":"assistant","model":"test",
 	fakePath := filepath.Join(dir, "pi")
 	writeTestExecutable(t, fakePath, []byte(script))
 
-	prompt := strings.Repeat("patchbay pi stdin payload 0123456789\n", 16_384)
+	prompt := strings.Repeat("orvilo pi stdin payload 0123456789\n", 16_384)
 	if len(prompt) < 512*1024 {
 		t.Fatalf("test prompt too small: %d bytes", len(prompt))
 	}

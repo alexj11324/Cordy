@@ -48,8 +48,8 @@ function rememberSignature(signature, now) {
 }
 
 function verify(rawBody, headers) {
-  const timestamp = headers["x-patchbay-timestamp"];
-  const presented = String(headers["x-patchbay-signature"] ?? "").replace(/^v1=/, "");
+  const timestamp = headers["x-orvilo-timestamp"];
+  const presented = String(headers["x-orvilo-signature"] ?? "").replace(/^v1=/, "");
   if (!timestamp || !presented) return "missing signature headers";
 
   const drift = Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp));

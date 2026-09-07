@@ -33,7 +33,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 같은 아카이브 형식은 CLI에서도 사용할 수 있습니다.
 
 ```bash
-patchbay skill import --file ./review-helper.skill
+orvilo skill import --file ./review-helper.skill
 ```
 
 가져올 때 워크스페이스에 같은 이름의 스킬이 이미 있으면 가져오기를 중단하거나, 기존 내용을 덮어쓰거나, 새 이름으로 저장하거나, 건너뛸 수 있습니다. 가져오기를 통한 덮어쓰기는 해당 스킬의 생성자만 할 수 있습니다. 워크스페이스 `admin`이 앱 안에서 수정할 수 있더라도 가져오기로는 덮어쓸 수 없습니다. 워크스페이스에 이미 있는 스킬의 새 버전을 받으려면 [가져온 스킬 업데이트](#가져온-스킬-업데이트)를 사용하세요.
@@ -43,7 +43,7 @@ patchbay skill import --file ./review-helper.skill
 GitHub, ClawHub, Skills.sh에서 가져온 스킬은 소스에 대한 참조를 유지합니다. 최신 버전을 받으려면 스킬 페이지의 **업데이트** 버튼(또는 목록 행 메뉴의 "소스에서 업데이트")을 사용하거나 CLI를 사용하세요:
 
 ```bash
-patchbay skill refresh <skill-id>
+orvilo skill refresh <skill-id>
 ```
 
 스킬은 소스에서 다시 다운로드되어 그 자리에서 교체됩니다:

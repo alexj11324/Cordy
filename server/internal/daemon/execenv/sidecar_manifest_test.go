@@ -170,7 +170,7 @@ var allFileBasedProviders = []string{
 // invariant the issue (MUL-2784) calls out: a user repo that contained
 // nothing related to Orvilo before a task ran must contain nothing
 // related to Orvilo after the task finishes — no .agent_context/,
-// no .claude/skills/, no .patchbay/, no stub directories. The test
+// no .claude/skills/, no .orvilo/, no stub directories. The test
 // runs the full Prepare → Inject → Cleanup cycle for every file-based
 // provider against a fresh empty workdir and asserts the directory is
 // byte-exactly empty again.
@@ -377,7 +377,7 @@ func TestPrepareThenCleanupSidecarsRepeatedCycles(t *testing.T) {
 }
 
 // TestPrepareThenCleanupSidecarsWithProjectResources extends the
-// round-trip to the .patchbay/project/resources.json branch — a separate
+// round-trip to the .orvilo/project/resources.json branch — a separate
 // sidecar write that creates its own intermediate directory tree.
 func TestPrepareThenCleanupSidecarsWithProjectResources(t *testing.T) {
 	t.Parallel()
@@ -434,10 +434,10 @@ func TestCleanupSidecarsLeavesUserContentInTrackedDirIntact(t *testing.T) {
 	workDir := t.TempDir()
 	envRoot := t.TempDir()
 
-	// Imagine Prepare wrote .patchbay/sidecar.txt and created
-	// .patchbay/ + .patchbay/project/, then exited. Between Prepare
-	// and Cleanup the user dropped their own file under .patchbay/.
-	managedDir := filepath.Join(workDir, ".patchbay")
+	// Imagine Prepare wrote .orvilo/sidecar.txt and created
+	// .orvilo/ + .orvilo/project/, then exited. Between Prepare
+	// and Cleanup the user dropped their own file under .orvilo/.
+	managedDir := filepath.Join(workDir, ".orvilo")
 	managedProject := filepath.Join(managedDir, "project")
 	managedFile := filepath.Join(managedProject, "resources.json")
 	if err := os.MkdirAll(managedProject, 0o755); err != nil {
@@ -469,7 +469,7 @@ func TestCleanupSidecarsLeavesUserContentInTrackedDirIntact(t *testing.T) {
 	if _, err := os.Stat(managedProject); !os.IsNotExist(err) {
 		t.Errorf("inner managed dir %s should be empty and removed, stat err=%v", managedProject, err)
 	}
-	// .patchbay still holds user-notes.txt, so rmdir must have been
+	// .orvilo still holds user-notes.txt, so rmdir must have been
 	// skipped silently — the directory must survive.
 	got, err := os.ReadFile(userFile)
 	if err != nil {
@@ -620,7 +620,7 @@ func TestSidecarManifestRoundTripJSON(t *testing.T) {
 // matrix below replays the user-skill-already-present scenario per
 // provider and asserts byte-exact round-trip — including that the
 // user's SKILL.md bytes survive the task untouched and our
-// collision-free sibling (which lives under .../issue-review-patchbay/)
+// collision-free sibling (which lives under .../issue-review-orvilo/)
 // is fully cleaned up.
 //
 // Codex skills live under codex-home (not workdir), so the per-skill
@@ -655,7 +655,7 @@ var sameSlugSkillProviderCases = []struct {
 // Prepare → Inject → Cleanup cycle with an Orvilo skill of the same
 // name, and assert the workdir snapshot is byte-identical to the
 // seed. The user's SKILL.md must not be touched, and the Orvilo
-// sibling (which lives at `<slug>-patchbay`) must be fully removed by
+// sibling (which lives at `<slug>-orvilo`) must be fully removed by
 // CleanupSidecars.
 func TestPrepareThenCleanupSidecarsSameSlugCollisionPerProvider(t *testing.T) {
 	t.Parallel()
@@ -771,7 +771,7 @@ func TestPrepareThenCleanupSidecarsIssueContextCollisionPerProvider(t *testing.T
 }
 
 // TestPrepareThenCleanupSidecarsProjectResourcesCollisionPerProvider
-// is the matching byte-exact matrix for `.patchbay/project/
+// is the matching byte-exact matrix for `.orvilo/project/
 // resources.json` — the other Orvilo-only namespace file. Same
 // invariant: pre-existing user content survives the round-trip
 // untouched even when the task ships project resources of its own.
@@ -784,11 +784,11 @@ func TestPrepareThenCleanupSidecarsProjectResourcesCollisionPerProvider(t *testi
 			workDir := t.TempDir()
 			envRoot := t.TempDir()
 
-			if err := os.MkdirAll(filepath.Join(workDir, ".patchbay", "project"), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Join(workDir, ".orvilo", "project"), 0o755); err != nil {
 				t.Fatalf("seed dir: %v", err)
 			}
 			userBody := `{"user":"owns this file"}`
-			userPath := filepath.Join(workDir, ".patchbay", "project", "resources.json")
+			userPath := filepath.Join(workDir, ".orvilo", "project", "resources.json")
 			if err := os.WriteFile(userPath, []byte(userBody), 0o644); err != nil {
 				t.Fatalf("seed user file: %v", err)
 			}
@@ -824,8 +824,8 @@ func TestPrepareThenCleanupSidecarsProjectResourcesCollisionPerProvider(t *testi
 }
 
 // TestAllocateCollisionFreeSkillDir pins the slug-suffix policy:
-// first try the natural slug, then `-patchbay`, then `-patchbay-2`,
-// `-patchbay-3`, … The PR-review concern is "Orvilo skill must still
+// first try the natural slug, then `-orvilo`, then `-orvilo-2`,
+// `-orvilo-3`, … The PR-review concern is "Orvilo skill must still
 // be discoverable" — this test demonstrates that we pick a sibling
 // path under the same skillsParent rather than dropping the skill or
 // nesting it under the user's directory.
@@ -845,7 +845,7 @@ func TestAllocateCollisionFreeSkillDir(t *testing.T) {
 		t.Errorf("first allocation path = %q, want under parent", dir)
 	}
 
-	// 2) Pre-existing user dir at the base slug → bump to `-patchbay`.
+	// 2) Pre-existing user dir at the base slug → bump to `-orvilo`.
 	if err := os.MkdirAll(filepath.Join(parent, "issue-review"), 0o755); err != nil {
 		t.Fatalf("seed user dir: %v", err)
 	}
@@ -853,25 +853,25 @@ func TestAllocateCollisionFreeSkillDir(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if slug != "issue-review-patchbay" {
-		t.Errorf("second allocation should bump to `-patchbay`; got %q", slug)
+	if slug != "issue-review-orvilo" {
+		t.Errorf("second allocation should bump to `-orvilo`; got %q", slug)
 	}
-	if dir != filepath.Join(parent, "issue-review-patchbay") {
+	if dir != filepath.Join(parent, "issue-review-orvilo") {
 		t.Errorf("second allocation path = %q, want under parent", dir)
 	}
 
 	// 3) Pre-existing collision at the bumped slug too → bump again.
-	if err := os.MkdirAll(filepath.Join(parent, "issue-review-patchbay"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(parent, "issue-review-orvilo"), 0o755); err != nil {
 		t.Fatalf("seed bumped dir: %v", err)
 	}
 	slug, dir, err = allocateCollisionFreeSkillDir(parent, "issue-review")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if slug != "issue-review-patchbay-2" {
-		t.Errorf("third allocation should be `-patchbay-2`; got %q", slug)
+	if slug != "issue-review-orvilo-2" {
+		t.Errorf("third allocation should be `-orvilo-2`; got %q", slug)
 	}
-	if dir != filepath.Join(parent, "issue-review-patchbay-2") {
+	if dir != filepath.Join(parent, "issue-review-orvilo-2") {
 		t.Errorf("third allocation path = %q, want under parent", dir)
 	}
 }
@@ -910,9 +910,9 @@ func TestPrepareThenCleanupSidecarsMultiSkillCollisionFreeAllocation(t *testing.
 		t.Fatalf("writeContextFiles: %v", err)
 	}
 
-	patchbayDir := filepath.Join(workDir, ".claude", "skills", "issue-review-patchbay")
-	if _, err := os.Stat(filepath.Join(patchbayDir, "SKILL.md")); err != nil {
-		t.Errorf("Orvilo sibling skill should exist at %s: %v", patchbayDir, err)
+	orviloDir := filepath.Join(workDir, ".claude", "skills", "issue-review-orvilo")
+	if _, err := os.Stat(filepath.Join(orviloDir, "SKILL.md")); err != nil {
+		t.Errorf("Orvilo sibling skill should exist at %s: %v", orviloDir, err)
 	}
 	got, err := os.ReadFile(userFile)
 	if err != nil {
@@ -930,7 +930,7 @@ func TestPrepareThenCleanupSidecarsMultiSkillCollisionFreeAllocation(t *testing.
 	if err := CleanupSidecars(envRoot); err != nil {
 		t.Fatalf("CleanupSidecars: %v", err)
 	}
-	if _, err := os.Stat(patchbayDir); !os.IsNotExist(err) {
+	if _, err := os.Stat(orviloDir); !os.IsNotExist(err) {
 		t.Errorf("Orvilo sibling should be removed by Cleanup; stat err=%v", err)
 	}
 	got, err = os.ReadFile(userFile)

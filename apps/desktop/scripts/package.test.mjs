@@ -111,12 +111,12 @@ describe("deriveVersion (real git describe)", () => {
   const repos = [];
 
   function initRepo() {
-    const dir = mkdtempSync(join(tmpdir(), "patchbay-desktop-ver-"));
+    const dir = mkdtempSync(join(tmpdir(), "orvilo-desktop-ver-"));
     repos.push(dir);
     const run = (...args) =>
       execFileSync("git", args, { cwd: dir, encoding: "utf-8" });
     run("init", "-q");
-    run("config", "user.email", "test@patchbay.ai");
+    run("config", "user.email", "test@orvilo.ai");
     run("config", "user.name", "test");
     run("config", "commit.gpgsign", "false");
     run("commit", "-q", "--allow-empty", "-m", "root");

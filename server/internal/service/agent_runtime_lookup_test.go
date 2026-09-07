@@ -70,9 +70,9 @@ func TestRuntimeLookupNilMetricsIsSafe(t *testing.T) {
 func lookupCount(t *testing.T, m *obsmetrics.BusinessMetrics, source, result string) float64 {
 	t.Helper()
 
-	fam := obsmetrics.GatherForTest(t, m)["patchbay_agent_runtime_lookup_total"]
+	fam := obsmetrics.GatherForTest(t, m)["orvilo_agent_runtime_lookup_total"]
 	if fam == nil {
-		t.Fatalf("patchbay_agent_runtime_lookup_total not registered")
+		t.Fatalf("orvilo_agent_runtime_lookup_total not registered")
 	}
 	for _, mtr := range fam.GetMetric() {
 		if labelValue(mtr, "source") == source && labelValue(mtr, "result") == result {

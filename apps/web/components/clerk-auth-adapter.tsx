@@ -32,7 +32,7 @@ export function ClerkAuthAdapter({ children }: { children: React.ReactNode }) {
   const { user: clerkUser, isLoaded: clerkLoaded } = useUser();
   const { getToken, isSignedIn, sessionId, signOut } = useAuth();
   const clerkUserId = clerkUser?.id;
-  const patchbayStatus = useAuthStore((state) => state.status);
+  const orviloStatus = useAuthStore((state) => state.status);
   const retryGeneration = useAuthStore((state) => state.retryGeneration);
   const logoutBarrierRef = useRef<Promise<void>>(Promise.resolve());
   const [exchangedIdentity, setExchangedIdentity] =
@@ -126,7 +126,7 @@ export function ClerkAuthAdapter({ children }: { children: React.ReactNode }) {
   const exchangeReady =
     clerkLoaded === true &&
     isSignedIn === true &&
-    patchbayStatus === "authenticated" &&
+    orviloStatus === "authenticated" &&
     typeof sessionId === "string" &&
     sessionId !== "" &&
     exchangedIdentity?.sessionId === sessionId &&

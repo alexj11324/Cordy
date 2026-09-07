@@ -107,7 +107,7 @@ func TestAutomationDispatchAdmitsClickerNotCreator(t *testing.T) {
 	// nor sit on its allow-list, so the creator gate denies them.
 	var apCreatorID string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('AP Creator', $1) RETURNING id`,
-		fmt.Sprintf("apc-%d@patchbay.test", time.Now().UnixNano())).Scan(&apCreatorID); err != nil {
+		fmt.Sprintf("apc-%d@orvilo.test", time.Now().UnixNano())).Scan(&apCreatorID); err != nil {
 		t.Fatalf("seed ap creator: %v", err)
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, apCreatorID) })

@@ -99,7 +99,7 @@ func prepareCursorMcpConfig(envRoot, workDir string, mcpConfig json.RawMessage, 
 	trustData, err := json.MarshalIndent(map[string]string{
 		"trustedAt":     "1970-01-01T00:00:00Z",
 		"workspacePath": projectRoot,
-		"trustMethod":   "patchbay-managed",
+		"trustMethod":   "orvilo-managed",
 	}, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshal cursor workspace trust: %w", err)

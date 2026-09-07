@@ -1,12 +1,12 @@
 {
   "manifest_version": 1,
-  "key": "ai.patchbay.release-checklist",
+  "key": "ai.orvilo.release-checklist",
   "name": "Release Checklist",
   "description": "A per-issue definition-of-done checklist. The team edits the items once in plugin settings; every issue gets its own state, and completing the list posts a sign-off comment.",
   "version": "1.0.0",
   "author": {
-    "name": "patchbay",
-    "url": "https://patchbay.aspectlylabs.com"
+    "name": "orvilo",
+    "url": "https://orvilo.aspectlylabs.com"
   },
   "scopes": [
     "issues:read",

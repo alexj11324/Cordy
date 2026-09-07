@@ -37,10 +37,10 @@ var detectSelfVersion = func(ctx context.Context, path string) (string, error) {
 	return ParseSelfVersion(string(out)), nil
 }
 
-// ParseSelfVersion pulls the version out of `patchbay --version` output, whose
+// ParseSelfVersion pulls the version out of `orvilo --version` output, whose
 // first line is rendered by cmd/orvilo's version template:
 //
-//	patchbay 0.3.7 (commit: abc1234, built: 2026-07-29T10:00:00Z)
+//	orvilo 0.3.7 (commit: abc1234, built: 2026-07-29T10:00:00Z)
 //	go: go1.26.1, os/arch: darwin/arm64
 //
 // The extracted field is exactly what ldflags put in main.version, which is
@@ -54,7 +54,7 @@ var detectSelfVersion = func(ctx context.Context, path string) (string, error) {
 func ParseSelfVersion(raw string) string {
 	line, _, _ := strings.Cut(raw, "\n")
 	line = strings.TrimSpace(line)
-	if fields := strings.Fields(line); len(fields) >= 2 && fields[0] == "patchbay" {
+	if fields := strings.Fields(line); len(fields) >= 2 && fields[0] == "orvilo" {
 		return fields[1]
 	}
 	return line
@@ -91,7 +91,7 @@ var selfReloadCheckInterval = 10 * time.Minute
 var selfReloadProbeTimeout = 10 * time.Second
 
 // autoUpdateLoop owns everything that can end in "restart this daemon into a
-// different patchbay binary". It runs two independent checks on one goroutine,
+// different orvilo binary". It runs two independent checks on one goroutine,
 // which is what keeps them from racing each other into triggerRestart:
 //
 //   - tryAutoUpdate: poll GitHub for a newer release and, when the daemon is
@@ -145,7 +145,7 @@ func (d *Daemon) autoUpdateLoop(ctx context.Context) {
 		d.logger.Info("auto-update: started", "interval", pullInterval, "current", d.cfg.CLIVersion)
 	}
 	if reloadEnabled {
-		d.logger.Info("auto-reload: watching the patchbay binary on disk",
+		d.logger.Info("auto-reload: watching the orvilo binary on disk",
 			"interval", selfReloadCheckInterval, "current", d.cfg.CLIVersion)
 	}
 
@@ -290,10 +290,10 @@ func (d *Daemon) tryAutoUpdate(ctx context.Context) {
 	barrierReleased = true
 }
 
-// trySelfReload restarts the daemon when the patchbay binary on disk no longer
+// trySelfReload restarts the daemon when the orvilo binary on disk no longer
 // reports the version compiled into this process.
 //
-// This is the out-of-band half of self-update. `brew upgrade patchbay`, a
+// This is the out-of-band half of self-update. `brew upgrade orvilo`, a
 // re-download, or a developer's `make build` all replace the binary at the same
 // path, and the daemon then keeps serving the version it booted with: its own
 // version string is frozen at compile time, and the pinned-path self-heal in
@@ -384,7 +384,7 @@ func (d *Daemon) trySelfReload(ctx context.Context) {
 		return
 	}
 
-	reason := fmt.Sprintf("patchbay binary on disk reports %s, running %s", onDisk, d.cfg.CLIVersion)
+	reason := fmt.Sprintf("orvilo binary on disk reports %s, running %s", onDisk, d.cfg.CLIVersion)
 	d.setReloadPending(reason)
 
 	if !d.trySetClaimBarrier() {
@@ -410,7 +410,7 @@ func (d *Daemon) trySelfReload(ctx context.Context) {
 	barrierReleased = true
 }
 
-// setReloadPending records that a patchbay version change is confirmed but the
+// setReloadPending records that a orvilo version change is confirmed but the
 // restart is waiting for the daemon to go idle. Purely diagnostic — surfaced on
 // /health and `daemon status` — and it gates nothing, so it can never park the
 // daemon the way a pending-state machine could.

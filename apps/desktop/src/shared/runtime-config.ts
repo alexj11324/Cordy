@@ -18,7 +18,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   schemaVersion: 1,
   apiUrl: "https://api.aspectlylabs.com",
   wsUrl: "wss://api.aspectlylabs.com/ws",
-  appUrl: "https://patchbay.aspectlylabs.com",
+  appUrl: "https://orvilo.aspectlylabs.com",
   accountsUrl: "https://accounts.aspectlylabs.com",
 });
 

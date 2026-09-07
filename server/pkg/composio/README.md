@@ -43,22 +43,22 @@ if err != nil { /* ... */ }
 // 1. Send a user to the hosted Connect Link
 link, err := client.CreateLink(ctx, composio.CreateLinkRequest{
     AuthConfigID: "ac_xxxxxxxx",          // configured in the Composio dashboard
-    UserID:       patchbayUserID.String(), // your own user id
-    CallbackURL:  "https://patchbay.aspectlylabs.com/api/integrations/composio/callback",
+    UserID:       orviloUserID.String(), // your own user id
+    CallbackURL:  "https://orvilo.aspectlylabs.com/api/integrations/composio/callback",
 })
 // → http.Redirect(w, r, link.RedirectURL, http.StatusFound)
 
 // 2. After Composio creates the account, fetch what the user has connected
 accounts, err := client.ListConnectedAccounts(ctx, composio.ListConnectedAccountsRequest{
-    UserIDs:  []string{patchbayUserID.String()},
+    UserIDs:  []string{orviloUserID.String()},
     Statuses: []string{"ACTIVE"},
 })
 
 // 3. Open an MCP session for the agent runtime
 session, err := client.CreateSession(ctx, composio.CreateSessionRequest{
-    UserID: patchbayUserID.String(),
+    UserID: orviloUserID.String(),
     ManageConnections: &composio.ManageConnections{
-        CallbackURL: "https://patchbay.aspectlylabs.com/settings/integrations",
+        CallbackURL: "https://orvilo.aspectlylabs.com/settings/integrations",
     },
 })
 mcpURL  := session.MCP.URL

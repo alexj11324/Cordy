@@ -7,9 +7,9 @@ import (
 	"github.com/google/uuid"
 )
 
-const markerPrefix = "<!-- patchbay:channel-media:"
+const markerPrefix = "<!-- orvilo:channel-media:"
 
-var markerPattern = regexp.MustCompile(`<!-- patchbay:channel-media:([0-9a-fA-F-]{36}) -->`)
+var markerPattern = regexp.MustCompile(`<!-- orvilo:channel-media:([0-9a-fA-F-]{36}) -->`)
 
 // DownloadPath is the durable, authorization-aware attachment URL persisted in
 // issue and chat Markdown.

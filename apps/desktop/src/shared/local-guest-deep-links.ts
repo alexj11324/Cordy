@@ -21,7 +21,7 @@ export const MAIN_RENDERER_CHANNEL_SCOPES: Record<
 > = {
   // The accounts-broker handoff — carries a cloud credential.
   "auth:handoff": "cloud",
-  // patchbay://invite/<invitationId> — joins a cloud workspace.
+  // orvilo://invite/<invitationId> — joins a cloud workspace.
   "invite:open": "cloud",
   // Native notification click — navigates to a cloud issue in a workspace tab.
   "inbox:open": "cloud",

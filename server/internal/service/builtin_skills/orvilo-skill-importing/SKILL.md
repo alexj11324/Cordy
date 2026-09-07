@@ -2,7 +2,7 @@
 name: orvilo-skill-importing
 description: "Use when asked to import or install a specific skill into this Orvilo workspace from a URL or slug. Not for choosing which skill the user needs; never treat a local installer such as `npx skills add` as the final install."
 user-invocable: false
-allowed-tools: Bash(patchbay *)
+allowed-tools: Bash(orvilo *)
 ---
 
 # Importing skills into Orvilo
@@ -26,8 +26,8 @@ import endpoint. It accepts either a hosted URL or an uploaded local archive
 (`.skill` / `.zip`), driven by this CLI:
 
 ```bash
-patchbay skill import --url <url> --output json              # hosted source
-patchbay skill import --file <path-to.skill> --output json   # local archive
+orvilo skill import --url <url> --output json              # hosted source
+orvilo skill import --file <path-to.skill> --output json   # local archive
 ```
 
 The CLI defaults to `--on-conflict fail`. A URL import sends:
@@ -48,14 +48,14 @@ environment, not the Orvilo workspace DB, so Orvilo cannot manage or bind it.
 ## Supported URL source families
 
 `detectImportSource` accepts these hosts (and `www.` variants). Pass any of these
-forms to `patchbay skill import --url <url> --output json`:
+forms to `orvilo skill import --url <url> --output json`:
 
 ```bash
-patchbay skill import --url clawhub.ai/owner/skill --output json
-patchbay skill import --url skills.sh/owner/repo/skill --output json
-patchbay skill import --url github.com/owner/repo --output json
-patchbay skill import --url github.com/owner/repo/tree/main/path/to/skill --output json
-patchbay skill import --url github.com/owner/repo/blob/main/path/to/SKILL.md --output json
+orvilo skill import --url clawhub.ai/owner/skill --output json
+orvilo skill import --url skills.sh/owner/repo/skill --output json
+orvilo skill import --url github.com/owner/repo --output json
+orvilo skill import --url github.com/owner/repo/tree/main/path/to/skill --output json
+orvilo skill import --url github.com/owner/repo/blob/main/path/to/SKILL.md --output json
 ```
 
 - `clawhub.ai`, `skills.sh`, `github.com` are the recognized hosts.
@@ -66,7 +66,7 @@ patchbay skill import --url github.com/owner/repo/blob/main/path/to/SKILL.md --o
 
 ## Local archive import (`.skill` / `.zip`)
 
-`patchbay skill import --file <path> --output json` imports a skill from a local
+`orvilo skill import --file <path> --output json` imports a skill from a local
 archive instead of a hosted URL. A `.skill` file is a standard zip — the format
 Anthropic's skill-creator `package_skill` produces — and a plain `.zip` of a
 skill folder works too. The server:
@@ -93,7 +93,7 @@ local archive still goes through `--url`.
 directly; search is not required by the API:
 
 ```bash
-patchbay skill import --url <url> --output json
+orvilo skill import --url <url> --output json
 ```
 
 2. Treat the response as the source of truth. Current CLI imports use the
@@ -128,19 +128,19 @@ whether the import succeeded.
 assignments and appends the new id:
 
 ```bash
-patchbay agent skills add <agent-id> --skill-ids <skill-id> --output json
-patchbay agent skills list <agent-id> --output json
+orvilo agent skills add <agent-id> --skill-ids <skill-id> --output json
+orvilo agent skills list <agent-id> --output json
 ```
 
-After the final `patchbay agent skills list <agent-id> --output json`, verify the
+After the final `orvilo agent skills list <agent-id> --output json`, verify the
 target skill id is present before claiming the skill is available to that agent.
 
 ## Additive add vs replace-all set
 
-`patchbay agent skills add` is additive: the server inserts the assignments without
+`orvilo agent skills add` is additive: the server inserts the assignments without
 clearing existing ones (`AddAgentSkills`).
 
-`patchbay agent skills set` is replace-all: the server clears every current
+`orvilo agent skills set` is replace-all: the server clears every current
 assignment, then re-adds exactly the ids you pass (`SetAgentSkills`).
 `set` is the replacement path. Passing only one id to `set` leaves the agent with
 only that one skill and drops every previous assignment.
@@ -163,7 +163,7 @@ for the primary skill content" — only fires on the dedicated single-file endpo
 
 ## Same-name conflicts: `--on-conflict`
 
-Default behavior is safe: `patchbay skill import --url <url>` is equivalent to
+Default behavior is safe: `orvilo skill import --url <url>` is equivalent to
 `--on-conflict fail`. If the imported skill name already exists, the command
 prints a structured `conflict` result and exits non-zero; no skill is created or
 updated.
@@ -187,16 +187,16 @@ Concrete examples:
 
 ```bash
 # Safe default. Fails with status=conflict if review-helper already exists.
-patchbay skill import --url https://skills.sh/acme/repo/review-helper --output json
+orvilo skill import --url https://skills.sh/acme/repo/review-helper --output json
 
 # Replace the existing same-name skill, preserving its ID and agent bindings.
-patchbay skill import --url https://skills.sh/acme/repo/review-helper --on-conflict overwrite --output json
+orvilo skill import --url https://skills.sh/acme/repo/review-helper --on-conflict overwrite --output json
 
 # Keep the existing skill and import a copy such as review-helper-2.
-patchbay skill import --url https://skills.sh/acme/repo/review-helper --on-conflict rename --output json
+orvilo skill import --url https://skills.sh/acme/repo/review-helper --on-conflict rename --output json
 
 # Batch-friendly behavior: leave the existing skill alone and mark it skipped.
-patchbay skill import --url https://skills.sh/acme/repo/review-helper --on-conflict skip --output json
+orvilo skill import --url https://skills.sh/acme/repo/review-helper --on-conflict skip --output json
 ```
 
 Legacy compatibility: clients that do not send `on_conflict` keep the old
@@ -218,7 +218,7 @@ non-zero for the default `fail` strategy. Treat `existing_skill.id` and
 `existing_skill.name` as the source of truth, then fetch details if needed:
 
 ```bash
-patchbay skill get <skill-id> --output json
+orvilo skill get <skill-id> --output json
 ```
 
 Older servers may return a `409` whose body is only a string like `a skill with
@@ -226,21 +226,21 @@ this name already exists`, with no `existing_skill` key. Recover by finding the
 existing workspace skill yourself:
 
 ```bash
-patchbay skill list --output json
-patchbay skill get <skill-id> --output json
+orvilo skill list --output json
+orvilo skill get <skill-id> --output json
 ```
 
 Then report that the skill already exists and include its `id` / `name`. Do not
 retry in a loop, and do not create a second skill under a different name just to
 dodge the conflict.
 
-## Updating an already-imported skill: `patchbay skill refresh`
+## Updating an already-imported skill: `orvilo skill refresh`
 
 When the goal is to pull the latest version of a skill that is already in the
 workspace, prefer `refresh` over re-typing the import URL:
 
 ```bash
-patchbay skill refresh <skill-id> --output json
+orvilo skill refresh <skill-id> --output json
 ```
 
 It sends `POST /api/skills/{id}/refresh` (empty body). The server re-downloads
@@ -256,7 +256,7 @@ skill in place:
   `import --on-conflict overwrite`, which stays creator-only.
 
 The success response is the plain `SkillWithFilesResponse` (same shape as
-`patchbay skill get --with-content`), not the import result envelope. Failure modes to report
+`orvilo skill get --with-content`), not the import result envelope. Failure modes to report
 instead of retrying in a loop:
 
 - `422`: the skill has no refreshable provenance (created manually, imported
@@ -269,16 +269,16 @@ instead of retrying in a loop:
 
 ## Reading a skill back: metadata by default
 
-`patchbay skill get` and `patchbay skill files list` return **metadata only** —
+`orvilo skill get` and `orvilo skill files list` return **metadata only** —
 path, byte size and content hash per file, plus the size and hash of the
 SKILL.md body. That is what the conflict and verification steps above need, and
 it is what keeps a large skill inspectable at all: inlining every body made a
 ~600KB skill impossible to fetch over a slow link (GH #7498).
 
 ```bash
-patchbay skill get <skill-id> --output json                  # metadata
-patchbay skill get <skill-id> --with-content --output json   # bodies inlined
-patchbay skill files list <skill-id>                         # paths and sizes
+orvilo skill get <skill-id> --output json                  # metadata
+orvilo skill get <skill-id> --with-content --output json   # bodies inlined
+orvilo skill files list <skill-id>                         # paths and sizes
 ```
 
 Reach for `--with-content` only when you are going to read the content. To find
@@ -303,15 +303,15 @@ use `add`.
 Correct import:
 
 ```bash
-patchbay skill import --url https://skills.sh/owner/repo/skill --output json
+orvilo skill import --url https://skills.sh/owner/repo/skill --output json
 ```
 
 Agent binding after import, when the caller intentionally wants to mutate that
 agent's skill assignments:
 
 ```bash
-patchbay agent skills add <agent-id> --skill-ids <skill-id> --output json
-patchbay agent skills list <agent-id> --output json
+orvilo agent skills add <agent-id> --skill-ids <skill-id> --output json
+orvilo agent skills list <agent-id> --output json
 ```
 
 ## References

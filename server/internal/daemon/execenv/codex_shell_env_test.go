@@ -284,7 +284,7 @@ func TestEnsureCodexShellEnvPolicyConfigIsIdempotent(t *testing.T) {
 	}
 	s := string(data)
 	assertValidToml(t, s)
-	if n := strings.Count(s, patchbayShellEnvBeginMarker); n != 1 {
+	if n := strings.Count(s, orviloShellEnvBeginMarker); n != 1 {
 		t.Fatalf("expected exactly one managed block, got %d:\n%s", n, s)
 	}
 }

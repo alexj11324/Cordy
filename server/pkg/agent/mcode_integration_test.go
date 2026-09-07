@@ -37,8 +37,8 @@ func TestMcodeRealACPContextAndToolSmoke(t *testing.T) {
 
 For every response in this workspace, include the exact marker AGENTS-MCODE-OK.
 `)
-	writeMcodeSmokeFile(t, filepath.Join(workDir, ".minimax", "skills", "patchbay-smoke", "SKILL.md"), `---
-name: patchbay-smoke
+	writeMcodeSmokeFile(t, filepath.Join(workDir, ".minimax", "skills", "orvilo-smoke", "SKILL.md"), `---
+name: orvilo-smoke
 description: Use when asked to run the Orvilo MiniMax Code integration smoke.
 ---
 # Orvilo smoke skill
@@ -55,7 +55,7 @@ Read tool-canary.txt with a file-reading tool. Include the exact marker SKILL-MC
 	defer cancel()
 
 	session, err := backend.Execute(ctx,
-		"Run the patchbay-smoke skill. Follow the workspace instructions and return its requested evidence.",
+		"Run the orvilo-smoke skill. Follow the workspace instructions and return its requested evidence.",
 		ExecOptions{Cwd: workDir, Timeout: 210 * time.Second},
 	)
 	if err != nil {

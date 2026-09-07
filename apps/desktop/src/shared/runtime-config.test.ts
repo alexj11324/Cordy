@@ -14,7 +14,7 @@ describe("runtime config", () => {
       schemaVersion: 1,
       apiUrl: "https://api.aspectlylabs.com",
       wsUrl: "wss://api.aspectlylabs.com/ws",
-      appUrl: "https://patchbay.aspectlylabs.com",
+      appUrl: "https://orvilo.aspectlylabs.com",
       accountsUrl: "https://accounts.aspectlylabs.com",
     });
   });
@@ -45,7 +45,7 @@ describe("runtime config", () => {
       schemaVersion: 1,
       apiUrl: "https://api.aspectlylabs.com",
       wsUrl: "wss://api.aspectlylabs.com/ws",
-      appUrl: "https://patchbay.aspectlylabs.com",
+      appUrl: "https://orvilo.aspectlylabs.com",
       accountsUrl: "https://accounts.aspectlylabs.com",
     });
   });
@@ -110,7 +110,7 @@ describe("runtime config", () => {
 
   it("rejects non-http api schemes", () => {
     expect(() =>
-      parseRuntimeConfig(JSON.stringify({ schemaVersion: 1, apiUrl: "file:///tmp/patchbay" })),
+      parseRuntimeConfig(JSON.stringify({ schemaVersion: 1, apiUrl: "file:///tmp/orvilo" })),
     ).toThrow(/apiUrl must use http or https/);
   });
 

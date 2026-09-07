@@ -23,7 +23,7 @@ import { isDesktopShell } from "../platform/local-directory";
 import { DISCORD_URL, DiscordIcon } from "./discord";
 import { useT } from "../i18n";
 
-const DOCS_URL = "https://patchbay.aspectlylabs.com/docs";
+const DOCS_URL = "https://orvilo.aspectlylabs.com/docs";
 const CHANGELOG_URL = "https://github.com/alexj11324/Cordy/releases";
 // Installers are published with releases. Keep this absolute for self-hosted
 // deployments too: the desktop client can point at a self-hosted backend once

@@ -1,7 +1,7 @@
 # Shared local development env derivation. Source this after loading .env.
 
-POSTGRES_DB="${POSTGRES_DB:-patchbay}"
-POSTGRES_USER="${POSTGRES_USER:-patchbay}"
+POSTGRES_DB="${POSTGRES_DB:-orvilo}"
+POSTGRES_USER="${POSTGRES_USER:-orvilo}"
 POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 
 PORT="${BACKEND_PORT:-${API_PORT:-${SERVER_PORT:-${PORT:-8080}}}}"

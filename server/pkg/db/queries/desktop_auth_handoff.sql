@@ -14,7 +14,7 @@ INSERT INTO desktop_auth_handoff (
     callback_protocol,
     expires_at
 )
-VALUES ($1, $2, 'patchbay', now() + interval '5 minutes')
+VALUES ($1, $2, 'orvilo', now() + interval '5 minutes')
 ON CONFLICT (state) DO UPDATE
 SET state = EXCLUDED.state
 WHERE desktop_auth_handoff.code_challenge = EXCLUDED.code_challenge

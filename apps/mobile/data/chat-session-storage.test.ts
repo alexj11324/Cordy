@@ -27,11 +27,11 @@ describe("chat session storage", () => {
     const restored = await loadChatActiveSession("workspace-a");
 
     expect(setItemAsync).toHaveBeenCalledWith(
-      "patchbay_chat_active_session_v1:workspace-a",
+      "orvilo_chat_active_session_v1:workspace-a",
       "session-2",
     );
     expect(getItemAsync).toHaveBeenCalledWith(
-      "patchbay_chat_active_session_v1:workspace-a",
+      "orvilo_chat_active_session_v1:workspace-a",
     );
     expect(restored).toBe("session-2");
   });
@@ -40,7 +40,7 @@ describe("chat session storage", () => {
     await saveChatActiveSession("workspace-a", null);
 
     expect(deleteItemAsync).toHaveBeenCalledWith(
-      "patchbay_chat_active_session_v1:workspace-a",
+      "orvilo_chat_active_session_v1:workspace-a",
     );
   });
 

@@ -1000,7 +1000,7 @@ export const useTabStore = create<TabStore>()(
       },
     }),
     {
-      name: "patchbay_tabs",
+      name: "orvilo_tabs",
       version: 4,
       storage: createJSONStorage(() => createPersistStorage(defaultStorage)),
       migrate: (persistedState, version) => {

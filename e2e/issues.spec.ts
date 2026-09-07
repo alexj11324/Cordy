@@ -4,7 +4,7 @@ import { loginAsDefault, createTestApi, preferManualCreateMode, reloadAppPage } 
 import type { TestApiClient } from "./fixtures";
 
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable";
+  process.env.DATABASE_URL ?? "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable";
 
 async function setIssueTimestamps(
   issueId: string,

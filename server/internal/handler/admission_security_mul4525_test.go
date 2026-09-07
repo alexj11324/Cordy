@@ -22,7 +22,7 @@ func seedSecurityTestOwner(t *testing.T, label string) string {
 	ctx := context.Background()
 	var ownerID string
 	if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id`,
-		label, fmt.Sprintf("%s-%d@patchbay.test", label, time.Now().UnixNano())).Scan(&ownerID); err != nil {
+		label, fmt.Sprintf("%s-%d@orvilo.test", label, time.Now().UnixNano())).Scan(&ownerID); err != nil {
 		t.Fatalf("seed owner user: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, ownerID) })

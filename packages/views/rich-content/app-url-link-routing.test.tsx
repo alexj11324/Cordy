@@ -56,12 +56,12 @@ let openSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   navigatedPaths = [];
-  window.addEventListener("patchbay:navigate", captureNavigate);
+  window.addEventListener("orvilo:navigate", captureNavigate);
   openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 });
 
 afterEach(() => {
-  window.removeEventListener("patchbay:navigate", captureNavigate);
+  window.removeEventListener("orvilo:navigate", captureNavigate);
   vi.restoreAllMocks();
 });
 

@@ -55,7 +55,7 @@ Orvilo 当前会检测以下命令：
 
 使用 MiniMax Code 时，请安装受支持的 Node.js 版本（`>=22.19 <23` 或 `>=24 <27`），并运行 `npm install --global @minimax-ai/code@latest`。全局 npm 安装会把 `mcode` 放入 npm 的全局可执行目录；如果 `command -v mcode` 或 `Get-Command mcode` 找不到它，请将该目录加入 `PATH`。然后运行 `mcode login`。模型由 MiniMax Code 管理，Orvilo 无法通过 ACP 覆盖它。
 
-使用 DeepSeek Harness 时，请先安装 Node.js 20+ 并运行 `npm install -g @deepseek-ai/dsh`，然后为它安装 Orvilo 运行时 profile（`dsh plugin --profile patchbay add <bundle>`）。守护进程只有在 `dsh --profile patchbay --probe` 成功后才注册 DeepSeek Harness。启动守护进程前请设置 `DEEPSEEK_API_KEY`（或在 dsh 自身设置中保存）。
+使用 DeepSeek Harness 时，请先安装 Node.js 20+ 并运行 `npm install -g @deepseek-ai/dsh`，然后为它安装 Orvilo 运行时 profile（`dsh plugin --profile orvilo add <bundle>`）。守护进程只有在 `dsh --profile orvilo --probe` 成功后才注册 DeepSeek Harness。启动守护进程前请设置 `DEEPSEEK_API_KEY`（或在 dsh 自身设置中保存）。
 
 这些登录凭据由工具保存在本机。Orvilo 不会接收 Claude、Codex、Cursor 或其他 CLI 的登录 token。
 
@@ -88,13 +88,13 @@ Get-Command <command>
 使用 CLI 启动守护进程：
 
 ```bash
-patchbay daemon start
+orvilo daemon start
 ```
 
 如果守护进程已经运行，安装新工具后重新启动：
 
 ```bash
-patchbay daemon restart
+orvilo daemon restart
 ```
 
 使用 Orvilo Desktop 时，退出并重新打开应用即可。
@@ -111,7 +111,7 @@ patchbay daemon restart
 
 1. 在终端运行工具本身，确认安装和登录都已完成。
 2. 用 `command -v` 或 `Get-Command` 检查实际命令名和路径。
-3. 运行 `patchbay daemon logs -f`，查看版本、路径或认证错误。
+3. 运行 `orvilo daemon logs -f`，查看版本、路径或认证错误。
 4. 重启守护进程，让它重新读取当前环境。
 5. 回到**运行时**页面，确认电脑和工具都已上线。
 

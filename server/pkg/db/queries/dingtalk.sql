@@ -9,7 +9,7 @@
 SELECT installation_id, channel_user_id
 FROM channel_user_binding
 WHERE workspace_id = sqlc.arg(workspace_id)
-  AND patchbay_user_id = sqlc.arg(patchbay_user_id)
+  AND orvilo_user_id = sqlc.arg(orvilo_user_id)
   AND channel_type = 'dingtalk'
 ORDER BY bound_at DESC, id ASC;
 

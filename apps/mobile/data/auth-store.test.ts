@@ -70,7 +70,7 @@ describe("mobile auth state", () => {
   });
 
   it("refuses to restore a legacy Guest bearer", async () => {
-    mocks.storedToken = `pbg_${"a".repeat(40)}`;
+    mocks.storedToken = `ovg_${"a".repeat(40)}`;
 
     await useAuthStore.getState().initialize();
 

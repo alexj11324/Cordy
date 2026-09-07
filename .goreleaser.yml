@@ -1,12 +1,12 @@
 version: 2
 
-project_name: patchbay
+project_name: orvilo
 
 builds:
-  - id: patchbay
+  - id: orvilo
     main: ./cmd/orvilo
     dir: server
-    binary: patchbay
+    binary: orvilo
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -23,8 +23,8 @@ builds:
       - arm64
 
 archives:
-  # Legacy archive name kept so already-released CLIs (whose `patchbay update`
-  # looks for `patchbay_{os}_{arch}.{ext}`) can keep self-updating. Remove
+  # Legacy archive name kept so already-released CLIs (whose `orvilo update`
+  # looks for `orvilo_{os}_{arch}.{ext}`) can keep self-updating. Remove
   # once those versions are no longer in use.
   - id: legacy
     files:
@@ -71,11 +71,11 @@ release:
   use_existing_draft: true
 
 homebrew_casks:
-  - name: patchbay
+  - name: orvilo
     ids:
       - versioned
     binaries:
-      - patchbay
+      - orvilo
     repository:
       owner: alexj11324
       name: homebrew-tap

@@ -75,7 +75,7 @@ func TestStartPatrickOnboarding_AllowsAnyMemberNotJustTheOwner(t *testing.T) {
 		t.Fatalf("provision patrick: expected 201, got %d: %s", owner.Code, owner.Body.String())
 	}
 
-	second := addSecondWorkspaceMember(t, "patrick-second-member@patchbay.test")
+	second := addSecondWorkspaceMember(t, "patrick-second-member@orvilo.test")
 	joined := createPatrickAs(t, second, map[string]any{
 		"runtime_id":    handlerTestRuntimeID(t),
 		"language":      "en",
@@ -207,7 +207,7 @@ func TestCreatePatrickAgent_SessionIsPerMemberAndStable(t *testing.T) {
 
 	// Another member of the same workspace gets their own conversation with
 	// the same Patrick, not the first member's.
-	other := addSecondWorkspaceMember(t, "patrick-session-owner@patchbay.test")
+	other := addSecondWorkspaceMember(t, "patrick-session-owner@orvilo.test")
 	otherResp := decodePatrick(t, createPatrickAs(t, other, map[string]any{
 		"runtime_id": runtimeID, "language": "en", "session_title": "Getting started with Patrick",
 	}))

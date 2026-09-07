@@ -641,7 +641,7 @@ function makeAttachment(id: string, overrides: Partial<Attachment> = {}): Attach
     filename: `${id}.png`,
     url: `/uploads/${id}.png`,
     download_url: `/api/attachments/${id}/download`,
-    markdown_url: `https://api.patchbay.test/api/attachments/${id}/download`,
+    markdown_url: `https://api.orvilo.test/api/attachments/${id}/download`,
     content_type: "image/png",
     size_bytes: 1,
     created_at: "2026-06-10T00:00:00Z",

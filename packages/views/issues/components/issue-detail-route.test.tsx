@@ -38,7 +38,7 @@ function wrapper({ children }: { children: ReactNode }) {
     pathname: "/acme/issues/x",
     searchParams: new URLSearchParams(),
     hash: "",
-    getShareableUrl: (p: string) => `https://app.patchbay.com${p}`,
+    getShareableUrl: (p: string) => `https://app.orvilo.com${p}`,
   };
   return <NavigationProvider value={adapter}>{children}</NavigationProvider>;
 }
@@ -141,7 +141,7 @@ describe("IssueDetailRoute with an identifier that names no issue", () => {
             pathname: "/acme/issues/ZZZ-134",
             searchParams: new URLSearchParams(),
             hash: "",
-            getShareableUrl: (p: string) => `https://app.patchbay.com${p}`,
+            getShareableUrl: (p: string) => `https://app.orvilo.com${p}`,
           }}
         >
           <IssueDetailRoute routeId="ZZZ-134" />
@@ -163,7 +163,7 @@ describe("IssueDetailRoute with an identifier that names no issue", () => {
             pathname: "/acme/issues/ZZZ-134",
             searchParams: new URLSearchParams(),
             hash: "",
-            getShareableUrl: (p: string) => `https://app.patchbay.com${p}`,
+            getShareableUrl: (p: string) => `https://app.orvilo.com${p}`,
           }}
         >
           <IssueDetailRoute routeId="ZZZ-134" />

@@ -110,7 +110,7 @@ func init() {
 var rootHelpTemplate = `Work seamlessly with Orvilo from the command line.
 
 USAGE
-  patchbay <command> <subcommand> [flags]
+  orvilo <command> <subcommand> [flags]
 {{range .Groups}}
 {{.Title}}
 {{formatCommandList (commandsInGroup $.Commands .ID)}}
@@ -118,17 +118,17 @@ USAGE
 FLAGS
 {{.LocalFlags.FlagUsages}}
 EXAMPLES
-  $ patchbay login
-  $ patchbay issue list --output json
-  $ patchbay daemon start
-  $ patchbay agent list --output json
+  $ orvilo login
+  $ orvilo issue list --output json
+  $ orvilo daemon start
+  $ orvilo agent list --output json
 
 ENVIRONMENT VARIABLES
   ORVILO_SERVER_URL    Override the default server URL
   ORVILO_WORKSPACE_ID  Set the active workspace
 
 LEARN MORE
-  Use ` + "`patchbay <command> <subcommand> --help`" + ` for more information about a command.
+  Use ` + "`orvilo <command> <subcommand> --help`" + ` for more information about a command.
 `
 
 var subHelpTemplate = `{{.Short}}
@@ -173,5 +173,5 @@ EXAMPLES
 {{- end}}
 
 LEARN MORE
-  Use ` + "`patchbay <command> <subcommand> --help`" + ` for more information about a command.
+  Use ` + "`orvilo <command> <subcommand> --help`" + ` for more information about a command.
 `

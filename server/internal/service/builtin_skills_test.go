@@ -127,7 +127,7 @@ func TestBuiltinSkillsFrontmatterIsStrictYAML(t *testing.T) {
 
 // TestMentioningSkillFollowsContractFrontmatter locks the reference template:
 // the mentioning skill is a context-triggered platform-contract skill, so it
-// must declare user-invocable:false and fence itself to the patchbay CLI. New
+// must declare user-invocable:false and fence itself to the orvilo CLI. New
 // contract skills should copy this shape.
 func TestMentioningSkillFollowsContractFrontmatter(t *testing.T) {
 	skill, ok := findSkill(t, "orvilo-mentioning")
@@ -139,8 +139,8 @@ func TestMentioningSkillFollowsContractFrontmatter(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (a platform-contract skill triggers from context, not a slash command)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); got != "Bash(patchbay *)" {
-		t.Errorf("allowed-tools = %q, want Bash(patchbay *) (fence the skill to the CLI it teaches)", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); got != "Bash(orvilo *)" {
+		t.Errorf("allowed-tools = %q, want Bash(orvilo *) (fence the skill to the CLI it teaches)", got)
 	}
 }
 
@@ -218,7 +218,7 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (issue workflow guidance triggers from context)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(orvilo *)") {
 		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
@@ -226,7 +226,7 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 	// references/source-map.md, not here, so a downstream main merge that
 	// shifts a line cannot rot this test into pinning a stale lie.
 	mustContain := []string{
-		"patchbay issue pull-requests <issue-id> --output json",
+		"orvilo issue pull-requests <issue-id> --output json",
 		"Default for code-changing issue work",
 		"open or update a PR before posting the final Orvilo issue comment",
 		"This is a default, not",
@@ -245,7 +245,7 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 		"`todo` starts work now, `backlog` parks it",
 		"`--stage <N>`",
 		"when a whole stage finishes",
-		"patchbay issue status <child-id> todo",
+		"orvilo issue status <child-id> todo",
 		// MUL-5442: the brief's Issue Metadata section defers the full
 		// write discipline here. Every relocated ban is anchored
 		// individually — both defining categories AND each example —
@@ -277,10 +277,10 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 		"scratchpad for run state",
 		"(`pr_url`, `waiting_on`",
 		"Start from the trigger, not from memory",
-		"patchbay issue get <issue-id> --output json",
-		"patchbay issue metadata list <issue-id> --output json",
-		"patchbay issue comment list <issue-id> --thread <trigger-comment-id>",
-		"patchbay issue comment add <issue-id> --parent <trigger-comment-id>",
+		"orvilo issue get <issue-id> --output json",
+		"orvilo issue metadata list <issue-id> --output json",
+		"orvilo issue comment list <issue-id> --thread <trigger-comment-id>",
+		"orvilo issue comment add <issue-id> --parent <trigger-comment-id>",
 	}
 	for _, forbidden := range mustNotContain {
 		if strings.Contains(body, forbidden) {
@@ -303,12 +303,12 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (skill import guidance triggers from context)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(orvilo *)") {
 		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
 	mustContain := []string{
-		"patchbay skill import --url <url> --output json",
+		"orvilo skill import --url <url> --output json",
 		"/api/skills/import",
 		"clawhub.ai",
 		"skills.sh",
@@ -326,10 +326,10 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 		"id",
 		"name",
 		"legacy",
-		"patchbay skill list --output json",
+		"orvilo skill list --output json",
 		"npx skills add",
-		"patchbay agent skills add <agent-id> --skill-ids <skill-id> --output json",
-		"patchbay agent skills list <agent-id> --output json",
+		"orvilo agent skills add <agent-id> --skill-ids <skill-id> --output json",
+		"orvilo agent skills list <agent-id> --output json",
 		"replace-all",
 		"`set` is the replacement path",
 		"references/skill-importing-source-map.md",
@@ -341,7 +341,7 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 	}
 
 	mustNotContain := []string{
-		"patchbay agent skills set <agent-id> --skill-ids <skill-id>",
+		"orvilo agent skills set <agent-id> --skill-ids <skill-id>",
 		"merge the new skill id with the existing ids",
 	}
 	for _, forbidden := range mustNotContain {
@@ -365,7 +365,7 @@ func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (agent creation guidance triggers from context)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(orvilo *)") {
 		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
@@ -375,15 +375,15 @@ func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
 		"`instructions` is the runtime behavior contract",
 		"`conversation_starters`",
 		"`avatar_url` → a random `emoji:<glyph>`",
-		"patchbay agent create --name <name> --runtime-id <runtime-id>",
+		"orvilo agent create --name <name> --runtime-id <runtime-id>",
 		"`model` is a first-class persisted column",
 		"custom_env",
 		"Never put credentials or other secrets in `custom_args`",
 		"--custom-env-stdin",
 		"--custom-env-file",
-		"patchbay agent skills add <agent-id> --skill-ids <skill-id> --output json",
-		"patchbay agent skills list <agent-id> --output json",
-		"patchbay agent get <agent-id> --output json",
+		"orvilo agent skills add <agent-id> --skill-ids <skill-id> --output json",
+		"orvilo agent skills list <agent-id> --output json",
+		"orvilo agent get <agent-id> --output json",
 		"255",
 		"references/creating-agents-source-map.md",
 	}
@@ -426,7 +426,7 @@ func TestTeamsSkillCoversLeaderRoutingContract(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (team guidance triggers from context)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(orvilo *)") {
 		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
@@ -434,7 +434,7 @@ func TestTeamsSkillCoversLeaderRoutingContract(t *testing.T) {
 		"A team is not an agent",
 		"team's `leader_id` agent",
 		"team members are not automatically fanned out",
-		"patchbay team member set-role",
+		"orvilo team member set-role",
 		"mention://team/<team-id>",
 		"recording team activity",
 		"references/team-source-map.md",
@@ -457,7 +457,7 @@ func TestTeamsSkillCoversLeaderRoutingContract(t *testing.T) {
 	// `issue comment list` in the CLI section; both shapes contradict the
 	// brief's "two bounded reads, never one bulk pull" doctrine.
 	for _, banned := range []string{
-		"patchbay issue comment list <issue-id> --output json",
+		"orvilo issue comment list <issue-id> --output json",
 		"--recent 10",
 	} {
 		if strings.Contains(body, banned) {
@@ -480,7 +480,7 @@ func TestAutomationsSkillCoversDispatchAndSideEffects(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(orvilo *)") {
 		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
@@ -488,8 +488,8 @@ func TestAutomationsSkillCoversDispatchAndSideEffects(t *testing.T) {
 		"An automation is not an agent",
 		"create_issue",
 		"run_only",
-		"patchbay automation trigger-add <automation-id> --kind schedule",
-		"patchbay automation trigger <automation-id> --output json",
+		"orvilo automation trigger-add <automation-id> --kind schedule",
+		"orvilo automation trigger <automation-id> --output json",
 		"Do not run `trigger`",
 		"webhook tokens",
 		"{{date}}",
@@ -516,15 +516,15 @@ func TestRuntimesAndReposSkillCoversClaimAndCheckoutChain(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(orvilo *)") {
 		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
 	mustContain := []string{
 		"agent_task_queue",
 		"daemon polls/claims the task",
-		"patchbay runtime list --output json",
-		"patchbay repo checkout <url>",
+		"orvilo runtime list --output json",
+		"orvilo repo checkout <url>",
 		"ORVILO_DAEMON_PORT",
 		"resource_ref.ref",
 		"github_repo",
@@ -557,17 +557,17 @@ func TestProjectsAndResourcesSkillCoversDurableContext(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(orvilo *)") {
 		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
 	mustContain := []string{
 		"Projects are durable context containers",
-		".patchbay/project/resources.json",
-		"patchbay project resource list <project-id> --output json",
-		"patchbay project resource add <project-id> --type github_repo --url <github-url> --output json",
-		"patchbay project resource add <project-id> --type github_repo --url <github-url> --ref <branch-or-sha> --output json",
-		"patchbay project resource add <project-id> --type local_directory",
+		".orvilo/project/resources.json",
+		"orvilo project resource list <project-id> --output json",
+		"orvilo project resource add <project-id> --type github_repo --url <github-url> --output json",
+		"orvilo project resource add <project-id> --type github_repo --url <github-url> --ref <branch-or-sha> --output json",
+		"orvilo project resource add <project-id> --type local_directory",
 		"Project resources are durable and affect future tasks",
 		"github_repo.resource_ref.url",
 		"resource_ref.ref",

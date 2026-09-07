@@ -179,7 +179,7 @@ func (h *Handler) ListDingTalkInstallations(w http.ResponseWriter, r *http.Reque
 		}
 		bindings, err := h.Queries.ListDingTalkUserBindingsForMember(r.Context(), db.ListDingTalkUserBindingsForMemberParams{
 			WorkspaceID:    wsUUID,
-			PatchbayUserID: userUUID,
+			OrviloUserID: userUUID,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list dingtalk user bindings")

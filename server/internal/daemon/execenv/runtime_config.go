@@ -29,8 +29,8 @@ import (
 // text is a breaking change for any file that already carries the previous
 // markers — bump deliberately.
 const (
-	runtimeMarkerBegin = "<!-- BEGIN PATCHBAY-RUNTIME (auto-managed; do not edit) -->"
-	runtimeMarkerEnd   = "<!-- END PATCHBAY-RUNTIME -->"
+	runtimeMarkerBegin = "<!-- BEGIN ORVILO-RUNTIME (auto-managed; do not edit) -->"
+	runtimeMarkerEnd   = "<!-- END ORVILO-RUNTIME -->"
 
 	// runtimeManagedSeparator is the fixed separator inserted between any
 	// pre-existing user content and the marker block whenever Inject
@@ -283,7 +283,7 @@ func writeRuntimeConfigFile(path, brief string) error {
 // matters for two malformed cases that the previous naive `strings.Index`
 // pair would mishandle:
 //
-//   - User content carries a stray `<!-- END PATCHBAY-RUNTIME -->` (e.g. a
+//   - User content carries a stray `<!-- END ORVILO-RUNTIME -->` (e.g. a
 //     documentation snippet showing what the wire format looks like) before
 //     any begin marker. The naive parser would find that end and reject the
 //     block (`endIdx > startIdx` false), then append a fresh block — and

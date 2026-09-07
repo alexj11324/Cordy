@@ -15,7 +15,7 @@ import (
 	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
-// `patchbay issue dependency-graph` is the CLI surface for the typed graph
+// `orvilo issue dependency-graph` is the CLI surface for the typed graph
 // contract. The server remains the authority for role validation, topology,
 // wave derivation, and atomic persistence; the CLI only reads a complete plan
 // and forwards it with its idempotency key.

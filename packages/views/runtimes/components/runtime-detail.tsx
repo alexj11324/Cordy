@@ -336,7 +336,7 @@ function HeroCard({
         </Fact>
       </dl>
 
-      {/* Diagnostic IDs — patchbay CLI git hash + truncated daemon UUID.
+      {/* Diagnostic IDs — orvilo CLI git hash + truncated daemon UUID.
           Only useful when filing an issue or reading logs; folded by
           default so they don't compete with the user-visible facts above. */}
       {hasTechDetails && (

@@ -28,7 +28,7 @@ import { setupLocalDirectory, validateLocalDirectory } from "./local-directory";
 const temporaryDirectories: string[] = [];
 
 async function createTemporaryDirectory(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "patchbay-picker-"));
+  const directory = await mkdtemp(join(tmpdir(), "orvilo-picker-"));
   temporaryDirectories.push(directory);
   return directory;
 }

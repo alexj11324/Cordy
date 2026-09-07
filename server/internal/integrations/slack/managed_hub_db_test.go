@@ -76,7 +76,7 @@ func TestManagedSlackHubRoutesAndSwitchesInPostgres(t *testing.T) {
 		"channel_type": "slack", "config": config, "status": "installed", "installer_user_id": fx.UserID,
 	}))
 	fx.Insert(t, "channel_user_binding", dbfx.Cols{
-		"workspace_id": fx.WorkspaceID, "patchbay_user_id": fx.UserID,
+		"workspace_id": fx.WorkspaceID, "orvilo_user_id": fx.UserID,
 		"installation_id": installationID, "channel_type": "slack", "channel_user_id": "U-fixture", "config": dbfx.Raw("'{}'::jsonb"),
 	})
 	t.Cleanup(func() {

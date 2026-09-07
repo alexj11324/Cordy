@@ -33,7 +33,7 @@ Copying from a runtime takes a snapshot of the files at that moment. Later chang
 The same archive format works from the CLI:
 
 ```bash
-patchbay skill import --file ./review-helper.skill
+orvilo skill import --file ./review-helper.skill
 ```
 
 If a skill with the same name already exists in the workspace, the import can stop, overwrite the existing content, save under a new name, or skip. Overwriting through import is limited to the skill's creator; a workspace `admin` who can edit the skill in the app still cannot overwrite it via import. To pull a newer version of a skill that is already in the workspace, use [Updating an imported skill](#updating-an-imported-skill) instead.
@@ -43,7 +43,7 @@ If a skill with the same name already exists in the workspace, the import can st
 A skill imported from GitHub, ClawHub, or Skills.sh keeps a reference to its source. To pull the latest version, use **Update** on the skill page (or "Update from source" in the list's row menu), or the CLI:
 
 ```bash
-patchbay skill refresh <skill-id>
+orvilo skill refresh <skill-id>
 ```
 
 The skill is re-downloaded from its source and replaced in place:

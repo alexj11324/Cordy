@@ -92,7 +92,7 @@ import (
 // HERMES_HOME to the overlay, and is written even when the source has none so
 // Hermes' project-.env fallback (loaded with override=True only when no user
 // .env loaded) can't relocate the home either.
-const hermesTaskLocalStateMarker = ".patchbay-task-local-state-v1"
+const hermesTaskLocalStateMarker = ".orvilo-task-local-state-v1"
 
 var hermesOverriddenEntries = map[string]struct{}{
 	"skills":                   {},

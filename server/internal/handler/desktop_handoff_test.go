@@ -65,13 +65,13 @@ func TestDesktopHandoffInitiateAcceptsWorktreeCallbackProtocols(t *testing.T) {
 		State:         strings.Repeat("s", 43),
 		CodeChallenge: strings.Repeat("c", 43),
 	}
-	for _, protocol := range []string{"patchbay", "patchbay-canary-5718c47b86bf9ece"} {
+	for _, protocol := range []string{"orvilo", "orvilo-canary-5718c47b86bf9ece"} {
 		binding.CallbackProtocol = protocol
 		if !validateDesktopHandoffInitiate(binding) {
 			t.Fatalf("owned protocol %q rejected", protocol)
 		}
 	}
-	for _, protocol := range []string{"evil-app", "patchbay-canary", "patchbay-canary-01zp-25"} {
+	for _, protocol := range []string{"evil-app", "orvilo-canary", "orvilo-canary-01zp-25"} {
 		binding.CallbackProtocol = protocol
 		if validateDesktopHandoffInitiate(binding) {
 			t.Fatalf("unowned protocol %q accepted", protocol)

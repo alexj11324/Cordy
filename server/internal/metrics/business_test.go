@@ -198,8 +198,8 @@ func TestBusinessMetricsRegistryExposesAllFamilies(t *testing.T) {
 			t.Fatalf("registry did not expose metric family %s", metric)
 		}
 	}
-	if !seen["patchbay_entitlement_config_error_total"] {
-		t.Fatal("registry did not expose metric family patchbay_entitlement_config_error_total")
+	if !seen["orvilo_entitlement_config_error_total"] {
+		t.Fatal("registry did not expose metric family orvilo_entitlement_config_error_total")
 	}
 }
 

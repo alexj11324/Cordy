@@ -68,7 +68,7 @@ func TestTriggerRestart_BrewLinuxCellarDeleted(t *testing.T) {
 	})
 
 	prefix := filepath.Join(t.TempDir(), "home", "linuxbrew", ".linuxbrew")
-	deletedCellarPath := filepath.Join(prefix, "Cellar", "patchbay", "0.2.9", "bin", "patchbay")
+	deletedCellarPath := filepath.Join(prefix, "Cellar", "orvilo", "0.2.9", "bin", "orvilo")
 	isBrewInstall = func() bool { return true }
 	getBrewPrefix = func() string { return prefix }
 
@@ -77,7 +77,7 @@ func TestTriggerRestart_BrewLinuxCellarDeleted(t *testing.T) {
 	}
 	d.triggerRestart()
 
-	want := filepath.Join(prefix, "bin", "patchbay")
+	want := filepath.Join(prefix, "bin", "orvilo")
 	if got := d.RestartBinary(); got != want {
 		t.Fatalf("restart binary = %q, want %q", got, want)
 	}
@@ -94,7 +94,7 @@ func TestTriggerRestart_UsesResolvedFallback(t *testing.T) {
 		isBrewInstall = originalIsBrewInstall
 	})
 
-	want := filepath.Join(t.TempDir(), "patchbay")
+	want := filepath.Join(t.TempDir(), "orvilo")
 	if err := os.WriteFile(want, []byte("test executable"), 0o755); err != nil {
 		t.Fatalf("write executable fixture: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestIsBlockedEnvKey(t *testing.T) {
 	}{
 		{key: "ORVILO_TOKEN", want: true},
 		{key: "orvilo_runtime_id", want: true},
-		{key: "patchbay_runtime_id", want: false},
+		{key: "orvilo_runtime_id", want: false},
 		{key: "HOME", want: true},
 		{key: "PATH", want: true},
 		{key: "TMPDIR", want: true},
@@ -195,7 +195,7 @@ func TestPrepareReasonixTaskStateHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareReasonixTaskStateHome: %v", err)
 	}
-	want := filepath.Join(home, ".patchbay", "profiles", "work", "reasonix-state", "runtime-1", "agent_2")
+	want := filepath.Join(home, ".orvilo", "profiles", "work", "reasonix-state", "runtime-1", "agent_2")
 	if got != want {
 		t.Fatalf("state home = %q, want %q", got, want)
 	}
@@ -217,7 +217,7 @@ func TestPrepareDshTaskSessionRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareDshTaskSessionRoot: %v", err)
 	}
-	want := filepath.Join(home, ".patchbay", "profiles", "work", "dsh-sessions", "runtime-1", "agent_2")
+	want := filepath.Join(home, ".orvilo", "profiles", "work", "dsh-sessions", "runtime-1", "agent_2")
 	if got != want {
 		t.Fatalf("session root = %q, want %q", got, want)
 	}
@@ -367,7 +367,7 @@ func TestConfigureCodexTaskShellEnvironment(t *testing.T) {
 			"CUSTOM_ACCESS_TOKEN":     "agent-secret",
 			"CUSTOM_FLAG":             "enabled",
 			"UNAUTHORIZED_TOKEN":      "daemon-secret",
-			"ORVILO_TASK_CONFIG_ROOT": "/task/patchbay-config",
+			"ORVILO_TASK_CONFIG_ROOT": "/task/orvilo-config",
 			"ORVILO_SERVER_URL":       "https://task.example",
 			"ORVILO_TOKEN":            "mat_task",
 		}
@@ -428,7 +428,7 @@ func TestCodexTaskShellEnvInheritsRealHome(t *testing.T) {
 	// task-scoped CODEX_HOME, and — since MUL-5578 — no HOME/XDG entry.
 	explicit := map[string]string{
 		"CODEX_HOME":              codexHome,
-		"ORVILO_TASK_CONFIG_ROOT": "/task/patchbay-config",
+		"ORVILO_TASK_CONFIG_ROOT": "/task/orvilo-config",
 		"ORVILO_TOKEN":            "mat_task",
 		"ORVILO_SERVER_URL":       "https://task.example",
 	}
@@ -501,7 +501,7 @@ func TestTaskScopedAuthToken(t *testing.T) {
 		},
 		{
 			name:    "member token fails closed",
-			token:   "pby_member_token",
+			token:   "ovy_member_token",
 			wantErr: "server provided non-task-scoped auth token",
 		},
 		{
@@ -540,8 +540,8 @@ func TestTaskOrviloEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 
 	const (
 		fakeToken      = "mat_task_environment_sentinel"
-		taskRoot       = "/task/private-patchbay-config"
-		workspacesRoot = "/daemon/patchbay_workspaces_staging"
+		taskRoot       = "/task/private-orvilo-config"
+		workspacesRoot = "/daemon/orvilo_workspaces_staging"
 	)
 	task := Task{
 		ID:          "task-test",
@@ -571,8 +571,8 @@ func TestTaskOrviloEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 
 	layerCustomEnvAndHermesHome(env, map[string]string{
 		"ORVILO_TASK_CONFIG_ROOT":     "/owner/config",
-		"ORVILO_TASK_WORKSPACES_ROOT": "/owner/patchbay_workspaces",
-		"ORVILO_TOKEN":                "pby_owner_sentinel",
+		"ORVILO_TASK_WORKSPACES_ROOT": "/owner/orvilo_workspaces",
+		"ORVILO_TOKEN":                "ovy_owner_sentinel",
 	}, "", nil)
 	if env["ORVILO_TASK_CONFIG_ROOT"] != taskRoot {
 		t.Fatalf("custom env replaced task config root: %q", env["ORVILO_TASK_CONFIG_ROOT"])
@@ -587,7 +587,7 @@ func TestTaskOrviloEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 
 // When `brew --prefix` is unavailable but the executable path is under a
 // known Cellar root, triggerRestart must recover the prefix from the
-// known-prefix list and target <prefix>/bin/patchbay.
+// known-prefix list and target <prefix>/bin/orvilo.
 func TestTriggerRestart_BrewPrefixUnavailable_FallsBackToKnownPrefix(t *testing.T) {
 	originalIsBrewInstall := isBrewInstall
 	originalGetBrewPrefix := getBrewPrefix
@@ -601,7 +601,7 @@ func TestTriggerRestart_BrewPrefixUnavailable_FallsBackToKnownPrefix(t *testing.
 	})
 
 	const knownPrefix = "/home/linuxbrew/.linuxbrew"
-	cellarPath := filepath.Join(knownPrefix, "Cellar", "patchbay", "0.2.9", "bin", "patchbay")
+	cellarPath := filepath.Join(knownPrefix, "Cellar", "orvilo", "0.2.9", "bin", "orvilo")
 	isBrewInstall = func() bool { return true }
 	getBrewPrefix = func() string { return "" }
 	resolveSelfExecutable = func() (string, error) { return cellarPath, nil }
@@ -617,7 +617,7 @@ func TestTriggerRestart_BrewPrefixUnavailable_FallsBackToKnownPrefix(t *testing.
 	}
 	d.triggerRestart()
 
-	want := filepath.Join(knownPrefix, "bin", "patchbay")
+	want := filepath.Join(knownPrefix, "bin", "orvilo")
 	if got := d.RestartBinary(); got != want {
 		t.Fatalf("restart binary = %q, want %q", got, want)
 	}
@@ -625,7 +625,7 @@ func TestTriggerRestart_BrewPrefixUnavailable_FallsBackToKnownPrefix(t *testing.
 
 // When `brew --prefix` is unavailable AND the executable is not under any
 // known Cellar root, triggerRestart logs a warning and keeps the executable
-// path (no fabricated <prefix>/bin/patchbay path).
+// path (no fabricated <prefix>/bin/orvilo path).
 func TestTriggerRestart_BrewPrefixUnavailable_NoKnownPrefix_KeepsExecutable(t *testing.T) {
 	originalIsBrewInstall := isBrewInstall
 	originalGetBrewPrefix := getBrewPrefix
@@ -819,7 +819,7 @@ func TestBuildPromptContainsIssueID(t *testing.T) {
 	// Prompt should contain the issue ID and CLI hint.
 	for _, want := range []string{
 		issueID,
-		"patchbay issue get",
+		"orvilo issue get",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q", want)
@@ -865,23 +865,23 @@ func TestSessionContinuityNoticeMatchesSurface(t *testing.T) {
 			name:         "slack rebuilds from the channel",
 			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeSlack},
 			tellUser:     false,
-			wantMentions: "patchbay chat history",
+			wantMentions: "orvilo chat history",
 		},
 		{
-			// Web chat history is persisted in chat_message, which `patchbay chat
+			// Web chat history is persisted in chat_message, which `orvilo chat
 			// history` reads back — recoverable, just from Orvilo's store.
 			name:         "web chat rebuilds from the stored transcript",
 			task:         Task{ChatSessionID: "chat-1"},
 			tellUser:     false,
-			wantMentions: "patchbay chat history",
+			wantMentions: "orvilo chat history",
 		},
 		{
 			// Feishu's conversation is persisted to chat_message too, and the
-			// handler's non-Slack fallback reads it back via `patchbay chat history`.
+			// handler's non-Slack fallback reads it back via `orvilo chat history`.
 			name:         "feishu rebuilds from the stored transcript",
 			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeFeishu},
 			tellUser:     false,
-			wantMentions: "patchbay chat history",
+			wantMentions: "orvilo chat history",
 		},
 		{
 			// WeCom is fully wired on main (persists chat_message, stamps
@@ -890,7 +890,7 @@ func TestSessionContinuityNoticeMatchesSurface(t *testing.T) {
 			name:         "wecom rebuilds from the stored transcript",
 			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeWecom},
 			tellUser:     false,
-			wantMentions: "patchbay chat history",
+			wantMentions: "orvilo chat history",
 		},
 		{
 			// DingTalk persists to chat_message through the same AppendUserMessage
@@ -898,7 +898,7 @@ func TestSessionContinuityNoticeMatchesSurface(t *testing.T) {
 			name:         "dingtalk rebuilds from the stored transcript",
 			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeDingtalk},
 			tellUser:     false,
-			wantMentions: "patchbay chat history",
+			wantMentions: "orvilo chat history",
 		},
 	}
 
@@ -1101,7 +1101,7 @@ func TestBuildPromptAutomationRunOnly(t *testing.T) {
 		"Automation run ID: run-1",
 		"Daily dependency check",
 		"Check dependencies and report outdated packages.",
-		"patchbay automation get automation-1 --output json",
+		"orvilo automation get automation-1 --output json",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("automation prompt missing %q\n---\n%s", want, prompt)
@@ -1112,7 +1112,7 @@ func TestBuildPromptAutomationRunOnly(t *testing.T) {
 	// workflow section (execenv.AutomationIssueCommandsGuard). MUL-5696 found
 	// that a second hand-maintained per-turn copy drifts, so the per-turn
 	// prompt must not restate it in any form.
-	if strings.Contains(prompt, "Do not run `patchbay issue get`") {
+	if strings.Contains(prompt, "Do not run `orvilo issue get`") {
 		t.Fatalf("automation prompt restates the issue-command boundary the brief owns (MUL-5696)\n---\n%s", prompt)
 	}
 	if strings.Contains(prompt, "Your executor issue ID is:") {
@@ -1143,7 +1143,7 @@ func TestBuildPromptCommentTriggered(t *testing.T) {
 		commentContent,
 		"Focus on THIS comment",
 		commentID,
-		"patchbay issue comment add " + issueID + " --parent " + commentID,
+		"orvilo issue comment add " + issueID + " --parent " + commentID,
 		"do NOT reuse --parent values from previous turns",
 		// MUL-5442 (2026-08-06): with the generic no-reply rule retired,
 		// the reply command is framed as a plain imperative again — the
@@ -1156,7 +1156,7 @@ func TestBuildPromptCommentTriggered(t *testing.T) {
 	}
 
 	// Should still contain CLI hint for fetching issue context.
-	if !strings.Contains(prompt, "patchbay issue get") {
+	if !strings.Contains(prompt, "orvilo issue get") {
 		t.Fatal("prompt missing CLI hint for issue context")
 	}
 }
@@ -1247,7 +1247,7 @@ func TestBuildPromptCommentTriggeredNoContent(t *testing.T) {
 		Agent:            &AgentData{Name: "Test"},
 	}, "claude")
 
-	if !strings.Contains(prompt, "patchbay issue get") {
+	if !strings.Contains(prompt, "orvilo issue get") {
 		t.Fatal("prompt missing CLI hint")
 	}
 }
@@ -1276,7 +1276,7 @@ func TestBuildPromptTeamLeaderNoActionProhibition(t *testing.T) {
 	for _, want := range []string{
 		"Team leader no_action rule",
 		"DO NOT post any comment",
-		"patchbay team activity",
+		"orvilo team activity",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("team leader prompt missing %q\n---\n%s", want, prompt)
@@ -3908,7 +3908,7 @@ func TestEnsureRepoReadyRefreshesOnMiss(t *testing.T) {
 }
 
 // A project github_repo URL that the workspace itself does not bind must still
-// be allowed for `patchbay repo checkout` after registerTaskRepos runs. Without
+// be allowed for `orvilo repo checkout` after registerTaskRepos runs. Without
 // this, the new project-repos-override-workspace-repos behavior would surface
 // repos in the meta-skill that the agent then can't actually clone.
 func TestRegisterTaskReposAllowsProjectOnlyURL(t *testing.T) {
@@ -4326,7 +4326,7 @@ func TestReportTaskResult_CancelledParentStillReportsTerminalState(t *testing.T)
 	}
 }
 
-// Pins the GitHub patchbay#1952 fail-closed behaviour: a task whose
+// Pins the GitHub orvilo#1952 fail-closed behaviour: a task whose
 // agent run never produced a real result (blocked, cancelled, or any
 // future status we forget to enumerate) MUST go through FailTask, so
 // the UI never shows a green "Completed" badge for a run that didn't

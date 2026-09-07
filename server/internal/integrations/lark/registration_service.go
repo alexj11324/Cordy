@@ -667,7 +667,7 @@ func (s *RegistrationService) finishSuccess(ctx context.Context, sess *registrat
 	if err := s.binder.BindInstallerTx(ctx, qtx, InstallerBindParams{
 		WorkspaceID:    sess.workspaceID,
 		InstallationID: inst.ID,
-		PatchbayUserID: sess.initiatorID,
+		OrviloUserID: sess.initiatorID,
 		LarkOpenID:     res.OpenID,
 	}); err != nil {
 		s.cfg.Logger.Warn("lark registration: bind installer",

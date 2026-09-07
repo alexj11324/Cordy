@@ -293,7 +293,7 @@ type workerBinding struct {
 func (w *LinearWorker) loadBinding(ctx context.Context, id pgtype.UUID) (workerBinding, error) {
 	var b workerBinding
 	var sm, am []byte
-	err := w.db.QueryRow(ctx, `SELECT id,workspace_id,connection_id,patchbay_project_id,created_by_id,linear_project_id,linear_team_id,sync_mode,status_mapping,agent_label_mapping FROM linear_project_binding WHERE id=$1 AND status='active'`, id).Scan(&b.ID, &b.WorkspaceID, &b.ConnectionID, &b.ProjectID, &b.CreatorID, &b.LinearProjectID, &b.TeamID, &b.Mode, &sm, &am)
+	err := w.db.QueryRow(ctx, `SELECT id,workspace_id,connection_id,orvilo_project_id,created_by_id,linear_project_id,linear_team_id,sync_mode,status_mapping,agent_label_mapping FROM linear_project_binding WHERE id=$1 AND status='active'`, id).Scan(&b.ID, &b.WorkspaceID, &b.ConnectionID, &b.ProjectID, &b.CreatorID, &b.LinearProjectID, &b.TeamID, &b.Mode, &sm, &am)
 	_ = json.Unmarshal(sm, &b.StatusMapping)
 	_ = json.Unmarshal(am, &b.AgentMapping)
 	return b, err
@@ -569,14 +569,14 @@ func (w *LinearWorker) applyRemoteLegacy(ctx context.Context, b workerBinding, r
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `SELECT set_config('patchbay.linear_remote_apply','on',true)`); err != nil {
+	if _, err = tx.Exec(ctx, `SELECT set_config('orvilo.linear_remote_apply','on',true)`); err != nil {
 		return err
 	}
 	var linkID, issueID pgtype.UUID
 	var baseRaw []byte
 	var seenAt pgtype.Int8
 	var seenEvent pgtype.Text
-	err = tx.QueryRow(ctx, `SELECT id,patchbay_issue_id,last_common_snapshot,last_remote_event_at_ms,last_remote_event_id FROM linear_issue_link WHERE binding_id=$1 AND linear_issue_id=$2 FOR UPDATE`, b.ID, remote.ID).Scan(&linkID, &issueID, &baseRaw, &seenAt, &seenEvent)
+	err = tx.QueryRow(ctx, `SELECT id,orvilo_issue_id,last_common_snapshot,last_remote_event_at_ms,last_remote_event_id FROM linear_issue_link WHERE binding_id=$1 AND linear_issue_id=$2 FOR UPDATE`, b.ID, remote.ID).Scan(&linkID, &issueID, &baseRaw, &seenAt, &seenEvent)
 	if errors.Is(err, pgx.ErrNoRows) {
 		if remote.Deleted {
 			return tx.Commit(ctx)
@@ -598,7 +598,7 @@ func (w *LinearWorker) applyRemoteLegacy(ctx context.Context, b workerBinding, r
 		}
 		linkID = parseUUID(uuid.NewString())
 		snap, _ := json.Marshal(snapshot(remote, b))
-		_, err = tx.Exec(ctx, `INSERT INTO linear_issue_link(id,workspace_id,binding_id,patchbay_issue_id,linear_issue_id,linear_identifier,last_common_snapshot,remote_updated_at,last_remote_event_at_ms,last_remote_event_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, linkID, b.WorkspaceID, b.ID, issueID, remote.ID, remote.Identifier, snap, remote.UpdatedAt, eventAt, eventID)
+		_, err = tx.Exec(ctx, `INSERT INTO linear_issue_link(id,workspace_id,binding_id,orvilo_issue_id,linear_issue_id,linear_identifier,last_common_snapshot,remote_updated_at,last_remote_event_at_ms,last_remote_event_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, linkID, b.WorkspaceID, b.ID, issueID, remote.ID, remote.Identifier, snap, remote.UpdatedAt, eventAt, eventID)
 		if err != nil {
 			return err
 		}
@@ -648,7 +648,7 @@ func (w *LinearWorker) applyRemoteLegacy(ctx context.Context, b workerBinding, r
 			rawBase, _ := json.Marshal(base[field])
 			rawLocal, _ := json.Marshal(local[field])
 			rawRemote, _ := json.Marshal(incoming[field])
-			_, err = tx.Exec(ctx, `INSERT INTO linear_sync_conflict(id,workspace_id,binding_id,link_id,patchbay_issue_id,linear_issue_id,field,base_value,local_value,remote_value,source_event_id,source_event_at_ms) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (link_id,field) WHERE status='open' DO UPDATE SET local_value=EXCLUDED.local_value,remote_value=EXCLUDED.remote_value,source_event_id=EXCLUDED.source_event_id,source_event_at_ms=EXCLUDED.source_event_at_ms,updated_at=now()`, parseUUID(uuid.NewString()), b.WorkspaceID, b.ID, linkID, issueID, remote.ID, field, rawBase, rawLocal, rawRemote, eventID, eventAt)
+			_, err = tx.Exec(ctx, `INSERT INTO linear_sync_conflict(id,workspace_id,binding_id,link_id,orvilo_issue_id,linear_issue_id,field,base_value,local_value,remote_value,source_event_id,source_event_at_ms) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (link_id,field) WHERE status='open' DO UPDATE SET local_value=EXCLUDED.local_value,remote_value=EXCLUDED.remote_value,source_event_id=EXCLUDED.source_event_id,source_event_at_ms=EXCLUDED.source_event_at_ms,updated_at=now()`, parseUUID(uuid.NewString()), b.WorkspaceID, b.ID, linkID, issueID, remote.ID, field, rawBase, rawLocal, rawRemote, eventID, eventAt)
 			if err != nil {
 				return err
 			}
@@ -728,7 +728,7 @@ func (w *LinearWorker) handleOutboxLegacy(ctx context.Context, c linearOutboxCla
 	}
 	var linkID pgtype.UUID
 	var remoteID string
-	linkErr := w.db.QueryRow(ctx, `SELECT id,linear_issue_id FROM linear_issue_link WHERE binding_id=$1 AND patchbay_issue_id=$2 AND sync_status<>'deleted'`, b.ID, c.IssueID).Scan(&linkID, &remoteID)
+	linkErr := w.db.QueryRow(ctx, `SELECT id,linear_issue_id FROM linear_issue_link WHERE binding_id=$1 AND orvilo_issue_id=$2 AND sync_status<>'deleted'`, b.ID, c.IssueID).Scan(&linkID, &remoteID)
 	if c.EventType == "issue_deleted" {
 		if errors.Is(linkErr, pgx.ErrNoRows) {
 			return nil
@@ -748,7 +748,7 @@ func (w *LinearWorker) handleOutboxLegacy(ctx context.Context, c linearOutboxCla
 		return err
 	}
 	var assignee string
-	_ = w.db.QueryRow(ctx, `SELECT mb.linear_user_id FROM issue i JOIN linear_member_binding mb ON mb.workspace_id=i.workspace_id AND mb.patchbay_user_id=i.executor_id WHERE i.id=$1 AND i.workspace_id=$2`, c.IssueID, b.WorkspaceID).Scan(&assignee)
+	_ = w.db.QueryRow(ctx, `SELECT mb.linear_user_id FROM issue i JOIN linear_member_binding mb ON mb.workspace_id=i.workspace_id AND mb.orvilo_user_id=i.executor_id WHERE i.id=$1 AND i.workspace_id=$2`, c.IssueID, b.WorkspaceID).Scan(&assignee)
 	var assigneePtr *string
 	if assignee != "" {
 		assigneePtr = &assignee
@@ -770,7 +770,7 @@ func (w *LinearWorker) handleOutboxLegacy(ctx context.Context, c linearOutboxCla
 		// fail with "no unique or exclusion constraint matching the ON
 		// CONFLICT specification" after the remote issue had already been
 		// created.
-		tag, insertErr := w.db.Exec(ctx, `INSERT INTO linear_issue_link(id,workspace_id,binding_id,patchbay_issue_id,linear_issue_id,linear_identifier,last_common_snapshot,remote_updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (workspace_id,patchbay_issue_id) WHERE sync_status<>'deleted' DO NOTHING`, parseUUID(uuid.NewString()), b.WorkspaceID, b.ID, c.IssueID, remote.ID, remote.Identifier, snap, remote.UpdatedAt)
+		tag, insertErr := w.db.Exec(ctx, `INSERT INTO linear_issue_link(id,workspace_id,binding_id,orvilo_issue_id,linear_issue_id,linear_identifier,last_common_snapshot,remote_updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (workspace_id,orvilo_issue_id) WHERE sync_status<>'deleted' DO NOTHING`, parseUUID(uuid.NewString()), b.WorkspaceID, b.ID, c.IssueID, remote.ID, remote.Identifier, snap, remote.UpdatedAt)
 		if insertErr != nil {
 			return insertErr
 		}

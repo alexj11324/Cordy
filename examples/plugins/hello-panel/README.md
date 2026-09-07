@@ -8,12 +8,12 @@ boring — it should demonstrate the contract, not the framework of the week.
 
 ## What it shows
 
-- `patchbay.context.get()` — who is looking and which issue the panel is on
-- `patchbay.issue.get()` — reading the issue behind `issues:read`
-- `patchbay.issue.comment()` — a write that lands as **the user**, marked with
+- `orvilo.context.get()` — who is looking and which issue the panel is on
+- `orvilo.issue.get()` — reading the issue behind `issues:read`
+- `orvilo.issue.comment()` — a write that lands as **the user**, marked with
   the plugin (`via_plugin_id`), behind `comments:write`
-- `patchbay.storage.user` — per-member state behind `storage:user`
-- `patchbay.ui.resize()` — asking the host for the height it actually needs
+- `orvilo.storage.user` — per-member state behind `storage:user`
+- `orvilo.ui.resize()` — asking the host for the height it actually needs
 
 ## Running it
 

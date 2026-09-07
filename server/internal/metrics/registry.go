@@ -34,7 +34,7 @@ func NewRegistry(opts RegistryOptions) *Registry {
 	reg.MustRegister(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 
 	buildInfo := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "patchbay_build_info",
+		Name: "orvilo_build_info",
 		Help: "Build information for the Orvilo server binary.",
 	}, []string{"version", "commit"})
 	buildInfo.WithLabelValues(defaultLabel(opts.Version, "dev"), defaultLabel(opts.Commit, "unknown")).Set(1)

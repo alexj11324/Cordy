@@ -55,7 +55,7 @@ afterEach(cleanup);
 beforeEach(() => {
   window.sessionStorage.clear();
   mocks.searchParams.current = new URLSearchParams({
-    return_url: "https://patchbay.aspectlylabs.com/login",
+    return_url: "https://orvilo.aspectlylabs.com/login",
   });
   mocks.sso.mockReset().mockResolvedValue({ error: null });
   mocks.register.mockReset().mockResolvedValue(undefined);
@@ -91,11 +91,11 @@ describe("Accounts Google entry", () => {
       redirectCallbackUrl: string;
     };
     expect(new URL(call.redirectUrl).searchParams.get("return_url")).toBe(
-      "https://patchbay.aspectlylabs.com/login",
+      "https://orvilo.aspectlylabs.com/login",
     );
     expect(
       new URL(call.redirectCallbackUrl).searchParams.get("return_url"),
-    ).toBe("https://patchbay.aspectlylabs.com/login");
+    ).toBe("https://orvilo.aspectlylabs.com/login");
     expect(screen.getByRole("status")).toHaveTextContent("Starting");
   });
 

@@ -56,7 +56,7 @@ function initCore(
   const api = new ApiClient(apiBaseUrl, {
     logger: createLogger("api"),
     onUnauthorized: () => {
-      storage.removeItem("patchbay_token");
+      storage.removeItem("orvilo_token");
     },
     identity,
   });
@@ -65,7 +65,7 @@ function initCore(
 
   // In token mode, hydrate token from storage.
   if (!cookieAuth && !clerkAuth) {
-    const token = storage.getItem("patchbay_token");
+    const token = storage.getItem("orvilo_token");
     if (token) api.setToken(token);
   }
   // Workspace identity is URL-driven: the [workspaceSlug] layout resolves

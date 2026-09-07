@@ -67,9 +67,9 @@ func TestPluginHookScheduleTwoReplicasRetryWithStableDelivery(t *testing.T) {
 		mu.Unlock()
 		if err := service.VerifyHookSignature(
 			secret,
-			r.Header.Get("X-Patchbay-Timestamp"),
+			r.Header.Get("X-Orvilo-Timestamp"),
 			raw,
-			r.Header.Get("X-Patchbay-Signature"),
+			r.Header.Get("X-Orvilo-Signature"),
 			time.Now(),
 		); err != nil {
 			mu.Lock()

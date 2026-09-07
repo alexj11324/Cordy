@@ -23,7 +23,7 @@ func batchClaimFixture(t *testing.T, ctx context.Context, pool *pgxpool.Pool) (r
 
 	var userID string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ($1,$2) RETURNING id`,
-		"Batch Claim Test", fmt.Sprintf("batch-claim-%d@patchbay.ai", suffix)).Scan(&userID); err != nil {
+		"Batch Claim Test", fmt.Sprintf("batch-claim-%d@orvilo.ai", suffix)).Scan(&userID); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	var workspaceID string

@@ -62,7 +62,7 @@ export const baseOptions: BaseLayoutProps = {
     {
       icon: <OrviloMark />,
       text: externalLinkText("Orvilo"),
-      url: "https://patchbay.aspectlylabs.com",
+      url: "https://orvilo.aspectlylabs.com",
       external: true,
     },
   ],

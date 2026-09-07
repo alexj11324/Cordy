@@ -12,12 +12,12 @@ This page lists deployment-facing configuration only; test variables and interna
 ## Minimum production configuration
 
 ```dotenv
-DATABASE_URL=postgres://user:password@postgres:5432/patchbay?sslmode=require
+DATABASE_URL=postgres://user:password@postgres:5432/orvilo?sslmode=require
 JWT_SECRET=<long-random-secret>
 APP_ENV=production
-FRONTEND_ORIGIN=https://patchbay.example.com
-ORVILO_APP_URL=https://patchbay.example.com
-ORVILO_PUBLIC_URL=https://api.patchbay.example.com
+FRONTEND_ORIGIN=https://orvilo.example.com
+ORVILO_APP_URL=https://orvilo.example.com
+ORVILO_PUBLIC_URL=https://api.orvilo.example.com
 ```
 
 You also need to pick an email service, otherwise verification codes and invitations are only written to the server log.
@@ -30,7 +30,7 @@ You also need to pick an email service, otherwise verification codes and invitat
 
 | Variable | Default | Description |
 |---|---|---|
-| `DATABASE_URL` | local `patchbay` database | PostgreSQL connection string |
+| `DATABASE_URL` | local `orvilo` database | PostgreSQL connection string |
 | `DATABASE_MAX_CONNS` | `25` | Maximum database connections per API process |
 | `DATABASE_MIN_CONNS` | `5` | Minimum connections each API process keeps |
 | `ORVILO_DATABASE_STARTUP_TIMEOUT` | `3m` | Container-level retry budget shared by migration and API startup; set to `0` for one fail-fast attempt per phase |
@@ -52,7 +52,7 @@ When setting a shutdown hold on Kubernetes, `terminationGracePeriodSeconds` must
 | `FRONTEND_ORIGIN` | empty | Frontend origin users visit; used for CORS, cookies, and invitation links |
 | `ORVILO_APP_URL` | falls back to `FRONTEND_ORIGIN` | User-reachable web URL; CLI sign-in and account-link URLs use it |
 | `ORVILO_PUBLIC_URL` | empty | Public API URL; used for webhook URLs and runtime connection instructions |
-| `ORVILO_DAEMON_SERVER_URL` | falls back to `ORVILO_PUBLIC_URL`, then `ORVILO_APP_URL` / `FRONTEND_ORIGIN` | Server URL the API process inserts into `patchbay setup self-host`; set it when daemons reach the API at a different URL than the public webhook URL |
+| `ORVILO_DAEMON_SERVER_URL` | falls back to `ORVILO_PUBLIC_URL`, then `ORVILO_APP_URL` / `FRONTEND_ORIGIN` | Server URL the API process inserts into `orvilo setup self-host`; set it when daemons reach the API at a different URL than the public webhook URL |
 | `CORS_ALLOWED_ORIGINS` | empty | Extra allowed HTTP origins, comma-separated |
 | `ALLOWED_ORIGINS` | falls back to CORS / frontend origins | WebSocket origin allowlist, comma-separated |
 | `COOKIE_DOMAIN` | empty | Required when the frontend and API use different hosts and the browser talks to the API domain directly; keep empty for single-domain deployments |
@@ -237,8 +237,8 @@ The variables below are read on the computer that runs your agents, not in the A
 | `ORVILO_CODEX_HANDSHAKE_TIMEOUT` | `30s`; `thread/start`, `thread/resume`: `60s` | Codex app-server startup handshake ceilings. An explicit value overrides both budgets globally |
 | `ORVILO_DAEMON_AUTO_UPDATE` | Cloud `true`; self-hosted `false` | Whether to check for and apply CLI updates automatically |
 | `ORVILO_DAEMON_AUTO_UPDATE_INTERVAL` | `6h` | Update check interval |
-| `ORVILO_DAEMON_AUTO_RELOAD` | `true` | Whether to restart into a `patchbay` binary replaced on disk out of band (`brew upgrade`, a re-download, a local build). Independent of `ORVILO_DAEMON_AUTO_UPDATE` |
-| `ORVILO_WORKSPACES_ROOT` | `~/patchbay_workspaces` | Root directory for task working directories |
+| `ORVILO_DAEMON_AUTO_RELOAD` | `true` | Whether to restart into a `orvilo` binary replaced on disk out of band (`brew upgrade`, a re-download, a local build). Independent of `ORVILO_DAEMON_AUTO_UPDATE` |
+| `ORVILO_WORKSPACES_ROOT` | `~/orvilo_workspaces` | Root directory for task working directories |
 | `ORVILO_AGENT_TEMP_BASE` | `/tmp` (Linux/macOS) | Linux/macOS only. Parent directory for private per-task temp dirs; must be an existing, writable absolute directory, and an invalid value fails task startup instead of falling back to `/tmp`. Pick a short path — child tools may bind AF_UNIX sockets under it, and `sun_path` is limited to 108 bytes on Linux and 104 on macOS |
 | `ORVILO_KEEP_ENV_AFTER_TASK` | `false` | Keep task directories for debugging |
 
@@ -249,15 +249,15 @@ ORVILO_CLAUDE_PATH=/opt/bin/claude
 ORVILO_CLAUDE_ARGS=--max-turns 40
 ```
 
-Precedence is command-line flag → environment variable → `~/.patchbay/config.json` → built-in default. For watchdog behavior, see [Daemon and runtimes](/daemon-runtimes).
+Precedence is command-line flag → environment variable → `~/.orvilo/config.json` → built-in default. For watchdog behavior, see [Daemon and runtimes](/daemon-runtimes).
 
 ### Persisting daemon configuration
 
-Common daemon-side settings can also be written to `~/.patchbay/config.json` instead of relying on shell environment variables; named profiles keep theirs at `~/.patchbay/profiles/<name>/config.json`:
+Common daemon-side settings can also be written to `~/.orvilo/config.json` instead of relying on shell environment variables; named profiles keep theirs at `~/.orvilo/profiles/<name>/config.json`:
 
 ```bash
-patchbay config set poll_interval 10s
-patchbay config show
+orvilo config set poll_interval 10s
+orvilo config show
 ```
 
 Supported keys:
@@ -283,7 +283,7 @@ Supported keys:
 A few value rules:
 
 - Duration keys accept positive Go durations (such as `10s`, `2h`); `0s` and negative values are rejected. The one exception is `agent_timeout`: `0s` is valid and explicitly disables the run time limit.
-- Passing an empty string clears a persisted value and falls back to the env var or built-in default, for example `patchbay config set poll_interval ""`.
+- Passing an empty string clears a persisted value and falls back to the env var or built-in default, for example `orvilo config set poll_interval ""`.
 - `max_concurrent_tasks` requires a non-negative integer.
 - Relative `workspaces_root` values are converted to absolute paths when saved.
 

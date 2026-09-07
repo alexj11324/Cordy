@@ -38,7 +38,7 @@ var agentMcpAddCmd = &cobra.Command{
 	Use:   "add <agent-id> <server-id>",
 	Short: "Give a workspace MCP server to an agent",
 	Long: "Assigns a workspace MCP server to this agent, enabled. Take the server " +
-		"id from 'patchbay workspace mcp list'. Adding one twice is a no-op.",
+		"id from 'orvilo workspace mcp list'. Adding one twice is a no-op.",
 	Args: exactArgs(2),
 	RunE: runAgentMcpAdd,
 }

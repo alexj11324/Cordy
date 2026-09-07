@@ -23,7 +23,7 @@ func TestPersistSelfHostConfigIfReachable(t *testing.T) {
 			ServerURL:   "https://api.old.example",
 			AppURL:      "https://old.example",
 			WorkspaceID: "ws-1",
-			Token:       "pby_existing_token",
+			Token:       "ovy_existing_token",
 		}
 		if err := cli.SaveCLIConfig(existing); err != nil {
 			t.Fatalf("seed config: %v", err)
@@ -44,7 +44,7 @@ func TestPersistSelfHostConfigIfReachable(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load config: %v", err)
 		}
-		if got.Token != "pby_existing_token" {
+		if got.Token != "ovy_existing_token" {
 			t.Fatalf("token: want preserved, got %q", got.Token)
 		}
 		if got.ServerURL != "https://api.old.example" {
@@ -134,7 +134,7 @@ func TestDispatchDaemonAfterSetup(t *testing.T) {
 			t.Fatal("dispatchDaemonAfterSetup: want active-task error")
 		}
 		if !strings.Contains(err.Error(), "2 active tasks") ||
-			!strings.Contains(err.Error(), "patchbay daemon restart") {
+			!strings.Contains(err.Error(), "orvilo daemon restart") {
 			t.Fatalf("error = %q, want active count and restart guidance", err)
 		}
 		if len(calls) != 0 {
@@ -441,13 +441,13 @@ func TestSetupCommandsFailClosedInTaskContext(t *testing.T) {
 	t.Setenv("HOME", ownerHome)
 	t.Setenv("ORVILO_AGENT_ID", "agent-test")
 	t.Setenv("ORVILO_TASK_ID", "task-test")
-	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-orvilo"))
 
-	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
+	ownerPath := filepath.Join(ownerHome, ".orvilo", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"token\": \"pby_owner_sentinel\"\n}\n")
+	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"token\": \"ovy_owner_sentinel\"\n}\n")
 	if err := os.WriteFile(ownerPath, ownerBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}

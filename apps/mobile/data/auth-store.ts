@@ -55,7 +55,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     // Guest mode is Desktop-local-only. Never restore a bearer created by the
     // removed mobile Guest experiment, even if an older build persisted one.
-    if (token.startsWith("pbg_")) {
+    if (token.startsWith("ovg_")) {
       api.setToken(null);
       await Promise.allSettled([
         clearToken(),

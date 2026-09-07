@@ -88,8 +88,8 @@ func (s *BindingTokenService) Mint(ctx context.Context, workspaceID, installatio
 }
 
 // RedeemAndBind atomically consumes a raw token and binds the Telegram user
-// id to patchbayUserID (taken from the session, never from the token).
-func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, patchbayUserID pgtype.UUID) (RedeemedBindingToken, error) {
+// id to orviloUserID (taken from the session, never from the token).
+func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, orviloUserID pgtype.UUID) (RedeemedBindingToken, error) {
 	if s.tx == nil {
 		return RedeemedBindingToken{}, errors.New("telegram: BindingTokenService missing TxStarter")
 	}
@@ -117,7 +117,7 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, pat
 	// Explicit membership gate (no member FK): returning before Commit rolls
 	// the consume back, so a non-member's attempt does not burn the token.
 	if _, err := qtx.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-		UserID:      patchbayUserID,
+		UserID:      orviloUserID,
 		WorkspaceID: row.WorkspaceID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -128,7 +128,7 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, pat
 
 	if _, err := qtx.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
 		WorkspaceID:    row.WorkspaceID,
-		PatchbayUserID: patchbayUserID,
+		OrviloUserID: orviloUserID,
 		InstallationID: row.InstallationID,
 		ChannelType:    string(TypeTelegram),
 		ChannelUserID:  row.ChannelUserID,

@@ -279,7 +279,7 @@ func TestRunWorkspaceSwitch(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	// Isolate HOME so the test never touches the developer's ~/.patchbay.
+	// Isolate HOME so the test never touches the developer's ~/.orvilo.
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("ORVILO_SERVER_URL", srv.URL)
 	t.Setenv("ORVILO_TOKEN", "test-token")
@@ -337,7 +337,7 @@ func TestRunWorkspaceSwitch(t *testing.T) {
 
 		// Verify the staging profile config landed in the expected path.
 		path, _ := cli.CLIConfigPathForProfile("staging")
-		wantSuffix := filepath.Join(".patchbay", "profiles", "staging", "config.json")
+		wantSuffix := filepath.Join(".orvilo", "profiles", "staging", "config.json")
 		if !strings.HasSuffix(path, wantSuffix) {
 			t.Errorf("staging config path = %q, want suffix %q", path, wantSuffix)
 		}
@@ -354,7 +354,7 @@ func TestRunWorkspaceSwitchFailsClosedInTaskContext(t *testing.T) {
 	t.Setenv("ORVILO_TOKEN", "mat_task_sentinel")
 	t.Setenv("ORVILO_SERVER_URL", "https://task.invalid")
 	t.Setenv("ORVILO_WORKSPACE_ID", "task-workspace")
-	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-orvilo"))
 
 	err := runWorkspaceSwitch(newWorkspaceSwitchTestCmd(), []string{"target"})
 	if err == nil || !strings.Contains(err.Error(), "not available inside a daemon-managed task") {
@@ -371,7 +371,7 @@ func TestFetchWorkspacesExplainsPortOnlyFailClosedContext(t *testing.T) {
 	t.Setenv("ORVILO_DAEMON_PORT", "20032")
 	t.Setenv("ORVILO_SERVER_URL", "https://api.example.test")
 	t.Setenv("ORVILO_TOKEN", "")
-	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "pby_owner_pat"}); err != nil {
+	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "ovy_owner_pat"}); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
 

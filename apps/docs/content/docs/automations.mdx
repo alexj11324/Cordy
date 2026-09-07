@@ -161,10 +161,10 @@ Pausing manually stops schedules, webhooks, and **Run now**. Deletion is actuall
 ## Use the CLI
 
 ```bash
-patchbay automation get <automation-id> --output json
-patchbay automation trigger <automation-id>
-patchbay automation runs <automation-id>
-patchbay automation trigger-rotate-url <automation-id> <trigger-id>
+orvilo automation get <automation-id> --output json
+orvilo automation trigger <automation-id>
+orvilo automation runs <automation-id>
+orvilo automation trigger-rotate-url <automation-id> <trigger-id>
 ```
 
 `automation get` sets `webhook_token`, `webhook_path`, and `webhook_url` to `null` by default, and returns `has_webhook_token` plus `webhook_token_hint` instead. Add `--show-secrets` only when you intentionally need the live credential; the CLI prints a warning to stderr so piped JSON stays valid.

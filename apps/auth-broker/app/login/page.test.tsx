@@ -116,7 +116,7 @@ describe("Accounts desktop login", () => {
 
     expect(await screen.findByTestId("accounts-login-form")).toHaveAttribute(
       "data-return-url",
-      "https://patchbay.aspectlylabs.com/login",
+      "https://orvilo.aspectlylabs.com/login",
     );
     expect(mocks.register).not.toHaveBeenCalled();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -124,14 +124,14 @@ describe("Accounts desktop login", () => {
 
   it("accepts only the product return target for a direct Accounts login", async () => {
     mocks.searchParams.current = new URLSearchParams({
-      return_url: "https://patchbay.aspectlylabs.com/acme/issues",
+      return_url: "https://orvilo.aspectlylabs.com/acme/issues",
     });
 
     render(<Page />);
 
     expect(await screen.findByTestId("accounts-login-form")).toHaveAttribute(
       "data-return-url",
-      "https://patchbay.aspectlylabs.com/acme/issues",
+      "https://orvilo.aspectlylabs.com/acme/issues",
     );
   });
 
@@ -145,17 +145,17 @@ describe("Accounts desktop login", () => {
   });
 
   it("completes a local login through the broker without posting a bearer to localhost", async () => {
-    window.sessionStorage.setItem(`patchbay_desktop_attempt:${STATE}`, CHALLENGE);
+    window.sessionStorage.setItem(`orvilo_desktop_attempt:${STATE}`, CHALLENGE);
     mocks.auth.isSignedIn = true;
     mocks.getToken.mockResolvedValue("clerk-session-token");
-    mocks.complete.mockResolvedValue({ code: `pbl_${"c".repeat(43)}`, callbackProtocol: "patchbay" });
+    mocks.complete.mockResolvedValue({ code: `ovl_${"c".repeat(43)}`, callbackProtocol: "orvilo" });
     mocks.searchParams.current.set("session_mode", "local");
     render(<Page />);
     await waitFor(() => expect(mocks.complete).toHaveBeenCalledWith("clerk-session-token", {
       state: STATE, code_challenge: CHALLENGE, local: true,
     }));
     const link = await screen.findByRole("link", { name: "Open Orvilo" });
-    expect(link.getAttribute("href")).toContain("patchbay://auth/callback?code=pbl_");
+    expect(link.getAttribute("href")).toContain("orvilo://auth/callback?code=ovl_");
     expect(document.querySelector("form")).toBeNull();
     expect(document.querySelector('input[name="session"]')).toBeNull();
   });
@@ -183,7 +183,7 @@ describe("Accounts desktop login", () => {
   });
 
   it("shows a rejected completion without signing out and looping back to the form", async () => {
-    window.sessionStorage.setItem(`patchbay_desktop_attempt:${STATE}`, CHALLENGE);
+    window.sessionStorage.setItem(`orvilo_desktop_attempt:${STATE}`, CHALLENGE);
     mocks.auth.isSignedIn = true;
     mocks.getToken.mockResolvedValue("token");
     mocks.complete.mockRejectedValue(new Error("rejected"));
@@ -196,12 +196,12 @@ describe("Accounts desktop login", () => {
   });
 
   it("keeps a clickable desktop callback when production complete cannot auto-open the app", async () => {
-    window.sessionStorage.setItem(`patchbay_desktop_attempt:${STATE}`, CHALLENGE);
+    window.sessionStorage.setItem(`orvilo_desktop_attempt:${STATE}`, CHALLENGE);
     mocks.auth.isSignedIn = true;
     mocks.getToken.mockResolvedValue("clerk-session-token");
     mocks.complete.mockResolvedValue({
-      code: `pbd_${"c".repeat(43)}`,
-      callbackProtocol: "patchbay",
+      code: `ovd_${"c".repeat(43)}`,
+      callbackProtocol: "orvilo",
     });
 
     render(<Page />);
@@ -210,7 +210,7 @@ describe("Accounts desktop login", () => {
       await screen.findByRole("link", { name: "Open Orvilo" }),
     ).toHaveAttribute(
       "href",
-      `patchbay://auth/callback?code=pbd_${"c".repeat(43)}&state=${STATE}`,
+      `orvilo://auth/callback?code=ovd_${"c".repeat(43)}&state=${STATE}`,
     );
     expect(screen.getByText("Finishing sign-in…")).toBeInTheDocument();
     expect(screen.queryByText("Opening Orvilo…")).not.toBeInTheDocument();

@@ -16,7 +16,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 리소스가 실행에 들어가는 방식
 
-에이전트가 프로젝트 안의 태스크를 처리하면 Orvilo가 프로젝트 이름, 프로젝트 설명, 리소스 목록을 실행 컨텍스트에 추가하고 작업 디렉터리에 `.patchbay/project/resources.json`을 기록합니다.
+에이전트가 프로젝트 안의 태스크를 처리하면 Orvilo가 프로젝트 이름, 프로젝트 설명, 리소스 목록을 실행 컨텍스트에 추가하고 작업 디렉터리에 `.orvilo/project/resources.json`을 기록합니다.
 
 워크스페이스에 연결된 저장소 목록은 항상 실행 컨텍스트에 포함됩니다. 프로젝트에 연결된 저장소는 그중 이 작업 묶음에서 사용할 코드와 기본 ref를 지정합니다.
 
@@ -84,7 +84,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 - **조용히 사라지는 것은 없습니다.** 에이전트가 커밋하지 않고 남긴 변경 사항은 워크트리가 제거되기 전에 해당 브랜치로 커밋되며, **작업이 도중에 실패한 경우에도 마찬가지입니다.** 드물게 그 커밋 자체를 할 수 없는 경우 — 예를 들어 `commit.gpgSign`이 켜져 있고 런타임이 서명 키를 사용할 수 없는 저장소 — 워크트리는 제거되지 않고 의도적으로 유지되며, 작업은 실패로 보고되고, 저장소에서 `git worktree list`를 실행하면 해당 변경 사항이 있는 디렉터리를 확인할 수 있습니다.
 - **아무것도 변경하지 않은 작업은 아무것도 남기지 않습니다.** 해당 브랜치는 `git branch`에 빈 항목으로 남지 않고 삭제됩니다. 다만 이전 실행의 작업을 담고 있는 태스크 브랜치는 항상 유지됩니다.
 
-워크트리는 런타임의 작업 공간 디렉터리 안에 있으므로 일반적인 정리 주기에 따라 회수됩니다. 저장소에는 두 가지가 남습니다. 브랜치, 그리고 브랜치마다 하나씩 있는 숨은 ref(`refs/patchbay/local-state/` 아래)입니다. 후자는 그 브랜치의 소유자와 마지막으로 이어받을 때 사용자 디렉터리의 내용을 기록합니다. 숨은 ref는 `git branch`에 나타나지 않으며 `git for-each-ref refs/patchbay`로 확인할 수 있습니다. Orvilo는 브랜치를 지울 때 함께 지우고, 사용자가 직접 지운 브랜치의 ref는 그 저장소에서 다음 작업이 실행될 때 정리합니다. `git for-each-ref --format='%(refname)' refs/patchbay | xargs -n1 git update-ref -d`로 한 번에 지울 수도 있습니다.
+워크트리는 런타임의 작업 공간 디렉터리 안에 있으므로 일반적인 정리 주기에 따라 회수됩니다. 저장소에는 두 가지가 남습니다. 브랜치, 그리고 브랜치마다 하나씩 있는 숨은 ref(`refs/orvilo/local-state/` 아래)입니다. 후자는 그 브랜치의 소유자와 마지막으로 이어받을 때 사용자 디렉터리의 내용을 기록합니다. 숨은 ref는 `git branch`에 나타나지 않으며 `git for-each-ref refs/orvilo`로 확인할 수 있습니다. Orvilo는 브랜치를 지울 때 함께 지우고, 사용자가 직접 지운 브랜치의 ref는 그 저장소에서 다음 작업이 실행될 때 정리합니다. `git for-each-ref --format='%(refname)' refs/orvilo | xargs -n1 git update-ref -d`로 한 번에 지울 수도 있습니다.
 
 <Callout type="warn">
 **셀프 호스팅 운영자 주의:** 이 모드의 격리는 서버가 강제합니다(리소스 저장 시 한 번, 런타임이 각 작업을 가져갈 때 다시 한 번). 따라서 런타임을 언제 다운그레이드하더라도 차단됩니다. 유일하게 차단되지 않는 조합은 이 모드를 구현하지 않은 런타임이 연결된 상태에서 서버를 이 기능 이전 빌드로 롤백하는 것입니다 — 구버전 서버에는 이 게이트가 없고, 그런 런타임은 `execution_mode`를 무시한 채 작업을 원본 디렉터리에서 그대로 실행합니다. `worktree` 리소스가 존재하는 동안에는 해당 머신의 런타임이 모두 최신이 아닌 한 서버를 이 릴리스 이전으로 롤백하지 마십시오.
@@ -96,7 +96,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 실행 중 기록되는 내용
 
-에이전트가 만든 코드 변경 외에도 런타임이 현재 AI 코딩 도구에 필요한 지시 파일과 `.patchbay/project/resources.json`을 디렉터리에 기록할 수 있습니다. 버전 관리에 포함하고 싶지 않다면 `.gitignore`에 추가하세요.
+에이전트가 만든 코드 변경 외에도 런타임이 현재 AI 코딩 도구에 필요한 지시 파일과 `.orvilo/project/resources.json`을 디렉터리에 기록할 수 있습니다. 버전 관리에 포함하고 싶지 않다면 `.gitignore`에 추가하세요.
 
 Orvilo가 실행 환경을 정리할 때 연결된 로컬 디렉터리는 삭제하지 않습니다. 에이전트가 이 디렉터리에 만든 변경은 터미널에서 AI 코딩 도구를 직접 실행해 만든 변경과 성격이 같으므로 동일하게 검토해야 합니다.
 
@@ -104,37 +104,37 @@ Orvilo가 실행 환경을 정리할 때 연결된 로컬 디렉터리는 삭제
 
 ```bash
 # 프로젝트를 만들면서 저장소 연결
-patchbay project create \
+orvilo project create \
   --title "Agent UX" \
   --repo https://github.com/alexj11324/Cordy
 
 # 리소스 확인 및 추가
-patchbay project resource list <project-id>
-patchbay project resource add <project-id> \
+orvilo project resource list <project-id>
+orvilo project resource add <project-id> \
   --type github_repo \
   --url https://github.com/alexj11324/Cordy \
   --ref main
 
 # 지정한 데몬의 로컬 디렉터리 연결
-patchbay project resource add <project-id> \
+orvilo project resource add <project-id> \
   --type local_directory \
   --local-path /absolute/path/to/repo \
   --daemon-id <daemon-id>
 
 # 로컬 git 저장소를 연결하고 작업을 각자의 워크트리에서 동시에 실행
-patchbay project resource add <project-id> \
+orvilo project resource add <project-id> \
   --type local_directory \
   --local-path /absolute/path/to/repo \
   --daemon-id <daemon-id> \
   --execution-mode worktree
 
 # 기존 로컬 디렉터리의 모드 전환
-patchbay project resource update <project-id> <resource-id> --execution-mode worktree
-patchbay project resource update <project-id> <resource-id> --execution-mode in_place
+orvilo project resource update <project-id> <resource-id> --execution-mode worktree
+orvilo project resource update <project-id> <resource-id> --execution-mode in_place
 
 
 # 리소스 제거
-patchbay project resource remove <project-id> <resource-id>
+orvilo project resource remove <project-id> <resource-id>
 ```
 
 리소스 변경은 이후 생성되는 작업에 적용되며 이미 끝난 실행 기록은 바꾸지 않습니다.

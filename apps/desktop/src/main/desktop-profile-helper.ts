@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 
 export const DESKTOP_PROFILE_HELPER_ARG =
-  "--patchbay-private-desktop-profile";
+  "--orvilo-private-desktop-profile";
 
 export type DesktopProfileRequest =
   | { action: "configure"; profile: string; server_url: string }

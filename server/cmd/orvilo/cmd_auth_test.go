@@ -77,7 +77,7 @@ func TestResolveCallbackBinding(t *testing.T) {
 	}{
 		{
 			name:         "public app URL stays on loopback",
-			appURL:       "https://patchbay.aspectlylabs.com",
+			appURL:       "https://orvilo.aspectlylabs.com",
 			serverURL:    "https://api.aspectlylabs.com",
 			detect:       failing,
 			wantCallback: "localhost",
@@ -118,7 +118,7 @@ func TestResolveCallbackBinding(t *testing.T) {
 		{
 			name:         "--callback-host flag overrides everything",
 			flagHost:     "cli.internal.example",
-			appURL:       "https://patchbay.aspectlylabs.com",
+			appURL:       "https://orvilo.aspectlylabs.com",
 			serverURL:    "https://api.aspectlylabs.com",
 			detect:       fixed("10.0.0.5"),
 			wantCallback: "cli.internal.example",
@@ -141,7 +141,7 @@ func TestResolveCallbackBinding(t *testing.T) {
 }
 
 func TestBrowserLoginInstructionsSSHRemoteHint(t *testing.T) {
-	const loginURL = "https://patchbay.aspectlylabs.com/login?cli_callback=http%3A%2F%2Flocalhost%3A43689%2Fcallback"
+	const loginURL = "https://orvilo.aspectlylabs.com/login?cli_callback=http%3A%2F%2Flocalhost%3A43689%2Fcallback"
 
 	got := browserLoginInstructions(loginURL, "localhost", 43689, true)
 	if !strings.Contains(got, "ssh -L 43689:127.0.0.1:43689 <user>@<remote-host>") {
@@ -199,12 +199,12 @@ func TestLoginTokenFlagWiring(t *testing.T) {
 		t.Fatalf("loginCmd --token type = %q, want %q (regressed to bool?)", got, "string")
 	}
 	if tokenFlag.NoOptDefVal != tokenPromptSentinel {
-		t.Fatalf("loginCmd --token NoOptDefVal = %q, want %q (legacy `patchbay login --token` prompt mode would break)", tokenFlag.NoOptDefVal, tokenPromptSentinel)
+		t.Fatalf("loginCmd --token NoOptDefVal = %q, want %q (legacy `orvilo login --token` prompt mode would break)", tokenFlag.NoOptDefVal, tokenPromptSentinel)
 	}
 }
 
 // TestLoginTokenHelpOutputRendersCleanly renders loginCmd's flag help through
-// the same pflag path `patchbay login -h` uses (FlagUsagesWrapped) and locks the
+// the same pflag path `orvilo login -h` uses (FlagUsagesWrapped) and locks the
 // user-visible help contract that regressed. The original bug had two causes,
 // both invisible to the flag-wiring/parsing tests above:
 //   - The NoOptDefVal sentinel was "\x00prompt". pflag renders NoOptDefVal
@@ -247,7 +247,7 @@ func TestLoginTokenHelpOutputRendersCleanly(t *testing.T) {
 // TestLoginTokenFlagParsing exercises every documented invocation form
 // against a cobra command wired up exactly the same way as the production
 // loginCmd, then runs runAuthLogin's flag-resolution logic to confirm the
-// right downstream branch is taken: `--token pby_xxx` and `--token=pby_xxx`
+// right downstream branch is taken: `--token ovy_xxx` and `--token=ovy_xxx`
 // both consume the value (the bug from #1994), `--token` alone falls
 // through to the prompt sentinel (preserves the legacy headless form), and
 // no flag at all leaves the browser flow untouched.
@@ -265,13 +265,13 @@ func TestLoginTokenFlagParsing(t *testing.T) {
 	}{
 		{
 			name: "space-separated value (the form from #1994)",
-			argv: []string{"--token", "pby_xxx"},
-			want: want{changed: true, resolvedToken: "pby_xxx"},
+			argv: []string{"--token", "ovy_xxx"},
+			want: want{changed: true, resolvedToken: "ovy_xxx"},
 		},
 		{
 			name: "equals-separated value",
-			argv: []string{"--token=pby_yyy"},
-			want: want{changed: true, resolvedToken: "pby_yyy"},
+			argv: []string{"--token=ovy_yyy"},
+			want: want{changed: true, resolvedToken: "ovy_yyy"},
 		},
 		{
 			name: "no value falls through to prompt (legacy CLI_INSTALL.md form)",
@@ -337,7 +337,7 @@ func TestRunAuthStatusTaskContextDoesNotPrintCredential(t *testing.T) {
 	t.Setenv("ORVILO_AGENT_ID", "agent-test")
 	t.Setenv("ORVILO_TASK_ID", "task-test")
 	t.Setenv("ORVILO_TOKEN", fakeTaskToken)
-	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-orvilo"))
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/me" {
@@ -375,13 +375,13 @@ func TestRunAuthStatusTaskContextRequiresTaskToken(t *testing.T) {
 	t.Setenv("HOME", ownerHome)
 	t.Setenv("ORVILO_AGENT_ID", "agent-test")
 	t.Setenv("ORVILO_TASK_ID", "task-test")
-	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-orvilo"))
 
-	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
+	ownerPath := filepath.Join(ownerHome, ".orvilo", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"token\": \"pby_owner_sentinel\"\n}\n")
+	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"token\": \"ovy_owner_sentinel\"\n}\n")
 	if err := os.WriteFile(ownerPath, ownerBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -399,7 +399,7 @@ func TestRunAuthStatusTaskContextRequiresTaskToken(t *testing.T) {
 		token string
 	}{
 		{name: "missing token", token: ""},
-		{name: "human token", token: "pby_owner_sentinel"},
+		{name: "human token", token: "ovy_owner_sentinel"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("ORVILO_TOKEN", tc.token)
@@ -438,20 +438,20 @@ func TestHumanAuthCommandsFailClosedInTaskContext(t *testing.T) {
 	t.Setenv("ORVILO_TASK_ID", "task-test")
 	t.Setenv("ORVILO_TOKEN", "mat_task_sentinel")
 	t.Setenv("ORVILO_SERVER_URL", "https://task.invalid")
-	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-orvilo"))
 
-	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
+	ownerPath := filepath.Join(ownerHome, ".orvilo", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"token\": \"pby_owner_sentinel\"\n}\n")
+	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"token\": \"ovy_owner_sentinel\"\n}\n")
 	if err := os.WriteFile(ownerPath, ownerBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	loginCmd := testCmd()
-	loginCmd.Flags().String("token", "pby_fake_login", "")
-	_ = loginCmd.Flags().Set("token", "pby_fake_login")
+	loginCmd.Flags().String("token", "ovy_fake_login", "")
+	_ = loginCmd.Flags().Set("token", "ovy_fake_login")
 	for name, run := range map[string]func() error{
 		"login":  func() error { return runAuthLogin(loginCmd, nil) },
 		"logout": func() error { return runAuthLogout(testCmd(), nil) },
@@ -491,7 +491,7 @@ func TestNormalizeAPIBaseURL(t *testing.T) {
 }
 
 // TestValidateLoginTokenPrefix pins the accepted PAT prefix set for
-// `patchbay login --token`. The original implementation hardcoded `pby_`
+// `orvilo login --token`. The original implementation hardcoded `ovy_`
 // only, which rejected legitimate Orvilo Cloud Node PATs (`mcn_`) at
 // the CLI even though the server's middleware would have accepted them.
 // If a future change drops `mcn_` from the list (or accidentally
@@ -502,14 +502,14 @@ func TestValidateLoginTokenPrefix(t *testing.T) {
 		token   string
 		wantErr bool
 	}{
-		{name: "pby_ PAT", token: "pby_abc123", wantErr: false},
+		{name: "ovy_ PAT", token: "ovy_abc123", wantErr: false},
 		{name: "mcn_ Cloud Node PAT", token: "mcn_abc123", wantErr: false},
 		{name: "empty token", token: "", wantErr: true},
 		{name: "no prefix", token: "abc123", wantErr: true},
 		{name: "wrong prefix mdt_", token: "mdt_abc123", wantErr: true},
 		{name: "wrong prefix mat_", token: "mat_abc123", wantErr: true},
 		{name: "case-sensitive: MUL_ rejected", token: "MUL_abc123", wantErr: true},
-		{name: "leading whitespace not allowed (callers TrimSpace first)", token: " pby_abc", wantErr: true},
+		{name: "leading whitespace not allowed (callers TrimSpace first)", token: " ovy_abc", wantErr: true},
 	}
 	for _, tc := range cases {
 		tc := tc
@@ -532,7 +532,7 @@ func TestValidateLoginTokenPrefix(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unknown prefix")
 	}
-	for _, p := range []string{"pby_", "mcn_"} {
+	for _, p := range []string{"ovy_", "mcn_"} {
 		if !strings.Contains(err.Error(), p) {
 			t.Errorf("error %q does not mention prefix %q", err.Error(), p)
 		}

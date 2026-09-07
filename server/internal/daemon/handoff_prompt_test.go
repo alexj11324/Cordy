@@ -22,8 +22,8 @@ func TestBuildPrompt_HandoffNote_ExecutorBranch(t *testing.T) {
 	if strings.Contains(out, "quick-create assistant") {
 		t.Fatalf("handoff task must not use the quick-create prompt branch:\n%s", out)
 	}
-	// Still an executor task: should point the agent at `patchbay issue get`.
-	if !strings.Contains(out, "patchbay issue get issue-123") {
+	// Still an executor task: should point the agent at `orvilo issue get`.
+	if !strings.Contains(out, "orvilo issue get issue-123") {
 		t.Fatalf("expected executor prompt body:\n%s", out)
 	}
 }

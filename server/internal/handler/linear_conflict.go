@@ -44,7 +44,7 @@ func (h *Handler) resolveLinearConflict(ctx context.Context, workspaceID, confli
 		return db.LinearSyncConflict{}, db.Issue{}, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err = tx.Exec(ctx, `SELECT set_config('patchbay.linear_remote_apply','on',true)`); err != nil {
+	if _, err = tx.Exec(ctx, `SELECT set_config('orvilo.linear_remote_apply','on',true)`); err != nil {
 		return db.LinearSyncConflict{}, db.Issue{}, err
 	}
 	qtx := db.New(tx)
@@ -104,7 +104,7 @@ func (h *Handler) resolveLinearConflict(ctx context.Context, workspaceID, confli
 	if err != nil {
 		return db.LinearSyncConflict{}, db.Issue{}, err
 	}
-	issue, err := qtx.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: conflict.PatchbayIssueID, WorkspaceID: workspaceID})
+	issue, err := qtx.GetIssueInWorkspace(ctx, db.GetIssueInWorkspaceParams{ID: conflict.OrviloIssueID, WorkspaceID: workspaceID})
 	if err != nil {
 		return db.LinearSyncConflict{}, db.Issue{}, err
 	}

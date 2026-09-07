@@ -33,7 +33,7 @@ Pick the installer that matches your OS and CPU architecture from the [latest Gi
 After installing, sign in with the same email you use on the web. Once signed in, Desktop starts its own bundled Orvilo CLI and detects the AI coding tools already installed on the machine.
 
 <Callout type="info">
-The CLI bundled with Desktop only serves the app's managed runtime. If you also want to run commands like `patchbay issue` in a terminal, install the CLI separately following [step 2 of the quickstart](/cloud-quickstart#2-connect-a-computer).
+The CLI bundled with Desktop only serves the app's managed runtime. If you also want to run commands like `orvilo issue` in a terminal, install the CLI separately following [step 2 of the quickstart](/cloud-quickstart#2-connect-a-computer).
 </Callout>
 
 ## Desktop tabs
@@ -49,7 +49,7 @@ Logging out clears every tab saved on the machine, so the next person to sign in
 After sign-in, Desktop creates a dedicated CLI profile for the current Orvilo service and uses it to start the daemon. The profile lives at:
 
 ```text
-~/.patchbay/profiles/desktop-<host>/
+~/.orvilo/profiles/desktop-<host>/
 ```
 
 It never reads or overwrites the default profile you use in the terminal. If you also start another daemon manually, Orvilo shows them as separate runtimes.
@@ -70,13 +70,13 @@ Updates are distributed per OS and CPU architecture:
 
 ## Connecting to a self-hosted instance
 
-Desktop connects to Orvilo Cloud by default. To connect to a self-hosted instance, create `desktop.json` inside the `.patchbay` directory of your home directory:
+Desktop connects to Orvilo Cloud by default. To connect to a self-hosted instance, create `desktop.json` inside the `.orvilo` directory of your home directory:
 
 | Platform | Path |
 | --- | --- |
-| macOS | `/Users/<you>/.patchbay/desktop.json` |
-| Linux | `/home/<you>/.patchbay/desktop.json` |
-| Windows | `C:\Users\<you>\.patchbay\desktop.json` |
+| macOS | `/Users/<you>/.orvilo/desktop.json` |
+| Linux | `/home/<you>/.orvilo/desktop.json` |
+| Windows | `C:\Users\<you>\.orvilo\desktop.json` |
 
 These are the default locations — if your home directory has been moved or redirected, use its actual path.
 
@@ -88,7 +88,7 @@ These are the default locations — if your home directory has been moved or red
 ```
 
 <Callout type="warning">
-This is **not** the CLI's `~/.patchbay/config.json`, and the key names differ: the CLI uses `server_url`, Desktop uses `apiUrl`. Desktop never reads the CLI's config — it manages a separate daemon profile under `~/.patchbay/profiles/desktop-<host>/`. Editing `config.json` does not change which server Desktop connects to.
+This is **not** the CLI's `~/.orvilo/config.json`, and the key names differ: the CLI uses `server_url`, Desktop uses `apiUrl`. Desktop never reads the CLI's config — it manages a separate daemon profile under `~/.orvilo/profiles/desktop-<host>/`. Editing `config.json` does not change which server Desktop connects to.
 </Callout>
 
 `apiUrl` is the backend's public address; it is required and must use `http` or `https`. The other two URLs can be omitted — Desktop derives them automatically:
@@ -126,13 +126,13 @@ Desktop can only connect to addresses reachable from both the browser and the ex
 
 Two Windows editor defaults silently produce a file Desktop can't use:
 
-- **Notepad appends `.txt`.** Saving as `desktop.json` can produce `desktop.json.txt`, which Desktop treats as not found. Turn on file name extensions in Explorer, or pick *All files* in the save dialog. To see the real filename, run `Get-ChildItem "$env:USERPROFILE\.patchbay" -Filter "desktop.json*"` in PowerShell — the `Name` column must read exactly `desktop.json`.
+- **Notepad appends `.txt`.** Saving as `desktop.json` can produce `desktop.json.txt`, which Desktop treats as not found. Turn on file name extensions in Explorer, or pick *All files* in the save dialog. To see the real filename, run `Get-ChildItem "$env:USERPROFILE\.orvilo" -Filter "desktop.json*"` in PowerShell — the `Name` column must read exactly `desktop.json`.
 - **PowerShell redirection writes UTF-16 or a BOM.** `> desktop.json` and `Out-File` can produce an encoding that fails to parse, which surfaces as a configuration error.
 
 To avoid both, create the file from PowerShell in one step:
 
 ```powershell
-$dir = "$env:USERPROFILE\.patchbay"
+$dir = "$env:USERPROFILE\.orvilo"
 New-Item -ItemType Directory -Force $dir | Out-Null
 $json = @'
 {
@@ -148,7 +148,7 @@ $json = @'
 **Symptom**: Windows Security reports a threat such as `Trojan:Script/Wacatac.B!ml` and quarantines a file inside the Desktop installation. The affected item is normally the bundled CLI, not the app executable:
 
 ```text
-C:\Users\<you>\AppData\Local\Programs\@patchbaydesktop\resources\app.asar.unpacked\resources\bin\patchbay.exe
+C:\Users\<you>\AppData\Local\Programs\@orvilodesktop\resources\app.asar.unpacked\resources\bin\orvilo.exe
 ```
 
 **This is a false positive.** The `!ml` suffix means the verdict came from Defender's machine-learning heuristics rather than a malware signature. Orvilo's Windows builds are not Authenticode code-signed yet, and a freshly published unsigned binary that starts background processes and opens network connections is exactly the profile those heuristics score as suspicious. Every Windows artifact is built by GitHub Actions from the public source in this repository.
@@ -156,7 +156,7 @@ C:\Users\<you>\AppData\Local\Programs\@patchbaydesktop\resources\app.asar.unpack
 **Verify it yourself** — each GitHub release publishes a `checksums.txt` covering every CLI archive:
 
 ```powershell
-Get-FileHash .\patchbay-cli-<version>-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\orvilo-cli-<version>-windows-amd64.zip -Algorithm SHA256
 ```
 
 Compare the hash with the matching line in `checksums.txt` on the [latest release](https://github.com/alexj11324/Cordy/releases/latest).
@@ -165,7 +165,7 @@ Compare the hash with the matching line in `checksums.txt` on the [latest releas
 
 1. **Restore the quarantined file** — Windows Security → *Virus & threat protection* → *Protection history* → select the Orvilo item → *Actions* → *Restore*.
 2. **Add an exclusion** so it isn't quarantined again — *Virus & threat protection* → *Manage settings* → *Exclusions* → *Add an exclusion* → *Folder*, and add both:
-   - `%LOCALAPPDATA%\Programs\@patchbaydesktop`
+   - `%LOCALAPPDATA%\Programs\@orvilodesktop`
    - `%APPDATA%\Orvilo`
 
    Both paths matter: when the bundled CLI goes missing, Desktop downloads a replacement into `%APPDATA%\Orvilo\bin`, so excluding only the install folder leaves you in a loop where the replacement gets quarantined too.

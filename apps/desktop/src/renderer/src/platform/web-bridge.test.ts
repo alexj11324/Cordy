@@ -31,7 +31,7 @@ afterEach(() => {
 describe("Vite browser Desktop bridge", () => {
   it("keeps API, app, and accounts origins distinct when configured", () => {
     vi.stubEnv("VITE_API_URL", "https://api.aspectlylabs.com");
-    vi.stubEnv("VITE_APP_URL", "https://patchbay.aspectlylabs.com");
+    vi.stubEnv("VITE_APP_URL", "https://orvilo.aspectlylabs.com");
     vi.stubEnv("VITE_ACCOUNTS_URL", "https://accounts.aspectlylabs.com");
 
     expect(installWebDesktopBridge()).toBe(true);
@@ -41,7 +41,7 @@ describe("Vite browser Desktop bridge", () => {
         schemaVersion: 1,
         apiUrl: "https://api.aspectlylabs.com",
         wsUrl: "wss://api.aspectlylabs.com/ws",
-        appUrl: "https://patchbay.aspectlylabs.com",
+        appUrl: "https://orvilo.aspectlylabs.com",
         accountsUrl: "https://accounts.aspectlylabs.com",
       },
     });
@@ -73,7 +73,7 @@ describe("Vite browser Desktop bridge", () => {
         schemaVersion: 1,
         apiUrl: "https://api.aspectlylabs.com",
         wsUrl: "wss://api.aspectlylabs.com/ws",
-        appUrl: "https://patchbay.aspectlylabs.com",
+        appUrl: "https://orvilo.aspectlylabs.com",
         accountsUrl: "https://accounts.aspectlylabs.com",
       },
     });
@@ -84,7 +84,7 @@ describe("Vite browser Desktop bridge", () => {
     window.history.replaceState(
       null,
       "",
-      `/auth/callback?code=pbd_${"a".repeat(43)}&state=${"b".repeat(43)}`,
+      `/auth/callback?code=ovd_${"a".repeat(43)}&state=${"b".repeat(43)}`,
     );
 
     expect(installWebDesktopBridge()).toBe(true);

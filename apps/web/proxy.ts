@@ -57,7 +57,7 @@ function resolveLocale(req: NextRequest): string {
   });
 }
 
-// Forward the resolved locale to RSC layouts via the `x-patchbay-locale`
+// Forward the resolved locale to RSC layouts via the `x-orvilo-locale`
 // request header. layout.tsx reads it through `await headers()`. The
 // `request: { headers }` form is what makes the header land on the upstream
 // request — without it the value would only sit on the response.
@@ -112,7 +112,7 @@ const clerkProxy = clerkMiddleware(async (auth, req) => {
   }
 
   const hasSession =
-    req.cookies.has("patchbay_logged_in") || req.cookies.has("cordy_logged_in"); // legacy-brand-compat
+    req.cookies.has("orvilo_logged_in") || req.cookies.has("cordy_logged_in"); // legacy-brand-compat
   const lastSlug = req.cookies.get("last_workspace_slug")?.value;
 
   // --- Legacy URL redirect: /issues/... → /{slug}/issues/... ---

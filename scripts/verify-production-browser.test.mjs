@@ -20,7 +20,7 @@ const SOURCE_SHA = "a".repeat(40);
 
 test("uses only the three public Aspectly Labs product origins", () => {
   assert.equal(API_ORIGIN, "https://api.aspectlylabs.com");
-  assert.equal(PRODUCT_ORIGIN, "https://patchbay.aspectlylabs.com");
+  assert.equal(PRODUCT_ORIGIN, "https://orvilo.aspectlylabs.com");
   assert.equal(ACCOUNTS_ORIGIN, "https://accounts.aspectlylabs.com");
 });
 
@@ -68,7 +68,7 @@ test("production browser acceptance includes the standalone broker and Go Clerk 
   assert.match(source, /user\?\.is_guest/u);
   assert.match(
     source,
-    /headers: \{\s*origin: ACCOUNTS_ORIGIN,\s*"x-patchbay-auth-contract-version": "1",\s*\}/u,
+    /headers: \{\s*origin: ACCOUNTS_ORIGIN,\s*"x-orvilo-auth-contract-version": "1",\s*\}/u,
   );
 });
 
@@ -95,7 +95,7 @@ test("authenticated Web acceptance carries the real cookie session", async () =>
   );
   assert.match(source, /storageState: await context\.storageState\(\)/u);
   assert.match(source, /storageState: auth\.storageState/u);
-  assert.doesNotMatch(source, /localStorage\.setItem\("patchbay_token"/u);
+  assert.doesNotMatch(source, /localStorage\.setItem\("orvilo_token"/u);
 });
 
 test("requires Google and not a lookalike OAuth destination", () => {
@@ -112,13 +112,13 @@ test("requires Google and not a lookalike OAuth destination", () => {
 
 test("requires matching build and commit headers", () => {
   const headers = new Headers({
-    "x-patchbay-build": `sha-${SOURCE_SHA}`,
-    "x-patchbay-commit": SOURCE_SHA,
+    "x-orvilo-build": `sha-${SOURCE_SHA}`,
+    "x-orvilo-commit": SOURCE_SHA,
   });
   assert.doesNotThrow(() =>
     requireBuildHeaders(headers, SOURCE_SHA, "runtime"),
   );
-  headers.set("x-patchbay-commit", "b".repeat(40));
+  headers.set("x-orvilo-commit", "b".repeat(40));
   assert.throws(
     () => requireBuildHeaders(headers, SOURCE_SHA, "runtime"),
     /reported commit/u,
@@ -148,16 +148,16 @@ test("accepts credentials only from the matching deployment receipt", () => {
 test("validates one-time broker completion and redemption payloads", () => {
   assert.equal(
     requireDesktopCompletion({
-      callback_protocol: "patchbay",
-      code: `pbd_${"c".repeat(43)}`,
+      callback_protocol: "orvilo",
+      code: `ovd_${"c".repeat(43)}`,
     }),
-    `pbd_${"c".repeat(43)}`,
+    `ovd_${"c".repeat(43)}`,
   );
   assert.throws(
     () =>
       requireDesktopCompletion({
         callback_protocol: "http",
-        code: `pbd_${"c".repeat(43)}`,
+        code: `ovd_${"c".repeat(43)}`,
       }),
     /invalid desktop completion/u,
   );

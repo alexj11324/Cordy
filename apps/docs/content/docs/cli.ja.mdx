@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/insta
 Homebrew がインストールされていれば、次のコマンドでもインストールできます:
 
 ```bash
-brew install alexj11324/tap/patchbay
+brew install alexj11324/tap/orvilo
 ```
 
 **Windows PowerShell**
@@ -30,7 +30,7 @@ irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 
 インストールを確認します:
 
 ```bash
-patchbay version
+orvilo version
 ```
 
 ## 初回接続
@@ -38,13 +38,13 @@ patchbay version
 Orvilo Cloud に接続する:
 
 ```bash
-patchbay setup
+orvilo setup
 ```
 
 セルフホストインスタンスに接続する:
 
 ```bash
-patchbay setup self-host \
+orvilo setup self-host \
   --server-url https://api.example.com \
   --app-url https://app.example.com
 ```
@@ -52,14 +52,14 @@ patchbay setup self-host \
 `setup` はサーバーアドレスを保存し、ブラウザを開いてサインインを完了し、デーモンを起動します。完了したら確認します:
 
 ```bash
-patchbay auth status
-patchbay daemon status
+orvilo auth status
+orvilo daemon status
 ```
 
-他の設定を上書きせずにサインインだけやり直したい場合は、`patchbay login` を実行します。ブラウザのない環境では、先に Web の設定で個人アクセストークンを作成しておき、次のコマンドで入力します:
+他の設定を上書きせずにサインインだけやり直したい場合は、`orvilo login` を実行します。ブラウザのない環境では、先に Web の設定で個人アクセストークンを作成しておき、次のコマンドで入力します:
 
 ```bash
-patchbay login --token
+orvilo login --token
 ```
 
 このコマンドはターミナル上でトークンの貼り付けを促すため、完全な値が shell history に残りません。
@@ -69,8 +69,8 @@ patchbay login --token
 ワークスペースを一覧し、デフォルトを切り替えます:
 
 ```bash
-patchbay workspace list
-patchbay workspace switch <slug>
+orvilo workspace list
+orvilo workspace switch <slug>
 ```
 
 以降のコマンドはこのワークスペースを使います。単発のコマンドでは `--workspace-id` で一時的に上書きでき、`ORVILO_WORKSPACE_ID` を設定することもできます。
@@ -78,63 +78,63 @@ patchbay workspace switch <slug>
 メンバーを招待する:
 
 ```bash
-patchbay workspace member invite teammate@example.com
-patchbay workspace member invite admin@example.com --role admin
+orvilo workspace member invite teammate@example.com
+orvilo workspace member invite admin@example.com --role admin
 ```
 
 ## よく使うタスク操作
 
 ```bash
 # 表示と検索
-patchbay issue list
-patchbay issue get MUL-123
-patchbay issue search "ログイン失敗"
+orvilo issue list
+orvilo issue get MUL-123
+orvilo issue search "ログイン失敗"
 
 # 作成と更新
-patchbay issue create --title "ログイン失敗を修正"
-patchbay issue status MUL-123 in_progress
-patchbay issue assign MUL-123 --to "Backend Agent"
+orvilo issue create --title "ログイン失敗を修正"
+orvilo issue status MUL-123 in_progress
+orvilo issue assign MUL-123 --to "Backend Agent"
 
 # コメントと実行履歴
-patchbay issue comment list MUL-123
-patchbay issue comment add MUL-123 --content "まず回帰テストを確認してください"
-patchbay issue runs MUL-123
+orvilo issue comment list MUL-123
+orvilo issue comment add MUL-123 --content "まず回帰テストを確認してください"
+orvilo issue runs MUL-123
 ```
 
 長い説明やコメントは stdin から読み込むと、改行や引用符の扱いに悩まずに済みます:
 
 ```bash
-patchbay issue create --title "アップグレードメモ" --description-stdin < notes.md
-patchbay issue comment add MUL-123 --content-stdin < review.md
+orvilo issue create --title "アップグレードメモ" --description-stdin < notes.md
+orvilo issue comment add MUL-123 --content-stdin < review.md
 ```
 
 1 回の実行のメッセージを表示する、または作業を停止する:
 
 ```bash
-patchbay issue run-messages <task-id> --issue MUL-123
-patchbay issue cancel-task <task-id> --issue MUL-123
+orvilo issue run-messages <task-id> --issue MUL-123
+orvilo issue cancel-task <task-id> --issue MUL-123
 ```
 
 ## エージェントとスキル
 
 ```bash
-patchbay agent list
-patchbay agent get <agent-id>
-patchbay agent create --help
-patchbay agent update <agent-id> --help
+orvilo agent list
+orvilo agent get <agent-id>
+orvilo agent create --help
+orvilo agent update <agent-id> --help
 
-patchbay skill list
-patchbay skill get <skill-id>
-patchbay skill import --url <skill-url>
-patchbay agent skills add <agent-id> --skill-ids <skill-id>
+orvilo skill list
+orvilo skill get <skill-id>
+orvilo skill import --url <skill-url>
+orvilo agent skills add <agent-id> --skill-ids <skill-id>
 ```
 
 インポートで同名のスキルに当たった場合、デフォルトでは既存の内容を変更せずに停止します。意図に応じて選択してください:
 
 ```bash
-patchbay skill import --url <skill-url> --on-conflict overwrite
-patchbay skill import --url <skill-url> --on-conflict rename
-patchbay skill import --url <skill-url> --on-conflict skip
+orvilo skill import --url <skill-url> --on-conflict overwrite
+orvilo skill import --url <skill-url> --on-conflict rename
+orvilo skill import --url <skill-url> --on-conflict skip
 ```
 
 `overwrite` はスキルの作成者だけが使え、元の ID とエージェントの紐付けを維持します。
@@ -142,19 +142,19 @@ patchbay skill import --url <skill-url> --on-conflict skip
 ## デーモンとランタイム
 
 ```bash
-patchbay daemon start
-patchbay daemon stop
-patchbay daemon restart
-patchbay daemon status --output json
-patchbay daemon logs --follow
+orvilo daemon start
+orvilo daemon stop
+orvilo daemon restart
+orvilo daemon status --output json
+orvilo daemon logs --follow
 
-patchbay runtime list
-patchbay runtime rename <runtime-id> "Office Mac"
-patchbay runtime usage <runtime-id>
-patchbay runtime activity <runtime-id>
+orvilo runtime list
+orvilo runtime rename <runtime-id> "Office Mac"
+orvilo runtime usage <runtime-id>
+orvilo runtime activity <runtime-id>
 ```
 
-アクティブなエージェントがまだ紐付いているランタイムの削除は、デフォルトで拒否されます。`patchbay runtime delete <id> --cascade` は、それらのエージェントをランタイムから解除して設定と履歴を保持し、アクティブな作業をキャンセルします。
+アクティブなエージェントがまだ紐付いているランタイムの削除は、デフォルトで拒否されます。`orvilo runtime delete <id> --cascade` は、それらのエージェントをランタイムから解除して設定と履歴を保持し、アクティブな作業をキャンセルします。
 
 仕組みとカスタムプロファイルについては[デーモンとランタイム](/daemon-runtimes)を参照してください。
 
@@ -176,7 +176,7 @@ patchbay runtime activity <runtime-id>
 | `config` | 現在の CLI プロファイルのローカル設定を表示・編集 |
 | `update`、`version` | CLI の更新とバージョンの表示 |
 
-`patchbay chat` が読み取るのは、**エージェントが現在処理している外部チャットセッション**です。主にチャット統合の中のエージェントが使うもので、任意のワークスペースの会話を閲覧するための汎用コマンドではありません。
+`orvilo chat` が読み取るのは、**エージェントが現在処理している外部チャットセッション**です。主にチャット統合の中のエージェントが使うもので、任意のワークスペースの会話を閲覧するための汎用コマンドではありません。
 
 ## ID と出力形式
 
@@ -187,29 +187,29 @@ patchbay runtime activity <runtime-id>
 多くのコマンドが構造化出力をサポートします:
 
 ```bash
-patchbay issue list --output json
-patchbay agent list --output json
+orvilo issue list --output json
+orvilo agent list --output json
 ```
 
-スクリプトでは、ターミナル向けの表を解析せず JSON 出力を使ってください。各コマンドがサポートする出力形式とページネーションのフラグは `patchbay <command> --help` が正です。
+スクリプトでは、ターミナル向けの表を解析せず JSON 出力を使ってください。各コマンドがサポートする出力形式とページネーションのフラグは `orvilo <command> --help` が正です。
 
 ## プロファイルと設定
 
-デフォルトの設定は `~/.patchbay/config.json` に保存されます。`--profile <name>` を使うと、サーバーアドレス、トークン、デフォルトワークスペース、デーモン状態を別のセットとして分離できます:
+デフォルトの設定は `~/.orvilo/config.json` に保存されます。`--profile <name>` を使うと、サーバーアドレス、トークン、デフォルトワークスペース、デーモン状態を別のセットとして分離できます:
 
 ```bash
-patchbay setup self-host --profile staging \
+orvilo setup self-host --profile staging \
   --server-url https://api.staging.example.com \
   --app-url https://app.staging.example.com
 
-patchbay issue list --profile staging
+orvilo issue list --profile staging
 ```
 
-名前付きプロファイルは `~/.patchbay/profiles/<name>/config.json` に保存されます。現在の値を確認する:
+名前付きプロファイルは `~/.orvilo/profiles/<name>/config.json` に保存されます。現在の値を確認する:
 
 ```bash
-patchbay config show
-patchbay config show --profile staging
+orvilo config show
+orvilo config show --profile staging
 ```
 
 <Callout type="warning">
@@ -218,7 +218,7 @@ CLI の設定ファイルには、あなたとして Orvilo にアクセスで�
 
 ## コマンドリファレンス
 
-以下の表は、現在のすべてのトップレベルコマンドを CLI 自身のグループ分けに沿って掲載しています。すべてのコマンドがグローバルフラグ `--server-url`、`--workspace-id`、`--profile`、`--debug` を受け付けます。`--output` はコマンドごとに登録されるフラグで、デフォルトの形式はコマンドによって異なります: `list` 系は表、`get` や `create` 系は多くが JSON です。完全なフラグは `patchbay <command> --help` が正です。
+以下の表は、現在のすべてのトップレベルコマンドを CLI 自身のグループ分けに沿って掲載しています。すべてのコマンドがグローバルフラグ `--server-url`、`--workspace-id`、`--profile`、`--debug` を受け付けます。`--output` はコマンドごとに登録されるフラグで、デフォルトの形式はコマンドによって異なります: `list` 系は表、`get` や `create` 系は多くが JSON です。完全なフラグは `orvilo <command> --help` が正です。
 
 ### Core
 
@@ -262,7 +262,7 @@ CLI の設定ファイルには、あなたとして Orvilo にアクセスで�
 | | `runs <id>` | 実行履歴を表示 | |
 | | `trigger-add/trigger-update/trigger-delete/trigger-rotate-url` | スケジュールと webhook のトリガーを管理 | |
 | `workspace` | `list/get/create/update/switch` | ワークスペースを管理。`switch` は現在のプロファイルのデフォルトワークスペースを設定 | |
-| | `mcp list/add/update/remove` | ワークスペースの MCP サーバーライブラリを管理 | 書き込みは owner/admin のみ。ここに追加したサーバーはどのエージェントにも割り当てられません — `patchbay agent mcp add` で割り当てます。`list` は名前と transport のみを表示し、保存されたエントリは書き込み専用でどのロールにも返りません。`--server-config-file` / `--server-config-stdin` はトークンをシェル履歴から守ります |
+| | `mcp list/add/update/remove` | ワークスペースの MCP サーバーライブラリを管理 | 書き込みは owner/admin のみ。ここに追加したサーバーはどのエージェントにも割り当てられません — `orvilo agent mcp add` で割り当てます。`list` は名前と transport のみを表示し、保存されたエントリは書き込み専用でどのロールにも返りません。`--server-config-file` / `--server-config-stdin` はトークンをシェル履歴から守ります |
 | | `member list/invite <email>` | メンバーの表示と招待 | `invite`: `--role`（member または admin。デフォルトは member） |
 | `repo` | `list/add/remove/checkout` | ワークスペースのリポジトリを管理し、ローカルにチェックアウト | `--url`（繰り返し可）；`checkout`: `--ref` |
 | `skill` | `list/get/create/update/delete` | スキルを管理 | |
@@ -304,10 +304,10 @@ CLI の設定ファイルには、あなたとして Orvilo にアクセスで�
 親タスクをハードな前提条件を持つ複数のタスクへ分割する場合は、型付き plan を使います。
 
 ```bash
-patchbay issue dependency-graph get MUL-123 --output table
-patchbay issue dependency-graph apply MUL-123 \
+orvilo issue dependency-graph get MUL-123 --output table
+orvilo issue dependency-graph apply MUL-123 \
   --idempotency-key plan-mul-123-v1 --plan-file ./dependency-plan.json
-cat dependency-plan.json | patchbay issue dependency-graph apply MUL-123 \
+cat dependency-plan.json | orvilo issue dependency-graph apply MUL-123 \
   --idempotency-key plan-mul-123-v1 --plan-stdin --output json
 ```
 

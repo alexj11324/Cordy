@@ -30,7 +30,7 @@ const (
 	ManifestVersion1 = 1
 
 	// ManifestFilename is the conventional file name inside a plugin package.
-	ManifestFilename = "patchbay.plugin.json"
+	ManifestFilename = "orvilo.plugin.json"
 
 	// MaxManifestSize bounds a fetched manifest before it is parsed.
 	MaxManifestSize = 1 << 20

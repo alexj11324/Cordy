@@ -239,7 +239,7 @@ var issueReorderCmd = &cobra.Command{
 		"  --top          move it to the top of its column\n" +
 		"  --bottom       move it to the bottom of its column\n\n" +
 		"Reorder stays inside the issue's current column. To move an issue to a\n" +
-		"different column, change its status first with `patchbay issue status`,\n" +
+		"different column, change its status first with `orvilo issue status`,\n" +
 		"which lands it at the top of the destination column — no follow-up\n" +
 		"reorder needed.",
 	Args: exactArgs(1),
@@ -570,8 +570,8 @@ func init() {
 	issueCommentListCmd.Flags().Bool("compact", false, "JSON output only: drop response fields that carry no information for a reader — the issue_id echoed from the request path, source_task_id, updated_at when identical to created_at, null-valued fields, and empty arrays. Content and identity fields pass through untouched. Recommended for agent reads; composes with any mode.")
 	issueCommentListCmd.Flags().Bool("summary", false, "Clip each comment's content to a short preview (sets content_truncated) so you can scan a list without pulling full bodies. Composes with any mode.")
 	issueCommentListCmd.Flags().Bool("full", false, "Escape hatch: return every comment in resolved threads verbatim. By default the complete-thread reads (default list, --recent, --thread without --tail) are folded — a resolved thread collapses to its root + conclusion, with the dropped count reported on the root — so you do not pay tokens for settled discussion. Pass --full when you need the folded discussion. No effect on --since/--tail/--roots-only reads, which are never folded.")
-	issueCommentListCmd.Flags().String("before", "", "Cursor (RFC3339Nano timestamp). With --recent: thread cursor (last_activity_at). With --thread + --tail: reply cursor (reply created_at). Read from the X-Patchbay-Next-Before response header, printed on stderr as \"Next thread cursor\" / \"Next reply cursor\"; must be paired with --before-id.")
-	issueCommentListCmd.Flags().String("before-id", "", "Cursor UUID. With --recent: thread root UUID. With --thread + --tail: oldest reply UUID. Read from the X-Patchbay-Next-Before-Id response header; must be paired with --before.")
+	issueCommentListCmd.Flags().String("before", "", "Cursor (RFC3339Nano timestamp). With --recent: thread cursor (last_activity_at). With --thread + --tail: reply cursor (reply created_at). Read from the X-Orvilo-Next-Before response header, printed on stderr as \"Next thread cursor\" / \"Next reply cursor\"; must be paired with --before-id.")
+	issueCommentListCmd.Flags().String("before-id", "", "Cursor UUID. With --recent: thread root UUID. With --thread + --tail: oldest reply UUID. Read from the X-Orvilo-Next-Before-Id response header; must be paired with --before.")
 
 	// issue runs
 	issueRunsCmd.Flags().String("output", "table", "Output format: table or json")
@@ -1190,7 +1190,7 @@ func runIssueCreate(cmd *cobra.Command, _ []string) error {
 	}
 	if hasDesc {
 		if err := guardLocalPathLinks(desc, "issue description",
-			"Deliver the file itself with `patchbay issue create --attachment <path>` (repeatable) and drop the link."); err != nil {
+			"Deliver the file itself with `orvilo issue create --attachment <path>` (repeatable) and drop the link."); err != nil {
 			return err
 		}
 		body["description"] = desc
@@ -1236,7 +1236,7 @@ func runIssueCreate(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Quick-create stamp: when the daemon sets ORVILO_QUICK_CREATE_TASK_ID
-	// before invoking the agent, the agent's `patchbay issue create` call
+	// before invoking the agent, the agent's `orvilo issue create` call
 	// inherits the env var and tags the new issue with origin_type=
 	// quick_create + origin_id=<task_id>. The completion handler then
 	// locates the issue deterministically by origin instead of "most
@@ -1367,7 +1367,7 @@ func runIssueUpdate(cmd *cobra.Command, args []string) error {
 		// command that does. Telling the agent to "pass --attachment" here would
 		// name an argument this command rejects.
 		if err := guardLocalPathLinks(desc, "issue description",
-			"`patchbay issue update` cannot carry files — deliver the file with `patchbay issue comment add <issue-id> --attachment <path>` instead, and drop the link."); err != nil {
+			"`orvilo issue update` cannot carry files — deliver the file with `orvilo issue comment add <issue-id> --attachment <path>` instead, and drop the link."); err != nil {
 			return err
 		}
 		body["description"] = desc
@@ -1766,7 +1766,7 @@ func reorderTargetNotInColumnError(ctx context.Context, client *cli.APIClient, o
 	if other, err := fetchIssue(ctx, client, otherRef.ID); err == nil {
 		otherDisplay = issueDisplayKey(other)
 		if otherStatus := strVal(other, "status"); otherStatus != "" && otherStatus != status {
-			return fmt.Errorf("issue %s is in the %q column but %s is in %q; move one with `patchbay issue status` first, or pick a target in the same column", otherDisplay, otherStatus, issueDisplay, status)
+			return fmt.Errorf("issue %s is in the %q column but %s is in %q; move one with `orvilo issue status` first, or pick a target in the same column", otherDisplay, otherStatus, issueDisplay, status)
 		}
 	}
 	return fmt.Errorf("issue %s was not found in the %q column", otherDisplay, status)
@@ -1980,8 +1980,8 @@ func runIssueCommentList(cmd *cobra.Command, args []string) error {
 	// to dig into the raw HTTP response. Label depends on which paging mode
 	// the caller is in — under --recent the cursor is a thread cursor;
 	// under --thread + --tail it is a reply cursor inside that thread.
-	if nb := respHeaders.Get("X-Patchbay-Next-Before"); nb != "" {
-		if nbid := respHeaders.Get("X-Patchbay-Next-Before-Id"); nbid != "" {
+	if nb := respHeaders.Get("X-Orvilo-Next-Before"); nb != "" {
+		if nbid := respHeaders.Get("X-Orvilo-Next-Before-Id"); nbid != "" {
 			label := "Next thread cursor"
 			if thread != "" && tailSet {
 				label = "Next reply cursor"
@@ -2037,7 +2037,7 @@ func runIssueCommentAdd(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--content, --content-stdin, or --content-file is required")
 	}
 	if err := guardLocalPathLinks(content, "comment body",
-		"Deliver the file itself with `patchbay issue comment add <issue-id> --attachment <path>` (repeatable) and drop the link."); err != nil {
+		"Deliver the file itself with `orvilo issue comment add <issue-id> --attachment <path>` (repeatable) and drop the link."); err != nil {
 		return err
 	}
 
@@ -2784,7 +2784,7 @@ func ambiguousActorError(input string, matches []actorMatch) error {
 // executor_id) by looking it up against the workspace's members, agents, and
 // (when allowed) teams. It is the deterministic counterpart to
 // resolveActor: callers that already hold a UUID (e.g. agents reading IDs
-// from `patchbay workspace member list --output json`) should use this instead of
+// from `orvilo workspace member list --output json`) should use this instead of
 // round-tripping through name matching, which can be ambiguous in workspaces
 // with overlapping names.
 func resolveActorByID(ctx context.Context, client *cli.APIClient, id string, kinds actorKinds) (string, string, error) {

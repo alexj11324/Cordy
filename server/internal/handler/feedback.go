@@ -48,7 +48,7 @@ type CreateFeedbackRequest struct {
 	Message string `json:"message"`
 	URL     string `json:"url"`
 	// Kind is the coarse category the feedback picker stamps. The metric
-	// label `patchbay_feedback_submitted_total{kind=...}` reads it via the
+	// label `orvilo_feedback_submitted_total{kind=...}` reads it via the
 	// fixed allow-list in metrics.NormalizeFeedbackKind ("bug", "feature",
 	// "general", "praise"); anything outside collapses to "other". Empty /
 	// missing falls back to "general" so legacy clients that don't send the

@@ -21,16 +21,16 @@ import (
 )
 
 const (
-	desktopBrokerAuthHeader = "X-Patchbay-Desktop-Broker-Auth"
-	authContractHeader      = "X-Patchbay-Auth-Contract-Version"
+	desktopBrokerAuthHeader = "X-Orvilo-Desktop-Broker-Auth"
+	authContractHeader      = "X-Orvilo-Auth-Contract-Version"
 	authContractVersion     = "1"
 )
 
 var (
 	desktopHandoffOpaquePattern    = regexp.MustCompile(`^[A-Za-z0-9._~-]{43,128}$`)
-	desktopHandoffCodePattern      = regexp.MustCompile(`^pbd_[A-Za-z0-9_-]{43}$`)
+	desktopHandoffCodePattern      = regexp.MustCompile(`^ovd_[A-Za-z0-9_-]{43}$`)
 	desktopBrokerSecretPattern     = regexp.MustCompile(`^[a-f0-9]{64}$`)
-	desktopCallbackProtocolPattern = regexp.MustCompile(`^(?:patchbay|patchbay-canary-[a-f0-9]{16})$`)
+	desktopCallbackProtocolPattern = regexp.MustCompile(`^(?:orvilo|orvilo-canary-[a-f0-9]{16})$`)
 )
 
 type desktopAuthHandoffRequest struct {
@@ -157,7 +157,7 @@ func (h *Handler) finishDesktopGoogleAttempt(r *http.Request, token string, req 
 	// Hash the complete purpose-prefixed code. Local identity grants can never
 	// be changed into production session grants by replacing their prefix.
 	if req.Local {
-		code = "pbl_" + strings.TrimPrefix(code, "pbd_")
+		code = "ovl_" + strings.TrimPrefix(code, "ovd_")
 	}
 	protocol, err := h.Queries.CompleteDesktopAuthHandoff(r.Context(), db.CompleteDesktopAuthHandoffParams{State: req.State, UserID: user.ID, CodeHash: pgtype.Text{String: auth.HashToken(code), Valid: true}, CodeChallenge: req.CodeChallenge})
 	if err != nil {
@@ -201,7 +201,7 @@ func generateDesktopHandoffCode() (string, error) {
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
-	return "pbd_" + base64.RawURLEncoding.EncodeToString(bytes), nil
+	return "ovd_" + base64.RawURLEncoding.EncodeToString(bytes), nil
 }
 
 func validateDesktopHandoffInitiate(req desktopAuthHandoffRequest) bool {
@@ -222,7 +222,7 @@ func validDesktopHandoffBinding(state, codeChallenge string) bool {
 
 // requireFormalDesktopAuthActor is a handler-level backstop for the
 // authenticated completion leg. Auth stamps X-Guest-User only after it has
-// verified the pbg_ session, while client-supplied values are removed there.
+// verified the ovg_ session, while client-supplied values are removed there.
 // A guest session must not be able to turn its guest identity into the native
 // JWT returned by the redeem leg. Keep this check local to Desktop handoff:
 // Guest lifecycle endpoints intentionally continue to accept guest bearers.

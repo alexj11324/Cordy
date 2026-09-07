@@ -594,7 +594,7 @@ func TestGetChatHistory_TranscriptPagesWithoutDuplicatesOrGaps(t *testing.T) {
 
 // TestGetChatHistory_RejectsForgedTaskID: a normal request (no server-set
 // X-Actor-Source) that forges X-Task-ID — what a member could do with a JWT /
-// pby_ PAT, since the Auth middleware does NOT strip a client-sent X-Task-ID —
+// ovy_ PAT, since the Auth middleware does NOT strip a client-sent X-Task-ID —
 // must be rejected, never served another session's history.
 func TestGetChatHistory_RejectsForgedTaskID(t *testing.T) {
 	if testHandler == nil {

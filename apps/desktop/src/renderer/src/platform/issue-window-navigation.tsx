@@ -12,7 +12,7 @@ import {
 import { parseIssueWindowPath } from "../../../shared/issue-window";
 
 /**
- * Answer the `patchbay:navigate` event inside a dedicated issue window (MUL-5208).
+ * Answer the `orvilo:navigate` event inside a dedicated issue window (MUL-5208).
  *
  * The event is what a link in content (comment, description) fires once it
  * resolves to an in-app destination, including an absolute URL on this
@@ -55,8 +55,8 @@ function useContentLinkHandler(
         `${runtimeConfig.config.appUrl}${path}`,
       );
     };
-    window.addEventListener("patchbay:navigate", handler);
-    return () => window.removeEventListener("patchbay:navigate", handler);
+    window.addEventListener("orvilo:navigate", handler);
+    return () => window.removeEventListener("orvilo:navigate", handler);
   }, [navigate, runtimeConfig]);
 }
 

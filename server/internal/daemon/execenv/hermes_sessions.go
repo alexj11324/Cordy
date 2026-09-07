@@ -30,7 +30,7 @@ import (
 //
 // The store is keyed by (agent, hermes profile, conversation):
 //
-//	<patchbay profile dir>/hermes-sessions/<agent>/<hermes profile>/<conversation>/state.db
+//	<orvilo profile dir>/hermes-sessions/<agent>/<hermes profile>/<conversation>/state.db
 //
 // Keying to the conversation — the issue, or `chat_<id>` for a chat session —
 // is what makes this safe to share where #6693 could not. Its stated reason
@@ -207,7 +207,7 @@ func mountHermesSessionDB(hermesHome, storeDir string, logger *slog.Logger) (her
 // published over state.db. Dot-prefixed so isHermesTaskLocalStateEntry does not
 // match it and the family cleanup cannot remove the link it is about to
 // publish.
-const hermesSessionLinkStagingEntry = ".patchbay-session-link"
+const hermesSessionLinkStagingEntry = ".orvilo-session-link"
 
 // hermesStoreHasSessionDB reports whether storeDir holds a session database
 // with content. A zero-length file is what SQLite leaves after an `open` that

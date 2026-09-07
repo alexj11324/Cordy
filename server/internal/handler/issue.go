@@ -2743,7 +2743,7 @@ func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
 // user picks an actor (agent or team) in the modal and types one line of
 // natural language; the server validates the actor's reachability up front,
 // queues a quick-create task, and returns 202 immediately. The agent
-// translates the prompt into a `patchbay issue create` invocation in the
+// translates the prompt into a `orvilo issue create` invocation in the
 // background; success and failure both surface as inbox notifications to
 // the requester.
 //
@@ -2753,7 +2753,7 @@ func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
 // is the team, so it can choose to delegate to a team member as usual.
 //
 // ProjectID is optional and lets the modal target a specific project so
-// the agent's `patchbay issue create` invocation passes `--project <uuid>`
+// the agent's `orvilo issue create` invocation passes `--project <uuid>`
 // instead of letting it default. The frontend remembers the user's last
 // pick per workspace, so frequent users skip retyping "in project X".
 //
@@ -3064,7 +3064,7 @@ func (h *Handler) checkQuickCreateDaemonVersionAtLeast(ctx context.Context, sour
 }
 
 // readRuntimeCLIVersion pulls metadata.cli_version off a runtime row. The
-// metadata column is JSONB on the wire; the daemon stores the patchbay CLI
+// metadata column is JSONB on the wire; the daemon stores the orvilo CLI
 // version under that key during registration (see DaemonRegister).
 func readRuntimeCLIVersion(metadata []byte) string {
 	if len(metadata) == 0 {

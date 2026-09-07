@@ -132,12 +132,12 @@ func TestKimiRealMcpConfigReachesSessionSmoke(t *testing.T) {
 	}
 
 	// Exactly the shape the daemon forwards from agent.mcp_config.
-	mcpConfig := fmt.Sprintf(`{"mcpServers":{"patchbayprobe":{"command":%q,"args":[],"env":{}}}}`, serverPath)
+	mcpConfig := fmt.Sprintf(`{"mcpServers":{"orviloprobe":{"command":%q,"args":[],"env":{}}}}`, serverPath)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
 	defer cancel()
 	session, err := backend.Execute(ctx,
-		"Call the patchbay_probe_ping tool and reply with exactly what it returned. Do nothing else.",
+		"Call the orvilo_probe_ping tool and reply with exactly what it returned. Do nothing else.",
 		ExecOptions{
 			Timeout:   210 * time.Second,
 			Cwd:       dir,
@@ -181,10 +181,10 @@ while IFS= read -r line; do
   id=` + "`" + `printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p'` + "`" + `
   case "$line" in
     *'"method":"initialize"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"patchbay-probe","version":"1.0.0"}}}\n' "$id"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"orvilo-probe","version":"1.0.0"}}}\n' "$id"
       ;;
     *'"method":"tools/list"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"patchbay_probe_ping","description":"Returns ORVILO_MCP_OK.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}]}}\n' "$id"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"orvilo_probe_ping","description":"Returns ORVILO_MCP_OK.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}]}}\n' "$id"
       ;;
     *'"method":"tools/call"'*)
       printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"ORVILO_MCP_OK"}],"isError":false}}\n' "$id"

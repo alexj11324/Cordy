@@ -33,7 +33,7 @@ Skill 是工作区中可以复用的一组工作方法。它以 `SKILL.md` 为�
 同一套压缩包格式也可以用 CLI 导入：
 
 ```bash
-patchbay skill import --file ./review-helper.skill
+orvilo skill import --file ./review-helper.skill
 ```
 
 导入时如果工作区已经存在同名 skill，可以停止导入、覆盖原内容、使用新名称保存，或跳过。通过导入覆盖仅限该 skill 的创建者本人；工作区 `admin` 即使可以在应用内编辑它，也不能用导入的方式覆盖。要为已在工作区里的 skill 拉取新版本，请改用[更新已导入的 skill](#更新已导入的-skill)。
@@ -43,7 +43,7 @@ patchbay skill import --file ./review-helper.skill
 从 GitHub、ClawHub 或 Skills.sh 导入的 skill 会记住它的来源。要拉取最新版本，在 skill 页面点击**更新**（或在列表行菜单里选「从来源更新」），也可以用 CLI：
 
 ```bash
-patchbay skill refresh <skill-id>
+orvilo skill refresh <skill-id>
 ```
 
 Skill 会从来源重新下载并就地替换：

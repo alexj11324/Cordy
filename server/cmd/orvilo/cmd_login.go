@@ -32,7 +32,7 @@ var loginCmd = &cobra.Command{
 	Use:   "login",
 	Short: "Authenticate and set up workspaces",
 	Long:  "Log in to Orvilo, then automatically discover and watch all your workspaces.",
-	// Up to one positional is accepted so `--token pby_...` / `--token mcn_...`
+	// Up to one positional is accepted so `--token ovy_...` / `--token mcn_...`
 	// (space form) can recover the token in runAuthLogin even though pflag
 	// won't bind it.
 	Args: cobra.MaximumNArgs(1),
@@ -41,8 +41,8 @@ var loginCmd = &cobra.Command{
 
 // tokenPromptSentinel is the value pflag assigns to `--token` when the flag
 // is supplied without an explicit value. runAuthLoginToken treats it as
-// "prompt me interactively", preserving the legacy `patchbay login --token`
-// no-value form alongside the documented `--token pby_...` / `--token mcn_...`
+// "prompt me interactively", preserving the legacy `orvilo login --token`
+// no-value form alongside the documented `--token ovy_...` / `--token mcn_...`
 // value form.
 //
 // The sentinel must be printable: pflag renders NoOptDefVal verbatim in help
@@ -55,9 +55,9 @@ const tokenPromptSentinel = "prompt"
 func init() {
 	// No backticks in the usage string: pflag's UnquoteUsage treats the first
 	// backquoted segment as the flag's value placeholder in help output.
-	loginCmd.Flags().String("token", "", "Authenticate using a personal access token (pby_... user PAT or mcn_... Cloud Node PAT). Pass --token pby_... / --token mcn_... to supply it inline, or --token alone to be prompted interactively.")
+	loginCmd.Flags().String("token", "", "Authenticate using a personal access token (ovy_... user PAT or mcn_... Cloud Node PAT). Pass --token ovy_... / --token mcn_... to supply it inline, or --token alone to be prompted interactively.")
 	// NoOptDefVal lets `--token` (no value) keep its old prompt-mode behavior
-	// while `--token pby_...` / `--token mcn_...` and the `=value` form
+	// while `--token ovy_...` / `--token mcn_...` and the `=value` form
 	// consume the value normally.
 	loginCmd.Flags().Lookup("token").NoOptDefVal = tokenPromptSentinel
 	loginCmd.Flags().String(callbackHostFlag, "", callbackHostFlagHelp)
@@ -75,11 +75,11 @@ func runLogin(cmd *cobra.Command, args []string) error {
 	// Auto-discover and watch all workspaces.
 	if err := autoWatchWorkspaces(cmd); err != nil {
 		fmt.Fprintf(os.Stderr, "\nCould not auto-configure workspaces: %v\n", err)
-		fmt.Fprintf(os.Stderr, "Run 'patchbay workspace list' and 'patchbay workspace watch <id>' to set up manually.\n")
+		fmt.Fprintf(os.Stderr, "Run 'orvilo workspace list' and 'orvilo workspace watch <id>' to set up manually.\n")
 		return nil
 	}
 
-	fmt.Fprintf(os.Stderr, "\n→ Run 'patchbay daemon start' to start your local agent runtime.\n")
+	fmt.Fprintf(os.Stderr, "\n→ Run 'orvilo daemon start' to start your local agent runtime.\n")
 	return nil
 }
 
@@ -142,7 +142,7 @@ func autoWatchWorkspaces(cmd *cobra.Command) error {
 		fmt.Fprintf(os.Stderr, "%s%s (%s)\n", marker, ws.Name, ws.ID)
 	}
 	if len(workspaces) > 1 {
-		fmt.Fprintln(os.Stderr, "\nUse 'patchbay workspace switch <id|slug>' to change the default workspace.")
+		fmt.Fprintln(os.Stderr, "\nUse 'orvilo workspace switch <id|slug>' to change the default workspace.")
 	}
 
 	return nil
@@ -159,7 +159,7 @@ func waitForWorkspaceCreation(cmd *cobra.Command, client *cli.APIClient) ([]stru
 		// No app URL available (e.g. token login without prior setup).
 		// Can't open the browser — tell the user to create a workspace manually.
 		fmt.Fprintln(os.Stderr, "\nNo workspaces found.")
-		fmt.Fprintln(os.Stderr, "Create a workspace in the web dashboard, then run 'patchbay login' again.")
+		fmt.Fprintln(os.Stderr, "Create a workspace in the web dashboard, then run 'orvilo login' again.")
 		return nil, nil
 	}
 

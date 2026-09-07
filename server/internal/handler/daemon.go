@@ -182,7 +182,7 @@ type DaemonRegisterRequest struct {
 	// and tasks keep working without manual intervention.
 	LegacyDaemonIDs []string `json:"legacy_daemon_ids"`
 	DeviceName      string   `json:"device_name"`
-	CLIVersion      string   `json:"cli_version"` // patchbay CLI version
+	CLIVersion      string   `json:"cli_version"` // orvilo CLI version
 	LaunchedBy      string   `json:"launched_by"` // "desktop" when spawned by the Electron app
 	Runtimes        []struct {
 		Name    string `json:"name"`
@@ -2756,7 +2756,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// (MUL-2968: "看上海天气" then "还有青岛" must both be delivered) —
 		// so a rolling deploy never replays their history. Attachments are
 		// collected per included message so the agent can
-		// `patchbay attachment download <id>` (the inline markdown URL is
+		// `orvilo attachment download <id>` (the inline markdown URL is
 		// signed + 30-min expiring on the CDN).
 		var unanswered []db.ChatMessage
 		var inputLoadErr error

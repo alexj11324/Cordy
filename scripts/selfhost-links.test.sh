@@ -6,8 +6,8 @@ cd "$ROOT_DIR"
 
 canonical_repo='https://github.com/alexj11324/Cordy'
 canonical_raw='https://raw.githubusercontent.com/alexj11324/Cordy'
-canonical_chart='oci://ghcr.io/alexj11324/charts/patchbay'
-canonical_brew='alexj11324/tap/patchbay'
+canonical_chart='oci://ghcr.io/alexj11324/charts/orvilo'
+canonical_brew='alexj11324/tap/orvilo'
 
 docs=(
   SELF_HOSTING.md
@@ -65,7 +65,7 @@ require_current_repo_reference() {
 
 # These exact strings are current executable repository/deployment addresses,
 # not product-domain text or historical migration prose. Keep the check limited
-# to these concrete hosts so `patchbay.ai` product text, migration wording,
+# to these concrete hosts so `orvilo.ai` product text, migration wording,
 # legacy asset names, and unrelated external integrations remain untouched.
 for doc in "${docs[@]}"; do
   require_current_repo_reference "$doc"
@@ -95,13 +95,13 @@ require_text SELF_HOSTING.md 'git clone https://github.com/alexj11324/Cordy.git'
 require_text SELF_HOSTING.md 'cd Cordy'
 require_text apps/docs/content/docs/self-host-quickstart.mdx 'git clone --depth 1 https://github.com/alexj11324/Cordy.git'
 require_text apps/docs/content/docs/self-host-quickstart.mdx 'cd Cordy'
-require_text CLI_INSTALL.md 'brew install alexj11324/tap/patchbay'
+require_text CLI_INSTALL.md 'brew install alexj11324/tap/orvilo'
 require_text CLI_INSTALL.md 'https://github.com/alexj11324/Cordy/releases/download/'
 require_text CLI_AND_DAEMON.md 'git clone https://github.com/alexj11324/Cordy.git'
 require_text SELF_HOSTING_AI.md 'curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh'
 require_text scripts/install.sh 'REPO_URL="https://github.com/alexj11324/Cordy.git"'
 require_text scripts/install.sh 'REPO_WEB_URL="https://github.com/alexj11324/Cordy"'
-require_text scripts/install.sh 'BREW_PACKAGE="alexj11324/tap/patchbay"'
+require_text scripts/install.sh 'BREW_PACKAGE="alexj11324/tap/orvilo"'
 require_text scripts/install.sh 'brew tap alexj11324/tap'
 require_text scripts/install.sh 'https://github.com/alexj11324/Cordy/releases/download/'
 require_text scripts/install.ps1 '$RepoUrl       = "https://github.com/alexj11324/Cordy.git"'
@@ -109,7 +109,7 @@ require_text scripts/install.ps1 '$RepoWebUrl    = "https://github.com/alexj1132
 require_text scripts/install.ps1 'https://api.github.com/repos/alexj11324/Cordy/releases/latest'
 require_text scripts/install.ps1 'https://github.com/alexj11324/Cordy/releases/download/'
 require_text scripts/install.test.sh 'https://github.com/alexj11324/Cordy/releases/tag/v0.3.2'
-require_text scripts/selfhost-wait.sh 'brew install alexj11324/tap/patchbay'
+require_text scripts/selfhost-wait.sh 'brew install alexj11324/tap/orvilo'
 require_text .github/workflows/release.yml 'OCI_REGISTRY: oci://ghcr.io/${{ github.repository_owner }}/charts'
 require_text .goreleaser.yml 'homepage: "https://github.com/alexj11324/Cordy"'
 

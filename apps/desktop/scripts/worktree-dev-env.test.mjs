@@ -43,10 +43,10 @@ describe("worktree-dev-env", () => {
   });
 
   it("never reuses 5173 even when the offset is 0", () => {
-    // POSIX cksum("/tmp/patchbay-3030") === 241176000, % 1000 === 0.
-    expect(offsetForPath("/tmp/patchbay-3030")).toBe(0);
-    expect(rendererPortForPath("/tmp/patchbay-3030")).toBe(5174);
-    expect(rendererPortForPath("/tmp/patchbay-3030")).not.toBe(5173);
+    // POSIX cksum("/tmp/orvilo-3030") === 241176000, % 1000 === 0.
+    expect(offsetForPath("/tmp/orvilo-3030")).toBe(0);
+    expect(rendererPortForPath("/tmp/orvilo-3030")).toBe(5174);
+    expect(rendererPortForPath("/tmp/orvilo-3030")).not.toBe(5173);
   });
 
   it("skips 6000, which Chromium refuses to load (ERR_UNSAFE_PORT)", () => {
@@ -88,22 +88,22 @@ describe("worktree-dev-env", () => {
   });
 
   it("disambiguates worktrees that share a folder name at different paths", () => {
-    // Same basename "patchbay", different parent dirs → different suffixes,
+    // Same basename "orvilo", different parent dirs → different suffixes,
     // so each gets its own userData and single-instance lock.
-    expect(appSuffixForPath("/tmp/a/patchbay")).not.toBe(
-      appSuffixForPath("/tmp/b/patchbay"),
+    expect(appSuffixForPath("/tmp/a/orvilo")).not.toBe(
+      appSuffixForPath("/tmp/b/orvilo"),
     );
   });
 
   it("derives a stable callback protocol from the full app path", () => {
-    expect(callbackProtocolForPath("/tmp/a/patchbay/apps/desktop")).toMatch(
-      /^patchbay-canary-[a-f0-9]{16}$/,
+    expect(callbackProtocolForPath("/tmp/a/orvilo/apps/desktop")).toMatch(
+      /^orvilo-canary-[a-f0-9]{16}$/,
     );
-    expect(callbackProtocolForPath("/tmp/a/patchbay/apps/desktop")).toBe(
-      callbackProtocolForPath("/tmp/a/patchbay/apps/desktop"),
+    expect(callbackProtocolForPath("/tmp/a/orvilo/apps/desktop")).toBe(
+      callbackProtocolForPath("/tmp/a/orvilo/apps/desktop"),
     );
-    expect(callbackProtocolForPath("/tmp/a/patchbay/apps/desktop")).not.toBe(
-      callbackProtocolForPath("/tmp/b/patchbay/apps/desktop"),
+    expect(callbackProtocolForPath("/tmp/a/orvilo/apps/desktop")).not.toBe(
+      callbackProtocolForPath("/tmp/b/orvilo/apps/desktop"),
     );
   });
 
@@ -134,7 +134,7 @@ describe("worktree-dev-env", () => {
     const env = {
       DESKTOP_RENDERER_PORT: "9999",
       DESKTOP_APP_SUFFIX: "manual",
-      DESKTOP_CALLBACK_PROTOCOL: "patchbay-canary-0000000000000000",
+      DESKTOP_CALLBACK_PROTOCOL: "orvilo-canary-0000000000000000",
     };
     applyWorktreeDevEnv(env, { root });
     expect(env.DESKTOP_RENDERER_PORT).toBe("9999");

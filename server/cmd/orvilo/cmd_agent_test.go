@@ -79,7 +79,7 @@ func TestHumanLocalCommandDistinguishesPortHintFromTaskIdentity(t *testing.T) {
 		t.Fatalf("port-only host context rejected login: %v", err)
 	}
 
-	t.Setenv(cli.TaskConfigRootEnv, filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv(cli.TaskConfigRootEnv, filepath.Join(t.TempDir(), "task-orvilo"))
 	if err := requireHumanLocalCommand("login"); err == nil || !strings.Contains(err.Error(), "daemon-managed task") {
 		t.Fatalf("task config root did not reject login: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestMissingServerConfigMessageExplainsPortOnlyContext(t *testing.T) {
 
 // TestNewAPIClient_WorkdirParentEscapeFailsClosed reproduces the confirmed
 // impersonation escape: a sandbox fault strips every ORVILO_* env var from
-// an agent subprocess, which then runs `patchbay` from the *parent* directory
+// an agent subprocess, which then runs `orvilo` from the *parent* directory
 // of its workdir. The per-workdir marker sits below cwd, so the upward walk
 // used to find no daemon signal and silently fell back to the user's config
 // PAT, posting agent writes as the workspace owner (author_type=member).
@@ -147,13 +147,13 @@ func TestMissingServerConfigMessageExplainsPortOnlyContext(t *testing.T) {
 // itself — carries the fail-closed signal. This test builds that tree shape
 // and asserts the CLI refuses the config-PAT fallback from the escaped cwd.
 func TestNewAPIClient_WorkdirParentEscapeFailsClosed(t *testing.T) {
-	// Seed a user config with a pby_ PAT that must never be picked up.
+	// Seed a user config with a ovy_ PAT that must never be picked up.
 	t.Setenv("HOME", t.TempDir())
-	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "pby_owner_pat"}); err != nil {
+	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "ovy_owner_pat"}); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
 
-	// Daemon-owned tree: {root}/.patchbay marker + {root}/{ws}/{task}/workdir
+	// Daemon-owned tree: {root}/.orvilo marker + {root}/{ws}/{task}/workdir
 	// with its own per-workdir marker, exactly as the daemon lays it out.
 	root := t.TempDir()
 	if err := execenv.EnsureWorkspacesRootMarker(root); err != nil {
@@ -223,7 +223,7 @@ func TestNewAPIClient_LeftoverMarkerActionableError(t *testing.T) {
 // TestResolveWorkspaceID_AgentContextSkipsConfig is a regression test for
 // the cross-workspace contamination bug (#1235). Inside a daemon-spawned
 // agent task (ORVILO_AGENT_ID / ORVILO_TASK_ID set), the CLI must NOT
-// silently read the user-global ~/.patchbay/config.json to recover a missing
+// silently read the user-global ~/.orvilo/config.json to recover a missing
 // workspace — that fallback is how agent operations leaked into an
 // unrelated workspace when the daemon failed to inject the right value.
 //
@@ -327,7 +327,7 @@ func TestResolveWorkspaceID_AgentContextSkipsConfig(t *testing.T) {
 func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 
-	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "pby_profile_token"}); err != nil {
+	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "ovy_profile_token"}); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
 
@@ -337,7 +337,7 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 		t.Setenv("ORVILO_DAEMON_PORT", "")
 		t.Setenv("ORVILO_TOKEN", "")
 
-		if got := resolveToken(testCmd()); got != "pby_profile_token" {
+		if got := resolveToken(testCmd()); got != "ovy_profile_token" {
 			t.Fatalf("resolveToken() = %q, want profile token", got)
 		}
 	})
@@ -350,7 +350,7 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 		t.Setenv("ORVILO_TOKEN", "")
 		t.Setenv("ORVILO_DAEMON_PORT", "")
 
-		if got := resolveToken(testCmd()); got != "pby_profile_token" {
+		if got := resolveToken(testCmd()); got != "ovy_profile_token" {
 			t.Fatalf("resolveToken() = %q, want profile token", got)
 		}
 	})
@@ -424,7 +424,7 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 		t.Setenv("ORVILO_SERVER_URL", "")
 		t.Setenv("ORVILO_TOKEN", "")
 
-		if got := resolveToken(testCmd()); got != "pby_profile_token" {
+		if got := resolveToken(testCmd()); got != "ovy_profile_token" {
 			t.Fatalf("resolveToken() = %q, want profile token (unreadable marker path must not fail closed)", got)
 		}
 	})
@@ -473,7 +473,7 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 		t.Setenv("ORVILO_DAEMON_PORT", "")
 		t.Setenv("ORVILO_SERVER_URL", "https://api.aspectlylabs.com")
 
-		if got := resolveToken(testCmd()); got != "pby_profile_token" {
+		if got := resolveToken(testCmd()); got != "ovy_profile_token" {
 			t.Fatalf("resolveToken() = %q, want profile token (SERVER_URL is not a daemon identity signal)", got)
 		}
 	})
@@ -488,7 +488,7 @@ func TestResolveToken_AgentContextSkipsConfig(t *testing.T) {
 		t.Setenv("ORVILO_DAEMON_PORT", "")
 		t.Setenv("ORVILO_SERVER_URL", "")
 
-		if got := resolveToken(testCmd()); got != "pby_profile_token" {
+		if got := resolveToken(testCmd()); got != "ovy_profile_token" {
 			t.Fatalf("resolveToken() = %q, want profile token (normal CLI flow)", got)
 		}
 	})
@@ -513,7 +513,7 @@ func TestNewAPIClient_AgentContextRequiresTaskToken(t *testing.T) {
 	})
 
 	t.Run("member token fails closed", func(t *testing.T) {
-		t.Setenv("ORVILO_TOKEN", "pby_member_token")
+		t.Setenv("ORVILO_TOKEN", "ovy_member_token")
 
 		_, err := newAPIClient(testCmd())
 		if err == nil {
@@ -547,7 +547,7 @@ func TestNewAPIClient_DaemonPortRequiresTaskToken(t *testing.T) {
 	t.Setenv("ORVILO_DAEMON_PORT", "27182")
 	t.Setenv("ORVILO_TOKEN", "")
 
-	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "pby_profile_token", WorkspaceID: "config-file-ws"}); err != nil {
+	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "ovy_profile_token", WorkspaceID: "config-file-ws"}); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
 
@@ -572,7 +572,7 @@ func TestNewAPIClient_WorkdirMarkerRequiresTaskToken(t *testing.T) {
 	t.Setenv("ORVILO_TOKEN", "")
 	chdirWithDaemonTaskMarker(t)
 
-	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "pby_profile_token", WorkspaceID: "config-file-ws"}); err != nil {
+	if err := cli.SaveCLIConfig(cli.CLIConfig{Token: "ovy_profile_token", WorkspaceID: "config-file-ws"}); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
 
@@ -698,8 +698,8 @@ func TestAgentUpdateNoFieldsErrorPointsAtEnvCommand(t *testing.T) {
 		t.Fatal("runAgentUpdate with no flags: expected 'no fields' error, got nil")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "patchbay agent env set") {
-		t.Fatalf("no-fields error must direct users to `patchbay agent env set`; got: %q", msg)
+	if !strings.Contains(msg, "orvilo agent env set") {
+		t.Fatalf("no-fields error must direct users to `orvilo agent env set`; got: %q", msg)
 	}
 }
 
@@ -710,7 +710,7 @@ func TestAgentUpdateNoFieldsErrorPointsAtEnvCommand(t *testing.T) {
 func TestAgentUpdateDoesNotExposeCustomEnvFlags(t *testing.T) {
 	for _, flag := range []string{"custom-env", "custom-env-stdin", "custom-env-file"} {
 		if agentUpdateCmd.Flag(flag) != nil {
-			t.Errorf("agent update must NOT expose --%s after MUL-2600; use `patchbay agent env set` instead", flag)
+			t.Errorf("agent update must NOT expose --%s after MUL-2600; use `orvilo agent env set` instead", flag)
 		}
 	}
 }

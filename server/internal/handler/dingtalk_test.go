@@ -61,8 +61,8 @@ INSERT INTO "user" (name, email) VALUES ('DingTalk non-member', $1) RETURNING id
 
 func dingTalkAgentPermissionCases(t *testing.T, prefix, agentOwnerID, memberID string) []dingTalkAgentPermissionCase {
 	t.Helper()
-	adminID := createPermissionTestAdmin(t, prefix+"-admin@patchbay.test")
-	nonMemberID := createDingTalkNonMember(t, prefix+"-non-member@patchbay.test")
+	adminID := createPermissionTestAdmin(t, prefix+"-admin@orvilo.test")
+	nonMemberID := createDingTalkNonMember(t, prefix+"-non-member@orvilo.test")
 	return []dingTalkAgentPermissionCase{
 		{name: "workspace owner, not agent owner", userID: testUserID},
 		{name: "workspace owner, agent owner", userID: testUserID, ownsAgent: true},
@@ -126,9 +126,9 @@ func TestListDingTalkGroupsForAgent_FollowsAgentViewPermissionMatrix(t *testing.
 		t.Skip("database not available")
 	}
 	agentID, ownerID, unrelatedMemberID := privateAgentTestFixture(t)
-	adminID := createPermissionTestAdmin(t, "dingtalk-view-admin@patchbay.test")
-	targetMemberID := createPermissionTestMember(t, "dingtalk-view-target@patchbay.test")
-	nonMemberID := createDingTalkNonMember(t, "dingtalk-view-non-member@patchbay.test")
+	adminID := createPermissionTestAdmin(t, "dingtalk-view-admin@orvilo.test")
+	targetMemberID := createPermissionTestMember(t, "dingtalk-view-target@orvilo.test")
+	nonMemberID := createDingTalkNonMember(t, "dingtalk-view-non-member@orvilo.test")
 	t.Cleanup(func() {
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM agent_invocation_target WHERE agent_id = $1`, agentID)
 	})
@@ -214,9 +214,9 @@ func TestListDingTalkGroupsForAgent_FollowsAgentViewPermissionMatrix(t *testing.
 func TestListDingTalkSettingsData_FollowsAgentViewPermissionMatrix(t *testing.T) {
 	wireDingTalkInstallService(t)
 	agentID, ownerID, unrelatedMemberID := privateAgentTestFixture(t)
-	adminID := createPermissionTestAdmin(t, "dingtalk-settings-view-admin@patchbay.test")
-	targetMemberID := createPermissionTestMember(t, "dingtalk-settings-view-target@patchbay.test")
-	nonMemberID := createDingTalkNonMember(t, "dingtalk-settings-view-non-member@patchbay.test")
+	adminID := createPermissionTestAdmin(t, "dingtalk-settings-view-admin@orvilo.test")
+	targetMemberID := createPermissionTestMember(t, "dingtalk-settings-view-target@orvilo.test")
+	nonMemberID := createDingTalkNonMember(t, "dingtalk-settings-view-non-member@orvilo.test")
 	installationID := dbfx.Insert(t, "channel_installation", testutil.Cols{
 		"workspace_id":      testWorkspaceID,
 		"agent_id":          agentID,
@@ -711,8 +711,8 @@ func TestRevokeDingTalkInstallation_AuthorizesAgentOwnerAndAdmins(t *testing.T) 
 func TestRevokeDingTalkInstallation_OrphanCleanableByAdminNotMember(t *testing.T) {
 	wireDingTalkInstallService(t)
 	_, _, memberID := privateAgentTestFixture(t)
-	adminID := createPermissionTestAdmin(t, "dingtalk-orphan-admin@patchbay.test")
-	nonMemberID := createDingTalkNonMember(t, "dingtalk-orphan-non-member@patchbay.test")
+	adminID := createPermissionTestAdmin(t, "dingtalk-orphan-admin@orvilo.test")
+	nonMemberID := createDingTalkNonMember(t, "dingtalk-orphan-non-member@orvilo.test")
 	const orphanAgentID = "d1473000-0000-4000-8000-0000000000aa"
 
 	seedOrphan := func(appID string) string {
@@ -860,8 +860,8 @@ func TestRedeemDingTalkBindingTokenPublishesAccountBindingUpdateAfterCommit(t *t
 	if queryErr != nil {
 		t.Fatalf("binding was not visible when event fired: %v", queryErr)
 	}
-	if bindingAtEvent.PatchbayUserID != parseUUID(testUserID) {
-		t.Errorf("binding user = %v, want %s", bindingAtEvent.PatchbayUserID, testUserID)
+	if bindingAtEvent.OrviloUserID != parseUUID(testUserID) {
+		t.Errorf("binding user = %v, want %s", bindingAtEvent.OrviloUserID, testUserID)
 	}
 	if published.WorkspaceID != testWorkspaceID || published.ActorType != "user" || published.ActorID != testUserID {
 		t.Errorf("event envelope = %+v", published)

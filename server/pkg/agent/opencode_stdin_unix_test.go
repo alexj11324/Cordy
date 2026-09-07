@@ -111,7 +111,7 @@ func TestOpencodeExecuteSendsPromptOnStdinNotArgv(t *testing.T) {
 func TestOpencodeExecutePromptExceedingWindowsCommandLineLimit(t *testing.T) {
 	t.Parallel()
 
-	prompt := strings.Repeat("patchbay opencode workspace skill catalogue 0123456789\n", 800)
+	prompt := strings.Repeat("orvilo opencode workspace skill catalogue 0123456789\n", 800)
 	if len(prompt) <= 32767 {
 		t.Fatalf("test prompt must exceed the Windows command-line limit, got %d bytes", len(prompt))
 	}
@@ -141,7 +141,7 @@ func TestOpencodeExecuteLargePromptDoesNotDeadlock(t *testing.T) {
 	fakePath := filepath.Join(dir, "opencode")
 	writeTestExecutable(t, fakePath, []byte(script))
 
-	prompt := strings.Repeat("patchbay opencode stdin payload 0123456789\n", 16_384)
+	prompt := strings.Repeat("orvilo opencode stdin payload 0123456789\n", 16_384)
 	if len(prompt) < 512*1024 {
 		t.Fatalf("test prompt too small: %d bytes", len(prompt))
 	}

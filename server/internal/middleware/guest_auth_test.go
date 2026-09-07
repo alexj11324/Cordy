@@ -235,7 +235,7 @@ func TestAuth_GuestBearerRejectsMalformedAndUnavailable(t *testing.T) {
 		want    int
 	}{
 		{
-			name:  "malformed pbg token",
+			name:  "malformed ovg token",
 			token: auth.GuestTokenPrefix + "not-hex",
 			want:  http.StatusUnauthorized,
 		},

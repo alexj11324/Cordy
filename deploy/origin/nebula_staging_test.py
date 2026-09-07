@@ -24,20 +24,20 @@ class StagingTests(unittest.TestCase):
         self.assertRegex(manifest['source_sha'], r'^[a-f0-9]{40}$')
         self.assertEqual(set(manifest['images']), {'backend', 'web', 'docs', 'auth-broker'})
         for name, image in manifest['images'].items():
-            self.assertRegex(image, rf'^ghcr.io/alexj11324/patchbay-{name}@sha256:[a-f0-9]{{64}}$')
+            self.assertRegex(image, rf'^ghcr.io/alexj11324/orvilo-{name}@sha256:[a-f0-9]{{64}}$')
 
     def test_readiness_rejects_unready_and_stale_builds(self):
         for status, commit in [(503, 'current'), (200, 'old'), (200, None)]:
             with self.subTest(status=status, commit=commit):
                 with self.assertRaises(ValueError):
-                    staging.require_ready(SimpleNamespace(status=status, headers={'X-Patchbay-Commit': commit}), 'current')
-        staging.require_ready(SimpleNamespace(status=200, headers={'X-Patchbay-Commit': 'current'}), 'current')
+                    staging.require_ready(SimpleNamespace(status=status, headers={'X-Orvilo-Commit': commit}), 'current')
+        staging.require_ready(SimpleNamespace(status=200, headers={'X-Orvilo-Commit': 'current'}), 'current')
 
     @patch.object(staging.time, 'sleep')
     @patch.object(staging, 'urlopen')
     def test_waits_through_migrations_then_checks_every_application(self, opened, sleep):
         ready = MagicMock()
-        ready.__enter__.return_value = SimpleNamespace(status=200, headers={'X-Patchbay-Commit': 'current'})
+        ready.__enter__.return_value = SimpleNamespace(status=200, headers={'X-Orvilo-Commit': 'current'})
         opened.side_effect = [OSError('migrating'), ready, ready, ready, ready]
         staging.wait_for_applications('current')
         self.assertEqual(opened.call_count, 5)

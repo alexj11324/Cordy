@@ -155,7 +155,7 @@ func TestLeftoverMarkerNotReportedUnderRealTaskIdentity(t *testing.T) {
 	for _, tc := range []struct{ name, env, value string }{
 		{name: "agent id", env: "ORVILO_AGENT_ID", value: "agent-1"},
 		{name: "task id", env: "ORVILO_TASK_ID", value: "task-1"},
-		{name: "task config root", env: cli.TaskConfigRootEnv, value: "/tmp/task-patchbay"},
+		{name: "task config root", env: cli.TaskConfigRootEnv, value: "/tmp/task-orvilo"},
 		{name: "daemon port", env: "ORVILO_DAEMON_PORT", value: "20032"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

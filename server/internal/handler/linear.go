@@ -402,7 +402,7 @@ func (h *Handler) GetLinearCatalog(w http.ResponseWriter, r *http.Request) {
 }
 
 type linearBindingRequest struct {
-	ConnectionID, PatchbayProjectID, LinearProjectID string
+	ConnectionID, OrviloProjectID, LinearProjectID string
 	LinearTeamID                                     *string
 	Status, SyncMode                                 string
 	InitialSourceOfTruth                             *string
@@ -412,7 +412,7 @@ type linearBindingRequest struct {
 func (v *linearBindingRequest) UnmarshalJSON(b []byte) error {
 	var r struct {
 		ConnectionID      string         `json:"connection_id"`
-		PatchbayProjectID string         `json:"patchbay_project_id"`
+		OrviloProjectID string         `json:"orvilo_project_id"`
 		LinearProjectID   string         `json:"linear_project_id"`
 		LinearTeamID      *string        `json:"linear_team_id"`
 		Status            string         `json:"status"`
@@ -424,11 +424,11 @@ func (v *linearBindingRequest) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &r); err != nil {
 		return err
 	}
-	v.ConnectionID, v.PatchbayProjectID, v.LinearProjectID, v.LinearTeamID, v.Status, v.SyncMode, v.InitialSourceOfTruth, v.StatusMapping, v.AgentLabelMapping = r.ConnectionID, r.PatchbayProjectID, r.LinearProjectID, r.LinearTeamID, r.Status, r.SyncMode, r.InitialSource, r.StatusMapping, r.AgentMapping
+	v.ConnectionID, v.OrviloProjectID, v.LinearProjectID, v.LinearTeamID, v.Status, v.SyncMode, v.InitialSourceOfTruth, v.StatusMapping, v.AgentLabelMapping = r.ConnectionID, r.OrviloProjectID, r.LinearProjectID, r.LinearTeamID, r.Status, r.SyncMode, r.InitialSource, r.StatusMapping, r.AgentMapping
 	return nil
 }
 
-const linearBindingSelect = `SELECT id,workspace_id,connection_id,patchbay_project_id,linear_project_id,linear_team_id,status,sync_mode,initial_source_of_truth,status_mapping,agent_label_mapping,activated_at,paused_at,created_by_id,created_at,updated_at FROM linear_project_binding`
+const linearBindingSelect = `SELECT id,workspace_id,connection_id,orvilo_project_id,linear_project_id,linear_team_id,status,sync_mode,initial_source_of_truth,status_mapping,agent_label_mapping,activated_at,paused_at,created_by_id,created_at,updated_at FROM linear_project_binding`
 
 func scanLinearBinding(row pgx.Row) (map[string]any, error) {
 	var id, ws, cid, pid, creator pgtype.UUID
@@ -443,7 +443,7 @@ func scanLinearBinding(row pgx.Row) (map[string]any, error) {
 	var smv, amv map[string]any
 	_ = json.Unmarshal(sm, &smv)
 	_ = json.Unmarshal(am, &amv)
-	return map[string]any{"id": uuidToString(id), "workspace_id": uuidToString(ws), "connection_id": uuidToString(cid), "patchbay_project_id": uuidToString(pid), "linear_project_id": remote, "linear_team_id": textToPtr(team), "status": status, "sync_mode": mode, "initial_source_of_truth": textToPtr(source), "status_mapping": smv, "agent_label_mapping": amv, "activated_at": timestampToPtr(activated), "paused_at": timestampToPtr(paused), "created_by_id": uuidToString(creator), "created_at": created.Format(time.RFC3339Nano), "updated_at": updated.Format(time.RFC3339Nano)}, nil
+	return map[string]any{"id": uuidToString(id), "workspace_id": uuidToString(ws), "connection_id": uuidToString(cid), "orvilo_project_id": uuidToString(pid), "linear_project_id": remote, "linear_team_id": textToPtr(team), "status": status, "sync_mode": mode, "initial_source_of_truth": textToPtr(source), "status_mapping": smv, "agent_label_mapping": amv, "activated_at": timestampToPtr(activated), "paused_at": timestampToPtr(paused), "created_by_id": uuidToString(creator), "created_at": created.Format(time.RFC3339Nano), "updated_at": updated.Format(time.RFC3339Nano)}, nil
 }
 
 func (h *Handler) ListLinearBindings(w http.ResponseWriter, r *http.Request) {
@@ -485,7 +485,7 @@ func validLinearBinding(v linearBindingRequest) bool {
 	default:
 		return false
 	}
-	if v.ConnectionID == "" || v.PatchbayProjectID == "" || v.LinearProjectID == "" {
+	if v.ConnectionID == "" || v.OrviloProjectID == "" || v.LinearProjectID == "" {
 		return false
 	}
 	if v.Status == "active" || v.Status == "paused" {
@@ -499,10 +499,10 @@ func validLinearBinding(v linearBindingRequest) bool {
 	if v.SyncMode == "import" && v.Status != "draft" && (v.InitialSourceOfTruth == nil || *v.InitialSourceOfTruth != "linear") {
 		return false
 	}
-	if v.SyncMode == "publish" && v.Status != "draft" && (v.InitialSourceOfTruth == nil || *v.InitialSourceOfTruth != "patchbay") {
+	if v.SyncMode == "publish" && v.Status != "draft" && (v.InitialSourceOfTruth == nil || *v.InitialSourceOfTruth != "orvilo") {
 		return false
 	}
-	if v.SyncMode == "two_way" && v.Status != "draft" && (v.InitialSourceOfTruth == nil || (*v.InitialSourceOfTruth != "linear" && *v.InitialSourceOfTruth != "patchbay")) {
+	if v.SyncMode == "two_way" && v.Status != "draft" && (v.InitialSourceOfTruth == nil || (*v.InitialSourceOfTruth != "linear" && *v.InitialSourceOfTruth != "orvilo")) {
 		return false
 	}
 	return v.Status != "tombstone"
@@ -554,7 +554,7 @@ func (h *Handler) seedLinearOutbound(ctx context.Context, tx pgx.Tx, ws, binding
 	if _, err := tx.Exec(ctx, `INSERT INTO linear_sync_outbox(id,workspace_id,binding_id,issue_id,event_key,event_type,payload) SELECT gen_random_uuid(),i.workspace_id,$2::uuid,i.id,'binding-seed:'||$2::uuid::text||':'||i.id::text||':'||i.revision::text,'issue_updated',jsonb_build_object('id',i.id,'revision',i.revision) FROM issue i WHERE i.workspace_id=$1::uuid AND i.project_id=$3::uuid AND i.status<>'cancelled' ON CONFLICT(binding_id,event_key) DO NOTHING`, ws, bindingID, projectID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO linear_comment_link(workspace_id,binding_id,issue_id,comment_id,linear_comment_id,origin) SELECT c.workspace_id,$2::uuid,c.issue_id,c.id,gen_random_uuid()::text,'patchbay' FROM comment c JOIN issue i ON i.id=c.issue_id AND i.workspace_id=c.workspace_id WHERE c.workspace_id=$1::uuid AND i.project_id=$3::uuid AND i.status<>'cancelled' AND c.author_type IN ('member','agent') AND c.type='comment' ON CONFLICT(binding_id,comment_id) DO NOTHING`, ws, bindingID, projectID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO linear_comment_link(workspace_id,binding_id,issue_id,comment_id,linear_comment_id,origin) SELECT c.workspace_id,$2::uuid,c.issue_id,c.id,gen_random_uuid()::text,'orvilo' FROM comment c JOIN issue i ON i.id=c.issue_id AND i.workspace_id=c.workspace_id WHERE c.workspace_id=$1::uuid AND i.project_id=$3::uuid AND i.status<>'cancelled' AND c.author_type IN ('member','agent') AND c.type='comment' ON CONFLICT(binding_id,comment_id) DO NOTHING`, ws, bindingID, projectID); err != nil {
 		return err
 	}
 	_, err := tx.Exec(ctx, `WITH RECURSIVE candidates AS (SELECT c.* FROM comment c JOIN issue i ON i.id=c.issue_id AND i.workspace_id=c.workspace_id WHERE c.workspace_id=$1::uuid AND i.project_id=$3::uuid AND i.status<>'cancelled' AND c.author_type IN ('member','agent') AND c.type='comment'), ordered AS (SELECT c.*,0 AS depth FROM candidates c WHERE c.parent_id IS NULL OR NOT EXISTS (SELECT 1 FROM candidates parent WHERE parent.id=c.parent_id) UNION ALL SELECT child.*,parent.depth+1 FROM candidates child JOIN ordered parent ON child.parent_id=parent.id) INSERT INTO linear_sync_outbox(id,workspace_id,binding_id,issue_id,event_key,event_type,payload,created_at) SELECT gen_random_uuid(),c.workspace_id,$2::uuid,c.issue_id,'binding-seed-comment:'||$2::uuid::text||':'||c.id::text||':'||c.revision::text,'comment_created',jsonb_build_object('comment_id',c.id,'body',c.content,'parent_id',CASE WHEN EXISTS (SELECT 1 FROM candidates parent WHERE parent.id=c.parent_id) THEN c.parent_id ELSE NULL END,'author_type',c.author_type,'author_id',c.author_id),transaction_timestamp()+((c.depth+1)*interval '1 millisecond') FROM ordered c ON CONFLICT(binding_id,event_key) DO NOTHING`, ws, bindingID, projectID)
@@ -577,7 +577,7 @@ func (h *Handler) CreateLinearBinding(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	pid, ok := parseUUIDOrBadRequest(w, v.PatchbayProjectID, "project id")
+	pid, ok := parseUUIDOrBadRequest(w, v.OrviloProjectID, "project id")
 	if !ok {
 		return
 	}
@@ -597,7 +597,7 @@ func (h *Handler) CreateLinearBinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(r.Context())
-	_, err = tx.Exec(r.Context(), `INSERT INTO linear_project_binding(id,workspace_id,connection_id,patchbay_project_id,linear_project_id,linear_team_id,status,sync_mode,initial_source_of_truth,status_mapping,agent_label_mapping,activated_at,paused_at,created_by_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $7='active' THEN now() END,CASE WHEN $7='paused' THEN now() END,$12)`, id, ws, cid, pid, v.LinearProjectID, v.LinearTeamID, v.Status, v.SyncMode, v.InitialSourceOfTruth, sm, am, member.UserID)
+	_, err = tx.Exec(r.Context(), `INSERT INTO linear_project_binding(id,workspace_id,connection_id,orvilo_project_id,linear_project_id,linear_team_id,status,sync_mode,initial_source_of_truth,status_mapping,agent_label_mapping,activated_at,paused_at,created_by_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,CASE WHEN $7='active' THEN now() END,CASE WHEN $7='paused' THEN now() END,$12)`, id, ws, cid, pid, v.LinearProjectID, v.LinearTeamID, v.Status, v.SyncMode, v.InitialSourceOfTruth, sm, am, member.UserID)
 	if err != nil {
 		writeError(w, 409, "Linear binding conflicts with an existing mapping")
 		return
@@ -640,7 +640,7 @@ func (h *Handler) UpdateLinearBinding(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	pid, ok := parseUUIDOrBadRequest(w, v.PatchbayProjectID, "project id")
+	pid, ok := parseUUIDOrBadRequest(w, v.OrviloProjectID, "project id")
 	if !ok {
 		return
 	}
@@ -648,19 +648,19 @@ func (h *Handler) UpdateLinearBinding(w http.ResponseWriter, r *http.Request) {
 		v.Status = "draft"
 	}
 	var current struct {
-		ConnectionID, PatchbayProjectID pgtype.UUID
+		ConnectionID, OrviloProjectID pgtype.UUID
 		LinearProjectID                 string
 		Status, SyncMode                string
 		LinearTeamID                    pgtype.Text
 	}
-	if err := h.DB.QueryRow(r.Context(), `SELECT connection_id,patchbay_project_id,linear_project_id,status,sync_mode,linear_team_id FROM linear_project_binding WHERE id=$1 AND workspace_id=$2`, bid, ws).Scan(&current.ConnectionID, &current.PatchbayProjectID, &current.LinearProjectID, &current.Status, &current.SyncMode, &current.LinearTeamID); errors.Is(err, pgx.ErrNoRows) {
+	if err := h.DB.QueryRow(r.Context(), `SELECT connection_id,orvilo_project_id,linear_project_id,status,sync_mode,linear_team_id FROM linear_project_binding WHERE id=$1 AND workspace_id=$2`, bid, ws).Scan(&current.ConnectionID, &current.OrviloProjectID, &current.LinearProjectID, &current.Status, &current.SyncMode, &current.LinearTeamID); errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, 404, "Linear binding not found")
 		return
 	} else if err != nil {
 		writeError(w, 500, "failed to load Linear binding")
 		return
 	}
-	if current.ConnectionID != cid || current.PatchbayProjectID != pid || current.LinearProjectID != v.LinearProjectID {
+	if current.ConnectionID != cid || current.OrviloProjectID != pid || current.LinearProjectID != v.LinearProjectID {
 		writeError(w, http.StatusConflict, "Linear binding identifiers are immutable")
 		return
 	}
@@ -743,7 +743,7 @@ func (h *Handler) ListLinearMemberBindings(w http.ResponseWriter, r *http.Reques
 	if !ok {
 		return
 	}
-	rows, err := h.DB.Query(r.Context(), `SELECT mb.id,mb.workspace_id,mb.connection_id,mb.patchbay_user_id,mb.linear_user_id,mb.created_at,mb.updated_at FROM linear_member_binding mb JOIN linear_connection c ON c.id=mb.connection_id AND c.workspace_id=mb.workspace_id WHERE mb.workspace_id=$1 AND c.status='active' ORDER BY mb.created_at`, ws)
+	rows, err := h.DB.Query(r.Context(), `SELECT mb.id,mb.workspace_id,mb.connection_id,mb.orvilo_user_id,mb.linear_user_id,mb.created_at,mb.updated_at FROM linear_member_binding mb JOIN linear_connection c ON c.id=mb.connection_id AND c.workspace_id=mb.workspace_id WHERE mb.workspace_id=$1 AND c.status='active' ORDER BY mb.created_at`, ws)
 	if err != nil {
 		writeError(w, 500, "failed to list Linear member bindings")
 		return
@@ -758,7 +758,7 @@ func (h *Handler) ListLinearMemberBindings(w http.ResponseWriter, r *http.Reques
 			writeError(w, 500, "failed to read Linear member bindings")
 			return
 		}
-		out = append(out, map[string]any{"id": uuidToString(id), "workspace_id": uuidToString(wid), "connection_id": uuidToString(cid), "patchbay_user_id": uuidToString(uid), "linear_user_id": linear, "created_at": created.Format(time.RFC3339Nano), "updated_at": updated.Format(time.RFC3339Nano)})
+		out = append(out, map[string]any{"id": uuidToString(id), "workspace_id": uuidToString(wid), "connection_id": uuidToString(cid), "orvilo_user_id": uuidToString(uid), "linear_user_id": linear, "created_at": created.Format(time.RFC3339Nano), "updated_at": updated.Format(time.RFC3339Nano)})
 	}
 	writeJSON(w, 200, map[string]any{"bindings": out})
 }
@@ -772,7 +772,7 @@ func (h *Handler) UpsertLinearMemberBinding(w http.ResponseWriter, r *http.Reque
 	}
 	var v struct {
 		ConnectionID   string `json:"connection_id"`
-		PatchbayUserID string `json:"patchbay_user_id"`
+		OrviloUserID string `json:"orvilo_user_id"`
 		LinearUserID   string `json:"linear_user_id"`
 	}
 	if json.NewDecoder(r.Body).Decode(&v) != nil || v.LinearUserID == "" {
@@ -783,7 +783,7 @@ func (h *Handler) UpsertLinearMemberBinding(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	uid, ok := parseUUIDOrBadRequest(w, v.PatchbayUserID, "user id")
+	uid, ok := parseUUIDOrBadRequest(w, v.OrviloUserID, "user id")
 	if !ok {
 		return
 	}
@@ -799,7 +799,7 @@ func (h *Handler) UpsertLinearMemberBinding(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	id := parseUUID(uuid.NewString())
-	_, err := h.DB.Exec(r.Context(), `INSERT INTO linear_member_binding(id,workspace_id,connection_id,patchbay_user_id,linear_user_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(workspace_id,connection_id,patchbay_user_id) DO UPDATE SET linear_user_id=EXCLUDED.linear_user_id,updated_at=now()`, id, ws, cid, uid, v.LinearUserID)
+	_, err := h.DB.Exec(r.Context(), `INSERT INTO linear_member_binding(id,workspace_id,connection_id,orvilo_user_id,linear_user_id) VALUES($1,$2,$3,$4,$5) ON CONFLICT(workspace_id,connection_id,orvilo_user_id) DO UPDATE SET linear_user_id=EXCLUDED.linear_user_id,updated_at=now()`, id, ws, cid, uid, v.LinearUserID)
 	if err != nil {
 		writeError(w, 409, "Linear user is already mapped")
 		return
@@ -807,7 +807,7 @@ func (h *Handler) UpsertLinearMemberBinding(w http.ResponseWriter, r *http.Reque
 	var savedID, savedWorkspaceID, savedConnectionID, savedUserID pgtype.UUID
 	var savedLinearUserID string
 	var createdAt, updatedAt time.Time
-	err = h.DB.QueryRow(r.Context(), `SELECT id,workspace_id,connection_id,patchbay_user_id,linear_user_id,created_at,updated_at FROM linear_member_binding WHERE workspace_id=$1 AND connection_id=$2 AND patchbay_user_id=$3`, ws, cid, uid).Scan(
+	err = h.DB.QueryRow(r.Context(), `SELECT id,workspace_id,connection_id,orvilo_user_id,linear_user_id,created_at,updated_at FROM linear_member_binding WHERE workspace_id=$1 AND connection_id=$2 AND orvilo_user_id=$3`, ws, cid, uid).Scan(
 		&savedID, &savedWorkspaceID, &savedConnectionID, &savedUserID, &savedLinearUserID, &createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -816,7 +816,7 @@ func (h *Handler) UpsertLinearMemberBinding(w http.ResponseWriter, r *http.Reque
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"id": uuidToString(savedID), "workspace_id": uuidToString(savedWorkspaceID),
-		"connection_id": uuidToString(savedConnectionID), "patchbay_user_id": uuidToString(savedUserID),
+		"connection_id": uuidToString(savedConnectionID), "orvilo_user_id": uuidToString(savedUserID),
 		"linear_user_id": savedLinearUserID, "created_at": createdAt.Format(time.RFC3339Nano),
 		"updated_at": updatedAt.Format(time.RFC3339Nano),
 	})
@@ -833,7 +833,7 @@ func (h *Handler) DeleteLinearMemberBinding(w http.ResponseWriter, r *http.Reque
 	if !ok {
 		return
 	}
-	_, err := h.DB.Exec(r.Context(), `DELETE FROM linear_member_binding WHERE workspace_id=$1 AND patchbay_user_id=$2 AND connection_id IN (SELECT id FROM linear_connection WHERE workspace_id=$1 AND status='active')`, ws, uid)
+	_, err := h.DB.Exec(r.Context(), `DELETE FROM linear_member_binding WHERE workspace_id=$1 AND orvilo_user_id=$2 AND connection_id IN (SELECT id FROM linear_connection WHERE workspace_id=$1 AND status='active')`, ws, uid)
 	if err != nil {
 		writeError(w, 500, "failed to delete Linear member binding")
 		return
@@ -850,11 +850,11 @@ func (h *Handler) DryRunLinearBinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var v linearBindingRequest
-	if json.NewDecoder(r.Body).Decode(&v) != nil || v.PatchbayProjectID == "" || v.LinearProjectID == "" {
+	if json.NewDecoder(r.Body).Decode(&v) != nil || v.OrviloProjectID == "" || v.LinearProjectID == "" {
 		writeError(w, 400, "invalid dry-run request")
 		return
 	}
-	pid, ok := parseUUIDOrBadRequest(w, v.PatchbayProjectID, "project id")
+	pid, ok := parseUUIDOrBadRequest(w, v.OrviloProjectID, "project id")
 	if !ok {
 		return
 	}
@@ -883,7 +883,7 @@ func (h *Handler) DryRunLinearBinding(w http.ResponseWriter, r *http.Request) {
 	if v.SyncMode == "publish" || v.SyncMode == "two_way" {
 		candidatePublish = local
 	}
-	writeJSON(w, 200, map[string]any{"patchbay_project_id": v.PatchbayProjectID, "linear_project_id": v.LinearProjectID, "sync_mode": v.SyncMode, "initial_source_of_truth": v.InitialSourceOfTruth, "local_issue_count": local, "remote_issue_count": remote.RemoteIssues, "remote_issue_count_truncated": remote.Truncated, "candidate_import_count": candidateImport, "candidate_publish_count": candidatePublish, "unmapped_remote_status_count": remote.UnmappedStatuses, "exact_link_counts_available": false})
+	writeJSON(w, 200, map[string]any{"orvilo_project_id": v.OrviloProjectID, "linear_project_id": v.LinearProjectID, "sync_mode": v.SyncMode, "initial_source_of_truth": v.InitialSourceOfTruth, "local_issue_count": local, "remote_issue_count": remote.RemoteIssues, "remote_issue_count_truncated": remote.Truncated, "candidate_import_count": candidateImport, "candidate_publish_count": candidatePublish, "unmapped_remote_status_count": remote.UnmappedStatuses, "exact_link_counts_available": false})
 }
 
 func linearValueOrEmpty(value *string) string {
@@ -936,7 +936,7 @@ func (h *Handler) ListLinearSyncConflicts(w http.ResponseWriter, r *http.Request
 	if status == "" {
 		status = "open"
 	}
-	rows, err := h.DB.Query(r.Context(), `SELECT c.id,c.workspace_id,c.binding_id,c.link_id,c.patchbay_issue_id,c.linear_issue_id,l.linear_identifier,c.field,c.base_value,c.local_value,c.remote_value,c.source_event_id,c.source_event_at_ms,c.status,c.resolution,c.resolved_value,c.resolved_by_id,c.created_at,c.updated_at FROM linear_sync_conflict c LEFT JOIN linear_issue_link l ON l.id=c.link_id WHERE c.workspace_id=$1 AND c.status=$2 ORDER BY c.created_at DESC`, ws, status)
+	rows, err := h.DB.Query(r.Context(), `SELECT c.id,c.workspace_id,c.binding_id,c.link_id,c.orvilo_issue_id,c.linear_issue_id,l.linear_identifier,c.field,c.base_value,c.local_value,c.remote_value,c.source_event_id,c.source_event_at_ms,c.status,c.resolution,c.resolved_value,c.resolved_by_id,c.created_at,c.updated_at FROM linear_sync_conflict c LEFT JOIN linear_issue_link l ON l.id=c.link_id WHERE c.workspace_id=$1 AND c.status=$2 ORDER BY c.created_at DESC`, ws, status)
 	if err != nil {
 		writeError(w, 500, "failed to list Linear conflicts")
 		return
@@ -962,7 +962,7 @@ func (h *Handler) ListLinearSyncConflicts(w http.ResponseWriter, r *http.Request
 		if resolved != nil {
 			_ = json.Unmarshal(resolved, &resv)
 		}
-		out = append(out, map[string]any{"id": uuidToString(id), "workspace_id": uuidToString(wid), "binding_id": uuidToString(bid), "link_id": uuidToString(lid), "patchbay_issue_id": uuidToString(pid), "linear_issue_id": linear, "linear_identifier": textToPtr(identifier), "field": field, "base_value": bv, "local_value": lv, "remote_value": rv, "source_event_id": event, "source_event_at_ms": int8ToPtr(at), "status": status, "resolution": textToPtr(resolution), "resolved_value": resv, "resolved_by_id": uuidToPtr(resolvedBy), "created_at": created.Format(time.RFC3339Nano), "updated_at": updated.Format(time.RFC3339Nano)})
+		out = append(out, map[string]any{"id": uuidToString(id), "workspace_id": uuidToString(wid), "binding_id": uuidToString(bid), "link_id": uuidToString(lid), "orvilo_issue_id": uuidToString(pid), "linear_issue_id": linear, "linear_identifier": textToPtr(identifier), "field": field, "base_value": bv, "local_value": lv, "remote_value": rv, "source_event_id": event, "source_event_at_ms": int8ToPtr(at), "status": status, "resolution": textToPtr(resolution), "resolved_value": resv, "resolved_by_id": uuidToPtr(resolvedBy), "created_at": created.Format(time.RFC3339Nano), "updated_at": updated.Format(time.RFC3339Nano)})
 	}
 	writeJSON(w, 200, map[string]any{"conflicts": out})
 }
@@ -1012,7 +1012,7 @@ func (h *Handler) ResolveLinearSyncConflict(w http.ResponseWriter, r *http.Reque
 	}
 	var resolved any
 	_ = json.Unmarshal(conflict.ResolvedValue, &resolved)
-	writeJSON(w, 200, map[string]any{"id": uuidToString(conflict.ID), "workspace_id": uuidToString(conflict.WorkspaceID), "binding_id": uuidToString(conflict.BindingID), "link_id": uuidToString(conflict.LinkID), "patchbay_issue_id": uuidToString(conflict.PatchbayIssueID), "linear_issue_id": conflict.LinearIssueID, "field": conflict.Field, "status": conflict.Status, "resolution": conflict.Resolution.String, "resolved_value": resolved, "resolved_by_id": uuidToString(conflict.ResolvedByID)})
+	writeJSON(w, 200, map[string]any{"id": uuidToString(conflict.ID), "workspace_id": uuidToString(conflict.WorkspaceID), "binding_id": uuidToString(conflict.BindingID), "link_id": uuidToString(conflict.LinkID), "orvilo_issue_id": uuidToString(conflict.OrviloIssueID), "linear_issue_id": conflict.LinearIssueID, "field": conflict.Field, "status": conflict.Status, "resolution": conflict.Resolution.String, "resolved_value": resolved, "resolved_by_id": uuidToString(conflict.ResolvedByID)})
 }
 
 type linearWebhookEvent struct {

@@ -48,7 +48,7 @@ func TestProbeAgentCLIsRequiresDshOrviloProfile(t *testing.T) {
 		want bool
 	}{
 		{name: "profile installed", body: `printf '%s\n' '{"v":1,"type":"probe","runtime":"dsh","protocol_version":1}'`, want: true},
-		{name: "profile missing", body: `printf '%s\n' 'missing patchbay profile'; exit 1`, want: false},
+		{name: "profile missing", body: `printf '%s\n' 'missing orvilo profile'; exit 1`, want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fakeDir := t.TempDir()

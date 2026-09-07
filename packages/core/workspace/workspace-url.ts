@@ -3,7 +3,7 @@
 // deliberately omits `daemon_app_url` for the managed cloud (and for any
 // self-hosted server that has not set ORVILO_APP_URL / FRONTEND_ORIGIN), so
 // this literal must remain the ultimate fallback.
-const BRAND_WORKSPACE_HOST = "patchbay.aspectlylabs.com";
+const BRAND_WORKSPACE_HOST = "orvilo.aspectlylabs.com";
 
 /**
  * Host rendered as the `<host>/<slug>` workspace URL prefix in the

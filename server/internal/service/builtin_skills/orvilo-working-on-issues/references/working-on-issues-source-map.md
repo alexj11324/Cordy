@@ -6,7 +6,7 @@ after the latest `main` merge; the prior skill cited pre-merge lines that have
 since moved (see the "drifted" column). Re-confirm with the verification command
 at the bottom before relying on an exact line.
 
-## `patchbay issue pull-requests` — read PR links from Orvilo
+## `orvilo issue pull-requests` — read PR links from Orvilo
 
 | Behavior | File:line | Drifted from |
 |---|---|---|
@@ -78,7 +78,7 @@ auto-link flag (`workspaceAutoLinkPRsEnabled`, `github.go:1074`).
 
 Every `PREFIX-NUMBER` mention in **title, body, or branch** resolves to an issue
 in the workspace and writes a link row (`LinkIssueToPullRequest`, ~`github.go:762`).
-This is what `patchbay issue pull-requests` later reads back.
+This is what `orvilo issue pull-requests` later reads back.
 
 **Reference-only flag (MUL-3739).** The link row carries a `reference_only`
 boolean (`migrations/127_issue_pull_request_reference_only.up.sql`). The handler
@@ -171,13 +171,13 @@ on those assignments creating their normal queued runs.
 | Stage barrier: notify+wake fire only when the lowest unfinished stage is all-terminal; unstaged set = one implicit stage | `server/internal/handler/issue_child_done.go:231` (`stageBarrierClosed`) |
 | Per-stage summary + next stage for the wake comment | `server/internal/handler/issue_child_done.go:254` (`stageProgressSummary`) |
 | `--stage` on `issue create` / `issue update` | `server/cmd/orvilo/cmd_issue.go:328,350` |
-| `patchbay issue children <id>` (sub-issues grouped by stage) | `server/cmd/orvilo/cmd_issue.go:114,678`; stage `done` counting via `isTerminalChildIssue` (reads `status_category`, MUL-6243); route `GET /api/issues/{id}/children` → `ListChildIssues` |
+| `orvilo issue children <id>` (sub-issues grouped by stage) | `server/cmd/orvilo/cmd_issue.go:114,678`; stage `done` counting via `isTerminalChildIssue` (reads `status_category`, MUL-6243); route `GET /api/issues/{id}/children` → `ListChildIssues` |
 
 Advancement is agent-driven: the server only detects the closed barrier and
 wakes the parent executor. Promoting the next stage's `backlog` sub-issues to
 `todo` is the woken agent's decision, not a server side effect. When the woken
 executor (often a team leader) decides the parent is complete, the system
-comment explicitly asks for `patchbay issue status <parent-id> in_review`. Any
+comment explicitly asks for `orvilo issue status <parent-id> in_review`. Any
 turn may move the status on its own too, judged from what the work changes
 about the issue — there is no executor gate (MUL-6417).
 
@@ -185,8 +185,8 @@ about the issue — there is no executor gate (MUL-6417).
 
 | Behavior | File:line |
 |---|---|
-| `patchbay issue metadata set <issue-id> --key --value [--type]` | `server/cmd/orvilo/cmd_issue_metadata.go:80,109-111` |
-| `patchbay issue metadata delete <issue-id> --key` | `server/cmd/orvilo/cmd_issue_metadata.go:93,113` |
+| `orvilo issue metadata set <issue-id> --key --value [--type]` | `server/cmd/orvilo/cmd_issue_metadata.go:80,109-111` |
+| `orvilo issue metadata delete <issue-id> --key` | `server/cmd/orvilo/cmd_issue_metadata.go:93,113` |
 | API routes (PUT/DELETE `/metadata/{key}`) | `server/cmd/server/router.go:478-479` |
 
 `--value` is JSON-parsed by default (bool/number sniff); `--type` forces
@@ -196,8 +196,8 @@ about the issue — there is no executor gate (MUL-6417).
 
 | Behavior | File:line |
 |---|---|
-| `patchbay property list/get/create/update/archive/unarchive` | `server/cmd/orvilo/cmd_property.go` |
-| `patchbay issue property list/set/unset` (name→id translation) | `server/cmd/orvilo/cmd_property.go` (`encodeIssuePropertyValue`) |
+| `orvilo property list/get/create/update/archive/unarchive` | `server/cmd/orvilo/cmd_property.go` |
+| `orvilo issue property list/set/unset` (name→id translation) | `server/cmd/orvilo/cmd_property.go` (`encodeIssuePropertyValue`) |
 | Definition CRUD, admin gate, agent-actor rejection | `server/internal/handler/property.go` (`requirePropertyAdmin`) |
 | Optional catalog icon field and allowlist validation | `server/internal/handler/property.go` (`PropertyResponse`, `validatePropertyIcon`) |
 | Per-type value validation (self-correcting errors) | `server/internal/handler/property.go` (`validatePropertyValue`) |

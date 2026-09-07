@@ -1,10 +1,10 @@
-name: patchbay-nebula-staging
+name: orvilo-nebula-staging
 services:
   postgres:
     image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_USER: patchbay
-      POSTGRES_DB: patchbay
+      POSTGRES_USER: orvilo
+      POSTGRES_DB: orvilo
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
     volumes: [pgdata:/var/lib/postgresql/data]
     mem_limit: 768m
@@ -12,7 +12,7 @@ services:
     pids_limit: 256
     restart: unless-stopped
     healthcheck:
-      test: [CMD-SHELL, pg_isready -U patchbay -d patchbay]
+      test: [CMD-SHELL, pg_isready -U orvilo -d orvilo]
       interval: 5s
       timeout: 5s
       retries: 12
@@ -27,11 +27,11 @@ services:
       DATABASE_URL: ${STAGING_DATABASE_URL:?required}
       ORVILO_TRUSTED_PROXIES: ${STAGING_TRUSTED_PROXY:?required}
       PORT: '8080'
-      FRONTEND_ORIGIN: https://patchbay-staging.nebula-spaces.com
-      ORVILO_APP_URL: https://patchbay-staging.nebula-spaces.com
-      ORVILO_PUBLIC_URL: https://patchbay-staging-api.nebula-spaces.com
-      CORS_ALLOWED_ORIGINS: https://patchbay-staging.nebula-spaces.com,https://patchbay-staging-accounts.nebula-spaces.com
-      CLERK_AUTHORIZED_PARTIES: https://patchbay-staging.nebula-spaces.com,https://patchbay-staging-accounts.nebula-spaces.com
+      FRONTEND_ORIGIN: https://orvilo-staging.nebula-spaces.com
+      ORVILO_APP_URL: https://orvilo-staging.nebula-spaces.com
+      ORVILO_PUBLIC_URL: https://orvilo-staging-api.nebula-spaces.com
+      CORS_ALLOWED_ORIGINS: https://orvilo-staging.nebula-spaces.com,https://orvilo-staging-accounts.nebula-spaces.com
+      CLERK_AUTHORIZED_PARTIES: https://orvilo-staging.nebula-spaces.com,https://orvilo-staging-accounts.nebula-spaces.com
       COOKIE_DOMAIN: ''
       APP_ENV: staging
       ANALYTICS_DISABLED: 'true'
@@ -51,8 +51,8 @@ services:
       ORVILO_CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?required}
       HOSTNAME: 0.0.0.0
       REMOTE_API_URL: http://backend:8080
-      ORVILO_AUTH_BROKER_ORIGIN: https://patchbay-staging-accounts.nebula-spaces.com
-      NEXT_PUBLIC_ACCOUNTS_URL: https://patchbay-staging-accounts.nebula-spaces.com
+      ORVILO_AUTH_BROKER_ORIGIN: https://orvilo-staging-accounts.nebula-spaces.com
+      NEXT_PUBLIC_ACCOUNTS_URL: https://orvilo-staging-accounts.nebula-spaces.com
     ports: ['127.0.0.1:13111:3000']
     mem_limit: 512m
     cpus: 1
@@ -71,8 +71,8 @@ services:
       CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?required}
       ORVILO_DESKTOP_BROKER_AUTH_TOKEN: ${ORVILO_DESKTOP_BROKER_AUTH_TOKEN:?required}
       ORVILO_ORIGIN_AUTH_TOKEN: ${ORVILO_ORIGIN_AUTH_TOKEN:?required}
-      ORVILO_API_ORIGIN: https://patchbay-staging-api.nebula-spaces.com
-      ORVILO_AUTH_BROKER_ORIGIN: https://patchbay-staging-accounts.nebula-spaces.com
+      ORVILO_API_ORIGIN: https://orvilo-staging-api.nebula-spaces.com
+      ORVILO_AUTH_BROKER_ORIGIN: https://orvilo-staging-accounts.nebula-spaces.com
     ports: ['127.0.0.1:14301:3000']
     mem_limit: 384m
     cpus: 0.5

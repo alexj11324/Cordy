@@ -35,7 +35,7 @@ The **GitHub connection** decides which repositories Orvilo receives PR events f
 |---|---|
 | GitHub integration | Master switch. When off, the three below stop working, but the GitHub App stays connected. |
 | PR sidebar | Shows linked pull requests in issue detail. |
-| Co-authored-by | Adds `Co-authored-by: patchbay-agent <github@aspectlylabs.com>` to commits created by agents. |
+| Co-authored-by | Adds `Co-authored-by: orvilo-agent <github@aspectlylabs.com>` to commits created by agents. |
 | Auto-link PRs | Detects issue identifiers in a PR's branch name, title, and body. |
 | **PR card → CI & mergeability** | For each linked PR, Orvilo fetches an authenticated GitHub API snapshot and mirrors its **CI status** and **mergeability** onto the card (see **What the PR card shows** below). |
 
@@ -113,7 +113,7 @@ Create the App under GitHub's **Developer settings → GitHub Apps** and fill in
 
 | Field | Value |
 |---|---|
-| Homepage URL | Your Orvilo frontend address, e.g. `https://patchbay.example.com` |
+| Homepage URL | Your Orvilo frontend address, e.g. `https://orvilo.example.com` |
 | Callback URL | Leave blank |
 | Setup URL | `https://<api-host>/api/github/setup`, with **Redirect on update** enabled |
 | Webhook URL | `https://<api-host>/api/webhooks/github` |
@@ -142,12 +142,12 @@ This is the **Webhook secret**, not the OAuth Client secret. If the two sides ha
 
 ### 2. Set environment variables
 
-Take the slug from the App's public URL. For example, the slug of `https://github.com/apps/patchbay-acme` is `patchbay-acme`.
+Take the slug from the App's public URL. For example, the slug of `https://github.com/apps/orvilo-acme` is `orvilo-acme`.
 
 ```dotenv
-GITHUB_APP_SLUG=patchbay-acme
+GITHUB_APP_SLUG=orvilo-acme
 GITHUB_WEBHOOK_SECRET=<the webhook secret you entered when creating the App>
-FRONTEND_ORIGIN=https://patchbay.example.com
+FRONTEND_ORIGIN=https://orvilo.example.com
 ```
 
 If either `GITHUB_APP_SLUG` or `GITHUB_WEBHOOK_SECRET` is missing, the connect button is disabled and the webhook endpoint refuses to process events.

@@ -2,7 +2,7 @@ package wecom
 
 // outbound_media_test.go — the last hop for a file an agent produced.
 //
-// `patchbay attachment upload` already bound the file to the assistant message;
+// `orvilo attachment upload` already bound the file to the assistant message;
 // everything downstream of that bind assumed a browser, so a WeCom
 // conversation received the words and nothing else. These drive the whole path
 // through processEvent, because the bug was never in the upload protocol — it

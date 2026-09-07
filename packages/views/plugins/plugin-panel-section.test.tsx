@@ -151,7 +151,7 @@ describe("PluginPanelSection", () => {
     render(<PluginPanelSection issueId="issue-1" />, { wrapper: Wrapper });
 
     const frame = screen.getByTitle("Hello Panel — Hello") as HTMLIFrameElement;
-    const event = new MessageEvent("message", { data: { type: "patchbay:plugin-surface-error" } });
+    const event = new MessageEvent("message", { data: { type: "orvilo:plugin-surface-error" } });
     Object.defineProperty(event, "source", { value: frame.contentWindow, configurable: true });
     act(() => window.dispatchEvent(event));
 
@@ -163,7 +163,7 @@ describe("PluginPanelSection", () => {
     const { rerender } = render(<PluginPanelSection issueId="issue-1" />, { wrapper: Wrapper });
 
     const frame = screen.getByTitle("Hello Panel — Hello") as HTMLIFrameElement;
-    const event = new MessageEvent("message", { data: { type: "patchbay:plugin-surface-error" } });
+    const event = new MessageEvent("message", { data: { type: "orvilo:plugin-surface-error" } });
     Object.defineProperty(event, "source", { value: frame.contentWindow, configurable: true });
     act(() => window.dispatchEvent(event));
     expect(screen.getByText("Hello Panel could not load its interface.")).toBeInTheDocument();
@@ -179,7 +179,7 @@ describe("PluginPanelSection", () => {
 
     const frame = screen.getByTitle("Hello Panel — Hello") as HTMLIFrameElement;
     const originalDocument = frame.getAttribute("srcdoc");
-    const event = new MessageEvent("message", { data: { type: "patchbay:plugin-surface-error" } });
+    const event = new MessageEvent("message", { data: { type: "orvilo:plugin-surface-error" } });
     Object.defineProperty(event, "source", { value: frame.contentWindow, configurable: true });
     act(() => window.dispatchEvent(event));
     expect(screen.getByText("Hello Panel could not load its interface.")).toBeInTheDocument();

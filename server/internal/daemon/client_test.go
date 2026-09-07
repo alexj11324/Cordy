@@ -103,7 +103,7 @@ func TestClient_ResolveRemoteMCPCredentialUsesExplicitDaemonToken(t *testing.T) 
 	defer srv.Close()
 
 	c := NewClient(srv.URL)
-	c.SetToken("pby_owner_pat")
+	c.SetToken("ovy_owner_pat")
 	headers, err := c.ResolveRemoteMCPCredential(context.Background(), "mdt_task_broker", "task-1", "contribution-1")
 	if err != nil {
 		t.Fatalf("ResolveRemoteMCPCredential: %v", err)
@@ -111,7 +111,7 @@ func TestClient_ResolveRemoteMCPCredentialUsesExplicitDaemonToken(t *testing.T) 
 	if got := headers.Get("Authorization"); got != "Bearer upstream" {
 		t.Fatalf("resolved credential = %q", got)
 	}
-	if got := c.Token(); got != "pby_owner_pat" {
+	if got := c.Token(); got != "ovy_owner_pat" {
 		t.Fatalf("client PAT was mutated to %q", got)
 	}
 }

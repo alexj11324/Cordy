@@ -17,15 +17,15 @@ import "../drafts/register-all-drafts";
  * or call `registerDraftCleanup` directly.
  */
 const WORKSPACE_SCOPED_KEYS = [
-  "patchbay_issue_surface_views",
-  "patchbay_issues_view",
-  "patchbay_issues_scope",
-  "patchbay_my_issues_view",
-  "patchbay:chat:selectedAgentId",
-  "patchbay:chat:selectedProjectId",
-  "patchbay:chat:activeSessionId",
-  "patchbay:chat:expanded",
-  "patchbay_navigation",
+  "orvilo_issue_surface_views",
+  "orvilo_issues_view",
+  "orvilo_issues_scope",
+  "orvilo_my_issues_view",
+  "orvilo:chat:selectedAgentId",
+  "orvilo:chat:selectedProjectId",
+  "orvilo:chat:activeSessionId",
+  "orvilo:chat:expanded",
+  "orvilo_navigation",
 ];
 
 /** Remove all workspace-scoped storage entries for the given workspace slug. */

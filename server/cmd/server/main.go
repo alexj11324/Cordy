@@ -55,7 +55,7 @@ func redisClientName(existing, suffix string) string {
 	if existing != "" {
 		return existing + ":" + suffix
 	}
-	return "patchbay-api:" + suffix
+	return "orvilo-api:" + suffix
 }
 
 func channelLeaseRedisURLFromEnv() string {
@@ -345,7 +345,7 @@ func main() {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dbURL = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 
 	startupSettings := dbstartup.SettingsFromEnv()

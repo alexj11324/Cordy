@@ -32,7 +32,7 @@ describe("CallbackPage", () => {
     // doesn't inherit a cap-reached state from a previous run).
     for (let i = window.localStorage.length - 1; i >= 0; i--) {
       const k = window.localStorage.key(i);
-      if (k && k.startsWith("patchbay.source_backfill.dismiss.")) {
+      if (k && k.startsWith("orvilo.source_backfill.dismiss.")) {
         window.localStorage.removeItem(k);
       }
     }
@@ -44,7 +44,7 @@ describe("CallbackPage", () => {
     mockSearchParams.set("code", "test-code");
     mockGoogleLogin.mockResolvedValue({ token: "unused-web-token" });
     mockCompleteDesktopAuthHandoff.mockResolvedValue({
-      callback_protocol: "patchbay",
+      callback_protocol: "orvilo",
       code: "desktop-code",
       state: "desktop-state",
     });
@@ -189,7 +189,7 @@ describe("CallbackPage", () => {
       );
       mockGoogleLogin.mockResolvedValue({ token: "must-not-be-in-uri" });
       mockCompleteDesktopAuthHandoff.mockResolvedValue({
-        callback_protocol: "patchbay",
+        callback_protocol: "orvilo",
         code: "one-time-code",
         state: "desktop-state",
       });
@@ -204,7 +204,7 @@ describe("CallbackPage", () => {
       });
       await waitFor(() => {
         expect(hrefSetter).toHaveBeenCalledWith(
-          "patchbay://auth/callback?code=one-time-code&state=desktop-state",
+          "orvilo://auth/callback?code=one-time-code&state=desktop-state",
         );
       });
       expect(hrefSetter.mock.calls[0]?.[0]).not.toContain("must-not-be-in-uri");

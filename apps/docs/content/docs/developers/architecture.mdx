@@ -17,7 +17,7 @@ Web / Desktop / Mobile / CLI
      local daemon ─── AI coding tools
 ```
 
-For a product-facing explanation, see [How Orvilo works](/how-patchbay-works). This page focuses on how the code is layered.
+For a product-facing explanation, see [How Orvilo works](/how-orvilo-works). This page focuses on how the code is layered.
 
 ## Repository layout
 
@@ -76,7 +76,7 @@ The main entry points are in `server/cmd/`:
 | Entry point | Purpose |
 | --- | --- |
 | `server` | Starts the HTTP API, WebSocket services, scheduler, and integration workers |
-| `patchbay` | CLI and local daemon |
+| `orvilo` | CLI and local daemon |
 | `migrate` | Runs database migrations |
 | `backfill_*` | Data backfill tools for specific releases |
 

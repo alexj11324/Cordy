@@ -76,7 +76,7 @@ func (c *slackSender) send(ctx context.Context, out channel.OutboundMessage, met
 	return channel.SendResult{MessageID: lastTS, MessageIDs: messageIDs}, nil
 }
 
-const slackOutboundMetadataEvent = "patchbay_channel_outbound"
+const slackOutboundMetadataEvent = "orvilo_channel_outbound"
 
 func outboundMetadata(bindingID pgtype.UUID, routeRevision int64, kind string) slack.SlackMetadata {
 	return slack.SlackMetadata{EventType: slackOutboundMetadataEvent, EventPayload: map[string]any{

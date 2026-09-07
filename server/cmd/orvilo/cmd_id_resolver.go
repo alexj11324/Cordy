@@ -172,12 +172,12 @@ func resolveIssueRef(ctx context.Context, client *cli.APIClient, input string) (
 	if _, err := normalizeUUIDPrefix(trimmed); err == nil {
 		return resolvedID{}, fmt.Errorf(
 			"issue ref %q looks like a short UUID prefix; short prefixes are no longer supported for issues. "+
-				"Use the issue key (e.g. MUL-123) shown by `patchbay issue list`, or pass the full UUID (run a list command with --full-id to copy it)",
+				"Use the issue key (e.g. MUL-123) shown by `orvilo issue list`, or pass the full UUID (run a list command with --full-id to copy it)",
 			input,
 		)
 	}
 	return resolvedID{}, fmt.Errorf(
-		"issue ref %q is not a recognized issue reference; use the issue key (e.g. MUL-123) shown by `patchbay issue list`, or pass the full UUID",
+		"issue ref %q is not a recognized issue reference; use the issue key (e.g. MUL-123) shown by `orvilo issue list`, or pass the full UUID",
 		input,
 	)
 }
@@ -290,7 +290,7 @@ func resolveTaskRunID(ctx context.Context, client *cli.APIClient, issueID, input
 		return resolvedID{ID: trimmed, Display: trimmed}, nil
 	}
 	if strings.TrimSpace(issueID) == "" {
-		return resolvedID{}, fmt.Errorf("short task run prefixes require --issue <issue-id>; pass a full task UUID or run `patchbay issue runs <issue-id> --full-id`")
+		return resolvedID{}, fmt.Errorf("short task run prefixes require --issue <issue-id>; pass a full task UUID or run `orvilo issue runs <issue-id> --full-id`")
 	}
 	fetch := func(ctx context.Context, client *cli.APIClient) ([]idCandidate, error) {
 		return fetchTaskRunCandidatesForIssue(ctx, client, issueID)

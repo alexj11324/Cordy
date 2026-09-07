@@ -27,7 +27,7 @@ func newResolveOriginatorPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dbURL = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -121,14 +121,14 @@ func seedOriginatorFanout(t *testing.T, pool *pgxpool.Pool) (memberCommentID, ag
 
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email)
-		VALUES ('Resolve Originator User', 'resolve-originator-fanout@patchbay.test')
+		VALUES ('Resolve Originator User', 'resolve-originator-fanout@orvilo.test')
 		RETURNING id
 	`).Scan(&userIDStr); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 	t.Cleanup(func() {
 		pool.Exec(context.Background(),
-			`DELETE FROM "user" WHERE email = 'resolve-originator-fanout@patchbay.test'`)
+			`DELETE FROM "user" WHERE email = 'resolve-originator-fanout@orvilo.test'`)
 	})
 
 	if err := pool.QueryRow(ctx, `
@@ -428,7 +428,7 @@ func TestEnqueueTaskForIssueStoresRuntimeMCPOverlayInQueuedRow(t *testing.T) {
 	ctx := context.Background()
 	q := db.New(pool)
 	suffix := time.Now().UnixNano()
-	email := fmt.Sprintf("runtime-overlay-insert-%d@patchbay.test", suffix)
+	email := fmt.Sprintf("runtime-overlay-insert-%d@orvilo.test", suffix)
 	workspaceSlug := fmt.Sprintf("runtime-overlay-insert-%d", suffix)
 
 	var userIDStr, workspaceIDStr, runtimeIDStr, agentIDStr, issueIDStr string

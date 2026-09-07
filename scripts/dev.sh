@@ -69,8 +69,8 @@ runtime_suffix=""
 if [ "$(node -p 'process.platform')" = "win32" ]; then
   runtime_suffix=".exe"
 fi
-dev_backend="$REPO_ROOT/.patchbay-dev/bin/server${runtime_suffix}"
-dev_migrate="$REPO_ROOT/.patchbay-dev/bin/migrate${runtime_suffix}"
+dev_backend="$REPO_ROOT/.orvilo-dev/bin/server${runtime_suffix}"
+dev_migrate="$REPO_ROOT/.orvilo-dev/bin/migrate${runtime_suffix}"
 
 bash scripts/ensure-postgres.sh "$ENV_FILE"
 

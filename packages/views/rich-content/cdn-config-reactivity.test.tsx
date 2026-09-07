@@ -77,7 +77,7 @@ vi.mock("../editor/attachment", () => ({
 
 import { RichContent } from "./rich-content";
 
-const CDN_DOMAIN = "patchbay-static.example.com";
+const CDN_DOMAIN = "orvilo-static.example.com";
 const FILE_URL = `https://${CDN_DOMAIN}/workspaces/w1/files/report.pdf`;
 // Legacy file-card syntax is a link ON ITS OWN LINE (FILE_LINK_LINE is
 // anchored); an inline link is deliberately not a card.

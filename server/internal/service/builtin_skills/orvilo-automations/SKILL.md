@@ -2,7 +2,7 @@
 name: orvilo-automations
 description: "Use when creating, updating, inspecting, triggering, or debugging an Orvilo automation (scheduled, GitHub/Slack/Linear, generic webhook, or manual)."
 user-invocable: false
-allowed-tools: Bash(patchbay *)
+allowed-tools: Bash(orvilo *)
 ---
 
 # Orvilo Automations
@@ -12,9 +12,9 @@ allowed-tools: Bash(patchbay *)
 Automations are durable automations. Read before mutating:
 
 ```bash
-patchbay automation list --output json
-patchbay automation get <automation-id> --output json
-patchbay automation runs <automation-id> --output json
+orvilo automation list --output json
+orvilo automation get <automation-id> --output json
+orvilo automation runs <automation-id> --output json
 ```
 
 Do not run `trigger`, `delete`, `trigger-delete`, or `trigger-rotate-url` to test. Those are real side effects.
@@ -36,17 +36,17 @@ Execution modes:
 ## CLI
 
 ```bash
-patchbay automation list --output json
-patchbay automation get <automation-id> --output json
-patchbay automation create --title "<title>" --description "<task prompt>" --agent <agent-name-or-id> --mode create_issue|run_only --output json
-patchbay automation update <automation-id> --status active|paused --output json
-patchbay automation runs <automation-id> --output json
-patchbay automation trigger-add <automation-id> --kind schedule --cron "0 9 * * *" --timezone Asia/Shanghai --output json
-patchbay automation trigger-add <automation-id> --kind webhook --preset github.pull_request.opened --output json
-patchbay automation trigger-add <automation-id> --kind webhook --preset slack.message --output json
-patchbay automation trigger-add <automation-id> --kind webhook --preset webhook.received --label "ci" --output json
-patchbay automation trigger <automation-id> --output json
-patchbay automation trigger-rotate-url <automation-id> <trigger-id> --yes --output json
+orvilo automation list --output json
+orvilo automation get <automation-id> --output json
+orvilo automation create --title "<title>" --description "<task prompt>" --agent <agent-name-or-id> --mode create_issue|run_only --output json
+orvilo automation update <automation-id> --status active|paused --output json
+orvilo automation runs <automation-id> --output json
+orvilo automation trigger-add <automation-id> --kind schedule --cron "0 9 * * *" --timezone Asia/Shanghai --output json
+orvilo automation trigger-add <automation-id> --kind webhook --preset github.pull_request.opened --output json
+orvilo automation trigger-add <automation-id> --kind webhook --preset slack.message --output json
+orvilo automation trigger-add <automation-id> --kind webhook --preset webhook.received --label "ci" --output json
+orvilo automation trigger <automation-id> --output json
+orvilo automation trigger-rotate-url <automation-id> <trigger-id> --yes --output json
 ```
 
 Use `trigger` only when the user explicitly asks for a manual run. Use `trigger-rotate-url` only when rotating a **generic** webhook URL (`preset=webhook.received` or a legacy minted token); native GitHub/Slack/Linear triggers have no public URL. The old URL stops being valid.
@@ -63,10 +63,10 @@ Operator secrets for those platform apps are **not** in this skill. The checklis
 
 For "why didn't it run":
 
-1. `patchbay automation get <id> --output json` — status, mode, executor, triggers.
-2. `patchbay automation runs <id> --output json` — run status and failure reason.
-3. If assigned to a team, inspect the team: `patchbay team get <team-id> --output json`; execution goes to the leader.
-4. Inspect the target agent/runtime: `patchbay agent get <agent-id> --output json` and `patchbay runtime list --output json`.
+1. `orvilo automation get <id> --output json` — status, mode, executor, triggers.
+2. `orvilo automation runs <id> --output json` — run status and failure reason.
+3. If assigned to a team, inspect the team: `orvilo team get <team-id> --output json`; execution goes to the leader.
+4. Inspect the target agent/runtime: `orvilo agent get <agent-id> --output json` and `orvilo runtime list --output json`.
 5. For webhooks, inspect delivery status: `queued` means the worker has not completed dispatch; `failed` carries the worker error. A provider retry with the same `X-GitHub-Delivery` / `Idempotency-Key` reuses the original delivery.
 6. For `create_issue`, inspect the created issue if the run records one.
 

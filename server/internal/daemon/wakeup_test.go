@@ -38,9 +38,9 @@ func TestTaskWakeupURL(t *testing.T) {
 		},
 		{
 			name:       "base path",
-			baseURL:    "https://api.example.com/patchbay",
+			baseURL:    "https://api.example.com/orvilo",
 			runtimeIDs: []string{"runtime-1"},
-			want:       "wss://api.example.com/patchbay/api/daemon/ws?runtime_ids=runtime-1",
+			want:       "wss://api.example.com/orvilo/api/daemon/ws?runtime_ids=runtime-1",
 		},
 		{
 			name:       "account-only connection",

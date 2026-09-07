@@ -69,7 +69,7 @@ func (b *antigravityBackend) Execute(ctx context.Context, prompt string, opts Ex
 	timeout := opts.Timeout
 	runCtx, cancel := runContext(ctx, timeout)
 
-	logFile, err := os.CreateTemp("", "patchbay-agy-log-*.log")
+	logFile, err := os.CreateTemp("", "orvilo-agy-log-*.log")
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("create agy log file: %w", err)

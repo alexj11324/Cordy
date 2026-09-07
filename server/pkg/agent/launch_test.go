@@ -274,7 +274,7 @@ func TestLogAgentCommandRedactsTextAndJSON(t *testing.T) {
 
 			var buf bytes.Buffer
 			cfg := Config{Logger: slog.New(tc.handler(&buf)), provider: "codex"}
-			cmd := &exec.Cmd{Path: "/opt/patchbay/bin/codex", Args: append([]string{"codex"}, args...)}
+			cmd := &exec.Cmd{Path: "/opt/orvilo/bin/codex", Args: append([]string{"codex"}, args...)}
 			cfg.logAgentCommandWithPrompt(cmd, newAgentCommandLogArgs(args), 123)
 
 			output := buf.String()
@@ -284,7 +284,7 @@ func TestLogAgentCommandRedactsTextAndJSON(t *testing.T) {
 				}
 			}
 			for _, diagnostic := range []string{
-				"agent command", "provider", "codex", "/opt/patchbay/bin/codex",
+				"agent command", "provider", "codex", "/opt/orvilo/bin/codex",
 				"--api-key", "--token", "--header", "-c", "--future-secret",
 				redactedAgentCommandArg, "arg_count", "prompt_bytes",
 			} {

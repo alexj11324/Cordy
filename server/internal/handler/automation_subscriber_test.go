@@ -217,7 +217,7 @@ func TestAutomationSubscriberSave_LosesToConcurrentRevoke(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			targetUserID := createPlainMember(t, fmt.Sprintf("automation-revoke-race-%s-%d@patchbay.ai", tc.name, time.Now().UnixNano()))
+			targetUserID := createPlainMember(t, fmt.Sprintf("automation-revoke-race-%s-%d@orvilo.ai", tc.name, time.Now().UnixNano()))
 			run := tc.prepare(t, targetUserID)
 
 			revokeTx, err := testPool.Begin(ctx)
@@ -532,7 +532,7 @@ func TestUpdateAutomationPreservesSubscribersWhenOmitted(t *testing.T) {
 // row without weakening create/update validation for arbitrary foreign ids.
 func TestAutomationDepartedSubscriberReadRepair(t *testing.T) {
 	ctx := context.Background()
-	departedUserID := createPlainMember(t, fmt.Sprintf("automation-departed-%d@patchbay.ai", time.Now().UnixNano()))
+	departedUserID := createPlainMember(t, fmt.Sprintf("automation-departed-%d@orvilo.ai", time.Now().UnixNano()))
 
 	var agentID string
 	if err := testPool.QueryRow(ctx, `SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&agentID); err != nil {

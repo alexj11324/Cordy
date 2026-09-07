@@ -9,7 +9,7 @@ const TOKEN = "single-use-launch-proof";
 
 function connectMessage(source: Window | null, port: MessagePort, challenge = TOKEN, version = 2) {
   const event = new MessageEvent("message", {
-    data: { type: "patchbay:plugin-bridge-init", version, challenge },
+    data: { type: "orvilo:plugin-bridge-init", version, challenge },
   });
   Object.defineProperty(event, "source", { value: source, configurable: true });
   Object.defineProperty(event, "ports", { value: [port], configurable: true });

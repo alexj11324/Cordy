@@ -32,9 +32,9 @@ var workspaceCreateCmd = &cobra.Command{
 		"--slug are required; the slug is permanent (lowercase letters, digits, " +
 		"and hyphens) and cannot be changed after creation.\n\n" +
 		"Creating a workspace does NOT change the current default workspace for " +
-		"this profile — run 'patchbay workspace switch <slug>' afterward if you " +
+		"this profile — run 'orvilo workspace switch <slug>' afterward if you " +
 		"want subsequent commands to target the new workspace.",
-	Example: "  patchbay workspace create --name \"Support Team\" --slug support-team --issue-prefix SUP",
+	Example: "  orvilo workspace create --name \"Support Team\" --slug support-team --issue-prefix SUP",
 	Args:    cobra.NoArgs,
 	RunE:    runWorkspaceCreate,
 }
@@ -93,7 +93,7 @@ var workspaceSwitchCmd = &cobra.Command{
 		"this workspace.\n\n" +
 		"Resolution priority (highest to lowest): --workspace-id flag, " +
 		"ORVILO_WORKSPACE_ID env, profile default (set by this command).\n\n" +
-		"For low-level use, 'patchbay config set workspace_id <id>' writes the " +
+		"For low-level use, 'orvilo config set workspace_id <id>' writes the " +
 		"same setting without verification.",
 	Args: exactArgs(1),
 	RunE: runWorkspaceSwitch,
@@ -104,7 +104,7 @@ var workspaceMcpCmd = &cobra.Command{
 	Short: "Manage the workspace's MCP server library",
 	Long: "Manages the workspace's library of MCP servers. A server added here " +
 		"is given to NO agent: it reaches an agent only when someone assigns it " +
-		"to that agent ('patchbay agent mcp add'), which also carries a per-agent " +
+		"to that agent ('orvilo agent mcp add'), which also carries a per-agent " +
 		"on/off toggle. Same shape as workspace skills.\n\n" +
 		"The stored configuration is write-only: reads return the server names " +
 		"and transports, never the urls, commands, headers, or env.",
@@ -125,14 +125,14 @@ var workspaceMcpAddCmd = &cobra.Command{
 	Use:   "add <server-name> [workspace-id|slug|prefix]",
 	Short: "Add an MCP server to the workspace library (admin/owner only)",
 	Long: "Adds an MCP server to the workspace library. It is assigned to no " +
-		"agent — use 'patchbay agent mcp add <agent-id> <server-id>' to give it to " +
+		"agent — use 'orvilo agent mcp add <agent-id> <server-id>' to give it to " +
 		"one.\n\n" +
 		"The payload is a single server entry, the same object shape that sits " +
 		"under a name in \"mcpServers\". Prefer --server-config-file or " +
 		"--server-config-stdin: MCP entries routinely carry API tokens, and an " +
 		"inline value ends up in shell history and 'ps'.",
-	Example: "  patchbay workspace mcp add linear --server-config-file ./linear.json\n" +
-		"  echo '{\"url\":\"https://mcp.example\"}' | patchbay workspace mcp add example --server-config-stdin",
+	Example: "  orvilo workspace mcp add linear --server-config-file ./linear.json\n" +
+		"  echo '{\"url\":\"https://mcp.example\"}' | orvilo workspace mcp add example --server-config-stdin",
 	Args: cobra.RangeArgs(1, 2),
 	RunE: runWorkspaceMcpAdd,
 }
@@ -226,7 +226,7 @@ func fetchWorkspaces(ctx context.Context, cmd *cobra.Command) ([]workspaceSummar
 	serverURL := resolveServerURL(cmd)
 	token := resolveToken(cmd)
 	if token == "" {
-		return nil, fmt.Errorf("not authenticated: run 'patchbay login' first%s", daemonPortOnlyContextHint())
+		return nil, fmt.Errorf("not authenticated: run 'orvilo login' first%s", daemonPortOnlyContextHint())
 	}
 
 	client := cli.NewAPIClient(serverURL, "", token)
@@ -271,9 +271,9 @@ func runWorkspaceList(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if currentID != "" {
-		fmt.Fprintln(os.Stderr, "\n* = current default workspace (use 'patchbay workspace switch <id|slug|prefix>' to change)")
+		fmt.Fprintln(os.Stderr, "\n* = current default workspace (use 'orvilo workspace switch <id|slug|prefix>' to change)")
 	} else {
-		fmt.Fprintln(os.Stderr, "\nNo default workspace set. Use 'patchbay workspace switch <id|slug|prefix>' to pick one.")
+		fmt.Fprintln(os.Stderr, "\nNo default workspace set. Use 'orvilo workspace switch <id|slug|prefix>' to pick one.")
 	}
 	fmt.Fprintln(os.Stderr, "Tip: pass the ID column, SLUG, or full UUID (--full-id) to 'workspace get/update/switch'.")
 	return nil
@@ -397,7 +397,7 @@ func resolveWorkspaceByIDOrSlug(workspaces []workspaceSummary, target string) (w
 		}
 	}
 
-	return workspaceSummary{}, fmt.Errorf("workspace %q not found or you do not have access; run 'patchbay workspace list' to see options", target)
+	return workspaceSummary{}, fmt.Errorf("workspace %q not found or you do not have access; run 'orvilo workspace list' to see options", target)
 }
 
 func ambiguousWorkspacePrefixError(input string, matches []workspaceSummary) error {

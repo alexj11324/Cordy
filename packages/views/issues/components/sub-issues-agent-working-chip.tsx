@@ -20,7 +20,7 @@ interface SubIssuesAgentWorkingChipProps {
 
 /**
  * Aggregate "N agents working" chip for the sub-issues header in issue
- * detail (patchbay#5825). The per-row IssueAgentActivityIndicator answers
+ * detail (orvilo#5825). The per-row IssueAgentActivityIndicator answers
  * "which sub-issue is being worked on"; this chip answers "how many agents
  * are on this parent's children right now" without scanning the rows — and
  * keeps that signal visible while the list is collapsed.

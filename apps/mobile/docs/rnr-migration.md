@@ -37,7 +37,7 @@ We adopt RNR with the following commitments. The first two are **principles** th
 
 ### 3.1 Defaults first
 
-When using any RNR component, accept its default variant, default size, default spacing, default palette. Don't add wrapper layers, "improved" defaults, or `variant="patchbayCustom"` styles unless a concrete product need demands it. The hand-written legacy exists precisely because someone reached for a "slightly improved" version of a standard primitive — recreating that pattern with RNR underneath defeats the migration.
+When using any RNR component, accept its default variant, default size, default spacing, default palette. Don't add wrapper layers, "improved" defaults, or `variant="orviloCustom"` styles unless a concrete product need demands it. The hand-written legacy exists precisely because someone reached for a "slightly improved" version of a standard primitive — recreating that pattern with RNR underneath defeats the migration.
 
 Concrete consequences:
 - Phase 1 uses shadcn's default neutral palette as-is (light + dark). Orvilo's existing custom tokens (`brand`, `success`, `warning`, `info`, `priority`, `code-surface`) are appended but **dark-mode values are not authored ahead of demonstrated need** — they copy their light values until a screen using them actually breaks in dark mode.

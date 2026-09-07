@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server daemon cli patchbay build test migrate-up migrate-down sqlc seed-dev clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop up down status list destroy gc env-exec dev-login api-dev web-dev desktop-dev
+.PHONY: help makehelp dev server daemon cli orvilo build test migrate-up migrate-down sqlc seed-dev clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop up down status list destroy gc env-exec dev-login api-dev web-dev desktop-dev
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -8,9 +8,9 @@ ifneq ($(wildcard $(ENV_FILE)),)
 include $(ENV_FILE)
 endif
 
-POSTGRES_DB ?= patchbay
-POSTGRES_USER ?= patchbay
-POSTGRES_PASSWORD ?= patchbay
+POSTGRES_DB ?= orvilo
+POSTGRES_USER ?= orvilo
+POSTGRES_PASSWORD ?= orvilo
 POSTGRES_PORT ?= 5432
 PORT := $(or $(BACKEND_PORT),$(API_PORT),$(SERVER_PORT),$(PORT),8080)
 ifeq ($(origin ORVILO_PUBLIC_URL), undefined)
@@ -322,12 +322,12 @@ server: ## Run only the Go server for the current checkout
 	cd server && go run ./cmd/server
 
 daemon: ## Restart the local agent daemon using the CLI's stored auth/session
-	@$(MAKE) patchbay ORVILO_ARGS="daemon restart --profile local"
+	@$(MAKE) orvilo ORVILO_ARGS="daemon restart --profile local"
 
-cli: ## Run the patchbay CLI with ARGS or ORVILO_ARGS from source
-	@$(MAKE) patchbay ORVILO_ARGS="$(ORVILO_ARGS)"
+cli: ## Run the orvilo CLI with ARGS or ORVILO_ARGS from source
+	@$(MAKE) orvilo ORVILO_ARGS="$(ORVILO_ARGS)"
 
-patchbay: ## Run the patchbay CLI entrypoint directly from the Go source tree
+orvilo: ## Run the orvilo CLI entrypoint directly from the Go source tree
 	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/orvilo $(ORVILO_ARGS)
 
 VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)
@@ -347,7 +347,7 @@ DATE    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 build: EXE = $(if $(filter windows,$(or $(GOOS),$(shell go env GOOS))),.exe,)
 build: ## Build the server, CLI, and migrate binaries into server/bin
 	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o bin/server$(EXE) ./cmd/server
-	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/patchbay$(EXE) ./cmd/orvilo
+	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/orvilo$(EXE) ./cmd/orvilo
 	cd server && go build -o bin/migrate$(EXE) ./cmd/migrate
 
 test: ## Run Go tests after ensuring the target DB exists and migrations are applied

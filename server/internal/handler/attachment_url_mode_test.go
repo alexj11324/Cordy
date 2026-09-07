@@ -190,7 +190,7 @@ func TestAttachmentToResponse_StableModeIsNoOpWithoutSigner(t *testing.T) {
 
 // TestGetAttachmentByID_IgnoresStableCapability is the load-bearing carve-out.
 // Stable-mode callers exchange the stable path for a loadable URL here —
-// `patchbay attachment download <id>` reads download_url off this endpoint — so
+// `orvilo attachment download <id>` reads download_url off this endpoint — so
 // honoring the capability would break the flow that makes stable mode safe.
 func TestGetAttachmentByID_IgnoresStableCapability(t *testing.T) {
 	withCloudFrontSigner(t)

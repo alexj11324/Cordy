@@ -31,20 +31,20 @@ Orvilo Desktop을 사용하면 앱이 데몬을 자동으로 시작하므로 별
 Web, 원격 컴퓨터, 화면 없는 환경에서는 먼저 [Orvilo CLI를 설치](/cli)한 뒤 다음을 실행합니다.
 
 ```bash
-patchbay daemon start
+orvilo daemon start
 ```
 
 데몬은 기본적으로 백그라운드에서 실행됩니다. 자주 사용하는 명령은 다음과 같습니다.
 
 | 명령 | 역할 |
 | --- | --- |
-| `patchbay daemon status` | 데몬과 연결 상태 확인 |
-| `patchbay daemon logs -f` | 로그 계속 보기 |
-| `patchbay daemon restart` | 데몬을 다시 시작하고 로컬 도구 다시 감지 |
-| `patchbay daemon stop` | 데몬 중지 |
-| `patchbay daemon start --foreground` | 디버깅을 위해 현재 터미널에서 실행 |
+| `orvilo daemon status` | 데몬과 연결 상태 확인 |
+| `orvilo daemon logs -f` | 로그 계속 보기 |
+| `orvilo daemon restart` | 데몬을 다시 시작하고 로컬 도구 다시 감지 |
+| `orvilo daemon stop` | 데몬 중지 |
+| `orvilo daemon start --foreground` | 디버깅을 위해 현재 터미널에서 실행 |
 
-작업 작업 디렉터리를 다른 디스크에 두려면 `patchbay config set workspaces_root <path>`로 현재 profile의 루트를 저장하거나 `daemon start` 또는 `daemon restart`에 `--workspaces-root <path>`를 전달합니다. flag는 `ORVILO_WORKSPACES_ROOT`보다 우선하고, 환경 변수는 profile 설정보다 우선합니다. 루트를 변경해도 기존 작업 디렉터리는 이동되지 않습니다.
+작업 작업 디렉터리를 다른 디스크에 두려면 `orvilo config set workspaces_root <path>`로 현재 profile의 루트를 저장하거나 `daemon start` 또는 `daemon restart`에 `--workspaces-root <path>`를 전달합니다. flag는 `ORVILO_WORKSPACES_ROOT`보다 우선하고, 환경 변수는 profile 설정보다 우선합니다. 루트를 변경해도 기존 작업 디렉터리는 이동되지 않습니다.
 
 시작할 때 데몬은 `PATH`에서 지원되는 AI 코딩 도구를 감지하고 사용자가 연결할 권한이 있는 워크스페이스에 런타임을 등록합니다. 도구를 방금 설치하거나 로그인했다면 데몬을 다시 시작해 다시 감지할 수 있습니다.
 
@@ -101,13 +101,13 @@ patchbay daemon start
 Desktop이 시작한 데몬에서 터미널에서는 실행되는 명령을 찾지 못한다면 현재 컴퓨터에 절대 경로를 설정할 수 있습니다.
 
 ```bash
-patchbay runtime profile set-path <profile-id> --path /absolute/path/to/command
+orvilo runtime profile set-path <profile-id> --path /absolute/path/to/command
 ```
 
 경로 덮어쓰기를 제거하려면 다음을 실행합니다.
 
 ```bash
-patchbay runtime profile unset-path <profile-id>
+orvilo runtime profile unset-path <profile-id>
 ```
 
 설정 변경은 이후 가져가는 작업에만 적용됩니다. 설정을 삭제하기 전에 해당 런타임에 계속 연결된 활성 에이전트를 먼저 처리해야 합니다. 특정 컴퓨터의 런타임 인스턴스만 삭제해도 설정은 삭제되지 않으며 실행 중인 데몬이 다시 등록합니다.
@@ -116,11 +116,11 @@ patchbay runtime profile unset-path <profile-id>
 
 다음 순서로 확인하세요.
 
-1. `patchbay daemon status`를 실행해 데몬이 시작되었는지 확인합니다.
-2. `patchbay daemon logs -f`를 실행해 로그인, 네트워크, 도구 감지 오류를 확인합니다.
+1. `orvilo daemon status`를 실행해 데몬이 시작되었는지 확인합니다.
+2. `orvilo daemon logs -f`를 실행해 로그인, 네트워크, 도구 감지 오류를 확인합니다.
 3. 같은 실행 환경에서 `command -v <도구 명령>`을 실행해 데몬이 도구를 찾을 수 있는지 확인합니다.
 4. Orvilo의 **런타임** 페이지를 열고 대상 컴퓨터와 해당 AI 코딩 도구가 온라인으로 표시되는지 확인합니다.
-5. 도구를 방금 설치했거나 경로 또는 설정을 변경했다면 `patchbay daemon restart`를 실행합니다.
+5. 도구를 방금 설치했거나 경로 또는 설정을 변경했다면 `orvilo daemon restart`를 실행합니다.
 
 그래도 해결되지 않으면 [문제 해결](/troubleshooting)을 참고하세요.
 

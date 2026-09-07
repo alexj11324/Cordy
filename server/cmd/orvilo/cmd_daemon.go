@@ -77,7 +77,7 @@ var daemonDiskUsageCmd = &cobra.Command{
 		"Default view is per-task, sorted by size descending. --by-workspace switches to a per-workspace summary;\n" +
 		"--top N keeps only the largest N entries.\n\n" +
 		"By default only the current profile's root is scanned. --all-profiles aggregates across every workspace\n" +
-		"root — the default root plus each ~/.patchbay/profiles/* root, including the Desktop app's dedicated\n" +
+		"root — the default root plus each ~/.orvilo/profiles/* root, including the Desktop app's dedicated\n" +
 		"`desktop-<host>` root — and prints a per-root breakdown with a combined grand total. In that mode --top\n" +
 		"applies within each root and --workspaces-root is not allowed.\n\n" +
 		"Bytes are split into total and the artifact-cleanable subset (node_modules, .next, .turbo by default,\n" +
@@ -106,7 +106,7 @@ func init() {
 	f.Int("max-concurrent-tasks", 0, "Max tasks running in parallel (env: ORVILO_DAEMON_MAX_CONCURRENT_TASKS)")
 	f.Bool("no-auto-update", false, "Disable periodic CLI self-update (env: ORVILO_DAEMON_AUTO_UPDATE=false)")
 	f.Duration("auto-update-interval", 0, "How often to poll GitHub for a newer release (env: ORVILO_DAEMON_AUTO_UPDATE_INTERVAL)")
-	f.Bool("no-auto-reload", false, "Disable restarting when the patchbay binary on disk changes version (env: ORVILO_DAEMON_AUTO_RELOAD=false)")
+	f.Bool("no-auto-reload", false, "Disable restarting when the orvilo binary on disk changes version (env: ORVILO_DAEMON_AUTO_RELOAD=false)")
 
 	daemonLogsCmd.Flags().BoolP("follow", "f", false, "Follow log output")
 	daemonLogsCmd.Flags().IntP("lines", "n", 50, "Number of lines to show")
@@ -128,7 +128,7 @@ func init() {
 	rf.Int("max-concurrent-tasks", 0, "Max tasks running in parallel (env: ORVILO_DAEMON_MAX_CONCURRENT_TASKS)")
 	rf.Bool("no-auto-update", false, "Disable periodic CLI self-update (env: ORVILO_DAEMON_AUTO_UPDATE=false)")
 	rf.Duration("auto-update-interval", 0, "How often to poll GitHub for a newer release (env: ORVILO_DAEMON_AUTO_UPDATE_INTERVAL)")
-	rf.Bool("no-auto-reload", false, "Disable restarting when the patchbay binary on disk changes version (env: ORVILO_DAEMON_AUTO_RELOAD=false)")
+	rf.Bool("no-auto-reload", false, "Disable restarting when the orvilo binary on disk changes version (env: ORVILO_DAEMON_AUTO_RELOAD=false)")
 
 	df := daemonDiskUsageCmd.Flags()
 	df.Bool("by-workspace", false, "Aggregate output by workspace instead of by task")
@@ -136,7 +136,7 @@ func init() {
 	df.Int("top", 0, "Keep only the largest N entries (per root in --all-profiles mode)")
 	df.String("output", "table", "Output format: table or json")
 	df.String("workspaces-root", "", "Override the workspaces root path (default: same as the daemon)")
-	df.Bool("all-profiles", false, "Scan every workspace root (default root + all ~/.patchbay/profiles/* roots, incl. the Desktop app's) and report a combined total")
+	df.Bool("all-profiles", false, "Scan every workspace root (default root + all ~/.orvilo/profiles/* roots, incl. the Desktop app's) and report a combined total")
 	daemonProbeRuntimesCmd.Flags().Bool("local", false, "Probe without reading an Orvilo CLI profile")
 
 	daemonCmd.AddCommand(daemonStartCmd)
@@ -190,7 +190,7 @@ func daemonRuntimeProbeFromAgents(agents map[string]daemon.AgentEntry) daemonRun
 }
 
 // daemonDirForProfile returns the state directory for the given profile.
-// Empty profile → ~/.patchbay/, named profile → ~/.patchbay/profiles/<name>/.
+// Empty profile → ~/.orvilo/, named profile → ~/.orvilo/profiles/<name>/.
 func daemonDirForProfile(profile string) string {
 	dir, err := cli.ProfileDir(profile)
 	if err != nil {
@@ -383,7 +383,7 @@ func daemonIdentityMismatch(health map[string]any, profile string, port int) err
 }
 
 // unknownProfileError reports an explicitly named --profile that has no
-// directory under ~/.patchbay/profiles. It carries the known profile names so
+// directory under ~/.orvilo/profiles. It carries the known profile names so
 // both the text and JSON renderings can list them without re-reading the disk.
 type unknownProfileError struct {
 	Profile string
@@ -394,7 +394,7 @@ func (e *unknownProfileError) Error() string {
 	if len(e.Known) == 0 {
 		// The command is left unquoted so the shell-quoted profile name below
 		// stays the only quoting in the line and the hint pastes cleanly.
-		return fmt.Sprintf("unknown profile %q: no named profiles exist yet.\nCreate one with: patchbay login --profile %s", e.Profile, shellQuoteArg(e.Profile))
+		return fmt.Sprintf("unknown profile %q: no named profiles exist yet.\nCreate one with: orvilo login --profile %s", e.Profile, shellQuoteArg(e.Profile))
 	}
 	return fmt.Sprintf("unknown profile %q\nKnown profiles: %s", e.Profile, strings.Join(e.Known, ", "))
 }
@@ -422,8 +422,8 @@ const profileConfigFileName = "config.json"
 //
 // The name is resolved through the same path logic the config layer uses
 // rather than matched against a flat directory listing, because a profile name
-// may contain separators: `patchbay --profile team/dev config set ...` creates
-// ~/.patchbay/profiles/team/dev. Matching against top-level entries would
+// may contain separators: `orvilo --profile team/dev config set ...` creates
+// ~/.orvilo/profiles/team/dev. Matching against top-level entries would
 // reject that profile while offering its parent "team" as a suggestion.
 func profileExists(profile string) (bool, error) {
 	dir, err := cli.ProfileDir(profile)
@@ -492,7 +492,7 @@ func knownProfiles() ([]string, error) {
 // port (#6694). Failing loudly with the known names turns that dead end into a
 // one-glance fix.
 //
-// The default profile is never validated: it owns ~/.patchbay directly, has no
+// The default profile is never validated: it owns ~/.orvilo directly, has no
 // entry under profiles/, and is always legitimate.
 //
 // Callers must invoke this AFTER their daemon-managed-task guard
@@ -526,7 +526,7 @@ func requireKnownProfile(profile string) error {
 // the test binary itself, which ignores the daemon args and re-runs the suite.
 var daemonExecutable = selfexec.Resolve
 
-// requireDaemonAuth fails fast when the user never ran `patchbay login`. The
+// requireDaemonAuth fails fast when the user never ran `orvilo login`. The
 // daemon child performs the same check (resolveAuth) and dies immediately,
 // but the background parent can't see that exit — it would poll the health
 // port for the full 45s readiness window and then print a vague "check logs"
@@ -539,9 +539,9 @@ func requireDaemonAuth(profile string) error {
 		return fmt.Errorf("load CLI config: %w", err)
 	}
 	if cfg.Token == "" {
-		loginHint := "patchbay login"
+		loginHint := "orvilo login"
 		if profile != "" {
-			loginHint = fmt.Sprintf("patchbay login --profile %s", profile)
+			loginHint = fmt.Sprintf("orvilo login --profile %s", profile)
 		}
 		return fmt.Errorf("you are not logged in. Run '%s' first, then start the daemon", loginHint)
 	}
@@ -758,7 +758,7 @@ func daemonStartupFailureError(logs daemonStartupLogs, waitErr error, profile, s
 	crashLines := readLogTailSince(logs.errLogPath, logs.errLogOffset, 40)
 	joined := strings.Join(append(append([]string{}, lines...), crashLines...), "\n")
 
-	loginHint := "patchbay login"
+	loginHint := "orvilo login"
 	if profile != "" {
 		loginHint += " --profile " + profile
 	}
@@ -767,7 +767,7 @@ func daemonStartupFailureError(logs daemonStartupLogs, waitErr error, profile, s
 	case strings.Contains(joined, "auth token rejected") ||
 		strings.Contains(joined, "returned 401") ||
 		strings.Contains(joined, "not authenticated"):
-		return fmt.Errorf("daemon failed to start: the server rejected your login token (it may have expired or been revoked).\nRun '%s' to sign in again, then rerun 'patchbay daemon start'.\nFull log: %s", loginHint, logs.logPath)
+		return fmt.Errorf("daemon failed to start: the server rejected your login token (it may have expired or been revoked).\nRun '%s' to sign in again, then rerun 'orvilo daemon start'.\nFull log: %s", loginHint, logs.logPath)
 	case strings.Contains(joined, "connection refused") ||
 		strings.Contains(joined, "no such host") ||
 		strings.Contains(joined, "i/o timeout") ||
@@ -776,7 +776,7 @@ func daemonStartupFailureError(logs daemonStartupLogs, waitErr error, profile, s
 		if serverURL != "" {
 			target += " at " + serverURL
 		}
-		return fmt.Errorf("daemon failed to start: cannot reach %s.\nMake sure the server is running and reachable, then rerun 'patchbay daemon start'.\nFull log: %s", target, logs.logPath)
+		return fmt.Errorf("daemon failed to start: cannot reach %s.\nMake sure the server is running and reachable, then rerun 'orvilo daemon start'.\nFull log: %s", target, logs.logPath)
 	}
 
 	var b strings.Builder
@@ -1165,7 +1165,7 @@ func runDaemonForeground(cmd *cobra.Command) error {
 // kills the working daemon in the stop phase, and then fails the replacement
 // child's preflight, leaving no daemon at all (#5165). So probe the server
 // the daemon will talk to with the stored token (same whoami call as
-// `patchbay auth status`) and refuse to touch the running daemon on failure.
+// `orvilo auth status`) and refuse to touch the running daemon on failure.
 func requireDaemonRestartPreflight(cmd *cobra.Command, profile string) error {
 	if err := requireDaemonAuth(profile); err != nil {
 		return err
@@ -1184,7 +1184,7 @@ func requireDaemonRestartPreflight(cmd *cobra.Command, profile string) error {
 		return fmt.Errorf("refusing to restart: invalid server URL %q: %w", rawURL, err)
 	}
 
-	loginHint := "patchbay login"
+	loginHint := "orvilo login"
 	if profile != "" {
 		loginHint += " --profile " + profile
 	}
@@ -1195,11 +1195,11 @@ func requireDaemonRestartPreflight(cmd *cobra.Command, profile string) error {
 		var httpErr *cli.HTTPError
 		if errors.As(err, &httpErr) {
 			if httpErr.StatusCode == http.StatusUnauthorized {
-				return fmt.Errorf("refusing to restart: the server rejected your login token (it may have expired or been revoked); the running daemon was left untouched.\nRun '%s' to sign in again, then rerun 'patchbay daemon restart'", loginHint)
+				return fmt.Errorf("refusing to restart: the server rejected your login token (it may have expired or been revoked); the running daemon was left untouched.\nRun '%s' to sign in again, then rerun 'orvilo daemon restart'", loginHint)
 			}
 			return fmt.Errorf("refusing to restart: preflight check against %s failed (%w); the running daemon was left untouched", baseURL, err)
 		}
-		return fmt.Errorf("refusing to restart: cannot reach the Orvilo server at %s (%w); the running daemon was left untouched.\nMake sure the server is running and reachable, then rerun 'patchbay daemon restart'", baseURL, err)
+		return fmt.Errorf("refusing to restart: cannot reach the Orvilo server at %s (%w); the running daemon was left untouched.\nMake sure the server is running and reachable, then rerun 'orvilo daemon restart'", baseURL, err)
 	}
 	return nil
 }
@@ -1527,8 +1527,8 @@ func profileLabel(profile string) string {
 }
 
 // daemonLogSourcePath resolves the daemon.log path for a profile —
-// ~/.patchbay/daemon.log for the default profile,
-// ~/.patchbay/profiles/<name>/daemon.log for a named one — and guarantees it is
+// ~/.orvilo/daemon.log for the default profile,
+// ~/.orvilo/profiles/<name>/daemon.log for a named one — and guarantees it is
 // absolute, because this path is shown to the user to paste into an editor or
 // another shell.
 //
@@ -1840,7 +1840,7 @@ func runDaemonDiskUsage(cmd *cobra.Command, _ []string) error {
 
 // checkTaskDiskUsageScope keeps a managed task's disk-usage view inside the
 // daemon root that hosts it. Each rejected input widens the report past that
-// boundary: --all-profiles enumerates ~/.patchbay/profiles and discloses the
+// boundary: --all-profiles enumerates ~/.orvilo/profiles and discloses the
 // Owner's profile names, while --workspaces-root and --profile aim the scan at
 // a directory this daemon does not manage.
 func checkTaskDiskUsageScope(profile, rootOverride string, allProfiles bool) error {
@@ -1943,7 +1943,7 @@ func newParentStatusFetcher(cmd *cobra.Command, profile string) daemon.ParentSta
 }
 
 // runDaemonDiskUsageAggregate scans every workspace root (the default root plus
-// each ~/.patchbay/profiles/* root) and renders a per-root breakdown with a
+// each ~/.orvilo/profiles/* root) and renders a per-root breakdown with a
 // combined grand total. This is the path that surfaces the Desktop app's
 // `desktop-<host>` root, which the default single-root scan never sees.
 func runDaemonDiskUsageAggregate(cmd *cobra.Command, byWorkspace bool, top int, output string) error {
@@ -1989,7 +1989,7 @@ func runDaemonDiskUsageAggregate(cmd *cobra.Command, byWorkspace bool, top int, 
 
 // enumerateDiskUsageRoots returns the ordered, de-duplicated set of workspace
 // roots to scan in --all-profiles mode: the default root first (always, for
-// orientation even when empty), then each ~/.patchbay/profiles/* root that
+// orientation even when empty), then each ~/.orvilo/profiles/* root that
 // exists on disk, sorted by profile name. Roots that resolve to the same path
 // (e.g. when ORVILO_WORKSPACES_ROOT pins every profile to one directory) are
 // collapsed to a single entry.
@@ -2162,7 +2162,7 @@ func printDiskUsageOtherRootsHint(w io.Writer, report daemon.DiskUsageReport, pr
 	if rootOverride != "" {
 		return
 	}
-	// The suggestions are built by listing ~/.patchbay/profiles, so printing
+	// The suggestions are built by listing ~/.orvilo/profiles, so printing
 	// them inside a task would disclose the Owner's profile names — exactly
 	// what rejecting --all-profiles prevents — and every command they suggest
 	// is rejected there anyway.
@@ -2179,7 +2179,7 @@ func printDiskUsageOtherRootsHint(w io.Writer, report daemon.DiskUsageReport, pr
 		fmt.Fprintf(w, "  %s  # %s (%d task%s)\n",
 			s.Command, s.Root, s.TaskCount, pluralS(s.TaskCount))
 	}
-	fmt.Fprintln(w, "Run 'patchbay daemon disk-usage --all-profiles' for a combined total across all roots.")
+	fmt.Fprintln(w, "Run 'orvilo daemon disk-usage --all-profiles' for a combined total across all roots.")
 }
 
 type diskUsageProfileSuggestion struct {
@@ -2196,7 +2196,7 @@ func diskUsageProfileSuggestions(currentProfile, currentRoot string) []diskUsage
 			if taskCount := countDiskUsageTaskDirs(root); taskCount > 0 {
 				out = append(out, diskUsageProfileSuggestion{
 					Profile:   "",
-					Command:   "patchbay daemon disk-usage",
+					Command:   "orvilo daemon disk-usage",
 					Root:      root,
 					TaskCount: taskCount,
 				})
@@ -2230,7 +2230,7 @@ func diskUsageProfileSuggestions(currentProfile, currentRoot string) []diskUsage
 		}
 		out = append(out, diskUsageProfileSuggestion{
 			Profile:   profile,
-			Command:   "patchbay --profile " + shellQuoteArg(profile) + " daemon disk-usage",
+			Command:   "orvilo --profile " + shellQuoteArg(profile) + " daemon disk-usage",
 			Root:      root,
 			TaskCount: taskCount,
 		})
@@ -2291,7 +2291,7 @@ func profilesRootDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".patchbay", "profiles"), nil
+	return filepath.Join(home, ".orvilo", "profiles"), nil
 }
 
 func samePath(a, b string) bool {

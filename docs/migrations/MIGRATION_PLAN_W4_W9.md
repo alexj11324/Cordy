@@ -34,7 +34,7 @@ W5    :  465 dependency_graph_domain │ 466-473 图索引（plan/node/edge/幂�
 W6    :  476 work_product + relation + provenance（含 430-445 对应）│ 477-483 配套索引与清理（external-id/provider/relation-key/manifest 任务等） │ +（按需）484-489 发现队列/分支索引
 W7    :  490 agent-thread 统一（不再使用 LobeHub sidebar；PR #660 为误合入已在后续纠正，回归原生侧栏；必要时补表/列，尽量复用现有 chat 栈）
 W8    :  491 workspace channels + Weixin（复用 channel/wecom，不另起栈；对应 Rust 386-393/微信增量）
-W9    :  492 guest session + 493 clerk/oauth/google + 494 auth-broker handoff（patchbay://）│ 合并 PR #727 前将 POST /auth/google 移出 Web 主路径（保留 mobile send-code）
+W9    :  492 guest session + 493 clerk/oauth/google + 494 auth-broker handoff（orvilo://）│ 合并 PR #727 前将 POST /auth/google 移出 Web 主路径（保留 mobile send-code）
 ```
 
 历史决策：W5/W6 当时允许并行设计，但提交顺序记录为先 W5 后 W6；后续小补丁
@@ -71,7 +71,7 @@ W9    :  492 guest session + 493 clerk/oauth/google + 494 auth-broker handoff（
 
 ## 7. W9 Auth（历史记录）
 
-- 新增：`492_guest_session`（Rust **397** `user.is_guest` + **398–400** `guest_session` 表/索引，token 仅存 SHA-256 hash）、`493_clerk_oauth_google`（Clerk + `/oauth/google` + guest 主路径）、`494_desktop_auth_broker`（`apps/auth-broker` + `patchbay://auth/callback`）。
+- 新增：`492_guest_session`（Rust **397** `user.is_guest` + **398–400** `guest_session` 表/索引，token 仅存 SHA-256 hash）、`493_clerk_oauth_google`（Clerk + `/oauth/google` + guest 主路径）、`494_desktop_auth_broker`（`apps/auth-broker` + `orvilo://auth/callback`）。
 - 移除：`POST /auth/google` 不再为 Web 主路径（保留 server 侧兼容或删除，以路由审计为准；mobile 保留 send-code）。
 - 历史备注：合并、branch protection、审批、密钥、回调和真实运行时验收均不由
   本文证明；应以当前 parity audit 和实际 CI/deployment 证据判断。

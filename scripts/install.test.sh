@@ -13,12 +13,12 @@ _setup_sandbox() {
   local payload_dir="$tmp/payload"
   mkdir -p "$stub_bin" "$install_bin" "$payload_dir"
 
-  cat >"$payload_dir/patchbay" <<'STUB'
+  cat >"$payload_dir/orvilo" <<'STUB'
 #!/usr/bin/env bash
-echo "patchbay v0.3.2 (commit: test)"
+echo "orvilo v0.3.2 (commit: test)"
 STUB
-  chmod +x "$payload_dir/patchbay"
-  tar -czf "$tmp/patchbay.tar.gz" -C "$payload_dir" patchbay
+  chmod +x "$payload_dir/orvilo"
+  tar -czf "$tmp/orvilo.tar.gz" -C "$payload_dir" orvilo
 
   cat >"$stub_bin/curl" <<'STUB'
 #!/usr/bin/env bash
@@ -55,7 +55,7 @@ _run_installer() {
   local err="$tmp/install.err"
   if ! PATH="$tmp/stub-bin:$tmp/install-bin:/usr/bin:/bin" \
     ORVILO_BIN_DIR="$tmp/install-bin" \
-    ORVILO_TEST_ARCHIVE="$tmp/patchbay.tar.gz" \
+    ORVILO_TEST_ARCHIVE="$tmp/orvilo.tar.gz" \
     bash "$ROOT_DIR/scripts/install.sh" >"$out" 2>"$err"; then
     echo "install.sh exited non-zero" >&2
     cat "$out" >&2 || true
@@ -63,8 +63,8 @@ _run_installer() {
     return 1
   fi
 
-  if [[ ! -x "$tmp/install-bin/patchbay" ]]; then
-    echo "expected fallback binary at $tmp/install-bin/patchbay" >&2
+  if [[ ! -x "$tmp/install-bin/orvilo" ]]; then
+    echo "expected fallback binary at $tmp/install-bin/orvilo" >&2
     cat "$out" >&2 || true
     cat "$err" >&2 || true
     return 1
@@ -166,7 +166,7 @@ STUB
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if ! grep -q "https://patchbay.aspectlylabs.com/settings?tab=tokens" "$tmp/install.out"; then
+  if ! grep -q "https://orvilo.aspectlylabs.com/settings?tab=tokens" "$tmp/install.out"; then
     echo "expected direct API Tokens settings URL in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
@@ -176,17 +176,17 @@ STUB
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if ! grep -q "patchbay login --token <YOUR_TOKEN>" "$tmp/install.out"; then
+  if ! grep -q "orvilo login --token <YOUR_TOKEN>" "$tmp/install.out"; then
     echo "expected token login command in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if grep -q "patchbay config set server_url" "$tmp/install.out"; then
+  if grep -q "orvilo config set server_url" "$tmp/install.out"; then
     echo "did not expect default cloud server config command in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if grep -q "patchbay config set app_url" "$tmp/install.out"; then
+  if grep -q "orvilo config set app_url" "$tmp/install.out"; then
     echo "did not expect default cloud app config command in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
@@ -229,7 +229,7 @@ STUB
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if grep -q "patchbay login --token <YOUR_TOKEN>" "$tmp/install.out"; then
+  if grep -q "orvilo login --token <YOUR_TOKEN>" "$tmp/install.out"; then
     echo "did not expect token login command in local installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
@@ -267,8 +267,8 @@ PORT=8080
 # SERVER_PORT=8080
 FRONTEND_PORT=3000
 JWT_SECRET=change-me-in-production
-POSTGRES_PASSWORD=patchbay
-DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
+POSTGRES_PASSWORD=orvilo
+DATABASE_URL=postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable
 ENVFILE
   touch "$server_dir/docker-compose.selfhost.yml"
 
@@ -358,8 +358,8 @@ STUB
   printf '#!/usr/bin/env bash\nexit 0\n' >"$stub_bin/brew"
   chmod +x "$stub_bin/brew"
 
-  printf '#!/usr/bin/env bash\necho "patchbay v0.3.2 (commit: test)"\n' >"$stub_bin/patchbay"
-  chmod +x "$stub_bin/patchbay"
+  printf '#!/usr/bin/env bash\necho "orvilo v0.3.2 (commit: test)"\n' >"$stub_bin/orvilo"
+  chmod +x "$stub_bin/orvilo"
 
   # curl records every probed URL so the health-check port can be asserted.
   cat >"$stub_bin/curl" <<'STUB'

@@ -638,7 +638,7 @@ func TestCancelTaskByUser_ChatTask_NonCreator_Returns403(t *testing.T) {
 
 	agentID := createHandlerTestAgent(t, "CancelChatAgent", []byte("[]"))
 	sessionID := createHandlerTestChatSession(t, agentID) // creator = testUserID
-	otherUserID := createWorkspaceMemberUser(t, "Chat Bystander", "cancel-chat-bystander@patchbay.test")
+	otherUserID := createWorkspaceMemberUser(t, "Chat Bystander", "cancel-chat-bystander@orvilo.test")
 
 	var taskID string
 	dbfx.QueryRow(t, `

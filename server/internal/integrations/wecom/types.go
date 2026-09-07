@@ -19,7 +19,7 @@
 //
 // Maintenance: this package is COMMUNITY-MAINTAINED. Its maintainers, the
 // support boundary and the retirement rule are published at
-// https://patchbay.aspectlylabs.com/docs/community-maintained
+// https://orvilo.aspectlylabs.com/docs/community-maintained
 // (apps/docs/content/docs/community-maintained.mdx, four locales). That page
 // is the single source of truth — record ownership changes there, not here.
 // Changing the shared channel engine? Keep this adapter building, and loop in
@@ -31,7 +31,7 @@
 // receipt.
 //
 // Outbound file delivery cannot report back to the agent that produced the
-// file. `patchbay attachment upload` returns once the object is in storage and
+// file. `orvilo attachment upload` returns once the object is in storage and
 // bound to the reply, while the send into the room runs on EventChatDone —
 // after the run has ended. A delivery that is shed, refused by WeCom, or lost
 // with the socket is therefore told to the person in the chat

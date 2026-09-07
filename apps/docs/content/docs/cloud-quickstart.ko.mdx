@@ -11,7 +11,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 1. 로그인하고 워크스페이스 열기
 
-Web([patchbay.aspectlylabs.com](https://patchbay.aspectlylabs.com)) 또는 [Orvilo Desktop](https://github.com/alexj11324/Cordy/releases/latest)에서 로그인합니다. 이메일 인증 코드와 Google 로그인을 지원합니다.
+Web([orvilo.aspectlylabs.com](https://orvilo.aspectlylabs.com)) 또는 [Orvilo Desktop](https://github.com/alexj11324/Cordy/releases/latest)에서 로그인합니다. 이메일 인증 코드와 Google 로그인을 지원합니다.
 
 - **Desktop**: 현재 컴퓨터를 자동으로 연결할 수 있습니다.
 - **Web**: 다음 단계에서 명령줄을 통해 연결해야 합니다.
@@ -27,17 +27,17 @@ Web([patchbay.aspectlylabs.com](https://patchbay.aspectlylabs.com)) 또는 [Orvi
 
   ```bash
   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
-  patchbay setup
+  orvilo setup
   ```
 
   **Windows PowerShell**
 
   ```powershell
   irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
-  patchbay setup
+  orvilo setup
   ```
 
-  `patchbay setup`이 브라우저를 열어 로그인을 마친 뒤 데몬을 백그라운드에서 실행합니다. 데몬이 온라인이 되면 보통 1분 안에 팝업이 이 컴퓨터를 자동으로 감지합니다.
+  `orvilo setup`이 브라우저를 열어 로그인을 마친 뒤 데몬을 백그라운드에서 실행합니다. 데몬이 온라인이 되면 보통 1분 안에 팝업이 이 컴퓨터를 자동으로 감지합니다.
 
 **성공 기준**: 런타임 목록에 온라인 컴퓨터가 표시됩니다.
 
@@ -82,8 +82,8 @@ Web([patchbay.aspectlylabs.com](https://patchbay.aspectlylabs.com)) 또는 [Orvi
 
 | 증상 | 먼저 확인할 사항 |
 |---|---|
-| 런타임을 찾지 못함 | AI 코딩 도구가 설치되어 있고 터미널에서 실행되는지 확인합니다. Desktop에서는 "새로고침"을 클릭하고 CLI 방식에서는 `patchbay setup`을 다시 실행합니다. |
-| 런타임이 오프라인으로 표시됨 | Desktop을 계속 열어 둡니다. CLI 방식에서는 `patchbay daemon status`를 실행하고 시작되지 않았다면 `patchbay daemon start`를 실행합니다. |
+| 런타임을 찾지 못함 | AI 코딩 도구가 설치되어 있고 터미널에서 실행되는지 확인합니다. Desktop에서는 "새로고침"을 클릭하고 CLI 방식에서는 `orvilo setup`을 다시 실행합니다. |
+| 런타임이 오프라인으로 표시됨 | Desktop을 계속 열어 둡니다. CLI 방식에서는 `orvilo daemon status`를 실행하고 시작되지 않았다면 `orvilo daemon start`를 실행합니다. |
 | 태스크가 계속 큐에서 대기함 | 에이전트가 사용하는 런타임이 온라인인지 확인합니다. 런타임이 동시 실행 상한에 도달하면 새 작업은 계속 대기합니다. |
 
 더 많은 경우는 [문제 해결](/troubleshooting)을 참고하세요.
@@ -91,5 +91,5 @@ Web([patchbay.aspectlylabs.com](https://patchbay.aspectlylabs.com)) 또는 [Orvi
 ## 다음 단계
 
 - [핵심 개념](/concepts) — 3분 안에 Orvilo의 모든 핵심 객체를 알아봅니다.
-- [Orvilo의 작동 방식](/how-patchbay-works) — 태스크, 에이전트, 런타임, 각 실행의 관계를 이해합니다.
+- [Orvilo의 작동 방식](/how-orvilo-works) — 태스크, 에이전트, 런타임, 각 실행의 관계를 이해합니다.
 - [에이전트에게 작업 맡기기](/triggering-agents) — executor 설정 외에 @댓글, 대화, 오토파일럿으로 트리거하는 세 가지 방법을 알아봅니다.

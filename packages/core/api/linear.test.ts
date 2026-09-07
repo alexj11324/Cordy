@@ -25,7 +25,7 @@ describe("Linear API contracts", () => {
       id: "binding-1",
       workspace_id: "workspace-1",
       connection_id: "connection-1",
-      patchbay_project_id: "project-1",
+      orvilo_project_id: "project-1",
       linear_project_id: "linear-project-1",
       linear_team_id: "team-1",
       status: "provider_added_status",
@@ -70,7 +70,7 @@ describe("Linear API contracts", () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
-          patchbay_project_id: "project-1",
+          orvilo_project_id: "project-1",
           linear_project_id: "linear-project-1",
           sync_mode: "import",
           initial_source_of_truth: "linear",
@@ -90,7 +90,7 @@ describe("Linear API contracts", () => {
     const client = new ApiClient("https://api.example");
     const preview = await client.dryRunLinearBinding("workspace-1", {
       connection_id: "connection-1",
-      patchbay_project_id: "project-1",
+      orvilo_project_id: "project-1",
       linear_project_id: "linear-project-1",
       linear_team_id: "team-1",
       status: "active",

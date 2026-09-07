@@ -15,7 +15,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
       >
         <div className="accounts-brand-lockup">
           <img
-            data-testid="patchbay-mark"
+            data-testid="orvilo-mark"
             src="/icons/icon.svg"
             alt=""
             width="28"

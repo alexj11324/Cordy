@@ -36,7 +36,7 @@ func rejectTemporarilyDisabledUser(w http.ResponseWriter, r *http.Request, userI
 // Tokens.
 // Token sources (in priority order):
 //  1. Authorization: Bearer <token> header (guest bearer, PAT, or JWT)
-//  2. patchbay_auth HttpOnly cookie (JWT) — requires valid CSRF token for state-changing requests
+//  2. orvilo_auth HttpOnly cookie (JWT) — requires valid CSRF token for state-changing requests
 //
 // Sets X-User-ID and X-User-Email headers on the request for downstream handlers.
 //
@@ -48,15 +48,15 @@ func rejectTemporarilyDisabledUser(w http.ResponseWriter, r *http.Request, userI
 // cloudPAT is optional; when non-nil, tokens with the mcn_ prefix are
 // validated by calling the Orvilo Cloud Fleet service rather than the
 // local DB. When nil (Fleet URL unset) mcn_ tokens are rejected at the
-// prefix branch — we don't fall through to the pby_ / JWT paths, since
-// an mcn_ string is by construction not a valid pby_ PAT or JWT.
+// prefix branch — we don't fall through to the ovy_ / JWT paths, since
+// an mcn_ string is by construction not a valid ovy_ PAT or JWT.
 func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATVerifier) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// X-Actor-Source is server-set only — any value supplied by
 			// the client is untrusted and discarded before the auth
 			// branches run. Only the mat_ branch below re-sets it. This
-			// is what prevents a client from sending a normal pby_ PAT
+			// is what prevents a client from sending a normal ovy_ PAT
 			// plus a forged `X-Actor-Source: member` (or anything else)
 			// to convince a downstream handler that its request came
 			// from a non-task-token path.
@@ -79,7 +79,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 				return
 			}
 
-			// Guest bearer: pbg_ tokens are opaque, database-backed credentials.
+			// Guest bearer: ovg_ tokens are opaque, database-backed credentials.
 			// Resolve the session on every request so a revoke/claim takes effect
 			// immediately; unlike PATs, this path deliberately has no cache.
 			if strings.HasPrefix(tokenString, auth.GuestTokenPrefix) {
@@ -165,7 +165,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 			// authoritative owner of the token's status and owner_id
 			// binding. We never look at the local
 			// personal_access_tokens table for this prefix; an mcn_
-			// string is not a valid pby_ value, so falling through
+			// string is not a valid ovy_ value, so falling through
 			// would just be a redundant DB miss. When the verifier
 			// is unconfigured (no ORVILO_CLOUD_URL) we reject
 			// at this branch rather than treating the token as a
@@ -220,8 +220,8 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 				return
 			}
 
-			// PAT: tokens starting with "pby_"
-			if strings.HasPrefix(tokenString, "pby_") {
+			// PAT: tokens starting with "ovy_"
+			if strings.HasPrefix(tokenString, "ovy_") {
 				hash := auth.HashToken(tokenString)
 
 				// Cache hit: TTL has not expired, the token was valid the
@@ -314,7 +314,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 
 // RevokeGuestOnLogout consumes a presented guest bearer on the public logout
 // endpoint. It is intentionally separate from Auth: logout is public and must
-// consume a valid pbg_ token before clearing cookies. Unknown or already-
+// consume a valid ovg_ token before clearing cookies. Unknown or already-
 // consumed tokens remain idempotent logout requests; a database outage is
 // surfaced instead of claiming a revocation that was not persisted.
 func RevokeGuestOnLogout(queries *db.Queries) func(http.Handler) http.Handler {
@@ -362,7 +362,7 @@ func RevokeGuestOnLogout(queries *db.Queries) func(http.Handler) http.Handler {
 }
 
 // extractToken returns the bearer token and whether it came from a cookie.
-// Priority: Authorization header > patchbay_auth cookie.
+// Priority: Authorization header > orvilo_auth cookie.
 func extractToken(r *http.Request) (token string, fromCookie bool) {
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 		parts := strings.Fields(authHeader)

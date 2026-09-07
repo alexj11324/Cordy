@@ -2,7 +2,7 @@
 name: orvilo-mentioning
 description: "Use when an issue comment needs to @mention someone — link to a person, trigger another agent, hand work to a team, or broadcast with @all. Whether to mention at all is covered by the runtime brief, not here."
 user-invocable: false
-allowed-tools: Bash(patchbay *)
+allowed-tools: Bash(orvilo *)
 ---
 
 # Mentioning & Delegating
@@ -45,9 +45,9 @@ this document is about the four types (plus `all`) the parser does recognize.
 
 A name is not a UUID. Look the UUID up first, from the matching list command:
 
-- a person → `patchbay workspace member list --output json` → use `user_id`
-- an agent → `patchbay agent list --output json` → use `id`
-- a team  → `patchbay team list --output json` → use `id`
+- a person → `orvilo workspace member list --output json` → use `user_id`
+- an agent → `orvilo agent list --output json` → use `id`
+- a team  → `orvilo team list --output json` → use `id`
 
 For a person the mention id is the `user_id`, NOT the membership-row id — the
 backend's own roster formatter uses `user_id` for member mentions. Match by
@@ -141,7 +141,7 @@ read. Read that array after posting — it is the only place any of this shows u
   agent in another workspace and the reason must not confirm that it exists.
   **So when you see `invocation_not_allowed`, check the UUID against the live
   roster BEFORE you touch any visibility or invocation setting** (MUL-5548);
-  `patchbay team member list <team-id> --output json` returns the `member_id`
+  `orvilo team member list <team-id> --output json` returns the `member_id`
   to build the mention from. An id that matches the pattern but is NOT a valid
   UUID at all (`mention://agent/-`) is rejected by the id parser and blocked
   with `target_unavailable` instead — a non-UUID names no entity anywhere, so
@@ -212,7 +212,7 @@ Incorrect: `[@Alice](mention://member/Alice) please review`
   pattern does not match, the link is silently dead.
 
 Correct:
-  1. `patchbay workspace member list --output json`  → Alice's `user_id` = 7f3a…
+  1. `orvilo workspace member list --output json`  → Alice's `user_id` = 7f3a…
   2. `[@Alice](mention://member/7f3a…) please review`
      → a real `user_id` parses; the link renders and resolves to Alice.
 

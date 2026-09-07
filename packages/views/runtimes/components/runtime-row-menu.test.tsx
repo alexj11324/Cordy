@@ -301,7 +301,7 @@ describe("runtime list CLI column", () => {
   beforeEach(() => vi.clearAllMocks());
 
   // #3838: every agent showed the same number because the column rendered the
-  // shared patchbay daemon `cli_version`. It must instead show the agent's own
+  // shared orvilo daemon `cli_version`. It must instead show the agent's own
   // tool version from `metadata.version`.
   it("shows the agent's own CLI tool version, not the shared daemon version", () => {
     renderCliCell(

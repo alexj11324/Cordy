@@ -338,7 +338,7 @@ func TestRunRuntimeProfileSetPathPreservesExistingConfig(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	// Seed an existing config with unrelated fields.
-	seed := cli.CLIConfig{ServerURL: "https://api.aspectlylabs.com", WorkspaceID: "ws-123", Token: "pby_xyz"}
+	seed := cli.CLIConfig{ServerURL: "https://api.aspectlylabs.com", WorkspaceID: "ws-123", Token: "ovy_xyz"}
 	if err := cli.SaveCLIConfig(seed); err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +353,7 @@ func TestRunRuntimeProfileSetPathPreservesExistingConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.ServerURL != "https://api.aspectlylabs.com" || cfg.WorkspaceID != "ws-123" || cfg.Token != "pby_xyz" {
+	if cfg.ServerURL != "https://api.aspectlylabs.com" || cfg.WorkspaceID != "ws-123" || cfg.Token != "ovy_xyz" {
 		t.Errorf("set-path clobbered existing config: %#v", cfg)
 	}
 	if cfg.ProfileCommandOverrides["prof-1"] != "/opt/bin/company-codex" {
@@ -366,13 +366,13 @@ func TestRuntimeProfilePathMutationFailsClosedInTaskContext(t *testing.T) {
 	t.Setenv("HOME", ownerHome)
 	t.Setenv("ORVILO_AGENT_ID", "agent-test")
 	t.Setenv("ORVILO_TASK_ID", "task-test")
-	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-orvilo"))
 
-	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
+	ownerPath := filepath.Join(ownerHome, ".orvilo", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ownerBytes := []byte("{\n  \"profile_command_overrides\": {\"owner-prof\": \"/owner/bin\"},\n  \"token\": \"pby_owner_sentinel\"\n}\n")
+	ownerBytes := []byte("{\n  \"profile_command_overrides\": {\"owner-prof\": \"/owner/bin\"},\n  \"token\": \"ovy_owner_sentinel\"\n}\n")
 	if err := os.WriteFile(ownerPath, ownerBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}

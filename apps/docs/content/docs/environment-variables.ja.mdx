@@ -12,12 +12,12 @@ Orvilo はプロセス起動時に環境変数を読み込みます。変更後�
 ## プロダクションの最小構成
 
 ```dotenv
-DATABASE_URL=postgres://user:password@postgres:5432/patchbay?sslmode=require
+DATABASE_URL=postgres://user:password@postgres:5432/orvilo?sslmode=require
 JWT_SECRET=<long-random-secret>
 APP_ENV=production
-FRONTEND_ORIGIN=https://patchbay.example.com
-ORVILO_APP_URL=https://patchbay.example.com
-ORVILO_PUBLIC_URL=https://api.patchbay.example.com
+FRONTEND_ORIGIN=https://orvilo.example.com
+ORVILO_APP_URL=https://orvilo.example.com
+ORVILO_PUBLIC_URL=https://api.orvilo.example.com
 ```
 
 さらにメールサービスを 1 つ選ぶ必要があります。選ばない場合、認証コードと招待はサーバーログに書き込まれるだけです。
@@ -30,7 +30,7 @@ ORVILO_PUBLIC_URL=https://api.patchbay.example.com
 
 | 変数 | デフォルト | 説明 |
 |---|---|---|
-| `DATABASE_URL` | ローカルの `patchbay` データベース | PostgreSQL 接続文字列 |
+| `DATABASE_URL` | ローカルの `orvilo` データベース | PostgreSQL 接続文字列 |
 | `DATABASE_MAX_CONNS` | `25` | API プロセスあたりの最大データベース接続数 |
 | `DATABASE_MIN_CONNS` | `5` | API プロセスが保持する最小接続数 |
 | `ORVILO_DATABASE_STARTUP_TIMEOUT` | `3m` | コンテナ起動時に migration と API が共有する、一時的なデータベース障害への再試行時間。`0` にすると各フェーズで 1 回だけ試行します |
@@ -52,7 +52,7 @@ Kubernetes で shutdown hold を設定する場合、`terminationGracePeriodSeco
 | `FRONTEND_ORIGIN` | 空 | ユーザーがアクセスするフロントエンドの origin。CORS、cookie、招待リンクに使われます |
 | `ORVILO_APP_URL` | `FRONTEND_ORIGIN` にフォールバック | ユーザーが到達できる Web アドレス。CLI ログインとアカウント連携リンクが使います |
 | `ORVILO_PUBLIC_URL` | 空 | 公開 API アドレス。webhook URL とランタイム接続案内に使われます |
-| `ORVILO_DAEMON_SERVER_URL` | `ORVILO_PUBLIC_URL`、次に `ORVILO_APP_URL` / `FRONTEND_ORIGIN` にフォールバック | API プロセスが `patchbay setup self-host` コマンドに埋め込むサーバー URL。デーモンから到達する API URL が公開 webhook URL と異なる場合に設定します |
+| `ORVILO_DAEMON_SERVER_URL` | `ORVILO_PUBLIC_URL`、次に `ORVILO_APP_URL` / `FRONTEND_ORIGIN` にフォールバック | API プロセスが `orvilo setup self-host` コマンドに埋め込むサーバー URL。デーモンから到達する API URL が公開 webhook URL と異なる場合に設定します |
 | `CORS_ALLOWED_ORIGINS` | 空 | 追加で許可する HTTP origin。カンマ区切り |
 | `ALLOWED_ORIGINS` | CORS / フロントエンド設定にフォールバック | WebSocket origin の許可リスト。カンマ区切り |
 | `COOKIE_DOMAIN` | 空 | フロントエンドと API の host が異なり、ブラウザが API ドメインへ直接アクセスする場合は必須。単一ドメイン構成では空のまま |
@@ -237,8 +237,8 @@ API key と base URL の両方が空の場合、このレイヤーは無効に�
 | `ORVILO_CODEX_HANDSHAKE_TIMEOUT` | `30s`、`thread/start`・`thread/resume`：`60s` | Codex app-server 起動ハンドシェイクの上限。明示的な値は両方の予算を一括で上書きします |
 | `ORVILO_DAEMON_AUTO_UPDATE` | Cloud は `true`、セルフホストは `false` | CLI の更新を自動でチェックして適用するか |
 | `ORVILO_DAEMON_AUTO_UPDATE_INTERVAL` | `6h` | 更新チェックの間隔 |
-| `ORVILO_DAEMON_AUTO_RELOAD` | `true` | 帯域外で置き換えられた `patchbay` バイナリ（`brew upgrade`、再ダウンロード、ローカルビルド）へ再起動して追従するかどうか。`ORVILO_DAEMON_AUTO_UPDATE` とは独立 |
-| `ORVILO_WORKSPACES_ROOT` | `~/patchbay_workspaces` | 作業作業ディレクトリのルート |
+| `ORVILO_DAEMON_AUTO_RELOAD` | `true` | 帯域外で置き換えられた `orvilo` バイナリ（`brew upgrade`、再ダウンロード、ローカルビルド）へ再起動して追従するかどうか。`ORVILO_DAEMON_AUTO_UPDATE` とは独立 |
+| `ORVILO_WORKSPACES_ROOT` | `~/orvilo_workspaces` | 作業作業ディレクトリのルート |
 | `ORVILO_AGENT_TEMP_BASE` | `/tmp`（Linux/macOS） | Linux/macOS 専用。作業ごとのプライベート一時ディレクトリの親ディレクトリ。既存かつ書き込み可能な絶対パスである必要があり、無効な値の場合は `/tmp` にフォールバックせず作業の開始に失敗します。短いパスを選んでください。子ツールがその配下に AF_UNIX ソケットを作成する場合があり、`sun_path` の上限は Linux で 108 バイト、macOS で 104 バイトです |
 | `ORVILO_KEEP_ENV_AFTER_TASK` | `false` | デバッグ用に作業ディレクトリを保持 |
 
@@ -249,15 +249,15 @@ ORVILO_CLAUDE_PATH=/opt/bin/claude
 ORVILO_CLAUDE_ARGS=--max-turns 40
 ```
 
-優先順位はコマンドラインフラグ → 環境変数 → `~/.patchbay/config.json` → 組み込みデフォルトです。watchdog の動作は[デーモンとランタイム](/daemon-runtimes)を参照してください。
+優先順位はコマンドラインフラグ → 環境変数 → `~/.orvilo/config.json` → 組み込みデフォルトです。watchdog の動作は[デーモンとランタイム](/daemon-runtimes)を参照してください。
 
 ### デーモン設定の永続化
 
-デーモン側のよく使う設定は、シェルの環境変数に頼らず `~/.patchbay/config.json` に書き込むこともできます。名前付きプロファイルの設定ファイルは `~/.patchbay/profiles/<name>/config.json` にあります:
+デーモン側のよく使う設定は、シェルの環境変数に頼らず `~/.orvilo/config.json` に書き込むこともできます。名前付きプロファイルの設定ファイルは `~/.orvilo/profiles/<name>/config.json` にあります:
 
 ```bash
-patchbay config set poll_interval 10s
-patchbay config show
+orvilo config set poll_interval 10s
+orvilo config show
 ```
 
 サポートされるキー:
@@ -283,7 +283,7 @@ patchbay config show
 値のルール:
 
 - duration 系のキーは正の Go duration（`10s`、`2h` など）を受け付け、`0s` と負の値は拒否されます。唯一の例外は `agent_timeout` で、`0s` は有効な値として実行時間上限を明示的に無効化します。
-- 空文字列を渡すと永続化された値がクリアされ、環境変数または組み込みデフォルトに戻ります。例: `patchbay config set poll_interval ""`。
+- 空文字列を渡すと永続化された値がクリアされ、環境変数または組み込みデフォルトに戻ります。例: `orvilo config set poll_interval ""`。
 - `max_concurrent_tasks` には非負の整数が必要です。
 - 相対パスの `workspaces_root` は保存時に絶対パスへ変換されます。
 

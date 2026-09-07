@@ -231,7 +231,7 @@ describe("RepositoriesTab — automatic updates", () => {
     const user = setupUser();
     mockGetGitHubConnectURL.mockResolvedValue({
       configured: true,
-      url: "https://github.com/apps/patchbay/installations/new",
+      url: "https://github.com/apps/orvilo/installations/new",
     });
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
     render(<RepositoriesTab />, { wrapper: I18nWrapper });
@@ -244,7 +244,7 @@ describe("RepositoriesTab — automatic updates", () => {
         "repositories",
       );
       expect(open).toHaveBeenCalledWith(
-        "https://github.com/apps/patchbay/installations/new",
+        "https://github.com/apps/orvilo/installations/new",
         "_blank",
         "noopener",
       );

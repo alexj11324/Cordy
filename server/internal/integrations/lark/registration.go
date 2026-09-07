@@ -110,7 +110,7 @@ type RegistrationConfig struct {
 
 	// Source labels the QR-code URL's `source` query param so Lark's
 	// telemetry can attribute installs back to Orvilo. Empty defaults
-	// to "patchbay".
+	// to "orvilo".
 	Source string
 
 	// Now is overridable for deterministic expiry-bound tests.
@@ -128,7 +128,7 @@ func (c RegistrationConfig) withDefaults() RegistrationConfig {
 		c.HTTPClient = &http.Client{Timeout: 30 * time.Second}
 	}
 	if c.Source == "" {
-		c.Source = "patchbay"
+		c.Source = "orvilo"
 	}
 	if c.Now == nil {
 		c.Now = time.Now

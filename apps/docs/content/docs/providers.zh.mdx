@@ -56,7 +56,7 @@ Orvilo 不会替代你使用的 AI 编程工具。运行时会调用电脑上已
 
 QwenPaw 和 MiniMax Code 是例外：它们不接受在 Orvilo 侧选择的模型，因此选择框不可用，显示为"由运行时管理"。请改在工具自身的配置里选择模型。模型列表为空属于正常情况，并不表示运行时离线。
 
-DeepSeek Harness 的模型目录由运行时自身提供（`dsh --profile patchbay --list-models`）。它的模型 id 采用 `provider/model` 形式（例如 `deepseek-official/deepseek-chat`），请从列表中选择完整 id。
+DeepSeek Harness 的模型目录由运行时自身提供（`dsh --profile orvilo --list-models`）。它的模型 id 采用 `provider/model` 形式（例如 `deepseek-official/deepseek-chat`），请从列表中选择完整 id。
 
 <Callout type="info">
 不同工具可能使用不同的模型名称。更换 AI 编程工具后，原有的模型值在新工具中无效，需要重新选择。

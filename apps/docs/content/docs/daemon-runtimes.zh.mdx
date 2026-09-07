@@ -31,20 +31,20 @@ Orvilo 负责记录和协调工作，连接的电脑负责执行。电脑上的*
 使用 Web、远程电脑或无界面环境时，先[安装 Orvilo CLI](/cli)，再运行：
 
 ```bash
-patchbay daemon start
+orvilo daemon start
 ```
 
 守护进程默认在后台运行。常用命令如下：
 
 | 命令 | 作用 |
 | --- | --- |
-| `patchbay daemon status` | 查看守护进程和连接状态 |
-| `patchbay daemon logs -f` | 持续查看日志 |
-| `patchbay daemon restart` | 重启守护进程并重新检测本机工具 |
-| `patchbay daemon stop` | 停止守护进程 |
-| `patchbay daemon start --foreground` | 在当前终端中运行，便于调试 |
+| `orvilo daemon status` | 查看守护进程和连接状态 |
+| `orvilo daemon logs -f` | 持续查看日志 |
+| `orvilo daemon restart` | 重启守护进程并重新检测本机工具 |
+| `orvilo daemon stop` | 停止守护进程 |
+| `orvilo daemon start --foreground` | 在当前终端中运行，便于调试 |
 
-如需把 task 工作目录放到其他磁盘，可用 `patchbay config set workspaces_root <path>` 为当前 profile 持久化根目录，也可在 `daemon start` 或 `daemon restart` 中传入 `--workspaces-root <path>`。flag 的优先级高于 `ORVILO_WORKSPACES_ROOT`，环境变量又高于 profile 配置。修改根目录不会迁移已有的 task 目录。
+如需把 task 工作目录放到其他磁盘，可用 `orvilo config set workspaces_root <path>` 为当前 profile 持久化根目录，也可在 `daemon start` 或 `daemon restart` 中传入 `--workspaces-root <path>`。flag 的优先级高于 `ORVILO_WORKSPACES_ROOT`，环境变量又高于 profile 配置。修改根目录不会迁移已有的 task 目录。
 
 启动时，守护进程会检测 `PATH` 中受支持的 AI 编程工具，并为你有权连接的工作区注册运行时。如果一款工具刚刚安装或登录，重启守护进程即可重新检测。
 
@@ -118,13 +118,13 @@ patchbay daemon start
 如果 Desktop 启动的守护进程找不到终端里能够执行的命令，可以为当前电脑设置绝对路径：
 
 ```bash
-patchbay runtime profile set-path <profile-id> --path /absolute/path/to/command
+orvilo runtime profile set-path <profile-id> --path /absolute/path/to/command
 ```
 
 移除路径覆盖：
 
 ```bash
-patchbay runtime profile unset-path <profile-id>
+orvilo runtime profile unset-path <profile-id>
 ```
 
 修改配置只影响之后领取的 task。删除配置前，需要先处理仍绑定在对应运行时上的活动智能体。只删除某台电脑上的运行时实例并不会删除配置，运行中的守护进程还会重新注册它。
@@ -133,11 +133,11 @@ patchbay runtime profile unset-path <profile-id>
 
 按以下顺序检查：
 
-1. 运行 `patchbay daemon status`，确认守护进程已经启动。
-2. 运行 `patchbay daemon logs -f`，查看登录、网络或工具检测错误。
+1. 运行 `orvilo daemon status`，确认守护进程已经启动。
+2. 运行 `orvilo daemon logs -f`，查看登录、网络或工具检测错误。
 3. 在同一运行环境中执行 `command -v <工具命令>`，确认守护进程能够找到它。
 4. 打开 Orvilo 的**运行时**页面，检查目标电脑和对应的 AI 编程工具是否显示在线。
-5. 工具刚安装、路径刚修改或配置刚更新时，运行 `patchbay daemon restart`。
+5. 工具刚安装、路径刚修改或配置刚更新时，运行 `orvilo daemon restart`。
 
 仍未解决时，参见[故障排查](/troubleshooting)。
 

@@ -3,13 +3,13 @@
 What an Orvilo plugin surface imports.
 
 ```js
-import { patchbay } from "@orvilo/plugin-sdk";
+import { orvilo } from "@orvilo/plugin-sdk";
 
-const ctx   = await patchbay.context.get();
-const issue = await patchbay.issue.get();
-await patchbay.issue.comment({ body: "hello" });
-const note  = await patchbay.storage.user.get("note");
-patchbay.ui.resize(320);
+const ctx   = await orvilo.context.get();
+const issue = await orvilo.issue.get();
+await orvilo.issue.comment({ body: "hello" });
+const note  = await orvilo.storage.user.get("note");
+orvilo.ui.resize(320);
 ```
 
 ## What a surface is
@@ -28,7 +28,7 @@ The frame is mounted with `sandbox="allow-scripts"` and **not**
 before you write one:
 
 - **No browser storage.** `localStorage`, `sessionStorage` and cookies all throw
-  or are empty. Use `patchbay.storage` — it is server-side, scoped per workspace
+  or are empty. Use `orvilo.storage` — it is server-side, scoped per workspace
   or per member, and survives the frame.
 - **`Origin: null` on your own requests.** If your surface calls your backend
   directly, that backend must accept a null origin in CORS.
@@ -72,9 +72,9 @@ the SDK writes them as custom properties on `:root`. Use `var(--foreground)`,
 `var(--background)`, `var(--border)`, `var(--radius)` and friends and your
 surface will look native without shipping a stylesheet.
 
-`patchbay.ui.onThemeChange(fn)` if you need to react in JS.
+`orvilo.ui.onThemeChange(fn)` if you need to react in JS.
 
 ## Sizing
 
-The frame does not auto-size. Call `patchbay.ui.resize(px)` after your content
+The frame does not auto-size. Call `orvilo.ui.resize(px)` after your content
 settles; the host clamps the value.

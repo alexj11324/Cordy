@@ -24,10 +24,10 @@ import (
 const CloudPATPrefix = "mcn_"
 
 // cloudPATCachePrefix namespaces cloud-PAT cache keys away from
-// pby_/mdt_ caches so the three token kinds can't accidentally share
+// ovy_/mdt_ caches so the three token kinds can't accidentally share
 // keys. The trailing slash mirrors the existing patCachePrefix /
 // daemonTokenCachePrefix conventions.
-const cloudPATCachePrefix = "pby:auth:mcn:"
+const cloudPATCachePrefix = "ovy:auth:mcn:"
 
 // cloudPATCacheTTL bounds how long a verified mcn_ token stays cached
 // before we re-ask Fleet. The Cloud doc explicitly recommends 30–60s
@@ -177,7 +177,7 @@ type CloudPATVerifier struct {
 // without churning every call site.
 type CloudPATVerifierConfig struct {
 	// FleetBaseURL is the Cloud Fleet base URL (e.g.
-	// https://fleet.patchbay.cloud). Trailing slashes are trimmed.
+	// https://fleet.orvilo.cloud). Trailing slashes are trimmed.
 	// Empty disables the verifier — NewCloudPATVerifier returns nil.
 	FleetBaseURL string
 

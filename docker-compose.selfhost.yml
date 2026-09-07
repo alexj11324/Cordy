@@ -30,15 +30,15 @@
 # read it back with `docker compose port`, so the health check and the printed
 # URL always match what was actually published.
 
-name: patchbay
+name: orvilo
 
 services:
   postgres:
     image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-patchbay}
-      POSTGRES_USER: ${POSTGRES_USER:-patchbay}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-patchbay}
+      POSTGRES_DB: ${POSTGRES_DB:-orvilo}
+      POSTGRES_USER: ${POSTGRES_USER:-orvilo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orvilo}
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
@@ -46,14 +46,14 @@ services:
       test:
         [
           "CMD-SHELL",
-          "pg_isready -U ${POSTGRES_USER:-patchbay} -d ${POSTGRES_DB:-patchbay}",
+          "pg_isready -U ${POSTGRES_USER:-orvilo} -d ${POSTGRES_DB:-orvilo}",
         ]
       interval: 5s
       timeout: 5s
       retries: 5
 
   backend:
-    image: ${ORVILO_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend}:${ORVILO_IMAGE_TAG:-latest}
+    image: ${ORVILO_BACKEND_IMAGE:-ghcr.io/alexj11324/orvilo-backend}:${ORVILO_IMAGE_TAG:-latest}
     depends_on:
       postgres:
         condition: service_healthy
@@ -62,7 +62,7 @@ services:
     volumes:
       - backend_uploads:/app/data/uploads
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-patchbay}:${POSTGRES_PASSWORD:-patchbay}@postgres:5432/${POSTGRES_DB:-patchbay}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-orvilo}:${POSTGRES_PASSWORD:-orvilo}@postgres:5432/${POSTGRES_DB:-orvilo}?sslmode=disable
       PORT: "8080"
       METRICS_ADDR: ${METRICS_ADDR:-}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set to a strong random value — generate one with 'openssl rand -hex 32'}
@@ -224,7 +224,7 @@ services:
     restart: unless-stopped
 
   frontend:
-    image: ${ORVILO_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web}:${ORVILO_IMAGE_TAG:-latest}
+    image: ${ORVILO_WEB_IMAGE:-ghcr.io/alexj11324/orvilo-web}:${ORVILO_IMAGE_TAG:-latest}
     depends_on:
       - backend
     ports:

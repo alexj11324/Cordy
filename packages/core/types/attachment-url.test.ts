@@ -17,7 +17,7 @@ describe("attachmentDownloadPath", () => {
 describe("stripChannelMediaMarkers", () => {
   it("removes provenance while retaining the visible channel image", () => {
     const image = `![](${attachmentDownloadPath(ID)})`;
-    const marker = `<!-- patchbay:channel-media:${ID} -->`;
+    const marker = `<!-- orvilo:channel-media:${ID} -->`;
 
     expect(stripChannelMediaMarkers(`${image}\n\n${marker}`)).toBe(`${image}\n\n`);
   });
@@ -87,7 +87,7 @@ describe("contentReferencesAttachment", () => {
     id: ID,
     url: "/uploads/workspaces/ws/legacy.png",
     download_url: "https://cdn.example.com/workspaces/ws/file.png?Signature=fresh",
-    markdown_url: `https://patchbay-api.copilothub.ai/api/attachments/${ID}/download`,
+    markdown_url: `https://orvilo-api.copilothub.ai/api/attachments/${ID}/download`,
   };
 
   it("matches when the markdown uses the stable download path", () => {

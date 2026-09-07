@@ -69,7 +69,7 @@ func TestHandleUpdateWaitsForEmptyClaimInsteadOfStarving(t *testing.T) {
 	originalResolveSelfExecutable := resolveSelfExecutable
 	originalIsBrewInstall := isBrewInstall
 	resolveSelfExecutable = func() (string, error) {
-		return "/tmp/patchbay-next", nil
+		return "/tmp/orvilo-next", nil
 	}
 	isBrewInstall = func() bool { return false }
 	t.Cleanup(func() {
@@ -181,7 +181,7 @@ func TestHandleUpdateKeepsBarrierOnlyWhenRestartWasScheduled(t *testing.T) {
 		{
 			name: "restart scheduled",
 			resolveExecutable: func() (string, error) {
-				return "/tmp/patchbay-next", nil
+				return "/tmp/orvilo-next", nil
 			},
 			wantUpdating:     true,
 			wantClaimsPaused: true,

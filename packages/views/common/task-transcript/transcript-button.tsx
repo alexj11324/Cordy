@@ -138,9 +138,9 @@ export function TranscriptButton({
       setOpen(false);
     };
 
-    window.addEventListener("patchbay:navigate", handleGlobalNavigate);
+    window.addEventListener("orvilo:navigate", handleGlobalNavigate);
     return () => {
-      window.removeEventListener("patchbay:navigate", handleGlobalNavigate);
+      window.removeEventListener("orvilo:navigate", handleGlobalNavigate);
     };
   }, [open, setOpen]);
 

@@ -14,39 +14,39 @@ func TestValidateTarget(t *testing.T) {
 		{
 			name:    "worktree database on localhost",
 			enabled: true,
-			dbURL:   "postgres://patchbay:patchbay@localhost:5432/patchbay_01zp_25?sslmode=disable",
+			dbURL:   "postgres://orvilo:orvilo@localhost:5432/orvilo_01zp_25?sslmode=disable",
 		},
 		{
 			name:    "main development database on IPv4 loopback",
 			enabled: true,
-			dbURL:   "postgresql://patchbay:patchbay@127.0.0.1:5432/patchbay",
+			dbURL:   "postgresql://orvilo:orvilo@127.0.0.1:5432/orvilo",
 		},
 		{
 			name:    "IPv6 loopback",
 			enabled: true,
-			dbURL:   "postgres://patchbay:patchbay@[::1]:5432/patchbay_feature",
+			dbURL:   "postgres://orvilo:orvilo@[::1]:5432/orvilo_feature",
 		},
 		{
 			name:    "explicit opt in is required",
-			dbURL:   "postgres://patchbay:patchbay@localhost:5432/patchbay_feature",
+			dbURL:   "postgres://orvilo:orvilo@localhost:5432/orvilo_feature",
 			wantErr: true,
 		},
 		{
 			name:    "remote database is rejected",
 			enabled: true,
-			dbURL:   "postgres://patchbay:patchbay@db.example.com:5432/patchbay",
+			dbURL:   "postgres://orvilo:orvilo@db.example.com:5432/orvilo",
 			wantErr: true,
 		},
 		{
 			name:    "unrelated local database is rejected",
 			enabled: true,
-			dbURL:   "postgres://patchbay:patchbay@localhost:5432/postgres",
+			dbURL:   "postgres://orvilo:orvilo@localhost:5432/postgres",
 			wantErr: true,
 		},
 		{
 			name:    "non postgres URL is rejected",
 			enabled: true,
-			dbURL:   "https://localhost/patchbay",
+			dbURL:   "https://localhost/orvilo",
 			wantErr: true,
 		},
 		{

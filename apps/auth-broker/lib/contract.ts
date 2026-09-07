@@ -1,6 +1,6 @@
 import contract from "../../../contracts/auth-broker/v1.json";
 export const AUTH_CONTRACT_VERSION = contract.version;
-export const AUTH_CONTRACT_HEADER = "x-patchbay-auth-contract-version";
+export const AUTH_CONTRACT_HEADER = "x-orvilo-auth-contract-version";
 export const DESKTOP_ATTEMPT_PATH = contract.broker.desktopAttemptPath;
 export const DESKTOP_COMPLETE_PATH = contract.broker.desktopCompletePath;
 export const GO_ATTEMPT_PATH = contract.goApi.desktopAttemptPath;

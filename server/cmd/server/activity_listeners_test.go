@@ -128,7 +128,7 @@ func TestActivityIssueUpdated_ExecutorChanged(t *testing.T) {
 	bus := events.New()
 	registerActivityListeners(bus, queries)
 
-	executorEmail := "activity-executor-test@patchbay.ai"
+	executorEmail := "activity-executor-test@orvilo.ai"
 	executorID := createTestUser(t, executorEmail)
 	t.Cleanup(func() { cleanupTestUser(t, executorEmail) })
 

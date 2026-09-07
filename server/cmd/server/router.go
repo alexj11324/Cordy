@@ -82,7 +82,7 @@ var corsAllowedHeaders = []string{
 	"X-Client-OS",
 	"X-Client-Capabilities",
 	// Sent by the host page when it relays a plugin surface's Action API call.
-	"X-Patchbay-Plugin-Installation",
+	"X-Orvilo-Plugin-Installation",
 }
 
 // corsExposedHeaders lists response headers browser clients are allowed to read.
@@ -211,10 +211,10 @@ func buildFingerprintMiddleware(buildVersion, buildCommit string) func(http.Hand
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if buildVersion != "" {
-				w.Header().Set("X-Patchbay-Build", buildVersion)
+				w.Header().Set("X-Orvilo-Build", buildVersion)
 			}
 			if buildCommit != "" {
-				w.Header().Set("X-Patchbay-Commit", buildCommit)
+				w.Header().Set("X-Orvilo-Commit", buildCommit)
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -521,7 +521,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	if opts.BusinessMetrics != nil {
 		// Wire the BusinessMetrics receiver into the cloud runtime client
 		// so every outbound Fleet/Gateway request feeds the
-		// patchbay_cloudruntime_request_* histograms.
+		// orvilo_cloudruntime_request_* histograms.
 		if client, ok := h.CloudRuntime.(*cloudruntime.Client); ok {
 			client.SetRecorder(opts.BusinessMetrics)
 		}
@@ -848,7 +848,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			channelRouter.Register(slack.TypeSlack, slack.NewSlackResolverSet(queries, pool, slackReplier, slackTyping, slackMedia))
 			slack.NewOutbound(queries, box.Open, slog.Default()).Register(bus)
 
-			// On-demand history reader behind the unified `patchbay chat history`
+			// On-demand history reader behind the unified `orvilo chat history`
 			// command (MUL-3871): pull the session's Slack conversation when the
 			// agent asks, instead of force-assembling it on every inbound.
 			h.SlackHistory = slack.NewHistory(queries, box.Open, slog.Default())
@@ -1400,7 +1400,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		h.HeartbeatScheduler = opts.HeartbeatScheduler
 	}
 	// Auth caches: PAT cache is shared between the regular Auth middleware,
-	// the DaemonAuth fallback (pby_) path, and the revoke handler
+	// the DaemonAuth fallback (ovy_) path, and the revoke handler
 	// (invalidate). DaemonTokenCache backs the DaemonAuth mdt_ path. Both
 	// constructors return nil when rdb is nil — every consumer handles that
 	// as "no cache, always hit DB".
@@ -1413,9 +1413,9 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Cloud PAT verifier: validates mcn_ tokens against Orvilo Cloud
 	// Fleet. Returns nil when no Cloud URL is configured — the Auth /
 	// DaemonAuth middlewares treat nil as "mcn_ not supported" and
-	// reject with 401, instead of falling through to pby_/JWT paths.
+	// reject with 401, instead of falling through to ovy_/JWT paths.
 	// Reuses ORVILO_CLOUD_URL (the same URL the cloud-runtime proxy uses) so a
-	// deployment has one authoritative patchbay-cloud connection.
+	// deployment has one authoritative orvilo-cloud connection.
 	cloudPATVerifier := auth.NewCloudPATVerifier(auth.CloudPATVerifierConfig{
 		FleetBaseURL: signupConfig.CloudURL,
 		Redis:        rdb,
@@ -1609,7 +1609,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// decryption secret.
 	r.Post("/api/webhooks/vcs/{connectionId}", h.HandleVCSWebhook)
 	// Stripe webhook (no Orvilo auth — Stripe signs the raw body
-	// with a shared secret, the patchbay-cloud upstream verifies. We
+	// with a shared secret, the orvilo-cloud upstream verifies. We
 	// only forward the bytes + the Stripe-Signature header; see
 	// HandleCloudBillingStripeWebhook for the rationale).
 	r.Post("/api/webhooks/stripe", h.HandleCloudBillingStripeWebhook)
@@ -1741,7 +1741,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.With(handler.RequireHumanActor).Post("/api/client-usage", h.UpsertClientUsage)
 
 		// Guest sessions are account-scoped, not workspace-scoped. Keep the
-		// human gate here as a second boundary after Auth: pbg_ guest bearers
+		// human gate here as a second boundary after Auth: ovg_ guest bearers
 		// may manage their own lifecycle, formal human users may claim, and
 		// machine credentials must not create/read/claim/revoke sessions.
 		r.Route("/api/guest-sessions", func(r chi.Router) {
@@ -2038,7 +2038,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		})
 
 		// Cloud Billing proxy. Same upstream service / port as
-		// cloud-runtime — patchbay-cloud's Fleet and Billing share
+		// cloud-runtime — orvilo-cloud's Fleet and Billing share
 		// :8080 and the same chi router. All routes here forward
 		// to /api/v1/billing/* with X-User-ID stamped from the
 		// authenticated context.

@@ -72,7 +72,7 @@ func TestResolveGuestUserChecksLiveIdentity(t *testing.T) {
 }
 func TestResolveGuestUserRejectsMalformedBeforeLookup(t *testing.T) {
 	f := &guestIdentityFixture{}
-	for _, raw := range []string{"", "pbg_bad", "pbg_" + strings.Repeat("g", 40), "pby_" + strings.Repeat("a", 40)} {
+	for _, raw := range []string{"", "ovg_bad", "ovg_" + strings.Repeat("g", 40), "ovy_" + strings.Repeat("a", 40)} {
 		if _, err := ResolveGuestUser(context.Background(), f, raw); !errors.Is(err, ErrInvalidGuestToken) {
 			t.Fatalf("malformed token accepted: %v", err)
 		}

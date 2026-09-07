@@ -37,7 +37,7 @@ var testRuntimeID string
 var dbfx *testutil.Fixture
 
 const (
-	handlerTestEmail         = "handler-test@patchbay.ai"
+	handlerTestEmail         = "handler-test@orvilo.ai"
 	handlerTestName          = "Handler Test User"
 	handlerTestWorkspaceSlug = "handler-tests"
 )
@@ -46,7 +46,7 @@ func TestMain(m *testing.M) {
 	ctx := context.Background()
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dbURL = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 
 	pool, err := pgxpool.New(ctx, dbURL)
@@ -2204,7 +2204,7 @@ func TestCreateWorkspaceInvalidSlugReturnsBadRequest(t *testing.T) {
 
 func TestSendCode(t *testing.T) {
 	w := httptest.NewRecorder()
-	body := map[string]string{"email": "sendcode-test@patchbay.ai"}
+	body := map[string]string{"email": "sendcode-test@orvilo.ai"}
 	var buf bytes.Buffer
 	json.NewEncoder(&buf).Encode(body)
 	req := httptest.NewRequest("POST", "/auth/send-code", &buf)
@@ -2221,7 +2221,7 @@ func TestSendCode(t *testing.T) {
 	}
 
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM verification_code WHERE email = $1`, "sendcode-test@patchbay.ai")
+		testPool.Exec(context.Background(), `DELETE FROM verification_code WHERE email = $1`, "sendcode-test@orvilo.ai")
 	})
 }
 
@@ -2236,7 +2236,7 @@ func TestSendCodeDbError(t *testing.T) {
 	cancel()
 
 	w := httptest.NewRecorder()
-	body := map[string]string{"email": "dberror-test@patchbay.ai"}
+	body := map[string]string{"email": "dberror-test@orvilo.ai"}
 	var buf bytes.Buffer
 	json.NewEncoder(&buf).Encode(body)
 	req := httptest.NewRequest("POST", "/auth/send-code", &buf)
@@ -2259,7 +2259,7 @@ func TestSendCodeDbError(t *testing.T) {
 }
 
 func TestSendCodeRateLimit(t *testing.T) {
-	const email = "ratelimit-test@patchbay.ai"
+	const email = "ratelimit-test@orvilo.ai"
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM verification_code WHERE email = $1`, email)
 	})
@@ -2289,7 +2289,7 @@ func TestSendCodeRateLimit(t *testing.T) {
 }
 
 func TestVerifyCode(t *testing.T) {
-	const email = "verify-test@patchbay.ai"
+	const email = "verify-test@orvilo.ai"
 	ctx := context.Background()
 
 	t.Cleanup(func() {
@@ -2360,7 +2360,7 @@ func TestVerifyCodeRejectsDevCodeUnlessExplicitlyConfigured(t *testing.T) {
 	t.Setenv(devVerificationCodeEnv, "")
 	t.Setenv("APP_ENV", "")
 
-	const email = "dev-code-disabled-test@patchbay.ai"
+	const email = "dev-code-disabled-test@orvilo.ai"
 	ctx := context.Background()
 
 	t.Cleanup(func() {
@@ -2384,7 +2384,7 @@ func TestVerifyCodeAcceptsConfiguredDevCodeOutsideProduction(t *testing.T) {
 	t.Setenv(devVerificationCodeEnv, "888888")
 	t.Setenv("APP_ENV", "development")
 
-	const email = "dev-code-enabled-test@patchbay.ai"
+	const email = "dev-code-enabled-test@orvilo.ai"
 	ctx := context.Background()
 
 	t.Cleanup(func() {
@@ -2409,7 +2409,7 @@ func TestVerifyCodeRejectsConfiguredDevCodeInProduction(t *testing.T) {
 	t.Setenv(devVerificationCodeEnv, "888888")
 	t.Setenv("APP_ENV", "production")
 
-	const email = "dev-code-production-test@patchbay.ai"
+	const email = "dev-code-production-test@orvilo.ai"
 	ctx := context.Background()
 
 	t.Cleanup(func() {
@@ -2432,7 +2432,7 @@ func TestVerifyCodeRejectsConfiguredDevCodeInProduction(t *testing.T) {
 func TestVerifyCodeWrongCode(t *testing.T) {
 	t.Setenv(devVerificationCodeEnv, "")
 
-	const email = "wrong-code-test@patchbay.ai"
+	const email = "wrong-code-test@orvilo.ai"
 	ctx := context.Background()
 
 	t.Cleanup(func() {
@@ -2462,7 +2462,7 @@ func TestVerifyCodeWrongCode(t *testing.T) {
 func TestVerifyCodeBruteForceProtection(t *testing.T) {
 	t.Setenv(devVerificationCodeEnv, "")
 
-	const email = "bruteforce-test@patchbay.ai"
+	const email = "bruteforce-test@orvilo.ai"
 	ctx := context.Background()
 
 	t.Cleanup(func() {
@@ -2512,7 +2512,7 @@ func TestVerifyCodeBruteForceProtection(t *testing.T) {
 }
 
 func TestVerifyCodeNewUserHasNoWorkspace(t *testing.T) {
-	const email = "workspace-verify-test@patchbay.ai"
+	const email = "workspace-verify-test@orvilo.ai"
 	ctx := context.Background()
 
 	t.Cleanup(func() {

@@ -46,7 +46,7 @@ async function verifyAccountsLoginSurface(browser, sourceSha) {
         data: {
           state,
           code_challenge: codeChallenge,
-          callback_protocol: "patchbay",
+          callback_protocol: "orvilo",
         },
       },
     );
@@ -84,7 +84,7 @@ async function verifyAccountsLoginSurface(browser, sourceSha) {
     await expect(authShell).toBeVisible();
     await expect(formPanel).toBeVisible();
     await expect(brandPanel).toBeVisible();
-    await expect(page.getByTestId("patchbay-mark")).toBeVisible();
+    await expect(page.getByTestId("orvilo-mark")).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Login", exact: true }),
     ).toBeVisible();
@@ -205,7 +205,7 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
         data: { state, code_challenge: codeChallenge },
         headers: {
           origin: ACCOUNTS_ORIGIN,
-          "x-patchbay-auth-contract-version": "1",
+          "x-orvilo-auth-contract-version": "1",
         },
       },
     );
@@ -387,9 +387,9 @@ async function verifyAuthenticatedProduct(browser, sourceSha, auth) {
   await context.clearCookies({ name: "last_workspace_slug" });
   await context.addCookies([
     {
-      name: "patchbay-locale",
+      name: "orvilo-locale",
       value: "en",
-      domain: "patchbay.aspectlylabs.com",
+      domain: "orvilo.aspectlylabs.com",
       path: "/",
       secure: true,
       sameSite: "Lax",

@@ -122,7 +122,7 @@ func writeDiskUsageIssueTask(t *testing.T, root, wsID, taskShort, issueID string
 // issue-kind task dir under that profile's workspaces root.
 func setupDiskUsageProfile(t *testing.T, home, profile, token, serverURL, wsID, taskShort, issueID string) {
 	t.Helper()
-	root := filepath.Join(home, "patchbay_workspaces")
+	root := filepath.Join(home, "orvilo_workspaces")
 	if profile != "" {
 		root += "_" + profile
 		mkdirProfile(t, home, profile)
@@ -390,7 +390,7 @@ func setupTaskDiskUsageContext(t *testing.T, home, ownerServerURL string) string
 
 	t.Setenv("ORVILO_AGENT_ID", "agent-test")
 	t.Setenv("ORVILO_TASK_ID", "task-test")
-	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-orvilo"))
 	t.Setenv(daemon.TaskWorkspacesRootEnv, injectedRoot)
 	return injectedRoot
 }
@@ -421,7 +421,7 @@ func TestRunDaemonDiskUsageTaskContextScansInjectedRootWithoutOwnerToken(t *test
 	if !strings.Contains(out, injectedRoot) {
 		t.Errorf("report did not name the injected root %q, got:\n%s", injectedRoot, out)
 	}
-	// The hint enumerates ~/.patchbay/profiles, so it must stay out of a task.
+	// The hint enumerates ~/.orvilo/profiles, so it must stay out of a task.
 	if strings.Contains(out, "Other workspace roots") {
 		t.Errorf("report disclosed other workspace roots inside a task, got:\n%s", out)
 	}
@@ -490,7 +490,7 @@ func TestResolveDiskUsageRootTaskContext(t *testing.T) {
 		if err != nil {
 			t.Fatalf("resolveDiskUsageRoot: %v", err)
 		}
-		if want := filepath.Join(home, "patchbay_workspaces_staging"); got != want {
+		if want := filepath.Join(home, "orvilo_workspaces_staging"); got != want {
 			t.Fatalf("root = %q, want %q", got, want)
 		}
 	})

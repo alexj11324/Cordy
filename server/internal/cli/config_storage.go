@@ -164,7 +164,7 @@ func ensureCLIConfigDirectory(dir string) error {
 	if !private {
 		return nil
 	}
-	root, _, err := patchbayConfigRoot()
+	root, _, err := orviloConfigRoot()
 	if err != nil {
 		return fmt.Errorf("resolve task-local CLI config root: %w", err)
 	}

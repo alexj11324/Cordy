@@ -18,7 +18,7 @@ vi.mock("@orvilo/core/config", () => ({
 }));
 
 vi.mock("@orvilo/core/api", () => ({
-  api: { getBaseUrl: () => "https://patchbay.aspectlylabs.com" },
+  api: { getBaseUrl: () => "https://orvilo.aspectlylabs.com" },
 }));
 
 vi.mock("@orvilo/core/workspace/mutations", () => ({

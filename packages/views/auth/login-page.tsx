@@ -198,7 +198,7 @@ export function LoginPage({
       })
       .catch(() => {
         // Cookie auth failed — fall back to localStorage token
-        const token = localStorage.getItem("patchbay_token");
+        const token = localStorage.getItem("orvilo_token");
         if (!token) return;
 
         api.setToken(token);
@@ -211,7 +211,7 @@ export function LoginPage({
           })
           .catch(() => {
             api.setToken(null);
-            localStorage.removeItem("patchbay_token");
+            localStorage.removeItem("orvilo_token");
           });
       });
   }, [cliCallback]);
@@ -259,7 +259,7 @@ export function LoginPage({
         if (cliCallback) {
           // CLI path: get token directly for the redirect URL
           const { token } = await api.verifyCode(email, value);
-          localStorage.setItem("patchbay_token", token);
+          localStorage.setItem("orvilo_token", token);
           api.setToken(token);
           onTokenObtained?.();
           redirectToCliCallback(cliCallback.url, token, cliCallback.state);
@@ -308,7 +308,7 @@ export function LoginPage({
 
       if (authSourceRef.current === "localStorage") {
         // Session was detected via localStorage — reuse that token directly.
-        const stored = localStorage.getItem("patchbay_token");
+        const stored = localStorage.getItem("orvilo_token");
         if (!stored) throw new Error("token missing");
         token = stored;
       } else {

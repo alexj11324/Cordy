@@ -37,7 +37,7 @@ class ProductionDeployContractTests(unittest.TestCase):
 
     def test_rejects_mutable_tags_from_the_network_request(self):
         manifest = self.manifest()
-        manifest["images"]["web"] = "ghcr.io/alexj11324/patchbay-web:latest"
+        manifest["images"]["web"] = "ghcr.io/alexj11324/orvilo-web:latest"
         with self.assertRaisesRegex(production_deploy.DeploymentError, "sha256 digest"):
             production_deploy.validate_deploy_request(manifest)
 

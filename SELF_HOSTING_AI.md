@@ -15,15 +15,15 @@ This document is designed for AI agents to execute. Follow these steps exactly t
 curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
 
 # Configure CLI for localhost, authenticate, and start daemon
-patchbay setup self-host
+orvilo setup self-host
 ```
 
-Wait for the server output `✓ Orvilo server is running and CLI is ready!` before running `patchbay setup self-host`.
+Wait for the server output `✓ Orvilo server is running and CLI is ready!` before running `orvilo setup self-host`.
 
 **Expected result:**
 - Frontend at http://localhost:3000
 - Backend at http://localhost:8080
-- `patchbay` CLI installed and configured for localhost
+- `orvilo` CLI installed and configured for localhost
 
 ## Alternative: Manual Setup
 
@@ -31,11 +31,11 @@ Wait for the server output `✓ Orvilo server is running and CLI is ready!` befo
 git clone https://github.com/alexj11324/Cordy.git
 cd Cordy
 make selfhost
-brew install alexj11324/tap/patchbay
-patchbay setup self-host
+brew install alexj11324/tap/orvilo
+orvilo setup self-host
 ```
 
-The `patchbay setup self-host` command will:
+The `orvilo setup self-host` command will:
 1. Configure CLI to connect to localhost:8080 / localhost:3000
 2. Open a browser for login — use the emailed code, or the generated code printed in backend logs when Resend is unset
 3. Discover workspaces automatically
@@ -44,7 +44,7 @@ The `patchbay setup self-host` command will:
 ## Verification
 
 ```bash
-patchbay daemon status
+orvilo daemon status
 ```
 
 Should show `running` with detected agents.
@@ -53,7 +53,7 @@ Should show `running` with detected agents.
 
 ```bash
 # Stop the daemon
-patchbay daemon stop
+orvilo daemon stop
 
 # Stop all Docker services
 cd Cordy
@@ -67,7 +67,7 @@ If the default ports (8080/3000) are in use:
 1. Edit `.env` and change `PORT` and `FRONTEND_PORT`. These are host ports; the
    containers keep listening on 8080/3000 internally, so no rebuild is needed.
 2. Run `make selfhost`
-3. Run `patchbay setup self-host --port <PORT> --frontend-port <FRONTEND_PORT>`
+3. Run `orvilo setup self-host --port <PORT> --frontend-port <FRONTEND_PORT>`
 
 Edit the file rather than relying on environment variables: `make` `include`s
 `.env`, so a value in the file outranks the same variable from your shell
@@ -84,5 +84,5 @@ one the stack is actually published on.
 
 - **Backend not ready:** `docker compose -f docker-compose.selfhost.yml logs backend`
 - **Frontend not ready:** `docker compose -f docker-compose.selfhost.yml logs frontend`
-- **Daemon issues:** `patchbay daemon logs`
+- **Daemon issues:** `orvilo daemon logs`
 - **Health checks:** `curl http://localhost:8080/health` for liveness, `curl http://localhost:8080/readyz` for dependency-aware readiness

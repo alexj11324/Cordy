@@ -118,7 +118,7 @@ export function ChatPage() {
   }, [c.activeSessionId]);
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "patchbay_chat_layout",
+    id: "orvilo_chat_layout",
   });
 
   // `?agent=` intent bookkeeping. The ref holds the param value already

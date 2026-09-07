@@ -251,7 +251,7 @@ func (b *reasonixBackend) Execute(ctx context.Context, prompt string, opts ExecO
 		initResult, err := c.request(runCtx, "initialize", map[string]any{
 			"protocolVersion": 1,
 			"clientInfo": map[string]any{
-				"name":    "patchbay-agent-sdk",
+				"name":    "orvilo-agent-sdk",
 				"version": "0.2.0",
 			},
 			"clientCapabilities": map[string]any{},

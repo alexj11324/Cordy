@@ -2,9 +2,9 @@
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{ include "patchbay.postgres.fullname" . }}-data
+  name: {{ include "orvilo.postgres.fullname" . }}-data
   labels:
-    {{- include "patchbay.labels" . | nindent 4 }}
+    {{- include "orvilo.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 spec:
   accessModes: [ReadWriteOnce]
@@ -18,9 +18,9 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "patchbay.postgres.fullname" . }}
+  name: {{ include "orvilo.postgres.fullname" . }}
   labels:
-    {{- include "patchbay.labels" . | nindent 4 }}
+    {{- include "orvilo.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 spec:
   replicas: 1
@@ -28,13 +28,13 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      app.kubernetes.io/name: patchbay
+      app.kubernetes.io/name: orvilo
       app.kubernetes.io/instance: {{ .Release.Name }}
       app.kubernetes.io/component: postgres
   template:
     metadata:
       labels:
-        {{- include "patchbay.labels" . | nindent 8 }}
+        {{- include "orvilo.labels" . | nindent 8 }}
         app.kubernetes.io/component: postgres
     spec:
       containers:
@@ -88,19 +88,19 @@ spec:
       volumes:
         - name: data
           persistentVolumeClaim:
-            claimName: {{ include "patchbay.postgres.fullname" . }}-data
+            claimName: {{ include "orvilo.postgres.fullname" . }}-data
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "patchbay.postgres.fullname" . }}
+  name: {{ include "orvilo.postgres.fullname" . }}
   labels:
-    {{- include "patchbay.labels" . | nindent 4 }}
+    {{- include "orvilo.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 spec:
   type: ClusterIP
   selector:
-    app.kubernetes.io/name: patchbay
+    app.kubernetes.io/name: orvilo
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/component: postgres
   ports:

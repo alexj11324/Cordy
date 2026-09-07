@@ -8,10 +8,10 @@ describe("loginAliasDestination", () => {
         platform: "desktop",
         state: "state",
         code_challenge: "challenge",
-        redirect_url: "https://patchbay.aspectlylabs.com/",
+        redirect_url: "https://orvilo.aspectlylabs.com/",
       }),
     ).toBe(
-      "/login?platform=desktop&state=state&code_challenge=challenge&redirect_url=https%3A%2F%2Fpatchbay.aspectlylabs.com%2F",
+      "/login?platform=desktop&state=state&code_challenge=challenge&redirect_url=https%3A%2F%2Forvilo.aspectlylabs.com%2F",
     );
   });
 

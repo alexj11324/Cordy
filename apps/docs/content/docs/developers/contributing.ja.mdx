@@ -21,7 +21,7 @@ Orvilo は Go バックエンドと pnpm monorepo で構成されています。
 
 ```bash
 git clone https://github.com/alexj11324/Cordy.git
-cd patchbay
+cd Cordy
 make up C=desktop   # 依存関係のインストール、データベース準備、バックエンドと Electron の起動
 make seed-dev       # 任意: サンプル issue を dev-fixtures ワークスペースに投入
 ```
@@ -43,8 +43,8 @@ make seed-dev       # 任意: サンプル issue を dev-fixtures ワークス�
 このリポジトリでは、メイン checkout と複数の worktree を同時に実行できます。1 つの PostgreSQL コンテナを共有しますが、データベースとポートは分かれています。
 
 ```bash
-git worktree add ../patchbay-feature -b feat/my-change main
-cd ../patchbay-feature
+git worktree add ../orvilo-feature -b feat/my-change main
+cd ../orvilo-feature
 make setup-worktree
 make start-worktree
 ```

@@ -185,10 +185,10 @@ func TestEnsureCodexMultiAgentConfigEmptyFile(t *testing.T) {
 	if !strings.Contains(got, "features.multi_agent = false") {
 		t.Errorf("expected managed block to set features.multi_agent = false at root, got:\n%s", got)
 	}
-	if !strings.Contains(got, patchbayMultiAgentBeginMarker) {
+	if !strings.Contains(got, orviloMultiAgentBeginMarker) {
 		t.Errorf("expected begin marker, got:\n%s", got)
 	}
-	if !strings.Contains(got, patchbayMultiAgentEndMarker) {
+	if !strings.Contains(got, orviloMultiAgentEndMarker) {
 		t.Errorf("expected end marker, got:\n%s", got)
 	}
 	requireMultiAgentDisabled(t, parseTOML(t, got))
@@ -512,10 +512,10 @@ features.multi_agent = true
 
 	data, _ := os.ReadFile(configPath)
 	got := string(data)
-	if !strings.Contains(got, patchbayManagedBeginMarker) {
+	if !strings.Contains(got, orviloManagedBeginMarker) {
 		t.Errorf("expected sandbox managed block, got:\n%s", got)
 	}
-	if !strings.Contains(got, patchbayMultiAgentBeginMarker) {
+	if !strings.Contains(got, orviloMultiAgentBeginMarker) {
 		t.Errorf("expected multi-agent managed block, got:\n%s", got)
 	}
 	if strings.Contains(got, "features.multi_agent = true") {

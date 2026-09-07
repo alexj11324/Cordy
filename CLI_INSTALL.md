@@ -17,10 +17,10 @@ Fetch https://github.com/alexj11324/Cordy/blob/main/CLI_INSTALL.md and follow th
 Run:
 
 ```bash
-patchbay version
+orvilo version
 ```
 
-- **If it prints a version string** (e.g. `patchbay v0.x.x`): skip to **Step 3**.
+- **If it prints a version string** (e.g. `orvilo v0.x.x`): skip to **Step 3**.
 - **If command not found**: continue to **Step 2**.
 
 ---
@@ -40,13 +40,13 @@ which brew
 If `brew` is found, install via Homebrew:
 
 ```bash
-brew install alexj11324/tap/patchbay
+brew install alexj11324/tap/orvilo
 ```
 
 Then verify:
 
 ```bash
-patchbay version
+orvilo version
 ```
 
 If the version prints successfully, skip to **Step 3**.
@@ -54,7 +54,7 @@ If the version prints successfully, skip to **Step 3**.
 To upgrade later, run:
 
 ```bash
-brew upgrade alexj11324/tap/patchbay
+brew upgrade alexj11324/tap/orvilo
 ```
 
 ### Option B: Download from GitHub Releases (macOS/Linux, no Homebrew)
@@ -77,22 +77,22 @@ LATEST=$(curl -sI https://github.com/alexj11324/Cordy/releases/latest | grep -i 
 
 # Download and extract
 VERSION="${LATEST#v}"
-curl -sL "https://github.com/alexj11324/Cordy/releases/download/${LATEST}/patchbay-cli-${VERSION}-${OS}-${ARCH}.tar.gz" -o /tmp/patchbay.tar.gz
-tar -xzf /tmp/patchbay.tar.gz -C /tmp patchbay
-sudo mv /tmp/patchbay /usr/local/bin/patchbay
-rm /tmp/patchbay.tar.gz
+curl -sL "https://github.com/alexj11324/Cordy/releases/download/${LATEST}/orvilo-cli-${VERSION}-${OS}-${ARCH}.tar.gz" -o /tmp/orvilo.tar.gz
+tar -xzf /tmp/orvilo.tar.gz -C /tmp orvilo
+sudo mv /tmp/orvilo /usr/local/bin/orvilo
+rm /tmp/orvilo.tar.gz
 ```
 
 Verify:
 
 ```bash
-patchbay version
+orvilo version
 ```
 
 **If this fails:**
 - Check that `/usr/local/bin` is in `$PATH`.
-- On Linux, you may need `chmod +x /usr/local/bin/patchbay`.
-- If `sudo` is not available, install to a user-writable directory: `mv /tmp/patchbay ~/.local/bin/patchbay` and ensure `~/.local/bin` is in `$PATH`.
+- On Linux, you may need `chmod +x /usr/local/bin/orvilo`.
+- If `sudo` is not available, install to a user-writable directory: `mv /tmp/orvilo ~/.local/bin/orvilo` and ensure `~/.local/bin` is in `$PATH`.
 
 ### Option C: Windows (PowerShell)
 
@@ -102,12 +102,12 @@ Run in PowerShell (no admin required):
 irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 ```
 
-This downloads the latest Windows binary from GitHub Releases, installs it to `%USERPROFILE%\.patchbay\bin\`, and adds it to your user PATH.
+This downloads the latest Windows binary from GitHub Releases, installs it to `%USERPROFILE%\.orvilo\bin\`, and adds it to your user PATH.
 
 Verify:
 
 ```powershell
-patchbay version
+orvilo version
 ```
 
 **If this fails:**
@@ -122,7 +122,7 @@ patchbay version
 Run:
 
 ```bash
-patchbay login
+orvilo login
 ```
 
 **Important:** This command opens a browser window for OAuth authentication. Tell the user:
@@ -134,14 +134,14 @@ Wait for the command to complete. It will automatically discover and watch all w
 Verify:
 
 ```bash
-patchbay auth status
+orvilo auth status
 ```
 
 Expected output should show the authenticated user and server URL.
 
 **If login fails:**
-- If no browser is available (headless environment), the user can generate a Personal Access Token at `https://patchbay.aspectlylabs.com/settings?tab=tokens` and run: `patchbay login --token <pby_...>` (use `--token=` with an empty value to be prompted interactively).
-- If the server URL needs to be customized: `patchbay config set server_url <url>` before logging in.
+- If no browser is available (headless environment), the user can generate a Personal Access Token at `https://orvilo.aspectlylabs.com/settings?tab=tokens` and run: `orvilo login --token <ovy_...>` (use `--token=` with an empty value to be prompted interactively).
+- If the server URL needs to be customized: `orvilo config set server_url <url>` before logging in.
 
 ---
 
@@ -150,26 +150,26 @@ Expected output should show the authenticated user and server URL.
 First, check if the daemon is already running:
 
 ```bash
-patchbay daemon status
+orvilo daemon status
 ```
 
 - **If status is "running"**: skip to **Step 5**.
 - **If status is "stopped"**: start it:
 
 ```bash
-patchbay daemon start
+orvilo daemon start
 ```
 
 Wait 3 seconds, then verify:
 
 ```bash
-patchbay daemon status
+orvilo daemon status
 ```
 
 Expected output should show `running` status with detected agents (e.g. `claude`, `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor-agent`, `grok`).
 
 **If daemon fails to start:**
-- Check logs: `patchbay daemon logs`
+- Check logs: `orvilo daemon logs`
 - If a port conflict occurs, the daemon may already be running under a different profile.
 - If no agents are detected, ensure at least one AI CLI (`claude`, `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor-agent`, or `grok`) is installed and on the `$PATH`.
 
@@ -180,7 +180,7 @@ Expected output should show `running` status with detected agents (e.g. `claude`
 Run:
 
 ```bash
-patchbay daemon status
+orvilo daemon status
 ```
 
 Confirm:
@@ -190,7 +190,7 @@ Confirm:
 
 If the agents list is empty, tell the user:
 
-> "The Orvilo daemon is running but no AI agent CLIs were detected. Please install at least one supported CLI (`claude`, `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor-agent`, or `grok`), then restart the daemon with `patchbay daemon stop && patchbay daemon start`."
+> "The Orvilo daemon is running but no AI agent CLIs were detected. Please install at least one supported CLI (`claude`, `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor-agent`, or `grok`), then restart the daemon with `orvilo daemon stop && orvilo daemon start`."
 
 ---
 
@@ -198,4 +198,4 @@ If the agents list is empty, tell the user:
 
 When all steps are complete, inform the user:
 
-> "Orvilo CLI is installed and the daemon is running. Agents in your workspaces can now execute tasks on this machine. You can manage workspaces with `patchbay workspace list` and view daemon logs with `patchbay daemon logs -f`."
+> "Orvilo CLI is installed and the daemon is running. Agents in your workspaces can now execute tasks on this machine. You can manage workspaces with `orvilo workspace list` and view daemon logs with `orvilo daemon logs -f`."

@@ -172,8 +172,8 @@ function useInternalLinkHandler() {
       if (!detail?.path) return;
       routeContentLinkPath(detail.path, detail.disposition);
     };
-    window.addEventListener("patchbay:navigate", handler);
-    return () => window.removeEventListener("patchbay:navigate", handler);
+    window.addEventListener("orvilo:navigate", handler);
+    return () => window.removeEventListener("orvilo:navigate", handler);
   }, []);
 }
 
@@ -193,7 +193,7 @@ function useInternalLinkHandler() {
  *      covers both click-to-select and URL-param-select paths.
  *
  * The click routes through `useNavigation().push` — NOT the
- * `patchbay:navigate` event, whose handler `openTab`s into the ACTIVE
+ * `orvilo:navigate` event, whose handler `openTab`s into the ACTIVE
  * workspace's tab group. The navigation adapter detects a cross-workspace
  * path and translates it into `switchWorkspace(slug, path)`, so clicking a
  * workspace-A notification while B is active performs a real workspace

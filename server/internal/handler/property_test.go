@@ -1288,7 +1288,7 @@ func TestIssuePropertyFacetScalarTypes(t *testing.T) {
 func createPropertyTestMember(t *testing.T) string {
 	t.Helper()
 	ctx := context.Background()
-	email := "actor-second-" + uuid.NewString()[:8] + "@patchbay.test"
+	email := "actor-second-" + uuid.NewString()[:8] + "@orvilo.test"
 	var userID string
 	if err := testPool.QueryRow(ctx,
 		`INSERT INTO "user" (name, email) VALUES ('Actor Second Member', $1) RETURNING id`, email,

@@ -8,10 +8,10 @@ import { Callout } from "fumadocs-ui/components/callout";
 先确认问题发生在哪一层：Orvilo 服务、守护进程、运行时，还是 AI 编程工具。下面几条命令通常足以找到第一条有效错误：
 
 ```bash
-patchbay version
-patchbay auth status
-patchbay daemon status --output json
-patchbay daemon logs --lines 100
+orvilo version
+orvilo auth status
+orvilo daemon status --output json
+orvilo daemon logs --lines 100
 ```
 
 自托管实例还可以直接检查服务：
@@ -28,9 +28,9 @@ curl -i https://api.example.com/readyz
 先运行：
 
 ```bash
-patchbay auth status
-patchbay daemon status --output json
-patchbay daemon logs --lines 100
+orvilo auth status
+orvilo daemon status --output json
+orvilo daemon logs --lines 100
 ```
 
 常见原因包括：
@@ -44,14 +44,14 @@ patchbay daemon logs --lines 100
 重新登录并重启守护进程：
 
 ```bash
-patchbay login
-patchbay daemon restart
+orvilo login
+orvilo daemon restart
 ```
 
-自托管部署还需要从**执行电脑**请求 API 的 `/health`——服务器本机测试无法暴露执行电脑侧的 DNS、TLS 或防火墙问题。需要修改地址时，重新运行 `patchbay setup self-host`，或检查当前 profile 的 `server_url`：
+自托管部署还需要从**执行电脑**请求 API 的 `/health`——服务器本机测试无法暴露执行电脑侧的 DNS、TLS 或防火墙问题。需要修改地址时，重新运行 `orvilo setup self-host`，或检查当前 profile 的 `server_url`：
 
 ```bash
-patchbay config show
+orvilo config show
 ```
 
 ## 任务未开始执行
@@ -70,12 +70,12 @@ patchbay config show
 智能体默认最多同时执行 6 条 task；单个守护进程默认最多同时执行 20 条。达到上限时，新 task 会留在队列中，等已有执行结束后再开始。运行时离线时，task 也会继续排队；只有该运行时心跳缺席超过重连宽限期、且该 task 自己也已等满这么久时才会失败；所以排在忙碌运行时后面的长队列不会因为等太久而被判失败，路由给已经离线的机器时也仍然留有完整一个宽限期把它唤醒。
 
 ```bash
-patchbay daemon status --output json
-patchbay agent get <agent-id>
-patchbay issue runs <issue-id>
+orvilo daemon status --output json
+orvilo agent get <agent-id>
+orvilo issue runs <issue-id>
 ```
 
-如果运行时列表缺少预期工具，先在同一个系统账号和 `PATH` 中确认工具可以运行并且已经登录，再执行 `patchbay daemon restart`。
+如果运行时列表缺少预期工具，先在同一个系统账号和 `PATH` 中确认工具可以运行并且已经登录，再执行 `orvilo daemon restart`。
 
 ### `waiting_local_directory` 状态
 
@@ -83,7 +83,7 @@ patchbay issue runs <issue-id>
 
 这种等待只存在于目录的 `in_place`（“原地”）模式。如果这个目录是 git 仓库，把资源切到 `worktree`（“并行”）就没有队列了：每条 task 拿到自己的 worktree，并以分支形式交回结果，谁都不用等谁。见[项目资源](/project-resources#task-如何共享这个目录)。
 
-否则通常只需等前一条 task 结束。若前一条已经卡住，可以从它的执行日志中停止；也可以为当前智能体选择其他本地目录。这个目录互斥由守护进程在内存中维护，不写磁盘锁文件；怀疑锁状态异常时运行 `patchbay daemon restart` 即可释放，没有需要手动删除的文件。
+否则通常只需等前一条 task 结束。若前一条已经卡住，可以从它的执行日志中停止；也可以为当前智能体选择其他本地目录。这个目录互斥由守护进程在内存中维护，不写磁盘锁文件；怀疑锁状态异常时运行 `orvilo daemon restart` 即可释放，没有需要手动删除的文件。
 
 ## AI 编程工具启动失败
 
@@ -120,7 +120,7 @@ docker compose -f docker-compose.selfhost.yml up -d
 
 完整的反向代理示例见[自托管快速上手](/self-host-quickstart#3-选择访问方式)。
 
-## `patchbay setup` 报告服务器不可达
+## `orvilo setup` 报告服务器不可达
 
 CLI 的可达性探测会 GET `<server-url>/health` 并要求 200。backend 提供这个路径。新版 web 前端会把 `/health` 转发给 backend，旧版不会——把所有流量都转给旧版 frontend 的反向代理会返回 404，于是 CLI 误判服务不可用，而服务实际是健康的。
 
@@ -211,21 +211,21 @@ netstat -ano | findstr :8080 # Windows
 
 | 组件 | 查看方式 |
 | --- | --- |
-| 后台守护进程 | `patchbay daemon logs --lines 100` |
-| 实时跟随守护进程日志 | `patchbay daemon logs --follow` |
-| 默认 profile 的日志文件 | `~/.patchbay/daemon.log` |
-| 默认 profile 的启动或崩溃日志 | `~/.patchbay/daemon.err.log` |
-| 命名 profile | `~/.patchbay/profiles/<name>/` 下的对应日志 |
+| 后台守护进程 | `orvilo daemon logs --lines 100` |
+| 实时跟随守护进程日志 | `orvilo daemon logs --follow` |
+| 默认 profile 的日志文件 | `~/.orvilo/daemon.log` |
+| 默认 profile 的启动或崩溃日志 | `~/.orvilo/daemon.err.log` |
+| 命名 profile | `~/.orvilo/profiles/<name>/` 下的对应日志 |
 | Docker backend | `docker compose -f docker-compose.selfhost.yml logs -f backend` |
 | 浏览器 | 开发者工具中的 Console 和 Network |
 
-哪个文件是当前活跃的日志，取决于守护进程启动时使用的 profile；早前守护进程残留的旧日志同样能正常读出来，最容易让人调错文件。不要靠猜去开文件：`patchbay daemon logs` 会在输出日志内容前先打印它解析到的绝对路径。读命名 profile 的日志时加上 `--profile <name>`。
+哪个文件是当前活跃的日志，取决于守护进程启动时使用的 profile；早前守护进程残留的旧日志同样能正常读出来，最容易让人调错文件。不要靠猜去开文件：`orvilo daemon logs` 会在输出日志内容前先打印它解析到的绝对路径。读命名 profile 的日志时加上 `--profile <name>`。
 
 需要直接观察守护进程启动过程时，可以改为前台运行：
 
 ```bash
-patchbay daemon stop
-patchbay daemon start --foreground
+orvilo daemon stop
+orvilo daemon start --foreground
 ```
 
 仍然无法定位时，到 [GitHub 任务](https://github.com/alexj11324/Cordy/issues) 搜索已有问题或提交新的任务。

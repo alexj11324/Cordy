@@ -27,7 +27,7 @@ Xcode 或真机开发环境未配置时，先完成 Expo 的 [iOS Device 环境�
 
 ```bash
 git clone https://github.com/alexj11324/Cordy.git
-cd patchbay
+cd Cordy
 pnpm install
 ```
 
@@ -52,7 +52,7 @@ Apple Developer Program 账号签名的有效期更长，也可以用于 TestFli
 如果 Xcode 提示 `No matching provisioning profiles found`，默认 bundle identifier 可能不属于你的 Apple ID。换成自己控制的反向域名后重新构建：
 
 ```bash
-export EXPO_BUNDLE_IDENTIFIER_PROD=com.yourname.patchbay
+export EXPO_BUNDLE_IDENTIFIER_PROD=com.yourname.orvilo
 pnpm ios:mobile:device:prod:release
 ```
 

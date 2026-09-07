@@ -359,7 +359,7 @@ func (s *InstallationService) finalize(ctx context.Context, workspaceID, agentID
 		return db.ChannelInstallation{}, fmt.Errorf("weixin: upsert installation: %w", err)
 	}
 	if _, err := qtx.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
-		WorkspaceID: workspaceID, PatchbayUserID: installerID, InstallationID: row.ID,
+		WorkspaceID: workspaceID, OrviloUserID: installerID, InstallationID: row.ID,
 		ChannelType: string(TypeWeixin), ChannelUserID: strings.TrimSpace(userID), Config: []byte(`{}`),
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

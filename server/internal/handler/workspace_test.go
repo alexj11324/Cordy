@@ -171,13 +171,13 @@ INSERT INTO github_pending_check_suite (
 	workspace_id, installation_id, repo_owner, repo_name, pr_number,
 	suite_id, head_sha, app_id, status, suite_updated_at
 )
-VALUES ($1, 123456789, 'patchbay-ai', 'patchbay', 3366, 987654321, 'abc123', 15368, 'completed', now())
+VALUES ($1, 123456789, 'patchbay-ai', 'orvilo', 3366, 987654321, 'abc123', 15368, 'completed', now())
 `, wsID)
 	githubPRID := dbfx.Insert(t, "github_pull_request", testutil.Cols{
 		"workspace_id":    wsID,
 		"installation_id": 123456789,
 		"repo_owner":      "patchbay-ai",
-		"repo_name":       "patchbay",
+		"repo_name":       "orvilo",
 		"pr_number":       5265,
 		"title":           "Workspace cleanup snapshot",
 		"state":           "open",
@@ -388,7 +388,7 @@ FROM pg_trigger
 WHERE tgname = $1
   AND NOT tgisinternal
 `, triggerName).Scan(&definition)
-		if !strings.Contains(definition, "patchbay.workspace_teardown") {
+		if !strings.Contains(definition, "orvilo.workspace_teardown") {
 			t.Fatalf("trigger %s does not guard workspace teardown: %s", triggerName, definition)
 		}
 	}
@@ -406,7 +406,7 @@ func TestWorkspaceTeardownModeDoesNotLeakIntoOrdinaryDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin teardown marker transaction: %v", err)
 	}
-	if _, err := tx.Exec(ctx, `SELECT set_config('patchbay.workspace_teardown', 'on', true)`); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT set_config('orvilo.workspace_teardown', 'on', true)`); err != nil {
 		_ = tx.Rollback(ctx)
 		t.Fatalf("set transaction-local teardown mode: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestWorkspaceTeardownModeDoesNotLeakIntoOrdinaryDeletes(t *testing.T) {
 	}
 
 	var teardownMode string
-	if err := conn.QueryRow(ctx, `SELECT current_setting('patchbay.workspace_teardown', true)`).Scan(&teardownMode); err != nil {
+	if err := conn.QueryRow(ctx, `SELECT current_setting('orvilo.workspace_teardown', true)`).Scan(&teardownMode); err != nil {
 		t.Fatalf("read teardown mode after commit: %v", err)
 	}
 	if teardownMode != "" {
@@ -844,7 +844,7 @@ func setupRevocationFixture(t *testing.T, slug, daemonID string) revocationFixtu
 INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')
 `, wsID, testUserID)
 
-	targetEmail := fmt.Sprintf("revocation-%s@patchbay.ai", slug)
+	targetEmail := fmt.Sprintf("revocation-%s@orvilo.ai", slug)
 	targetUserID := dbfx.Insert(t, "user", testutil.Cols{
 		"name":  "Revocation Target " + slug,
 		"email": targetEmail,
@@ -868,7 +868,7 @@ INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')
 		"workspace_id": wsID,
 		"daemon_id":    daemonID,
 		"runtime_mode": "local",
-		"provider":     "patchbay_daemon",
+		"provider":     "orvilo_daemon",
 		"owner_id":     targetUserID,
 	})
 
@@ -988,14 +988,14 @@ RETURNING id
 
 	// Binding for the member being removed — must be pruned.
 	dbfx.Exec(t, `
-INSERT INTO channel_user_binding (workspace_id, patchbay_user_id, installation_id, channel_type, channel_user_id)
+INSERT INTO channel_user_binding (workspace_id, orvilo_user_id, installation_id, channel_type, channel_user_id)
 VALUES ($1, $2, $3, 'feishu', $4)
 `, fx.WorkspaceID, fx.TargetUserID, installID, removedOpenID)
 
 	// Binding for the requester (an owner who stays) — must survive, proving
 	// the prune is scoped to the removed user, not the whole workspace.
 	dbfx.Exec(t, `
-INSERT INTO channel_user_binding (workspace_id, patchbay_user_id, installation_id, channel_type, channel_user_id)
+INSERT INTO channel_user_binding (workspace_id, orvilo_user_id, installation_id, channel_type, channel_user_id)
 VALUES ($1, $2, $3, 'feishu', $4)
 `, fx.WorkspaceID, testUserID, installID, keepOpenID)
 
@@ -1058,7 +1058,7 @@ VALUES ($1, 'member', $2), ($1, 'member', $3)
 		"workspace_id": otherWorkspaceID,
 		"daemon_id":    "daemon-revoke-automation-subscriber-other",
 		"runtime_mode": "local",
-		"provider":     "patchbay_daemon",
+		"provider":     "orvilo_daemon",
 		"owner_id":     fx.TargetUserID,
 	})
 	otherAgentID := dbfx.Agent(t, "Other workspace agent", otherRuntimeID, testutil.Cols{
@@ -1150,7 +1150,7 @@ func TestDeleteMember_CancelsTasksFromAgentReassignment(t *testing.T) {
 		"workspace_id": fx.WorkspaceID,
 		"daemon_id":    "daemon-revoke-reassign-other",
 		"runtime_mode": "local",
-		"provider":     "patchbay_daemon",
+		"provider":     "orvilo_daemon",
 	})
 
 	// Queue a task on the agent while it was still pinned to the OTHER
@@ -1238,7 +1238,7 @@ INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')
 
 	targetUserID := dbfx.Insert(t, "user", testutil.Cols{
 		"name":  "Revocation No Runtimes Target",
-		"email": "revocation-no-runtimes@patchbay.ai",
+		"email": "revocation-no-runtimes@orvilo.ai",
 	})
 	t.Cleanup(func() {
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM workspace WHERE id = $1`, wsID)

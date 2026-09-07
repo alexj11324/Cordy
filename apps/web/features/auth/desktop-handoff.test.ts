@@ -8,7 +8,7 @@ describe("buildDesktopHandoffQuery", () => {
   it("preserves only the PKCE binding parameters", () => {
     const query = buildDesktopHandoffQuery(
       new URLSearchParams(
-        "platform=desktop&code_challenge=challenge-value&state=opaque-state&callback_protocol=patchbay-canary-attacker",
+        "platform=desktop&code_challenge=challenge-value&state=opaque-state&callback_protocol=orvilo-canary-attacker",
       ),
     );
 
@@ -39,7 +39,7 @@ describe("buildDesktopHandoffQuery", () => {
           platform: "desktop",
           code_challenge: codeChallenge,
           state,
-          callback_protocol: "patchbay-canary-attacker",
+          callback_protocol: "orvilo-canary-attacker",
           token: "must-not-be-forwarded",
         }),
       ),
@@ -87,7 +87,7 @@ describe("buildDesktopHandoffQuery", () => {
       platform: "desktop",
       code_challenge: codeChallenge,
       state,
-      app_origin: "https://patchbay.aspectlylabs.com",
+      app_origin: "https://orvilo.aspectlylabs.com",
     });
 
     expect(readDesktopHandoffBinding(searchParams)).toBeNull();

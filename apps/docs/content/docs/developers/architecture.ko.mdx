@@ -17,7 +17,7 @@ Web / Desktop / Mobile / CLI
       로컬 데몬 ─── AI 코딩 도구
 ```
 
-제품 사용자 관점의 설명은 [Orvilo의 작동 방식](/how-patchbay-works)을 참고하세요. 이 페이지에서는 코드의 계층 구조를 설명합니다.
+제품 사용자 관점의 설명은 [Orvilo의 작동 방식](/how-orvilo-works)을 참고하세요. 이 페이지에서는 코드의 계층 구조를 설명합니다.
 
 ## 저장소 구조
 
@@ -76,7 +76,7 @@ API 응답은 `packages/core/api/` 경계에서 zod schema로 parsing합니다. 
 | entry point | 역할 |
 | --- | --- |
 | `server` | HTTP API, WebSocket, scheduler, 연동 worker 시작 |
-| `patchbay` | CLI와 로컬 데몬 |
+| `orvilo` | CLI와 로컬 데몬 |
 | `migrate` | 데이터베이스 migration 실행 |
 | `backfill_*` | 특정 버전의 데이터 backfill 도구 |
 

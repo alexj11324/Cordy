@@ -559,12 +559,12 @@ ORDER BY workspace_id;
 -- to an Orvilo user. The old composite member-FK is gone, so this no
 -- longer fails when the redeemer is not a workspace member — the caller
 -- (BindingTokenService.RedeemAndBind) validates membership explicitly
--- before calling. ON CONFLICT DO UPDATE is still gated on patchbay_user_id
+-- before calling. ON CONFLICT DO UPDATE is still gated on orvilo_user_id
 -- matching, so a second redeemer cannot steal an already-bound user id;
 -- a cross-user conflict updates zero rows and the caller maps that to
 -- ErrBindingAlreadyAssigned. config carries secondary identity (union_id).
 INSERT INTO channel_user_binding (
-    workspace_id, patchbay_user_id, installation_id,
+    workspace_id, orvilo_user_id, installation_id,
     channel_type, channel_user_id, config
 ) VALUES (
     $1, $2, $3, $4, $5, $6
@@ -576,7 +576,7 @@ ON CONFLICT (installation_id, channel_user_id) DO UPDATE SET
     -- erase a union_id we already captured. Only non-null incoming keys win.
     config   = channel_user_binding.config || jsonb_strip_nulls(EXCLUDED.config),
     bound_at = now()
-WHERE channel_user_binding.patchbay_user_id = EXCLUDED.patchbay_user_id
+WHERE channel_user_binding.orvilo_user_id = EXCLUDED.orvilo_user_id
 RETURNING *;
 
 -- name: GetChannelUserBindingByUserID :one
@@ -600,7 +600,7 @@ WHERE installation_id = $1 AND channel_user_id = $2;
 SELECT b.* FROM channel_user_binding b
 JOIN channel_installation ci ON ci.id = b.installation_id
 WHERE b.workspace_id = sqlc.arg('workspace_id')
-  AND b.patchbay_user_id = sqlc.arg('patchbay_user_id')
+  AND b.orvilo_user_id = sqlc.arg('orvilo_user_id')
   AND b.channel_type = sqlc.arg('channel_type')
   AND ci.status = 'installed'
 ORDER BY b.bound_at DESC
@@ -635,7 +635,7 @@ LIMIT 1;
 -- CASCADE): prune every binding for a user who has been removed from a
 -- workspace, across all installations in that workspace.
 DELETE FROM channel_user_binding
-WHERE workspace_id = $1 AND patchbay_user_id = $2;
+WHERE workspace_id = $1 AND orvilo_user_id = $2;
 
 -- name: DeleteChannelUserBindingsByInstallation :exec
 -- Application-layer integrity (schema has no FK/cascade, MUL-3515 §4): drop

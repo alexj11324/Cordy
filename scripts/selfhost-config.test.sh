@@ -51,7 +51,7 @@ tmp_env="$(mktemp)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -f "$tmp_env"; rm -rf "$tmp_dir"' EXIT
 sed 's/^FRONTEND_PORT=.*/FRONTEND_PORT=3100/' .env.example >"$tmp_env"
-printf '\nBACKEND_PORT=9100\nSMTP_FROM_EMAIL=patchbay@example.com\n' >>"$tmp_env"
+printf '\nBACKEND_PORT=9100\nSMTP_FROM_EMAIL=orvilo@example.com\n' >>"$tmp_env"
 printf 'ORVILO_LLM_API_KEY=llm-key-from-env\nORVILO_LLM_BASE_URL=http://gateway.example/v1\nORVILO_LLM_DEFAULT_MODEL=model-from-env\nORVILO_LLM_MAX_RETRIES=3\n' >>"$tmp_env"
 
 config="$(
@@ -66,7 +66,7 @@ require_config "$config" 'published: "9100"'
 require_config "$config" 'FRONTEND_ORIGIN: http://localhost:3100'
 require_config "$config" 'GOOGLE_REDIRECT_URI: http://localhost:3100/auth/callback'
 require_config "$config" 'ORVILO_APP_URL: http://localhost:3100'
-require_config "$config" 'SMTP_FROM_EMAIL: patchbay@example.com'
+require_config "$config" 'SMTP_FROM_EMAIL: orvilo@example.com'
 require_config "$config" 'RESEND_FROM_EMAIL: noreply@invalid.invalid'
 require_config "$config" 'ORVILO_DATABASE_STARTUP_TIMEOUT: 3m'
 require_config "$config" 'ORVILO_DATABASE_CONNECT_TIMEOUT: 5s'
@@ -80,38 +80,38 @@ require_config "$config" 'ORVILO_LLM_API_KEY: llm-key-from-env'
 require_config "$config" 'ORVILO_LLM_BASE_URL: http://gateway.example/v1'
 require_config "$config" 'ORVILO_LLM_DEFAULT_MODEL: model-from-env'
 require_config "$config" 'ORVILO_LLM_MAX_RETRIES: "3"'
-require_config "$config" 'image: ghcr.io/alexj11324/patchbay-backend:latest'
-require_config "$config" 'image: ghcr.io/alexj11324/patchbay-web:latest'
+require_config "$config" 'image: ghcr.io/alexj11324/orvilo-backend:latest'
+require_config "$config" 'image: ghcr.io/alexj11324/orvilo-web:latest'
 
 # Keep the self-host deployment surfaces on the same Go mainline image
 # namespace and the same safe sender/callback defaults. The Helm chart uses
 # Chart.appVersion for its empty tag, while Compose and .env.example use the
 # explicit latest channel; release promotion supplies the exact tag.
-require_text docker-compose.selfhost.yml 'image: ${ORVILO_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend}:${ORVILO_IMAGE_TAG:-latest}'
-require_text docker-compose.selfhost.yml 'image: ${ORVILO_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web}:${ORVILO_IMAGE_TAG:-latest}'
+require_text docker-compose.selfhost.yml 'image: ${ORVILO_BACKEND_IMAGE:-ghcr.io/alexj11324/orvilo-backend}:${ORVILO_IMAGE_TAG:-latest}'
+require_text docker-compose.selfhost.yml 'image: ${ORVILO_WEB_IMAGE:-ghcr.io/alexj11324/orvilo-web}:${ORVILO_IMAGE_TAG:-latest}'
 require_text docker-compose.selfhost.yml 'ORVILO_MESSAGING_MODE: ${ORVILO_MESSAGING_MODE:-server_configured}'
 require_text docker-compose.selfhost.yml 'ORVILO_MESSAGING_BOOTSTRAP: ${ORVILO_MESSAGING_BOOTSTRAP:-false}'
 require_text docker-compose.selfhost.yml 'ORVILO_MESSAGING_WORKSPACE_ID: ${ORVILO_MESSAGING_WORKSPACE_ID:-}'
 require_text docker-compose.selfhost.yml 'ORVILO_MESSAGING_INSTALLER_USER_ID: ${ORVILO_MESSAGING_INSTALLER_USER_ID:-}'
 require_text docker-compose.selfhost.yml 'SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}'
 require_text docker-compose.selfhost.yml 'SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}'
-require_text deploy/helm/patchbay/values.yaml 'repository: ghcr.io/alexj11324/patchbay-backend'
-require_text deploy/helm/patchbay/values.yaml 'repository: ghcr.io/alexj11324/patchbay-web'
-require_text deploy/helm/patchbay/values.yaml 'resendFromEmail: noreply@invalid.invalid'
-require_text deploy/helm/patchbay/values.yaml 'googleRedirectUri: http://patchbay.dev.lan/auth/callback'
-require_text .env.example 'ORVILO_BACKEND_IMAGE=ghcr.io/alexj11324/patchbay-backend'
-require_text .env.example 'ORVILO_WEB_IMAGE=ghcr.io/alexj11324/patchbay-web'
+require_text deploy/helm/orvilo/values.yaml 'repository: ghcr.io/alexj11324/orvilo-backend'
+require_text deploy/helm/orvilo/values.yaml 'repository: ghcr.io/alexj11324/orvilo-web'
+require_text deploy/helm/orvilo/values.yaml 'resendFromEmail: noreply@invalid.invalid'
+require_text deploy/helm/orvilo/values.yaml 'googleRedirectUri: http://orvilo.dev.lan/auth/callback'
+require_text .env.example 'ORVILO_BACKEND_IMAGE=ghcr.io/alexj11324/orvilo-backend'
+require_text .env.example 'ORVILO_WEB_IMAGE=ghcr.io/alexj11324/orvilo-web'
 require_text SELF_HOSTING_ADVANCED.md 'The bundled self-host deployments use `noreply@invalid.invalid` as the empty-value'
-require_text scripts/selfhost-wait.sh 'ORVILO_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend'
-require_text scripts/selfhost-wait.sh 'ORVILO_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web'
+require_text scripts/selfhost-wait.sh 'ORVILO_BACKEND_IMAGE:-ghcr.io/alexj11324/orvilo-backend'
+require_text scripts/selfhost-wait.sh 'ORVILO_WEB_IMAGE:-ghcr.io/alexj11324/orvilo-web'
 require_text docker/entrypoint.sh './migrate up &'
 require_text docker/entrypoint.sh 'exec ./server'
-require_text deploy/helm/patchbay/templates/backend.yaml 'path: /healthz'
-require_text deploy/helm/patchbay/templates/backend.yaml 'path: /health'
+require_text deploy/helm/orvilo/templates/backend.yaml 'path: /healthz'
+require_text deploy/helm/orvilo/templates/backend.yaml 'path: /health'
 require_text scripts/selfhost-wait.sh 'curl -sf "${backend_url}/health"'
 
 if grep -R -n -E 'ghcr\.io/patchbay-ai/(patchbay-backend|patchbay-web)' \
-  docker-compose.selfhost.yml deploy/helm/patchbay/values.yaml .env.example \
+  docker-compose.selfhost.yml deploy/helm/orvilo/values.yaml .env.example \
   SELF_HOSTING_ADVANCED.md scripts/selfhost-wait.sh; then
   echo "Self-host deployment files still contain the retired GHCR image namespace."
   exit 1

@@ -13,7 +13,7 @@ import { api } from "@orvilo/core/api";
  */
 
 const BRIDGE_PROTOCOL_VERSION = 2;
-const BRIDGE_CONNECT_MESSAGE = "patchbay:plugin-bridge-init";
+const BRIDGE_CONNECT_MESSAGE = "orvilo:plugin-bridge-init";
 
 type BridgeMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 

@@ -14,7 +14,7 @@ Orvilo 是人和 AI 智能体一起工作的平台。这篇教程从零开始，
 
 **开始前准备：**
 
-- 一个 Orvilo 账号（[patchbay.aspectlylabs.com](https://patchbay.aspectlylabs.com) 注册）
+- 一个 Orvilo 账号（[orvilo.aspectlylabs.com](https://orvilo.aspectlylabs.com) 注册）
 - 一台安装并登录了至少一款 AI 编程工具的电脑，例如 Claude Code 或 Codex；全部支持的工具见[安装 AI 编程工具](/install-agent-runtime)
 
 ## 创建工作区
@@ -28,7 +28,7 @@ Orvilo 是人和 AI 智能体一起工作的平台。这篇教程从零开始，
 创建时填两项：
 
 - **名称**：展示给成员，之后可以修改。
-- **工作区 URL**：地址中的 slug，例如 `patchbay.aspectlylabs.com/my-team` 里的 `my-team`，创建后不可修改。
+- **工作区 URL**：地址中的 slug，例如 `orvilo.aspectlylabs.com/my-team` 里的 `my-team`，创建后不可修改。
 
 ![创建工作区页面](/images/docs/tutorial-create-workspace-form.webp)
 
@@ -94,7 +94,7 @@ request is ambiguous, ask before acting.
 
 网站的代码放在 GitHub 仓库里。仓库的创建和绑定同样交给智能体——前提是这台电脑安装并登录了 [GitHub CLI](https://cli.github.com)。
 
-在**聊天**中选择 Engineer，告诉它：在我的 GitHub 账号下创建一个名为 `personal-website` 的空仓库（这台电脑上有 GitHub CLI），然后用 `patchbay repo add` 注册进这个工作区。Engineer 会在本地创建仓库、把它注册进工作区，并回复仓库地址。消息里没有指定可见性，它会按默认创建并在回复里说明；公开或私有都不影响后续步骤。
+在**聊天**中选择 Engineer，告诉它：在我的 GitHub 账号下创建一个名为 `personal-website` 的空仓库（这台电脑上有 GitHub CLI），然后用 `orvilo repo add` 注册进这个工作区。Engineer 会在本地创建仓库、把它注册进工作区，并回复仓库地址。消息里没有指定可见性，它会按默认创建并在回复里说明；公开或私有都不影响后续步骤。
 
 ![聊天，Engineer 回复仓库已创建并注册](/images/docs/tutorial-chat-create-repo.webp)
 
@@ -189,11 +189,11 @@ Engineer 的回复分两部分：本地服务已经启动，给出访问地址�
 
 这轮验收暴露了 Engineer 的两个工作习惯：完成后靠反复截图自查，占掉不少执行时间；提交 PR 时不带任务编号，关联不上。两个都不是这一次的偶然失误，而是它每次都会重复的做法——要改的不是这条任务，而是它的指令。
 
-指令不用你自己动手改：智能体可以用 patchbay CLI 更新自己的配置。继续在刚才的对话里告诉 Engineer 这两条规则——完成后不用截图自查，验收在浏览器里进行；PR 的分支名或标题里必须带任务编号——并让它写进自己的指令：
+指令不用你自己动手改：智能体可以用 orvilo CLI 更新自己的配置。继续在刚才的对话里告诉 Engineer 这两条规则——完成后不用截图自查，验收在浏览器里进行；PR 的分支名或标题里必须带任务编号——并让它写进自己的指令：
 
 ![让 Engineer 把规则写进自己的指令](/images/docs/tutorial-chat-update-instructions.webp)
 
-Engineer 用 `patchbay agent update` 完成更新，在指令里新增一节工作规则，并指出第一条的代价：不再截图自查，页面上的视觉问题要靠你在浏览器里发现。
+Engineer 用 `orvilo agent update` 完成更新，在指令里新增一节工作规则，并指出第一条的代价：不再截图自查，页面上的视觉问题要靠你在浏览器里发现。
 
 打开**智能体 → Engineer**，指令里已经多出这两条：
 

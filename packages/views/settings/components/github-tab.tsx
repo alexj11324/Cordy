@@ -262,7 +262,7 @@ export function GitHubTab() {
               <>
                 {t(($) => $.github.feature_co_author_description_prefix)}{" "}
                 <code className="rounded bg-muted px-1 py-0.5 text-caption">
-                  {"Co-authored-by: patchbay-agent <github@aspectlylabs.com>"}
+                  {"Co-authored-by: orvilo-agent <github@aspectlylabs.com>"}
                 </code>{" "}
                 {t(($) => $.github.feature_co_author_description_suffix)}
               </>

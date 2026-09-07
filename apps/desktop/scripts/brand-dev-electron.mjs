@@ -2,7 +2,7 @@
 // Prepare this worktree's Electron.app before launch. macOS discovers URL
 // schemes and application identity from Info.plist, not app.setName().
 // Every development checkout declares only its path-derived callback scheme.
-// A development build must never claim production patchbay:// or another
+// A development build must never claim production orvilo:// or another
 // checkout's callback.
 // https://www.electronjs.org/docs/latest/api/app#appsetasdefaultprotocolclientprotocol-path-args
 import { createRequire } from "node:module";
@@ -17,7 +17,7 @@ import {
 
 export function devBundleIdentity(appRoot, suffix) {
   const hash = identityHashForPath(appRoot);
-  const bundleId = `ai.patchbay.desktop.canary.${hash}`;
+  const bundleId = `ai.orvilo.desktop.canary.${hash}`;
   const callbackProtocol = callbackProtocolForPath(appRoot);
   return {
     name: suffix ? `Orvilo Canary ${suffix}` : "Orvilo Canary",

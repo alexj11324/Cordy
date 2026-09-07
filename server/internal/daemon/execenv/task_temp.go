@@ -14,7 +14,7 @@ import (
 // per-task temp directory the daemon creates under the task temp base. The
 // sweep below removes nothing without it, so the base itself — usually a
 // shared /tmp holding other programs' files — is never at risk.
-const TaskTempDirPrefix = "patchbay-task-"
+const TaskTempDirPrefix = "orvilo-task-"
 
 // taskTempLockClaimFile is the name the marker is locked under before being
 // renamed into place, so .task_lock never exists unlocked while its owner is

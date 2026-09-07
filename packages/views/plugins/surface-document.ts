@@ -13,7 +13,7 @@ export const SURFACE_THEME_TOKENS = [
   "--text-body",
 ] as const;
 
-export const SURFACE_BRIDGE_CONNECT_MESSAGE = "patchbay:plugin-bridge-init";
+export const SURFACE_BRIDGE_CONNECT_MESSAGE = "orvilo:plugin-bridge-init";
 export const SURFACE_BRIDGE_PROTOCOL_VERSION = 2;
 
 export function readThemeTokens(element: Element | null): Record<string, string> {
@@ -87,12 +87,12 @@ export function buildSurfaceFrameDocument({ url, bridgeToken }: SurfaceFrameDocu
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-html, body, #patchbay-plugin-root, iframe { width: 100%; height: 100%; margin: 0; padding: 0; border: 0; }
+html, body, #orvilo-plugin-root, iframe { width: 100%; height: 100%; margin: 0; padding: 0; border: 0; }
 body { overflow: hidden; background: transparent; }
 </style>
 </head>
 <body>
-<div id="patchbay-plugin-root"></div>
+<div id="orvilo-plugin-root"></div>
 <script>
 (function () {
   var encoded = ${JSON.stringify(config)};
@@ -117,19 +117,19 @@ body { overflow: hidden; background: transparent; }
 
   document.addEventListener("securitypolicyviolation", function (event) {
     if (event.effectiveDirective === "frame-src" || event.effectiveDirective === "child-src") {
-      stopSurface("patchbay:plugin-surface-navigation-blocked");
+      stopSurface("orvilo:plugin-surface-navigation-blocked");
     }
   });
 
   child.addEventListener("load", function () {
     loadCount += 1;
-    if (loadCount > 1) stopSurface("patchbay:plugin-surface-navigated");
+    if (loadCount > 1) stopSurface("orvilo:plugin-surface-navigated");
   });
 
   window.addEventListener("message", function (event) {
     if (!child.contentWindow || event.source !== child.contentWindow) return;
     var data = event.data || {};
-    if (data.type === "patchbay:plugin-surface-error" || data.type === "patchbay:plugin-surface-navigated") {
+    if (data.type === "orvilo:plugin-surface-error" || data.type === "orvilo:plugin-surface-navigated") {
       stopSurface(data.type);
       return;
     }
@@ -148,7 +148,7 @@ body { overflow: hidden; background: transparent; }
 
   child.src = config.url;
   config.url = "";
-  document.getElementById("patchbay-plugin-root").appendChild(child);
+  document.getElementById("orvilo-plugin-root").appendChild(child);
 })();
 </script>
 </body>

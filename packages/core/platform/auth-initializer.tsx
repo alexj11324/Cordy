@@ -331,7 +331,7 @@ export function AuthInitializer({
         status: "authenticating",
       });
     } else if (!cookieAuth) {
-      const token = storage.getItem("patchbay_token");
+      const token = storage.getItem("orvilo_token");
       if (!token) {
         settled = true;
         void onLogout?.(undefined, { reason: "missing-session" });

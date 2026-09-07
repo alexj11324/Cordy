@@ -169,7 +169,7 @@ func installExamplePlugin(t *testing.T, servers exampleServers) string {
 	// without a deployment key the engine refuses to call out at all.
 	plugins.DeploymentKey = bytes.Repeat([]byte{3}, 32)
 	plugins.Callbacks = service.NewCallbackTokens()
-	plugins.CallbackBaseURL = "https://plugin-api.patchbay.test/v1"
+	plugins.CallbackBaseURL = "https://plugin-api.orvilo.test/v1"
 	t.Cleanup(func() { *plugins = previous })
 
 	// Publishing is what validates the whole artifact: the manifest, the surface
@@ -329,8 +329,8 @@ func TestExamplePluginAgentHookRoundTripIsSigned(t *testing.T) {
 			Config  map[string]any `json:"config"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&payload)
-		seenSignature = r.Header.Get("X-Patchbay-Signature")
-		seenTimestamp = r.Header.Get("X-Patchbay-Timestamp")
+		seenSignature = r.Header.Get("X-Orvilo-Signature")
+		seenTimestamp = r.Header.Get("X-Orvilo-Timestamp")
 		seenHook, seenTrigger, seenConfig = payload.HookKey, payload.Trigger, payload.Config
 
 		w.Header().Set("Content-Type", "application/json")

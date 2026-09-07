@@ -33,7 +33,7 @@ Orvilo Desktop は macOS、Windows、Linux で利用できます。Web 版と同
 インストール後、Web 版と同じメールアドレスでサインインします。サインインすると、Desktop は内蔵の Orvilo CLI を起動し、マシンにすでにインストールされている AI コーディングツールを検出します。
 
 <Callout type="info">
-Desktop に内蔵された CLI は、アプリが管理するランタイム専用です。ターミナルで `patchbay issue` などのコマンドも実行したい場合は、[クイックスタートのステップ 2](/cloud-quickstart#2-コンピュータを接続する)に従って CLI を別途インストールしてください。
+Desktop に内蔵された CLI は、アプリが管理するランタイム専用です。ターミナルで `orvilo issue` などのコマンドも実行したい場合は、[クイックスタートのステップ 2](/cloud-quickstart#2-コンピュータを接続する)に従って CLI を別途インストールしてください。
 </Callout>
 
 ## デスクトップタブ
@@ -49,7 +49,7 @@ Desktop はワークスペースごとにタブを保存します。たとえば
 サインイン後、Desktop は現在の Orvilo サービス専用の CLI プロファイルを作成し、それを使ってデーモンを起動します。プロファイルの場所:
 
 ```text
-~/.patchbay/profiles/desktop-<host>/
+~/.orvilo/profiles/desktop-<host>/
 ```
 
 このプロファイルが、ターミナルで使っているデフォルトのプロファイルを読み取ったり上書きしたりすることはありません。別のデーモンを手動で起動した場合、Orvilo はそれらを別々のランタイムとして表示します。
@@ -70,13 +70,13 @@ Desktop はワークスペースごとにタブを保存します。たとえば
 
 ## セルフホストインスタンスへの接続
 
-Desktop はデフォルトで Orvilo Cloud に接続します。セルフホストインスタンスに接続するには、ホームディレクトリの `.patchbay` の中に `desktop.json` を作成します:
+Desktop はデフォルトで Orvilo Cloud に接続します。セルフホストインスタンスに接続するには、ホームディレクトリの `.orvilo` の中に `desktop.json` を作成します:
 
 | プラットフォーム | パス |
 | --- | --- |
-| macOS | `/Users/<you>/.patchbay/desktop.json` |
-| Linux | `/home/<you>/.patchbay/desktop.json` |
-| Windows | `C:\Users\<you>\.patchbay\desktop.json` |
+| macOS | `/Users/<you>/.orvilo/desktop.json` |
+| Linux | `/home/<you>/.orvilo/desktop.json` |
+| Windows | `C:\Users\<you>\.orvilo\desktop.json` |
 
 これらはデフォルトの場所です。ホームディレクトリを移動またはリダイレクトしている場合は、実際のパスを使ってください。
 
@@ -88,7 +88,7 @@ Desktop はデフォルトで Orvilo Cloud に接続します。セルフホス�
 ```
 
 <Callout type="warning">
-これは CLI の `~/.patchbay/config.json` と**別のファイル**で、キー名も異なります: CLI は `server_url`、Desktop は `apiUrl` を使います。Desktop は CLI の設定を読みません。`~/.patchbay/profiles/desktop-<host>/` の下に専用の daemon プロファイルを管理します。`config.json` を編集しても、Desktop の接続先は変わりません。
+これは CLI の `~/.orvilo/config.json` と**別のファイル**で、キー名も異なります: CLI は `server_url`、Desktop は `apiUrl` を使います。Desktop は CLI の設定を読みません。`~/.orvilo/profiles/desktop-<host>/` の下に専用の daemon プロファイルを管理します。`config.json` を編集しても、Desktop の接続先は変わりません。
 </Callout>
 
 `apiUrl` はバックエンドの公開アドレスです。必須で、`http` または `https` を使う必要があります。残りの 2 つのアドレスは省略でき、Desktop が自動で導出します:
@@ -126,13 +126,13 @@ Desktop が接続できるのは、ブラウザと実行マシンの両方から
 
 Windows では、エディタの 2 つのデフォルト動作が Desktop の読めないファイルを気づかないうちに作ってしまいます:
 
-- **メモ帳は `.txt` を付け足します。** `desktop.json` として保存したつもりでも実際には `desktop.json.txt` になることがあり、Desktop はファイルが見つからないものとして扱います。エクスプローラーでファイル名拡張子の表示を有効にするか、保存ダイアログで*すべてのファイル*を選んでください。実際のファイル名を確認するには、PowerShell で `Get-ChildItem "$env:USERPROFILE\.patchbay" -Filter "desktop.json*"` を実行します。`Name` 列がちょうど `desktop.json` になっている必要があります。
+- **メモ帳は `.txt` を付け足します。** `desktop.json` として保存したつもりでも実際には `desktop.json.txt` になることがあり、Desktop はファイルが見つからないものとして扱います。エクスプローラーでファイル名拡張子の表示を有効にするか、保存ダイアログで*すべてのファイル*を選んでください。実際のファイル名を確認するには、PowerShell で `Get-ChildItem "$env:USERPROFILE\.orvilo" -Filter "desktop.json*"` を実行します。`Name` 列がちょうど `desktop.json` になっている必要があります。
 - **PowerShell のリダイレクトは UTF-16 や BOM 付きで書き込みます。** `> desktop.json` や `Out-File` はパースできないエンコーディングを生成することがあり、設定エラーとして現れます。
 
 どちらも避けるには、PowerShell で一度に作成します:
 
 ```powershell
-$dir = "$env:USERPROFILE\.patchbay"
+$dir = "$env:USERPROFILE\.orvilo"
 New-Item -ItemType Directory -Force $dir | Out-Null
 $json = @'
 {
@@ -148,7 +148,7 @@ $json = @'
 **症状**: Windows セキュリティが `Trojan:Script/Wacatac.B!ml` のような脅威を報告し、Desktop のインストール先にあるファイルを隔離します。対象になるのは通常、アプリ本体の実行ファイルではなく同梱の CLI です。
 
 ```text
-C:\Users\<ユーザー名>\AppData\Local\Programs\@patchbaydesktop\resources\app.asar.unpacked\resources\bin\patchbay.exe
+C:\Users\<ユーザー名>\AppData\Local\Programs\@orvilodesktop\resources\app.asar.unpacked\resources\bin\orvilo.exe
 ```
 
 **これは誤検知です。** `!ml` というサフィックスは、この判定がマルウェアのシグネチャ一致ではなく Defender の機械学習ヒューリスティックによるものであることを示します。Orvilo の Windows ビルドはまだ Authenticode コード署名を行っておらず、公開されたばかりで署名がなく、バックグラウンドプロセスを起動してネットワーク接続を張るバイナリは、この種のヒューリスティックが最も疑わしいと判定するプロファイルそのものです。Windows 向けの成果物はすべて、このリポジトリの公開ソースから GitHub Actions でビルドされています。
@@ -156,7 +156,7 @@ C:\Users\<ユーザー名>\AppData\Local\Programs\@patchbaydesktop\resources\app
 **自分で検証できます** — 各 GitHub リリースには、すべての CLI アーカイブを網羅した `checksums.txt` が公開されています。
 
 ```powershell
-Get-FileHash .\patchbay-cli-<version>-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\orvilo-cli-<version>-windows-amd64.zip -Algorithm SHA256
 ```
 
 出力されたハッシュを、[最新リリース](https://github.com/alexj11324/Cordy/releases/latest)の `checksums.txt` の該当行と照合してください。
@@ -165,7 +165,7 @@ Get-FileHash .\patchbay-cli-<version>-windows-amd64.zip -Algorithm SHA256
 
 1. **隔離されたファイルを復元する** — Windows セキュリティ → *ウイルスと脅威の防止* → *保護の履歴* → Orvilo の項目を選択 → *操作* → *復元*。
 2. **除外を追加する**（再び隔離されないように）— *ウイルスと脅威の防止* → *設定の管理* → *除外* → *除外の追加または削除* → *フォルダー* で、次の両方を追加します。
-   - `%LOCALAPPDATA%\Programs\@patchbaydesktop`
+   - `%LOCALAPPDATA%\Programs\@orvilodesktop`
    - `%APPDATA%\Orvilo`
 
    両方が必要です。同梱の CLI が失われると Desktop は代替バイナリを `%APPDATA%\Orvilo\bin` にダウンロードするため、インストール先だけを除外してもダウンロードした代替バイナリが再び隔離され、同じことの繰り返しになります。

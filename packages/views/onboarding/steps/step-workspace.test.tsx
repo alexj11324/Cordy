@@ -334,22 +334,22 @@ describe("StepWorkspace — DISABLE_WORKSPACE_CREATION gate", () => {
 });
 
 // #4263: the workspace URL prefix must reflect the deployment's own host on
-// self-hosted instances instead of the hardcoded `patchbay.aspectlylabs.com`.
+// self-hosted instances instead of the hardcoded `orvilo.aspectlylabs.com`.
 describe("StepWorkspace — workspace URL prefix", () => {
   it("shows the brand host when no app URL is configured", () => {
     renderStep({ existing: null, disabled: false });
-    expect(screen.getByText("patchbay.aspectlylabs.com/")).toBeInTheDocument();
+    expect(screen.getByText("orvilo.aspectlylabs.com/")).toBeInTheDocument();
   });
 
   it("shows the deployment host for self-hosted instances", () => {
     renderStep({
       existing: null,
       disabled: false,
-      daemonAppUrl: "https://patchbay.example.com",
+      daemonAppUrl: "https://orvilo.example.com",
     });
-    expect(screen.getByText("patchbay.example.com/")).toBeInTheDocument();
+    expect(screen.getByText("orvilo.example.com/")).toBeInTheDocument();
     expect(
-      screen.queryByText("patchbay.aspectlylabs.com/"),
+      screen.queryByText("orvilo.aspectlylabs.com/"),
     ).not.toBeInTheDocument();
   });
 });

@@ -174,7 +174,7 @@ function makeWindowWithThrowingSend(error: Error) {
 describe("setupAutoUpdater", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    ctx.userDataPath = mkdtempSync(join(tmpdir(), "patchbay-updater-test-"));
+    ctx.userDataPath = mkdtempSync(join(tmpdir(), "orvilo-updater-test-"));
     ctx.handlers.clear();
     ctx.ipcHandlers.clear();
     ctx.ipcHandle.mockClear();
@@ -316,7 +316,7 @@ describe("setupAutoUpdater", () => {
 describe("setupAutoUpdater cloud gate", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    ctx.userDataPath = mkdtempSync(join(tmpdir(), "patchbay-updater-test-"));
+    ctx.userDataPath = mkdtempSync(join(tmpdir(), "orvilo-updater-test-"));
     ctx.handlers.clear();
     ctx.ipcHandlers.clear();
     ctx.ipcHandle.mockClear();

@@ -780,7 +780,7 @@ func (q *Queries) CreateChannelTaskDeliveryFromSession(ctx context.Context, arg 
 const createChannelUserBinding = `-- name: CreateChannelUserBinding :one
 
 INSERT INTO channel_user_binding (
-    workspace_id, patchbay_user_id, installation_id,
+    workspace_id, orvilo_user_id, installation_id,
     channel_type, channel_user_id, config
 ) VALUES (
     $1, $2, $3, $4, $5, $6
@@ -792,13 +792,13 @@ ON CONFLICT (installation_id, channel_user_id) DO UPDATE SET
     -- erase a union_id we already captured. Only non-null incoming keys win.
     config   = channel_user_binding.config || jsonb_strip_nulls(EXCLUDED.config),
     bound_at = now()
-WHERE channel_user_binding.patchbay_user_id = EXCLUDED.patchbay_user_id
-RETURNING id, workspace_id, patchbay_user_id, installation_id, channel_type, channel_user_id, config, bound_at
+WHERE channel_user_binding.orvilo_user_id = EXCLUDED.orvilo_user_id
+RETURNING id, workspace_id, orvilo_user_id, installation_id, channel_type, channel_user_id, config, bound_at
 `
 
 type CreateChannelUserBindingParams struct {
 	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
+	OrviloUserID   pgtype.UUID `json:"orvilo_user_id"`
 	InstallationID pgtype.UUID `json:"installation_id"`
 	ChannelType    string      `json:"channel_type"`
 	ChannelUserID  string      `json:"channel_user_id"`
@@ -812,14 +812,14 @@ type CreateChannelUserBindingParams struct {
 // to an Orvilo user. The old composite member-FK is gone, so this no
 // longer fails when the redeemer is not a workspace member — the caller
 // (BindingTokenService.RedeemAndBind) validates membership explicitly
-// before calling. ON CONFLICT DO UPDATE is still gated on patchbay_user_id
+// before calling. ON CONFLICT DO UPDATE is still gated on orvilo_user_id
 // matching, so a second redeemer cannot steal an already-bound user id;
 // a cross-user conflict updates zero rows and the caller maps that to
 // ErrBindingAlreadyAssigned. config carries secondary identity (union_id).
 func (q *Queries) CreateChannelUserBinding(ctx context.Context, arg CreateChannelUserBindingParams) (ChannelUserBinding, error) {
 	row := q.db.QueryRow(ctx, createChannelUserBinding,
 		arg.WorkspaceID,
-		arg.PatchbayUserID,
+		arg.OrviloUserID,
 		arg.InstallationID,
 		arg.ChannelType,
 		arg.ChannelUserID,
@@ -829,7 +829,7 @@ func (q *Queries) CreateChannelUserBinding(ctx context.Context, arg CreateChanne
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.PatchbayUserID,
+		&i.OrviloUserID,
 		&i.InstallationID,
 		&i.ChannelType,
 		&i.ChannelUserID,
@@ -1056,27 +1056,27 @@ func (q *Queries) DeleteChannelUserBindingsByInstallation(ctx context.Context, i
 
 const deleteChannelUserBindingsByWorkspaceMember = `-- name: DeleteChannelUserBindingsByWorkspaceMember :exec
 DELETE FROM channel_user_binding
-WHERE workspace_id = $1 AND patchbay_user_id = $2
+WHERE workspace_id = $1 AND orvilo_user_id = $2
 `
 
 type DeleteChannelUserBindingsByWorkspaceMemberParams struct {
-	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	OrviloUserID pgtype.UUID `json:"orvilo_user_id"`
 }
 
 // Application-layer integrity (replaces the old member-FK ON DELETE
 // CASCADE): prune every binding for a user who has been removed from a
 // workspace, across all installations in that workspace.
 func (q *Queries) DeleteChannelUserBindingsByWorkspaceMember(ctx context.Context, arg DeleteChannelUserBindingsByWorkspaceMemberParams) error {
-	_, err := q.db.Exec(ctx, deleteChannelUserBindingsByWorkspaceMember, arg.WorkspaceID, arg.PatchbayUserID)
+	_, err := q.db.Exec(ctx, deleteChannelUserBindingsByWorkspaceMember, arg.WorkspaceID, arg.OrviloUserID)
 	return err
 }
 
 const findChannelBindingForMember = `-- name: FindChannelBindingForMember :one
-SELECT b.id, b.workspace_id, b.patchbay_user_id, b.installation_id, b.channel_type, b.channel_user_id, b.config, b.bound_at FROM channel_user_binding b
+SELECT b.id, b.workspace_id, b.orvilo_user_id, b.installation_id, b.channel_type, b.channel_user_id, b.config, b.bound_at FROM channel_user_binding b
 JOIN channel_installation ci ON ci.id = b.installation_id
 WHERE b.workspace_id = $1
-  AND b.patchbay_user_id = $2
+  AND b.orvilo_user_id = $2
   AND b.channel_type = $3
   AND ci.status = 'installed'
 ORDER BY b.bound_at DESC
@@ -1084,9 +1084,9 @@ LIMIT 1
 `
 
 type FindChannelBindingForMemberParams struct {
-	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
-	ChannelType    string      `json:"channel_type"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	OrviloUserID pgtype.UUID `json:"orvilo_user_id"`
+	ChannelType  string      `json:"channel_type"`
 }
 
 // Outbound notification lookup: given an Orvilo member and a channel_type,
@@ -1099,12 +1099,12 @@ type FindChannelBindingForMemberParams struct {
 // one workspace (multi-bot org), the most-recently-bound wins — matches
 // FindReusableChannelUserBinding's tiebreak so the two lookups agree.
 func (q *Queries) FindChannelBindingForMember(ctx context.Context, arg FindChannelBindingForMemberParams) (ChannelUserBinding, error) {
-	row := q.db.QueryRow(ctx, findChannelBindingForMember, arg.WorkspaceID, arg.PatchbayUserID, arg.ChannelType)
+	row := q.db.QueryRow(ctx, findChannelBindingForMember, arg.WorkspaceID, arg.OrviloUserID, arg.ChannelType)
 	var i ChannelUserBinding
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.PatchbayUserID,
+		&i.OrviloUserID,
 		&i.InstallationID,
 		&i.ChannelType,
 		&i.ChannelUserID,
@@ -1175,7 +1175,7 @@ func (q *Queries) FindLiveChannelBindingToken(ctx context.Context, arg FindLiveC
 }
 
 const findReusableChannelUserBinding = `-- name: FindReusableChannelUserBinding :one
-SELECT b.id, b.workspace_id, b.patchbay_user_id, b.installation_id, b.channel_type, b.channel_user_id, b.config, b.bound_at FROM channel_user_binding b
+SELECT b.id, b.workspace_id, b.orvilo_user_id, b.installation_id, b.channel_type, b.channel_user_id, b.config, b.bound_at FROM channel_user_binding b
 JOIN channel_installation ci ON ci.id = b.installation_id
 WHERE b.workspace_id = $1
   AND b.channel_type = $2
@@ -1217,7 +1217,7 @@ func (q *Queries) FindReusableChannelUserBinding(ctx context.Context, arg FindRe
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.PatchbayUserID,
+		&i.OrviloUserID,
 		&i.InstallationID,
 		&i.ChannelType,
 		&i.ChannelUserID,
@@ -1625,7 +1625,7 @@ func (q *Queries) GetChannelTaskDelivery(ctx context.Context, taskID pgtype.UUID
 }
 
 const getChannelUserBindingByUserID = `-- name: GetChannelUserBindingByUserID :one
-SELECT id, workspace_id, patchbay_user_id, installation_id, channel_type, channel_user_id, config, bound_at FROM channel_user_binding
+SELECT id, workspace_id, orvilo_user_id, installation_id, channel_type, channel_user_id, config, bound_at FROM channel_user_binding
 WHERE installation_id = $1 AND channel_user_id = $2
 `
 
@@ -1644,7 +1644,7 @@ func (q *Queries) GetChannelUserBindingByUserID(ctx context.Context, arg GetChan
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.PatchbayUserID,
+		&i.OrviloUserID,
 		&i.InstallationID,
 		&i.ChannelType,
 		&i.ChannelUserID,

@@ -54,7 +54,7 @@ func TestDelegatedSubscribe_SkipsOriginatorRemovedFromWorkspace(t *testing.T) {
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
 
-	const email = "delegated-revoked-originator@patchbay.test"
+	const email = "delegated-revoked-originator@orvilo.test"
 	cleanupTestUser(t, email)
 	userID := createTestUser(t, email)
 	t.Cleanup(func() { cleanupTestUser(t, email) })
@@ -85,7 +85,7 @@ func TestDelegatedSubscribe_SubscribesOriginatorStillInWorkspace(t *testing.T) {
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
 
-	const email = "delegated-active-originator@patchbay.test"
+	const email = "delegated-active-originator@orvilo.test"
 	cleanupTestUser(t, email)
 	userID := createTestUser(t, email)
 	t.Cleanup(func() { cleanupTestUser(t, email) })

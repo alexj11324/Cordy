@@ -61,7 +61,7 @@ func TestCreateTeam_PlainMemberBecomesCreator(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
-	memberID := createPlainMember(t, "team-creator@patchbay.test")
+	memberID := createPlainMember(t, "team-creator@orvilo.test")
 	leaderID := createHandlerTestAgent(t, "team-creator-leader", nil)
 
 	team := createTeamAs(t, memberID, "Member Owned Team", leaderID)
@@ -76,7 +76,7 @@ func TestManageTeam_CreatorCanManageOwn(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
-	memberID := createPlainMember(t, "team-owner-manage@patchbay.test")
+	memberID := createPlainMember(t, "team-owner-manage@orvilo.test")
 	leaderID := createHandlerTestAgent(t, "team-owner-manage-leader", nil)
 	worker := createHandlerTestAgent(t, "team-owner-manage-worker", nil)
 
@@ -116,8 +116,8 @@ func TestManageTeam_StrangerMemberForbidden(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
-	creatorID := createPlainMember(t, "team-stranger-creator@patchbay.test")
-	strangerID := createPlainMember(t, "team-stranger-other@patchbay.test")
+	creatorID := createPlainMember(t, "team-stranger-creator@orvilo.test")
+	strangerID := createPlainMember(t, "team-stranger-other@orvilo.test")
 	leaderID := createHandlerTestAgent(t, "team-stranger-leader", nil)
 
 	team := createTeamAs(t, creatorID, "Stranger Test Team", leaderID)

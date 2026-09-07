@@ -97,11 +97,11 @@ type Config struct {
 	// StateSecret signs the connect-state HMAC. Required (non-empty).
 	StateSecret []byte
 	// CallbackBaseURL is the absolute, public base URL of THIS API, with no
-	// trailing slash (e.g. "https://patchbay.aspectlylabs.com"). The Composio callback
+	// trailing slash (e.g. "https://orvilo.aspectlylabs.com"). The Composio callback
 	// URL is built as CallbackBaseURL + CallbackPath. Required.
 	CallbackBaseURL string
 	// FrontendBaseURL is the web app base used to build the post-callback
-	// browser redirect (e.g. "https://patchbay.aspectlylabs.com"). May be empty, in which
+	// browser redirect (e.g. "https://orvilo.aspectlylabs.com"). May be empty, in which
 	// case CallbackRedirect returns a site-relative path.
 	FrontendBaseURL string
 	// StateTTL overrides the default connect-state lifetime. Zero uses
@@ -318,7 +318,7 @@ func (s *Service) CompleteCallback(ctx context.Context, state, status, connected
 	// redirect could pair a valid, un-expired state with someone else's account
 	// id and we would mirror it verbatim. Before writing, confirm with Composio
 	// that this account actually belongs to the state's user (the
-	// composio_user_id == patchbay user id invariant) and was created under the
+	// composio_user_id == orvilo user id invariant) and was created under the
 	// toolkit's auth config. Any mismatch fails closed with ErrAccountVerification.
 	if err := s.verifyAccountOwnership(ctx, connectedAccountID, claims.UserID, authConfigID); err != nil {
 		return claims.ToolkitSlug, err

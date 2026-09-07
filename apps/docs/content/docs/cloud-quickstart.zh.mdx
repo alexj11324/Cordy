@@ -11,7 +11,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 1. 登录，进入工作区
 
-用 Web（[patchbay.aspectlylabs.com](https://patchbay.aspectlylabs.com)）或 [Orvilo Desktop](https://github.com/alexj11324/Cordy/releases/latest) 登录，支持邮箱验证码和 Google。
+用 Web（[orvilo.aspectlylabs.com](https://orvilo.aspectlylabs.com)）或 [Orvilo Desktop](https://github.com/alexj11324/Cordy/releases/latest) 登录，支持邮箱验证码和 Google。
 
 - **Desktop**：可以自动连接这台电脑。
 - **Web**：需要在下一步通过命令行连接。
@@ -27,17 +27,17 @@ import { Callout } from "fumadocs-ui/components/callout";
 
  ```bash
  curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
- patchbay setup
+ orvilo setup
  ```
 
  **Windows PowerShell**
 
  ```powershell
  irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
- patchbay setup
+ orvilo setup
  ```
 
- `patchbay setup` 会打开浏览器完成登录，然后让守护进程在后台运行。守护进程上线后，弹窗通常在一分钟内自动检测到这台电脑。
+ `orvilo setup` 会打开浏览器完成登录，然后让守护进程在后台运行。守护进程上线后，弹窗通常在一分钟内自动检测到这台电脑。
 
 **成功标志**：运行时列表里出现一台在线的电脑。
 
@@ -82,8 +82,8 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 | 现象 | 先检查什么 |
 |---|---|
-| 没有找到运行时 | 确认 AI 编程工具已经安装并能在终端中运行。Desktop 点"刷新"；CLI 方式重新运行 `patchbay setup`。 |
-| 运行时显示离线 | Desktop 保持打开；CLI 方式运行 `patchbay daemon status`，未启动时运行 `patchbay daemon start`。 |
+| 没有找到运行时 | 确认 AI 编程工具已经安装并能在终端中运行。Desktop 点"刷新"；CLI 方式重新运行 `orvilo setup`。 |
+| 运行时显示离线 | Desktop 保持打开；CLI 方式运行 `orvilo daemon status`，未启动时运行 `orvilo daemon start`。 |
 | 任务一直排队 | 确认智能体使用的运行时在线。运行时达到并发上限时，新 task 会继续排队。 |
 
 更多情况见[故障排查](/troubleshooting)。
@@ -91,5 +91,5 @@ import { Callout } from "fumadocs-ui/components/callout";
 ## 接下来
 
 - [核心概念](/concepts) — 三分钟认识 Orvilo 的全部核心对象。
-- [Orvilo 的工作方式](/how-patchbay-works) — 理解任务、智能体、运行时和每次执行之间的关系。
+- [Orvilo 的工作方式](/how-orvilo-works) — 理解任务、智能体、运行时和每次执行之间的关系。
 - [让智能体开始工作](/triggering-agents) — 除了设置 executor，还有 @评论、对话和自动化三种触发方式。

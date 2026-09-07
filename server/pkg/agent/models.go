@@ -324,7 +324,7 @@ func ModelSelectorMustBeProviderQualified(providerType string) bool {
 // `provider/id` selector) want the qualified form, but `agent.model` holds
 // whatever was persisted — and for gateway-style providers the bare model id
 // is itself slash-shaped (`claude/claude-opus-5` under provider
-// `patchbay-anthropic`). The slash is therefore not a provider boundary and
+// `orvilo-anthropic`). The slash is therefore not a provider boundary and
 // cannot be guessed at: the catalog is the only thing that knows which
 // provider owns an id. Callers get the qualified id when exactly one provider
 // claims the value, and the input untouched otherwise.
@@ -566,7 +566,7 @@ func codexStaticModels() []Model {
 	// unset). It only marks the current flagship for the "default must track
 	// the latest release" catalog guard
 	// (TestCodexStaticModelsMatchVerifiedFallbackCatalog,
-	// patchbay#2009). It is deliberately NOT used to validate effort for an
+	// orvilo#2009). It is deliberately NOT used to validate effort for an
 	// empty (follow-CLI-config) model: that config can resolve to any model,
 	// so ValidateThinkingLevel fails an empty codex model closed rather than
 	// borrowing this entry's catalog (which alone advertises `ultra`) — see
@@ -616,8 +616,8 @@ func codexStaticModels() []Model {
 func discoverTraecliModels(ctx context.Context, runtimeCmd Command) ([]Model, error) {
 	return discoverACPModels(ctx, runtimeCmd, acpDiscoveryProvider{
 		defaultBin:   "traecli",
-		clientName:   "patchbay-model-discovery",
-		tmpdirPrefix: "patchbay-traecli-discovery-",
+		clientName:   "orvilo-model-discovery",
+		tmpdirPrefix: "orvilo-traecli-discovery-",
 		acpArgs:      []string{"acp", "serve", "--yolo"},
 	})
 }
@@ -1034,8 +1034,8 @@ func discoverPiModelsRPC(ctx context.Context, runtimeCmd Command, lookedUp strin
 
 	encoder := json.NewEncoder(stdin)
 	requests := []map[string]string{
-		{"id": "patchbay-state", "type": "get_state"},
-		{"id": "patchbay-models", "type": "get_available_models"},
+		{"id": "orvilo-state", "type": "get_state"},
+		{"id": "orvilo-models", "type": "get_available_models"},
 	}
 	for _, request := range requests {
 		if err := encoder.Encode(request); err != nil {
@@ -1058,12 +1058,12 @@ func discoverPiModelsRPC(ctx context.Context, runtimeCmd Command, lookedUp strin
 			continue
 		}
 		switch {
-		case response.ID == "patchbay-state" || response.Command == "get_state":
+		case response.ID == "orvilo-state" || response.Command == "get_state":
 			stateDone = true
 			if response.Success {
 				_ = json.Unmarshal(response.Data, &state)
 			}
-		case response.ID == "patchbay-models" || response.Command == "get_available_models":
+		case response.ID == "orvilo-models" || response.Command == "get_available_models":
 			modelsDone = true
 			if response.Success {
 				var payload struct {
@@ -1398,9 +1398,9 @@ func parseOmpModels(data []byte) ([]Model, error) {
 func discoverHermesModels(ctx context.Context, runtimeCmd Command) ([]Model, error) {
 	models, err := discoverACPModels(ctx, runtimeCmd, acpDiscoveryProvider{
 		defaultBin:   "hermes",
-		clientName:   "patchbay-model-discovery",
+		clientName:   "orvilo-model-discovery",
 		extraEnv:     []string{"HERMES_YOLO_MODE=1"},
-		tmpdirPrefix: "patchbay-hermes-discovery-",
+		tmpdirPrefix: "orvilo-hermes-discovery-",
 		strictErrors: true,
 		timeout:      hermesDiscoveryTimeout,
 		// The same handshake carries an effort selector on jcode and carries
@@ -1439,7 +1439,7 @@ func discoverHermesModels(ctx context.Context, runtimeCmd Command) ([]Model, err
 // Fixed prose, no interpolation, for the same reason the task hint is: this
 // text is error copy, and nothing user-controlled belongs in a string other
 // code may match on.
-const hermesDiscoveryUnconfiguredHint = " [patchbay] this is what hermes reported to the daemon, " +
+const hermesDiscoveryUnconfiguredHint = " [orvilo] this is what hermes reported to the daemon, " +
 	"which runs `hermes acp` with its OWN environment — not your login shell. " +
 	"Credentials exported only from a shell rc file are invisible to it. " +
 	"Reproduce with `env -i HOME=\"$HOME\" PATH=\"$PATH\" hermes model`: if that fails while a plain " +
@@ -1500,8 +1500,8 @@ func discoverKimiModels(ctx context.Context, runtimeCmd Command) ([]Model, error
 	var acpVersion string
 	models, err := discoverACPModels(ctx, runtimeCmd, acpDiscoveryProvider{
 		defaultBin:   "kimi",
-		clientName:   "patchbay-model-discovery",
-		tmpdirPrefix: "patchbay-kimi-discovery-",
+		clientName:   "orvilo-model-discovery",
+		tmpdirPrefix: "orvilo-kimi-discovery-",
 		inspectInit: func(initResult json.RawMessage) {
 			acpVersion = acpAgentInfoVersion(initResult)
 		},
@@ -1733,9 +1733,9 @@ func acpConfigOptionCurrentValue(raw json.RawMessage, configID string) (string, 
 func discoverReasonixModels(ctx context.Context, runtimeCmd Command) ([]Model, error) {
 	return discoverACPModels(ctx, runtimeCmd, acpDiscoveryProvider{
 		defaultBin:       "reasonix",
-		clientName:       "patchbay-model-discovery",
+		clientName:       "orvilo-model-discovery",
 		acpArgs:          reasonixACPLaunchArgs(),
-		tmpdirPrefix:     "patchbay-reasonix-discovery-",
+		tmpdirPrefix:     "orvilo-reasonix-discovery-",
 		isolatedStateEnv: "REASONIX_STATE_HOME",
 		annotate:         annotateACPThinkingForSessionModel,
 	})
@@ -1746,8 +1746,8 @@ func discoverReasonixModels(ctx context.Context, runtimeCmd Command) ([]Model, e
 func discoverKiroModels(ctx context.Context, runtimeCmd Command) ([]Model, error) {
 	return discoverACPModels(ctx, runtimeCmd, acpDiscoveryProvider{
 		defaultBin:   "kiro-cli",
-		clientName:   "patchbay-model-discovery",
-		tmpdirPrefix: "patchbay-kiro-discovery-",
+		clientName:   "orvilo-model-discovery",
+		tmpdirPrefix: "orvilo-kiro-discovery-",
 	})
 }
 
@@ -1773,8 +1773,8 @@ func discoverKiroModels(ctx context.Context, runtimeCmd Command) ([]Model, error
 func discoverCopilotModels(ctx context.Context, runtimeCmd Command) (Catalog, error) {
 	models, err := discoverACPModels(ctx, runtimeCmd, acpDiscoveryProvider{
 		defaultBin:   "copilot",
-		clientName:   "patchbay-model-discovery",
-		tmpdirPrefix: "patchbay-copilot-discovery-",
+		clientName:   "orvilo-model-discovery",
+		tmpdirPrefix: "orvilo-copilot-discovery-",
 		acpArgs:      []string{"--acp"},
 	})
 	if err != nil || len(models) == 0 {
@@ -1793,9 +1793,9 @@ func discoverCopilotModels(ctx context.Context, runtimeCmd Command) (Catalog, er
 func discoverQoderModels(ctx context.Context, runtimeCmd Command, defaultBin string) ([]Model, error) {
 	return discoverACPModels(ctx, runtimeCmd, acpDiscoveryProvider{
 		defaultBin:   defaultBin,
-		clientName:   "patchbay-model-discovery",
+		clientName:   "orvilo-model-discovery",
 		acpArgs:      []string{"--yolo", "--acp"},
-		tmpdirPrefix: "patchbay-qoder-discovery-",
+		tmpdirPrefix: "orvilo-qoder-discovery-",
 	})
 }
 
@@ -2345,8 +2345,8 @@ func discoverGrokModels(ctx context.Context, runtimeCmd Command) (Catalog, error
 	// after initialize returns the methods this installed CLI actually offers.
 	models, err := discoverACPModels(ctx, runtimeCmd, acpDiscoveryProvider{
 		defaultBin:   "grok",
-		clientName:   "patchbay-model-discovery",
-		tmpdirPrefix: "patchbay-grok-discovery-",
+		clientName:   "orvilo-model-discovery",
+		tmpdirPrefix: "orvilo-grok-discovery-",
 		acpArgs:      []string{"--no-auto-update", "agent", "--always-approve", "stdio"},
 		annotate:     annotateGrokThinkingFromACP,
 		selectAuthMethod: func(initResult json.RawMessage, childEnv []string) (string, error) {
@@ -2780,8 +2780,8 @@ func isOpenclawIdentifier(s string) bool {
 func discoverCodebuddyModels(ctx context.Context, runtimeCmd Command) (Catalog, error) {
 	models, err := discoverACPModels(ctx, runtimeCmd, acpDiscoveryProvider{
 		defaultBin:   "codebuddy",
-		clientName:   "patchbay-model-discovery",
-		tmpdirPrefix: "patchbay-codebuddy-discovery-",
+		clientName:   "orvilo-model-discovery",
+		tmpdirPrefix: "orvilo-codebuddy-discovery-",
 		acpArgs:      []string{"--acp"},
 		strictErrors: true,
 		annotate:     annotateCodebuddyThinkingFromACP,
@@ -2866,8 +2866,8 @@ func codebuddyStaticModels() []Model {
 func discoverDimModels(ctx context.Context, runtimeCmd Command) (Catalog, error) {
 	models, err := discoverACPModels(ctx, runtimeCmd, acpDiscoveryProvider{
 		defaultBin:   "dim",
-		clientName:   "patchbay-model-discovery",
-		tmpdirPrefix: "patchbay-dim-discovery-",
+		clientName:   "orvilo-model-discovery",
+		tmpdirPrefix: "orvilo-dim-discovery-",
 		acpArgs:      []string{"acp"},
 	})
 	if err != nil || len(models) == 0 {

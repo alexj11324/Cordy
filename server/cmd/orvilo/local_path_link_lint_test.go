@@ -249,19 +249,19 @@ func TestGuardLocalPathLinksHintIsPerCommand(t *testing.T) {
 	err := guardLocalPathLinks(
 		"[screenshot]("+shot+")",
 		"issue description",
-		"`patchbay issue update` cannot carry files — deliver the file with `patchbay issue comment add <issue-id> --attachment <path>` instead, and drop the link.",
+		"`orvilo issue update` cannot carry files — deliver the file with `orvilo issue comment add <issue-id> --attachment <path>` instead, and drop the link.",
 	)
 	if err == nil {
 		t.Fatal("expected a hard failure")
 	}
 	msg := err.Error()
-	if !strings.Contains(msg, "`patchbay issue update` cannot carry files") {
+	if !strings.Contains(msg, "`orvilo issue update` cannot carry files") {
 		t.Errorf("update hint missing, got: %v", msg)
 	}
-	if !strings.Contains(msg, "patchbay issue comment add <issue-id> --attachment <path>") {
+	if !strings.Contains(msg, "orvilo issue comment add <issue-id> --attachment <path>") {
 		t.Errorf("update hint must redirect to comment add, got: %v", msg)
 	}
-	if strings.Contains(msg, "patchbay issue update --attachment") {
+	if strings.Contains(msg, "orvilo issue update --attachment") {
 		t.Errorf("update hint must never name a flag `issue update` does not have, got: %v", msg)
 	}
 }
