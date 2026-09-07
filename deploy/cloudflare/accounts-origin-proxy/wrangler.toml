@@ -10,6 +10,16 @@ custom_domain = true
 [vars]
 ORIGIN = "https://accounts-origin.aspectlylabs.com"
 
+[env.staging]
+name = "aspectlylabs-proxy-staging"
+
+[[env.staging.routes]]
+pattern = "accounts.staging.aspectlylabs.com"
+custom_domain = true
+
+[env.staging.vars]
+ORIGIN = "https://accounts-origin.staging.aspectlylabs.com"
+
 [[ratelimits]]
 name = "DESKTOP_ATTEMPT_RATE_LIMITER"
 namespace_id = "13410502821"

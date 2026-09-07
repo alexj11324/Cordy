@@ -4,9 +4,25 @@ const SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const HANDOFF_VALUE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/u;
 const DESKTOP_CODE_PATTERN = /^pbd_[A-Za-z0-9_-]{43}$/u;
 
-export const PRODUCT_ORIGIN = "https://patchbay.aspectlylabs.com";
-export const API_ORIGIN = "https://api.aspectlylabs.com";
-export const ACCOUNTS_ORIGIN = "https://accounts.aspectlylabs.com";
+export const DEPLOYMENT_ENV = process.env.PATCHBAY_VERIFY_ENV ?? "production";
+const ORIGINS = {
+  production: {
+    product: "https://patchbay.aspectlylabs.com",
+    api: "https://api.aspectlylabs.com",
+    accounts: "https://accounts.aspectlylabs.com",
+  },
+  staging: {
+    product: "https://staging.aspectlylabs.com",
+    api: "https://api.staging.aspectlylabs.com",
+    accounts: "https://accounts.staging.aspectlylabs.com",
+  },
+};
+const origins = ORIGINS[DEPLOYMENT_ENV];
+if (!origins) throw new Error(`unsupported browser verification environment: ${DEPLOYMENT_ENV}`);
+
+export const PRODUCT_ORIGIN = origins.product;
+export const API_ORIGIN = origins.api;
+export const ACCOUNTS_ORIGIN = origins.accounts;
 
 export function requiredString(value, label) {
   if (typeof value !== "string" || value.trim() === "") {

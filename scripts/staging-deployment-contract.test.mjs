@@ -20,6 +20,7 @@ const [
   stagingGateway,
   installer,
   productionGateway,
+  accountsWorker,
 ] = await Promise.all([
   read(".github/workflows/aspectlylabs-staging.yml"),
   read(".github/workflows/aspectlylabs-production-images.yml"),
@@ -30,6 +31,7 @@ const [
   read("deploy/origin/staging_deploy.py"),
   read("deploy/origin/install-staging-deploy.sh"),
   read("deploy/origin/production_deploy.py"),
+  read("deploy/cloudflare/accounts-origin-proxy/wrangler.toml"),
 ]);
 
 test("staging is a separate GitHub Environment from production", () => {
@@ -65,6 +67,9 @@ test("staging consumes published production images instead of rebuilding", () =>
   assert.match(workflow, /assemble-production-manifest\.mjs/u);
   assert.match(workflow, /resolve-published-image-records\.mjs/u);
   assert.match(workflow, /verify-staging-deployment\.mjs/u);
+  assert.match(workflow, /verify-production-browser\.mjs/u);
+  assert.match(workflow, /browser_auth\.sign_in_ticket/u);
+  assert.match(workflow, /browser_auth\.testing_token/u);
 });
 
 test("staging origin routing uses isolated loopback ports", () => {
@@ -101,6 +106,14 @@ test("staging origin routing uses isolated loopback ports", () => {
   );
   assert.match(stagingApiBlock, /server_name api\.staging\.aspectlylabs\.com;/u);
   assert.doesNotMatch(stagingApiBlock, /127\.0\.0\.1:8210/u);
+});
+
+test("staging Accounts uses its own Cloudflare Worker route and origin", () => {
+  assert.match(accountsWorker, /\[env\.staging\]/u);
+  assert.match(accountsWorker, /name = "aspectlylabs-proxy-staging"/u);
+  assert.match(accountsWorker, /pattern = "accounts\.staging\.aspectlylabs\.com"/u);
+  assert.match(accountsWorker, /ORIGIN = "https:\/\/accounts-origin\.staging\.aspectlylabs\.com"/u);
+  assert.doesNotMatch(accountsWorker, /\[env\.staging\.vars\][\s\S]*accounts-origin\.aspectlylabs\.com/u);
 });
 
 test("staging compose overlays never reattach production projects", () => {
