@@ -4,7 +4,11 @@ import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { paths } from "@orvilo/core/paths";
 import { api } from "@orvilo/core/api";
-import { validateCliCallback, redirectToCliCallback } from "@orvilo/views/auth";
+import {
+  validateCliCallback,
+  redirectToCliCallback,
+  redirectToDesktopApp,
+} from "@orvilo/views/auth";
 import {
   Card,
   CardHeader,
@@ -14,13 +18,6 @@ import {
 } from "@orvilo/ui/components/ui/card";
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Loader2 } from "lucide-react";
-
-function redirectToDesktopHandoff(code: string, state: string): void {
-  const url = new URL("orvilo://auth/callback");
-  url.searchParams.set("code", code);
-  url.searchParams.set("state", state);
-  window.location.href = url.href;
-}
 
 function decodeStateValue(value: string, prefix: string): string | null {
   try {
@@ -36,6 +33,7 @@ function CallbackContent() {
   const [desktopHandoff, setDesktopHandoff] = useState<{
     code: string;
     state: string;
+    callbackProtocol: string;
   } | null>(null);
 
   useEffect(() => {
@@ -114,8 +112,16 @@ function CallbackContent() {
             desktopState,
             desktopCodeChallenge,
           );
-          setDesktopHandoff({ code: handoff.code, state: handoff.state });
-          redirectToDesktopHandoff(handoff.code, handoff.state);
+          setDesktopHandoff({
+            code: handoff.code,
+            state: handoff.state,
+            callbackProtocol: handoff.callback_protocol,
+          });
+          redirectToDesktopApp(
+            handoff.code,
+            handoff.state,
+            handoff.callback_protocol,
+          );
         })
         .catch((err) => {
           setError(err instanceof Error ? err.message : "Login failed");
@@ -144,9 +150,10 @@ function CallbackContent() {
             <Button
               variant="outline"
               onClick={() => {
-                redirectToDesktopHandoff(
+                redirectToDesktopApp(
                   desktopHandoff.code,
                   desktopHandoff.state,
+                  desktopHandoff.callbackProtocol,
                 );
               }}
             >

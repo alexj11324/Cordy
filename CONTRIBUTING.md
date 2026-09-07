@@ -524,17 +524,22 @@ the URL `make dev-login` prints.
 
 ### Isolation Guarantee
 
-Nothing in this flow touches the system-installed `orvilo` or the default
-`~/.orvilo/config.json`:
+Nothing in this flow touches the system-installed `orvilo`, the default
+`~/.orvilo/config.json`, or the public production app. Staging is a third
+channel with its own hosted backend — see
+[docs/operations/environments.md](docs/operations/environments.md).
 
-| Resource | System / Production | Local Dev (per environment) |
-|---|---|---|
-| Config | `~/.orvilo/config.json` | `~/.orvilo/profiles/dev-<slug>-<offset>/config.json` |
-| Daemon PID | `~/.orvilo/daemon.pid` | `~/.orvilo/profiles/dev-<slug>-<offset>/daemon.pid` |
-| Workspaces dir | `~/orvilo_workspaces/` | `~/orvilo_workspaces_dev-<slug>-<offset>/` |
-| Database | remote / production | local: `orvilo_<slug>_<offset>` |
-| Registry | — | `~/.orvilo/dev/envs/<name>/` |
-| Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-localhost-<port>` |
+| Resource | Public / Production | Testing / Staging | Local Dev (per environment) |
+|---|---|---|---|
+| Config | `~/.orvilo/config.json` | `~/.orvilo/profiles/staging/config.json` | `~/.orvilo/profiles/dev-<slug>-<offset>/config.json` |
+| Daemon PID | `~/.orvilo/daemon.pid` | `~/.orvilo/profiles/staging/daemon.pid` | `~/.orvilo/profiles/dev-<slug>-<offset>/daemon.pid` |
+| Workspaces dir | `~/orvilo_workspaces/` | `~/orvilo_workspaces_staging/` | `~/orvilo_workspaces_dev-<slug>-<offset>/` |
+| Database | production | staging (`orvilo-staging` Compose project) | local: `orvilo_<slug>_<offset>` |
+| Desktop app | `Orvilo` | `Orvilo Staging` | `Orvilo Canary` |
+| Desktop callback | `orvilo://` | `orvilo-staging-<hash>://` | `orvilo-canary-<hash>://` |
+| Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-api.staging.aspectlylabs.com` | `desktop-localhost-<port>` |
+| API | `https://api.aspectlylabs.com` | `https://api.staging.aspectlylabs.com` | local backend port |
+| Registry | — | `/var/lib/orvilo-staging/` on the origin | `~/.orvilo/dev/envs/<name>/` |
 
 Multiple environments run simultaneously without conflict; `make list` shows
 all of them.

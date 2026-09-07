@@ -35,7 +35,35 @@ Changing a Compose project name creates different default volume names; it is
 not a data migration. A Helm chart rename does not make Deployment selectors
 mutable. Use a new release instead of forcing the old Deployment selector update.
 
-## Rollback
+## Client and integration cutover checklist
+
+Before enabling traffic, complete these steps on the isolated restored target:
+
+- Revoke pre-cutover personal access tokens using the old installation before
+  the final backup. Issue fresh Orvilo tokens after restoring and update every
+  CLI, daemon, realtime consumer, and integration. Old token secrets are not
+  accepted and cannot be transformed from their stored hashes.
+- Stop old daemons and install the Orvilo CLI/Desktop distributions explicitly.
+  The old CLI updater cannot consume renamed archives. Configure fresh Orvilo
+  profiles; do not rely on old userData or credential directories being reused.
+- Rebuild and publish every installed plugin bundle with the Orvilo SDK, then
+  explicitly upgrade each installation before enabling its surfaces. The old
+  immutable v2 bundles cannot negotiate the renamed bridge identifiers.
+- Reconfigure every external plugin-hook receiver with its newly derived
+  signing secret through a coordinated rotation while delivery is paused.
+  Existing receivers retain an incompatible key until this is done.
+- Before reusing a checkout, inspect its `prepare-commit-msg` hook and archive
+  only hooks positively identified as old daemon-owned hooks. Never remove
+  user-owned hooks. Let the Orvilo daemon install the current hook and verify
+  both enabled and disabled co-author behavior before resuming work.
+- Migration 597 converts persisted channel-media provenance markers and
+  Desktop callback schemes. Verify existing attachments remain in descriptions
+  after editing an issue, including an edit from a stale revision.
+
+This checklist is a maintenance-window migration, not a rolling compatibility
+contract. Do not let old clients or old plugin bundles operate on the new stack.
+
+## Rollback procedure
 
 Before accepting new writes, route traffic back and restart the untouched old
 installation. After new writes have occurred, pause both sides and plan data

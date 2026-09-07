@@ -1,6 +1,11 @@
 -- Rename remaining Patchbay schema identity to Orvilo. Historical
 -- migration files stay byte-identical; this file is the live cutover.
 
+UPDATE issue SET description = replace(description, '<!-- patchbay:channel-media:', '<!-- orvilo:channel-media:')
+    WHERE description LIKE '%<!-- patchbay:channel-media:%';
+UPDATE chat_message SET content = replace(content, '<!-- patchbay:channel-media:', '<!-- orvilo:channel-media:')
+    WHERE content LIKE '%<!-- patchbay:channel-media:%';
+
 ALTER TABLE linear_comment_link DROP CONSTRAINT IF EXISTS linear_comment_link_origin_check;
 UPDATE linear_comment_link SET origin = 'orvilo' WHERE origin = 'patchbay';
 ALTER TABLE linear_comment_link ADD CONSTRAINT linear_comment_link_origin_check
@@ -15,8 +20,10 @@ ALTER TABLE desktop_auth_handoff DROP CONSTRAINT IF EXISTS desktop_auth_handoff_
 UPDATE desktop_auth_handoff SET callback_protocol = 'orvilo' WHERE callback_protocol = 'patchbay';
 UPDATE desktop_auth_handoff SET callback_protocol = regexp_replace(callback_protocol, '^patchbay-canary-', 'orvilo-canary-')
     WHERE callback_protocol LIKE 'patchbay-canary-%';
+UPDATE desktop_auth_handoff SET callback_protocol = regexp_replace(callback_protocol, '^patchbay-staging-', 'orvilo-staging-')
+    WHERE callback_protocol LIKE 'patchbay-staging-%';
 ALTER TABLE desktop_auth_handoff ADD CONSTRAINT desktop_auth_handoff_protocol_check
-    CHECK (callback_protocol ~ '^(orvilo|orvilo-canary-[a-f0-9]{16})$');
+    CHECK (callback_protocol ~ '^(orvilo|orvilo-(canary|staging)-[a-f0-9]{16})$');
 
 ALTER TABLE channel_user_binding RENAME COLUMN patchbay_user_id TO orvilo_user_id;
 ALTER TABLE linear_member_binding RENAME COLUMN patchbay_user_id TO orvilo_user_id;

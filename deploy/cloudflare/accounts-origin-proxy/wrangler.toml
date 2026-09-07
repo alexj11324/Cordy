@@ -10,6 +10,29 @@ custom_domain = true
 [vars]
 ORIGIN = "https://accounts-origin.aspectlylabs.com"
 
+[env.staging]
+name = "aspectlylabs-proxy-staging"
+
+[[env.staging.routes]]
+pattern = "accounts.staging.aspectlylabs.com"
+custom_domain = true
+
+[env.staging.vars]
+ORIGIN = "https://accounts-origin.staging.aspectlylabs.com"
+
+# Bindings are not inherited across Wrangler environments. Staging must declare
+# its own limiters, and the namespace_id values must stay distinct from
+# production: Cloudflare shares counters for the same id across Workers.
+[[env.staging.ratelimits]]
+name = "DESKTOP_ATTEMPT_RATE_LIMITER"
+namespace_id = "21410502821"
+simple = { limit = 20, period = 60 }
+
+[[env.staging.ratelimits]]
+name = "DESKTOP_COMPLETE_RATE_LIMITER"
+namespace_id = "21410502822"
+simple = { limit = 10, period = 60 }
+
 [[ratelimits]]
 name = "DESKTOP_ATTEMPT_RATE_LIMITER"
 namespace_id = "13410502821"

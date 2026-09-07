@@ -7,6 +7,9 @@ import {
   buildAccountsLoginProbeUrl,
   buildGoogleOAuthProbeUrl,
   buildPkceChallenge,
+  DESKTOP_CALLBACK_PROTOCOL,
+  hostedBrowserOrigins,
+  PRODUCT_COOKIE_DOMAIN,
   PRODUCT_ORIGIN,
   requireBrowserReceipt,
   requireBuildHeaders,
@@ -22,6 +25,30 @@ test("uses only the three public Aspectly Labs product origins", () => {
   assert.equal(API_ORIGIN, "https://api.aspectlylabs.com");
   assert.equal(PRODUCT_ORIGIN, "https://orvilo.aspectlylabs.com");
   assert.equal(ACCOUNTS_ORIGIN, "https://accounts.aspectlylabs.com");
+  assert.equal(PRODUCT_COOKIE_DOMAIN, "orvilo.aspectlylabs.com");
+  assert.equal(DESKTOP_CALLBACK_PROTOCOL, "orvilo");
+});
+
+test("staging browser origins stay off the public product hosts", () => {
+  const staging = hostedBrowserOrigins("staging");
+  assert.equal(staging.product, "https://staging.aspectlylabs.com");
+  assert.equal(staging.api, "https://api.staging.aspectlylabs.com");
+  assert.equal(staging.accounts, "https://accounts.staging.aspectlylabs.com");
+  assert.equal(staging.cookieDomain, "staging.aspectlylabs.com");
+  assert.equal(
+    staging.desktopCallbackProtocol,
+    "orvilo-staging-aaaaaaaaaaaaaaaa",
+  );
+  assert.match(
+    staging.desktopCallbackProtocol,
+    /^orvilo-staging-[a-f0-9]{16}$/u,
+  );
+  assert.notEqual(staging.cookieDomain, PRODUCT_COOKIE_DOMAIN);
+  assert.notEqual(staging.desktopCallbackProtocol, DESKTOP_CALLBACK_PROTOCOL);
+  assert.throws(
+    () => hostedBrowserOrigins("canary"),
+    /unsupported browser verification environment/u,
+  );
 });
 
 test("builds a PKCE-bound direct Accounts Google OAuth entry", () => {
@@ -146,26 +173,58 @@ test("accepts credentials only from the matching deployment receipt", () => {
 });
 
 test("validates one-time broker completion and redemption payloads", () => {
+  const code = `ovd_${"c".repeat(43)}`;
   assert.equal(
     requireDesktopCompletion({
       callback_protocol: "orvilo",
-      code: `ovd_${"c".repeat(43)}`,
+      code,
     }),
-    `ovd_${"c".repeat(43)}`,
+    code,
   );
   assert.throws(
     () =>
       requireDesktopCompletion({
         callback_protocol: "http",
-        code: `ovd_${"c".repeat(43)}`,
+        code,
       }),
     /invalid desktop completion/u,
+  );
+  assert.throws(
+    () =>
+      requireDesktopCompletion({
+        callback_protocol: "orvilo-staging-aaaaaaaaaaaaaaaa",
+        code,
+      }),
+    /invalid desktop completion/u,
+  );
+  assert.equal(
+    requireDesktopCompletion(
+      {
+        callback_protocol: "orvilo-staging-aaaaaaaaaaaaaaaa",
+        code,
+      },
+      "orvilo-staging-aaaaaaaaaaaaaaaa",
+    ),
+    code,
   );
   assert.equal(requireRedeemedSession({ token: "jwt-value" }), "jwt-value");
   assert.throws(
     () => requireRedeemedSession({ token: "bad\nvalue" }),
     /invalid/u,
   );
+});
+
+test("browser acceptance uses the environment cookie domain and desktop scheme", async () => {
+  const source = await import("node:fs/promises").then(({ readFile }) =>
+    readFile(
+      new URL("./verify-production-browser.mjs", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.match(source, /callback_protocol: DESKTOP_CALLBACK_PROTOCOL/u);
+  assert.match(source, /domain: PRODUCT_COOKIE_DOMAIN/u);
+  assert.doesNotMatch(source, /callback_protocol: "orvilo"/u);
+  assert.doesNotMatch(source, /domain: "orvilo\.aspectlylabs\.com"/u);
 });
 
 test("refuses to open a browser without a real Clerk publishable key", () => {

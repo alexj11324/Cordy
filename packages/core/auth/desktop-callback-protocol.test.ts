@@ -9,7 +9,8 @@ describe("desktop callback protocols", () => {
   it.each([
     PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
     "orvilo-canary-5718c47b86bf9ece",
-  ])("accepts an Orvilo-owned callback protocol: %s", (protocol) => {
+    "orvilo-staging-5718c47b86bf9ece",
+  ])("accepts a Orvilo-owned callback protocol: %s", (protocol) => {
     expect(isDesktopCallbackProtocol(protocol)).toBe(true);
   });
 
@@ -22,6 +23,8 @@ describe("desktop callback protocols", () => {
     "orvilo-canary-01zp-25",
     "orvilo-canary-login-fix-123",
     `orvilo-canary-${"a".repeat(49)}`,
+    "orvilo-staging",
+    "orvilo-staging-",
   ])("rejects an unowned callback protocol: %s", (protocol) => {
     expect(isDesktopCallbackProtocol(protocol)).toBe(false);
   });

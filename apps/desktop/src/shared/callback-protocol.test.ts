@@ -10,7 +10,7 @@ describe("desktop callback protocol", () => {
   it("keeps packaged Desktop on orvilo://", () => {
     expect(
       resolveDesktopCallbackProtocol({
-        packaged: true,
+        channel: "production",
         developmentProtocol: "orvilo-canary-5718c47b86bf9ece",
       }),
     ).toBe("orvilo");
@@ -22,7 +22,10 @@ describe("desktop callback protocol", () => {
       callbackProtocol: "orvilo-canary-5718c47b86bf9ece",
       name: "Orvilo Canary first", dataName: "Orvilo Canary first",
     });
-    expect(resolveDesktopCallbackProtocol({ packaged: true, previewIdentity: identity }))
+    expect(resolveDesktopCallbackProtocol({
+      channel: "production",
+      previewIdentity: identity,
+    }))
       .toBe("orvilo-canary-5718c47b86bf9ece");
     expect(parseDesktopPreviewIdentity(undefined)).toBeNull();
     expect(() => parseDesktopPreviewIdentity({ ...identity, callbackProtocol: "orvilo" })).toThrow();
@@ -32,19 +35,46 @@ describe("desktop callback protocol", () => {
   it("isolates Canary and linked worktrees from production and each other", () => {
     expect(
       resolveDesktopCallbackProtocol({
-        packaged: false,
+        channel: "development",
         developmentProtocol: "orvilo-canary-5718c47b86bf9ece",
       }),
     ).toBe("orvilo-canary-5718c47b86bf9ece");
   });
 
+  it("isolates Desktop staging from Canary and production callbacks", () => {
+    expect(
+      resolveDesktopCallbackProtocol({
+        channel: "staging",
+        developmentProtocol: "orvilo-staging-5718c47b86bf9ece",
+      }),
+    ).toBe("orvilo-staging-5718c47b86bf9ece");
+    expect(() =>
+      resolveDesktopCallbackProtocol({
+        channel: "staging",
+        developmentProtocol: "orvilo",
+      }),
+    ).toThrow("staging callback protocol");
+    expect(() =>
+      resolveDesktopCallbackProtocol({
+        channel: "staging",
+        developmentProtocol: "orvilo-canary-5718c47b86bf9ece",
+      }),
+    ).toThrow("staging callback protocol");
+    expect(() =>
+      resolveDesktopCallbackProtocol({
+        channel: "staging",
+        developmentProtocol: "orvilo-staging",
+      }),
+    ).toThrow("staging callback protocol");
+  });
+
   it("rejects a missing or shared development protocol", () => {
     expect(() =>
-      resolveDesktopCallbackProtocol({ packaged: false }),
+      resolveDesktopCallbackProtocol({ channel: "development" }),
     ).toThrow("development callback protocol");
     expect(() =>
       resolveDesktopCallbackProtocol({
-        packaged: false,
+        channel: "development",
         developmentProtocol: "orvilo",
       }),
     ).toThrow("development callback protocol");

@@ -31,6 +31,8 @@ describe("desktop handoff", () => {
       .toContain("orvilo://auth/callback?");
     expect(buildDesktopCallbackUrl(`ovl_${"c".repeat(43)}`, "s".repeat(43), "orvilo-canary-5718c47b86bf9ece"))
       .toContain("orvilo-canary-5718c47b86bf9ece://auth/callback?");
+    expect(buildDesktopCallbackUrl(`ovl_${"c".repeat(43)}`, "s".repeat(43), "orvilo-staging-5718c47b86bf9ece"))
+      .toContain("orvilo-staging-5718c47b86bf9ece://auth/callback?");
   });
 
   it.each(["http://localhost:8080", "http://127.0.0.1:19080", "https://evil.example"])(

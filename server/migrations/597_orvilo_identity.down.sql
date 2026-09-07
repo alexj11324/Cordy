@@ -10,14 +10,21 @@ ALTER TABLE channel_user_binding RENAME COLUMN orvilo_user_id TO patchbay_user_i
 ALTER TABLE desktop_auth_handoff DROP CONSTRAINT IF EXISTS desktop_auth_handoff_protocol_check;
 UPDATE desktop_auth_handoff SET callback_protocol = regexp_replace(callback_protocol, '^orvilo-canary-', 'patchbay-canary-')
     WHERE callback_protocol LIKE 'orvilo-canary-%';
+UPDATE desktop_auth_handoff SET callback_protocol = regexp_replace(callback_protocol, '^orvilo-staging-', 'patchbay-staging-')
+    WHERE callback_protocol LIKE 'orvilo-staging-%';
 UPDATE desktop_auth_handoff SET callback_protocol = 'patchbay' WHERE callback_protocol = 'orvilo';
 ALTER TABLE desktop_auth_handoff ADD CONSTRAINT desktop_auth_handoff_protocol_check
-    CHECK (callback_protocol ~ '^(patchbay|patchbay-canary-[a-f0-9]{16})$');
+    CHECK (callback_protocol ~ '^(patchbay|patchbay-(canary|staging)-[a-f0-9]{16})$');
 
 ALTER TABLE linear_project_binding DROP CONSTRAINT IF EXISTS linear_project_binding_initial_source_of_truth_check;
 UPDATE linear_project_binding SET initial_source_of_truth = 'patchbay' WHERE initial_source_of_truth = 'orvilo';
 ALTER TABLE linear_project_binding ADD CONSTRAINT linear_project_binding_initial_source_of_truth_check
     CHECK (initial_source_of_truth IS NULL OR initial_source_of_truth IN ('linear', 'patchbay'));
+
+UPDATE issue SET description = replace(description, '<!-- orvilo:channel-media:', '<!-- patchbay:channel-media:')
+    WHERE description LIKE '%<!-- orvilo:channel-media:%';
+UPDATE chat_message SET content = replace(content, '<!-- orvilo:channel-media:', '<!-- patchbay:channel-media:')
+    WHERE content LIKE '%<!-- orvilo:channel-media:%';
 
 ALTER TABLE linear_comment_link DROP CONSTRAINT IF EXISTS linear_comment_link_origin_check;
 UPDATE linear_comment_link SET origin = 'patchbay' WHERE origin = 'orvilo';

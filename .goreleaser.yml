@@ -23,9 +23,8 @@ builds:
       - arm64
 
 archives:
-  # Legacy archive name kept so already-released CLIs (whose `orvilo update`
-  # looks for `orvilo_{os}_{arch}.{ext}`) can keep self-updating. Remove
-  # once those versions are no longer in use.
+  # Unversioned Orvilo archive for installers. Pre-cutover CLIs must be
+  # replaced explicitly; these artifacts are not an updater bridge.
   - id: legacy
     files:
       - LICENSE*

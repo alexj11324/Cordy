@@ -1,9 +1,12 @@
 // Keep in sync with packages/core/auth/desktop-callback-protocol.ts.
 // Main must not import `@orvilo/core` (electron-vite externalizes it).
 
+import {
+  type DesktopChannel,
+  isDesktopCallbackProtocolForChannel,
+} from "./desktop-app-identity";
+
 export const PRODUCTION_DESKTOP_CALLBACK_PROTOCOL = "orvilo";
-const DEVELOPMENT_DESKTOP_CALLBACK_PROTOCOL =
-  /^orvilo-canary-[a-f0-9]{16}$/;
 
 export interface DesktopPreviewIdentity {
   bundleId: string;
@@ -26,17 +29,26 @@ export function parseDesktopPreviewIdentity(value: unknown): DesktopPreviewIdent
 }
 
 export function resolveDesktopCallbackProtocol(options: {
-  packaged: boolean;
+  channel: DesktopChannel;
   developmentProtocol?: string | null;
   previewIdentity?: DesktopPreviewIdentity | null;
 }): string {
   if (options.previewIdentity) return options.previewIdentity.callbackProtocol;
-  if (options.packaged) return PRODUCTION_DESKTOP_CALLBACK_PROTOCOL;
+  if (options.channel === "production") return PRODUCTION_DESKTOP_CALLBACK_PROTOCOL;
+  // Unpackaged Canary / Staging never claim the global production handler.
+  // Each channel must register only its own checkout-owned scheme.
   if (
     !options.developmentProtocol ||
-    !DEVELOPMENT_DESKTOP_CALLBACK_PROTOCOL.test(options.developmentProtocol)
+    !isDesktopCallbackProtocolForChannel(
+      options.developmentProtocol,
+      options.channel,
+    )
   ) {
-    throw new Error("Missing or invalid development callback protocol");
+    throw new Error(
+      options.channel === "staging"
+        ? "Missing or invalid staging callback protocol"
+        : "Missing or invalid development callback protocol",
+    );
   }
   return options.developmentProtocol;
 }

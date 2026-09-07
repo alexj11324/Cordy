@@ -17,6 +17,9 @@ import {
   buildAccountsLoginProbeUrl,
   buildGoogleOAuthProbeUrl,
   buildPkceChallenge,
+  DEPLOYMENT_ENV,
+  DESKTOP_CALLBACK_PROTOCOL,
+  PRODUCT_COOKIE_DOMAIN,
   PRODUCT_ORIGIN,
   requireBrowserReceipt,
   requireBuildHeaders,
@@ -28,7 +31,7 @@ import {
 
 const SCREENSHOT_PATH = path.join(
   process.env.RUNNER_TEMP ?? process.env.TMPDIR ?? ".",
-  "production-browser-failure.png",
+  `${DEPLOYMENT_ENV}-browser-failure.png`,
 );
 
 async function verifyAccountsLoginSurface(browser, sourceSha) {
@@ -46,7 +49,7 @@ async function verifyAccountsLoginSurface(browser, sourceSha) {
         data: {
           state,
           code_challenge: codeChallenge,
-          callback_protocol: "orvilo",
+          callback_protocol: DESKTOP_CALLBACK_PROTOCOL,
         },
       },
     );
@@ -389,7 +392,7 @@ async function verifyAuthenticatedProduct(browser, sourceSha, auth) {
     {
       name: "orvilo-locale",
       value: "en",
-      domain: "orvilo.aspectlylabs.com",
+      domain: PRODUCT_COOKIE_DOMAIN,
       path: "/",
       secure: true,
       sameSite: "Lax",
@@ -465,7 +468,7 @@ async function main() {
   const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
   await verifyProductionBrowser(sourceSha, receipt);
   console.log(
-    "production Accounts login UI, Google OAuth start, one-time broker login, and authenticated Web acceptance passed",
+    `${DEPLOYMENT_ENV} Accounts login UI, Google OAuth start, one-time broker login, and authenticated Web acceptance passed`,
   );
 }
 

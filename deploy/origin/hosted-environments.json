@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "environments": {
+    "development": {
+      "kind": "local",
+      "public": false,
+      "official_cloud": false,
+      "api_url": "http://localhost:8080",
+      "app_url": "http://localhost:3000",
+      "accounts_url": "https://accounts.aspectlylabs.com",
+      "desktop_channel": "development",
+      "desktop_app_name": "Orvilo Canary",
+      "desktop_callback_protocol_prefix": "orvilo-canary",
+      "mobile_bundle_id": "ai.orvilo.mobile.dev"
+    },
+    "staging": {
+      "kind": "hosted",
+      "public": false,
+      "official_cloud": false,
+      "api_url": "https://api.staging.aspectlylabs.com",
+      "app_url": "https://staging.aspectlylabs.com",
+      "accounts_url": "https://accounts.staging.aspectlylabs.com",
+      "accounts_origin_url": "https://accounts-origin.staging.aspectlylabs.com",
+      "desktop_channel": "staging",
+      "desktop_app_name": "Orvilo Staging",
+      "desktop_callback_protocol_prefix": "orvilo-staging",
+      "mobile_bundle_id": "ai.orvilo.mobile.staging",
+      "cli_profile": "staging",
+      "github_environment": "staging",
+      "compose_project": "orvilo-staging",
+      "docs_compose_project": "orvilo-staging-docs",
+      "auth_broker_compose_project": "orvilo-staging-auth-broker",
+      "state_root": "/var/lib/orvilo-staging",
+      "ports": {
+        "backend": 8211,
+        "web": 3111,
+        "docs": 4001,
+        "auth_broker": 43101
+      }
+    },
+    "production": {
+      "kind": "hosted",
+      "public": true,
+      "official_cloud": true,
+      "api_url": "https://api.aspectlylabs.com",
+      "app_url": "https://orvilo.aspectlylabs.com",
+      "accounts_url": "https://accounts.aspectlylabs.com",
+      "accounts_origin_url": "https://accounts-origin.aspectlylabs.com",
+      "desktop_channel": "production",
+      "desktop_app_name": "Orvilo",
+      "desktop_callback_protocol_prefix": "orvilo",
+      "mobile_bundle_id": "ai.orvilo.mobile",
+      "github_environment": "production",
+      "compose_project": "cordy632",
+      "docs_compose_project": "cordy",
+      "auth_broker_compose_project": "orvilo-auth-broker",
+      "state_root": "/var/lib/orvilo-production",
+      "ports": {
+        "backend": 8210,
+        "web": 3110,
+        "docs": 4000,
+        "auth_broker": 43100
+      }
+    }
+  }
+}

@@ -3,7 +3,7 @@ import { resolveAuthLocale } from "./auth-locale";
 const VALUE = /^[A-Za-z0-9._~-]{43,128}$/;
 const CODE = /^ov[dl]_[A-Za-z0-9_-]{43}$/;
 const PROTOCOL =
-  /^(?:orvilo|orvilo-canary-[a-f0-9]{16})$/;
+  /^(?:orvilo|orvilo-(?:canary|staging)-[a-f0-9]{16})$/;
 
 export type DesktopBinding = {
   state: string;

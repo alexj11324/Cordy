@@ -105,6 +105,12 @@ describe("worktree-dev-env", () => {
     expect(callbackProtocolForPath("/tmp/a/orvilo/apps/desktop")).not.toBe(
       callbackProtocolForPath("/tmp/b/orvilo/apps/desktop"),
     );
+    expect(
+      callbackProtocolForPath("/tmp/a/orvilo/apps/desktop", "staging"),
+    ).toMatch(/^orvilo-staging-[a-f0-9]{16}$/);
+    expect(
+      callbackProtocolForPath("/tmp/a/orvilo/apps/desktop", "staging"),
+    ).not.toBe(callbackProtocolForPath("/tmp/a/orvilo/apps/desktop"));
   });
 
   it("auto-isolates a linked worktree (.git is a file)", () => {
@@ -126,6 +132,15 @@ describe("worktree-dev-env", () => {
     expect(env.DESKTOP_APP_SUFFIX).toBeUndefined();
     expect(env.DESKTOP_CALLBACK_PROTOCOL).toBe(
       callbackProtocolForPath(join(root, "apps", "desktop")),
+    );
+  });
+
+  it("uses a staging callback protocol when the desktop channel is staging", () => {
+    const root = tmpRoot("dir");
+    const env = { ORVILO_DESKTOP_CHANNEL: "staging" };
+    applyWorktreeDevEnv(env, { root });
+    expect(env.DESKTOP_CALLBACK_PROTOCOL).toBe(
+      callbackProtocolForPath(join(root, "apps", "desktop"), "staging"),
     );
   });
 

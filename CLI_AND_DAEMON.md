@@ -448,16 +448,18 @@ orvilo daemon start
 
 ### Profiles
 
-Profiles let you run multiple daemons on the same machine — for example, one for production and one for a staging server.
+Profiles let you run multiple daemons on the same machine — for example, one for production and one for the internal staging environment. Canonical staging URLs live in `deploy/origin/hosted-environments.json`.
 
 ```bash
-# Set up a staging profile
-orvilo setup self-host --profile staging --server-url https://api-staging.example.com --app-url https://staging.example.com
+# Set up a staging profile (internal test environment, not public)
+orvilo setup self-host --profile staging \
+  --server-url https://api.staging.aspectlylabs.com \
+  --app-url https://staging.aspectlylabs.com
 
 # Start its daemon
 orvilo daemon start --profile staging
 
-# Default profile runs separately
+# Default profile runs separately against production or localhost
 orvilo daemon start
 ```
 
