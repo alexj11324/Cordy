@@ -205,6 +205,22 @@ describe("agent draft execution overrides", () => {
     expect(request).not.toHaveProperty("skill_ids");
   });
 
+  it("does not copy or submit a custom agent avatar", () => {
+    const duplicate = buildDuplicateDraft(sourceAgent({ avatar_url: "🚀" }), {
+      runtimes: [CODEX_RUNTIME],
+      currentUserId: "user-1",
+      fallbackRuntimeId: "runtime-1",
+      nameSuffix: " copy",
+    });
+    const request = buildCreateAgentRequest({
+      draft: { ...duplicate, avatarUrl: "https://example.test/legacy.png" },
+      runtimeId: "runtime-1",
+    });
+
+    expect(duplicate.avatarUrl).toBeNull();
+    expect(request).not.toHaveProperty("avatar_url");
+  });
+
   it("carries the runtime-independent duplicate config", () => {
     const request = buildCreateAgentRequest({
       draft: { ...draft(), thinkingLevel: "high", serviceTier: "priority" },

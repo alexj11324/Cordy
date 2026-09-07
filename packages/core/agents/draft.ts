@@ -191,7 +191,7 @@ export function buildDuplicateDraft(
     ...EMPTY_AGENT_DRAFT,
     name: `${source.name}${options.nameSuffix}`,
     conversationStarters: (source.conversation_starters ?? []).map((item) => ({ ...item })),
-    avatarUrl: source.avatar_url ?? null,
+    avatarUrl: null,
     runtimeId: keepsRuntime
       ? (source.runtime_id as string)
       : options.fallbackRuntimeId,
@@ -228,7 +228,6 @@ export function buildCreateAgentRequest(options: {
           })),
         }
       : {}),
-    avatar_url: draft.avatarUrl ?? undefined,
     runtime_id: runtimeId,
     model: draft.model.trim() || undefined,
     thinking_level: draft.thinkingLevel.trim() || undefined,

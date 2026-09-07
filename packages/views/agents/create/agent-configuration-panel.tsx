@@ -14,7 +14,6 @@ import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
 import { Input } from "@patchbay/ui/components/ui/input";
 import { cn } from "@patchbay/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useT } from "../../i18n";
 import {
   SettingsCard,
@@ -83,22 +82,6 @@ export function AgentConfigurationPanel({
         description={t(($) => $.creation_studio.sections.identity_hint)}
       >
         <SettingsCard>
-          <DraftFieldRow
-            compact={compact}
-            label={t(($) => $.create_dialog.avatar.change_aria)}
-          >
-            <div className={cn(!compact && "sm:flex sm:justify-end")}>
-              <AvatarUploadControl
-                variant="agent"
-                value={draft.avatarUrl}
-                name={draft.name}
-                size={compact ? 52 : 56}
-                onUploaded={(url) => set("avatarUrl", url)}
-                onEmojiSelected={(value) => set("avatarUrl", value)}
-                onClear={() => set("avatarUrl", null)}
-              />
-            </div>
-          </DraftFieldRow>
           <AgentNameField
             compact={compact}
             name={draft.name}

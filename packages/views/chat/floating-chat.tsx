@@ -19,6 +19,7 @@ import { isFloatingChatRouteSuppressed } from "./floating-chat-visibility";
  *     owns the conversation, so a floating copy of the same `activeSessionId`
  *     would be pure duplication — hide it there.
  *  3. An open task Agent panel. The corner overlay would cover its composer.
+ *  4. Agent detail. That page owns the direct message action in its identity card.
  */
 export function FloatingChat() {
   const enabled = useChatStore((s) => s.floatingChatEnabled);
@@ -28,7 +29,14 @@ export function FloatingChat() {
 
   if (!enabled) return null;
   // Conversation surfaces own their available space, including their composer.
-  if (isFloatingChatRouteSuppressed(pathname, wsPaths.chat(), agentThreadPath)) return null;
+  if (
+    isFloatingChatRouteSuppressed(
+      pathname,
+      wsPaths.chat(),
+      agentThreadPath,
+      wsPaths.agents(),
+    )
+  ) return null;
 
   return (
     <>

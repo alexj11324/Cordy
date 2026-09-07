@@ -13,7 +13,6 @@ import {
 import { api, ApiError } from "@patchbay/core/api";
 import { useAuthStore } from "@patchbay/core/auth";
 import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useModalStore } from "@patchbay/core/modals";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import {
   agentDetailOptions,
@@ -26,16 +25,8 @@ import { runtimeListOptions } from "@patchbay/core/runtimes";
 import { useAgentPermissions } from "@patchbay/core/permissions";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { CapabilityBanner } from "@patchbay/ui/components/common/capability-banner";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
 import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { AppLink, useNavigation } from "../../navigation";
+import { AppLink } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { AgentOverviewPane, type DetailTab } from "./agent-overview-pane";
 import { AgentIdentityCard } from "./agent-identity-card";
@@ -49,7 +40,6 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
   const { t } = useT("agents");
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
-  const navigation = useNavigation();
   const qc = useQueryClient();
   const currentUser = useAuthStore((s) => s.user);
 
@@ -100,8 +90,6 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     canEdit,
     isLoading: permissionsLoading,
   } = useAgentPermissions(agent, wsId);
-
-  const [confirmArchive, setConfirmArchive] = useState(false);
 
   // One-shot channel: the inspector's compact Lark status row asks the
   // overview pane to focus a tab. The pane clears it after consuming.
@@ -176,20 +164,6 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
         e instanceof Error ? e.message : t(($) => $.detail.update_failed_toast),
       );
       throw e;
-    }
-  };
-
-  const handleArchive = async (id: string) => {
-    try {
-      await api.archiveAgent(id);
-      qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
-      toast.success(t(($) => $.detail.agent_archived_toast));
-    } catch (e) {
-      toast.error(
-        e instanceof Error
-          ? e.message
-          : t(($) => $.detail.archive_failed_toast),
-      );
     }
   };
 
@@ -323,16 +297,8 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
       toast.error(t(($) => $.detail.runtime_required_toast));
     }
   };
-  const handleAssign = () => {
-    if (!runtimeBound) {
-      toast.error(t(($) => $.detail.runtime_required_toast));
-      return;
-    }
-    useModalStore.getState().open("quick-create-issue", { agent_id: agent.id });
-  };
-
   return (
-    <div className="flex flex-1 min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col bg-[Canvas] text-[CanvasText] [--background:Canvas] [--font-heading:system-ui] [--font-sans:system-ui] [--page-canvas:Canvas] [--surface-foreground:CanvasText] [--surface-raised:Canvas] [--surface:Canvas]">
       <div className="shrink-0 px-4 pt-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
           <AppLink
@@ -407,68 +373,20 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
             onNavIntentHandled={() => setTabNavIntent(null)}
           />
         </div>
-        <div className="shrink-0 overflow-x-auto px-4 pb-6 xl:w-[320px] xl:shrink-0 xl:overflow-y-auto xl:overflow-x-hidden xl:px-0 xl:py-6 xl:pr-6">
+        <div className="flex shrink-0 justify-center overflow-x-auto px-4 pb-6 xl:w-[368px] xl:shrink-0 xl:overflow-y-auto xl:overflow-x-hidden xl:px-6 xl:py-6">
           <AgentIdentityCard
             agent={agent}
             runtime={runtime}
             owner={owner}
             presence={presence}
-            canAssign={canAssign.allowed}
             canEdit={canEdit.allowed}
-            canArchive={canEdit.allowed}
             dmPending={permissionsLoading}
             dmHref={`${paths.chat()}?agent=${agent.id}`}
             onDm={handleDm}
-            onAssign={handleAssign}
-            onArchive={
-              agent.system_key ? undefined : () => setConfirmArchive(true)
-            }
             onUpdate={handleUpdate}
           />
         </div>
       </div>
-
-      {confirmArchive && (
-        <Dialog
-          open
-          onOpenChange={(v) => {
-            if (!v) setConfirmArchive(false);
-          }}
-        >
-          <DialogContent className="max-w-sm" showCloseButton={false}>
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-destructive/10">
-                <AlertCircle className="h-5 w-5 text-destructive" />
-              </div>
-              <DialogHeader className="flex-1 gap-1">
-                <DialogTitle className="text-body font-semibold">
-                  {t(($) => $.detail.archive_dialog_title)}
-                </DialogTitle>
-                <DialogDescription className="text-caption">
-                  {t(($) => $.detail.archive_dialog_description, {
-                    name: agent.name,
-                  })}
-                </DialogDescription>
-              </DialogHeader>
-            </div>
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setConfirmArchive(false)}>
-                {t(($) => $.detail.archive_dialog_cancel)}
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  setConfirmArchive(false);
-                  handleArchive(agent.id);
-                  navigation.push(paths.agents());
-                }}
-              >
-                {t(($) => $.detail.archive_dialog_confirm)}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
     </div>
   );
 }
