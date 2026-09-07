@@ -12,12 +12,17 @@ import (
 )
 
 const listWorkspaceAutomationRuns = `-- name: ListWorkspaceAutomationRuns :many
-SELECT r.id, r.automation_id, r.trigger_id, r.source, r.status, r.issue_id, r.task_id, r.triggered_at, r.completed_at, r.failure_reason, r.trigger_payload, r.result, r.created_at, r.team_id, r.planned_at, r.webhook_delivery_id, r.quota_reservation_id, r.reason_code, a.title AS automation_title, a.executor_id
+SELECT r.id, r.automation_id, r.trigger_id, r.source, r.status,
+  r.issue_id, r.task_id, r.triggered_at, r.completed_at,
+  r.failure_reason, r.reason_code, r.result, r.created_at,
+  a.title AS automation_title, a.executor_id
 FROM automation_run r
 JOIN automation a ON a.id = r.automation_id
 WHERE a.workspace_id = $1
   AND (NOT $2::boolean OR (a.created_by_type = 'member' AND a.created_by_id = $3))
-  AND (a.title ILIKE '%' || $4::text || '%' AND (cardinality($5::text[]) = 0 OR r.status = ANY($5::text[])))
+  AND (a.title ILIKE '%' || $4::text || '%'
+    OR COALESCE(r.failure_reason, '') ILIKE '%' || $4::text || '%')
+  AND (cardinality($5::text[]) = 0 OR r.status = ANY($5::text[]))
 ORDER BY r.triggered_at DESC, r.id DESC
 LIMIT $7 OFFSET $6
 `
@@ -33,9 +38,21 @@ type ListWorkspaceAutomationRunsParams struct {
 }
 
 type ListWorkspaceAutomationRunsRow struct {
-	AutomationRun   AutomationRun `json:"automation_run"`
-	AutomationTitle string        `json:"automation_title"`
-	ExecutorID      pgtype.UUID   `json:"executor_id"`
+	ID              pgtype.UUID        `json:"id"`
+	AutomationID    pgtype.UUID        `json:"automation_id"`
+	TriggerID       pgtype.UUID        `json:"trigger_id"`
+	Source          string             `json:"source"`
+	Status          string             `json:"status"`
+	IssueID         pgtype.UUID        `json:"issue_id"`
+	TaskID          pgtype.UUID        `json:"task_id"`
+	TriggeredAt     pgtype.Timestamptz `json:"triggered_at"`
+	CompletedAt     pgtype.Timestamptz `json:"completed_at"`
+	FailureReason   pgtype.Text        `json:"failure_reason"`
+	ReasonCode      pgtype.Text        `json:"reason_code"`
+	Result          []byte             `json:"result"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	AutomationTitle string             `json:"automation_title"`
+	ExecutorID      pgtype.UUID        `json:"executor_id"`
 }
 
 func (q *Queries) ListWorkspaceAutomationRuns(ctx context.Context, arg ListWorkspaceAutomationRunsParams) ([]ListWorkspaceAutomationRunsRow, error) {
@@ -56,24 +73,19 @@ func (q *Queries) ListWorkspaceAutomationRuns(ctx context.Context, arg ListWorks
 	for rows.Next() {
 		var i ListWorkspaceAutomationRunsRow
 		if err := rows.Scan(
-			&i.AutomationRun.ID,
-			&i.AutomationRun.AutomationID,
-			&i.AutomationRun.TriggerID,
-			&i.AutomationRun.Source,
-			&i.AutomationRun.Status,
-			&i.AutomationRun.IssueID,
-			&i.AutomationRun.TaskID,
-			&i.AutomationRun.TriggeredAt,
-			&i.AutomationRun.CompletedAt,
-			&i.AutomationRun.FailureReason,
-			&i.AutomationRun.TriggerPayload,
-			&i.AutomationRun.Result,
-			&i.AutomationRun.CreatedAt,
-			&i.AutomationRun.TeamID,
-			&i.AutomationRun.PlannedAt,
-			&i.AutomationRun.WebhookDeliveryID,
-			&i.AutomationRun.QuotaReservationID,
-			&i.AutomationRun.ReasonCode,
+			&i.ID,
+			&i.AutomationID,
+			&i.TriggerID,
+			&i.Source,
+			&i.Status,
+			&i.IssueID,
+			&i.TaskID,
+			&i.TriggeredAt,
+			&i.CompletedAt,
+			&i.FailureReason,
+			&i.ReasonCode,
+			&i.Result,
+			&i.CreatedAt,
 			&i.AutomationTitle,
 			&i.ExecutorID,
 		); err != nil {
@@ -88,7 +100,10 @@ func (q *Queries) ListWorkspaceAutomationRuns(ctx context.Context, arg ListWorks
 }
 
 const workspaceAutomationRunSummary = `-- name: WorkspaceAutomationRunSummary :one
-SELECT count(*) FILTER (WHERE (a.title ILIKE '%' || $1::text || '%' AND (cardinality($2::text[]) = 0 OR r.status = ANY($2::text[]))))::bigint AS total,
+SELECT count(*) FILTER (WHERE
+  (a.title ILIKE '%' || $1::text || '%'
+    OR COALESCE(r.failure_reason, '') ILIKE '%' || $1::text || '%')
+  AND (cardinality($2::text[]) = 0 OR r.status = ANY($2::text[])))::bigint AS total,
   count(*) FILTER (WHERE r.status = 'completed' AND r.triggered_at >= now() - interval '24 hours')::bigint AS successful_24h,
   count(*) FILTER (WHERE r.status = 'failed' AND r.triggered_at >= now() - interval '24 hours')::bigint AS failed_24h,
   count(*) FILTER (WHERE r.status = 'completed' AND r.triggered_at >= now() - interval '7 days')::bigint AS successful_7d,

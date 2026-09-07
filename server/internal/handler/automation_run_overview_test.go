@@ -45,6 +45,10 @@ func TestWorkspaceAutomationRunOverview(t *testing.T) {
  ($1, 'manual', 'failed', now() - interval '8 days', now()),
  ($2, 'manual', 'failed', now() - interval '1 hour', now()),
  ($3, 'manual', 'completed', now() - interval '1 hour', now())`, mine, teammate, foreign)
+	exec(`UPDATE automation_run SET failure_reason = 'Provider rejected payload',
+ trigger_payload = jsonb_build_object('body', repeat('x', 250 * 1024)),
+ result = '{"delivery_error":"kept for run history"}'::jsonb
+ WHERE automation_id = $1 AND status = 'failed'`, mine)
 	type response struct {
 		Runs []struct {
 			AutomationRunResponse
@@ -95,6 +99,23 @@ func TestWorkspaceAutomationRunOverview(t *testing.T) {
 	result = get("scope=mine&status=failed")
 	if len(result.Runs) != 2 || result.Summary.Total != 2 {
 		t.Fatalf("status filter truncated to first page: %+v", result)
+	}
+	result = get("scope=mine&search=Provider+rejected+payload")
+	if len(result.Runs) != 2 || result.Summary.Total != 2 || result.Summary.Successful24h != 30 {
+		t.Fatalf("failure-reason search lost matching history or changed scope counts: %+v", result)
+	}
+	for _, run := range result.Runs {
+		if run.TriggerPayload != nil {
+			t.Fatal("workspace history included the large trigger payload")
+		}
+		result, ok := run.Result.(map[string]any)
+		if !ok || result["delivery_error"] != "kept for run history" {
+			t.Fatalf("workspace history lost result details: %+v", run.Result)
+		}
+	}
+	result = get("scope=mine&search=Provider+rejected+payload&status=completed")
+	if len(result.Runs) != 0 || result.Summary.Total != 0 {
+		t.Fatalf("failure-reason search bypassed the status filter: %+v", result)
 	}
 	w := httptest.NewRecorder()
 	testHandler.ListWorkspaceAutomationRuns(w, newRequest(http.MethodGet, "/api/automations/runs?offset=2147483648", nil))

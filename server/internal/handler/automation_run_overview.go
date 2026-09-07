@@ -50,7 +50,25 @@ func (h *Handler) ListWorkspaceAutomationRuns(w http.ResponseWriter, r *http.Req
 	}
 	runs := make([]overviewRun, len(rows))
 	for i, row := range rows {
-		runs[i] = overviewRun{runToResponseSlim(row.AutomationRun), row.AutomationTitle, uuidToString(row.ExecutorID)}
+		runs[i] = overviewRun{
+			AutomationRunResponse: AutomationRunResponse{
+				ID:            uuidToString(row.ID),
+				AutomationID:  uuidToString(row.AutomationID),
+				TriggerID:     uuidToPtr(row.TriggerID),
+				Source:        row.Source,
+				Status:        row.Status,
+				IssueID:       uuidToPtr(row.IssueID),
+				TaskID:        uuidToPtr(row.TaskID),
+				TriggeredAt:   timestampToString(row.TriggeredAt),
+				CompletedAt:   timestampToPtr(row.CompletedAt),
+				FailureReason: textToPtr(row.FailureReason),
+				ReasonCode:    textToPtr(row.ReasonCode),
+				Result:        jsonObjectOrNil(row.Result),
+				CreatedAt:     timestampToString(row.CreatedAt),
+			},
+			AutomationTitle: row.AutomationTitle,
+			ExecutorID:      uuidToString(row.ExecutorID),
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"runs": runs, "summary": summary})
 }
