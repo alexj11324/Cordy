@@ -52,10 +52,6 @@ vi.mock("../../common/actor-avatar", () => ({
   }) => <div data-testid={`avatar-${actorType}-${actorId}`} />,
 }));
 
-vi.mock("../../common/avatar-upload-control", () => ({
-  AvatarUploadControl: () => <div data-testid="agent-avatar-upload" />,
-}));
-
 const agent: Agent = {
   id: "agent-1",
   workspace_id: "ws-1",
@@ -126,8 +122,25 @@ function renderCard(
   };
   const onUpdate = overrides.onUpdate ?? vi.fn().mockResolvedValue(undefined);
   const onDm = overrides.onDm ?? vi.fn();
-  const onAssign = overrides.onAssign ?? vi.fn();
-  render(
+  const props: ComponentProps<typeof AgentIdentityCard> = {
+    agent,
+    runtime,
+    owner,
+    presence: {
+      availability: "online",
+      workload: "idle",
+      runningCount: 0,
+      queuedCount: 0,
+      capacity: 5,
+    },
+    canEdit: true,
+    dmPending: false,
+    dmHref: "/acme/chat?agent=agent-1",
+    onDm,
+    onUpdate,
+    ...overrides,
+  };
+  const renderTree = (cardProps: ComponentProps<typeof AgentIdentityCard>) => (
     <I18nProvider locale="en" resources={TEST_RESOURCES}>
       <NavigationProvider value={navigation}>
         <QueryClientProvider
@@ -137,33 +150,19 @@ function renderCard(
             })
           }
         >
-          <AgentIdentityCard
-          agent={agent}
-          runtime={runtime}
-          owner={owner}
-          presence={{
-            availability: "online",
-            workload: "idle",
-            runningCount: 0,
-            queuedCount: 0,
-            capacity: 5,
-          }}
-          canAssign
-          canEdit
-          canArchive
-          dmPending={false}
-          dmHref="/acme/chat?agent=agent-1"
-          onDm={onDm}
-          onAssign={onAssign}
-          onArchive={vi.fn()}
-          onUpdate={onUpdate}
-          {...overrides}
-        />
+          <AgentIdentityCard {...cardProps} />
         </QueryClientProvider>
       </NavigationProvider>
-    </I18nProvider>,
+    </I18nProvider>
   );
-  return { onUpdate, onDm, onAssign };
+  const view = render(renderTree(props));
+  return {
+    onUpdate,
+    onDm,
+    rerenderCard: (
+      next: Partial<ComponentProps<typeof AgentIdentityCard>>,
+    ) => view.rerender(renderTree({ ...props, ...next })),
+  };
 }
 
 describe("AgentIdentityCard", () => {
@@ -172,23 +171,22 @@ describe("AgentIdentityCard", () => {
     catalogRef.models = [];
   });
 
-  it("puts name, model, status, and actions in the compact inspector card", () => {
+  it("puts provider identity, name, model, and one message action in the card", () => {
     renderCard();
 
-    expect(screen.getByRole("heading", { name: "Agent" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Model Picker Verification" })).toBeInTheDocument();
     expect(screen.getByTestId("agent-name-value")).toHaveTextContent(
       "Model Picker Verification",
     );
     expect(screen.getByText("gpt-5.6-sol · low · Standard")).toBeInTheDocument();
-    expect(screen.getByText("Online")).toBeInTheDocument();
-    expect(screen.getByText("Idle")).toBeInTheDocument();
+    expect(screen.queryByText("Online")).not.toBeInTheDocument();
+    expect(screen.queryByText("Idle")).not.toBeInTheDocument();
+    expect(document.querySelector('[data-slot="avatar-badge"]')).toHaveClass("bg-success");
     expect(screen.getByText("Antigravity (Mac)")).toBeInTheDocument();
     expect(screen.getByText("dev")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "DM" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Assign work" }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit agent" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Agent actions")).not.toBeInTheDocument();
   });
 
   it("does not render description or instructions", () => {
@@ -204,7 +202,7 @@ describe("AgentIdentityCard", () => {
     const { onUpdate } = renderCard();
 
     await user.click(screen.getByRole("button", { name: "Edit agent" }));
-    expect(screen.getByTestId("agent-avatar-upload")).toBeInTheDocument();
+    expect(document.querySelector('[data-slot="avatar"]')).toBeInTheDocument();
     const input = screen.getByRole("textbox", { name: "Name" });
     await user.clear(input);
     await user.type(input, "Renamed Agent");
@@ -215,7 +213,7 @@ describe("AgentIdentityCard", () => {
     );
   });
 
-  it("rolls the draft back when rename fails", async () => {
+  it("retains the draft when rename fails", async () => {
     const user = userEvent.setup();
     const onUpdate = vi.fn().mockRejectedValue(new Error("save failed"));
     renderCard({ onUpdate });
@@ -228,7 +226,7 @@ describe("AgentIdentityCard", () => {
 
     await waitFor(() =>
       expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue(
-        "Model Picker Verification",
+        "Broken",
       ),
     );
     expect(
@@ -236,10 +234,41 @@ describe("AgentIdentityCard", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps the rename draft open through an optimistic name update", async () => {
+    const user = userEvent.setup();
+    let rejectSave: ((reason?: unknown) => void) | undefined;
+    const onUpdate = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectSave = reject;
+        }),
+    );
+    const { rerenderCard } = renderCard({ onUpdate });
+
+    await user.click(screen.getByRole("button", { name: "Edit agent" }));
+    const input = screen.getByRole("textbox", { name: "Name" });
+    await user.clear(input);
+    await user.type(input, "Optimistic Name");
+    await user.click(screen.getByRole("button", { name: "Finish editing agent" }));
+
+    rerenderCard({ agent: { ...agent, name: "Optimistic Name" } });
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue(
+      "Optimistic Name",
+    );
+
+    rejectSave?.(new Error("save failed"));
+    rerenderCard({ agent });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Finish editing agent" }),
+      ).toBeEnabled(),
+    );
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Optimistic Name");
+  });
+
   it("hides Edit when the caller cannot manage the agent", () => {
     renderCard({ canEdit: false });
     expect(screen.queryByRole("button", { name: "Edit agent" })).toBeNull();
-    expect(screen.queryByTestId("agent-avatar-upload")).toBeNull();
   });
 
   it("shows Claude Fast by catalog name instead of the stored id true", async () => {

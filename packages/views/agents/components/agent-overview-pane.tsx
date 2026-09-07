@@ -1,12 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type {
-  Agent,
-  AgentRuntime,
-  MemberWithUser,
-} from "@patchbay/core/types";
+import type { Agent, AgentRuntime, MemberWithUser } from "@patchbay/core/types";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { larkInstallationsOptions } from "@patchbay/core/lark";
 import { slackInstallationsOptions } from "@patchbay/core/slack";
@@ -23,7 +19,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@patchbay/ui/components/ui/alert-dialog";
-import { cn } from "@patchbay/ui/lib/utils";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@patchbay/ui/components/ui/tabs";
 import { EnvTab } from "./tabs/env-tab";
 import { CustomArgsTab } from "./tabs/custom-args-tab";
 import { IntegrationsTab } from "./tabs/integrations-tab";
@@ -33,34 +34,16 @@ import { AgentAccessSettings } from "./agent-access-settings";
 import { useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 
-export type DetailTab =
-  | "composio_mcp"
-  | "integrations"
-  | "general"
-  | "access"
-  | "env"
-  | "custom_args"
-  | "runtime_config";
+export type DetailTab = "general" | "access";
 
 type SecondaryTab = {
   id: DetailTab;
-  labelKey:
-    | "composio_mcp"
-    | "integrations"
-    | "general"
-    | "access"
-    | "environment"
-    | "custom_args"
-    | "runtime_config";
+  labelKey: "general" | "access";
 };
 
 const SETTINGS_TABS: SecondaryTab[] = [
   { id: "general", labelKey: "general" },
   { id: "access", labelKey: "access" },
-  { id: "env", labelKey: "environment" },
-  { id: "custom_args", labelKey: "custom_args" },
-  { id: "runtime_config", labelKey: "runtime_config" },
-  { id: "integrations", labelKey: "integrations" },
 ];
 
 const DETAIL_VIEWS = new Set<DetailTab>(SETTINGS_TABS.map((tab) => tab.id));
@@ -73,7 +56,20 @@ const LEGACY_VIEWS = new Set([
   "composio_mcp",
   "capabilities",
   "settings",
+  "integrations",
+  "env",
+  "custom_args",
+  "runtime_config",
 ]);
+
+type DirtySection = "access" | "env" | "custom_args" | "runtime_config";
+
+const CLEAN_SECTIONS: Record<DirtySection, boolean> = {
+  access: false,
+  env: false,
+  custom_args: false,
+  runtime_config: false,
+};
 
 function isDetailTab(value: string | null): value is DetailTab {
   return value !== null && DETAIL_VIEWS.has(value as DetailTab);
@@ -121,8 +117,12 @@ export function AgentOverviewPane({
   const [activeView, setActiveView] = useState<DetailTab>(() =>
     viewFromUrl(urlView),
   );
-  const [activeDirty, setActiveDirty] = useState(false);
+  const [dirtySections, setDirtySections] = useState(CLEAN_SECTIONS);
   const [pendingView, setPendingView] = useState<DetailTab | null>(null);
+  const [pendingUpdate, setPendingUpdate] = useState<{
+    id: string;
+    data: Record<string, unknown>;
+  } | null>(null);
   const lastUrlViewRef = useRef(urlView);
 
   const { data: larkListing } = useQuery({
@@ -152,22 +152,17 @@ export function AgentOverviewPane({
     wecomListing?.configured === true ||
     telegramListing?.configured === true;
 
-  const visibleSettingsTabs = useMemo(() => {
-    return SETTINGS_TABS.filter((tab) => {
-      // Env is the only settings tab backed by a secret-bearing endpoint.
-      // GET/PUT /api/agents/{id}/env admits the agent owner or a workspace
-      // owner/admin (MUL-5438) — the same rule `canEdit` encodes — so
-      // showing the tab to anyone else guarantees a 403 on "Reveal & edit".
-      if (tab.id === "env") return canEdit;
-      if (tab.id === "runtime_config") return runtime?.provider === "openclaw";
-      if (tab.id === "integrations") return integrationsConfigured;
-      return true;
-    });
-  }, [canEdit, integrationsConfigured, runtime?.provider]);
+  const activeDirty = Object.values(dirtySections).some(Boolean);
+  const visibleSettingsTabs = SETTINGS_TABS;
+  const visibleViews = DETAIL_VIEWS;
 
-  const visibleViews = useMemo(
-    () => new Set<DetailTab>(visibleSettingsTabs.map((tab) => tab.id)),
-    [visibleSettingsTabs],
+  const handleDirtyChange = useCallback(
+    (section: DirtySection, dirty: boolean) => {
+      setDirtySections((current) =>
+        current[section] === dirty ? current : { ...current, [section]: dirty },
+      );
+    },
+    [],
   );
 
   const effectiveView = visibleViews.has(activeView) ? activeView : "general";
@@ -196,11 +191,39 @@ export function AgentOverviewPane({
     [activeDirty, commitView, effectiveView],
   );
 
+  const requestUpdate = useCallback(
+    async (id: string, data: Record<string, unknown>) => {
+      const runtimeId =
+        typeof data.runtime_id === "string" ? data.runtime_id : null;
+      const nextRuntime = runtimeId
+        ? runtimes.find((candidate) => candidate.id === runtimeId)
+        : null;
+      if (
+        dirtySections.runtime_config &&
+        nextRuntime &&
+        nextRuntime.provider !== "openclaw"
+      ) {
+        setPendingUpdate({ id, data });
+        return;
+      }
+      await onUpdate(id, data);
+    },
+    [dirtySections.runtime_config, onUpdate, runtimes],
+  );
+
   const commitViewChange = () => {
     if (!pendingView) return;
     commitView(pendingView);
-    setActiveDirty(false);
+    setDirtySections(CLEAN_SECTIONS);
     setPendingView(null);
+  };
+
+  const commitPendingUpdate = async () => {
+    if (!pendingUpdate) return;
+    const update = pendingUpdate;
+    setPendingUpdate(null);
+    await onUpdate(update.id, update.data);
+    setDirtySections(CLEAN_SECTIONS);
   };
 
   useEffect(() => {
@@ -224,36 +247,27 @@ export function AgentOverviewPane({
     <div className="flex min-h-0 flex-1 flex-col bg-background">
       <div className="min-h-0 flex-1 overflow-y-auto md:overflow-hidden">
         {visibleSettingsTabs.length > 0 && activeSecondaryTab && (
-          <div className="flex min-h-full flex-col md:h-full md:flex-row">
-            <aside className="shrink-0 overflow-x-auto border-b border-surface-border p-2 md:w-52 md:overflow-y-auto md:border-b-0 md:border-r md:p-4">
-              <div
-                className="flex w-max min-w-full items-center gap-1 md:w-full md:flex-col md:items-stretch"
-                role="tablist"
-                aria-orientation="vertical"
+          <Tabs
+            value={effectiveView}
+            onValueChange={(value) => requestView(value as DetailTab)}
+            className="flex min-h-full flex-col gap-0 md:h-full"
+          >
+            <div className="flex shrink-0 justify-center overflow-x-auto p-2 sm:px-6 md:px-8">
+              <TabsList
+                className="w-max"
                 aria-label={t(($) => $.tabs.section_navigation_aria)}
               >
-                {visibleSettingsTabs.map((tab) => {
-                  const active = effectiveView === tab.id;
-                  return (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      role="tab"
-                      aria-selected={active}
-                      onClick={() => requestView(tab.id)}
-                      className={cn(
-                        "flex h-8 shrink-0 items-center rounded-md px-2.5 text-left text-caption transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:w-full",
-                        active
-                          ? "bg-surface-selected font-medium text-surface-selected-foreground hover:bg-surface-selected"
-                          : "text-muted-foreground hover:bg-surface-hover hover:text-foreground",
-                      )}
-                    >
-                      {t(($) => $.tabs[tab.labelKey])}
-                    </button>
-                  );
-                })}
-              </div>
-            </aside>
+                {visibleSettingsTabs.map((tab) => (
+                  <TabsTrigger
+                    key={tab.id}
+                    value={tab.id}
+                    className="flex-none px-3"
+                  >
+                    {t(($) => $.tabs[tab.labelKey])}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </div>
 
             <section className="min-w-0 flex-1 md:overflow-y-auto">
               <div className="mx-auto w-full max-w-3xl p-4 sm:p-6 md:p-8">
@@ -263,60 +277,98 @@ export function AgentOverviewPane({
                   </h2>
                 </header>
 
-                <div className="mt-6">
-                  {effectiveView === "integrations" && (
-                    <IntegrationsTab agent={agent} />
-                  )}
+                <TabsContent value={effectiveView} className="mt-6">
                   {effectiveView === "general" && (
-                    <AgentDetailInspector
-                      agent={agent}
-                      runtime={runtime}
-                      runtimes={runtimes}
-                      members={members}
-                      currentUserId={currentUserId ?? null}
-                      canEdit={canEdit}
-                      onUpdate={onUpdate}
-                    />
+                    <div className="space-y-10">
+                      <AgentDetailInspector
+                        agent={agent}
+                        runtime={runtime}
+                        runtimes={runtimes}
+                        members={members}
+                        currentUserId={currentUserId ?? null}
+                        canEdit={canEdit}
+                        onUpdate={requestUpdate}
+                      />
+
+                      {canEdit && (
+                        <section className="space-y-6">
+                          <h3 className="text-body font-medium">
+                            {t(($) => $.tabs.environment)}
+                          </h3>
+                          <EnvTab
+                            agent={agent}
+                            onDirtyChange={(dirty) =>
+                              handleDirtyChange("env", dirty)
+                            }
+                          />
+                        </section>
+                      )}
+
+                      <section className="space-y-6">
+                        <h3 className="text-body font-medium">
+                          {t(($) => $.tabs.custom_args)}
+                        </h3>
+                        <CustomArgsTab
+                          agent={agent}
+                          runtimeDevice={runtime ?? undefined}
+                          onSave={(updates) => onUpdate(agent.id, updates)}
+                          onDirtyChange={(dirty) =>
+                            handleDirtyChange("custom_args", dirty)
+                          }
+                        />
+                      </section>
+
+                      {runtime?.provider === "openclaw" && (
+                        <section className="space-y-6">
+                          <h3 className="text-body font-medium">
+                            {t(($) => $.tabs.runtime_config)}
+                          </h3>
+                          <RuntimeConfigTab
+                            agent={agent}
+                            onSave={(updates) => onUpdate(agent.id, updates)}
+                            onDirtyChange={(dirty) =>
+                              handleDirtyChange("runtime_config", dirty)
+                            }
+                          />
+                        </section>
+                      )}
+
+                      {integrationsConfigured && (
+                        <section className="space-y-6">
+                          <h3 className="text-body font-medium">
+                            {t(($) => $.tabs.integrations)}
+                          </h3>
+                          <IntegrationsTab agent={agent} />
+                        </section>
+                      )}
+                    </div>
                   )}
                   {effectiveView === "access" && (
                     <AgentAccessSettings
                       agent={agent}
                       members={members}
                       currentUserId={currentUserId ?? null}
-                      onDirtyChange={setActiveDirty}
+                      onDirtyChange={(dirty) =>
+                        handleDirtyChange("access", dirty)
+                      }
                       onUpdate={onUpdate}
                     />
                   )}
-                  {effectiveView === "env" && (
-                    <EnvTab agent={agent} onDirtyChange={setActiveDirty} />
-                  )}
-                  {effectiveView === "custom_args" && (
-                    <CustomArgsTab
-                      agent={agent}
-                      runtimeDevice={runtime ?? undefined}
-                      onSave={(updates) => onUpdate(agent.id, updates)}
-                      onDirtyChange={setActiveDirty}
-                    />
-                  )}
-                  {effectiveView === "runtime_config" && (
-                    <RuntimeConfigTab
-                      agent={agent}
-                      onSave={(updates) => onUpdate(agent.id, updates)}
-                      onDirtyChange={setActiveDirty}
-                    />
-                  )}
-                </div>
+                </TabsContent>
               </div>
             </section>
-          </div>
+          </Tabs>
         )}
       </div>
 
-      {pendingView !== null && (
+      {(pendingView !== null || pendingUpdate !== null) && (
         <AlertDialog
           open
           onOpenChange={(open) => {
-            if (!open) setPendingView(null);
+            if (!open) {
+              setPendingView(null);
+              setPendingUpdate(null);
+            }
           }}
         >
           <AlertDialogContent>
@@ -334,7 +386,7 @@ export function AgentOverviewPane({
               </AlertDialogCancel>
               <AlertDialogAction
                 variant="destructive"
-                onClick={commitViewChange}
+                onClick={pendingUpdate ? commitPendingUpdate : commitViewChange}
               >
                 {t(($) => $.tabs.discard_confirm)}
               </AlertDialogAction>

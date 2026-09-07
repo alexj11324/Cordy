@@ -36,6 +36,7 @@ export interface ModelDropdownProps {
   clearUnsupported?: boolean;
   allowEffort?: boolean;
   allowSpeed?: boolean;
+  popoverAlign?: "start" | "center" | "end";
 }
 
 export function ModelDropdown({
@@ -54,6 +55,7 @@ export function ModelDropdown({
   clearUnsupported = true,
   allowEffort,
   allowSpeed,
+  popoverAlign = "start",
 }: ModelDropdownProps) {
   const { t } = useT("agents");
   const [open, setOpen] = useState(false);
@@ -162,7 +164,7 @@ export function ModelDropdown({
             {trigger}
           </PopoverTrigger>
           <PopoverContent
-            align="start"
+            align={popoverAlign}
             sideOffset={6}
             className="w-[min(35rem,calc(100vw-1rem))] gap-0 overflow-hidden p-0 duration-150 data-open:zoom-in-100 data-closed:zoom-out-100"
           >
