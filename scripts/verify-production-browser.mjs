@@ -18,6 +18,8 @@ import {
   buildGoogleOAuthProbeUrl,
   buildPkceChallenge,
   DEPLOYMENT_ENV,
+  DESKTOP_CALLBACK_PROTOCOL,
+  PRODUCT_COOKIE_DOMAIN,
   PRODUCT_ORIGIN,
   requireBrowserReceipt,
   requireBuildHeaders,
@@ -47,7 +49,7 @@ async function verifyAccountsLoginSurface(browser, sourceSha) {
         data: {
           state,
           code_challenge: codeChallenge,
-          callback_protocol: "patchbay",
+          callback_protocol: DESKTOP_CALLBACK_PROTOCOL,
         },
       },
     );
@@ -390,7 +392,7 @@ async function verifyAuthenticatedProduct(browser, sourceSha, auth) {
     {
       name: "patchbay-locale",
       value: "en",
-      domain: "patchbay.aspectlylabs.com",
+      domain: PRODUCT_COOKIE_DOMAIN,
       path: "/",
       secure: true,
       sameSite: "Lax",

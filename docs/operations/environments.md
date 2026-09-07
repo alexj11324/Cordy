@@ -102,18 +102,34 @@ its Compose project, Secret Manager entry, or smoke user here.
    `staging-smoke@aspectlylabs.com` in that application only.
 3. Create the GitHub Environment `staging` (selected-branch policy: `main`)
    with `STAGING_SSH_PRIVATE_KEY`, `STAGING_SSH_KNOWN_HOSTS`,
-   `STAGING_SSH_HOST`, and `STAGING_SSH_USER`. Clerk keys stay in the origin
-   secret files, not in GitHub.
+   `STAGING_SSH_HOST`, `STAGING_SSH_USER`, and the staging Clerk
+   `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (used by authenticated browser
+   verification). The Clerk secret key stays in the origin secret files, not
+   in GitHub.
 4. Place mode-0600 `product-env.json` and `auth-broker-env.json` under
    `/var/lib/patchbay-staging/secrets`. They must name the staging URLs and
    ports above and must not mention production product hosts. Use cookie
    domain `.staging.aspectlylabs.com` so staging sessions are not scoped to
    the public product host. Production cookies on `.aspectlylabs.com` may
    still be *presented* to the staging hostname by the browser; a separate
-   Clerk application makes those cookies unusable.
+   Clerk application makes those cookies unusable. Generate a staging-only
+   `PATCHBAY_ORIGIN_AUTH_TOKEN`; do not copy the production Worker secret.
 5. Install the origin nginx map from `deploy/origin/nginx/aspectlylabs-origin.conf`
    (staging server blocks are in the same file, different ports).
-6. From a reviewed checkout:
+6. Deploy the staging Accounts edge Worker. Wrangler environments do not
+   inherit bindings, so this Worker has its own route, origin, origin-auth
+   secret, and rate-limit namespaces (`21410502821` / `21410502822`) and must
+   never reuse the production counters:
+
+   ```bash
+   cd deploy/cloudflare/accounts-origin-proxy
+   npx wrangler secret put ORIGIN_AUTH_TOKEN --env staging
+   npx wrangler deploy --env staging
+   ```
+
+   The token must match `/var/lib/patchbay-staging/secrets`. Deploying without
+   `--env staging` would publish over the production Worker.
+7. From a reviewed checkout:
 
    ```bash
    sudo deploy/origin/install-staging-deploy.sh /path/to/staging-deploy-key.pub

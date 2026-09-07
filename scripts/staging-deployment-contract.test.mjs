@@ -21,6 +21,7 @@ const [
   installer,
   productionGateway,
   accountsWorker,
+  environmentsDoc,
 ] = await Promise.all([
   read(".github/workflows/aspectlylabs-staging.yml"),
   read(".github/workflows/aspectlylabs-production-images.yml"),
@@ -32,6 +33,7 @@ const [
   read("deploy/origin/install-staging-deploy.sh"),
   read("deploy/origin/production_deploy.py"),
   read("deploy/cloudflare/accounts-origin-proxy/wrangler.toml"),
+  read("docs/operations/environments.md"),
 ]);
 
 test("staging is a separate GitHub Environment from production", () => {
@@ -68,6 +70,7 @@ test("staging consumes published production images instead of rebuilding", () =>
   assert.match(workflow, /resolve-published-image-records\.mjs/u);
   assert.match(workflow, /verify-staging-deployment\.mjs/u);
   assert.match(workflow, /verify-production-browser\.mjs/u);
+  assert.match(workflow, /PATCHBAY_VERIFY_ENV: staging/u);
   assert.match(workflow, /browser_auth\.sign_in_ticket/u);
   assert.match(workflow, /browser_auth\.testing_token/u);
 });
@@ -114,6 +117,25 @@ test("staging Accounts uses its own Cloudflare Worker route and origin", () => {
   assert.match(accountsWorker, /pattern = "accounts\.staging\.aspectlylabs\.com"/u);
   assert.match(accountsWorker, /ORIGIN = "https:\/\/accounts-origin\.staging\.aspectlylabs\.com"/u);
   assert.doesNotMatch(accountsWorker, /\[env\.staging\.vars\][\s\S]*accounts-origin\.aspectlylabs\.com/u);
+  const stagingLimitIds = [
+    ...accountsWorker.matchAll(
+      /\[\[env\.staging\.ratelimits\]\]\s*\nname = "[^"]+"\s*\nnamespace_id = "(\d+)"/g,
+    ),
+  ].map((match) => match[1]);
+  const productionLimitIds = [
+    ...accountsWorker.matchAll(
+      /(?:^|\n)\[\[ratelimits\]\]\s*\nname = "[^"]+"\s*\nnamespace_id = "(\d+)"/g,
+    ),
+  ].map((match) => match[1]);
+  assert.deepEqual(stagingLimitIds, ["21410502821", "21410502822"]);
+  assert.deepEqual(productionLimitIds, ["13410502821", "13410502822"]);
+  assert.equal(
+    new Set([...stagingLimitIds, ...productionLimitIds]).size,
+    stagingLimitIds.length + productionLimitIds.length,
+  );
+  assert.match(environmentsDoc, /wrangler secret put ORIGIN_AUTH_TOKEN --env staging/u);
+  assert.match(environmentsDoc, /wrangler deploy --env staging/u);
+  assert.match(environmentsDoc, /NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY/u);
 });
 
 test("staging compose overlays never reattach production projects", () => {
