@@ -686,7 +686,7 @@ describe("AutomationDetailPage settings layout", () => {
     const tools = await screen.findByTestId("automation-tools");
     expect(tools).toHaveTextContent("Memories");
     expect(tools).toHaveTextContent("Send to Slack");
-    expect(tools).toHaveTextContent("Requires connection");
+    await waitFor(() => expect(tools).toHaveTextContent("Requires connection"));
     expect(tools).toHaveTextContent("Add Tool or MCP");
   });
 
@@ -697,7 +697,8 @@ describe("AutomationDetailPage settings layout", () => {
     expect(await screen.findByTestId("automation-settings-title")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Run now" })).toBeDisabled();
 
-    const connectHrefs = screen.getAllByRole("link", { name: /Connect/ }).map((node) => node.getAttribute("href"));
+    const connectHrefs = (await screen.findAllByRole("link", { name: /Connect/ }))
+      .map((node) => node.getAttribute("href"));
     expect(connectHrefs).toEqual(expect.arrayContaining([
       "/acme/settings?tab=github",
       "/acme/settings?tab=integrations",
