@@ -136,6 +136,15 @@ class StagingDeployIsolationTests(unittest.TestCase):
                 "https://accounts.staging.aspectlylabs.com",
             )
             self.assertEqual(product["ORVILO_CLERK_PUBLISHABLE_KEY"], "pk_test_staging")
+            self.assertEqual(product["ALLOWED_EMAILS"], staging_deploy.STAGING_SMOKE_USER_EMAIL)
+
+    def test_rejects_incomplete_release_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            deployment = staging_deploy.StagingDeployment(root / "state", root / "static")
+            release = MODULE_PATH.parents[2]
+            with self.assertRaisesRegex(staging_deploy.DeploymentError, "missing required variables"):
+                deployment.validate_compose_environment(release, valid_product_env(), valid_broker_env())
 
     def test_ports_and_projects_do_not_overlap_production(self):
         self.assertNotEqual(

@@ -36,6 +36,7 @@ SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 WORKFLOW_RUN_ID_RE = re.compile(r"^[1-9][0-9]{0,19}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 COMPOSE_VARIABLE_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)")
+REQUIRED_COMPOSE_VARIABLE_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*):\?")
 EXPECTED_IMAGE_REPOSITORIES = {
     name: f"ghcr.io/alexj11324/orvilo-{name}"
     for name in ("backend", "web", "docs", "auth-broker")
@@ -418,19 +419,33 @@ class StagingDeployment:
         if not isinstance(publishable_key, str) or not publishable_key.strip():
             raise DeploymentError("staging auth broker environment must include CLERK_PUBLISHABLE_KEY")
         product["ORVILO_CLERK_PUBLISHABLE_KEY"] = publishable_key.strip()
+        emails = [email.strip() for email in product.get("ALLOWED_EMAILS", "").split(",") if email.strip()]
+        if STAGING_SMOKE_USER_EMAIL not in emails:
+            emails.append(STAGING_SMOKE_USER_EMAIL)
+        product["ALLOWED_EMAILS"] = ",".join(emails)
         return product, broker
+
+    def validate_compose_environment(
+        self, release: Path, product: dict[str, str], broker: dict[str, str]
+    ) -> None:
+        overlays = release / "deploy/origin"
+        generated = {"ORVILO_BACKEND_IMAGE_REF", "ORVILO_WEB_IMAGE_REF", "ORVILO_DOCS_IMAGE_REF", "ORVILO_AUTH_BROKER_IMAGE"}
+        for path, values in (
+            (release / "docker-compose.selfhost.yml", product),
+            (overlays / "staging-product.override.yml", product),
+            (overlays / "staging-docs.compose.yml", product),
+            (overlays / "staging-auth-broker.compose.yml", broker),
+        ):
+            required = set(REQUIRED_COMPOSE_VARIABLE_RE.findall(path.read_text(encoding="utf-8"))) - generated
+            missing = sorted(name for name in required if not values.get(name, "").strip())
+            if missing:
+                raise DeploymentError(f"staging {path.name} is missing required variables: {', '.join(missing)}")
 
     def bootstrap(self) -> dict[str, Any]:
         self.initialize_directories()
-        self.load_secrets()
-        for name in (
-            "staging-product.override.yml",
-            "staging-docs.compose.yml",
-            "staging-auth-broker.compose.yml",
-        ):
-            if not (self.static_directory / name).is_file():
-                raise DeploymentError(f"installed staging deployment file is missing: {name}")
+        product, broker = self.load_secrets()
         source_sha = self.fetch_main()
+        self.validate_compose_environment(self.checkout(source_sha), product, broker)
         self.atomic_json(
             self.bootstrapped_path,
             {
@@ -583,6 +598,7 @@ class StagingDeployment:
         source_sha = manifest["source_sha"]
         release = self.checkout(source_sha)
         product_env, broker_env = self.deployment_environment(manifest)
+        self.validate_compose_environment(release, product_env, broker_env)
         for image in manifest["images"].values():
             run(["docker", "pull", image])
 
@@ -594,7 +610,7 @@ class StagingDeployment:
             "-f",
             str(release / "docker-compose.selfhost.yml"),
             "-f",
-            str(self.static_directory / "staging-product.override.yml"),
+            str(release / "deploy/origin/staging-product.override.yml"),
         ]
         self.compose([*product_files, "up", "-d", "--wait", "--wait-timeout", "180", "postgres"], env=product_env)
         for service in ("backend", "frontend"):
@@ -616,7 +632,7 @@ class StagingDeployment:
                 "--project-name",
                 assert_isolated_project(DOCS_COMPOSE_PROJECT),
                 "-f",
-                str(self.static_directory / "staging-docs.compose.yml"),
+                str(release / "deploy/origin/staging-docs.compose.yml"),
                 "up",
                 "-d",
                 "--no-deps",
@@ -632,7 +648,7 @@ class StagingDeployment:
                 "--project-name",
                 assert_isolated_project(AUTH_BROKER_COMPOSE_PROJECT),
                 "-f",
-                str(self.static_directory / "staging-auth-broker.compose.yml"),
+                str(release / "deploy/origin/staging-auth-broker.compose.yml"),
                 "up",
                 "-d",
                 "--no-deps",

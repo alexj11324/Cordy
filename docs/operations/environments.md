@@ -114,6 +114,12 @@ its Compose project, Secret Manager entry, or smoke user here.
    still be *presented* to the staging hostname by the browser; a separate
    Clerk application makes those cookies unusable. Generate a staging-only
    `ORVILO_ORIGIN_AUTH_TOKEN`; do not copy the production Worker secret.
+   Include every required Compose variable, including `CORS_ALLOWED_ORIGINS`,
+   `CLERK_JWT_KEY`, `CLERK_ISSUER`, and the matching desktop broker credential
+   in both snapshots. Bootstrap validates the selected checkout before granting
+   deployment access. `ALLOWED_EMAILS` may list individual QA addresses; the
+   gateway always adds `staging-smoke@aspectlylabs.com`, while the overlay disables
+   open signup and domain-wide allowlists.
 5. Install the origin nginx map from `deploy/origin/nginx/aspectlylabs-origin.conf`
    (staging server blocks are in the same file, different ports). Before reloading
    nginx, install a root-owned mode-0600 snippet at
@@ -150,3 +156,5 @@ its Compose project, Secret Manager entry, or smoke user here.
 
 The first GitHub Actions run then creates the staging Compose projects and
 empty volumes. It never inspects or reattaches production containers.
+Each deployment loads all staging overlays from its validated source checkout,
+so configuration and images advance together without reinstalling static files.

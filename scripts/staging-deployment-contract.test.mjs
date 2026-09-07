@@ -36,6 +36,15 @@ const [
   read("docs/operations/environments.md"),
 ]);
 
+test("synthetic login initiates the channel-specific handoff before broker registration", async () => {
+  const source = await read("scripts/verify-production-browser.mjs");
+  const flow = source.slice(source.indexOf("async function redeemSyntheticLogin("));
+  const initiate = flow.indexOf("/api/desktop-handoff/initiate");
+  assert.ok(initiate >= 0);
+  assert.ok(initiate < flow.indexOf("/v1/desktop/google/attempt"));
+  assert.match(flow.slice(initiate, flow.indexOf("const registered")), /callback_protocol: DESKTOP_CALLBACK_PROTOCOL/u);
+});
+
 test("staging is a separate GitHub Environment from production", () => {
   assert.match(workflow, /environment:\n\s+name: staging/u);
   assert.match(workflow, /STAGING_SSH_PRIVATE_KEY/u);
@@ -151,6 +160,8 @@ test("staging compose overlays never reattach production projects", () => {
   assert.match(stagingOverride, /ORVILO_APP_URL to https:\/\/staging\.aspectlylabs\.com/u);
   assert.match(stagingOverride, /ANALYTICS_ENVIRONMENT: staging/u);
   assert.match(stagingOverride, /ALLOW_SIGNUP: "false"/u);
+  assert.match(stagingOverride, /ALLOWED_EMAILS: \$\{ALLOWED_EMAILS:\?/u);
+  assert.match(stagingOverride, /ALLOWED_EMAIL_DOMAINS: ""/u);
   for (const key of ["ORVILO_API_ORIGIN", "ORVILO_AUTH_BROKER_ORIGIN", "ORVILO_DESKTOP_BROKER_AUTH_TOKEN", "ORVILO_ORIGIN_AUTH_TOKEN"]) {
     assert.match(stagingBroker, new RegExp(`\\n      ${key}:`));
   }
@@ -194,6 +205,10 @@ test("staging accounts origin validates its own Worker token", () => {
 });
 
 test("staging gateway refuses production state", () => {
+  for (const file of ["staging-product.override.yml", "staging-docs.compose.yml", "staging-auth-broker.compose.yml"]) {
+    assert.ok(stagingGateway.includes(`str(release / "deploy/origin/${file}")`));
+    assert.ok(!stagingGateway.includes(`str(self.static_directory / "${file}")`));
+  }
   assert.match(stagingGateway, /DEFAULT_ROOT = Path\("\/var\/lib\/orvilo-staging"\)/u);
   assert.match(stagingGateway, /PRODUCTION_ROOT = Path\("\/var\/lib\/orvilo-production"\)/u);
   assert.match(stagingGateway, /FORBIDDEN_COMPOSE_PROJECTS = \{"cordy632", "cordy", "orvilo-auth-broker"\}/u);
