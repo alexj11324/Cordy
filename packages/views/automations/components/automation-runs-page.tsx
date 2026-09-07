@@ -59,7 +59,7 @@ export function AutomationRunsPage() {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-5xl space-y-6 px-5 py-10 sm:px-8">
-          <h1 className="text-2xl font-semibold">
+          <h1 className="text-display-sm font-semibold">
             {t(($) => $.overview.runs)}
           </h1>
 

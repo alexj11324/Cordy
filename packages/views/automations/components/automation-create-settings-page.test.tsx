@@ -84,10 +84,10 @@ vi.mock("../../projects/components/project-picker", () => ({
 }));
 vi.mock("../../editor", () => ({
   ContentEditor: forwardRef(
-    (
+    function MockContentEditor(
       { value, onUpdate }: { value: string; onUpdate: (value: string) => void },
       ref,
-    ) => {
+    ) {
       useImperativeHandle(ref, () => ({ getMarkdown: () => value }));
       return (
         <textarea
