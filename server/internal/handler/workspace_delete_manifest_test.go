@@ -33,6 +33,7 @@ var workspaceDeletionManifest = map[string]workspaceDeleteAction{
 	"attachment":                               workspaceDelete,
 	"automation":                               workspaceDelete,
 	"automation_collaborator":                  workspaceDelete,
+	"automation_memory":                        workspaceDelete,
 	"automation_quota_period":                  workspaceDelete,
 	"automation_quota_reservation":             workspaceDelete,
 	"automation_rule_version":                  workspaceDelete,

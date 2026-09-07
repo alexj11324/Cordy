@@ -749,7 +749,7 @@
       "triggered_by": "Triggered by",
       "open_issue_aria": "Open issue",
       "open_issue_tooltip": "Open issue",
-      "transcript_tooltip": "View transcript",
+      "conversation_tooltip": "View conversation",
       "cancel_task_aria": "Cancel task",
       "cancel_task_tooltip": "Cancel task",
       "cancelling_tooltip": "Cancelling…",

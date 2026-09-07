@@ -481,11 +481,13 @@ const LinearCatalogTeamSchema = z.object({
   id: z.string(),
   key: z.string(),
   name: z.string(),
+  organization_id: z.string().optional(),
 }).loose();
 
 const LinearCatalogProjectSchema = z.object({
   id: z.string(),
   name: z.string(),
+  team_id: z.string().optional(),
 }).loose();
 
 const LinearCatalogStateSchema = z.object({
@@ -494,6 +496,7 @@ const LinearCatalogStateSchema = z.object({
   // Keep this open: Linear may add workflow categories.
   type: z.string(),
   color: z.string(),
+  team_id: z.string().optional(),
 }).loose();
 
 const LinearCatalogUserSchema = z.object({
@@ -692,6 +695,13 @@ export const EMPTY_LIST_GITHUB_REPOSITORIES_RESPONSE: ListGitHubRepositoriesResp
   total_count: 0,
   next_page: null,
 };
+
+export const AutomationGitHubCatalogSchema = z.object({
+  repositories: z.array(GitHubRepositorySchema).default([]),
+  me_logins: z.array(z.string()).default([]),
+}).loose();
+
+export const EMPTY_AUTOMATION_GITHUB_CATALOG = { repositories: [], me_logins: [] };
 
 export const GitHubPullRequestSchema = z.object({
   id: z.string(),
@@ -2672,6 +2682,11 @@ export const ContinueAgentThreadResponseSchema = z.object({
   status: z.enum(["queued", "coalesced"]).catch("queued"),
 }).loose();
 
+export const PrioritizeAgentThreadTaskResponseSchema = z.object({
+  task_id: z.string(),
+  active_task_id: z.string(),
+}).loose();
+
 // Task cancellation (`POST /api/tasks/:id/cancel`) is consumed directly by
 // chat recovery. Its optional message payload must be well-formed before the
 // UI deletes a message from cache or restores text into the input.
@@ -3123,6 +3138,8 @@ const AutomationListItemSchema = z.object({
   can_write: z.boolean().optional(),
   // Narrower per-caller access-management capability (detail endpoint only).
   can_manage_access: z.boolean().optional(),
+  run_ready: z.boolean().optional(),
+  run_blocked_reasons: z.array(z.string()).optional(),
 }).loose();
 
 export const ListAutomationsResponseSchema = z.object({
@@ -3168,6 +3185,8 @@ const AutomationTriggerSchema = z.object({
   provider: z.string().nullable().optional(),
   preset: z.string().nullable().optional(),
   config: z.record(z.string(), z.unknown()).nullable().optional(),
+  ready: z.boolean().optional(),
+  readiness_reasons: z.array(z.string()).optional(),
   has_signing_secret: z.boolean().optional(),
   last_fired_at: z.string().nullable().optional(),
   created_at: z.string().default(""),
@@ -4012,6 +4031,17 @@ export const ListSlackInstallationsResponseSchema = z.object({
   install_supported: z.boolean().optional(),
   managed_supported: z.boolean().optional(),
 }).loose();
+
+export const SlackAutomationCatalogResponseSchema = z.object({
+  channels: z.array(z.object({
+    installation_id: z.string(),
+    team_id: z.string(),
+    id: z.string(),
+    name: z.string(),
+  }).loose()).default([]),
+}).loose();
+
+export const EMPTY_SLACK_AUTOMATION_CATALOG_RESPONSE = { channels: [] };
 
 export const ListLarkInstallationsResponseSchema = z.object({
   installations: z.array(LarkInstallationSchema).default([]),

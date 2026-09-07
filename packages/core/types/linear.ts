@@ -40,11 +40,13 @@ export type LinearCatalogTeam = {
   id: string;
   key: string;
   name: string;
+  organization_id?: string;
 };
 
 export type LinearCatalogProject = {
   id: string;
   name: string;
+  team_id?: string;
 };
 
 export type LinearCatalogState = {
@@ -52,6 +54,7 @@ export type LinearCatalogState = {
   name: string;
   type: string;
   color: string;
+  team_id?: string;
 };
 
 export type LinearCatalogUser = {

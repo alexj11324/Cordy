@@ -141,39 +141,12 @@ export function routeContentLinkPath(
   if (disposition === "push") {
     const active = getActiveTab(store);
     if (active && active.url === path) return;
-    if (tryRouteToPinnedNewTab(path)) return;
     store.navigateActiveSession(path);
     return;
   }
   // Empty seed title — the tab bar derives the real title from the URL and
   // cache; a raw path would flash before that resolves.
   store.openTab(path, "", { activate: disposition === "foreground-tab" });
-}
-
-/**
- * Intercept pushes originating in a pinned tab and force them into a new
- * tab. Returns `true` if the navigation was redirected (caller should NOT
- * proceed). Pathname-only changes (search / hash / same-page state) are
- * allowed through so pinned filter / drawer / form-state interactions
- * still work — see RFC §3 D2a (FINAL: any pathname change → new tab) and
- * D2b (FINAL: same pathname → allowed in pinned tab).
- *
- * Dedupe is preserved (D4a): `openTab` activates an existing tab with the
- * same resourceKey if one exists, otherwise creates a new one. The
- * newly-focused tab is activated foreground — a pinned-tab push is an
- * explicit user action, not a background cmd+click, so the focus follows.
- */
-function tryRouteToPinnedNewTab(path: string): boolean {
-  const store = useTabStore.getState();
-  const active = getActiveTab(store);
-  if (!active?.pinned) return false;
-
-  const currentPathname = splitTabUrl(active.url).pathname;
-  const newPathname = splitTabUrl(path).pathname;
-  if (currentPathname === newPathname) return false;
-
-  store.openTab(path, "", { activate: true });
-  return true;
 }
 
 /**
@@ -219,7 +192,6 @@ export function DesktopNavigationProvider({
         const active = getActiveTab(store);
         if (active && active.url === path) return;
         if (tryRouteToOtherWorkspace(path)) return;
-        if (tryRouteToPinnedNewTab(path)) return;
         store.navigateActiveSession(path);
       },
       replace: (path: string) => {

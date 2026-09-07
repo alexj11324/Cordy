@@ -833,6 +833,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// reaction on a failed run, which the outbound replier does not handle.
 			slackTyping := slack.NewTypingIndicatorManager(queries, box.Open, slog.Default())
 			slackTyping.Register(bus)
+			slack.NewAutomationCompletionReactor(queries, pool, box.Open, slog.Default()).Register(bus)
 			// Slack attachments require object storage because each chat
 			// attachment points to an uploaded object. When storage is disabled,
 			// leave the media resolver unset and ingest Slack messages as text.
@@ -1926,6 +1927,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Get("/linear/members", h.ListLinearMemberBindings)
 					r.Get("/linear/conflicts", h.ListLinearSyncConflicts)
 					r.Get("/slack/installations", h.ListSlackInstallations)
+					r.Get("/slack/automation-catalog", h.GetSlackAutomationCatalog)
 					r.Get("/wecom/installations", h.ListWecomInstallations)
 				})
 				r.Group(func(r chi.Router) {
@@ -2293,7 +2295,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 					r.Post("/trigger", h.TriggerAutomation)
 					r.Get("/runs", h.ListAutomationRuns)
 					r.Get("/runs/{runId}", h.GetAutomationRun)
+					r.Get("/github-catalog", h.GetAutomationGitHubCatalog)
 					r.Get("/deliveries", h.ListAutomationDeliveries)
+					r.Get("/memories", h.ListAutomationMemories)
+					r.Get("/memories/{name}", h.GetAutomationMemory)
+					r.Put("/memories/{name}", h.PutAutomationMemory)
+					r.Delete("/memories/{name}", h.DeleteAutomationMemory)
 					r.Get("/deliveries/{deliveryId}", h.GetAutomationDelivery)
 					r.Post("/deliveries/{deliveryId}/replay", h.ReplayAutomationDelivery)
 					r.Post("/triggers", h.CreateAutomationTrigger)
@@ -2500,6 +2507,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// Tasks (user-facing, with ownership check)
 			r.Get("/api/tasks/{taskId}/agent-thread", h.GetAgentThread)
 			r.Post("/api/tasks/{taskId}/agent-thread/continue", h.ContinueAgentThread)
+			r.Post("/api/tasks/{taskId}/agent-thread/queued-tasks/{queuedTaskId}/prioritize", h.PrioritizeAgentThreadTask)
 			r.Post("/api/tasks/{taskId}/cancel", h.CancelTaskByUser)
 
 			// Workspace-wide agent task snapshot for presence derivation:

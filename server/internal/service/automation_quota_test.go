@@ -621,8 +621,8 @@ func TestAutomationQuotaSchedulePersistsSkippedRun(t *testing.T) {
 	}
 	var triggerID pgtype.UUID
 	if err := pool.QueryRow(ctx, `
-		INSERT INTO automation_trigger (automation_id, kind, enabled, cron_expression, timezone)
-		VALUES ($1, 'schedule', true, '0 * * * *', 'UTC') RETURNING id`, automation.ID).Scan(&triggerID); err != nil {
+		INSERT INTO automation_trigger (automation_id, kind, enabled, cron_expression, timezone, next_run_at)
+		VALUES ($1, 'schedule', true, '0 * * * *', 'UTC', $2) RETURNING id`, automation.ID, start.Add(time.Hour)).Scan(&triggerID); err != nil {
 		t.Fatalf("create schedule trigger: %v", err)
 	}
 	svc := &AutomationService{

@@ -8,6 +8,7 @@ import { api } from "../api";
 export const slackKeys = {
   all: (wsId: string) => ["slack", wsId] as const,
   installations: (wsId: string) => [...slackKeys.all(wsId), "installations"] as const,
+  automationCatalog: (wsId: string) => [...slackKeys.all(wsId), "automation-catalog"] as const,
 };
 
 export const slackInstallationsOptions = (wsId: string) =>
@@ -16,4 +17,11 @@ export const slackInstallationsOptions = (wsId: string) =>
     queryFn: () => api.listSlackInstallations(wsId),
     enabled: !!wsId,
     refetchInterval: (query) => query.state.status === "success" ? 5_000 : false,
+  });
+
+export const slackAutomationCatalogOptions = (wsId: string, enabled = true) =>
+  queryOptions({
+    queryKey: slackKeys.automationCatalog(wsId),
+    queryFn: () => api.getSlackAutomationCatalog(wsId),
+    enabled: enabled && !!wsId,
   });

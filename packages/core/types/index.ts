@@ -4,6 +4,7 @@ export type {
   AgentThreadResponse,
   ContinueAgentThreadRequest,
   ContinueAgentThreadResponse,
+  PrioritizeAgentThreadTaskResponse,
 } from "./agent-thread";
 export type {
   IssueStatusCategory,
@@ -248,6 +249,7 @@ export type {
   GitHubPullRequestState,
   ListGitHubInstallationsResponse,
   GitHubRepository,
+  AutomationGitHubCatalog,
   ListGitHubRepositoriesResponse,
   GitHubConnectResponse,
 } from "./github";
@@ -273,6 +275,8 @@ export type {
 export type {
   SlackInstallation,
   ListSlackInstallationsResponse,
+  SlackAutomationChannel,
+  SlackAutomationCatalogResponse,
   RegisterSlackBYORequest,
   BeginManagedSlackInstallResponse,
   RedeemSlackBindingTokenResponse,
@@ -349,6 +353,12 @@ export type {
   WebhookSignatureStatus,
   ListWebhookDeliveriesResponse,
 } from "./automation";
+export type {
+  AutomationMemorySummary,
+  AutomationMemoryFile,
+  ListAutomationMemoriesResponse,
+  UpdateAutomationMemoryRequest,
+} from "./automation-memory";
 export type {
   Team,
   TeamMember,

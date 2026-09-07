@@ -85,6 +85,39 @@
   line-height: 1.5;
 }
 
+/* Automation instructions have their own section label and bounded viewport.
+ * Keep prose and Markdown headings compact without changing other editors. */
+.automation-instructions .rich-text-editor {
+  font-size: var(--text-label);
+}
+
+.automation-instructions .rich-text-editor h1 {
+  font-size: var(--text-body-lg);
+  font-weight: 600;
+  margin-top: 0.75rem;
+  margin-bottom: 0.35rem;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.automation-instructions .rich-text-editor h2 {
+  font-size: var(--text-body);
+  font-weight: 600;
+  margin-top: 0.75rem;
+  margin-bottom: 0.35rem;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.automation-instructions .rich-text-editor h3 {
+  font-size: var(--text-label);
+  font-weight: 600;
+  margin-top: 0.75rem;
+  margin-bottom: 0.25rem;
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
 .rich-text-editor h6 {
   font-size: var(--text-caption);
   font-weight: 600;

@@ -20,6 +20,7 @@ import {
 } from "@patchbay/views/layout";
 import { SearchCommand, SearchTrigger } from "@patchbay/views/search";
 import { FloatingChat } from "@patchbay/views/chat";
+import { AgentThreadPanelLayout } from "@patchbay/views/agent-thread";
 import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@patchbay/core/paths";
 import { workspaceListOptions } from "@patchbay/core/workspace";
 import {
@@ -115,23 +116,25 @@ function useNativeNavigationGestures() {
 }
 
 
-// The main area's top bar doubles as a window drag region. When the sidebar
-// is not occupying main-flow width, leave room for the fixed window toolbar
-// so tabs do not land beneath the traffic lights / navigation controls.
+// The main area's top bar doubles as a window drag region. Track `open`, which
+// owns the sidebar's in-flow gap, rather than `state`, which also becomes
+// expanded during a temporary hover overlay. A hover-revealed sidebar remains
+// out of flow, so the tab strip must keep clearing the fixed window toolbar and
+// native traffic lights.
 function MainTopBar() {
-  const { state, isCompact } = useSidebar();
-  const sidebarHidden = state === "collapsed" || isCompact;
+  const { open, isCompact } = useSidebar();
+  const sidebarOutOfFlow = !open || isCompact;
 
   return (
     <motion.header
-      animate={{ paddingLeft: sidebarHidden ? WINDOW_TOOLBAR_CLEARANCE : 0 }}
+      animate={{ paddingLeft: sidebarOutOfFlow ? WINDOW_TOOLBAR_CLEARANCE : 0 }}
       className={cn("relative shrink-0 flex items-center gap-2", TOP_BAR_HEIGHT_CLASS)}
       initial={false}
       transition={toolbarMotion}
     >
       <motion.div
         aria-hidden
-        animate={{ left: sidebarHidden ? WINDOW_TOOLBAR_CLEARANCE : 0 }}
+        animate={{ left: sidebarOutOfFlow ? WINDOW_TOOLBAR_CLEARANCE : 0 }}
         className="absolute inset-y-0 right-0"
         initial={false}
         transition={toolbarMotion}
@@ -144,16 +147,15 @@ function MainTopBar() {
   );
 }
 
-// The canvas meets the expanded sidebar without a divider or gap. When the
-// sidebar leaves the main flow, the left margin mirrors the fixed mr-2 so
-// the floating canvas sits symmetrically inside the window frame.
+// Keep the canvas on the same in-flow signal as the sidebar gap and top bar.
+// Temporary hover reveal is an overlay and must not pull either sibling left.
 function MainCanvas({ children }: { children: React.ReactNode }) {
-  const { state, isCompact } = useSidebar();
-  const sidebarHidden = state === "collapsed" || isCompact;
+  const { open, isCompact } = useSidebar();
+  const sidebarOutOfFlow = !open || isCompact;
 
   return (
     <motion.div
-      animate={{ marginLeft: sidebarHidden ? 8 : 0 }}
+      animate={{ marginLeft: sidebarOutOfFlow ? 8 : 0 }}
       className="relative flex flex-1 min-h-0 flex-col overflow-hidden mr-2 mb-2 rounded-xl bg-page-canvas"
       initial={false}
       transition={toolbarMotion}
@@ -296,6 +298,7 @@ export function DesktopShell() {
           <SidebarProvider
             hasExternalTrigger
             hoverReveal
+            compactBehavior="collapse"
             glass
             data-native-vibrancy={usesNativeVibrancy ? "true" : undefined}
             className={cn(
@@ -315,8 +318,10 @@ export function DesktopShell() {
                     equivalent relative/overflow-hidden content box. Desktop
                     used to have no navigation feedback at all — a click just
                     froze until the destination committed (MUL-6404). */}
-                <NavigationProgress />
-                <TabContent />
+                <AgentThreadPanelLayout>
+                  <NavigationProgress />
+                  <TabContent />
+                </AgentThreadPanelLayout>
                 {slug && <FloatingChat />}
               </MainCanvas>
             </div>

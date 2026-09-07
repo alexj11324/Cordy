@@ -663,6 +663,24 @@ describe("ChatInput project context", () => {
     expect(screen.queryByRole("button", { name: "Queue message" })).not.toBeInTheDocument();
   });
 
+  it("keeps Stop with a nonempty disabled draft when running submission is unavailable", () => {
+    const onStop = vi.fn();
+    renderInput({
+      isRunning: true,
+      allowSubmitWhileRunning: false,
+      disabled: true,
+      onStop,
+    });
+
+    fireEvent.change(screen.getByTestId("editor"), {
+      target: { value: "saved follow-up draft" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+    expect(onStop).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("button", { name: "Queue message" })).not.toBeInTheDocument();
+  });
+
   it("keeps Stop available while queued content is uploading", async () => {
     let resolveUpload!: (value: UploadResult) => void;
     mockApiUploadFile.mockImplementation(

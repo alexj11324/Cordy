@@ -38,6 +38,7 @@ describe("runNowBlockedKey", () => {
     expect(runNowBlockedKey("issue_limit_reached")).toBe(
       "run_blocked_issue_limit_reached",
     );
+    expect(runNowBlockedKey("trigger_not_ready")).toBe("run_blocked_trigger_not_ready");
   });
 
   it("degrades an unknown or absent code to the generic message", () => {

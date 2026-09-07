@@ -2,9 +2,11 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/patchbay-ai/patchbay/server/internal/service"
@@ -115,9 +117,23 @@ func (h *Handler) fanoutGitHubAutomations(ctx context.Context, event string, bod
 }
 
 func (h *Handler) HandleSlackNativeAutomation(ctx context.Context, inst db.ChannelInstallation, body []byte) {
-	preset, eventID, match := service.ParseSlackNativeEnvelope(body)
+	preset, eventID, match := service.ParseSlackNativeEnvelopeForInstallation(body, uuidToString(inst.ID))
 	if preset == "" {
 		return
+	}
+	if match.SenderID != "" {
+		_, err := h.Queries.GetChannelUserBindingByUserID(ctx, db.GetChannelUserBindingByUserIDParams{
+			InstallationID: inst.ID, ChannelUserID: match.SenderID,
+		})
+		switch {
+		case err == nil:
+			match.SenderAuthenticated = true
+		case errors.Is(err, pgx.ErrNoRows):
+			// Anyone remains eligible; authenticated-only triggers reject below.
+		default:
+			slog.Warn("automation native fan-out: resolve Slack sender identity",
+				"installation_id", uuidToString(inst.ID), "sender_id", match.SenderID, "err", err)
+		}
 	}
 	h.FanoutNativeAutomationEvent(ctx, inst.WorkspaceID, "slack", preset, eventID, "slack_event", body, match)
 }
@@ -135,5 +151,5 @@ func (h *Handler) fanoutLinearAutomations(ctx context.Context, connectionID pgty
 		)
 		return
 	}
-	h.FanoutNativeAutomationEvent(ctx, conn.WorkspaceID, "linear", preset, deliveryID, "linear_delivery", body, service.NativeTriggerMatch{})
+	h.FanoutNativeAutomationEvent(ctx, conn.WorkspaceID, "linear", preset, deliveryID, "linear_delivery", body, service.LinearTriggerMatch(body))
 }

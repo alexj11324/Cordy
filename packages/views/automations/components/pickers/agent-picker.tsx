@@ -27,12 +27,14 @@ export function AgentPicker({
   onChange,
   trigger: customTrigger,
   triggerRender,
+  disabled = false,
   align = "start",
 }: {
   assignee: AssigneeSelection | null;
   onChange: (next: AssigneeSelection) => void;
   trigger?: React.ReactNode;
   triggerRender?: React.ReactElement;
+  disabled?: boolean;
   align?: "start" | "center" | "end";
 }) {
   const { t } = useT("automations");
@@ -50,7 +52,7 @@ export function AgentPicker({
   );
 
   const selectedAgent =
-    assignee?.type === "agent" ? activeAgents.find((a) => a.id === assignee.id) : undefined;
+    assignee?.type === "agent" ? agents.find((a) => a.id === assignee.id) : undefined;
   const selectedTeam =
     assignee?.type === "team" ? activeTeams.find((s) => s.id === assignee.id) : undefined;
   const selectedName = selectedAgent?.name ?? selectedTeam?.name;
@@ -73,7 +75,8 @@ export function AgentPicker({
     <PropertyPicker
       open={open}
       onOpenChange={setOpen}
-      width="w-56"
+      disabled={disabled}
+      width="w-80 min-w-72 max-w-[calc(100vw-2rem)]"
       align={align}
       searchable
       searchPlaceholder={t(($) => $.agent_picker.filter_placeholder)}
@@ -91,6 +94,11 @@ export function AgentPicker({
                   showStatusDot={assignee.type === "agent"}
                 />
                 <span className="truncate">{selectedName}</span>
+                {selectedAgent?.archived_at ? (
+                  <span className="shrink-0 text-caption text-muted-foreground">
+                    {t(($) => $.agent_picker.archived)}
+                  </span>
+                ) : null}
               </>
             ) : (
               <>

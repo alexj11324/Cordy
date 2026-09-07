@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// TestClassifyTask pins the precedence rule on classifyTask. All four
+// TestClassifyTask pins the precedence rule on classifyTask. All five
 // kinds plus tiebreak cases for safety.
 func TestClassifyTask(t *testing.T) {
 	t.Parallel()
@@ -17,6 +17,9 @@ func TestClassifyTask(t *testing.T) {
 		{"chat", TaskContextForEnv{ChatSessionID: "c"}, kindChat},
 		{"quick-create", TaskContextForEnv{QuickCreatePrompt: "p"}, kindQuickCreate},
 		{"automation", TaskContextForEnv{AutomationRunID: "r"}, kindAutomationRunOnly},
+		{"automation-followup", TaskContextForEnv{IsAgentThreadContinuation: true, AutomationID: "ap"}, kindAgentThread},
+		{"quick-create-followup", TaskContextForEnv{IsAgentThreadContinuation: true, QuickCreatePrompt: "old input"}, kindAgentThread},
+		{"issue-followup", TaskContextForEnv{IsAgentThreadContinuation: true, IssueID: "i"}, kindIssue},
 		{"issue-comment-triggered", TaskContextForEnv{IssueID: "i", TriggerCommentID: "c"}, kindIssue},
 		{"issue-executor-triggered", TaskContextForEnv{IssueID: "i"}, kindIssue},
 		{"issue-bare", TaskContextForEnv{}, kindIssue},
@@ -47,6 +50,7 @@ func TestTaskKindHasIssueContext(t *testing.T) {
 		{kindAutomationRunOnly, false},
 		{kindQuickCreate, false},
 		{kindChat, false},
+		{kindAgentThread, false},
 	}
 	for _, tc := range cases {
 		if got := tc.kind.hasIssueContext(); got != tc.want {
@@ -83,7 +87,7 @@ func TestBuildMetaSkillContentIssueBodyFormatting(t *testing.T) {
 
 	fixtures := map[string]TaskContextForEnv{
 		"issue":        {IssueID: "i-1"},
-		"automation":    {AutomationRunID: "r-1"},
+		"automation":   {AutomationRunID: "r-1"},
 		"quick-create": {QuickCreatePrompt: "create an issue"},
 		"chat":         {ChatSessionID: "c-1"},
 	}

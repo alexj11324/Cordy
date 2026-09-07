@@ -30,3 +30,9 @@ export type ContinueAgentThreadResponse = {
   continuation_task_id: string;
   status: "queued" | "coalesced";
 };
+
+export type PrioritizeAgentThreadTaskResponse = {
+  task_id: string;
+  /** Server-authoritative executing task to interrupt after prioritization. */
+  active_task_id: string;
+};

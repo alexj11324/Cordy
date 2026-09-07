@@ -7322,6 +7322,19 @@ func (s *TaskService) ResolveTaskWorkspaceID(ctx context.Context, task db.AgentT
 			}
 		}
 	}
+	// Agent-thread continuations deliberately carry no source FK: inheriting an
+	// automation_run_id would let a follow-up completion overwrite its root run,
+	// while inheriting quick-create context would replay one-shot create side
+	// effects. Resolve the workspace through the bounded, server-owned thread
+	// lineage instead. The root has one of the normal source shapes handled by
+	// this function, so recursion terminates after one hop.
+	if AgentThreadMessage(task) != "" {
+		if thread, err := s.Queries.ListAgentThreadTasks(ctx, task.ID); err == nil {
+			if root, ok := agentThreadRootTask(thread); ok && root.ID != task.ID {
+				return s.ResolveTaskWorkspaceID(ctx, root)
+			}
+		}
+	}
 	// Quick-create tasks have no issue / chat / automation link — workspace
 	// lives in the context JSONB. Returning "" here is what blocked
 	// requireDaemonTaskAccess (404 on /start, /progress, /complete, /fail
@@ -7762,10 +7775,7 @@ func (s *TaskService) notifyQuickCreateCompleted(ctx context.Context, task db.Ag
 	// (kind = "direct") instead of staying on the "Creating issue" active-
 	// wording label. Best-effort: a write failure here doesn't block the
 	// inbox notification, which is the more important signal to the user.
-	if err := s.Queries.LinkTaskToIssue(ctx, db.LinkTaskToIssueParams{
-		ID:      task.ID,
-		IssueID: issue.ID,
-	}); err != nil {
+	if err := s.LinkAgentThreadTaskToIssue(ctx, task.ID, issue.ID); err != nil {
 		slog.Warn("quick-create completion: link task→issue failed",
 			"task_id", util.UUIDToString(task.ID),
 			"issue_id", util.UUIDToString(issue.ID),

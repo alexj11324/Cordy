@@ -628,6 +628,7 @@ func TestAutomationDispatchFansOutSubscribersToIssue(t *testing.T) {
 		t.Fatalf("decode automation: %v", err)
 	}
 	automationID = automation.ID
+	seedValidAutomationScheduleTrigger(t, automationID)
 
 	queries := db.New(testPool)
 	ap, err := queries.GetAutomation(ctx, parseUUID(automationID))
@@ -701,6 +702,7 @@ func TestAutomationDispatchNotifiesSubscribersOnCreate(t *testing.T) {
 		t.Fatalf("decode automation: %v", err)
 	}
 	automationID = automation.ID
+	seedValidAutomationScheduleTrigger(t, automationID)
 
 	queries := db.New(testPool)
 	ap, err := queries.GetAutomation(ctx, parseUUID(automationID))
@@ -783,6 +785,7 @@ func TestAutomationDispatchSkipsInboxWhenNoSubscribers(t *testing.T) {
 		t.Fatalf("decode automation: %v", err)
 	}
 	automationID = automation.ID
+	seedValidAutomationScheduleTrigger(t, automationID)
 
 	queries := db.New(testPool)
 	ap, err := queries.GetAutomation(ctx, parseUUID(automationID))
