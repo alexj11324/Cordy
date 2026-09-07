@@ -18,8 +18,8 @@ describe("preferredAppLocaleFromLanguages", () => {
     expect(preferredAppLocaleFromLanguages(["zh-Hant"])).toBe("zh-Hans");
   });
 
-  it("resolves Japanese and Korean from a language prefix", () => {
-    expect(preferredAppLocaleFromLanguages(["ja-JP"])).toBe("ja");
-    expect(preferredAppLocaleFromLanguages(["ko-KR"])).toBe("ko");
+  it("reads English for the retired Japanese and Korean copy", () => {
+    expect(preferredAppLocaleFromLanguages(["ja-JP"])).toBe("en");
+    expect(preferredAppLocaleFromLanguages(["ko-KR"])).toBe("en");
   });
 });
