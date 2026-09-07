@@ -47,8 +47,11 @@ import {
   CollectionPageHeaderAction,
   CollectionPageState,
 } from "../../layout/collection-page";
-import { AutomationDialog } from "./automation-dialog";
-import { AutomationListToolbar, actorFilterValue } from "./automation-list-toolbar";
+import { AutomationCreatePanel } from "./automation-create-panel";
+import {
+  AutomationListToolbar,
+  actorFilterValue,
+} from "./automation-list-toolbar";
 import {
   AutomationBatchToolbar,
   AutomationRowActions,
@@ -136,7 +139,9 @@ function CheckboxCell({
           onToggle();
         }}
         className={`-m-1.5 flex items-center p-1.5 ${
-          checked ? "" : "opacity-0 transition-opacity group-hover/row:opacity-100"
+          checked
+            ? ""
+            : "opacity-0 transition-opacity group-hover/row:opacity-100"
         }`}
       >
         <Checkbox
@@ -271,7 +276,11 @@ function LastRunCell({ automation }: { automation: Automation }) {
   return (
     <ListGridCell className="hidden gap-1.5 @2xl:flex">
       <span
-        title={knownStatus ? t(($) => $.run_status[knownStatus]) : status ?? undefined}
+        title={
+          knownStatus
+            ? t(($) => $.run_status[knownStatus])
+            : (status ?? undefined)
+        }
         className={`size-1.5 shrink-0 rounded-full ${runStatusDotClass(status)}`}
       />
       <span className="whitespace-nowrap text-caption tabular-nums text-muted-foreground">
@@ -306,7 +315,9 @@ function ModeCell({ automation }: { automation: Automation }) {
       : mode;
   return (
     <ListGridCell className="hidden @2xl:flex">
-      <span className="truncate text-caption text-muted-foreground">{label}</span>
+      <span className="truncate text-caption text-muted-foreground">
+        {label}
+      </span>
     </ListGridCell>
   );
 }
@@ -590,7 +601,10 @@ export function AutomationsPage() {
       ) {
         return false;
       }
-      if (filters.modes.length > 0 && !filters.modes.includes(a.execution_mode)) {
+      if (
+        filters.modes.length > 0 &&
+        !filters.modes.includes(a.execution_mode)
+      ) {
         return false;
       }
       if (
@@ -637,6 +651,7 @@ export function AutomationsPage() {
 
   // Row virtualization — same wiring as the skills list: headless math,
   // offsets as padding on the body, fixed-height rows.
+  const templateGalleryRef = useRef<HTMLDivElement | null>(null);
   const listScrollRef = useRef<HTMLDivElement | null>(null);
   const rowVirtualizer = useVirtualizer({
     count: rows.length,
@@ -646,6 +661,7 @@ export function AutomationsPage() {
   });
 
   const openCreate = (template?: AutomationTemplate) => {
+    setSelectedIds(new Set());
     setSelectedTemplate(template ?? null);
     setCreateOpen(true);
   };
@@ -662,13 +678,26 @@ export function AutomationsPage() {
   const lastVirtual = virtualItems[virtualItems.length - 1];
   const virtualPadding = {
     top: firstVirtual ? firstVirtual.start : 0,
-    bottom: lastVirtual
-      ? rowVirtualizer.getTotalSize() - lastVirtual.end
-      : 0,
+    bottom: lastVirtual ? rowVirtualizer.getTotalSize() - lastVirtual.end : 0,
   };
 
   const totalCount = automations.length;
   const showEmpty = !isLoading && !listError && totalCount === 0;
+  const focusAddAutomation = () => {
+    if (createOpen) {
+      document.getElementById("automation-create-title")?.focus();
+      return;
+    }
+    if (listError) {
+      openCreate();
+      return;
+    }
+    templateGalleryRef.current?.scrollIntoView?.({
+      behavior: "smooth",
+      block: "start",
+    });
+    templateGalleryRef.current?.focus({ preventScroll: true });
+  };
 
   return (
     // relative: positioning anchor for the batch toolbar (page-centered,
@@ -683,12 +712,34 @@ export function AutomationsPage() {
           <CollectionPageHeaderAction
             icon={Plus}
             label={t(($) => $.page.new_automation)}
-            onClick={() => openCreate()}
+            onClick={focusAddAutomation}
           />
         }
       />
 
-      {listError ? (
+      {createOpen ? (
+        <AutomationCreatePanel
+          key={selectedTemplate?.id ?? "blank"}
+          seed={{
+            title: selectedTemplate
+              ? t(($) => $.templates[selectedTemplate.id].title)
+              : "",
+            description: selectedTemplate?.prompt ?? "",
+            schedule:
+              selectedTemplate?.triggerKind === "schedule"
+                ? selectedTemplate.schedule
+                : undefined,
+            preset: selectedTemplate
+              ? templateTriggerPreset(selectedTemplate.trigger)
+              : null,
+          }}
+          onCancel={() => {
+            setCreateOpen(false);
+            setSelectedTemplate(null);
+          }}
+          onCreated={(id) => navigation.push(wsPaths.automationDetail(id))}
+        />
+      ) : listError ? (
         <CollectionPageState
           role="alert"
           tone="destructive"
@@ -711,157 +762,161 @@ export function AutomationsPage() {
         <div className="flex-1 overflow-y-auto @container">
           <LoadingSkeleton />
         </div>
-      ) : showEmpty ? (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <AutomationTemplateGallery
-            onSelectTemplate={openCreate}
-            onStartBlank={() => openCreate()}
-          />
-        </div>
       ) : (
-        <>
-          <AutomationListToolbar
-            scope={scope}
-            onScopeChange={setScope}
-            scopeCounts={scopeCounts}
-            filters={filters}
-            onToggleFilter={toggleFilter}
-            onClearFilters={clearFilters}
-            sortField={sortField}
-            sortDirection={sortDirection}
-            onSortFieldChange={handleSortFieldSelect}
-            onSortDirectionChange={setSortDirection}
-            hiddenColumns={hiddenColumns}
-            onToggleColumn={toggleColumn}
-            allRows={scopeRows}
-            visibleCount={rows.length}
-          />
+        <div className="flex min-h-0 flex-1 flex-col">
           <div
-            ref={listScrollRef}
-            className="min-h-0 flex-1 overflow-auto @container"
+            ref={templateGalleryRef}
+            tabIndex={-1}
+            aria-label={t(($) => $.page.recommended.title)}
+            className={
+              showEmpty
+                ? "min-h-0 flex-1 overflow-y-auto"
+                : "h-[250px] shrink-0 overflow-y-auto border-b"
+            }
           >
-            <ListGrid
-              className={`${GRID_COLS} @2xl:min-w-[var(--apc-minw)]`}
-              style={columnTrackVars(isColVisible)}
+            <AutomationTemplateGallery
+              onSelectTemplate={openCreate}
+              onStartBlank={() => openCreate()}
+              persistent={!showEmpty}
+            />
+          </div>
+
+          {!showEmpty ? (
+            <section
+              aria-labelledby="your-automations-heading"
+              className="flex min-h-0 flex-1 flex-col"
             >
-              <AutomationListHeader
+              <div className="flex h-10 shrink-0 items-center px-5">
+                <h2
+                  id="your-automations-heading"
+                  className="text-body font-medium"
+                >
+                  {t(($) => $.page.your_automations)}
+                </h2>
+              </div>
+              <AutomationListToolbar
+                scope={scope}
+                onScopeChange={setScope}
+                scopeCounts={scopeCounts}
+                filters={filters}
+                onToggleFilter={toggleFilter}
+                onClearFilters={clearFilters}
                 sortField={sortField}
                 sortDirection={sortDirection}
-                onSort={handleSort}
-                allSelected={allSelected}
-                someSelected={someSelected}
-                onToggleAll={handleToggleAll}
-                isColVisible={isColVisible}
+                onSortFieldChange={handleSortFieldSelect}
+                onSortDirectionChange={setSortDirection}
+                hiddenColumns={hiddenColumns}
+                onToggleColumn={toggleColumn}
+                allRows={scopeRows}
+                visibleCount={rows.length}
               />
-              <ListGridBody
-                style={{
-                  paddingTop: virtualPadding.top,
-                  paddingBottom:
-                    virtualPadding.bottom + LIST_GRID_BOTTOM_CLEARANCE,
-                }}
+              <div
+                ref={listScrollRef}
+                className="min-h-0 flex-1 overflow-auto @container"
               >
-                {rows.length === 0 && (
-                  <div className="col-span-full py-16 text-center text-body text-muted-foreground">
-                    {t(($) => $.page.no_matches)}
-                  </div>
-                )}
-                {virtualItems.map((vi) => {
-                  const automation = rows[vi.index];
-                  if (!automation) return null;
-                  return (
-                    <ListGridRow
-                      key={automation.id}
-                      className={`cursor-pointer ${
-                        selectedIds.has(automation.id) ? "bg-accent/30" : ""
-                      }`}
-                      {...rowLink(wsPaths.automationDetail(automation.id), automation.title)}
-                    >
-                      <CheckboxCell
-                        checked={selectedIds.has(automation.id)}
-                        onToggle={() => toggleSelected(automation.id)}
-                      />
-                      <NameCell automation={automation} />
-                      {isColVisible("assignee") ? (
-                        <AssigneeCell automation={automation} />
-                      ) : (
-                        <ListGridCell className="px-0" />
-                      )}
-                      {isColVisible("trigger") ? (
-                        <TriggerCell automation={automation} />
-                      ) : (
-                        <ListGridCell className="hidden px-0 @2xl:flex" />
-                      )}
-                      {isColVisible("lastRun") ? (
-                        <LastRunCell automation={automation} />
-                      ) : (
-                        <ListGridCell className="hidden px-0 @2xl:flex" />
-                      )}
-                      {isColVisible("nextRun") ? (
-                        <NextRunCell automation={automation} />
-                      ) : (
-                        <ListGridCell className="hidden px-0 @2xl:flex" />
-                      )}
-                      {isColVisible("mode") ? (
-                        <ModeCell automation={automation} />
-                      ) : (
-                        <ListGridCell className="hidden px-0 @2xl:flex" />
-                      )}
-                      {isColVisible("creator") ? (
-                        <CreatorCell automation={automation} />
-                      ) : (
-                        <ListGridCell className="hidden px-0 @2xl:flex" />
-                      )}
-                      {isColVisible("created") ? (
-                        <ListGridCell className="hidden whitespace-nowrap text-caption tabular-nums text-muted-foreground @2xl:flex">
-                          {new Date(automation.created_at).toLocaleDateString(locale)}
-                        </ListGridCell>
-                      ) : (
-                        <ListGridCell className="hidden px-0 @2xl:flex" />
-                      )}
-                      <ListGridCell className="justify-end px-0">
-                        <AutomationRowActions row={automation} />
-                      </ListGridCell>
-                    </ListGridRow>
-                  );
-                })}
-              </ListGridBody>
-            </ListGrid>
-          </div>
-        </>
+                <ListGrid
+                  className={`${GRID_COLS} @2xl:min-w-[var(--apc-minw)]`}
+                  style={columnTrackVars(isColVisible)}
+                >
+                  <AutomationListHeader
+                    sortField={sortField}
+                    sortDirection={sortDirection}
+                    onSort={handleSort}
+                    allSelected={allSelected}
+                    someSelected={someSelected}
+                    onToggleAll={handleToggleAll}
+                    isColVisible={isColVisible}
+                  />
+                  <ListGridBody
+                    style={{
+                      paddingTop: virtualPadding.top,
+                      paddingBottom:
+                        virtualPadding.bottom + LIST_GRID_BOTTOM_CLEARANCE,
+                    }}
+                  >
+                    {rows.length === 0 && (
+                      <div className="col-span-full py-16 text-center text-body text-muted-foreground">
+                        {t(($) => $.page.no_matches)}
+                      </div>
+                    )}
+                    {virtualItems.map((vi) => {
+                      const automation = rows[vi.index];
+                      if (!automation) return null;
+                      return (
+                        <ListGridRow
+                          key={automation.id}
+                          className={`cursor-pointer ${
+                            selectedIds.has(automation.id) ? "bg-accent/30" : ""
+                          }`}
+                          {...rowLink(
+                            wsPaths.automationDetail(automation.id),
+                            automation.title,
+                          )}
+                        >
+                          <CheckboxCell
+                            checked={selectedIds.has(automation.id)}
+                            onToggle={() => toggleSelected(automation.id)}
+                          />
+                          <NameCell automation={automation} />
+                          {isColVisible("assignee") ? (
+                            <AssigneeCell automation={automation} />
+                          ) : (
+                            <ListGridCell className="px-0" />
+                          )}
+                          {isColVisible("trigger") ? (
+                            <TriggerCell automation={automation} />
+                          ) : (
+                            <ListGridCell className="hidden px-0 @2xl:flex" />
+                          )}
+                          {isColVisible("lastRun") ? (
+                            <LastRunCell automation={automation} />
+                          ) : (
+                            <ListGridCell className="hidden px-0 @2xl:flex" />
+                          )}
+                          {isColVisible("nextRun") ? (
+                            <NextRunCell automation={automation} />
+                          ) : (
+                            <ListGridCell className="hidden px-0 @2xl:flex" />
+                          )}
+                          {isColVisible("mode") ? (
+                            <ModeCell automation={automation} />
+                          ) : (
+                            <ListGridCell className="hidden px-0 @2xl:flex" />
+                          )}
+                          {isColVisible("creator") ? (
+                            <CreatorCell automation={automation} />
+                          ) : (
+                            <ListGridCell className="hidden px-0 @2xl:flex" />
+                          )}
+                          {isColVisible("created") ? (
+                            <ListGridCell className="hidden whitespace-nowrap text-caption tabular-nums text-muted-foreground @2xl:flex">
+                              {new Date(
+                                automation.created_at,
+                              ).toLocaleDateString(locale)}
+                            </ListGridCell>
+                          ) : (
+                            <ListGridCell className="hidden px-0 @2xl:flex" />
+                          )}
+                          <ListGridCell className="justify-end px-0">
+                            <AutomationRowActions row={automation} />
+                          </ListGridCell>
+                        </ListGridRow>
+                      );
+                    })}
+                  </ListGridBody>
+                </ListGrid>
+              </div>
+            </section>
+          ) : null}
+        </div>
       )}
 
-      <AutomationBatchToolbar
-        rows={selectedRows}
-        onClear={() => setSelectedIds(new Set())}
-      />
-
-      {createOpen && (
-        <AutomationDialog
-          mode="create"
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          initial={
-            selectedTemplate
-              ? {
-                  // Template title pulls from i18n so the user-visible default
-                  // matches their locale, while the prompt body stays raw EN
-                  // since it's injected directly into the agent task.
-                  title: t(($) => $.templates[selectedTemplate.id].title),
-                  description: selectedTemplate.prompt,
-                }
-              : undefined
-          }
-          initialSchedule={
-            selectedTemplate?.triggerKind === "schedule"
-              ? selectedTemplate.schedule
-              : undefined
-          }
-          initialPreset={
-            selectedTemplate ? templateTriggerPreset(selectedTemplate.trigger) : null
-          }
-          onCreated={(id) => navigation.push(wsPaths.automationDetail(id))}
+      {!createOpen ? (
+        <AutomationBatchToolbar
+          rows={selectedRows}
+          onClear={() => setSelectedIds(new Set())}
         />
-      )}
+      ) : null}
     </div>
   );
 }

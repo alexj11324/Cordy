@@ -1,12 +1,25 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  Play, Clock, Trash2, CheckCircle2, XCircle, Loader2, Pencil,
-  Ban, ChevronDown, ChevronRight, FolderKanban, MoreHorizontal, Server, AlertTriangle,
+  Play,
+  Clock,
+  Trash2,
+  Loader2,
+  Pencil,
+  ChevronDown,
+  FolderKanban,
+  MoreHorizontal,
+  Server,
+  AlertTriangle,
+  ListFilter,
+  Search,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { automationDetailOptions, automationRunsOptions } from "@patchbay/core/automations/queries";
+import {
+  automationDetailOptions,
+  automationRunsOptions,
+} from "@patchbay/core/automations/queries";
 import { projectDetailOptions } from "@patchbay/core/projects/queries";
 import type { AutomationTriggerPreset } from "@patchbay/core/automations";
 import {
@@ -15,7 +28,11 @@ import {
   useTriggerAutomation,
   useCreateAutomationTrigger,
 } from "@patchbay/core/automations/mutations";
-import { clientErrorMessage, dispatchReasonCode, errorCode } from "@patchbay/core/api";
+import {
+  clientErrorMessage,
+  dispatchReasonCode,
+  errorCode,
+} from "@patchbay/core/api";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useActorName } from "@patchbay/core/workspace/hooks";
@@ -23,6 +40,8 @@ import { useNavigation, AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { Button } from "@patchbay/ui/components/ui/button";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Input } from "@patchbay/ui/components/ui/input";
 import { Switch } from "@patchbay/ui/components/ui/switch";
 import { cn } from "@patchbay/ui/lib/utils";
 import { toast } from "sonner";
@@ -37,22 +56,40 @@ import {
   AlertDialogTitle,
 } from "@patchbay/ui/components/ui/alert-dialog";
 import { formatInTimeZone } from "../../common/format-in-time-zone";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@patchbay/ui/components/ui/tabs";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@patchbay/ui/components/ui/tabs";
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@patchbay/ui/components/ui/dropdown-menu";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@patchbay/ui/components/ui/table";
 import type {
   Automation,
   AutomationExecutionMode,
   AutomationRun,
+  AutomationTrigger,
 } from "@patchbay/core/types";
 import type { AgentTask } from "@patchbay/core/types/agent";
 import { ContentEditor, ReadonlyContent } from "../../editor";
 import { AgentThreadButton } from "../../agent-thread";
-import { AutomationDialog } from "./automation-dialog";
+import { AutomationEditDialog } from "./automation-edit-dialog";
 import { runNowToastKind, runNowBlockedKey } from "./run-now-toast";
 import { WebhookDeliveriesSection } from "./webhook-deliveries-section";
 import { ProjectIcon } from "../../projects/components/project-icon";
@@ -69,18 +106,26 @@ import { AutomationToolsSection } from "./automation-tools-section";
 // the reader's zone (no timeZone passed). A run that is still to come belongs to
 // the schedule that will fire it — see the trigger row, which passes the
 // trigger's own timezone.
-type RunStatus = "issue_created" | "running" | "skipped" | "completed" | "failed";
+type RunStatus =
+  | "issue_created"
+  | "running"
+  | "skipped"
+  | "completed"
+  | "failed";
 
-const RUN_VISUAL: Record<RunStatus, { color: string; icon: typeof CheckCircle2; spin?: boolean }> = {
-  issue_created: { color: "text-blue-500", icon: Clock },
-  running: { color: "text-blue-500", icon: Loader2, spin: true },
-  // `skipped` (admission check found the assignee runtime offline,
-  // MUL-1899) is muted so it doesn't read as a failure-ratio inflator.
-  // The row still shows failure_reason which carries the skip context.
-  skipped: { color: "text-muted-foreground", icon: Ban },
-  completed: { color: "text-emerald-500", icon: CheckCircle2 },
-  failed: { color: "text-destructive", icon: XCircle },
-};
+const RUN_STATUSES: RunStatus[] = [
+  "issue_created",
+  "running",
+  "skipped",
+  "completed",
+  "failed",
+];
+
+function normalizedRunStatus(value: string): RunStatus {
+  return RUN_STATUSES.includes(value as RunStatus)
+    ? (value as RunStatus)
+    : "issue_created";
+}
 
 function getToolDeliveryErrors(result: unknown): string[] {
   if (!result || typeof result !== "object" || Array.isArray(result)) return [];
@@ -89,18 +134,88 @@ function getToolDeliveryErrors(result: unknown): string[] {
   return errors.flatMap((error) => {
     if (!error || typeof error !== "object" || Array.isArray(error)) return [];
     const message = (error as Record<string, unknown>).message;
-    return typeof message === "string" && message.trim() !== "" ? [message] : [];
+    return typeof message === "string" && message.trim() !== ""
+      ? [message]
+      : [];
   });
 }
 
-function RunRow({ run, agentId }: { run: AutomationRun; agentId: string }) {
+function runDuration(run: AutomationRun, now = Date.now()): string {
+  const start = Date.parse(run.triggered_at || run.created_at);
+  if (!Number.isFinite(start)) return "—";
+  const end = run.completed_at ? Date.parse(run.completed_at) : now;
+  if (!Number.isFinite(end) || end < start) return "—";
+  const seconds = Math.floor((end - start) / 1000);
+  if (seconds < 60) return "< 1m";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
+}
+
+export function useRunHistoryClock(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [active]);
+  return now;
+}
+
+function triggerLabel(
+  run: AutomationRun,
+  triggers: AutomationTrigger[],
+  t: ReturnType<typeof useT<"automations">>["t"],
+): string {
+  if (run.source === "manual") return t(($) => $.run_history.test_run);
+  const trigger = run.trigger_id
+    ? triggers.find((candidate) => candidate.id === run.trigger_id)
+    : null;
+  if (trigger?.label?.trim()) return trigger.label;
+  return t(($) => $.run_source[run.source]);
+}
+
+function RunStatusBadge({ status }: { status: RunStatus }) {
+  const { t } = useT("automations");
+  return (
+    <Badge
+      variant={status === "failed" ? "destructive" : "secondary"}
+      className={cn(
+        "h-5 border-0 px-2 font-medium",
+        status === "completed" &&
+          "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+        (status === "running" || status === "issue_created") &&
+          "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+        status === "skipped" && "text-muted-foreground",
+      )}
+    >
+      {status === "running" ? (
+        <Loader2 className="animate-spin" aria-hidden="true" />
+      ) : null}
+      {t(($) => $.run_status[status])}
+    </Badge>
+  );
+}
+
+function RunRow({
+  run,
+  agentId,
+  triggers,
+  now,
+}: {
+  run: AutomationRun;
+  agentId: string;
+  triggers: AutomationTrigger[];
+  now: number;
+}) {
   const { t, i18n } = useT("automations");
   const wsId = useWorkspaceId();
   const wsPaths = useWorkspacePaths();
-  const status = (RUN_VISUAL[run.status as RunStatus] ? (run.status as RunStatus) : "issue_created");
-  const visual = RUN_VISUAL[status];
-  const StatusIcon = visual.icon;
+  const status = normalizedRunStatus(run.status);
   const deliveryErrors = getToolDeliveryErrors(run.result);
+  const [threadOpen, setThreadOpen] = useState(false);
 
   // Run-only executions have no issue route, so their task opens directly in
   // the same interactive Agent conversation used by issue and Agent surfaces.
@@ -112,10 +227,13 @@ function RunRow({ run, agentId }: { run: AutomationRun; agentId: string }) {
         runtime_id: "",
         issue_id: run.issue_id ?? "",
         status:
-          run.status === "running" ? "running" :
-          run.status === "completed" ? "completed" :
-          run.status === "failed" ? "failed" :
-          "queued",
+          run.status === "running"
+            ? "running"
+            : run.status === "completed"
+              ? "completed"
+              : run.status === "failed"
+                ? "failed"
+                : "queued",
         priority: 0,
         dispatched_at: null,
         started_at: run.triggered_at || null,
@@ -126,130 +244,262 @@ function RunRow({ run, agentId }: { run: AutomationRun; agentId: string }) {
       }
     : null;
 
-  const content = (
-    <>
-      <StatusIcon className={cn("h-4 w-4 shrink-0", visual.color, visual.spin && "animate-spin")} />
-      <span className={cn("w-24 shrink-0 text-caption font-medium", visual.color)}>
-        {t(($) => $.run_status[status])}
-      </span>
-      <span className="w-20 shrink-0 text-caption text-muted-foreground">
-        {t(($) => $.run_source[run.source as "schedule" | "manual" | "webhook" | "api"]) ?? run.source}
-      </span>
-      <span className="flex-1 min-w-0 text-caption text-muted-foreground truncate">
-        {run.issue_id ? (
-          t(($) => $.run.issue_linked)
-        ) : run.failure_reason ? (
-          <span className="text-destructive">{run.failure_reason}</span>
-        ) : null}
-      </span>
-      <span className="w-32 shrink-0 text-right text-caption text-muted-foreground tabular-nums">
-        {formatInTimeZone(run.triggered_at || run.created_at, undefined, i18n.language)}
-      </span>
-    </>
-  );
-
-  const rowClass = "flex items-center gap-3 px-4 py-2.5 text-body hover:bg-accent/30 transition-colors";
-  const row = (
-    <div className={rowClass}>
-      {run.issue_id ? (
-        <AppLink
-          href={wsPaths.issueDetail(run.issue_id)}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3"
-        >
-          {content}
-        </AppLink>
-      ) : content}
-      {syntheticTask && (
-        <AgentThreadButton
-          task={syntheticTask}
-          title={t(($) => $.run.view_conversation)}
-        />
-      )}
-    </div>
-  );
-
   return (
-    <div>
-      {row}
-      {deliveryErrors.length > 0 && (
-        <div
-          role="alert"
-          className="mx-4 mb-2 flex items-start gap-1.5 rounded-md bg-destructive/10 px-2.5 py-2 text-caption text-destructive"
-        >
-          <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
-          <span>
-            <span className="font-medium">{t(($) => $.run.delivery_failed)}:</span>{" "}
-            {deliveryErrors.join(" · ")}
+    <>
+      <TableRow data-testid="automation-run-row" className="h-14">
+        <TableCell className="min-w-40 px-5">
+          <span className="flex min-w-0 items-center gap-2">
+            <Clock
+              className="size-3.5 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <span className="truncate font-medium">
+              {triggerLabel(run, triggers, t)}
+            </span>
           </span>
-        </div>
+        </TableCell>
+        <TableCell className="text-muted-foreground">—</TableCell>
+        <TableCell className="text-muted-foreground tabular-nums">
+          {formatInTimeZone(
+            run.triggered_at || run.created_at,
+            undefined,
+            i18n.language,
+          )}
+        </TableCell>
+        <TableCell className="text-muted-foreground">—</TableCell>
+        <TableCell>
+          <div className="flex max-w-64 flex-col items-start gap-1">
+            <RunStatusBadge status={status} />
+            {run.failure_reason ? (
+              <span className="break-words text-caption text-destructive">
+                {run.failure_reason}
+              </span>
+            ) : null}
+          </div>
+        </TableCell>
+        <TableCell className="text-muted-foreground tabular-nums">
+          {runDuration(run, now)}
+        </TableCell>
+        <TableCell className="w-10 px-3 text-right">
+          {syntheticTask ? (
+            <AgentThreadButton
+              task={syntheticTask}
+              title={t(($) => $.run.view_conversation)}
+              renderButton={false}
+              open={threadOpen}
+              onOpenChange={setThreadOpen}
+            />
+          ) : null}
+          {syntheticTask || run.issue_id ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={t(($) => $.run_history.actions)}
+                  />
+                }
+              >
+                <MoreHorizontal aria-hidden="true" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {syntheticTask ? (
+                  <DropdownMenuItem onClick={() => setThreadOpen(true)}>
+                    {t(($) => $.run.view_conversation)}
+                  </DropdownMenuItem>
+                ) : null}
+                {run.issue_id ? (
+                  <DropdownMenuItem
+                    render={
+                      <AppLink href={wsPaths.issueDetail(run.issue_id)} />
+                    }
+                  >
+                    {t(($) => $.run_history.open_issue)}
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : null}
+        </TableCell>
+      </TableRow>
+      {deliveryErrors.length > 0 && (
+        <TableRow className="hover:bg-transparent">
+          <TableCell colSpan={7} className="px-5 pb-3 pt-0">
+            <div
+              role="alert"
+              className="flex items-start gap-1.5 rounded-md bg-destructive/10 px-2.5 py-2 text-caption text-destructive"
+            >
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                <span className="font-medium">
+                  {t(($) => $.run.delivery_failed)}:
+                </span>{" "}
+                {deliveryErrors.join(" · ")}
+              </span>
+            </div>
+          </TableCell>
+        </TableRow>
       )}
-    </div>
+    </>
   );
 }
 
 function RunHistoryList({
   runs,
   agentId,
+  triggers,
 }: {
   runs: AutomationRun[];
   agentId: string;
+  triggers: AutomationTrigger[];
 }) {
-  const visibleRuns = runs.filter((run) => run.status !== "skipped");
-  const skippedRuns = runs.filter((run) => run.status === "skipped");
-
-  return (
-    <div className="rounded-md border overflow-hidden">
-      {visibleRuns.map((run) => (
-        <RunRow key={run.id} run={run} agentId={agentId} />
-      ))}
-      {skippedRuns.length > 0 && (
-        <SkippedRunsGroup runs={skippedRuns} agentId={agentId} />
-      )}
-    </div>
+  const { t } = useT("automations");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statuses, setStatuses] = useState<Set<RunStatus>>(new Set());
+  const hasActiveRun = runs.some(
+    (run) =>
+      !run.completed_at &&
+      (normalizedRunStatus(run.status) === "running" ||
+        normalizedRunStatus(run.status) === "issue_created"),
   );
-}
+  const now = useRunHistoryClock(hasActiveRun);
+  const visibleRuns = useMemo(() => {
+    const needle = search.trim().toLocaleLowerCase();
+    return runs.filter((run) => {
+      const status = normalizedRunStatus(run.status);
+      if (statuses.size > 0 && !statuses.has(status)) return false;
+      if (!needle) return true;
+      const haystack = [
+        triggerLabel(run, triggers, t),
+        t(($) => $.run_status[status]),
+        run.failure_reason ?? "",
+      ]
+        .join(" ")
+        .toLocaleLowerCase();
+      return haystack.includes(needle);
+    });
+  }, [runs, search, statuses, t, triggers]);
 
-function SkippedRunsGroup({
-  runs,
-  agentId,
-}: {
-  runs: AutomationRun[];
-  agentId: string;
-}) {
-  const { t, i18n } = useT("automations");
-  const [open, setOpen] = useState(false);
-  const latestRun = runs[0];
-  const ToggleIcon = open ? ChevronDown : ChevronRight;
+  const toggleStatus = (status: RunStatus) => {
+    setStatuses((current) => {
+      const next = new Set(current);
+      if (next.has(status)) next.delete(status);
+      else next.add(status);
+      return next;
+    });
+  };
 
   return (
-    <div className="border-t bg-muted/20">
-      <button
-        type="button"
-        className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-body hover:bg-accent/30 transition-colors"
-        onClick={() => setOpen((value) => !value)}
-        aria-expanded={open}
-      >
-        <ToggleIcon className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <Ban className="h-4 w-4 shrink-0 text-muted-foreground" />
-        <span className="w-24 shrink-0 text-caption font-medium text-muted-foreground">
-          {t(($) => $.run.skipped_group.label)}
-        </span>
-        <span className="flex-1 min-w-0 text-caption text-muted-foreground truncate">
-          {t(($) => $.run.skipped_group.summary, { count: runs.length })}
-        </span>
-        {latestRun && (
-          <span className="w-32 shrink-0 text-right text-caption text-muted-foreground tabular-nums">
-            {formatInTimeZone(latestRun.triggered_at || latestRun.created_at, undefined, i18n.language)}
-          </span>
-        )}
-      </button>
-      {open && (
-        <div className="border-t bg-background">
-          {runs.map((run) => (
-            <RunRow key={run.id} run={run} agentId={agentId} />
-          ))}
-        </div>
-      )}
+    <div className="space-y-3">
+      <div className="flex min-h-8 items-center justify-end gap-1.5">
+        {searchOpen ? (
+          <div className="relative w-full max-w-64">
+            <Search
+              className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              autoFocus
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={t(($) => $.run_history.search_placeholder)}
+              aria-label={t(($) => $.run_history.search_placeholder)}
+              className="h-8 pl-8"
+            />
+          </div>
+        ) : null}
+        <Button
+          type="button"
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t(($) => $.run_history.search)}
+          aria-pressed={searchOpen}
+          onClick={() => {
+            setSearchOpen((open) => !open);
+            if (searchOpen) setSearch("");
+          }}
+        >
+          <Search aria-hidden="true" />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            render={
+              <Button
+                type="button"
+                size="icon-sm"
+                variant={statuses.size > 0 ? "secondary" : "ghost"}
+                aria-label={t(($) => $.run_history.filter)}
+              />
+            }
+          >
+            <ListFilter aria-hidden="true" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel>
+                {t(($) => $.run_history.filter_status)}
+              </DropdownMenuLabel>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            {RUN_STATUSES.map((status) => (
+              <DropdownMenuCheckboxItem
+                key={status}
+                checked={statuses.has(status)}
+                onCheckedChange={() => toggleStatus(status)}
+                onSelect={(event) => event.preventDefault()}
+              >
+                {t(($) => $.run_status[status])}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+
+      <div className="overflow-hidden rounded-xl border bg-background">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="px-5">
+                {t(($) => $.run_history.trigger)}
+              </TableHead>
+              <TableHead>{t(($) => $.run_history.model)}</TableHead>
+              <TableHead>{t(($) => $.run_history.triggered)}</TableHead>
+              <TableHead>{t(($) => $.run_history.tools)}</TableHead>
+              <TableHead>{t(($) => $.run_history.status)}</TableHead>
+              <TableHead>{t(($) => $.run_history.duration)}</TableHead>
+              <TableHead className="w-10">
+                <span className="sr-only">
+                  {t(($) => $.run_history.actions)}
+                </span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visibleRuns.map((run) => (
+              <RunRow
+                key={run.id}
+                run={run}
+                agentId={agentId}
+                triggers={triggers}
+                now={now}
+              />
+            ))}
+            {visibleRuns.length === 0 ? (
+              <TableRow className="hover:bg-transparent">
+                <TableCell
+                  colSpan={7}
+                  className="h-28 text-center text-muted-foreground"
+                >
+                  {t(($) => $.run_history.no_matches)}
+                </TableCell>
+              </TableRow>
+            ) : null}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }
@@ -274,7 +524,9 @@ function InstructionsSection({
         onError: (err) => {
           lastSaved.current = automation.description ?? "";
           toast.error(
-            err instanceof Error ? err.message : t(($) => $.dialog.toast_update_failed),
+            err instanceof Error
+              ? err.message
+              : t(($) => $.dialog.toast_update_failed),
           );
         },
       },
@@ -288,7 +540,7 @@ function InstructionsSection({
       </h2>
       <div className="rounded-lg border bg-background">
         <div className="automation-instructions h-44 overflow-y-auto overscroll-contain px-4 py-3">
-        {canWrite ? (
+          {canWrite ? (
             <ContentEditor
               value={automation.description ?? ""}
               placeholder={t(($) => $.dialog.description_placeholder)}
@@ -297,33 +549,42 @@ function InstructionsSection({
               flushPendingOnUnmount
               showBubbleMenu={false}
             />
-        ) : automation.description ? (
+          ) : automation.description ? (
             <ReadonlyContent content={automation.description} />
-        ) : (
-          <p className="text-label text-muted-foreground">
-            {t(($) => $.dialog.description_placeholder)}
-          </p>
-        )}
+          ) : (
+            <p className="text-label text-muted-foreground">
+              {t(($) => $.dialog.description_placeholder)}
+            </p>
+          )}
         </div>
         <div className="flex min-w-0 items-center px-3 pb-2">
           <AgentPicker
-            assignee={{ type: automation.executor_type, id: automation.executor_id }}
+            assignee={{
+              type: automation.executor_type,
+              id: automation.executor_id,
+            }}
             disabled={!canWrite || updateAutomation.isPending}
             onChange={(next) => {
               if (!canWrite) return;
-              updateAutomation.mutate({
-                id: automation.id,
-                executor_type: next.type,
-                executor_id: next.id,
-                // The selected Agent owns its model configuration. Empty is
-                // the established API sentinel for clearing a legacy
-                // automation-level override.
-                model: "",
-              }, {
-                onError: (error) => toast.error(
-                  error instanceof Error ? error.message : t(($) => $.dialog.toast_update_failed),
-                ),
-              });
+              updateAutomation.mutate(
+                {
+                  id: automation.id,
+                  executor_type: next.type,
+                  executor_id: next.id,
+                  // The selected Agent owns its model configuration. Empty is
+                  // the established API sentinel for clearing a legacy
+                  // automation-level override.
+                  model: "",
+                },
+                {
+                  onError: (error) =>
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : t(($) => $.dialog.toast_update_failed),
+                    ),
+                },
+              );
             }}
           />
         </div>
@@ -332,15 +593,26 @@ function InstructionsSection({
   );
 }
 
-export function AutomationDetailPage({ automationId }: { automationId: string }) {
+export function AutomationDetailPage({
+  automationId,
+}: {
+  automationId: string;
+}) {
   const { t } = useT("automations");
   const wsId = useWorkspaceId();
   const wsPaths = useWorkspacePaths();
   const router = useNavigation();
   const { getActorName } = useActorName();
 
-  const { data, isLoading, isError, refetch } = useQuery(automationDetailOptions(wsId, automationId));
-  const { data: runs = [], isLoading: runsLoading, isError: runsError, refetch: refetchRuns } = useQuery(automationRunsOptions(wsId, automationId));
+  const { data, isLoading, isError, refetch } = useQuery(
+    automationDetailOptions(wsId, automationId),
+  );
+  const {
+    data: runs = [],
+    isLoading: runsLoading,
+    isError: runsError,
+    refetch: refetchRuns,
+  } = useQuery(automationRunsOptions(wsId, automationId));
   const updateAutomation = useUpdateAutomation();
   const deleteAutomation = useDeleteAutomation();
   const triggerAutomation = useTriggerAutomation();
@@ -389,8 +661,16 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
   if (!data) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 text-body text-muted-foreground">
-        <p role="status">{isError ? t(($) => $.settings.load_failed) : t(($) => $.detail.not_found)}</p>
-        {isError && <Button size="sm" variant="outline" onClick={() => void refetch()}>{t(($) => $.page.retry)}</Button>}
+        <p role="status">
+          {isError
+            ? t(($) => $.settings.load_failed)
+            : t(($) => $.detail.not_found)}
+        </p>
+        {isError && (
+          <Button size="sm" variant="outline" onClick={() => void refetch()}>
+            {t(($) => $.page.retry)}
+          </Button>
+        )}
       </div>
     );
   }
@@ -444,7 +724,9 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
       // Only a 4xx message is written for the user; a 5xx one is internal
       // server detail (MUL-6472), so an unclassified dispatch failure shows the
       // localized generic sentence instead of the raw body.
-      toast.error(clientErrorMessage(e) || t(($) => $.detail.toast_trigger_failed));
+      toast.error(
+        clientErrorMessage(e) || t(($) => $.detail.toast_trigger_failed),
+      );
     }
   };
 
@@ -465,9 +747,17 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
   };
 
   const handleToggleStatus = (checked: boolean) => {
-    updateAutomation.mutate({ id: automationId, status: checked ? "active" : "paused" }, {
-      onError: (error) => toast.error(error instanceof Error ? error.message : t(($) => $.dialog.toast_update_failed)),
-    });
+    updateAutomation.mutate(
+      { id: automationId, status: checked ? "active" : "paused" },
+      {
+        onError: (error) =>
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : t(($) => $.dialog.toast_update_failed),
+          ),
+      },
+    );
   };
 
   const handlePickPreset = async (preset: AutomationTriggerPreset) => {
@@ -480,17 +770,20 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
       toast.success(t(($) => $.settings.toast_trigger_added));
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : t(($) => $.settings.toast_trigger_add_failed),
+        err instanceof Error
+          ? err.message
+          : t(($) => $.settings.toast_trigger_add_failed),
       );
     }
   };
 
   const hasWebhookTrigger = triggers.some((trig) => trig.kind === "webhook");
-
   return (
     <div className="flex h-full flex-col">
       <BreadcrumbHeader
-        segments={[{ href: wsPaths.automations(), label: t(($) => $.page.title) }]}
+        segments={[
+          { href: wsPaths.automations(), label: t(($) => $.page.title) },
+        ]}
         leaf={
           <span className="min-w-0 truncate text-caption text-muted-foreground">
             {automation.title}
@@ -499,17 +792,31 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
         actions={
           canWrite ? (
             <>
-              <Button size="sm" variant="outline" onClick={() => setEditDialogOpen(true)} className="px-2 sm:px-2.5" aria-label={t(($) => $.detail.edit)}>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setEditDialogOpen(true)}
+                className="px-2 sm:px-2.5"
+                aria-label={t(($) => $.detail.edit)}
+              >
                 <Pencil className="h-3.5 w-3.5 sm:mr-1" />
-                <span className="hidden sm:inline">{t(($) => $.detail.edit)}</span>
+                <span className="hidden sm:inline">
+                  {t(($) => $.detail.edit)}
+                </span>
               </Button>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={handleRunNow}
-                disabled={automation.status !== "active" || triggerAutomation.isPending}
+                disabled={
+                  automation.status !== "active" || triggerAutomation.isPending
+                }
                 className="px-2 sm:px-2.5"
-                aria-label={triggerAutomation.isPending ? t(($) => $.detail.running) : t(($) => $.detail.run_now)}
+                aria-label={
+                  triggerAutomation.isPending
+                    ? t(($) => $.detail.running)
+                    : t(($) => $.detail.run_now)
+                }
               >
                 {triggerAutomation.isPending ? (
                   <Loader2 className="h-3.5 w-3.5 sm:mr-1 animate-spin" />
@@ -573,7 +880,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
         className="flex min-h-0 flex-1 flex-col gap-0"
       >
         <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl space-y-8 px-4 py-6 sm:px-8 sm:py-8">
+          <div className="mx-auto max-w-5xl space-y-8 px-4 py-6 sm:px-8 sm:py-8">
             <header className="space-y-4">
               <h1
                 data-testid="automation-settings-title"
@@ -587,17 +894,25 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                     size="sm"
                     checked={automation.status === "active"}
                     onCheckedChange={handleToggleStatus}
-                    disabled={automation.status === "archived" || !canWrite || updateAutomation.isPending}
+                    disabled={
+                      automation.status === "archived" ||
+                      !canWrite ||
+                      updateAutomation.isPending
+                    }
                     aria-label={
                       automation.status === "active"
                         ? t(($) => $.detail.pause_aria)
                         : t(($) => $.detail.activate_aria)
                     }
                   />
-                  <span className={cn(
-                    "text-caption font-medium",
-                    automation.status === "active" ? "text-emerald-500" : "text-muted-foreground",
-                  )}>
+                  <span
+                    className={cn(
+                      "text-caption font-medium",
+                      automation.status === "active"
+                        ? "text-emerald-500"
+                        : "text-muted-foreground",
+                    )}
+                  >
                     {automation.status === "active"
                       ? t(($) => $.status.active)
                       : t(($) => $.detail.status_inactive)}
@@ -609,12 +924,20 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                   disabled={!canWrite || updateAutomation.isPending}
                   onUpdate={(updates) => {
                     if (!canWrite || updates.project_id === undefined) return;
-                    updateAutomation.mutate({
-                      id: automationId,
-                      project_id: updates.project_id,
-                    }, {
-                      onError: (error) => toast.error(error instanceof Error ? error.message : t(($) => $.dialog.toast_update_failed)),
-                    });
+                    updateAutomation.mutate(
+                      {
+                        id: automationId,
+                        project_id: updates.project_id,
+                      },
+                      {
+                        onError: (error) =>
+                          toast.error(
+                            error instanceof Error
+                              ? error.message
+                              : t(($) => $.dialog.toast_update_failed),
+                          ),
+                      },
+                    );
                   }}
                   triggerRender={
                     <button
@@ -627,12 +950,16 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                       ) : project ? (
                         <>
                           <ProjectIcon project={project} size="sm" />
-                          <span className="truncate text-foreground">{project.title}</span>
+                          <span className="truncate text-foreground">
+                            {project.title}
+                          </span>
                         </>
                       ) : (
                         <>
                           <FolderKanban className="size-3.5 shrink-0" />
-                          <span className="truncate">{t(($) => $.detail.no_project)}</span>
+                          <span className="truncate">
+                            {t(($) => $.detail.no_project)}
+                          </span>
                         </>
                       )}
                       <ChevronDown className="size-3 shrink-0" />
@@ -642,7 +969,10 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                 <span aria-hidden className="h-3.5 w-px shrink-0 bg-border" />
                 <span className="text-caption text-muted-foreground">
                   {t(($) => $.detail.created_by_line, {
-                    name: getActorName(automation.created_by_type, automation.created_by_id),
+                    name: getActorName(
+                      automation.created_by_type,
+                      automation.created_by_id,
+                    ),
                   })}
                 </span>
               </div>
@@ -662,12 +992,14 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
               </TabsList>
             </header>
 
-            <TabsContent value="settings" className="mt-0 space-y-8">
+            <TabsContent value="settings" className="mt-0 max-w-3xl space-y-8">
               <section className="space-y-2">
                 <h2 className="text-caption font-medium uppercase tracking-wider text-muted-foreground">
                   {t(($) => $.detail.section_triggers)}
                 </h2>
-                <p className="text-caption text-muted-foreground">{t(($) => $.settings.trigger_help)}</p>
+                <p className="text-caption text-muted-foreground">
+                  {t(($) => $.settings.trigger_help)}
+                </p>
                 <div
                   data-testid="automation-triggers-card"
                   className="divide-y rounded-lg border bg-background"
@@ -702,7 +1034,10 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                 canWrite={canWrite}
               />
 
-              <AutomationToolsSection automation={automation} canWrite={canWrite} />
+              <AutomationToolsSection
+                automation={automation}
+                canWrite={canWrite}
+              />
 
               <WebhookDeliveriesSection
                 automationId={automationId}
@@ -720,7 +1055,13 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
               ) : runsError ? (
                 <div className="space-y-3 rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
                   <p role="status">{t(($) => $.settings.runs_load_failed)}</p>
-                  <Button size="sm" variant="outline" onClick={() => void refetchRuns()}>{t(($) => $.page.retry)}</Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void refetchRuns()}
+                  >
+                    {t(($) => $.page.retry)}
+                  </Button>
                 </div>
               ) : runs.length === 0 ? (
                 <div className="rounded-md border border-dashed p-4 text-center text-body text-muted-foreground">
@@ -730,6 +1071,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                 <RunHistoryList
                   runs={runs}
                   agentId={automation.executor_id}
+                  triggers={triggers}
                 />
               )}
             </TabsContent>
@@ -746,8 +1088,7 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
         />
       )}
       {editDialogOpen && (
-        <AutomationDialog
-          mode="edit"
+        <AutomationEditDialog
           open={editDialogOpen}
           onOpenChange={setEditDialogOpen}
           automationId={automation.id}
@@ -757,7 +1098,8 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
             project_id: automation.project_id ?? null,
             executor_type: automation.executor_type,
             executor_id: automation.executor_id,
-            execution_mode: automation.execution_mode as AutomationExecutionMode,
+            execution_mode:
+              automation.execution_mode as AutomationExecutionMode,
             subscriber_user_ids:
               automation.subscribers
                 ?.filter((s) => s.user_type === "member")
@@ -770,13 +1112,19 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
       )}
       <AlertDialog
         open={deleteConfirmOpen}
-        onOpenChange={(v) => { if (!v && !deleting) setDeleteConfirmOpen(false); }}
+        onOpenChange={(v) => {
+          if (!v && !deleting) setDeleteConfirmOpen(false);
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t(($) => $.detail.delete_dialog.title)}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t(($) => $.detail.delete_dialog.title)}
+            </AlertDialogTitle>
             <AlertDialogDescription>
-              {t(($) => $.detail.delete_dialog.description, { title: automation.title })}
+              {t(($) => $.detail.delete_dialog.description, {
+                title: automation.title,
+              })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -798,16 +1146,20 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
       <AlertDialog open={runBlockedOpen} onOpenChange={setRunBlockedOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{t(($) => $.detail.run_blocked_dialog.title)}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {t(($) => $.detail.run_blocked_dialog.title)}
+            </AlertDialogTitle>
             <AlertDialogDescription>
               {t(($) => $.detail.run_blocked_dialog.description)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogAction onClick={() => {
-              setRunBlockedOpen(false);
-              setDetailTab("settings");
-            }}>
+            <AlertDialogAction
+              onClick={() => {
+                setRunBlockedOpen(false);
+                setDetailTab("settings");
+              }}
+            >
               {t(($) => $.detail.run_blocked_dialog.confirm)}
             </AlertDialogAction>
           </AlertDialogFooter>

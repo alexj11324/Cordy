@@ -24,7 +24,11 @@ import {
   DialogContent,
   DialogTitle,
 } from "@patchbay/ui/components/ui/dialog";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from "@patchbay/ui/components/ui/tooltip";
 import {
   Popover,
   PopoverTrigger,
@@ -36,10 +40,12 @@ import {
 import { Button } from "@patchbay/ui/components/ui/button";
 import { useCurrentWorkspace } from "@patchbay/core/paths";
 import { useWorkspaceId } from "@patchbay/core/hooks";
-import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
+import {
+  agentListOptions,
+  teamListOptions,
+} from "@patchbay/core/workspace/queries";
 import { projectListOptions } from "@patchbay/core/projects/queries";
 import {
-  useCreateAutomation,
   useCreateAutomationTrigger,
   useUpdateAutomation,
   useUpdateAutomationTrigger,
@@ -59,7 +65,10 @@ import { AgentPicker, type AssigneeSelection } from "./pickers/agent-picker";
 import { SubscriberMultiSelect } from "./subscriber-multi-select";
 import { AutomationAccessManager } from "./automation-access-manager";
 import { ScheduleEditor } from "./schedule-editor/schedule-editor";
-import { getDefaultScheduleConfig, type ScheduleConfig } from "./schedule-editor/model";
+import {
+  getDefaultScheduleConfig,
+  type ScheduleConfig,
+} from "./schedule-editor/model";
 import { browserTimezone } from "../../common/timezone-select";
 import { parseCron, toCron } from "./schedule-editor/cron-mapping";
 import { useScheduleSubmitGate } from "./schedule-editor/validate";
@@ -81,34 +90,24 @@ export interface AutomationInitial {
   subscriber_user_ids?: string[];
 }
 
-export type AutomationDialogProps =
-  | {
-      mode: "create";
-      open: boolean;
-      onOpenChange: (v: boolean) => void;
-      initial?: Partial<AutomationInitial>;
-      initialSchedule?: Pick<ScheduleConfig, "time" | "days">;
-      // Native catalog preset (github.pull_request.opened, slack.message, …).
-      // Blank creates write no trigger; schedule templates use initialSchedule.
-      initialPreset?: string | null;
-      onCreated?: (automationId: string) => void;
-    }
-  | {
-      mode: "edit";
-      open: boolean;
-      onOpenChange: (v: boolean) => void;
-      automationId: string;
-      initial: AutomationInitial;
-      triggers: AutomationTrigger[];
-      collaborators: AutomationCollaborator[];
-      canManageAccess: boolean;
-    };
+export interface AutomationEditDialogProps {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  automationId: string;
+  initial: AutomationInitial;
+  triggers: AutomationTrigger[];
+  collaborators: AutomationCollaborator[];
+  canManageAccess: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Static schema-level data (not user-visible)
 // ---------------------------------------------------------------------------
 
-const OUTPUT_MODE_KEYS: AutomationExecutionMode[] = ["create_issue", "run_only"];
+const OUTPUT_MODE_KEYS: AutomationExecutionMode[] = [
+  "create_issue",
+  "run_only",
+];
 
 const OUTPUT_MODE_ICONS: Record<AutomationExecutionMode, typeof FilePlus2> = {
   create_issue: FilePlus2,
@@ -130,10 +129,10 @@ function serializeEventFilters(filters: WebhookEventFilter[]): string {
 }
 
 // ---------------------------------------------------------------------------
-// AutomationDialog
+// AutomationEditDialog
 // ---------------------------------------------------------------------------
 
-export function AutomationDialog(props: AutomationDialogProps) {
+export function AutomationEditDialog(props: AutomationEditDialogProps) {
   const { t } = useT("automations");
   const { open, onOpenChange } = props;
   const workspaceName = useCurrentWorkspace()?.name;
@@ -143,18 +142,19 @@ export function AutomationDialog(props: AutomationDialogProps) {
   const { data: projects = [] } = useQuery(projectListOptions(wsId));
   const [isExpanded, setIsExpanded] = useState(false);
 
-  const isCreate = props.mode === "create";
-  const initial: Partial<AutomationInitial> = isCreate
-    ? props.initial ?? {}
-    : props.initial;
+  const initial = props.initial;
 
   const [title, setTitle] = useState(initial.title ?? "");
   const [description, setDescription] = useState(initial.description ?? "");
-  const [projectId, setProjectId] = useState<string | null>(initial.project_id ?? null);
+  const [projectId, setProjectId] = useState<string | null>(
+    initial.project_id ?? null,
+  );
   const [assigneeType, setAssigneeType] = useState<AutomationAssigneeType>(
     initial.executor_type ?? "agent",
   );
-  const [assigneeId, setAssigneeId] = useState<string>(initial.executor_id ?? "");
+  const [assigneeId, setAssigneeId] = useState<string>(
+    initial.executor_id ?? "",
+  );
   const [executionMode, setExecutionMode] = useState<AutomationExecutionMode>(
     initial.execution_mode ?? "create_issue",
   );
@@ -165,18 +165,15 @@ export function AutomationDialog(props: AutomationDialogProps) {
   // The schedule panel speaks for the automation's SCHEDULE trigger, not for
   // `triggers[0]` — on a webhook- or api-triggered automation that row is one no
   // cron may be written into.
-  const existingSchedule = isCreate
-    ? null
-    : props.triggers.find((trig) => trig.kind === "schedule") ?? null;
+  const existingSchedule =
+    props.triggers.find((trig) => trig.kind === "schedule") ?? null;
 
   const initialCfg: ScheduleConfig = (() => {
-    if (isCreate) {
-      const tpl = props.initialSchedule;
-      const fallback = getDefaultScheduleConfig(browserTimezone());
-      return tpl ? { ...fallback, ...tpl } : fallback;
-    }
     if (existingSchedule?.cron_expression) {
-      return parseCron(existingSchedule.cron_expression, existingSchedule.timezone ?? "UTC");
+      return parseCron(
+        existingSchedule.cron_expression,
+        existingSchedule.timezone ?? "UTC",
+      );
     }
     return getDefaultScheduleConfig(browserTimezone());
   })();
@@ -191,28 +188,26 @@ export function AutomationDialog(props: AutomationDialogProps) {
   // writes what it shows whether or not they touched the default.
   const [scheduleAdded, setScheduleAdded] = useState(false);
 
-  // Edit mode still shows the schedule vs webhook panel that already exists
-  // on the automation. Create mode no longer asks Schedule vs Webhook:
-  // templates write a schedule or a native preset, and blank creates add
-  // triggers on the detail page.
+  // Show the schedule vs webhook panel that already exists on the automation.
   const initialKind: "schedule" | "webhook" = (() => {
-    if (isCreate) return "schedule";
     const first = props.triggers[0];
     if (first?.kind === "webhook") return "webhook";
     return "schedule";
   })();
   const [triggerKind] = useState<"schedule" | "webhook">(initialKind);
 
-  const initialEventFilters: WebhookEventFilter[] = isCreate
-    ? []
-    : props.triggers[0]?.event_filters
-      ? props.triggers[0].event_filters
-      : [];
-  const [eventFilters, setEventFilters] = useState<WebhookEventFilter[]>(initialEventFilters);
+  const initialEventFilters: WebhookEventFilter[] = props.triggers[0]
+    ?.event_filters
+    ? props.triggers[0].event_filters
+    : [];
+  const [eventFilters, setEventFilters] =
+    useState<WebhookEventFilter[]>(initialEventFilters);
 
   const initialCronRef = useRef(toCron(initialCfg));
   const initialTimezoneRef = useRef(initialCfg.timezone);
-  const initialEventFiltersRef = useRef(serializeEventFilters(initialEventFilters));
+  const initialEventFiltersRef = useRef(
+    serializeEventFilters(initialEventFilters),
+  );
   const scheduleDirty =
     toCron(schedule) !== initialCronRef.current ||
     schedule.timezone !== initialTimezoneRef.current;
@@ -220,20 +215,20 @@ export function AutomationDialog(props: AutomationDialogProps) {
     serializeEventFilters(eventFilters) !== initialEventFiltersRef.current;
 
   const firstTriggerIdRef = useRef(
-    !isCreate && props.triggers[0] ? props.triggers[0].id : null,
+    props.triggers[0] ? props.triggers[0].id : null,
   );
   // The row the schedule write targets, snapshotted at mount like the one
   // above. Null means there is none to patch, so the write creates one.
   const scheduleTriggerIdRef = useRef(existingSchedule?.id ?? null);
 
-  const triggerCount = isCreate ? 0 : props.triggers.length;
-  const schedulePillDisabled = !isCreate && triggerCount >= 2;
+  const triggerCount = props.triggers.length;
+  const schedulePillDisabled = triggerCount >= 2;
 
   // The manual-automation empty state, and the only path to a first schedule
   // from this dialog. Skipped when the panel is locked (2+ triggers), which
   // keeps that case rendering exactly the disabled editor it always has.
   const showScheduleEmptyState =
-    !isCreate && existingSchedule === null && !scheduleAdded && !schedulePillDisabled;
+    existingSchedule === null && !scheduleAdded && !schedulePillDisabled;
 
   const selectedAssignee = useMemo(() => {
     if (!assigneeId) return null;
@@ -254,7 +249,6 @@ export function AutomationDialog(props: AutomationDialogProps) {
     setAssigneeId(next.id);
   };
 
-  const createAutomation = useCreateAutomation();
   const createTrigger = useCreateAutomationTrigger();
   const updateAutomation = useUpdateAutomation();
   const updateTrigger = useUpdateAutomationTrigger();
@@ -262,28 +256,26 @@ export function AutomationDialog(props: AutomationDialogProps) {
 
   const scheduleGate = useScheduleSubmitGate(wsId);
 
-  const createWritesSchedule = isCreate && Boolean(props.initialSchedule);
-  const createPreset = isCreate ? (props.initialPreset ?? null) : null;
-
   // The schedule only gates submit when this save would actually write it. A
   // locked schedule (2+ triggers) or a stored one the user never touched is not
   // sent, so a preview 400 on the stored expression — an expression the server
   // accepted once and may now reject, e.g. a timezone its tzdata dropped — must
   // not veto edits to the title, prompt or assignee. A schedule the user just
   // added has no stored counterpart to differ from: adding it IS the change.
-  // Blank creates write no trigger; only a template's initialSchedule does.
   const scheduleWillBeWritten =
     !schedulePillDisabled &&
-    (createWritesSchedule ||
-      (!isCreate &&
-        triggerKind === "schedule" &&
-        (existingSchedule !== null ? scheduleDirty : scheduleAdded)));
+    triggerKind === "schedule" &&
+    (existingSchedule !== null ? scheduleDirty : scheduleAdded);
 
   // The FIRST empty required field in reading order — the user fills one, the
   // next surfaces. Only these two are answered here: a rejected schedule is
   // re-checked against the server below, which toasts its actual reason.
   const missingField: "title" | "assignee" | null =
-    title.trim().length === 0 ? "title" : assigneeId.length === 0 ? "assignee" : null;
+    title.trim().length === 0
+      ? "title"
+      : assigneeId.length === 0
+        ? "assignee"
+        : null;
 
   // Inline errors appear only after a submit attempt: a form that opens already
   // shouting at the user for fields they have not reached yet is worse than the
@@ -306,41 +298,47 @@ export function AutomationDialog(props: AutomationDialogProps) {
     }
     setSubmitting(true);
     try {
-      if (scheduleWillBeWritten && !(await scheduleGate.ensureAccepted(schedule))) {
+      if (
+        scheduleWillBeWritten &&
+        !(await scheduleGate.ensureAccepted(schedule))
+      ) {
         setSubmitting(false);
         return;
       }
-      if (isCreate) {
-        const automation = await createAutomation.mutateAsync({
-          title: title.trim(),
-          description: description.trim() || undefined,
-          project_id: projectId,
-          executor_type: assigneeType,
-          executor_id: assigneeId,
-          execution_mode: executionMode,
-          subscribers: subscriberUserIds.map((user_id) => ({
-            user_type: "member" as const,
-            user_id,
-          })),
-        });
-        let triggerOk = true;
-        let triggerErrMessage: string | null = null;
+      await updateAutomation.mutateAsync({
+        id: props.automationId,
+        title: title.trim(),
+        description: description.trim() || null,
+        project_id: projectId,
+        executor_type: assigneeType,
+        executor_id: assigneeId,
+        execution_mode: executionMode,
+        subscribers: subscriberUserIds.map((user_id) => ({
+          user_type: "member" as const,
+          user_id,
+        })),
+      });
+      let triggerOk = true;
+      let triggerErrMessage: string | null = null;
+      // Skip the schedule sync when the automation's first trigger is a
+      // webhook — there's no cron to update there, and the schedule
+      // panel isn't even rendered for webhook automations.
+      if (scheduleWillBeWritten) {
+        const snapshottedTriggerId = scheduleTriggerIdRef.current;
         try {
-          if (createWritesSchedule) {
-            await createTrigger.mutateAsync({
-              automationId: automation.id,
-              kind: "schedule",
+          if (snapshottedTriggerId) {
+            await updateTrigger.mutateAsync({
+              automationId: props.automationId,
+              triggerId: snapshottedTriggerId,
               cron_expression: toCron(schedule),
               timezone: schedule.timezone,
             });
-          } else if (createPreset) {
+          } else {
             await createTrigger.mutateAsync({
-              automationId: automation.id,
-              kind: "webhook",
-              preset: createPreset,
-              ...(createPreset === "github.workflow_run.completed" || createPreset === "github.ci_completed"
-                ? { config: { on_failure: true } }
-                : {}),
+              automationId: props.automationId,
+              kind: "schedule",
+              cron_expression: toCron(schedule),
+              timezone: schedule.timezone,
             });
           }
         } catch (err) {
@@ -348,102 +346,49 @@ export function AutomationDialog(props: AutomationDialogProps) {
           triggerErrMessage =
             err instanceof Error && err.message ? err.message : null;
         }
-        props.onCreated?.(automation.id);
-        onOpenChange(false);
-        if (triggerOk) {
-          toast.success(t(($) => $.dialog.toast_created));
-        } else {
-          // Partial success: automation saved, trigger failed. Show the
-          // server-provided reason so the user can act on it instead of
-          // seeing a generic message.
-          toast.error(formatSchedulePartialFailureToast(t, "create", triggerErrMessage));
+      }
+      // Webhook automations have no schedule, but the user can still edit
+      // event_filters from the same dialog. PATCH only when the snapshot
+      // taken on open differs from the live state. Sending an explicit
+      // empty array clears filters server-side (tri-state semantics — see
+      // UpdateAutomationTriggerRequest in automation.go).
+      if (
+        triggerKind === "webhook" &&
+        eventFiltersDirty &&
+        firstTriggerIdRef.current
+      ) {
+        try {
+          await updateTrigger.mutateAsync({
+            automationId: props.automationId,
+            triggerId: firstTriggerIdRef.current,
+            event_filters: eventFilters,
+          });
+        } catch (err) {
+          triggerOk = false;
+          triggerErrMessage =
+            err instanceof Error && err.message ? err.message : null;
         }
+      }
+      onOpenChange(false);
+      if (triggerOk) {
+        toast.success(t(($) => $.dialog.toast_updated));
       } else {
-        await updateAutomation.mutateAsync({
-          id: props.automationId,
-          title: title.trim(),
-          description: description.trim() || null,
-          project_id: projectId,
-          executor_type: assigneeType,
-          executor_id: assigneeId,
-          execution_mode: executionMode,
-          subscribers: subscriberUserIds.map((user_id) => ({
-            user_type: "member" as const,
-            user_id,
-          })),
-        });
-        let triggerOk = true;
-        let triggerErrMessage: string | null = null;
-        // Skip the schedule sync when the automation's first trigger is a
-        // webhook — there's no cron to update there, and the schedule
-        // panel isn't even rendered for webhook automations.
-        if (scheduleWillBeWritten) {
-          const snapshottedTriggerId = scheduleTriggerIdRef.current;
-          try {
-            if (snapshottedTriggerId) {
-              await updateTrigger.mutateAsync({
-                automationId: props.automationId,
-                triggerId: snapshottedTriggerId,
-                cron_expression: toCron(schedule),
-                timezone: schedule.timezone,
-              });
-            } else {
-              await createTrigger.mutateAsync({
-                automationId: props.automationId,
-                kind: "schedule",
-                cron_expression: toCron(schedule),
-                timezone: schedule.timezone,
-              });
-            }
-          } catch (err) {
-            triggerOk = false;
-            triggerErrMessage =
-              err instanceof Error && err.message ? err.message : null;
-          }
-        }
-        // Webhook automations have no schedule, but the user can still edit
-        // event_filters from the same dialog. PATCH only when the snapshot
-        // taken on open differs from the live state. Sending an explicit
-        // empty array clears filters server-side (tri-state semantics — see
-        // UpdateAutomationTriggerRequest in automation.go).
-        if (
-          triggerKind === "webhook" &&
-          eventFiltersDirty &&
-          firstTriggerIdRef.current
-        ) {
-          try {
-            await updateTrigger.mutateAsync({
-              automationId: props.automationId,
-              triggerId: firstTriggerIdRef.current,
-              event_filters: eventFilters,
-            });
-          } catch (err) {
-            triggerOk = false;
-            triggerErrMessage =
-              err instanceof Error && err.message ? err.message : null;
-          }
-        }
-        onOpenChange(false);
-        if (triggerOk) {
-          toast.success(t(($) => $.dialog.toast_updated));
-        } else {
-          toast.error(formatSchedulePartialFailureToast(t, "update", triggerErrMessage));
-        }
+        toast.error(
+          formatSchedulePartialFailureToast(t, "update", triggerErrMessage),
+        );
       }
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
           ? err.message
-          : isCreate
-            ? t(($) => $.dialog.toast_create_failed)
-            : t(($) => $.dialog.toast_update_failed),
+          : t(($) => $.dialog.toast_update_failed),
       );
     } finally {
       setSubmitting(false);
     }
   };
 
-  const contentKey = isCreate ? "create" : props.automationId;
+  const contentKey = props.automationId;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -459,7 +404,7 @@ export function AutomationDialog(props: AutomationDialogProps) {
         )}
       >
         <DialogTitle className="sr-only">
-          {isCreate ? t(($) => $.dialog.sr_create) : t(($) => $.dialog.sr_edit)}
+          {t(($) => $.dialog.sr_edit)}
         </DialogTitle>
 
         {/* Header */}
@@ -470,13 +415,13 @@ export function AutomationDialog(props: AutomationDialogProps) {
                 <Rocket className="size-3" />
               </span>
               <span className="font-medium text-foreground">
-                {isCreate
-                  ? t(($) => $.dialog.header_create)
-                  : t(($) => $.dialog.header_edit)}
+                {t(($) => $.dialog.header_edit)}
               </span>
             </div>
             <span className="text-faint-foreground">·</span>
-            <span className="text-muted-foreground">{t(($) => $.dialog.subtitle)}</span>
+            <span className="text-muted-foreground">
+              {t(($) => $.dialog.subtitle)}
+            </span>
             {workspaceName && (
               <>
                 <ChevronRight className="size-3 text-faint-foreground" />
@@ -485,14 +430,19 @@ export function AutomationDialog(props: AutomationDialogProps) {
             )}
           </div>
           <div className="flex items-center gap-1">
-            {!isCreate && props.canManageAccess && (
+            {props.canManageAccess && (
               <>
                 <Popover>
                   <PopoverTrigger className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-caption text-muted-foreground transition-all hover:bg-accent/60 hover:text-foreground hover:opacity-100 cursor-pointer">
                     <Users className="size-3.5" />
                     <span>{t(($) => $.access.title)}</span>
                   </PopoverTrigger>
-                  <PopoverContent align="end" sideOffset={6} keepMounted className="w-80">
+                  <PopoverContent
+                    align="end"
+                    sideOffset={6}
+                    keepMounted
+                    className="w-80"
+                  >
                     <PopoverHeader>
                       <PopoverTitle>{t(($) => $.access.title)}</PopoverTitle>
                       <PopoverDescription className="text-caption">
@@ -516,12 +466,18 @@ export function AutomationDialog(props: AutomationDialogProps) {
                     onClick={() => setIsExpanded((v) => !v)}
                     className="rounded-sm p-1.5 opacity-70 hover:opacity-100 hover:bg-accent/60 transition-all cursor-pointer"
                   >
-                    {isExpanded ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+                    {isExpanded ? (
+                      <Minimize2 className="size-4" />
+                    ) : (
+                      <Maximize2 className="size-4" />
+                    )}
                   </button>
                 }
               />
               <TooltipContent side="bottom">
-                {isExpanded ? t(($) => $.dialog.collapse) : t(($) => $.dialog.expand)}
+                {isExpanded
+                  ? t(($) => $.dialog.collapse)
+                  : t(($) => $.dialog.expand)}
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -536,7 +492,9 @@ export function AutomationDialog(props: AutomationDialogProps) {
                   </button>
                 }
               />
-              <TooltipContent side="bottom">{t(($) => $.dialog.close)}</TooltipContent>
+              <TooltipContent side="bottom">
+                {t(($) => $.dialog.close)}
+              </TooltipContent>
             </Tooltip>
           </div>
         </div>
@@ -551,7 +509,7 @@ export function AutomationDialog(props: AutomationDialogProps) {
             <div className="px-6 pt-5 pb-3 shrink-0">
               <TitleEditor
                 ref={titleEditorRef}
-                autoFocus={isCreate}
+                autoFocus={false}
                 defaultValue={initial.title ?? ""}
                 placeholder={t(($) => $.dialog.title_placeholder)}
                 className="text-display-sm font-semibold tracking-tight"
@@ -563,7 +521,10 @@ export function AutomationDialog(props: AutomationDialogProps) {
                   the only way a screen-reader user learns why Create did
                   nothing. */}
               {showErrors && title.trim().length === 0 && (
-                <p role="alert" className="mt-1.5 text-caption text-destructive">
+                <p
+                  role="alert"
+                  className="mt-1.5 text-caption text-destructive"
+                >
                   {t(($) => $.dialog.error_title_required)}
                 </p>
               )}
@@ -604,7 +565,10 @@ export function AutomationDialog(props: AutomationDialogProps) {
               errorId={assigneeErrorId}
             />
 
-            <OutputModeSection mode={executionMode} onChange={setExecutionMode} />
+            <OutputModeSection
+              mode={executionMode}
+              onChange={setExecutionMode}
+            />
 
             {/* Shown for BOTH output modes (MUL-6681). The project is not only
                 issue routing: for a run_only automation it is the ONLY source of
@@ -627,21 +591,11 @@ export function AutomationDialog(props: AutomationDialogProps) {
               />
             )}
 
-            {isCreate ? (
-              createWritesSchedule ? (
-                <div>
-                  <SectionLabel>{t(($) => $.dialog.section_schedule)}</SectionLabel>
-                  <ScheduleEditor
-                    value={schedule}
-                    onChange={setSchedule}
-                    wsId={wsId}
-                    disabled={submitting}
-                  />
-                </div>
-              ) : null
-            ) : triggerKind === "schedule" ? (
+            {triggerKind === "schedule" ? (
               <div>
-                <SectionLabel>{t(($) => $.dialog.section_schedule)}</SectionLabel>
+                <SectionLabel>
+                  {t(($) => $.dialog.section_schedule)}
+                </SectionLabel>
                 {showScheduleEmptyState ? (
                   <ScheduleEmptyState onAdd={() => setScheduleAdded(true)} />
                 ) : (
@@ -670,7 +624,6 @@ export function AutomationDialog(props: AutomationDialogProps) {
               </div>
             ) : (
               <WebhookSection
-                isCreate={false}
                 eventFilters={eventFilters}
                 onEventFiltersChange={setEventFilters}
               />
@@ -686,16 +639,21 @@ export function AutomationDialog(props: AutomationDialogProps) {
               slot itself stays, or `justify-between` would walk the buttons
               over to the left edge. */}
           <div className="flex items-center gap-1.5 text-caption text-muted-foreground min-w-0">
-            {((isCreate && (createWritesSchedule || Boolean(createPreset))) ||
-              (!isCreate && !showScheduleEmptyState)) && (
+            {!showScheduleEmptyState && (
               <>
                 <Zap className="size-3.5 text-amber-500 shrink-0" />
-                <span className="truncate">{t(($) => $.dialog.auto_run_hint)}</span>
+                <span className="truncate">
+                  {t(($) => $.dialog.auto_run_hint)}
+                </span>
               </>
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
               {t(($) => $.dialog.cancel)}
             </Button>
             {/* Live whenever a save isn't already in flight — an unmet
@@ -709,13 +667,7 @@ export function AutomationDialog(props: AutomationDialogProps) {
               disabled={submitting}
               aria-busy={submitting || undefined}
             >
-              {submitting
-                ? isCreate
-                  ? t(($) => $.dialog.creating)
-                  : t(($) => $.dialog.saving)
-                : isCreate
-                  ? t(($) => $.dialog.create)
-                  : t(($) => $.dialog.save)}
+              {submitting ? t(($) => $.dialog.saving) : t(($) => $.dialog.save)}
             </Button>
           </div>
         </div>
@@ -778,7 +730,9 @@ function AgentSection({
       {/* Marked required, unlike the Project and Subscribers pickers below it:
           the three look identical, and nothing else told the user that only
           this one blocks Create (#6231). */}
-      <SectionLabel required>{t(($) => $.dialog.section_assignee)}</SectionLabel>
+      <SectionLabel required>
+        {t(($) => $.dialog.section_assignee)}
+      </SectionLabel>
       <AgentPicker
         assignee={hasSelection ? { type: selectedType, id: selectedId } : null}
         onChange={onChange}
@@ -822,7 +776,11 @@ function AgentSection({
         }
       />
       {invalid && (
-        <p id={errorId} role="alert" className="mt-1.5 text-caption text-destructive">
+        <p
+          id={errorId}
+          role="alert"
+          className="mt-1.5 text-caption text-destructive"
+        >
           {t(($) => $.dialog.error_assignee_required)}
         </p>
       )}
@@ -955,7 +913,6 @@ function SubscribersSection({
   );
 }
 
-
 // The schedule section of an automation that has none. Mirrors the detail
 // page's trigger empty state — a dashed card that states the automation is
 // manual — so the two surfaces agree on what "no schedule" looks like instead
@@ -977,11 +934,9 @@ function ScheduleEmptyState({ onAdd }: { onAdd: () => void }) {
 }
 
 function WebhookSection({
-  isCreate,
   eventFilters,
   onEventFiltersChange,
 }: {
-  isCreate: boolean;
   eventFilters: WebhookEventFilter[];
   onEventFiltersChange: (filters: WebhookEventFilter[]) => void;
 }) {
@@ -991,9 +946,7 @@ function WebhookSection({
       <div>
         <SectionLabel>{t(($) => $.dialog.section_webhook)}</SectionLabel>
         <p className="rounded-md border bg-background px-3 py-2 text-caption text-muted-foreground leading-relaxed">
-          {isCreate
-            ? t(($) => $.dialog.webhook_help_create)
-            : t(($) => $.dialog.webhook_help_edit)}
+          {t(($) => $.dialog.webhook_help_edit)}
         </p>
       </div>
       <WebhookEventFilterSection
