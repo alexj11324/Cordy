@@ -830,9 +830,13 @@ export class ApiClient {
 
   private readCsrfToken(): string | null {
     if (typeof document === "undefined") return null;
+    const hostname = new URL(this.baseUrl || "/", document.location?.href ?? "http://localhost").hostname;
+    const cookieName = hostname === "staging.aspectlylabs.com" || hostname.endsWith(".staging.aspectlylabs.com")
+      ? "orvilo_staging_csrf"
+      : "orvilo_csrf";
     const match = document.cookie
       .split("; ")
-      .find((c) => c.startsWith("orvilo_csrf="));
+      .find((c) => c.startsWith(`${cookieName}=`));
     return match ? match.split("=")[1] ?? null : null;
   }
 
