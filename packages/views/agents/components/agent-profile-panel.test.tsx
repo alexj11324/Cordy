@@ -19,6 +19,11 @@ vi.mock("@patchbay/core/paths", () => ({
 
 vi.mock("@patchbay/core/agents", () => ({
   effectiveAccessScope: () => "workspace",
+  isAgentRuntimeBound: (
+    candidate: Pick<Agent, "runtime_id" | "runtime_bound">,
+  ) =>
+    candidate.runtime_bound !== false &&
+    (candidate.runtime_id ?? "").trim().length > 0,
   providerSupportsMcpConfig: () => true,
 }));
 
