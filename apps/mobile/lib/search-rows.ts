@@ -9,8 +9,8 @@ import type {
   Issue,
   SearchIssueResult,
   SearchProjectResult,
-} from "@patchbay/core/types";
-import { partitionAggregatedSearchResults } from "@patchbay/core/search/cancelled-rank";
+} from "@orvilo/core/types";
+import { partitionAggregatedSearchResults } from "@orvilo/core/search/cancelled-rank";
 
 export type RowItem =
   | { kind: "header"; key: string; title: string }

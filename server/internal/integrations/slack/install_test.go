@@ -8,9 +8,9 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func testBox(t *testing.T) *secretbox.Box {
@@ -42,12 +42,12 @@ type fakeInstallQueries struct {
 	// appIDTaken makes UpsertChannelInstallation report a unique-constraint
 	// violation on the (channel_type, app_id) routing index — i.e. the pasted app
 	// is already connected to a LIVE owner (the reclaim has run by then).
-	appIDTaken   bool
-	upsertParams db.UpsertChannelInstallationParams
-	upsertCalled bool
+	appIDTaken      bool
+	upsertParams    db.UpsertChannelInstallationParams
+	upsertCalled    bool
 	hubUpsertParams db.UpsertChannelInstallationHubParams
 	hubUpsertCalled bool
-	rowID        pgtype.UUID
+	rowID           pgtype.UUID
 
 	// byAppID* drive the UpsertChannelInstallationByAppID stub behind
 	// RegisterManaged: byAppIDNoRows models a team live-owned by another
@@ -193,9 +193,9 @@ func TestPersistInstallUsesWorkspaceHubSlotWithoutAgent(t *testing.T) {
 	q := &fakeInstallQueries{rowID: mustUUID(t, "11111111-1111-1111-1111-111111111111")}
 	svc := newTestInstallService(t, q)
 	_, err := svc.persistInstall(context.Background(), installPersist{
-		wsID: mustUUID(t, "22222222-2222-2222-2222-222222222222"),
+		wsID:        mustUUID(t, "22222222-2222-2222-2222-222222222222"),
 		installerID: mustUUID(t, "33333333-3333-3333-3333-333333333333"),
-		appIDKey: "A123", configJSON: []byte(`{"app_id":"A123"}`),
+		appIDKey:    "A123", configJSON: []byte(`{"app_id":"A123"}`),
 	}, nil)
 	if err != nil {
 		t.Fatal(err)

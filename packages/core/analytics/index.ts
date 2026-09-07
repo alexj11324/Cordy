@@ -304,7 +304,7 @@ function captureNow(
  * handlers can't see.
  *
  * Currently called by the web route-level `global-error`. Section-level
- * `@patchbay/ui` ErrorBoundary can opt in by passing `onError={captureException}`
+ * `@orvilo/ui` ErrorBoundary can opt in by passing `onError={captureException}`
  * at its call sites; it is not wired app-wide (those failures already degrade
  * gracefully with fallback UI).
  *

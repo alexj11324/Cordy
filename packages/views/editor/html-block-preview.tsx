@@ -24,12 +24,12 @@ import {
   Eye,
   Maximize2,
 } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+import { cn } from "@orvilo/ui/lib/utils";
+import { copyText } from "@orvilo/ui/lib/clipboard";
 import {
   Dialog,
   DialogContent,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import { useT } from "../i18n";
 import { CodeBlockStatic } from "./code-block-static";
 import { HtmlPreviewBody } from "./html-preview-body";

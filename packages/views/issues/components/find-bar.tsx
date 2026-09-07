@@ -2,9 +2,9 @@
 
 import type { KeyboardEvent } from "react";
 import { ChevronDown, ChevronUp, Search, X } from "lucide-react";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 import type { UseInPageFindResult } from "../hooks/use-in-page-find";
 

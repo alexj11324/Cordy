@@ -2,17 +2,17 @@
 
 import { useLayoutEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Dialog, DialogContent } from "@patchbay/ui/components/ui/dialog";
+import { cn } from "@orvilo/ui/lib/utils";
+import { Dialog, DialogContent } from "@orvilo/ui/components/ui/dialog";
 import {
   useCreateModeStore,
   type CreateMode,
-} from "@patchbay/core/issues/stores/create-mode-store";
+} from "@orvilo/core/issues/stores/create-mode-store";
 import { AgentCreatePanel } from "./quick-create-issue";
 import { ManualCreatePanel, manualDialogContentClass } from "./create-issue";
-import { sourceContextPreviewOptions } from "@patchbay/core/issues/queries";
-import { useIssueDraftStore } from "@patchbay/core/issues/stores/draft-store";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import { sourceContextPreviewOptions } from "@orvilo/core/issues/queries";
+import { useIssueDraftStore } from "@orvilo/core/issues/stores/draft-store";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 
 /**
  * Shell that owns the single `<Dialog>` AND `<DialogContent>` for the

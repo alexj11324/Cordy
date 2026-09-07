@@ -3,25 +3,25 @@
 import { useEffect, useState } from "react";
 import { CalendarDays, Check, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
-import type { Issue, IssueProperty, IssuePropertyValue } from "@patchbay/core/types";
-import { hasUnknownActorRef } from "@patchbay/core/types";
+import type { Issue, IssueProperty, IssuePropertyValue } from "@orvilo/core/types";
+import { hasUnknownActorRef } from "@orvilo/core/types";
 import {
   useSetIssueProperty,
   useUnsetIssueProperty,
-} from "@patchbay/core/properties";
+} from "@orvilo/core/properties";
 import {
   toDateOnly,
   dateOnlyToLocalDate,
   formatDateOnly,
-} from "@patchbay/core/issues/date";
-import { Calendar } from "@patchbay/ui/components/ui/calendar";
+} from "@orvilo/core/issues/date";
+import { Calendar } from "@orvilo/ui/components/ui/calendar";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@patchbay/ui/components/ui/popover";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
+} from "@orvilo/ui/components/ui/popover";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
 import { useLocale, useT } from "../../../i18n";
 import { PropertyPicker, PickerItem } from "./property-picker";
 import { ActorPropertyPicker, ActorPropertyDisplay } from "./actor-property-picker";

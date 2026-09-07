@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/daemonws"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 // TestAgentRuntimeLookupSourcesAreDistinct drives the three entry points the

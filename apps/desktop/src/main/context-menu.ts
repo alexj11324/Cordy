@@ -123,7 +123,7 @@ const labelsByLocale: Record<string, ContextMenuLabels> = {
 // locales we ship copy for. We say "Open Link in Browser" rather than
 // "Open Link in New Window" because the link is opened via
 // shell.openExternal — it lands in the user's default browser, not in
-// another Patchbay window — so the wording matches what actually
+// another Orvilo window — so the wording matches what actually
 // happens.
 function pickLabels(): ContextMenuLabels {
   return labelsByLocale[

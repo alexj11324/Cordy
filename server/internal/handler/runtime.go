@@ -13,12 +13,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 type AgentRuntimeResponse struct {
@@ -1183,9 +1183,9 @@ func (h *Handler) UnbindAgentsAndDeleteRuntime(w http.ResponseWriter, r *http.Re
 	)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":            "ok",
-		"agents_unbound":    len(teardown.UnboundAgents),
-		"tasks_cancelled":   len(teardown.CancelledTasks),
+		"status":             "ok",
+		"agents_unbound":     len(teardown.UnboundAgents),
+		"tasks_cancelled":    len(teardown.CancelledTasks),
 		"automations_paused": len(teardown.PausedAutomations),
 		// Deprecated mirror of agents_unbound: installed clients built against
 		// the archive-and-delete contract read this key. The count is the same

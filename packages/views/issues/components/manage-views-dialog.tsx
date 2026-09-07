@@ -18,17 +18,17 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { GripVertical, Layers, Pencil, Trash2 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { cn } from "@patchbay/ui/lib/utils";
-import type { IssueView } from "@patchbay/core/api/schemas";
+} from "@orvilo/ui/components/ui/dialog";
+import { cn } from "@orvilo/ui/lib/utils";
+import type { IssueView } from "@orvilo/core/api/schemas";
 import {
   DeleteViewConfirm,
   type ViewBarItem,

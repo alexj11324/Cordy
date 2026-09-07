@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
+	publicapiv1 "github.com/orvilo-ai/orvilo/server/pkg/publicapi/v1"
 )
 
 func TestPluginRateLimitIsPerCredentialAndUsesStableProblem(t *testing.T) {

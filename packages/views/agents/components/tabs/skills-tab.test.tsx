@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Agent, AgentRuntime } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent, AgentRuntime } from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 
@@ -34,11 +34,11 @@ const { ApiError } = vi.hoisted(() => {
   return { ApiError };
 });
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     listSkills: (...args: unknown[]) => mockListSkills(...args),
     getSkill: (...args: unknown[]) => mockGetSkill(...args),
@@ -51,10 +51,10 @@ vi.mock("@patchbay/core/api", () => ({
   ApiError,
 }));
 
-vi.mock("@patchbay/core/runtimes", async () => {
+vi.mock("@orvilo/core/runtimes", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/runtimes")>(
-      "@patchbay/core/runtimes",
+    await vi.importActual<typeof import("@orvilo/core/runtimes")>(
+      "@orvilo/core/runtimes",
     );
   return {
     ...actual,

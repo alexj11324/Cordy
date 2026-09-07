@@ -83,31 +83,31 @@ func TestParsePoolConfigPreservesNativeConnectTimeout(t *testing.T) {
 	tests := []struct {
 		name          string
 		databaseURL   string
-		patchbayValue  time.Duration
+		patchbayValue time.Duration
 		wantPGXNative time.Duration
 	}{
 		{
-			name:          "URL longer than Patchbay fallback",
+			name:          "URL longer than Orvilo fallback",
 			databaseURL:   "postgres://user:pass@localhost:5432/db?sslmode=disable&connect_timeout=30",
-			patchbayValue:  5 * time.Second,
+			patchbayValue: 5 * time.Second,
 			wantPGXNative: 30 * time.Second,
 		},
 		{
-			name:          "URL shorter than explicit Patchbay value",
+			name:          "URL shorter than explicit Orvilo value",
 			databaseURL:   "postgres://user:pass@localhost:5432/db?sslmode=disable&connect_timeout=1",
-			patchbayValue:  30 * time.Second,
+			patchbayValue: 30 * time.Second,
 			wantPGXNative: time.Second,
 		},
 		{
 			name:          "URL explicitly disables timeout",
 			databaseURL:   "postgres://user:pass@localhost:5432/db?sslmode=disable&connect_timeout=0",
-			patchbayValue:  5 * time.Second,
+			patchbayValue: 5 * time.Second,
 			wantPGXNative: 0,
 		},
 		{
 			name:          "keyword value",
 			databaseURL:   "host=localhost port=5432 user=user password=pass dbname=db sslmode=disable connect_timeout=12",
-			patchbayValue:  5 * time.Second,
+			patchbayValue: 5 * time.Second,
 			wantPGXNative: 12 * time.Second,
 		},
 	}

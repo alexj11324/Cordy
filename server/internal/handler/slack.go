@@ -10,9 +10,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/slack"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // SlackInstallationResponse is the wire shape for a Slack installation row. The
@@ -20,36 +20,36 @@ import (
 // (only the outbound sender decrypts it). WS lease columns are runtime state,
 // not API surface, so they are omitted too.
 type SlackInstallationResponse struct {
-	Runtime MessagingConnectionStatus `json:"runtime"`
-	ID              string `json:"id"`
-	WorkspaceID     string `json:"workspace_id"`
-	AgentID         string `json:"agent_id"`
-	TeamID          string `json:"team_id"`
-	BotUserID       string `json:"bot_user_id"`
-	InstallerUserID string `json:"installer_user_id"`
-	Status          string `json:"status"`
-	InstallationStatus string `json:"installation_status"`
-	InstalledAt     string `json:"installed_at"`
-	CreatedAt       string `json:"created_at"`
-	UpdatedAt       string `json:"updated_at"`
+	Runtime            MessagingConnectionStatus `json:"runtime"`
+	ID                 string                    `json:"id"`
+	WorkspaceID        string                    `json:"workspace_id"`
+	AgentID            string                    `json:"agent_id"`
+	TeamID             string                    `json:"team_id"`
+	BotUserID          string                    `json:"bot_user_id"`
+	InstallerUserID    string                    `json:"installer_user_id"`
+	Status             string                    `json:"status"`
+	InstallationStatus string                    `json:"installation_status"`
+	InstalledAt        string                    `json:"installed_at"`
+	CreatedAt          string                    `json:"created_at"`
+	UpdatedAt          string                    `json:"updated_at"`
 }
 
 func slackInstallationToResponse(row db.ChannelInstallation) SlackInstallationResponse {
 	info := slack.DecodePublicConfig(row.Config)
 	legacyStatus, installationStatus := messagingInstallationWireStatuses(row.Status)
 	return SlackInstallationResponse{
-		Runtime: initialConnectionStatus(row.Status),
-		ID:              uuidToString(row.ID),
-		WorkspaceID:     uuidToString(row.WorkspaceID),
-		AgentID:         uuidToString(row.AgentID),
-		TeamID:          info.TeamID,
-		BotUserID:       info.BotUserID,
-		InstallerUserID: uuidToString(row.InstallerUserID),
-		Status:          legacyStatus,
+		Runtime:            initialConnectionStatus(row.Status),
+		ID:                 uuidToString(row.ID),
+		WorkspaceID:        uuidToString(row.WorkspaceID),
+		AgentID:            uuidToString(row.AgentID),
+		TeamID:             info.TeamID,
+		BotUserID:          info.BotUserID,
+		InstallerUserID:    uuidToString(row.InstallerUserID),
+		Status:             legacyStatus,
 		InstallationStatus: installationStatus,
-		InstalledAt:     row.InstalledAt.Time.UTC().Format(time.RFC3339),
-		CreatedAt:       row.CreatedAt.Time.UTC().Format(time.RFC3339),
-		UpdatedAt:       row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+		InstalledAt:        row.InstalledAt.Time.UTC().Format(time.RFC3339),
+		CreatedAt:          row.CreatedAt.Time.UTC().Format(time.RFC3339),
+		UpdatedAt:          row.UpdatedAt.Time.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -184,7 +184,7 @@ func (h *Handler) RegisterSlackBYO(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, slack.ErrTeamOwnedByArchivedAgent):
 			writeError(w, http.StatusConflict, "this Slack app is installed for an archived agent in this workspace — restore that agent, or remove its bot installation, before installing it here")
 		case errors.Is(err, slack.ErrTeamOwnedByAnotherWorkspace):
-			writeError(w, http.StatusConflict, "this Slack app is already installed in a different Patchbay workspace — remove that installation before installing it here")
+			writeError(w, http.StatusConflict, "this Slack app is already installed in a different Orvilo workspace — remove that installation before installing it here")
 		default:
 			// The dominant non-sentinel failure here is auth.test rejecting the
 			// pasted bot token (a user error), so guide the user to recheck the
@@ -268,7 +268,7 @@ type RedeemSlackBindingTokenResponse struct {
 }
 
 // RedeemSlackBindingToken (POST /api/slack/binding/redeem) binds the Slack user
-// id carried by the token to the logged-in Patchbay user. The redeemer's identity
+// id carried by the token to the logged-in Orvilo user. The redeemer's identity
 // comes from the session, not the token, so a stolen token cannot bind a Slack
 // id to an attacker's account. Failure modes map to distinct status codes:
 //   - 410 Gone:      token unknown / consumed / expired
@@ -303,7 +303,7 @@ func (h *Handler) RedeemSlackBindingToken(w http.ResponseWriter, r *http.Request
 		case errors.Is(err, slack.ErrBindingTokenInvalid):
 			writeError(w, http.StatusGone, "binding token invalid or expired")
 		case errors.Is(err, slack.ErrBindingAlreadyAssigned):
-			writeError(w, http.StatusConflict, "this Slack account is already bound to a different Patchbay user")
+			writeError(w, http.StatusConflict, "this Slack account is already bound to a different Orvilo user")
 		case errors.Is(err, slack.ErrBindingNotWorkspaceMember):
 			writeError(w, http.StatusForbidden, "binding refused (are you a workspace member?)")
 		default:

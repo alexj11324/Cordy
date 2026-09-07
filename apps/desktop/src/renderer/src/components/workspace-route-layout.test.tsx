@@ -20,7 +20,7 @@ const state = vi.hoisted(() => ({
   childQuerySlugs: [] as (string | null)[],
 }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@orvilo/core/auth", () => {
   const useAuthStore = (selector: (s: typeof state) => unknown) => {
     if (selector.toString().includes("isLoading"))
       return state.isAuthLoading;
@@ -37,7 +37,7 @@ vi.mock("@patchbay/core/auth", () => {
 // tab-swap case below: the incoming layout of a same-workspace swap writes the
 // slug that is already there, so its write is a no-op and cannot be what stops
 // the outgoing cleanup from clearing it.
-vi.mock("@patchbay/core/platform", () => ({
+vi.mock("@orvilo/core/platform", () => ({
   setCurrentWorkspace: vi.fn((slug: string | null) => {
     if (state.currentSlug === slug) return;
     state.currentSlug = slug;
@@ -45,13 +45,13 @@ vi.mock("@patchbay/core/platform", () => ({
   getCurrentSlug: () => state.currentSlug,
 }));
 
-vi.mock("@patchbay/core/workspace/pending-delete", () => ({
+vi.mock("@orvilo/core/workspace/pending-delete", () => ({
   isWorkspaceDeletePending: (id: string) => state.pendingDeletes.has(id),
 }));
 
-vi.mock("@patchbay/core/workspace", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/workspace")>(
-    "@patchbay/core/workspace",
+vi.mock("@orvilo/core/workspace", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/workspace")>(
+    "@orvilo/core/workspace",
   );
   return {
     ...actual,
@@ -69,9 +69,9 @@ vi.mock("@patchbay/core/workspace", async () => {
   };
 });
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@orvilo/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/paths")>(
+    "@orvilo/core/paths",
   );
   return {
     ...actual,
@@ -85,15 +85,15 @@ vi.mock("@patchbay/core/paths", async () => {
   };
 });
 
-vi.mock("@patchbay/views/workspace/use-workspace-seen", () => ({
+vi.mock("@orvilo/views/workspace/use-workspace-seen", () => ({
   useWorkspaceSeen: () => state.workspaceSeen,
 }));
 
-vi.mock("@patchbay/views/workspace/welcome-after-onboarding", () => ({
+vi.mock("@orvilo/views/workspace/welcome-after-onboarding", () => ({
   WelcomeAfterOnboarding: () => null,
 }));
 
-vi.mock("@patchbay/views/layout", () => ({
+vi.mock("@orvilo/views/layout", () => ({
   WorkspacePresencePrefetch: () => null,
 }));
 
@@ -101,7 +101,7 @@ vi.mock("@patchbay/views/layout", () => ({
 // SourceBackfillModal. We stub the real component with a marker that
 // renders only when the layout actually rendered it (and not e.g.
 // suppressed by overlayActive).
-vi.mock("@patchbay/views/onboarding", () => ({
+vi.mock("@orvilo/views/onboarding", () => ({
   SourceBackfillModal: () => {
     state.modalRenders += 1;
     return <div data-testid={state.modalAriaLabel} />;

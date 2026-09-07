@@ -3,18 +3,18 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plug } from "lucide-react";
-import { useFeatureEnabled } from "@patchbay/core/config";
-import { PLUGINS_V1_FLAG } from "@patchbay/core/feature-flags";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { pluginInstallationsOptions } from "@patchbay/core/plugins";
-import type { PluginInstallation, PluginSurface } from "@patchbay/core/types";
+import { useFeatureEnabled } from "@orvilo/core/config";
+import { PLUGINS_V1_FLAG } from "@orvilo/core/feature-flags";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
+import { pluginInstallationsOptions } from "@orvilo/core/plugins";
+import type { PluginInstallation, PluginSurface } from "@orvilo/core/types";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import { PluginSurfaceFrame } from "./plugin-surface-frame";
 
 /**

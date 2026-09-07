@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
 )
 
 func TestRealtimeCollectorExposesCounters(t *testing.T) {

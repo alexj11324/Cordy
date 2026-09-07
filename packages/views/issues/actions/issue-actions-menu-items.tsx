@@ -19,18 +19,18 @@ import {
   Unlink,
   UserMinus,
 } from "lucide-react";
-import type { Issue } from "@patchbay/core/types";
-import { resolveWorkdirCopyTarget } from "@patchbay/core/issues";
-import { todayDateOnly, addDaysDateOnly } from "@patchbay/core/issues/date";
-import { api } from "@patchbay/core/api";
+import type { Issue } from "@orvilo/core/types";
+import { resolveWorkdirCopyTarget } from "@orvilo/core/issues";
+import { todayDateOnly, addDaysDateOnly } from "@orvilo/core/issues/date";
+import { api } from "@orvilo/core/api";
 import {
   PRIORITY_DISPLAY_ORDER,
   PRIORITY_CONFIG,
-} from "@patchbay/core/issues/config";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+} from "@orvilo/core/issues/config";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
 import { useStatusOptions } from "../utils/status-options";
-import { issueKeys } from "@patchbay/core/issues/queries";
+import { issueKeys } from "@orvilo/core/issues/queries";
 import { StatusIcon } from "../components/status-icon";
 import { PriorityIcon } from "../components/priority-icon";
 import {
@@ -39,15 +39,15 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
   DropdownMenuSeparator,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import {
   ContextMenuItem,
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuSubContent,
   ContextMenuSeparator,
-} from "@patchbay/ui/components/ui/context-menu";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+} from "@orvilo/ui/components/ui/context-menu";
+import { copyText } from "@orvilo/ui/lib/clipboard";
 import type { UseIssueActionsResult } from "./use-issue-actions";
 import { PluginHookMenuItems, PluginModalMenuItems } from "../../plugins";
 import { useT } from "../../i18n";

@@ -6,13 +6,13 @@ import { ChevronRight, FileText } from "lucide-react";
 import {
   workProductListInfiniteOptions,
   workProductProvenanceInfiniteOptions,
-} from "@patchbay/core/work-products";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import type { WorkProduct } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/core/work-products";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import type { WorkProduct } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import {
   CollectionPageHeader,
   CollectionPageState,

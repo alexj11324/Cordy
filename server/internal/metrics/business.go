@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -68,7 +68,7 @@ type BusinessMetrics struct {
 	entitlementRefreshDuration     *prometheus.HistogramVec
 	entitlementDecision            *prometheus.CounterVec
 	entitlementVersionRegression   prometheus.Counter
-	automationQuotaDecision         *prometheus.CounterVec
+	automationQuotaDecision        *prometheus.CounterVec
 
 	// agentRuntimeLookup counts single-row agent_runtime reads by product
 	// source. Every source shares one SQL fingerprint, so this is the only
@@ -245,7 +245,7 @@ func NewBusinessMetrics() *BusinessMetrics {
 		}, metricLabels("patchbay_runtime_gc_skipped_total")),
 		entitlementConfigError: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: "patchbay", Subsystem: "entitlement", Name: "config_error_total",
-			Help: "Total startup failures caused by a malformed Patchbay Cloud URL for entitlement policy.",
+			Help: "Total startup failures caused by a malformed Orvilo Cloud URL for entitlement policy.",
 		}),
 		entitlementCache: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace: "patchbay", Subsystem: "entitlement", Name: "cache_total",

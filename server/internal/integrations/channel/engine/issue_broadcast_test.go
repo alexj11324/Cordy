@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // A chat-created issue must broadcast the same full issue payload the HTTP

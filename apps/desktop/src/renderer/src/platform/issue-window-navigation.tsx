@@ -3,12 +3,12 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   bucketDiagnosticPath,
   setDiagnosticRoute,
-} from "@patchbay/core/diagnostics";
+} from "@orvilo/core/diagnostics";
 import {
   NavigationProvider,
   type LinkClickIntent,
   type NavigationAdapter,
-} from "@patchbay/views/navigation";
+} from "@orvilo/views/navigation";
 import { parseIssueWindowPath } from "../../../shared/issue-window";
 
 /**

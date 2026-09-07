@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/repocache"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/repocache"
 )
 
 // HealthResponse is returned by the daemon's local health endpoint.

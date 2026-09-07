@@ -8,17 +8,17 @@ import {
   decodeBuilderInput,
   pickBuilderRestore,
   type BuilderRestore,
-} from "@patchbay/core/agents";
-import { api, ApiError } from "@patchbay/core/api";
+} from "@orvilo/core/agents";
+import { api, ApiError } from "@orvilo/core/api";
 import {
   chatKeys,
   chatMessagesOptions,
   pendingChatTaskOptions,
-} from "@patchbay/core/chat/queries";
-import { upsertChatMessageToCaches } from "@patchbay/core/chat/message-cache";
-import { removeChatMessageFromCaches } from "@patchbay/core/realtime";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import type { ChatMessage } from "@patchbay/core/types";
+} from "@orvilo/core/chat/queries";
+import { upsertChatMessageToCaches } from "@orvilo/core/chat/message-cache";
+import { removeChatMessageFromCaches } from "@orvilo/core/realtime";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import type { ChatMessage } from "@orvilo/core/types";
 import { useAppForeground } from "../../common/use-app-foreground";
 import { useChatDraftRestore } from "../../chat/components/use-chat-draft-restore";
 import { useT } from "../../i18n";

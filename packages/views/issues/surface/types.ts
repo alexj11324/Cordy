@@ -1,6 +1,6 @@
-import type { IssueScope } from "@patchbay/core/issues/surface/scope";
-import type { CreateIssueRequest } from "@patchbay/core/types";
-import type { ViewMode } from "@patchbay/core/issues/stores/view-store";
+import type { IssueScope } from "@orvilo/core/issues/surface/scope";
+import type { CreateIssueRequest } from "@orvilo/core/types";
+import type { ViewMode } from "@orvilo/core/issues/stores/view-store";
 
 export type IssueCreateDefaults = Partial<
   Omit<

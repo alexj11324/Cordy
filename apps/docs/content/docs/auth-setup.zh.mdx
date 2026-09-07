@@ -5,11 +5,11 @@ description: 配置邮箱验证码、Google 登录和新用户注册范围。
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay 默认使用邮箱验证码登录，也可以增加 Google OAuth。已经存在的用户始终可以再次登录；注册限制只决定是否允许创建新账号。
+Orvilo 默认使用邮箱验证码登录，也可以增加 Google OAuth。已经存在的用户始终可以再次登录；注册限制只决定是否允许创建新账号。
 
 ## 邮箱验证码
 
-用户输入邮箱后，Patchbay 会发送一个 6 位验证码。验证码 10 分钟内有效，验证成功后浏览器获得登录 cookie。
+用户输入邮箱后，Orvilo 会发送一个 6 位验证码。验证码 10 分钟内有效，验证成功后浏览器获得登录 cookie。
 
 邮件可以通过 Resend 或 SMTP 发送。两者同时配置时，`SMTP_HOST` 优先。
 
@@ -99,7 +99,7 @@ ORVILO_DEV_LOGIN=1
 ## Google 登录
 
 1. 在 [Google Cloud Console](https://console.cloud.google.com/) 创建 OAuth 2.0 client。
-2. 把 Patchbay 前端的回调地址加入 **Authorized redirect URIs**：
+2. 把 Orvilo 前端的回调地址加入 **Authorized redirect URIs**：
 
  ```text
  https://patchbay.example.com/auth/callback
@@ -154,7 +154,7 @@ ALLOWED_EMAILS=partner@example.net
 
 邀请不会自动绕过注册限制：
 
-- 对方已经有 Patchbay 账号时，可以登录并接受邀请；
+- 对方已经有 Orvilo 账号时，可以登录并接受邀请；
 - 对方还没有账号时，邮箱必须符合上面的注册规则。
 
 在关闭开放注册的实例中邀请新成员时，先把对方邮箱加入 `ALLOWED_EMAILS`。账号创建并接受邀请后，可以再从名单中移除。

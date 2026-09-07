@@ -1,11 +1,11 @@
 ---
 title: Contributing
-description: Set up a local Patchbay development environment, run tests, and submit changes using the repository conventions.
+description: Set up a local Orvilo development environment, run tests, and submit changes using the repository conventions.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay is a Go backend and pnpm monorepo. The simplest way to start locally is `make dev`; it prepares the environment, database, and migrations for the current checkout, then starts Web and API.
+Orvilo is a Go backend and pnpm monorepo. The simplest way to start locally is `make dev`; it prepares the environment, database, and migrations for the current checkout, then starts Web and API.
 
 ## Requirements
 
@@ -20,7 +20,7 @@ Treat the root `package.json`, `server/go.mod`, and CI workflows as the source o
 ## First start
 
 ```bash
-git clone https://github.com/patchbay-ai/patchbay.git
+git clone https://github.com/alexj11324/Cordy.git
 cd patchbay
 make up C=desktop   # install deps, prepare the database, start the backend and Electron
 make seed-dev       # optional: sample issues, in the dev-fixtures workspace
@@ -36,7 +36,7 @@ The primary checkout uses `.env`. If the file does not exist, `make up` creates 
 
 `make dev-login` works because `make up` writes `ORVILO_DEV_LOGIN=1` into the local env file — see [Sign-in and signup](/auth-setup#skipping-the-login-page-in-development). Never enable it on an internet-facing deployment, and do not use a local `.env` for one either.
 
-The full contributor guide — environments, worktrees, testing layers, troubleshooting and destructive reset — is [CONTRIBUTING.md](https://github.com/patchbay-ai/patchbay/blob/main/CONTRIBUTING.md) in the repository. This page is the short version.
+The full contributor guide — environments, worktrees, testing layers, troubleshooting and destructive reset — is [CONTRIBUTING.md](https://github.com/alexj11324/Cordy/blob/main/CONTRIBUTING.md) in the repository. This page is the short version.
 
 ## Developing in a worktree
 
@@ -164,7 +164,7 @@ Use an application transaction in the service layer when multiple writes must su
 Run the check closest to the change first, then expand the scope. For a Docs-only change:
 
 ```bash
-pnpm --filter @patchbay/docs typecheck
+pnpm --filter @orvilo/docs typecheck
 ```
 
 For shared frontend changes:

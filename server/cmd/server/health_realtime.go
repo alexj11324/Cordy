@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/internal/daemonws"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
 )
 
 // realtimeMetricsHandler returns the HTTP handler for /health/realtime.

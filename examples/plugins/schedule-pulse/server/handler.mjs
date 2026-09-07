@@ -17,7 +17,7 @@ const TOLERANCE_SECONDS = 5 * 60;
 const PULSE_KEY = "last_pulse";
 
 if (!SIGNING_SECRET) {
-  console.error("ORVILO_SIGNING_SECRET is required. Rotate the plugin token in Patchbay to obtain it.");
+  console.error("ORVILO_SIGNING_SECRET is required. Rotate the plugin token in Orvilo to obtain it.");
   process.exit(1);
 }
 
@@ -67,7 +67,7 @@ async function callback(body, method, path, payload) {
   const text = await response.text();
   if (response.status === 404) return null;
   if (!response.ok) {
-    throw new Error(`Patchbay answered ${response.status}: ${text}`);
+    throw new Error(`Orvilo answered ${response.status}: ${text}`);
   }
   return text ? JSON.parse(text) : null;
 }

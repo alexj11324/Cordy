@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 func enableDevLogin(t *testing.T) {

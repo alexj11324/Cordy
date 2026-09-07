@@ -12,9 +12,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // GH #6340: a user stops a chat turn the agent had already started answering,
@@ -275,7 +275,7 @@ func TestCancelTask_PointerAdvanceIsAtomicWithStatusFlip(t *testing.T) {
 	})
 
 	// The follow-up the user queued while the turn was still running.
-		dbfx.Exec(t, `
+	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, chat_session_id, status, priority,
 			originator_user_id, accountable_user_id, originator_source
@@ -364,7 +364,7 @@ func TestPinTaskSession_LateCancelledPinAdvancesChatPointer(t *testing.T) {
 
 	pinTaskSessionViaAPI(t, taskID, daemonID, "turn2-session", "/tmp/turn2-workdir")
 
-		dbfx.Exec(t, `
+	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, chat_session_id, status, priority,
 			originator_user_id, accountable_user_id, originator_source
@@ -455,7 +455,7 @@ func TestPinTaskSession_PointerAdvanceIsAtomicWithPin(t *testing.T) {
 		"completed_at":    testutil.Raw("now()"),
 	})
 
-		dbfx.Exec(t, `
+	dbfx.Exec(t, `
 		INSERT INTO agent_task_queue (
 			agent_id, runtime_id, chat_session_id, status, priority,
 			originator_user_id, accountable_user_id, originator_source

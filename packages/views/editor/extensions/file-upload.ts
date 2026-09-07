@@ -1,7 +1,7 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
-import type { UploadResult } from "@patchbay/core/hooks/use-file-upload";
-import { createSafeId } from "@patchbay/core/utils";
+import type { UploadResult } from "@orvilo/core/hooks/use-file-upload";
+import { createSafeId } from "@orvilo/core/utils";
 
 /**
  * Locate this upload's placeholder node, whichever shape it took.

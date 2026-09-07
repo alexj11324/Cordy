@@ -3,7 +3,7 @@ export type AppCopyLocale = "en" | "zh-Hans" | "ja" | "ko";
 /**
  * Map OS-preferred language tags to the four locales the desktop main
  * process ships copy for. Chinese variants all resolve to Simplified —
- * Patchbay does not ship zh-Hant, and falling through to English is worse
+ * Orvilo does not ship zh-Hant, and falling through to English is worse
  * than reading Simplified for those users.
  */
 export function preferredAppLocaleFromLanguages(

@@ -12,12 +12,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // outboundQueries is the slice of generated queries the Slack outbound
@@ -94,7 +94,7 @@ func (o *Outbound) processEvent(ctx context.Context, e events.Event) error {
 	// Only bound, non-empty completions reach here, so classify the task origin
 	// before loading credentials or sending. Web/mobile direct-chat tasks can
 	// reuse a session that originated in Slack, but their replies belong only in
-	// Patchbay. Outbound delivery fails closed when the origin cannot be
+	// Orvilo. Outbound delivery fails closed when the origin cannot be
 	// established. Sealed channel tasks own an input batch just like direct
 	// tasks, so the discriminator is the immutable channel_ingested provenance
 	// of that batch, not chat_input_task_id presence (which #5645 originally

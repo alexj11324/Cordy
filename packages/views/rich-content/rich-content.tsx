@@ -39,16 +39,16 @@ import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize from "rehype-sanitize";
-import { cn } from "@patchbay/ui/lib/utils";
-import { useWorkspaceSlug } from "@patchbay/core/paths";
-import { useConfigStore } from "@patchbay/core/config";
-import type { Attachment } from "@patchbay/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
+import { useWorkspaceSlug } from "@orvilo/core/paths";
+import { useConfigStore } from "@orvilo/core/config";
+import type { Attachment } from "@orvilo/core/types";
 import {
   isAllowedFileCardHref,
   isIssueIdentifier,
   markdownSanitizeSchema,
   markdownUrlTransform,
-} from "@patchbay/ui/markdown";
+} from "@orvilo/ui/markdown";
 import {
   resolveClickIntent,
   useAppOrigin,

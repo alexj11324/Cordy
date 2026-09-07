@@ -34,7 +34,7 @@ export function devRuntimeComponents({
   return [
     {
       id: "cli",
-      packagePath: "./cmd/patchbay",
+      packagePath: "./cmd/orvilo",
       profile: "dev-cli",
       binaryName: executableName("patchbay", target.suffix),
       sourceBinary: join(

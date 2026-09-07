@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -16,7 +16,7 @@ const workspaceRef = vi.hoisted(() => ({
     id: "workspace-1",
     name: "Test Workspace",
     slug: "test-workspace",
-    repos: [{ url: "https://github.com/patchbay-ai/patchbay" }] as {
+    repos: [{ url: "https://github.com/alexj11324/Cordy" }] as {
       url: string;
       description?: string;
     }[],
@@ -84,27 +84,27 @@ vi.mock("@tanstack/react-query", () => ({
   infiniteQueryOptions: <T,>(options: T) => options,
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => workspaceRef.current,
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
   workspaceKeys: { list: () => ["workspaces"] },
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     updateWorkspace: mockUpdateWorkspace,
     getGitHubConnectURL: mockGetGitHubConnectURL,
   },
 }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@orvilo/core/auth", () => {
   const useAuthStore = Object.assign(
     (selector?: (state: { user: { id: string } }) => unknown) =>
       selector ? selector({ user: { id: "user-1" } }) : { user: { id: "user-1" } },
@@ -151,7 +151,7 @@ describe("RepositoriesTab — automatic updates", () => {
       id: "workspace-1",
       name: "Test Workspace",
       slug: "test-workspace",
-      repos: [{ url: "https://github.com/patchbay-ai/patchbay" }],
+      repos: [{ url: "https://github.com/alexj11324/Cordy" }],
     };
     membersRef.current = [{ user_id: "user-1", role: "owner" }];
     githubRef.current = {
@@ -200,12 +200,12 @@ describe("RepositoriesTab — automatic updates", () => {
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
     await user.click(screen.getAllByRole("button", {name: "Add a remote repository"}).at(-1)!);
     await waitFor(() => expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {repos: [
-      {url: "https://github.com/patchbay-ai/patchbay"}, {url: "git@github.com:patchbay-ai/second.git"},
+      {url: "https://github.com/alexj11324/Cordy"}, {url: "git@github.com:patchbay-ai/second.git"},
     ]}));
   });
 
   it("keeps stored descriptions without asking users to edit them", () => {
-    workspaceRef.current = {...workspaceRef.current, repos: [{url: "https://github.com/patchbay-ai/patchbay", description: "Main app"}]};
+    workspaceRef.current = {...workspaceRef.current, repos: [{url: "https://github.com/alexj11324/Cordy", description: "Main app"}]};
     render(<RepositoriesTab />, {wrapper: I18nWrapper});
     expect(screen.queryAllByRole("textbox")).toHaveLength(0);
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
@@ -284,8 +284,8 @@ describe("RepositoriesTab — automatic updates", () => {
       {
         id: 1,
         full_name: "patchbay-ai/patchbay",
-        html_url: "https://github.com/patchbay-ai/patchbay",
-        clone_url: "https://github.com/patchbay-ai/patchbay.git",
+        html_url: "https://github.com/alexj11324/Cordy",
+        clone_url: "https://github.com/alexj11324/Cordy.git",
         description: "Existing repository",
         private: false,
         archived: false,

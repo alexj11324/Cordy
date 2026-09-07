@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
 )
 
 // The identity model, exercised through the path that actually decides it.

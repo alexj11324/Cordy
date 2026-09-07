@@ -22,11 +22,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
 )
 
 // maxWebhookBodyBytes is the request body size cap for webhook ingress.
@@ -541,7 +541,7 @@ func (h *Handler) HandleAutomationWebhook(w http.ResponseWriter, r *http.Request
 	// 7. Persist (INSERT delivery). Dedupe collision → bump existing row.
 	delivery, dup, err := h.persistInboundDelivery(r, persistDeliveryInput{
 		WorkspaceID:     automation.WorkspaceID,
-		AutomationID:     automation.ID,
+		AutomationID:    automation.ID,
 		TriggerID:       trigRow.ID,
 		Provider:        provider,
 		Event:           envelope.Event,
@@ -689,11 +689,11 @@ func (h *Handler) HandleAutomationWebhook(w http.ResponseWriter, r *http.Request
 	}
 
 	respBody := map[string]any{
-		"status":       "accepted",
-		"delivery_id":  uuidToString(delivery.ID),
-		"run_id":       uuidToString(run.ID),
+		"status":        "accepted",
+		"delivery_id":   uuidToString(delivery.ID),
+		"run_id":        uuidToString(run.ID),
 		"automation_id": uuidToString(automation.ID),
-		"trigger_id":   uuidToString(trigRow.ID),
+		"trigger_id":    uuidToString(trigRow.ID),
 	}
 	if run.Status == "skipped" {
 		respBody = map[string]any{
@@ -875,7 +875,7 @@ func webhookActionCandidates(eventAction string, payload json.RawMessage) []stri
 
 type persistDeliveryInput struct {
 	WorkspaceID     pgtype.UUID
-	AutomationID     pgtype.UUID
+	AutomationID    pgtype.UUID
 	TriggerID       pgtype.UUID
 	Provider        string
 	Event           string
@@ -899,7 +899,7 @@ func (h *Handler) persistInboundDeliveryCtx(ctx context.Context, in persistDeliv
 	params := db.CreateWebhookDeliveryParams{
 		ID:              dbid.NewV7(),
 		WorkspaceID:     in.WorkspaceID,
-		AutomationID:     in.AutomationID,
+		AutomationID:    in.AutomationID,
 		TriggerID:       in.TriggerID,
 		Provider:        in.Provider,
 		Event:           in.Event,
@@ -991,11 +991,11 @@ func (h *Handler) finaliseDeliveryWithRun(
 ) {
 	bodyJSON, _ := json.Marshal(responseBody)
 	params := db.UpdateWebhookDeliveryDispatchedParams{
-		ID:             id,
-		Status:         status,
+		ID:              id,
+		Status:          status,
 		AutomationRunID: runID,
-		ResponseStatus: pgtype.Int4{Int32: int32(httpStatus), Valid: true},
-		ResponseBody:   pgtype.Text{String: string(bodyJSON), Valid: true},
+		ResponseStatus:  pgtype.Int4{Int32: int32(httpStatus), Valid: true},
+		ResponseBody:    pgtype.Text{String: string(bodyJSON), Valid: true},
 	}
 	if _, err := h.Queries.UpdateWebhookDeliveryDispatched(r.Context(), params); err != nil {
 		slog.Warn("webhook: finalise with run failed",

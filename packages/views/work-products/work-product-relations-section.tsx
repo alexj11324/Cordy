@@ -10,11 +10,11 @@ import {
   useAttachExistingWorkProduct,
   useAttachIssuePullRequest,
   useDetachWorkProduct,
-} from "@patchbay/core/work-products";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
+} from "@orvilo/core/work-products";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -22,15 +22,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/ui/components/ui/dialog";
+import { Label } from "@orvilo/ui/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
+} from "@orvilo/ui/components/ui/select";
 import { WorkProductRow } from "./work-product-row";
 import { useT } from "../i18n";
 

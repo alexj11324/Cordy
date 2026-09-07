@@ -14,9 +14,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/slack"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
 )
 
 type fakeChatHistoryReader struct {

@@ -7,9 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // TestMemberAllowedToViewAgent_Pure exercises the pure predicate that drives
@@ -457,7 +457,7 @@ func TestMentionAgent_RejectsCrossWorkspaceAgentUUID(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, issueID)
 	})
 
-	// Patchbay's mention format is markdown-linked: [@Name](mention://agent/<uuid>).
+	// Orvilo's mention format is markdown-linked: [@Name](mention://agent/<uuid>).
 	mention := "[@Foreign](mention://agent/" + foreignAgentID + ")"
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO comment (workspace_id, issue_id, author_type, author_id, content)

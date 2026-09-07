@@ -20,7 +20,7 @@ test("auth broker release remains an independently gated image", () => {
   assert.match(build, /^    needs: verify\n/u);
   assert.match(merge, /^    needs: \[verify, docker-auth-broker-build\]/u);
   assert.match(publish, /docker-auth-broker-merge/u);
-  assert.match(read("Dockerfile.auth-broker"), /pnpm --filter @patchbay\/auth-broker build/);
+  assert.match(read("Dockerfile.auth-broker"), /pnpm --filter @orvilo\/auth-broker build/);
   assert.match(
     read("Dockerfile.auth-broker"),
     /COPY --from=builder[^\n]*apps\/auth-broker\/public/u,
@@ -68,8 +68,8 @@ test("Accounts login uses the custom shadcn form instead of Clerk's card", () =>
   const brokerForm = read("apps/auth-broker/components/accounts-login-form.tsx");
   const webForm = read("apps/web/components/accounts-login-form.tsx");
   const form = read("packages/auth-ui/login-form.tsx");
-  assert.match(brokerForm, /@patchbay\/auth-ui\/login-form/u);
-  assert.match(webForm, /@patchbay\/auth-ui\/login-form/u);
+  assert.match(brokerForm, /@orvilo\/auth-ui\/login-form/u);
+  assert.match(webForm, /@orvilo\/auth-ui\/login-form/u);
   assert.match(read("apps/auth-broker/app/page.tsx"), /redirect\("\/login"\)/u);
   assert.doesNotMatch(page, /<SignIn\b/u);
   assert.match(form, /signIn\.emailCode\.sendCode/u);

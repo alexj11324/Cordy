@@ -27,9 +27,9 @@ const h = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@patchbay/core/api", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/api")>(
-    "@patchbay/core/api",
+vi.mock("@orvilo/core/api", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/api")>(
+    "@orvilo/core/api",
   );
   return {
     ...actual,
@@ -43,17 +43,17 @@ vi.mock("@patchbay/core/api", async () => {
     },
   };
 });
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@patchbay/core/chat", () => ({
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@orvilo/core/chat", () => ({
   useChatStore: Object.assign((sel: (s: typeof h.store) => unknown) => sel(h.store), {
     getState: () => h.store,
   }),
 }));
-// `@patchbay/core/realtime` is deliberately NOT mocked: removeChatMessageFromCaches
+// `@orvilo/core/realtime` is deliberately NOT mocked: removeChatMessageFromCaches
 // is the behaviour under test.
 
-import { chatKeys } from "@patchbay/core/chat/queries";
-import type { ChatMessage, ChatMessagesPage } from "@patchbay/core/types";
+import { chatKeys } from "@orvilo/core/chat/queries";
+import type { ChatMessage, ChatMessagesPage } from "@orvilo/core/types";
 import { useBuilderSession } from "./use-builder-session";
 
 const sessionId = "session-1";

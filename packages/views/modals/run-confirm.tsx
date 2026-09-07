@@ -11,28 +11,28 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { Spinner } from "@patchbay/ui/components/ui/spinner";
+} from "@orvilo/ui/components/ui/dialog";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { Spinner } from "@orvilo/ui/components/ui/spinner";
 import type {
   IssueExecutorType,
   IssueReviewerType,
   IssueStatus,
   UpdateIssueRequest,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   useUpdateIssue,
   useBatchUpdateIssues,
   type UpdateIssueMutationInput,
-} from "@patchbay/core/issues/mutations";
-import { errorCode } from "@patchbay/core/api";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
-import { runtimeListOptions, readRuntimeCliVersion, handoffSupported } from "@patchbay/core/runtimes";
-import { useShortcut, shortcutMatchesEvent, isPlainShortcut } from "@patchbay/core/shortcuts";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@orvilo/core/issues/mutations";
+import { errorCode } from "@orvilo/core/api";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { agentListOptions, teamListOptions } from "@orvilo/core/workspace/queries";
+import { runtimeListOptions, readRuntimeCliVersion, handoffSupported } from "@orvilo/core/runtimes";
+import { useShortcut, shortcutMatchesEvent, isPlainShortcut } from "@orvilo/core/shortcuts";
+import { isImeComposing } from "@orvilo/core/utils";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { ActorAvatar } from "../common/actor-avatar";
 import { ReviewerPicker } from "../issues/components/pickers/executor-picker";

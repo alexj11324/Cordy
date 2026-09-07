@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/daemonws"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
 )
 
 // rpcResponseCapture is a minimal in-memory http.ResponseWriter so a WS RPC can

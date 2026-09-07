@@ -3,13 +3,13 @@ package main
 import (
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
 )
 
 func TestDurableCoordinationIDIsStableAndScoped(t *testing.T) {
 	event := events.Event{
 		Payload: map[string]any{
-			"coordination_event_id": "11111111-1111-4111-8111-111111111111",
+			"coordination_event_id":    "11111111-1111-4111-8111-111111111111",
 			"coordination_publication": "review_handoff",
 		},
 	}

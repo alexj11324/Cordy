@@ -15,10 +15,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
-	"github.com/patchbay-ai/patchbay/server/pkg/remotemcp"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/pkg/remotemcp"
 )
 
 // examples/plugins/deploy-sentinel, driven end to end.
@@ -315,7 +315,7 @@ func TestExamplePluginHooksReachAnAgentAsTools(t *testing.T) {
 	}
 }
 
-// The whole round trip: an agent calls the tool, Patchbay signs the request, the
+// The whole round trip: an agent calls the tool, Orvilo signs the request, the
 // plugin's own server sees that signature and answers, and the answer comes
 // back. Nothing is mocked except the author's business logic, which is theirs.
 func TestExamplePluginAgentHookRoundTripIsSigned(t *testing.T) {

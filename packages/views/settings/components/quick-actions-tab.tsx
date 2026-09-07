@@ -16,24 +16,24 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import {
   quickActionListOptions,
   useCreateQuickAction,
   useDeleteQuickAction,
   useUpdateQuickAction,
-} from "@patchbay/core/quick-actions";
+} from "@orvilo/core/quick-actions";
 import type {
   QuickAction,
   QuickActionAssigneeType,
   QuickActionVisibility,
-} from "@patchbay/core/types";
-import { findQuickActionTemplateToken } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/core/types";
+import { findQuickActionTemplateToken } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { Label as FieldLabel } from "@orvilo/ui/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -41,7 +41,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -51,14 +51,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { cn } from "@orvilo/ui/lib/utils";
 import { AgentPicker } from "../../automations/components/pickers/agent-picker";
 import { useT } from "../../i18n";
 import {

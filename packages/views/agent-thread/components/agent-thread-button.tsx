@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { MessagesSquare } from "lucide-react";
-import type { AgentTask } from "@patchbay/core/types";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@patchbay/ui/components/ui/tooltip";
+import type { AgentTask } from "@orvilo/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@orvilo/ui/components/ui/tooltip";
 import { TaskAgentThreadDialog } from "./task-agent-thread-dialog";
 import { TranscriptButton } from "../../common/task-transcript";
 

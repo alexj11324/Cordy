@@ -7,14 +7,14 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import {
   isRuntimeUsableForUser,
   runtimeDisplayName,
-} from "@patchbay/core/runtimes";
-import type { MemberWithUser, RuntimeDevice } from "@patchbay/core/types";
+} from "@orvilo/core/runtimes";
+import type { MemberWithUser, RuntimeDevice } from "@orvilo/core/types";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@patchbay/ui/components/ui/popover";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/ui/components/ui/popover";
+import { Label } from "@orvilo/ui/components/ui/label";
 import { useT } from "../../i18n";
 import {
   buildRuntimeMachines,

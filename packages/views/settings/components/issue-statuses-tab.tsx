@@ -24,23 +24,23 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useAuthStore } from "@patchbay/core/auth";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { issueStatusColor, issueStatusListOptions } from "@patchbay/core/issue-statuses/queries";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useAuthStore } from "@orvilo/core/auth";
+import { memberListOptions } from "@orvilo/core/workspace/queries";
+import { issueStatusColor, issueStatusListOptions } from "@orvilo/core/issue-statuses/queries";
 import {
   useArchiveIssueStatus,
   useCreateIssueStatus,
   useReorderIssueStatuses,
   useUpdateIssueStatus,
-} from "@patchbay/core/issue-statuses/mutations";
-import { ALL_STATUSES } from "@patchbay/core/issues/config";
-import type { IssueStatusCategory, IssueStatusEntry } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+} from "@orvilo/core/issue-statuses/mutations";
+import { ALL_STATUSES } from "@orvilo/core/issues/config";
+import type { IssueStatusCategory, IssueStatusEntry } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { Label as FieldLabel } from "@orvilo/ui/components/ui/label";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -48,7 +48,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,25 +58,25 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
+} from "@orvilo/ui/components/ui/select";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/ui/components/ui/tooltip";
 import { ColorPicker, COLOR_PICKER_PRESETS } from "../../common/color-picker";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { useStatusLabel } from "../../issues/utils/status-label";

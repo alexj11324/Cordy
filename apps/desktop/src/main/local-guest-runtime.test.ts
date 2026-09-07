@@ -66,8 +66,8 @@ afterEach(async () => {
 
 describe("bundled CLI location", () => {
   it("reads the unpacked copy, which is the one that can be executed", () => {
-    expect(bundledCliPath("/Applications/Patchbay.app/app.asar", "darwin")).toBe(
-      "/Applications/Patchbay.app/app.asar.unpacked/resources/bin/patchbay",
+    expect(bundledCliPath("/Applications/Orvilo.app/app.asar", "darwin")).toBe(
+      "/Applications/Orvilo.app/app.asar.unpacked/resources/bin/patchbay",
     );
     expect(bundledCliPath("C:/app.asar", "win32")).toContain("patchbay.exe");
   });
@@ -148,7 +148,7 @@ describe("verifyBundledCli", () => {
 });
 
 describe("localGuestChildEnvironment", () => {
-  it("hands the local runner no Patchbay configuration at all", async () => {
+  it("hands the local runner no Orvilo configuration at all", async () => {
     // ORVILO_* is how the CLI is pointed at a server, a profile or a token.
     // Inheriting even one of them would turn a local Guest run into a cloud
     // call, which is exactly what Guest mode exists to prevent.

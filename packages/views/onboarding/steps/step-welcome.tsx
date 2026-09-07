@@ -1,14 +1,14 @@
 "use client";
 
-import { statusCategoryOfKey } from "@patchbay/core/issues";
+import { statusCategoryOfKey } from "@orvilo/core/issues";
 import { useState } from "react";
 import { ArrowRight, Download, Loader2 } from "lucide-react";
-import { Button, buttonVariants } from "@patchbay/ui/components/ui/button";
-import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { cn } from "@patchbay/ui/lib/utils";
-import { DragStrip } from "@patchbay/views/platform";
-import { STATUS_CONFIG } from "@patchbay/core/issues/config";
-import type { IssueStatus } from "@patchbay/core/types";
+import { Button, buttonVariants } from "@orvilo/ui/components/ui/button";
+import { OrviloIcon } from "@orvilo/ui/components/common/orvilo-icon";
+import { cn } from "@orvilo/ui/lib/utils";
+import { DragStrip } from "@orvilo/views/platform";
+import { STATUS_CONFIG } from "@orvilo/core/issues/config";
+import type { IssueStatus } from "@orvilo/core/types";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
 import { useT } from "../../i18n";
@@ -79,7 +79,7 @@ export function StepWelcome({
         <div className="flex flex-1 flex-col justify-center px-6 pb-12 sm:px-10 md:px-20 lg:px-20 xl:px-24">
           <div className="flex w-full max-w-[540px] flex-col gap-8">
             <div className="flex items-center gap-2.5">
-              <PatchbayIcon className="size-5 text-foreground" noSpin />
+              <OrviloIcon className="size-5 text-foreground" noSpin />
               <span className="font-serif text-title-lg font-medium tracking-tight">
                 {t(($) => $.welcome.wordmark)}
               </span>

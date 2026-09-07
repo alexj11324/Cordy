@@ -13,11 +13,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/slack"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // ChatChannelHistoryReader reads a chat session's bound IM-channel history. The
@@ -81,7 +81,7 @@ func (h *Handler) GetChatChannelHistory(w http.ResponseWriter, r *http.Request) 
 // as a channel.HistoryPage, oldest-first, honoring the shared ?limit / ?before
 // paging contract. It backs `patchbay chat history` for sessions with no IM
 // channel (web chat, Feishu, WeCom, DingTalk), whose history lives only in
-// Patchbay — there is no platform to read back. It pages through the same
+// Orvilo — there is no platform to read back. It pages through the same
 // (created_at, id) cursor the frontend's message list uses, so an agent can walk
 // a long session back without re-reading the recent window each time.
 func (h *Handler) chatMessageHistory(r *http.Request, scope chatHistoryScope) (channel.HistoryPage, error) {

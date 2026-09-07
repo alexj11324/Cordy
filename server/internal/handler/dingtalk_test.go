@@ -11,13 +11,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	dingtalkintegration "github.com/patchbay-ai/patchbay/server/internal/integrations/dingtalk"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	dingtalkintegration "github.com/orvilo-ai/orvilo/server/internal/integrations/dingtalk"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 func wireDingTalkInstallService(t *testing.T) {
@@ -1042,8 +1042,8 @@ func TestDingTalkGroupRoutes_ListAndReassign(t *testing.T) {
 	}
 	ctx := context.Background()
 	const (
-		agentA     = "d1481000-0000-4000-8000-0000000000a1"
-		agentB     = "d1481000-0000-4000-8000-0000000000a2"
+		agentA   = "d1481000-0000-4000-8000-0000000000a1"
+		agentB   = "d1481000-0000-4000-8000-0000000000a2"
 		install  = "d1481000-0000-4000-8000-0000000000b1"
 		revoked  = "d1481000-0000-4000-8000-0000000000b2"
 		route    = "d1481000-0000-4000-8000-0000000000c1"

@@ -9,10 +9,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func dingtalkInstallTestDB(t *testing.T) *pgxpool.Pool {
@@ -53,7 +53,7 @@ func TestRegisterBYO_DifferentAppKey_IsolatesIdentityStateDB(t *testing.T) {
 		workspaceID    = "d1470000-0000-4000-8000-000000000001"
 		agentID        = "d1470000-0000-4000-8000-000000000002"
 		installerID    = "d1470000-0000-4000-8000-000000000003"
-		patchbayUserID  = "d1470000-0000-4000-8000-000000000004"
+		patchbayUserID = "d1470000-0000-4000-8000-000000000004"
 		oldInstallID   = "d1470000-0000-4000-8000-000000000010"
 		chatSessionID  = "d1470000-0000-4000-8000-000000000020"
 		bindingID      = "d1470000-0000-4000-8000-000000000021"

@@ -24,7 +24,7 @@ function relativeReturnUrl(raw: string): string | null {
   }
 }
 
-/** Keep browser returns inside the broker or the frozen Patchbay product origin. */
+/** Keep browser returns inside the broker or the frozen Orvilo product origin. */
 export function resolveAccountsReturnUrl(
   raw: string | null | undefined,
 ): string {

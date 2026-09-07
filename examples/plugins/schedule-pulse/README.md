@@ -1,6 +1,6 @@
 # Schedule Pulse
 
-A real scheduled plugin, not a log line. Patchbay POSTs the plugin's own HTTPS
+A real scheduled plugin, not a log line. Orvilo POSTs the plugin's own HTTPS
 endpoint every five minutes. The handler records each unique `delivery_id` in
 workspace storage **before** it answers, so a retry of the same planned wake
 does not look like a second pulse.

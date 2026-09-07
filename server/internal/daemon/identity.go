@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/patchbay-ai/patchbay/server/internal/cli"
+	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
 // daemonIDFileName is the file that stores this machine's stable daemon

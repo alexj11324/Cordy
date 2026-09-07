@@ -20,8 +20,8 @@ import (
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 type fakeAppLookup struct {

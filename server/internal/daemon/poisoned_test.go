@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 )
 
 func TestClassifyPoisonedOutput(t *testing.T) {

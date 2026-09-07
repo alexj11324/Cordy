@@ -7,18 +7,18 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useAuthStore } from "@patchbay/core/auth";
-import { agentListOptions, memberListOptions } from "@patchbay/core/workspace/queries";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import { canAssignAgent } from "@patchbay/views/issues/components";
-import { api, dispatchReasonCode } from "@patchbay/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useAuthStore } from "@orvilo/core/auth";
+import { agentListOptions, memberListOptions } from "@orvilo/core/workspace/queries";
+import { projectListOptions } from "@orvilo/core/projects/queries";
+import { canAssignAgent } from "@orvilo/views/issues/components";
+import { api, dispatchReasonCode } from "@orvilo/core/api";
 import {
   isAgentRuntimeBound as hasAgentRuntime,
   useAgentPresenceDetail,
   useCustomizeConversationStartersHref,
   useWorkspaceAgentAvailability,
-} from "@patchbay/core/agents";
+} from "@orvilo/core/agents";
 import {
   chatSessionsOptions,
   chatMessagesPageOptions,
@@ -26,29 +26,29 @@ import {
   chatKeys,
   isTaskMessageTaskId,
   sortChatSessions,
-} from "@patchbay/core/chat/queries";
+} from "@orvilo/core/chat/queries";
 import {
   useCreateChatSession,
   useMarkChatSessionRead,
   useSetChatSessionProject,
   useSetChatSessionArchived,
-} from "@patchbay/core/chat/mutations";
-import { useChatStore } from "@patchbay/core/chat";
-import { upsertChatMessageToCaches } from "@patchbay/core/chat/message-cache";
+} from "@orvilo/core/chat/mutations";
+import { useChatStore } from "@orvilo/core/chat";
+import { upsertChatMessageToCaches } from "@orvilo/core/chat/message-cache";
 import {
   enqueuePendingChatTask,
   hideQueuedChatMessages,
-} from "@patchbay/core/chat/pending";
+} from "@orvilo/core/chat/pending";
 import { useChatDraftRestore } from "./use-chat-draft-restore";
 import { useChatTaskActions } from "./use-chat-task-actions";
 import { useChatProjectContextSupport } from "./use-chat-project-context-support";
-import { createLogger } from "@patchbay/core/logger";
+import { createLogger } from "@orvilo/core/logger";
 import type {
   Agent,
   Attachment,
   ChatMessage,
   ChatPendingTask,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { useT } from "../../i18n";
 import { useAppForeground } from "../../common/use-app-foreground";
 

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@patchbay/ui/components/ui/sidebar", () => ({
+vi.mock("@orvilo/ui/components/ui/sidebar", () => ({
   SidebarProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
   SidebarInset: ({
     children,

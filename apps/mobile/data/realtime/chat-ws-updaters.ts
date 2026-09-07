@@ -23,7 +23,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import {
   enqueuePendingChatTask,
   removePendingChatTask,
-} from "@patchbay/core/chat/pending";
+} from "@orvilo/core/chat/pending";
 import type {
   ChatDonePayload,
   ChatMessage,
@@ -34,7 +34,7 @@ import type {
   TaskMessagePayload,
   TaskQueuedPayload,
   TaskDispatchPayload,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { chatKeys } from "@/data/queries/chat";
 
 // =====================================================

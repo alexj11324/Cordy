@@ -10,7 +10,7 @@
  * cookies, desktop uses localStorage via StorageAdapter.
  */
 import { create } from "zustand";
-import type { User } from "@patchbay/core/types";
+import type { User } from "@orvilo/core/types";
 import { api, ApiError } from "./api";
 import {
   clearLegacyGuestCredentials,

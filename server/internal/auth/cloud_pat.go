@@ -16,8 +16,8 @@ import (
 )
 
 // CloudPATPrefix is the literal token prefix that identifies an mcn_
-// (Patchbay Cloud Node) PAT. Tokens with this prefix are validated by
-// calling the Patchbay Cloud Fleet service rather than by hitting our
+// (Orvilo Cloud Node) PAT. Tokens with this prefix are validated by
+// calling the Orvilo Cloud Fleet service rather than by hitting our
 // local personal_access_tokens table — the cloud is the authoritative
 // owner of the token's lifecycle, status, and (owner_id, instance_id)
 // binding.

@@ -9,8 +9,8 @@ import {
 } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { RESOURCES } from "@patchbay/views/locales";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import { RESOURCES } from "@orvilo/views/locales";
 import { DesktopLoginPage } from "./login";
 
 const mocks = vi.hoisted(() => ({
@@ -20,23 +20,23 @@ const mocks = vi.hoisted(() => ({
   cancelDesktopLogin: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: { initiateDesktopAuthHandoff: mocks.initiateDesktopAuthHandoff },
 }));
 
-vi.mock("@patchbay/views/auth", () => ({
+vi.mock("@orvilo/views/auth", () => ({
   LoginPage: () => <div data-testid="legacy-embedded-login" />,
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: () => vi.fn(),
 }));
 
-vi.mock("@patchbay/ui/components/common/patchbay-icon", () => ({
-  PatchbayIcon: () => <div data-testid="patchbay-icon" />,
+vi.mock("@orvilo/ui/components/common/orvilo-icon", () => ({
+  OrviloIcon: () => <div data-testid="orvilo-icon" />,
 }));
 
-vi.mock("@patchbay/views/platform", () => ({
+vi.mock("@orvilo/views/platform", () => ({
   DragStrip: () => null,
 }));
 

@@ -5,15 +5,15 @@ import type { FormEvent, HTMLAttributes } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Cloud, Loader2, RefreshCw, Rocket, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { CloudRuntimeNode } from "@patchbay/core/runtimes";
+import type { CloudRuntimeNode } from "@orvilo/core/runtimes";
 import {
   cloudRuntimeNodeListOptions,
   useCreateCloudRuntimeNode,
   useDeleteCloudRuntimeNode,
-} from "@patchbay/core/runtimes";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/runtimes";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -21,17 +21,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/ui/components/ui/dialog";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/select";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 
 const CLOUD_RUNTIME_INSTANCE_TYPES = ["t4g.medium", "t4g.large"] as const;

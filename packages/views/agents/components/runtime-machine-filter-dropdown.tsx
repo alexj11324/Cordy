@@ -1,12 +1,12 @@
 import { useMemo } from "react";
 import { ChevronDown, Server } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import type { RuntimeMachine, RuntimeMachineSection } from "../../runtimes/components/runtime-machines";
 import { useT } from "../../i18n";
 

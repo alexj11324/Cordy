@@ -1,8 +1,8 @@
 "use client";
 
 import { Globe, Lock } from "lucide-react";
-import type { AgentVisibility } from "@patchbay/core/types";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
+import type { AgentVisibility } from "@orvilo/core/types";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@orvilo/ui/components/ui/tooltip";
 import { useT } from "../../i18n";
 
 /**

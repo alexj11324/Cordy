@@ -3,8 +3,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Agent, RuntimeDevice } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent, RuntimeDevice } from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 

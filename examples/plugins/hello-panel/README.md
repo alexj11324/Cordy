@@ -1,6 +1,6 @@
 # Hello Panel
 
-The reference Patchbay plugin: one `issue_panel` surface that exercises every
+The reference Orvilo plugin: one `issue_panel` surface that exercises every
 part of the Action API a v1 surface can reach.
 
 It is also the fixture the surface end-to-end tests run against, so keep it
@@ -18,12 +18,12 @@ boring — it should demonstrate the contract, not the framework of the week.
 ## Running it
 
 Zip this folder — the manifest plus every file it names — and upload it in
-**Settings → Plugins**. You need no server of your own: Patchbay stores the
+**Settings → Plugins**. You need no server of your own: Orvilo stores the
 artifact, serves the panel script from it, and binds your installation to that
 one immutable version.
 
 `ui/main.js` is one file with no `import`. That is the contract, not a
-simplification for the example: Patchbay serves the entry inside one generated
+simplification for the example: Orvilo serves the entry inside one generated
 document with no module graph, so a bare module specifier has nowhere to
 resolve. Bundle your dependencies in.
 

@@ -4,7 +4,7 @@ import {
   type NextFetchEvent,
   type NextRequest,
 } from "next/server";
-import { LOCALE_COOKIE } from "@patchbay/core/i18n";
+import { LOCALE_COOKIE } from "@orvilo/core/i18n";
 import {
   ORVILO_LOCALE_HEADER,
   resolveLocaleFromSignals,

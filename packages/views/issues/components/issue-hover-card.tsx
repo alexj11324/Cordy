@@ -1,18 +1,18 @@
 "use client";
 
-import { issueStatusCategory } from "@patchbay/core/issues";
+import { issueStatusCategory } from "@orvilo/core/issues";
 import { useStatusLabel } from "./../utils/status-label";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { childIssueProgressOptions, issueDetailOptions } from "@patchbay/core/issues/queries";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useActorName } from "@patchbay/core/workspace/hooks";
+import { childIssueProgressOptions, issueDetailOptions } from "@orvilo/core/issues/queries";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useActorName } from "@orvilo/core/workspace/hooks";
 import {
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
-} from "@patchbay/ui/components/ui/hover-card";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/ui/components/ui/hover-card";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { useT } from "../../i18n";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { descriptionPreview } from "./description-preview";

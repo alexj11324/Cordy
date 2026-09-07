@@ -15,40 +15,40 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { DialogTitle } from "@patchbay/ui/components/ui/dialog";
+import { DialogTitle } from "@orvilo/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Switch } from "@patchbay/ui/components/ui/switch";
-import { cn } from "@patchbay/ui/lib/utils";
-import { api, ApiError } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Switch } from "@orvilo/ui/components/ui/switch";
+import { cn } from "@orvilo/ui/lib/utils";
+import { api, ApiError } from "@orvilo/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useCurrentWorkspace, useWorkspacePaths } from "@orvilo/core/paths";
 import { AppLink, resolveClickIntent } from "../navigation";
-import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
-import { projectListOptions } from "@patchbay/core/projects/queries";
+import { agentListOptions, teamListOptions } from "@orvilo/core/workspace/queries";
+import { projectListOptions } from "@orvilo/core/projects/queries";
 import {
   useQuickCreateStore,
   type QuickCreateActorType,
-} from "@patchbay/core/issues/stores/quick-create-store";
+} from "@orvilo/core/issues/stores/quick-create-store";
 import {
   useIssueCreateSettingsStore,
   type QuickCreateField,
-} from "@patchbay/core/issues/stores/issue-create-settings-store";
-import { useIssueDraftStore, type IssueCreateDraft } from "@patchbay/core/issues/stores/draft-store";
-import { useCreateModeStore } from "@patchbay/core/issues/stores/create-mode-store";
+} from "@orvilo/core/issues/stores/issue-create-settings-store";
+import { useIssueDraftStore, type IssueCreateDraft } from "@orvilo/core/issues/stores/draft-store";
+import { useCreateModeStore } from "@orvilo/core/issues/stores/create-mode-store";
 import {
   runtimeListOptions,
   checkQuickCreateCliVersion,
   checkQuickCreateFieldsCliVersion,
   readRuntimeCliVersion,
-} from "@patchbay/core/runtimes";
-import { useShortcut } from "@patchbay/core/shortcuts";
+} from "@orvilo/core/runtimes";
+import { useShortcut } from "@orvilo/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import {
   contentReferencesAttachment,
@@ -56,21 +56,21 @@ import {
   type IssuePriority,
   type SourceContextPreview,
   type Team,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { ActorAvatar } from "../common/actor-avatar";
 import { ClearablePillButton, PillButton } from "../common/pill-button";
 import { ProjectPicker } from "../projects/components/project-picker";
 import { DueDatePicker, PriorityIcon, PriorityPicker } from "../issues/components";
 import { canAssignAgent } from "../issues/components/pickers/executor-picker";
-import { isAgentRuntimeBound } from "@patchbay/core/agents";
+import { isAgentRuntimeBound } from "@orvilo/core/agents";
 import {
   PropertyPicker,
   PickerItem,
   PickerSection,
   PickerEmpty,
 } from "../issues/components/pickers/property-picker";
-import { useAuthStore } from "@patchbay/core/auth";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { useAuthStore } from "@orvilo/core/auth";
+import { memberListOptions } from "@orvilo/core/workspace/queries";
 import {
   ContentEditor,
   type ContentEditorRef,
@@ -80,7 +80,7 @@ import {
   useComposerSubmit,
 } from "../editor";
 import { useIssueCreateUploads } from "./use-issue-create-uploads";
-import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
+import { FileUploadButton } from "@orvilo/ui/components/common/file-upload-button";
 import { useT } from "../i18n";
 import { matchesPinyin } from "../editor/extensions/pinyin-match";
 import { SourceContextPreviewCard, useSourceContextFailureMessage } from "./source-context-preview";

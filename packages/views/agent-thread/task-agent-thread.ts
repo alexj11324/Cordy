@@ -1,5 +1,5 @@
-import type { AgentTask, ChatMessage } from "@patchbay/core/types";
-import { isAgentTaskActive } from "@patchbay/core/agent-thread";
+import type { AgentTask, ChatMessage } from "@orvilo/core/types";
+import { isAgentTaskActive } from "@orvilo/core/agent-thread";
 
 export function taskResultText(task: AgentTask): string {
   if (typeof task.result === "string") return task.result;

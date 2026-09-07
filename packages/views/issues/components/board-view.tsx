@@ -20,13 +20,13 @@ import type {
   IssueStatusCategory,
   Project,
   IssueProperty,
-} from "@patchbay/core/types";
-import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
-import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
-import { propertyListOptions, useSetIssueProperty, useUnsetIssueProperty } from "@patchbay/core/properties";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import type { IssueGrouping } from "@patchbay/core/issues/stores/view-store";
-import { useActorName } from "@patchbay/core/workspace/hooks";
+} from "@orvilo/core/types";
+import { useViewStore } from "@orvilo/core/issues/stores/view-store-context";
+import { propertyIdFromViewKey } from "@orvilo/core/issues/stores/view-store";
+import { propertyListOptions, useSetIssueProperty, useUnsetIssueProperty } from "@orvilo/core/properties";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import type { IssueGrouping } from "@orvilo/core/issues/stores/view-store";
+import { useActorName } from "@orvilo/core/workspace/hooks";
 import { BoardColumn, BOARD_CARD_WIDTH, type BoardColumnGroup } from "./board-column";
 import { BoardCardContent } from "./board-card";
 import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";

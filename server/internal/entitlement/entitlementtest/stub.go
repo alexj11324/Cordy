@@ -1,5 +1,5 @@
 // Package entitlementtest provides a deterministic Provider for tests of
-// future entitlement consumers. It never contacts Patchbay Cloud.
+// future entitlement consumers. It never contacts Orvilo Cloud.
 package entitlementtest
 
 import (
@@ -7,7 +7,7 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
 )
 
 type Call struct {

@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 import { IntegrationSetupGuide } from "./integration-setup-guide";

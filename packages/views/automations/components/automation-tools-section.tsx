@@ -2,14 +2,14 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { parseAutomationTools, type AutomationToolsConfig } from "@patchbay/core/automations";
-import { useUpdateAutomation } from "@patchbay/core/automations/mutations";
-import { workspaceMcpServersOptions } from "@patchbay/core/workspace/queries";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import type { Automation } from "@patchbay/core/types";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { parseAutomationTools, type AutomationToolsConfig } from "@orvilo/core/automations";
+import { useUpdateAutomation } from "@orvilo/core/automations/mutations";
+import { workspaceMcpServersOptions } from "@orvilo/core/workspace/queries";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import type { Automation } from "@orvilo/core/types";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 

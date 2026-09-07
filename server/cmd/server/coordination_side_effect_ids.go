@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
 )
 
 // durableCoordinationID returns a stable UUID for a side effect of one

@@ -1,6 +1,6 @@
 /**
  * Mobile-local zod schemas + fallbacks for endpoints whose responses aren't
- * yet schematised in @patchbay/core/api/schemas. Lenient by design — see the
+ * yet schematised in @orvilo/core/api/schemas. Lenient by design — see the
  * leniency rationale at the top of the core file (string enums tolerated,
  * loose() so unknown server fields pass through, defaults so a missing
  * array doesn't take the page down).
@@ -39,8 +39,8 @@ import type {
   TaskMessagePayload,
   User,
   Workspace,
-} from "@patchbay/core/types";
-import { IssueSchema } from "@patchbay/core/api/schemas";
+} from "@orvilo/core/types";
+import { IssueSchema } from "@orvilo/core/api/schemas";
 
 /** Upload response. Only fields mobile actually consumes — `url` to put
  *  into the markdown link, `filename` for the `[📎 name](url)` form, `id`
@@ -691,7 +691,7 @@ export const EMPTY_AGENT_LIST: Agent[] = [];
 
 // Runtime device — the daemon (local or cloud) an agent binds to. Mobile reads
 // it for the presence dot: `status` + `last_seen_at` drive the three-state
-// availability derivation in @patchbay/core/agents/derive-presence. All other
+// availability derivation in @orvilo/core/agents/derive-presence. All other
 // fields default safely so a backend that adds optional new metadata
 // (timezone, visibility flags, etc.) doesn't break the parse.
 export const RuntimeSchema: z.ZodType<RuntimeDevice> = z.object({
@@ -749,7 +749,7 @@ export const EMPTY_TEAM_LIST: Team[] = [];
 // for parsing; this sentinel lets parseWithFallback yield a structurally-
 // valid Issue when the response drifts. `id: ""` flags drift downstream — the
 // detail screen treats it as "issue not found" and shows the empty state.
-export const EMPTY_ISSUE_FALLBACK: import("@patchbay/core/types").Issue = {
+export const EMPTY_ISSUE_FALLBACK: import("@orvilo/core/types").Issue = {
   id: "",
   workspace_id: "",
   number: 0,

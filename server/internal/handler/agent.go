@@ -16,17 +16,17 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/attribution"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/runtimeapps"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
-	"github.com/patchbay-ai/patchbay/server/pkg/remotemcp"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/attribution"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/runtimeapps"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/pkg/remotemcp"
 )
 
 // Mirrors AGENT_DESCRIPTION_MAX_LENGTH in packages/core/agents/constants.ts
@@ -70,7 +70,7 @@ type AgentResponse struct {
 	ConversationStarters []AgentConversationStarter `json:"conversation_starters"`
 	// SystemKey identifies a product-defined agent (e.g. "patrick"). Empty for
 	// every user- or template-created agent. The UI keys "this is maintained
-	// by Patchbay" off this rather than off the display name, which owners may
+	// by Orvilo" off this rather than off the display name, which owners may
 	// change.
 	SystemKey string `json:"system_key,omitempty"`
 	// SystemInstructions is the read-only product half of a system agent's
@@ -459,7 +459,7 @@ type AgentTaskResponse struct {
 	NewCommentCount          int                    `json:"new_comment_count,omitempty"`           // trigger-thread comments since last run; excludes injected trigger + own comments; omitempty so old daemons ignore it
 	NewCommentsSince         string                 `json:"new_comments_since,omitempty"`          // RFC3339 anchor (last run's started_at) the count is measured from; omitempty so old daemons ignore it
 	ChatSessionID            string                 `json:"chat_session_id,omitempty"`             // non-empty for chat tasks
-	ChatChannelType          string                 `json:"chat_channel_type,omitempty"`           // "slack" when the chat session is backed by an IM channel; empty for a web-only chat. Makes the agent channel-aware (read history from the channel, not Patchbay)
+	ChatChannelType          string                 `json:"chat_channel_type,omitempty"`           // "slack" when the chat session is backed by an IM channel; empty for a web-only chat. Makes the agent channel-aware (read history from the channel, not Orvilo)
 	ChatChannelDeliversFiles bool                   `json:"chat_channel_delivers_files,omitempty"` // server capability: THIS deployment can put a file the agent produced into THIS conversation — the adapter goes back for the bound attachment AND object storage exists to go back to. Absent/false on a server predating it, which is the safe reading: the agent is told to describe its file in words. Never inferred daemon-side from chat_channel_type; see handler.Handler.channelDeliversFiles
 	ChatType                 string                 `json:"chat_type,omitempty"`                   // channel_chat_session_binding.chat_type — "group" for a shared room, "p2p" for a 1:1 with the bot. Lets the per-turn prompt tell the agent who else can read its replies; empty for a web-only chat
 	ChatInThread             bool                   `json:"chat_in_thread,omitempty"`              // true when the latest @mention was a thread reply; tells the agent to start with `patchbay chat thread` vs `patchbay chat history`
@@ -501,7 +501,7 @@ type AgentTaskResponse struct {
 	// daemon emits these into the brief under `## Task Initiator` so a
 	// workspace-visible, multi-user agent can attribute the request and apply
 	// per-person privacy / access rules instead of seeing every requester as
-	// the owner. The agent's effective Patchbay credentials stay owner-scoped —
+	// the owner. The agent's effective Orvilo credentials stay owner-scoped —
 	// this is an attested identity, not a credential. See MUL-2645.
 	InitiatorType  string `json:"initiator_type,omitempty"`  // "member" or "agent"
 	InitiatorID    string `json:"initiator_id,omitempty"`    // user UUID (member) or agent UUID
@@ -2339,7 +2339,7 @@ func (h *Handler) ArchiveAgent(w http.ResponseWriter, r *http.Request) {
 	// the bootstrap endpoint, since its lookup skips archived rows but the
 	// unique index does not.
 	if agent.SystemKey.Valid && agent.SystemKey.String != "" {
-		writeError(w, http.StatusBadRequest, "this agent is built into Patchbay and cannot be archived")
+		writeError(w, http.StatusBadRequest, "this agent is built into Orvilo and cannot be archived")
 		return
 	}
 

@@ -14,7 +14,7 @@ const pending = new Map();
 const port = globalThis.__patchbayPluginBridgePortV2;
 let sequence = 0;
 
-if (!(port instanceof MessagePort)) throw new Error("Patchbay surface bridge is unavailable");
+if (!(port instanceof MessagePort)) throw new Error("Orvilo surface bridge is unavailable");
 delete globalThis.__patchbayPluginBridgePortV2;
 port.onmessage = (message) => {
   const payload = message.data;

@@ -91,7 +91,7 @@ func TestRenderedSkillListsHideDisableModelInvocationSkills(t *testing.T) {
 	ctx := TaskContextForEnv{
 		IssueID:           "issue-1",
 		QuickCreatePrompt: "create something",
-		AutomationRunID:    "run-1",
+		AutomationRunID:   "run-1",
 		AgentName:         "Eve",
 		AgentID:           "eve-1",
 		AgentSkills: []SkillContextForEnv{
@@ -117,7 +117,7 @@ Hidden body.`,
 		},
 	}
 
-	// The brief is now the only Patchbay-rendered skill listing, for every kind.
+	// The brief is now the only Orvilo-rendered skill listing, for every kind.
 	for _, kind := range []TaskContextForEnv{
 		{IssueID: ctx.IssueID, AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
 		{QuickCreatePrompt: ctx.QuickCreatePrompt, AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
@@ -142,7 +142,7 @@ Hidden body.`,
 	for name, out := range map[string]string{
 		"issue context": renderIssueContext("codex", TaskContextForEnv{IssueID: ctx.IssueID, AgentSkills: ctx.AgentSkills}),
 		"quick create":  renderQuickCreateContext(TaskContextForEnv{QuickCreatePrompt: ctx.QuickCreatePrompt, AgentSkills: ctx.AgentSkills}),
-		"automation":     renderAutomationContext(TaskContextForEnv{AutomationRunID: ctx.AutomationRunID, AgentSkills: ctx.AgentSkills}),
+		"automation":    renderAutomationContext(TaskContextForEnv{AutomationRunID: ctx.AutomationRunID, AgentSkills: ctx.AgentSkills}),
 	} {
 		if strings.Contains(out, "## Agent Skills") || strings.Contains(out, "visible-skill") {
 			t.Errorf("%s still renders a skill list:\n%s", name, out)

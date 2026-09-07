@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func notificationPreferenceRequest(

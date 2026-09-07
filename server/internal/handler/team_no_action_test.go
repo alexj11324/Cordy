@@ -9,12 +9,12 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 type runningTeamLeaderTaskFixture struct {
 	IssueID          string
-	TeamID          string
+	TeamID           string
 	LeaderID         string
 	TaskID           string
 	TriggerCommentID string
@@ -40,12 +40,12 @@ func newRunningTeamLeaderTaskFixture(t *testing.T) runningTeamLeaderTaskFixture 
 		"status":             "running",
 		"started_at":         testutil.Raw("now()"),
 		"is_leader_task":     true,
-		"team_id":           fx.TeamID,
+		"team_id":            fx.TeamID,
 	})
 
 	return runningTeamLeaderTaskFixture{
 		IssueID:          issueID,
-		TeamID:          fx.TeamID,
+		TeamID:           fx.TeamID,
 		LeaderID:         fx.LeaderID,
 		TaskID:           taskID,
 		TriggerCommentID: triggerCommentID,

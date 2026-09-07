@@ -15,9 +15,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/dingtalk"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/dingtalk"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // DingTalkInstallationResponse is the wire shape for a DingTalk installation
@@ -25,21 +25,21 @@ import (
 // server-internal (only the outbound sender decrypts it). WS lease columns are
 // runtime state, not API surface, so they are omitted too.
 type DingTalkInstallationResponse struct {
-	Runtime MessagingConnectionStatus `json:"runtime"`
-	ID                   string   `json:"id"`
-	WorkspaceID          string   `json:"workspace_id"`
-	AgentID              string   `json:"agent_id"`
-	InstallerUserID      string   `json:"installer_user_id"`
-	Status               string   `json:"status"`
-	InstallationStatus   string   `json:"installation_status"`
-	InstalledAt          string   `json:"installed_at"`
-	CreatedAt            string   `json:"created_at"`
-	UpdatedAt            string   `json:"updated_at"`
-	AgentAvailable       bool     `json:"agent_available"`
-	BoundDingTalkUserIDs []string `json:"bound_dingtalk_user_ids,omitempty"`
+	Runtime              MessagingConnectionStatus `json:"runtime"`
+	ID                   string                    `json:"id"`
+	WorkspaceID          string                    `json:"workspace_id"`
+	AgentID              string                    `json:"agent_id"`
+	InstallerUserID      string                    `json:"installer_user_id"`
+	Status               string                    `json:"status"`
+	InstallationStatus   string                    `json:"installation_status"`
+	InstalledAt          string                    `json:"installed_at"`
+	CreatedAt            string                    `json:"created_at"`
+	UpdatedAt            string                    `json:"updated_at"`
+	AgentAvailable       bool                      `json:"agent_available"`
+	BoundDingTalkUserIDs []string                  `json:"bound_dingtalk_user_ids,omitempty"`
 }
 
-// DingTalkGroupBotResponse identifies one connected Patchbay bot observed in a
+// DingTalkGroupBotResponse identifies one connected Orvilo bot observed in a
 // DingTalk group. AgentID is the product-facing identity; BotName is the
 // readable DingTalk identity when the app has qyapi_chat_manage permission.
 type DingTalkGroupBotResponse struct {
@@ -76,17 +76,17 @@ const (
 func dingtalkInstallationToResponse(row db.ChannelInstallation) DingTalkInstallationResponse {
 	legacyStatus, installationStatus := messagingInstallationWireStatuses(row.Status)
 	return DingTalkInstallationResponse{
-		Runtime: initialConnectionStatus(row.Status),
-		ID:              uuidToString(row.ID),
-		WorkspaceID:     uuidToString(row.WorkspaceID),
-		AgentID:         uuidToString(row.AgentID),
-		InstallerUserID: uuidToString(row.InstallerUserID),
-		Status:          legacyStatus,
+		Runtime:            initialConnectionStatus(row.Status),
+		ID:                 uuidToString(row.ID),
+		WorkspaceID:        uuidToString(row.WorkspaceID),
+		AgentID:            uuidToString(row.AgentID),
+		InstallerUserID:    uuidToString(row.InstallerUserID),
+		Status:             legacyStatus,
 		InstallationStatus: installationStatus,
-		InstalledAt:     row.InstalledAt.Time.UTC().Format(time.RFC3339),
-		CreatedAt:       row.CreatedAt.Time.UTC().Format(time.RFC3339),
-		UpdatedAt:       row.UpdatedAt.Time.UTC().Format(time.RFC3339),
-		AgentAvailable:  true,
+		InstalledAt:        row.InstalledAt.Time.UTC().Format(time.RFC3339),
+		CreatedAt:          row.CreatedAt.Time.UTC().Format(time.RFC3339),
+		UpdatedAt:          row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+		AgentAvailable:     true,
 	}
 }
 
@@ -138,9 +138,9 @@ func (h *Handler) dingtalkAgentVisibility(
 func (h *Handler) ListDingTalkInstallations(w http.ResponseWriter, r *http.Request) {
 	if h.DingTalkInstall == nil {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"installations":         []DingTalkInstallationResponse{},
-			"configured":            false,
-			"install_supported":     false,
+			"installations":           []DingTalkInstallationResponse{},
+			"configured":              false,
+			"install_supported":       false,
 			"group_routing_supported": false,
 		})
 		return
@@ -178,7 +178,7 @@ func (h *Handler) ListDingTalkInstallations(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		bindings, err := h.Queries.ListDingTalkUserBindingsForMember(r.Context(), db.ListDingTalkUserBindingsForMemberParams{
-			WorkspaceID:   wsUUID,
+			WorkspaceID:    wsUUID,
 			PatchbayUserID: userUUID,
 		})
 		if err != nil {
@@ -226,7 +226,7 @@ func (h *Handler) ListDingTalkInstallations(w http.ResponseWriter, r *http.Reque
 }
 
 // ListDingTalkGroups (GET /api/workspaces/{id}/dingtalk/groups) returns the
-// Settings inventory of observed groups and connected Patchbay bots. Workspace
+// Settings inventory of observed groups and connected Orvilo bots. Workspace
 // owners/admins see the full inventory; ordinary members only receive bots for
 // Agents they can open, matching ListAgents and Agent Detail.
 func (h *Handler) ListDingTalkGroups(w http.ResponseWriter, r *http.Request) {
@@ -808,7 +808,7 @@ func (h *Handler) RegisterDingTalkBYO(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, dingtalk.ErrRobotOwnedByArchivedAgent):
 			writeError(w, http.StatusConflict, "this DingTalk robot is installed for an archived agent in this workspace — restore that agent, or remove its robot installation, before installing it here")
 		case errors.Is(err, dingtalk.ErrRobotOwnedByAnotherWorkspace):
-			writeError(w, http.StatusConflict, "this DingTalk robot is already installed in a different Patchbay workspace — remove that installation before installing it here")
+			writeError(w, http.StatusConflict, "this DingTalk robot is already installed in a different Orvilo workspace — remove that installation before installing it here")
 		case errors.Is(err, dingtalk.ErrCredentialValidation):
 			// The access-token mint rejected the pasted credentials (a user error),
 			// so guide the user to recheck them.
@@ -910,7 +910,7 @@ type RedeemDingTalkBindingTokenResponse struct {
 }
 
 // RedeemDingTalkBindingToken (POST /api/dingtalk/binding/redeem) binds the
-// DingTalk user id carried by the bearer token to the logged-in Patchbay user.
+// DingTalk user id carried by the bearer token to the logged-in Orvilo user.
 // The redeemer's identity comes from the session, while token possession proves
 // control of the link delivered to that DingTalk account. Failure modes map to
 // distinct status codes:
@@ -946,7 +946,7 @@ func (h *Handler) RedeemDingTalkBindingToken(w http.ResponseWriter, r *http.Requ
 		case errors.Is(err, dingtalk.ErrBindingTokenInvalid):
 			writeError(w, http.StatusGone, "binding token invalid or expired")
 		case errors.Is(err, dingtalk.ErrBindingAlreadyAssigned):
-			writeError(w, http.StatusConflict, "this DingTalk account is already bound to a different Patchbay user")
+			writeError(w, http.StatusConflict, "this DingTalk account is already bound to a different Orvilo user")
 		case errors.Is(err, dingtalk.ErrBindingNotWorkspaceMember):
 			writeError(w, http.StatusForbidden, "binding refused (are you a workspace member?)")
 		default:

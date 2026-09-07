@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
+	publicapiv1 "github.com/orvilo-ai/orvilo/server/pkg/publicapi/v1"
 )
 
 // These are the Action API's security properties, not its happy path. Each one

@@ -5,10 +5,10 @@ import {
   issueBehavesAsAny,
   issueStatusCategory,
   statusCategoryOfKey,
-} from "@patchbay/core/issues";
+} from "@orvilo/core/issues";
 import { useStatusLabel } from "../utils/status-label";
 import { priorityLabel } from "../utils/priority-label";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment, type ReactNode } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
@@ -34,45 +34,45 @@ import {
   Users,
 } from "lucide-react";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@patchbay/ui/components/ui/resizable";
-import { Sheet, SheetContent } from "@patchbay/ui/components/ui/sheet";
-import { useIsMobile } from "@patchbay/ui/hooks/use-mobile";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@orvilo/ui/components/ui/resizable";
+import { Sheet, SheetContent } from "@orvilo/ui/components/ui/sheet";
+import { useIsMobile } from "@orvilo/ui/hooks/use-mobile";
 import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useEditorUpload, ImageSequenceProvider } from "../../editor";
-import { collectImageSequence, type ImageSequenceBlock } from "@patchbay/core/attachments/image-sequence";
-import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
+import { collectImageSequence, type ImageSequenceBlock } from "@orvilo/core/attachments/image-sequence";
+import { FileUploadButton } from "@orvilo/ui/components/common/file-upload-button";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/ui/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Popover, PopoverTrigger, PopoverContent } from "@patchbay/ui/components/ui/popover";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@patchbay/ui/components/ui/dialog";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@patchbay/ui/components/ui/command";
-import { AvatarGroup, AvatarGroupCount } from "@patchbay/ui/components/ui/avatar";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Popover, PopoverTrigger, PopoverContent } from "@orvilo/ui/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@orvilo/ui/components/ui/dialog";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
+import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@orvilo/ui/components/ui/command";
+import { AvatarGroup, AvatarGroupCount } from "@orvilo/ui/components/ui/avatar";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropRow } from "../../common/prop-row";
 import { PropertyIcon } from "../../common/property-icon";
-import type { Attachment, Issue, IssueProperty, IssueStatus, IssueStatusCategory, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@patchbay/core/types";
-import { contentReferencesAttachment } from "@patchbay/core/types";
-import { STATUS_CONFIG } from "@patchbay/core/issues/config";
-import { formatDateOnly, isPastDateOnly } from "@patchbay/core/issues/date";
-import { useUpdateIssue } from "@patchbay/core/issues/mutations";
+import type { Attachment, Issue, IssueProperty, IssueStatus, IssueStatusCategory, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@orvilo/core/types";
+import { contentReferencesAttachment } from "@orvilo/core/types";
+import { STATUS_CONFIG } from "@orvilo/core/issues/config";
+import { formatDateOnly, isPastDateOnly } from "@orvilo/core/issues/date";
+import { useUpdateIssue } from "@orvilo/core/issues/mutations";
 import { toast } from "sonner";
-import { errorCode } from "@patchbay/core/api";
+import { errorCode } from "@orvilo/core/api";
 import { StatusIcon, PriorityIcon, StatusPicker, PriorityPicker, StagePicker, StartDatePicker, DueDatePicker, ExecutorPicker, OwnerPicker, ReviewerPicker, LabelPicker } from ".";
 import { ExecutorHandoffRow } from "./executor-handoff-row";
 import { maxSiblingStage } from "./pickers/stage-picker";
 import { CustomPropertyValueEditor, CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import { IssueActionsDropdown, useIssueActions, IssueActionsContextMenu, IssueContextMenuProvider } from "../actions";
 import { LabelChip } from "../../labels/label-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
@@ -85,8 +85,8 @@ import { RevisionConflictCompare } from "./revision-conflict-compare";
 import { CommentInput } from "./comment-input";
 import { CurrentIssueRenderContextProvider } from "../current-issue-render-context";
 import { ResolvedThreadBar } from "./resolved-thread-bar";
-import { getShortcut, shortcutMatchesEvent } from "@patchbay/core/shortcuts";
-import { isImeComposing } from "@patchbay/core/utils";
+import { getShortcut, shortcutMatchesEvent } from "@orvilo/core/shortcuts";
+import { isImeComposing } from "@orvilo/core/utils";
 import { ThreadMinimap } from "./thread-minimap";
 import { ThreadNavPanel, mentionsUser, type ThreadNavThread } from "./thread-nav-panel";
 import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
@@ -97,18 +97,18 @@ import { PluginPanelSection } from "../../plugins";
 import { DependencyPrerequisites } from "./dependency-prerequisites";
 import { WorkProductRelationsSection } from "../../work-products";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useRecentContextStore } from "@patchbay/core/chat";
-import { useModalStore } from "@patchbay/core/modals";
-import { issueListOptions, issueDetailOptions, childIssuesOptions, childIssueProgressOptions, issueAttachmentsOptions } from "@patchbay/core/issues/queries";
-import { projectDetailOptions } from "@patchbay/core/projects/queries";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useRecentContextStore } from "@orvilo/core/chat";
+import { useModalStore } from "@orvilo/core/modals";
+import { issueListOptions, issueDetailOptions, childIssuesOptions, childIssueProgressOptions, issueAttachmentsOptions } from "@orvilo/core/issues/queries";
+import { projectDetailOptions } from "@orvilo/core/projects/queries";
 import { ProjectIcon } from "../../projects/components/project-icon";
-import { issueLabelsOptions } from "@patchbay/core/labels";
-import { propertyListOptions } from "@patchbay/core/properties";
-import { memberListOptions, agentListOptions } from "@patchbay/core/workspace/queries";
+import { issueLabelsOptions } from "@orvilo/core/labels";
+import { propertyListOptions } from "@orvilo/core/properties";
+import { memberListOptions, agentListOptions } from "@orvilo/core/workspace/queries";
 import {
   selectExpandedResolved,
   useRecentIssuesStore,
@@ -118,13 +118,13 @@ import {
   SUB_ISSUE_ROW_PROPERTY_KEYS,
   type SubIssueRowProperties,
   type SubIssueRowPropertyKey,
-} from "@patchbay/core/issues/stores";
-import { useIssueSelectionStore } from "@patchbay/core/issues/stores/selection-store";
+} from "@orvilo/core/issues/stores";
+import { useIssueSelectionStore } from "@orvilo/core/issues/stores/selection-store";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 import { useIssueTimeline } from "../hooks/use-issue-timeline";
 import { useIssueReactions } from "../hooks/use-issue-reactions";
 import { useIssueSubscribers } from "../hooks/use-issue-subscribers";
-import { ReactionBar } from "@patchbay/ui/components/common/reaction-bar";
+import { ReactionBar } from "@orvilo/ui/components/common/reaction-bar";
 import { useLocale, useTimeAgo } from "../../i18n";
 import {
   useRestoredScrollOffset,
@@ -132,7 +132,7 @@ import {
   useRestoredViewState,
   useViewStateWriter,
 } from "../../platform";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 import { PAGE_GUTTER } from "../../layout/page-header";
 
 import { ProgressRing } from "./progress-ring";

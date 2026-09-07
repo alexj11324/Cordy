@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/runtimeapps"
+	"github.com/orvilo-ai/orvilo/server/internal/runtimeapps"
 )
 
 // This file holds the runtime brief assembler — the post-MUL-3560 path
@@ -40,8 +40,8 @@ import (
 
 // writeHeader emits the brief's leading title and one-line elevator pitch.
 func writeHeader(b *strings.Builder) {
-	b.WriteString("# Patchbay Agent Runtime\n\n")
-	b.WriteString("You are a coding agent in the Patchbay platform. Use the `patchbay` CLI to interact with the platform.\n\n")
+	b.WriteString("# Orvilo Agent Runtime\n\n")
+	b.WriteString("You are a coding agent in the Orvilo platform. Use the `patchbay` CLI to interact with the platform.\n\n")
 }
 
 // writeBackgroundTaskSafetySlim emits the Background Task Safety section
@@ -98,7 +98,7 @@ func writeHeader(b *strings.Builder) {
 // a fresh review decision.
 func writeBackgroundTaskSafetySlim(b *strings.Builder) {
 	b.WriteString("## Background Task Safety\n\n")
-	b.WriteString("Patchbay marks the task terminal the moment your top-level turn exits — any run-owned work still active is orphaned, its result lost, and the final comment you meant to post never sends. There is no background-completion wakeup, whatever a tool response promises. Never background-and-yield: collect required results inside foreground tool calls that block to completion, run unobservable work synchronously, and never end a turn \"standing by\" for something to finish — that message becomes your final output.\n\n")
+	b.WriteString("Orvilo marks the task terminal the moment your top-level turn exits — any run-owned work still active is orphaned, its result lost, and the final comment you meant to post never sends. There is no background-completion wakeup, whatever a tool response promises. Never background-and-yield: collect required results inside foreground tool calls that block to completion, run unobservable work synchronously, and never end a turn \"standing by\" for something to finish — that message becomes your final output.\n\n")
 	b.WriteString("External systems triggered by your completed actions — CI, GitHub Actions after a successful push — are not run-owned: do not wait for them, and do not run `gh pr checks --watch`, `gh run watch`, or sleep/retry polls. A repo's merge gate (\"CI must be green before merge\") is NOT your delivery acceptance criteria. Deliver what you have — \"Local tests pass; CI running: <PR link>\" is a complete hand-off. The one exception: when the trigger comment or the issue's acceptance criteria explicitly ask for the CI result, collect it as ONE foreground blocking call (`gh pr checks <pr> --watch`) inside this same turn.\n\n")
 	b.WriteString("A user explicitly asking for a local service to stay available after the turn is a persistent service handoff, not background-and-yield — allowed only when the running service itself is the requested deliverable. Detach its lifecycle from this run first (durable logs, a recorded cleanup handle such as PID/profile), verify readiness, and reply with the URL, logs, and stop instructions. Without a supervisor, describe survival as best-effort, not guaranteed.\n\n")
 	b.WriteString("Never terminate `patchbay` or `patchbay.exe` by executable name: a long-lived matching process may be the workspace daemon. Cancel only the exact child PID you started, and before terminating it compare that PID with `patchbay daemon status --output json`; never kill it if it is the reported daemon PID.\n\n")
@@ -177,7 +177,7 @@ func BuildTaskInitiatorBlock(initiatorType, initiatorName, initiatorEmail string
 	} else {
 		fmt.Fprintf(&b, "This task was initiated by **%s**, a member of this workspace.\n\n", safeInitiator)
 	}
-	b.WriteString("The initiator — not the runtime owner — is who you are answering: apply any per-person privacy or access rules your instructions define. Your Patchbay credentials stay scoped to the runtime owner, and initiator attribution does not change what you may read or write; do not assume the initiator can see everything you can.\n\n")
+	b.WriteString("The initiator — not the runtime owner — is who you are answering: apply any per-person privacy or access rules your instructions define. Your Orvilo credentials stay scoped to the runtime owner, and initiator attribution does not change what you may read or write; do not assume the initiator can see everything you can.\n\n")
 	return b.String()
 }
 
@@ -447,7 +447,7 @@ func writeIssueMetadata(b *strings.Builder) {
 	b.WriteString("## Issue Metadata\n\n")
 	b.WriteString("`metadata` is a small per-issue KV bag — custom key-value state your workflow wants future runs on this issue to re-read. Most runs write nothing.\n\n")
 	b.WriteString("- **Read on entry.** Hints, not truth: latest comment / code wins on conflict. Empty `{}` is normal.\n")
-	b.WriteString("- **Write on exit.** Only what a future run will actually re-read — short values, never secrets or long content. Overwrite or `patchbay issue metadata delete` stale keys. Full write discipline: the `patchbay-working-on-issues` skill.\n\n")
+	b.WriteString("- **Write on exit.** Only what a future run will actually re-read — short values, never secrets or long content. Overwrite or `patchbay issue metadata delete` stale keys. Full write discipline: the `orvilo-working-on-issues` skill.\n\n")
 }
 
 // writeInstructionPrecedence emits the "Agent Identity wins over the issue
@@ -482,12 +482,12 @@ func writeInstructionPrecedence(b *strings.Builder) {
 //     `patchbay chat thread` can fetch it — see buildChatPrompt, which hands the
 //     agent exactly those commands. Recoverable, just from a different place.
 //   - Web chat, Feishu, WeCom and DingTalk: the conversation is persisted in
-//     Patchbay's chat_message table and `patchbay chat history` reads it back —
+//     Orvilo's chat_message table and `patchbay chat history` reads it back —
 //     see handler/chat_history.go's chat_message fallback for non-Slack
 //     sessions. Recoverable, just from a different place. The readable set is
 //     decided in one place, SurfacePersistsTranscript.
 //
-// Only a surface whose conversation Patchbay never stored (so there is nothing
+// Only a surface whose conversation Orvilo never stored (so there is nothing
 // to read back) warrants telling the user; no current surface is in that
 // group, so SessionContinuityNoticeUnrecoverable is a defensive fallback. On
 // the readable ones the discussion survives, so announcing "the previous
@@ -507,10 +507,10 @@ const SessionContinuityNoticeChannelHistory = "## Session Continuity Notice\n\n"
 	"This run was meant to continue an earlier conversation, but that provider session could not be restored, so you are on a fresh one. The channel conversation itself is unaffected — read it back with `patchbay chat history` / `patchbay chat thread` before acting, and treat what you find there as the authoritative version. What is gone is only your own working memory from earlier turns: what you already tried, what you ruled out, and how far you had got. Re-derive what you need instead of assuming it. Do not open your reply by announcing this — raise it only where it actually matters.\n\n"
 
 const SessionContinuityNoticeChatTranscript = "## Session Continuity Notice\n\n" +
-	"This run was meant to continue an earlier conversation, but that provider session could not be restored, so you are on a fresh one. The conversation itself is unaffected — Patchbay stored it, and you can read it back with `patchbay chat history` before acting; treat what you find there as the authoritative version. What is gone is only your own working memory from earlier turns: what you already tried, what you ruled out, and how far you had got. Re-derive what you need instead of assuming it. Do not open your reply by announcing this — raise it only where it actually matters.\n\n"
+	"This run was meant to continue an earlier conversation, but that provider session could not be restored, so you are on a fresh one. The conversation itself is unaffected — Orvilo stored it, and you can read it back with `patchbay chat history` before acting; treat what you find there as the authoritative version. What is gone is only your own working memory from earlier turns: what you already tried, what you ruled out, and how far you had got. Re-derive what you need instead of assuming it. Do not open your reply by announcing this — raise it only where it actually matters.\n\n"
 
 // SessionContinuityNoticeUnrecoverable is the defensive fallback for a surface
-// whose conversation Patchbay never stored and cannot read back. Every current
+// whose conversation Orvilo never stored and cannot read back. Every current
 // chat surface (web chat, Feishu, WeCom, DingTalk, Slack) persists a transcript
 // that `patchbay chat history` can fetch, so no surface routes here today — it
 // exists so a future channel that stores no transcript degrades to an honest
@@ -548,7 +548,7 @@ func writeWorkflowChat(b *strings.Builder) {
 // writeWorkflowQuickCreate emits the quick-create workflow's hard
 // guardrails.
 func writeWorkflowQuickCreate(b *strings.Builder) {
-	b.WriteString("**This task was triggered by quick-create.** There is NO existing Patchbay issue. Follow the field and output rules in the user message you just received; ignore the default issue-task workflow.\n\n")
+	b.WriteString("**This task was triggered by quick-create.** There is NO existing Orvilo issue. Follow the field and output rules in the user message you just received; ignore the default issue-task workflow.\n\n")
 	b.WriteString("Hard guardrails (apply even if the user message is missing):\n")
 	b.WriteString("- Run exactly one `patchbay issue create` invocation, then exit.\n")
 	b.WriteString("- Do NOT call `patchbay issue get`, `patchbay issue status`, or `patchbay issue comment add` for this task — there is no issue to query, transition, or comment on. The platform writes the user's success/failure inbox notification automatically based on whether `patchbay issue create` succeeded.\n")
@@ -564,7 +564,7 @@ const AutomationIssueCommandsGuard = "Do not run `patchbay issue get`, `patchbay
 
 // writeWorkflowAutomation emits the automation run-only workflow.
 func writeWorkflowAutomation(b *strings.Builder, ctx TaskContextForEnv) {
-	b.WriteString("**This task was triggered by an Automation in run-only mode.** There is no Patchbay issue attached to this run.\n\n")
+	b.WriteString("**This task was triggered by an Automation in run-only mode.** There is no Orvilo issue attached to this run.\n\n")
 	fmt.Fprintf(b, "- Automation run ID: `%s`\n", ctx.AutomationRunID)
 	if ctx.AutomationID != "" {
 		fmt.Fprintf(b, "- Automation ID: `%s`\n", ctx.AutomationID)
@@ -722,13 +722,13 @@ func writeWorkflowIssue(b *strings.Builder, ctx TaskContextForEnv) {
 // writeSubIssueCreation emits the Sub-issue Creation section.
 //
 // MUL-5442 demotes the full todo/backlog/stage playbook to the
-// patchbay-working-on-issues built-in skill: the semantics are only needed at
+// orvilo-working-on-issues built-in skill: the semantics are only needed at
 // the moment an agent is about to create sub-issues, and that moment is
 // exactly what triggers the skill. The brief keeps the one-line map so the
 // flags remain discoverable without the skill.
 func writeSubIssueCreation(b *strings.Builder) {
 	b.WriteString("## Sub-issue Creation\n\n")
-	b.WriteString("`--status todo` starts a child with an agent/team executor immediately; `--status backlog` parks it for later promotion; `--stage <N>` groups children into ordered stages. Before creating sub-issues, read the `patchbay-working-on-issues` skill — it covers serial chains, promotion, and stage wake semantics.\n\n")
+	b.WriteString("`--status todo` starts a child with an agent/team executor immediately; `--status backlog` parks it for later promotion; `--stage <N>` groups children into ordered stages. Before creating sub-issues, read the `orvilo-working-on-issues` skill — it covers serial chains, promotion, and stage wake semantics.\n\n")
 }
 
 // writeSkills emits the Skills section: an index of invocable skill names.
@@ -739,7 +739,7 @@ func writeSubIssueCreation(b *strings.Builder) {
 // already had — measured at ~3,100 tokens per brief on a real task, 40% of the
 // whole brief — and no extra routing signal (MUL-5529).
 //
-// The index itself stays because it is the one skill listing Patchbay controls.
+// The index itself stays because it is the one skill listing Orvilo controls.
 // Each CLI's own listing is theirs: its format, and whether it exists at all,
 // can change with any release.
 //
@@ -793,7 +793,7 @@ func writeMentions(b *strings.Builder) {
 // writeAttachments emits the Attachments pointer.
 func writeAttachments(b *strings.Builder) {
 	b.WriteString("## Attachments\n\n")
-	b.WriteString("Fetch issue/comment attachments via the authenticated CLI (`patchbay attachment --help`); never open Patchbay resource URLs directly.\n")
+	b.WriteString("Fetch issue/comment attachments via the authenticated CLI (`patchbay attachment --help`); never open Orvilo resource URLs directly.\n")
 	// Closes the inbound half of the MUL-4899 loop: an attachment the agent
 	// just downloaded is the most tempting local path to echo back, because it
 	// came from the conversation and *feels* shared. It is not — the download
@@ -805,7 +805,7 @@ func writeAttachments(b *strings.Builder) {
 // (compressed).
 func writeAlwaysUseCLI(b *strings.Builder) {
 	b.WriteString("## Important: Always Use the `patchbay` CLI\n\n")
-	b.WriteString("Access Patchbay platform resources only through the `patchbay` CLI — never `curl` / `wget`. For anything the CLI doesn't cover, post a comment mentioning the workspace owner rather than working around it.\n\n")
+	b.WriteString("Access Orvilo platform resources only through the `patchbay` CLI — never `curl` / `wget`. For anything the CLI doesn't cover, post a comment mentioning the workspace owner rather than working around it.\n\n")
 }
 
 // writeDeliveryInvariant emits the always-on delivery contract, shared by every
@@ -846,7 +846,7 @@ func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 		// Two-layer channel policy (MUL-4899). This is the DELIVERY layer, and
 		// the brief answers only the half that is stable for the whole session.
 		//
-		// `attachment upload` binds a file to the Patchbay chat reply whatever
+		// `attachment upload` binds a file to the Orvilo chat reply whatever
 		// the surface; whether anything carries it the last hop is a property
 		// of the deployment — its object storage, and whether the server is new
 		// enough to report the hop at all. Both change under a session that
@@ -864,7 +864,7 @@ func writeOutput(b *strings.Builder, kind taskKind, ctx TaskContextForEnv) {
 		// Slack-only and also lives in the per-turn chat prompt — do not
 		// collapse the two.
 		if ctx.ChatChannelType != "" {
-			fmt.Fprintf(b, "**Delivering files here:** whether Patchbay can push a file you produce into this %s conversation depends on how this deployment is configured, so it is stated per turn rather than here: the per-turn user message tells you, every turn. Follow what it says about files, and never report a file as delivered unless it told you how to deliver one.\n", ChannelDisplayName(ctx.ChatChannelType))
+			fmt.Fprintf(b, "**Delivering files here:** whether Orvilo can push a file you produce into this %s conversation depends on how this deployment is configured, so it is stated per turn rather than here: the per-turn user message tells you, every turn. Follow what it says about files, and never report a file as delivered unless it told you how to deliver one.\n", ChannelDisplayName(ctx.ChatChannelType))
 		} else {
 			b.WriteString("**Delivering files here:** run `patchbay attachment upload <local-path>` — it binds the file to your reply and it renders as an attachment card. That command is the ONLY way a file reaches the user; a path written into your reply text is not.\n")
 		}

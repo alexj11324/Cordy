@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
 )
 
 // This file hand-rolls the DingTalk Stream WebSocket connection, replacing the

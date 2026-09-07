@@ -39,12 +39,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // outboundQueries is the slice of generated queries the WeCom outbound
@@ -177,8 +177,8 @@ func (o *Outbound) processEvent(ctx context.Context, e events.Event) error {
 	}
 	// Only bound, non-empty completions reach here, so classify the task
 	// origin before loading credentials or sending. A question asked in the
-	// Patchbay web UI can reuse a session that originated in WeCom — and its
-	// answer belongs only in Patchbay. Without this gate that answer is pushed
+	// Orvilo web UI can reuse a session that originated in WeCom — and its
+	// answer belongs only in Orvilo. Without this gate that answer is pushed
 	// into the WeCom chat, which in a group means in front of everyone in the
 	// room. slack/outbound.go:118 and the lark and dingtalk equivalents all
 	// gate here; WeCom was the one that did not.
@@ -382,9 +382,9 @@ func (o *Outbound) tryDeliverInbox(ctx context.Context, item map[string]any, rec
 		return false
 	}
 	binding, err := o.q.FindChannelBindingForMember(ctx, db.FindChannelBindingForMemberParams{
-		WorkspaceID:   workspaceID,
+		WorkspaceID:    workspaceID,
 		PatchbayUserID: recipientID,
-		ChannelType:   channelTypeWecom,
+		ChannelType:    channelTypeWecom,
 	})
 	if err != nil {
 		if !errors.Is(err, pgx.ErrNoRows) {

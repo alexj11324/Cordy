@@ -104,7 +104,7 @@ export async function publishHomebrewCask({
     }
 
     const body = {
-      message: `Update Patchbay to ${tag}`,
+      message: `Update Orvilo to ${tag}`,
       content: Buffer.from(caskContent, "utf8").toString("base64"),
       branch: "main",
       ...(current?.sha ? { sha: current.sha } : {}),

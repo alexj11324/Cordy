@@ -1,11 +1,11 @@
 ---
 title: 参与开发
-description: 配置 Patchbay 本地开发环境，运行测试，并按仓库约定提交改动。
+description: 配置 Orvilo 本地开发环境，运行测试，并按仓库约定提交改动。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `make dev`；它会为当前 checkout 准备环境、数据库和 migration，再启动 Web 与 API。
+Orvilo 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `make dev`；它会为当前 checkout 准备环境、数据库和 migration，再启动 Web 与 API。
 
 ## 环境要求
 
@@ -20,7 +20,7 @@ Patchbay 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `m
 ## 第一次启动
 
 ```bash
-git clone https://github.com/patchbay-ai/patchbay.git
+git clone https://github.com/alexj11324/Cordy.git
 cd patchbay
 make up C=desktop   # 装依赖、准备数据库、启动后端和 Electron 桌面端
 make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作区
@@ -36,7 +36,7 @@ make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作�
 
 `make dev-login` 能用，是因为 `make up` 会把 `ORVILO_DEV_LOGIN=1` 写进本地 env 文件——见[登录与注册](/auth-setup#开发环境跳过登录页)。绝不要在公网部署上启用它，也不要把本地 `.env` 用到公网部署。
 
-完整的贡献指南——环境、worktree、测试分层、排查和彻底重置——在仓库的 [CONTRIBUTING.md](https://github.com/patchbay-ai/patchbay/blob/main/CONTRIBUTING.md)。本页是简版。
+完整的贡献指南——环境、worktree、测试分层、排查和彻底重置——在仓库的 [CONTRIBUTING.md](https://github.com/alexj11324/Cordy/blob/main/CONTRIBUTING.md)。本页是简版。
 
 ## 在 worktree 中开发
 
@@ -150,7 +150,7 @@ Migration 位于 `server/migrations/`，查询位于 `server/pkg/db/queries/`。
 先运行与改动最接近的检查，再扩大范围。例如只改 Docs：
 
 ```bash
-pnpm --filter @patchbay/docs typecheck
+pnpm --filter @orvilo/docs typecheck
 ```
 
 共享前端改动：

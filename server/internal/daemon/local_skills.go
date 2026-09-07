@@ -11,8 +11,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/patchbay-ai/patchbay/server/internal/skill"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/internal/skill"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 const (

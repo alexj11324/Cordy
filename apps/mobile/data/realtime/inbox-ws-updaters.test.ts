@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import type { InboxItem } from "@patchbay/core/types";
+import type { InboxItem } from "@orvilo/core/types";
 import { describe, expect, it, vi } from "vitest";
 import { inboxKeys } from "@/data/queries/inbox";
 import { patchInboxIssueStatus } from "./inbox-ws-updaters";

@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, Pencil } from "lucide-react";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { cn } from "@orvilo/ui/lib/utils";
 import { toast } from "sonner";
-import { useAuthStore } from "@patchbay/core/auth";
-import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
+import { api } from "@orvilo/core/api";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useT } from "../../i18n";
 import {

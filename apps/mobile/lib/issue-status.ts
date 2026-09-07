@@ -22,7 +22,7 @@ import type {
   IssueStatus,
   IssueStatusCategory,
   IssueStatusEntry,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { normalizeProductLocale, type ProductLocale } from "@/lib/locale";
 
 /**

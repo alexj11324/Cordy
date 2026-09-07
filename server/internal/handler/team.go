@@ -10,31 +10,31 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // ── Response types ──────────────────────────────────────────────────────────
 
 type TeamResponse struct {
-	ID            string                       `json:"id"`
-	WorkspaceID   string                       `json:"workspace_id"`
-	Name          string                       `json:"name"`
-	Description   string                       `json:"description"`
-	Instructions  string                       `json:"instructions"`
-	AvatarURL     *string                      `json:"avatar_url"`
-	LeaderID      string                       `json:"leader_id"`
-	CreatorID     string                       `json:"creator_id"`
-	CreatedAt     string                       `json:"created_at"`
-	UpdatedAt     string                       `json:"updated_at"`
-	ArchivedAt    *string                      `json:"archived_at"`
-	ArchivedBy    *string                      `json:"archived_by"`
-	MemberCount   int                          `json:"member_count"`
+	ID            string                      `json:"id"`
+	WorkspaceID   string                      `json:"workspace_id"`
+	Name          string                      `json:"name"`
+	Description   string                      `json:"description"`
+	Instructions  string                      `json:"instructions"`
+	AvatarURL     *string                     `json:"avatar_url"`
+	LeaderID      string                      `json:"leader_id"`
+	CreatorID     string                      `json:"creator_id"`
+	CreatedAt     string                      `json:"created_at"`
+	UpdatedAt     string                      `json:"updated_at"`
+	ArchivedAt    *string                     `json:"archived_at"`
+	ArchivedBy    *string                     `json:"archived_by"`
+	MemberCount   int                         `json:"member_count"`
 	MemberPreview []TeamMemberPreviewResponse `json:"member_preview"`
 }
 
@@ -51,7 +51,7 @@ type teamMemberSummary struct {
 
 type TeamMemberResponse struct {
 	ID         string `json:"id"`
-	TeamID    string `json:"team_id"`
+	TeamID     string `json:"team_id"`
 	MemberType string `json:"member_type"`
 	MemberID   string `json:"member_id"`
 	Role       string `json:"role"`
@@ -81,7 +81,7 @@ func (h *Handler) teamToResponse(s db.Team) TeamResponse {
 func teamMemberToResponse(m db.TeamMember) TeamMemberResponse {
 	return TeamMemberResponse{
 		ID:         uuidToString(m.ID),
-		TeamID:    uuidToString(m.TeamID),
+		TeamID:     uuidToString(m.TeamID),
 		MemberType: m.MemberType,
 		MemberID:   uuidToString(m.MemberID),
 		Role:       m.Role,
@@ -302,7 +302,7 @@ func (h *Handler) CreateTeam(w http.ResponseWriter, r *http.Request) {
 
 	// Auto-add leader as a member with role "leader".
 	h.Queries.AddTeamMember(r.Context(), db.AddTeamMemberParams{
-		TeamID:    team.ID,
+		TeamID:     team.ID,
 		MemberType: "agent",
 		MemberID:   leaderUUID,
 		Role:       "leader",
@@ -534,7 +534,7 @@ func (h *Handler) DeleteTeam(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.publish(protocol.EventTeamDeleted, workspaceID, "member", userID, map[string]any{
-		"team_id":  uuidToString(team.ID),
+		"team_id":   uuidToString(team.ID),
 		"leader_id": uuidToString(team.LeaderID),
 	})
 	w.WriteHeader(http.StatusNoContent)
@@ -567,11 +567,11 @@ func (h *Handler) ListTeamMembers(w http.ResponseWriter, r *http.Request) {
 // only so the front-end can render them in the same list without
 // reordering.
 type TeamMemberStatusResponse struct {
-	MemberType   string                  `json:"member_type"`
-	MemberID     string                  `json:"member_id"`
-	Status       *string                 `json:"status"`
+	MemberType   string                 `json:"member_type"`
+	MemberID     string                 `json:"member_id"`
+	Status       *string                `json:"status"`
 	ActiveIssues []TeamActiveIssueBrief `json:"active_issues"`
-	LastActiveAt *string                 `json:"last_active_at"`
+	LastActiveAt *string                `json:"last_active_at"`
 }
 
 type TeamActiveIssueBrief struct {
@@ -818,7 +818,7 @@ func (h *Handler) AddTeamMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sm, err := h.Queries.AddTeamMember(r.Context(), db.AddTeamMemberParams{
-		TeamID:    team.ID,
+		TeamID:     team.ID,
 		MemberType: req.MemberType,
 		MemberID:   memberUUID,
 		Role:       req.Role,
@@ -875,7 +875,7 @@ func (h *Handler) RemoveTeamMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.Queries.RemoveTeamMember(r.Context(), db.RemoveTeamMemberParams{
-		TeamID:    team.ID,
+		TeamID:     team.ID,
 		MemberType: req.MemberType,
 		MemberID:   memberUUID,
 	})
@@ -926,7 +926,7 @@ func (h *Handler) UpdateTeamMemberRole(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sm, err := h.Queries.UpdateTeamMemberRole(r.Context(), db.UpdateTeamMemberRoleParams{
-		TeamID:    team.ID,
+		TeamID:     team.ID,
 		MemberType: req.MemberType,
 		MemberID:   memberUUID,
 		Role:       req.Role,
@@ -1079,9 +1079,9 @@ func (h *Handler) RecordTeamLeaderEvaluation(w http.ResponseWriter, r *http.Requ
 
 	details, _ := json.Marshal(map[string]string{
 		"team_id": uuidToString(team.ID),
-		"task_id":  util.UUIDToString(taskUUID),
-		"outcome":  req.Outcome,
-		"reason":   req.Reason,
+		"task_id": util.UUIDToString(taskUUID),
+		"outcome": req.Outcome,
+		"reason":  req.Reason,
 	})
 
 	activity, err := h.Queries.CreateActivity(r.Context(), db.CreateActivityParams{

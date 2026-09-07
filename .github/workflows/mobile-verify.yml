@@ -94,4 +94,4 @@ jobs:
 
       - name: Type check, lint, and test
         if: ${{ needs.changes.outputs.mobile == 'true' }}
-        run: pnpm exec turbo typecheck lint test --filter=@patchbay/mobile
+        run: pnpm exec turbo typecheck lint test --filter=@orvilo/mobile

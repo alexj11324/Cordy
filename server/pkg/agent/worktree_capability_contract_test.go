@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // What the two sides must agree on is the capability TOKEN, not a version.

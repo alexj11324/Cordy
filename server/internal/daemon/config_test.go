@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/cli"
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/internal/cli"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
 )
 
 func TestResolveAgentExecutablePath_PreservesDispatchShimName(t *testing.T) {
@@ -348,7 +348,7 @@ func TestLoadConfig_DiscoversQwenCode(t *testing.T) {
 	}
 }
 
-func TestLoadConfig_SkipsPatchbayHooksShadowingAgentBinaries(t *testing.T) {
+func TestLoadConfig_SkipsOrviloHooksShadowingAgentBinaries(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("POSIX shell not available on Windows")
 	}
@@ -768,7 +768,7 @@ func TestLoadConfig_OpenCodeIdleWatchdog(t *testing.T) {
 }
 
 // TestLoadConfig_AutoUpdateDefault_CloudOn confirms the symmetric case: a
-// daemon pointed at Patchbay's hosted cloud keeps the historical opt-in
+// daemon pointed at Orvilo's hosted cloud keeps the historical opt-in
 // auto-update default. We pass the WSS form of the URL to also exercise that
 // NormalizeServerBaseURL maps it through to the http host the detector
 // inspects.
@@ -782,7 +782,7 @@ func TestLoadConfig_AutoUpdateDefault_CloudOn(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	if !cfg.AutoUpdateEnabled {
-		t.Fatalf("AutoUpdateEnabled = false for Patchbay Cloud server, want true")
+		t.Fatalf("AutoUpdateEnabled = false for Orvilo Cloud server, want true")
 	}
 }
 
@@ -957,7 +957,7 @@ func TestLoadConfig_UsesCodexDesktopAppBundleFallback(t *testing.T) {
 }
 
 // Regression for #5205: after OpenAI moved the Desktop app to ChatGPT.app,
-// Patchbay must resolve the bundled CLI under ChatGPT.app (and prefer it over
+// Orvilo must resolve the bundled CLI under ChatGPT.app (and prefer it over
 // the legacy Codex.app path when both exist).
 func TestLoadConfig_UsesChatGPTAppBundleCodexPath(t *testing.T) {
 	pathDir := t.TempDir()

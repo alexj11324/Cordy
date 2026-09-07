@@ -18,11 +18,11 @@ import (
 // ignores `[sandbox_workspace_write] network_access = true`. DNS resolution is
 // blocked at the syscall layer, so processes inside the sandbox see
 // `no such host` errors when calling out (for example, `patchbay issue get`
-// hitting the Patchbay API). See upstream issue openai/codex#10390.
+// hitting the Orvilo API). See upstream issue openai/codex#10390.
 //
 // Until a fixed Codex release ships, the per-task Codex config on macOS needs
 // to fall back to `sandbox_mode = "danger-full-access"` so the agent can
-// actually reach the Patchbay API.
+// actually reach the Orvilo API.
 //
 // Linux runs danger-full-access as a deliberate product decision (MUL-5578,
 // #6218), not as a compatibility fallback — see codexSandboxPolicyFor.
@@ -94,7 +94,7 @@ func resolveGOOS(goos string) string {
 //   - darwin with a version at or above CodexDarwinNetworkAccessFixedVersion:
 //     workspace-write with network access (upstream bug fixed).
 //   - darwin otherwise (including when the version is unknown): fall back to
-//     danger-full-access so the Patchbay CLI can reach the API.
+//     danger-full-access so the Orvilo CLI can reach the API.
 func codexSandboxPolicyFor(goos, detectedVersion string) codexSandboxPolicy {
 	if goos == "" {
 		goos = runtime.GOOS
@@ -334,7 +334,7 @@ const (
 	patchbayManagedEndMarker   = "# END patchbay-managed"
 )
 
-// renderPatchbayManagedBlock produces the managed block for the given policy.
+// renderOrviloManagedBlock produces the managed block for the given policy.
 //
 // The block contains only top-level key=value assignments — no `[table]`
 // headers — and uses TOML dotted-key syntax for nested values. This is
@@ -348,8 +348,8 @@ const (
 //     key would be parsed as a child of that preceding table.
 //
 // Keeping the block as pure top-level dotted-key assignments, and placing it
-// at the top of the file (see upsertPatchbayManagedBlock), avoids both traps.
-func renderPatchbayManagedBlock(policy codexSandboxPolicy) string {
+// at the top of the file (see upsertOrviloManagedBlock), avoids both traps.
+func renderOrviloManagedBlock(policy codexSandboxPolicy) string {
 	var b strings.Builder
 	b.WriteString(patchbayManagedBeginMarker)
 	b.WriteString("\n")
@@ -370,7 +370,7 @@ var managedBlockRe = regexp.MustCompile(
 	`(?ms)^` + regexp.QuoteMeta(patchbayManagedBeginMarker) +
 		`.*?^` + regexp.QuoteMeta(patchbayManagedEndMarker) + `\n*`)
 
-// upsertPatchbayManagedBlock returns the config content with the patchbay-managed
+// upsertOrviloManagedBlock returns the config content with the patchbay-managed
 // block placed at the very top of the file. Any previously written managed
 // block is removed in place; user content outside the markers is preserved.
 //
@@ -378,12 +378,12 @@ var managedBlockRe = regexp.MustCompile(
 // appended to EOF) so that its top-level keys are parsed at the TOML root,
 // regardless of whether the user's config ends inside a table like
 // `[permissions.patchbay]` or `[profiles.foo]`. Combined with the dotted-key
-// form used by renderPatchbayManagedBlock, this means the managed block neither
+// form used by renderOrviloManagedBlock, this means the managed block neither
 // leaks into nor inherits from any surrounding table scope.
-func upsertPatchbayManagedBlock(content string, policy codexSandboxPolicy) string {
+func upsertOrviloManagedBlock(content string, policy codexSandboxPolicy) string {
 	// Drop any previously written managed block (wherever it sits).
 	content = managedBlockRe.ReplaceAllString(content, "")
-	block := renderPatchbayManagedBlock(policy)
+	block := renderOrviloManagedBlock(policy)
 	// Trim leading blank lines left behind by the removal so we don't grow
 	// the file on every idempotent rewrite.
 	content = strings.TrimLeft(content, "\n")
@@ -450,7 +450,7 @@ func ensureCodexSandboxConfig(configPath string, policy codexSandboxPolicy, dete
 		existing = stripLegacySandboxDirectives(existing)
 	}
 
-	updated := upsertPatchbayManagedBlock(existing, policy)
+	updated := upsertOrviloManagedBlock(existing, policy)
 	if updated == string(data) {
 		return nil
 	}

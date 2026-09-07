@@ -1,11 +1,11 @@
 ---
 title: 使用 CLI
-description: 安装并登录 Patchbay CLI，在终端中管理工作区、任务、智能体和运行时。
+description: 安装并登录 Orvilo CLI，在终端中管理工作区、任务、智能体和运行时。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay CLI 既负责连接本机运行时，也可以在终端中管理工作区、任务、智能体和自动化。这里介绍常用路径；当前版本支持的参数始终以命令自身的 `--help` 为准。
+Orvilo CLI 既负责连接本机运行时，也可以在终端中管理工作区、任务、智能体和自动化。这里介绍常用路径；当前版本支持的参数始终以命令自身的 `--help` 为准。
 
 ## 安装
 
@@ -35,7 +35,7 @@ patchbay version
 
 ## 第一次连接
 
-连接 Patchbay Cloud：
+连接 Orvilo Cloud：
 
 ```bash
 patchbay setup
@@ -213,7 +213,7 @@ patchbay config show --profile staging
 ```
 
 <Callout type="warning">
-CLI 配置文件包含可代表你访问 Patchbay 的令牌。不要提交到仓库、上传到日志或与他人共享。
+CLI 配置文件包含可代表你访问 Orvilo 的令牌。不要提交到仓库、上传到日志或与他人共享。
 </Callout>
 
 ## 命令参考
@@ -317,10 +317,10 @@ cat dependency-plan.json | patchbay issue dependency-graph apply MUL-123 \
 parent、children、nodes、edges 以及带有 `unlock_condition` 的就绪信息。重复使用
 幂等键会重放同一个计划。图发生变更时会发布 `dependency_graph:updated`，连接中的客户端会刷新数据。
 
-## 在其他编码智能体里操作 Patchbay
+## 在其他编码智能体里操作 Orvilo
 
-如果你的工作大多发生在 Codex、Claude Code 或 Cursor 里，可以直接在那里操作 Patchbay，
-不必切回终端。[Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli)
+如果你的工作大多发生在 Codex、Claude Code 或 Cursor 里，可以直接在那里操作 Orvilo，
+不必切回终端。[Orvilo CLI skill](https://github.com/alexj11324/Cordy-cli)
 会教这些智能体安全地使用本页的命令：低成本地读任务和评论线程、通过文件写评论，
 以及正确处理 mention、状态变更和 owner、executor、reviewer 变更带来的副作用。
 
@@ -331,7 +331,7 @@ Claude Code 插件市场、Codex skill 安装器、Cursor 以及其他任何加�
 
 ## 接下来
 
-- [Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli) — 在 Codex、Claude Code 或 Cursor 里操作 Patchbay。
+- [Orvilo CLI skill](https://github.com/alexj11324/Cordy-cli) — 在 Codex、Claude Code 或 Cursor 里操作 Orvilo。
 - [认证与令牌](/auth-tokens) — PAT 的创建、续期和吊销。
 - [故障排查](/troubleshooting) — 命令报错和 task 不开始的排查路径。
 - [创建和配置智能体](/agents-create) — `agent create` 各字段的完整语义。

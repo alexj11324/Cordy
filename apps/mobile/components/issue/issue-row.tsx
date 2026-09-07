@@ -26,7 +26,7 @@
  *     the other. `ActorAvatar` handles member / agent / team rendering.
  */
 import { Pressable, View } from "react-native";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@orvilo/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { PriorityIcon } from "@/components/ui/priority-icon";

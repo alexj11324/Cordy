@@ -6,12 +6,12 @@ import { ArrowLeft, ExternalLink, FileText } from "lucide-react";
 import {
   workProductDetailOptions,
   workProductProvenanceInfiniteOptions,
-} from "@patchbay/core/work-products";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@patchbay/ui/components/ui/card";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/core/work-products";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@orvilo/ui/components/ui/card";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { CollectionPageHeader, CollectionPageState } from "../layout/collection-page";
 import { AppLink } from "../navigation";
 import { useLocale, useT } from "../i18n";

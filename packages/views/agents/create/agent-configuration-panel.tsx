@@ -7,13 +7,13 @@ import {
   applyDraftRuntimeChange,
   type AgentDraft,
   type AgentPermissionScope,
-} from "@patchbay/core/agents";
-import { useConfigStore } from "@patchbay/core/config";
-import type { MemberWithUser, RuntimeDevice } from "@patchbay/core/types";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/core/agents";
+import { useConfigStore } from "@orvilo/core/config";
+import type { MemberWithUser, RuntimeDevice } from "@orvilo/core/types";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { cn } from "@orvilo/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useT } from "../../i18n";

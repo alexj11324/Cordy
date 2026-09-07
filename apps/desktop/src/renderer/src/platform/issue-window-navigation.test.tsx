@@ -14,11 +14,11 @@ import {
   currentPath,
   useNavigation,
   type NavigationAdapter,
-} from "@patchbay/views/navigation";
+} from "@orvilo/views/navigation";
 
 const APP_URL = "https://app.example";
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ slug: "acme", id: "ws-1" }),
 }));
 

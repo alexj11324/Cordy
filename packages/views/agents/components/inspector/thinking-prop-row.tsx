@@ -2,8 +2,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import type { RuntimeModel } from "@patchbay/core/types";
-import { runtimeModelsOptions } from "@patchbay/core/runtimes";
+import type { RuntimeModel } from "@orvilo/core/types";
+import { runtimeModelsOptions } from "@orvilo/core/runtimes";
 import { PropRow } from "../../../common/prop-row";
 import { SettingsRow } from "../../../settings/components/settings-layout";
 import { useT } from "../../../i18n";

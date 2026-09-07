@@ -13,12 +13,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // failureMonitorConfig is the tunable knob set for the automation failure
@@ -185,7 +185,7 @@ func tickAutomationFailureMonitor(ctx context.Context, queries *db.Queries, bus 
 			ActorType:   "system",
 			Payload: map[string]any{
 				"automation": automationEventPayload(paused),
-				"reason":    "auto_paused_high_failure_rate",
+				"reason":     "auto_paused_high_failure_rate",
 			},
 		})
 	}
@@ -223,8 +223,8 @@ func emitAutomationPausedNotifications(
 		candidate.FailedRuns, candidate.TotalRuns, failPct, formatLookback(cfg.Lookback),
 	)
 	details, _ := json.Marshal(map[string]any{
-		"automation_id":         util.UUIDToString(automation.ID),
-		"automation_title":      automation.Title,
+		"automation_id":        util.UUIDToString(automation.ID),
+		"automation_title":     automation.Title,
 		"failed_runs":          candidate.FailedRuns,
 		"total_runs":           candidate.TotalRuns,
 		"fail_pct":             failPct,

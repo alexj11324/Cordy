@@ -31,7 +31,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Installation is the flat, feishu-shaped view of a channel_installation row.
@@ -63,7 +63,7 @@ type Installation struct {
 type UserBinding struct {
 	ID             pgtype.UUID
 	WorkspaceID    pgtype.UUID
-	PatchbayUserID  pgtype.UUID
+	PatchbayUserID pgtype.UUID
 	InstallationID pgtype.UUID
 	ChannelUserID  string
 	UnionID        pgtype.Text
@@ -199,7 +199,7 @@ func userBindingFromRow(row db.ChannelUserBinding) (UserBinding, error) {
 	return UserBinding{
 		ID:             row.ID,
 		WorkspaceID:    row.WorkspaceID,
-		PatchbayUserID:  row.PatchbayUserID,
+		PatchbayUserID: row.PatchbayUserID,
 		InstallationID: row.InstallationID,
 		ChannelUserID:  row.ChannelUserID,
 		UnionID:        textOrNull(cfg.UnionID),

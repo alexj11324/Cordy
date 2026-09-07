@@ -4,7 +4,7 @@ import { type ReactNode } from "react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -43,13 +43,13 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: <T,>(opts: T) => opts,
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({
     getAgentName: (agentId: string) => `Agent ${agentId}`,
     getMemberName: () => "Unknown",
@@ -66,7 +66,7 @@ vi.mock("../../common/actor-avatar", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/wecom", () => ({
+vi.mock("@orvilo/core/wecom", () => ({
   wecomInstallationsOptions: () => ({
     queryKey: ["wecom", "installations"],
     queryFn: vi.fn(),
@@ -74,7 +74,7 @@ vi.mock("@patchbay/core/wecom", () => ({
   wecomKeys: { installations: (wsId: string) => ["wecom", "installations", wsId] },
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     registerWecomBYO: mockRegisterBYO,
     deleteWecomInstallation: mockDeleteInstallation,
@@ -85,7 +85,7 @@ vi.mock("@patchbay/core/api", () => ({
     e && typeof e === "object" ? (e as { code?: string }).code : undefined,
 }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@orvilo/core/auth", () => {
   const useAuthStore = Object.assign(
     (sel?: (s: { user: { id: string } }) => unknown) =>
       sel ? sel({ user: { id: "user-1" } }) : { user: { id: "user-1" } },
@@ -213,7 +213,7 @@ describe("WecomAgentBindButton", () => {
   // The bot's chat name reaches the server, and only when it was typed.
   //
   // WeCom delivers a group @-mention as literal text with no structured
-  // mention list, so a name containing a space ("Patchbay Bot") swallows the
+  // mention list, so a name containing a space ("Orvilo Bot") swallows the
   // slash command typed after it. The name is the only way to tell where the
   // mention ends — and it cannot be discovered, because the smart bot exposes
   // no REST surface to ask. Left blank, the request omits it entirely so a
@@ -224,11 +224,11 @@ describe("WecomAgentBindButton", () => {
     await userEvent.click(screen.getByTestId("wecom-agent-connect"));
     await userEvent.type(await screen.findByTestId("wecom-byo-bot-id"), "aib94");
     await userEvent.type(screen.getByTestId("wecom-byo-secret"), "s3cret");
-    await userEvent.type(screen.getByTestId("wecom-byo-bot-name"), "  Patchbay Bot  ");
+    await userEvent.type(screen.getByTestId("wecom-byo-bot-name"), "  Orvilo Bot  ");
     await userEvent.click(screen.getByTestId("wecom-byo-submit"));
 
     await waitFor(() => expect(mockRegisterBYO).toHaveBeenCalled());
-    expect(mockRegisterBYO.mock.calls[0]?.[2].bot_name).toBe("Patchbay Bot");
+    expect(mockRegisterBYO.mock.calls[0]?.[2].bot_name).toBe("Orvilo Bot");
 
     cleanup();
     mockRegisterBYO.mockClear();

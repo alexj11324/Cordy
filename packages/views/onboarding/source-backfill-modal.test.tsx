@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enOnboarding from "../locales/en/onboarding.json";
 
@@ -19,10 +19,10 @@ const { mockUser, mockSaveQuestionnaire, mockWorkspace, mockAgentDoneTotal, mock
     mockListIssues: vi.fn(),
   }));
 
-vi.mock("@patchbay/core/auth", async () => {
+vi.mock("@orvilo/core/auth", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/auth")>(
-      "@patchbay/core/auth",
+    await vi.importActual<typeof import("@orvilo/core/auth")>(
+      "@orvilo/core/auth",
     );
   const useAuthStore = Object.assign(
     (selector: (s: { user: unknown }) => unknown) =>
@@ -32,26 +32,26 @@ vi.mock("@patchbay/core/auth", async () => {
   return { ...actual, useAuthStore };
 });
 
-vi.mock("@patchbay/core/onboarding", async () => {
+vi.mock("@orvilo/core/onboarding", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/onboarding")>(
-      "@patchbay/core/onboarding",
+    await vi.importActual<typeof import("@orvilo/core/onboarding")>(
+      "@orvilo/core/onboarding",
     );
   return { ...actual, saveQuestionnaire: mockSaveQuestionnaire };
 });
 
-vi.mock("@patchbay/core/paths", async () => {
+vi.mock("@orvilo/core/paths", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/paths")>(
-      "@patchbay/core/paths",
+    await vi.importActual<typeof import("@orvilo/core/paths")>(
+      "@orvilo/core/paths",
     );
   return { ...actual, useCurrentWorkspace: () => mockWorkspace.value };
 });
 
-vi.mock("@patchbay/core/api", async () => {
+vi.mock("@orvilo/core/api", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/api")>(
-      "@patchbay/core/api",
+    await vi.importActual<typeof import("@orvilo/core/api")>(
+      "@orvilo/core/api",
     );
   return {
     ...actual,
@@ -140,7 +140,7 @@ describe("SourceBackfillModal", () => {
   // Which users need the backfill is needsSourceBackfill's contract — no user,
   // not yet onboarded, empty/missing/legacy-string/malformed source, the skip
   // flag and the dismiss cap all have their matrix in
-  // @patchbay/core/onboarding/needs-backfill.test.ts. What belongs here is the
+  // @orvilo/core/onboarding/needs-backfill.test.ts. What belongs here is the
   // modal's own reaction to the verdict, so one settled user stands for the
   // whole "predicate says no" family.
   it("does not render when the user already recorded a source", () => {

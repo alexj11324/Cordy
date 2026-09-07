@@ -8,13 +8,13 @@ import {
   dependencyGraphOptions,
   selectDependencyPrerequisiteState,
   type DependencyPrerequisite,
-} from "@patchbay/core/dependency-graphs";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useWSReconnect, useWSEvent } from "@patchbay/core/realtime";
-import type { DependencyGraphResponse } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/core/dependency-graphs";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useWSReconnect, useWSEvent } from "@orvilo/core/realtime";
+import type { DependencyGraphResponse } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
 import { useStatusLabel } from "../utils/status-label";

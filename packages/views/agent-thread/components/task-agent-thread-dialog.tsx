@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, ApiError, clientErrorMessage } from "@patchbay/core/api";
-import { agentThreadOptions, deriveAgentThreadTaskState, useContinueAgentThread } from "@patchbay/core/agent-thread";
-import { chatKeys, unionTaskMessagesBySeq } from "@patchbay/core/chat/queries";
-import { createSafeId } from "@patchbay/core/utils";
-import type { AgentAvailability } from "@patchbay/core/agents";
-import type { ChatMessage, TaskMessagePayload } from "@patchbay/core/types";
+import { api, ApiError, clientErrorMessage } from "@orvilo/core/api";
+import { agentThreadOptions, deriveAgentThreadTaskState, useContinueAgentThread } from "@orvilo/core/agent-thread";
+import { chatKeys, unionTaskMessagesBySeq } from "@orvilo/core/chat/queries";
+import { createSafeId } from "@orvilo/core/utils";
+import type { AgentAvailability } from "@orvilo/core/agents";
+import type { ChatMessage, TaskMessagePayload } from "@orvilo/core/types";
 import { useT } from "../../i18n";
 import { buildTaskAgentThreadMessages } from "../task-agent-thread";
 import { AgentThreadSurface } from "./agent-thread-surface";

@@ -25,7 +25,7 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (s: unknown) => unknown) => {
       const state = { logout: mockAuthLogout };
@@ -35,20 +35,20 @@ vi.mock("@patchbay/core/auth", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   workspaceKeys: { list: () => ["workspaces", "list"] },
 }));
 
-vi.mock("@patchbay/core/platform", () => ({
+vi.mock("@orvilo/core/platform", () => ({
   clearWorkspaceStorage: mockClearWorkspaceStorage,
   defaultStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
 }));
 
-vi.mock("@patchbay/core/drafts/cleanup-registry", () => ({
+vi.mock("@orvilo/core/drafts/cleanup-registry", () => ({
   resetAllRegisteredDrafts: mockReset,
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   paths: { login: () => "/login" },
 }));
 

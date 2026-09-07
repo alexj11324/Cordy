@@ -1,20 +1,20 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, AgentRuntime } from "@patchbay/core/types";
-import { useAgentPresenceDetail } from "@patchbay/core/agents";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import type { Agent, AgentRuntime } from "@orvilo/core/types";
+import { useAgentPresenceDetail } from "@orvilo/core/agents";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import {
   deriveRuntimeHealth,
   runtimeDisplayLabel,
   type RuntimeHealth,
-} from "@patchbay/core/runtimes";
-import { agentListOptions, memberListOptions } from "@patchbay/core/workspace/queries";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
-import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/core/runtimes";
+import { agentListOptions, memberListOptions } from "@orvilo/core/workspace/queries";
+import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
+import { runtimeListOptions } from "@orvilo/core/runtimes/queries";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { AppLink } from "../../navigation";
 import { HealthIcon } from "../../runtimes/components/shared";
 import { availabilityConfig } from "../presence";

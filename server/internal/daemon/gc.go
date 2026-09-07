@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/processtree"
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/repocache"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/processtree"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/repocache"
 )
 
 // reposDirName is the bare-repo cache directory inside the workspaces root.

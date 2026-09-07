@@ -12,7 +12,7 @@ const SchemaVersion = 1
 type GateName string
 
 const (
-	GateIssueCount    GateName = "issue_count"
+	GateIssueCount     GateName = "issue_count"
 	GateAutomationRuns GateName = "automation_runs"
 	// GateImInstallationLimit caps how many installed channel connections a
 	// managed workspace may hold. Unlike the counters above it is OPTIONAL on
@@ -20,8 +20,8 @@ const (
 	// and a missing gate resolves to an off decision (ReasonGateAbsent) rather
 	// than failing the whole policy — issue-count and automation gating must
 	// keep working on those deployments.
-	GateImInstallationLimit GateName = "im_installation_limit"
-	GateImAgentTurns        GateName = "im_agent_turns"
+	GateImInstallationLimit  GateName = "im_installation_limit"
+	GateImAgentTurns         GateName = "im_agent_turns"
 	GateHostedWorkspaceLimit GateName = "hosted_workspace_limit"
 )
 

@@ -1,11 +1,11 @@
 ---
 title: CLI を使う
-description: Patchbay CLI をインストールしてサインインし、ターミナルからワークスペース、タスク、エージェント、ランタイムを管理します。
+description: Orvilo CLI をインストールしてサインインし、ターミナルからワークスペース、タスク、エージェント、ランタイムを管理します。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay CLI は、ローカルのランタイムを接続する役割と、ターミナルからワークスペース、タスク、エージェント、オートパイロットを管理する役割の両方を担います。このページではよく使う操作の流れを紹介します。現在のバージョンがサポートするフラグは、常に各コマンド自身の `--help` が正です。
+Orvilo CLI は、ローカルのランタイムを接続する役割と、ターミナルからワークスペース、タスク、エージェント、オートパイロットを管理する役割の両方を担います。このページではよく使う操作の流れを紹介します。現在のバージョンがサポートするフラグは、常に各コマンド自身の `--help` が正です。
 
 ## インストール
 
@@ -35,7 +35,7 @@ patchbay version
 
 ## 初回接続
 
-Patchbay Cloud に接続する:
+Orvilo Cloud に接続する:
 
 ```bash
 patchbay setup
@@ -213,7 +213,7 @@ patchbay config show --profile staging
 ```
 
 <Callout type="warning">
-CLI の設定ファイルには、あなたとして Patchbay にアクセスできるトークンが含まれます。リポジトリにコミットしたり、ログにアップロードしたり、他人と共有したりしないでください。
+CLI の設定ファイルには、あなたとして Orvilo にアクセスできるトークンが含まれます。リポジトリにコミットしたり、ログにアップロードしたり、他人と共有したりしないでください。
 </Callout>
 
 ## コマンドリファレンス
@@ -317,10 +317,10 @@ cat dependency-plan.json | patchbay issue dependency-graph apply MUL-123 \
 edges、`unlock_condition` 付きの準備状態を返します。同じ冪等キーを再利用すると同じ plan が再生されます。
 グラフの変更は `dependency_graph:updated` を発行し、接続中のクライアントがデータを再取得します。
 
-## 別のコーディングエージェントから Patchbay を操作する
+## 別のコーディングエージェントから Orvilo を操作する
 
 作業の多くを Codex、Claude Code、Cursor の中で進めているなら、ターミナルに切り替えず
-そこから Patchbay を操作できます。[Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli)
+そこから Orvilo を操作できます。[Orvilo CLI skill](https://github.com/alexj11324/Cordy-cli)
 は、このページのコマンドを安全に扱う方法をそれらのエージェントに教えます。タスクと
 コメントスレッドをトークンを浪費せずに読み、コメントはファイル経由で書き、メンション・
 ステータス変更・owner、executor、reviewer の変更が伴う副作用を正しく扱います。
@@ -333,7 +333,7 @@ Claude Code のプラグインマーケットプレイス、Codex の skill イ�
 
 ## 次のステップ
 
-- [Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli) — Codex、Claude Code、Cursor から Patchbay を操作する。
+- [Orvilo CLI skill](https://github.com/alexj11324/Cordy-cli) — Codex、Claude Code、Cursor から Orvilo を操作する。
 - [認証とトークン](/auth-tokens) — PAT の作成、更新、失効。
 - [トラブルシューティング](/troubleshooting) — コマンドのエラーと、いつまでも開始しない作業の診断。
 - [エージェントの作成と設定](/agents-create) — `agent create` 各フィールドの完全な意味。

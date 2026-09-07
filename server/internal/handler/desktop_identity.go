@@ -15,8 +15,8 @@ import (
 
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 var desktopLocalIdentityCodePattern = regexp.MustCompile(`^pbl_[A-Za-z0-9_-]{43}$`)

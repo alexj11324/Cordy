@@ -7,8 +7,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // RuntimeLookup is the only way production code reads a single agent_runtime

@@ -16,9 +16,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 const (

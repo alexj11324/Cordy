@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/patchbay-ai/patchbay/server/internal/dispatch"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/dispatch"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // AgentAvailability is what a readiness check concluded, in the vocabulary the

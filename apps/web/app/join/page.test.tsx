@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import enCommon from "@patchbay/views/locales/en/common.json";
-import enAuth from "@patchbay/views/locales/en/auth.json";
-import enSettings from "@patchbay/views/locales/en/settings.json";
-import { ApiError } from "@patchbay/core/api";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import enCommon from "@orvilo/views/locales/en/common.json";
+import enAuth from "@orvilo/views/locales/en/auth.json";
+import enSettings from "@orvilo/views/locales/en/settings.json";
+import { ApiError } from "@orvilo/core/api";
 import type { ReactNode } from "react";
 
 const TEST_RESOURCES = {
@@ -49,9 +49,9 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParamsState.params,
 }));
 
-vi.mock("@patchbay/core/auth", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/auth")>(
-    "@patchbay/core/auth",
+vi.mock("@orvilo/core/auth", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/auth")>(
+    "@orvilo/core/auth",
   );
   const useAuthStore = Object.assign(
     (selector: (s: typeof authStateRef.state) => unknown) =>
@@ -61,9 +61,9 @@ vi.mock("@patchbay/core/auth", async () => {
   return { ...actual, useAuthStore };
 });
 
-vi.mock("@patchbay/core/api", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/api")>(
-    "@patchbay/core/api",
+vi.mock("@orvilo/core/api", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/api")>(
+    "@orvilo/core/api",
   );
   return {
     ...actual,

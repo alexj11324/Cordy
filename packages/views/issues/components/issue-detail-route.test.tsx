@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
+import { setApiInstance } from "@orvilo/core/api";
+import type { ApiClient } from "@orvilo/core/api/client";
 import { NavigationProvider } from "../../navigation";
 import type { NavigationAdapter } from "../../navigation";
 import {
@@ -12,13 +12,13 @@ import {
   useCanonicalIssueUrl,
 } from "./issue-detail-route";
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@orvilo/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/paths")>(
+    "@orvilo/core/paths",
   );
   return {
     ...actual,

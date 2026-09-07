@@ -11,8 +11,8 @@ import {
   Plus,
   RefreshCw,
 } from "lucide-react";
-import { ApiError, errorCode } from "@patchbay/core/api";
-import { automationQuotaUsageOptions } from "@patchbay/core/automations";
+import { ApiError, errorCode } from "@orvilo/core/api";
+import { automationQuotaUsageOptions } from "@orvilo/core/automations";
 import {
   useCreateWorkspaceSubscriptionCheckout,
   useCreateWorkspaceSubscriptionPortal,
@@ -21,20 +21,20 @@ import {
   issueLimitUsageOptions,
   workspaceSubscriptionPricesOptions,
   workspaceSubscriptionSummaryOptions,
-} from "@patchbay/core/billing";
-import { useFeatureEnabled } from "@patchbay/core/config";
-import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@patchbay/core/feature-flags";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
+} from "@orvilo/core/billing";
+import { useFeatureEnabled } from "@orvilo/core/config";
+import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@orvilo/core/feature-flags";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
 import type {
   PurchaseWorkspaceSeatsRequest,
   WorkspaceSeatPurchasePreview,
   WorkspaceSubscriptionInterval,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "@patchbay/ui/components/ui/alert";
+} from "@orvilo/ui/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,9 +44,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -54,14 +54,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
+} from "@orvilo/ui/components/ui/dialog";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   Progress,
   ProgressLabel,
   ProgressValue,
-} from "@patchbay/ui/components/ui/progress";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/ui/components/ui/progress";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { useLocale, useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 import { openExternal } from "../../platform";

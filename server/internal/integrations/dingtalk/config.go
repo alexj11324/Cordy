@@ -1,7 +1,7 @@
 // Package dingtalk is the DingTalk integration for the channel-agnostic engine.
 // It uses the bring-your-own-app (BYO) model: an agent owner or workspace admin
 // creates a DingTalk Stream-mode robot and pastes its AppKey (client id) and
-// AppSecret (client secret) into Patchbay. Each channel_installation carries its
+// AppSecret (client secret) into Orvilo. Each channel_installation carries its
 // OWN AppSecret and gets its OWN Stream-mode connection, supervised
 // per-installation by the engine like Feishu and Slack (dingtalk_channel.go) —
 // so several agents can each have a distinct bot identity in one DingTalk
@@ -30,7 +30,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
 )
 
 // TypeDingTalk is the channel discriminator for the DingTalk adapter. It is

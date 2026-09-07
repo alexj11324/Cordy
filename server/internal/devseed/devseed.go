@@ -19,14 +19,14 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 const (
 	WorkspaceName         = "开发调试样例"
 	WorkspaceSlug         = "dev-fixtures"
-	WorkspaceDescription  = "Patchbay 内置开发 fixture。内容可从代码重建，不代表真实工作记录。"
+	WorkspaceDescription  = "Orvilo 内置开发 fixture。内容可从代码重建，不代表真实工作记录。"
 	FixtureSet            = "ui-guidance-v1"
 	DefaultDeveloperEmail = "dev@localhost"
 )

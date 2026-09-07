@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 const maxRuntimeSkillKeyLength = 512

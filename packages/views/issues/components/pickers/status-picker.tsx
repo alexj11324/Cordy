@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { IssueStatus, UpdateIssueRequest } from "@patchbay/core/types";
-import { STATUS_CONFIG } from "@patchbay/core/issues/config";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import type { IssueStatus, UpdateIssueRequest } from "@orvilo/core/types";
+import { STATUS_CONFIG } from "@orvilo/core/issues/config";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import { StatusIcon } from "../status-icon";
 import { PropertyPicker, PickerItem } from "./property-picker";
 import { useT } from "../../../i18n";

@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ApiError } from "@patchbay/core/api";
-import { cronPreviewOptions } from "@patchbay/core/automations/queries";
+import { ApiError } from "@orvilo/core/api";
+import { cronPreviewOptions } from "@orvilo/core/automations/queries";
 import { useT } from "../../../i18n";
 import type { ScheduleConfig } from "./model";
 import { toCron } from "./cron-mapping";

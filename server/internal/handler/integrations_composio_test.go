@@ -13,10 +13,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	composio "github.com/patchbay-ai/patchbay/server/internal/integrations/composio"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	sdk "github.com/patchbay-ai/patchbay/server/pkg/composio"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	composio "github.com/orvilo-ai/orvilo/server/internal/integrations/composio"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	sdk "github.com/orvilo-ai/orvilo/server/pkg/composio"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 const composioTestUserID = "22222222-2222-2222-2222-222222222222"

@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { Search } from "lucide-react";
 import { SkillIcon } from "../../skills/lib/skill-icon";
-import type { SkillSummary } from "@patchbay/core/types";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { cn } from "@patchbay/ui/lib/utils";
+import type { SkillSummary } from "@orvilo/core/types";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 
 interface SkillPickerListProps {

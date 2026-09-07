@@ -2,8 +2,8 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
-import { ApiError } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
+import { ApiError } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
 
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000] as const;
 
@@ -84,7 +84,7 @@ export function ClerkAuthAdapter({ children }: { children: React.ReactNode }) {
           status !== 429;
         if (isPermanentRejection) {
           // A rejected identity cannot recover by retrying the same Clerk
-          // session. Clear the Patchbay session and Clerk identity so the
+          // session. Clear the Orvilo session and Clerk identity so the
           // user can take an actionable sign-in path instead of seeing a
           // blank recovering shell forever.
           logoutBarrierRef.current = useAuthStore

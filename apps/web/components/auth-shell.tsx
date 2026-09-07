@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
+import { OrviloIcon } from "@orvilo/ui/components/common/orvilo-icon";
 
 /**
  * The approved shadcn authentication composition: a dark form panel on the
@@ -21,7 +21,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
         aria-hidden="true"
       >
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_35%,rgba(255,255,255,0.12),transparent_42%)]" />
-        <PatchbayIcon className="relative size-24 text-white" noSpin />
+        <OrviloIcon className="relative size-24 text-white" noSpin />
       </aside>
     </main>
   );

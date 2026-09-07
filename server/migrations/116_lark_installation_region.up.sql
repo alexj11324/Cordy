@@ -1,4 +1,4 @@
--- Add a per-installation `region` so one Patchbay deployment can serve
+-- Add a per-installation `region` so one Orvilo deployment can serve
 -- BOTH mainland Feishu (open.feishu.cn / accounts.feishu.cn) and Lark
 -- international (open.larksuite.com / accounts.larksuite.com) at the same
 -- time. Before this column the open-platform host was a single

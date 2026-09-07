@@ -2,7 +2,7 @@ import type {
   DependencyGraphEdge,
   DependencyGraphNode,
   DependencyGraphResponse,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 
 export type GraphFilter = "all" | "ready" | "running" | "blocked";
 

@@ -64,10 +64,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
 )
 
 // relayPublisher is the slice of the realtime relay this package needs.

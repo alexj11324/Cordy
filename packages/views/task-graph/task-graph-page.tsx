@@ -12,25 +12,25 @@ import {
 import {
   dependencyGraphKeys,
   dependencyGraphsOptions,
-} from "@patchbay/core/dependency-graphs";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { projectListOptions } from "@patchbay/core/projects";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useWSReconnect, useWSEvent } from "@patchbay/core/realtime";
+} from "@orvilo/core/dependency-graphs";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { projectListOptions } from "@orvilo/core/projects";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useWSReconnect, useWSEvent } from "@orvilo/core/realtime";
 import type {
   DependencyGraphNode,
   DependencyGraphReadinessState,
   DependencyGraphResponse,
-} from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/select";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   CollectionPageHeader,
   CollectionPageHeaderAction,

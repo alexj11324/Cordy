@@ -11,23 +11,39 @@ import (
 
 func TestHTTPClientOAuthUsesPKCEAndRejectsIncompleteTokens(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := r.ParseForm(); err != nil { t.Fatal(err) }
-		if r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("code_verifier") != "verifier" || r.Form.Get("redirect_uri") != "https://app/callback" { t.Fatalf("oauth form = %v", r.Form) }
-		_ = json.NewEncoder(w).Encode(map[string]any{"access_token":"access","refresh_token":"refresh","scope":[]string{"read","issues:create"},"expires_in":3600})
+		if err := r.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if r.Form.Get("grant_type") != "authorization_code" || r.Form.Get("code_verifier") != "verifier" || r.Form.Get("redirect_uri") != "https://app/callback" {
+			t.Fatalf("oauth form = %v", r.Form)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "access", "refresh_token": "refresh", "scope": []string{"read", "issues:create"}, "expires_in": 3600})
 	}))
 	defer server.Close()
-	client := NewHTTPClient(server.Client()); client.TokenURL = server.URL
-	token, err := client.ExchangeAuthorizationCode(context.Background(),"code","https://app/callback","verifier","client","secret")
-	if err != nil || token.AccessToken != "access" || token.RefreshToken != "refresh" || token.Scope != "read issues:create" { t.Fatalf("token=%+v err=%v",token,err) }
-	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _ = json.NewEncoder(w).Encode(map[string]any{"access_token":"access","refresh_token":"refresh","expires_in":0}) }))
-	defer bad.Close(); client.TokenURL = bad.URL
-	if _, err = client.RefreshToken(context.Background(),"refresh","client","secret"); err == nil || !IsKind(err, ErrorInvalidResponse) { t.Fatalf("incomplete token err=%v",err) }
+	client := NewHTTPClient(server.Client())
+	client.TokenURL = server.URL
+	token, err := client.ExchangeAuthorizationCode(context.Background(), "code", "https://app/callback", "verifier", "client", "secret")
+	if err != nil || token.AccessToken != "access" || token.RefreshToken != "refresh" || token.Scope != "read issues:create" {
+		t.Fatalf("token=%+v err=%v", token, err)
+	}
+	bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "access", "refresh_token": "refresh", "expires_in": 0})
+	}))
+	defer bad.Close()
+	client.TokenURL = bad.URL
+	if _, err = client.RefreshToken(context.Background(), "refresh", "client", "secret"); err == nil || !IsKind(err, ErrorInvalidResponse) {
+		t.Fatalf("incomplete token err=%v", err)
+	}
 }
 
-func TestPatchbayIssueMarkerRoundTrip(t *testing.T) {
-	description := DescriptionWithPatchbayMarker("body", "issue-1")
-	if PatchbayIssueIDFromDescription(description) != "issue-1" { t.Fatalf("marker=%q",description) }
-	if got := StripPatchbayIssueMarker(description); got != "body" { t.Fatalf("stripped=%q",got) }
+func TestOrviloIssueMarkerRoundTrip(t *testing.T) {
+	description := DescriptionWithOrviloMarker("body", "issue-1")
+	if PatchbayIssueIDFromDescription(description) != "issue-1" {
+		t.Fatalf("marker=%q", description)
+	}
+	if got := StripOrviloIssueMarker(description); got != "body" {
+		t.Fatalf("stripped=%q", got)
+	}
 }
 
 func TestHTTPClientTokenRefreshAndRevokeContracts(t *testing.T) {
@@ -82,8 +98,8 @@ func TestHTTPClientGraphQLIssueContracts(t *testing.T) {
 			t.Fatal(err)
 		}
 		switch {
-		case strings.Contains(request.Query, "PatchbayIssues"):
-			if !strings.Contains(request.Query, "PatchbayIssues($project:String!") {
+		case strings.Contains(request.Query, "OrviloIssues"):
+			if !strings.Contains(request.Query, "OrviloIssues($project:String!") {
 				_ = json.NewEncoder(w).Encode(map[string]any{"errors": []any{map[string]any{
 					"message": `Variable "$project" of type "ID!" used in position expecting type "String!".`,
 				}}})
@@ -91,17 +107,17 @@ func TestHTTPClientGraphQLIssueContracts(t *testing.T) {
 			}
 			seen["list"] = true
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"issues": map[string]any{"nodes": []any{map[string]any{"id": "remote-1", "identifier": "ENG-1", "title": "Imported", "priority": 2, "updatedAt": "2026-01-01T00:00:00Z", "team": map[string]any{"id": "team-1"}}}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil}}}})
-		case strings.Contains(request.Query, "PatchbayCreateIssue"):
+		case strings.Contains(request.Query, "OrviloCreateIssue"):
 			seen["create"] = true
 			input := request.Variables["input"].(map[string]any)
 			if input["projectId"] != "project-1" || input["teamId"] != "team-1" {
 				t.Fatalf("create input = %#v", input)
 			}
 			_ = json.NewEncoder(w).Encode(issueMutation("issueCreate", "remote-2"))
-		case strings.Contains(request.Query, "PatchbayUpdateIssue"):
+		case strings.Contains(request.Query, "OrviloUpdateIssue"):
 			seen["update"] = request.Variables["id"] == "remote-2"
 			_ = json.NewEncoder(w).Encode(issueMutation("issueUpdate", "remote-2"))
-		case strings.Contains(request.Query, "PatchbayDeleteIssue"):
+		case strings.Contains(request.Query, "OrviloDeleteIssue"):
 			seen["delete"] = request.Variables["id"] == "remote-2"
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"issueDelete": map[string]any{"success": true}}})
 		default:
@@ -140,7 +156,7 @@ func TestHTTPClientFetchIssueUsesStringIdentifierVariable(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(request.Query, "PatchbayIssue($id:String!)") {
+		if !strings.Contains(request.Query, "OrviloIssue($id:String!)") {
 			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []any{map[string]any{
 				"message": "Variable \"$id\" of type \"ID!\" used in position expecting type \"String!\".",
 			}}})
@@ -168,30 +184,39 @@ func TestHTTPClientFetchIssueUsesStringIdentifierVariable(t *testing.T) {
 
 func TestHTTPClientCatalogReadsProjectTeamConnectionNodes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var request struct { Query string `json:"query"` }
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil { t.Fatal(err) }
-		writeJSON := func(value any) { w.Header().Set("Content-Type", "application/json"); _ = json.NewEncoder(w).Encode(value) }
+		var request struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
+		writeJSON := func(value any) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(value)
+		}
 		switch {
-		case strings.Contains(request.Query, "PatchbayCatalogTeams"):
+		case strings.Contains(request.Query, "OrviloCatalogTeams"):
 			writeJSON(map[string]any{"data": map[string]any{"teams": map[string]any{
-				"nodes": []any{map[string]any{"id": "team-1", "name": "Engineering", "key": "ENG", "organization": map[string]any{"id": "org-1"}}},
+				"nodes":    []any{map[string]any{"id": "team-1", "name": "Engineering", "key": "ENG", "organization": map[string]any{"id": "org-1"}}},
 				"pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil},
 			}}})
-		case strings.Contains(request.Query, "PatchbayCatalogProjects"):
+		case strings.Contains(request.Query, "OrviloCatalogProjects"):
 			if strings.Contains(request.Query, "teams{id}") {
 				writeJSON(map[string]any{"errors": []any{map[string]any{"message": `Cannot query field "id" on type "TeamConnection".`}}})
 				return
 			}
-			if !strings.Contains(request.Query, "teams{nodes{id}}") { t.Fatalf("project query does not read team connection nodes: %s", request.Query) }
+			if !strings.Contains(request.Query, "teams{nodes{id}}") {
+				t.Fatalf("project query does not read team connection nodes: %s", request.Query)
+			}
 			writeJSON(map[string]any{"data": map[string]any{"projects": map[string]any{
-				"nodes": []any{map[string]any{"id": "project-1", "name": "Roadmap", "teams": map[string]any{"nodes": []any{map[string]any{"id": "team-1"}}}}},
+				"nodes":    []any{map[string]any{"id": "project-1", "name": "Roadmap", "teams": map[string]any{"nodes": []any{map[string]any{"id": "team-1"}}}}},
 				"pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil},
 			}}})
-		case strings.Contains(request.Query, "PatchbayCatalogStates"):
+		case strings.Contains(request.Query, "OrviloCatalogStates"):
 			writeJSON(map[string]any{"data": map[string]any{"workflowStates": map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil}}}})
-		case strings.Contains(request.Query, "PatchbayCatalogUsers"):
+		case strings.Contains(request.Query, "OrviloCatalogUsers"):
 			writeJSON(map[string]any{"data": map[string]any{"users": map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil}}}})
-		case strings.Contains(request.Query, "PatchbayCatalogLabels"):
+		case strings.Contains(request.Query, "OrviloCatalogLabels"):
 			writeJSON(map[string]any{"data": map[string]any{"issueLabels": map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil}}}})
 		default:
 			t.Fatalf("unexpected GraphQL operation %s", request.Query)
@@ -199,28 +224,44 @@ func TestHTTPClientCatalogReadsProjectTeamConnectionNodes(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewHTTPClient(server.Client()); client.GraphQLURL = server.URL
+	client := NewHTTPClient(server.Client())
+	client.GraphQLURL = server.URL
 	catalog, err := client.Catalog(context.Background(), "access")
-	if err != nil { t.Fatalf("catalog error = %v", err) }
-	if len(catalog.Teams) != 1 || catalog.Teams[0].ID != "team-1" { t.Fatalf("teams = %+v", catalog.Teams) }
-	if len(catalog.ProjectCatalog) != 1 || catalog.ProjectCatalog[0].TeamID != "team-1" { t.Fatalf("projects = %+v", catalog.ProjectCatalog) }
+	if err != nil {
+		t.Fatalf("catalog error = %v", err)
+	}
+	if len(catalog.Teams) != 1 || catalog.Teams[0].ID != "team-1" {
+		t.Fatalf("teams = %+v", catalog.Teams)
+	}
+	if len(catalog.ProjectCatalog) != 1 || catalog.ProjectCatalog[0].TeamID != "team-1" {
+		t.Fatalf("projects = %+v", catalog.ProjectCatalog)
+	}
 }
 
 func TestHTTPClientValidateBindingReadsProjectTeamConnectionNodes(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var request struct { Query string `json:"query"` }
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil { t.Fatal(err) }
+		var request struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatal(err)
+		}
 		if strings.Contains(request.Query, "teams{id}") {
 			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []any{map[string]any{"message": `Cannot query field "id" on type "TeamConnection".`}}})
 			return
 		}
-		if !strings.Contains(request.Query, "teams{nodes{id}}") { t.Fatalf("binding query does not read team connection nodes: %s", request.Query) }
+		if !strings.Contains(request.Query, "teams{nodes{id}}") {
+			t.Fatalf("binding query does not read team connection nodes: %s", request.Query)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"project": map[string]any{"teams": map[string]any{"nodes": []any{map[string]any{"id": "team-1"}}}}}})
 	}))
 	defer server.Close()
 
-	client := NewHTTPClient(server.Client()); client.GraphQLURL = server.URL
-	if err := client.ValidateBinding(context.Background(), "access", "project-1", "team-1"); err != nil { t.Fatalf("validate binding error = %v", err) }
+	client := NewHTTPClient(server.Client())
+	client.GraphQLURL = server.URL
+	if err := client.ValidateBinding(context.Background(), "access", "project-1", "team-1"); err != nil {
+		t.Fatalf("validate binding error = %v", err)
+	}
 }
 
 func issueMutation(name, id string) map[string]any {

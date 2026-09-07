@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { X, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,19 +14,19 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import type { Issue, UpdateIssueRequest } from "@patchbay/core/types";
-import { commonIssueFields } from "@patchbay/core/issues/batch";
-import { issueBehavesAs } from "@patchbay/core/issues";
-import { useBatchUpdateIssues, useBatchDeleteIssues } from "@patchbay/core/issues/mutations";
-import { useModalStore } from "@patchbay/core/modals";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import type { Issue, UpdateIssueRequest } from "@orvilo/core/types";
+import { commonIssueFields } from "@orvilo/core/issues/batch";
+import { issueBehavesAs } from "@orvilo/core/issues";
+import { useBatchUpdateIssues, useBatchDeleteIssues } from "@orvilo/core/issues/mutations";
+import { useModalStore } from "@orvilo/core/modals";
 import { StatusPicker, PriorityPicker, ExecutorPicker, OwnerPicker } from "./pickers";
 import { useT } from "../../i18n";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@patchbay/ui/lib/motion";
+} from "@orvilo/ui/lib/motion";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 import { useIssueSurfaceSelection } from "../surface/selection-context";
 

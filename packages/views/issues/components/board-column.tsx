@@ -10,15 +10,15 @@ import type {
   IssueExecutorType,
   IssueStatusCategory,
   Project,
-} from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { useViewStoreApi } from "@orvilo/core/issues/stores/view-store-context";
 import { useViewBaseline } from "../surface/view-baseline-context";
 import { StatusHeading } from "./status-heading";
 import { DraggableBoardCard } from "./board-card";

@@ -14,9 +14,9 @@ import (
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // This file is the managed (hosted-OAuth) Events API ingress. BYO installs
@@ -29,7 +29,7 @@ import (
 // differs.
 
 // ManagedEventsPath is the public webhook Slack calls per event. It is public
-// (no Patchbay auth): authenticity comes from the HMAC-SHA256 request
+// (no Orvilo auth): authenticity comes from the HMAC-SHA256 request
 // signature, and tenant routing comes from the event's api_app_id + team_id.
 const ManagedEventsPath = "/api/integrations/slack/events"
 

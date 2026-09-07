@@ -4,17 +4,17 @@ import { useState } from "react";
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronDown, ChevronRight, ExternalLink, Info, Trash2 } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { cn } from "@orvilo/ui/lib/utils";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/ui/components/ui/dialog";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,34 +24,34 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+} from "@orvilo/ui/components/ui/tooltip";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import {
   agentListOptions,
   memberListOptions,
-} from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/workspace/queries";
 import { DingTalkMark } from "./dingtalk-mark";
 import { MessagingConnectionStatus } from "./messaging-connection-status";
 import { DingTalkGroupRoutes } from "./dingtalk-group-routes";
-import { useActorName } from "@patchbay/core/workspace/hooks";
+import { useActorName } from "@orvilo/core/workspace/hooks";
 import {
   dingtalkGroupsOptions,
   dingtalkInstallationsOptions,
   dingtalkKeys,
-} from "@patchbay/core/dingtalk";
-import { api } from "@patchbay/core/api";
+} from "@orvilo/core/dingtalk";
+import { api } from "@orvilo/core/api";
 import type {
   DingTalkGroup,
   DingTalkGroupBot,
   DingTalkInstallation,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
 import { useT, useTimeAgo } from "../../i18n";
@@ -505,7 +505,7 @@ export function DingTalkBotGroups({
 // workspace owner/admin-only in Settings.
 //
 // Adding a new installation flows through the Agent detail page: the install
-// path is per-agent (each Patchbay agent gets exactly one robot — the
+// path is per-agent (each Orvilo agent gets exactly one robot — the
 // (workspace_id, agent_id, channel_type) UNIQUE in channel_installation), so
 // asking the user to pick an agent here would re-create that page's picker.
 export function DingTalkTab() {

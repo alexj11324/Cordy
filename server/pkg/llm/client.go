@@ -10,7 +10,7 @@
 // Running an agent is a different data path entirely: the daemon executes an
 // AI coding tool as a subprocess under that tool's own credentials, and does
 // not forward this layer's ORVILO_LLM_* settings to it. (It does inject the
-// task-scoped Patchbay connection variables the agent itself needs — see
+// task-scoped Orvilo connection variables the agent itself needs — see
 // mergeEnv in pkg/agent, which drops the daemon's inherited ORVILO_* and then
 // appends the values assembled for that task.) Nothing here governs that path,
 // and operator-facing copy about this layer must not imply otherwise — an

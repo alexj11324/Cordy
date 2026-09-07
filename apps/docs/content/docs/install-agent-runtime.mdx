@@ -1,17 +1,17 @@
 ---
 title: Install AI coding tools
-description: Install and sign in to a supported AI coding tool so Patchbay can execute tasks on your machine.
+description: Install and sign in to a supported AI coding tool so Orvilo can execute tasks on your machine.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-A local runtime has two parts: the Patchbay daemon, and one AI coding tool it can invoke. Install only the tool you intend to use — you do not need all of them.
+A local runtime has two parts: the Orvilo daemon, and one AI coding tool it can invoke. Install only the tool you intend to use — you do not need all of them.
 
 ## 1. Choose a tool
 
 A tool that is already installed and signed in needs no extra setup. Tools differ in models, MCP, session resumption, and skill support; the details are in [AI coding tools comparison](/providers).
 
-Patchbay currently detects these commands:
+Orvilo currently detects these commands:
 
 | Tool | Detected command | Official install guide |
 | --- | --- | --- |
@@ -41,23 +41,23 @@ Patchbay currently detects these commands:
 | TRAE CLI | `traecli` | [TRAE official site](https://www.trae.cn/) |
 | Dim | `dim` | [DimCode](https://dimagent.cn/en/docs/cli) |
 
-"Supported" means Patchbay can invoke that CLI. It does not mean Patchbay provides the tool's account, subscription, or model quota for you.
+"Supported" means Orvilo can invoke that CLI. It does not mean Orvilo provides the tool's account, subscription, or model quota for you.
 
 ## 2. Sign in on your machine
 
 After installing, launch the tool once in a terminal on its own and complete its sign-in or model provider setup. If the tool cannot complete requests in the terminal, the daemon's invocations fail the same way.
 
-For CodeArts, verify the non-interactive path with `codearts run --model provider/model "Reply OK"`, not only the TUI. The current CodeArts CLI can let a custom provider work in the TUI while `run`, `models`, and `serve` still require [`CODEARTS_CLI_AK` / `CODEARTS_CLI_SK`](https://support.huaweicloud.com/usermanual-cli/codeartsagent_cli_0026.html). Patchbay can discover custom models from `~/.codeartsdoer/codearts_cli.json` or `.jsonc`, but task execution uses `codearts run` and therefore follows its authorization requirements.
+For CodeArts, verify the non-interactive path with `codearts run --model provider/model "Reply OK"`, not only the TUI. The current CodeArts CLI can let a custom provider work in the TUI while `run`, `models`, and `serve` still require [`CODEARTS_CLI_AK` / `CODEARTS_CLI_SK`](https://support.huaweicloud.com/usermanual-cli/codeartsagent_cli_0026.html). Orvilo can discover custom models from `~/.codeartsdoer/codearts_cli.json` or `.jsonc`, but task execution uses `codearts run` and therefore follows its authorization requirements.
 
 For Reasonix, run `reasonix setup` and configure a default provider and model before starting the daemon.
 
-For QwenPaw, choose the provider and model in QwenPaw's own configuration. Patchbay cannot override a QwenPaw model at run time.
+For QwenPaw, choose the provider and model in QwenPaw's own configuration. Orvilo cannot override a QwenPaw model at run time.
 
-For MiniMax Code, install a supported Node.js release (`>=22.19 <23` or `>=24 <27`) and run `npm install --global @minimax-ai/code@latest`. A global npm install places `mcode` on npm's global binary path; if `command -v mcode` or `Get-Command mcode` cannot find it, add that path to `PATH`. Then run `mcode login`. MiniMax Code owns the model selection; Patchbay cannot override it through ACP.
+For MiniMax Code, install a supported Node.js release (`>=22.19 <23` or `>=24 <27`) and run `npm install --global @minimax-ai/code@latest`. A global npm install places `mcode` on npm's global binary path; if `command -v mcode` or `Get-Command mcode` cannot find it, add that path to `PATH`. Then run `mcode login`. MiniMax Code owns the model selection; Orvilo cannot override it through ACP.
 
-For DeepSeek Harness, install Node.js 20+ and run `npm install -g @deepseek-ai/dsh`, then add the Patchbay runtime profile to it (`dsh plugin --profile patchbay add <bundle>`). The daemon registers DeepSeek Harness only after `dsh --profile patchbay --probe` succeeds. Set `DEEPSEEK_API_KEY` (or store it in dsh's own settings) before starting the daemon.
+For DeepSeek Harness, install Node.js 20+ and run `npm install -g @deepseek-ai/dsh`, then add the Orvilo runtime profile to it (`dsh plugin --profile patchbay add <bundle>`). The daemon registers DeepSeek Harness only after `dsh --profile patchbay --probe` succeeds. Set `DEEPSEEK_API_KEY` (or store it in dsh's own settings) before starting the daemon.
 
-Those login credentials are stored locally by the tool itself. Patchbay never receives login tokens from Claude, Codex, Cursor, or any other CLI.
+Those login credentials are stored locally by the tool itself. Orvilo never receives login tokens from Claude, Codex, Cursor, or any other CLI.
 
 <Callout type="info">
 Claude Code requires 2.0.0 or later, Codex 0.100.0 or later, Copilot 1.0.0 or later, Grok 0.2.89 or later, Qwen Code 0.20.0 or later, and MiniMax Code 0.1.2 or later. Below the minimum version, the daemon does not register the corresponding runtime.
@@ -97,9 +97,9 @@ If the daemon is already running, restart it after installing a new tool:
 patchbay daemon restart
 ```
 
-With Patchbay Desktop, quit and reopen the app.
+With Orvilo Desktop, quit and reopen the app.
 
-Then open Patchbay's **Runtimes** page. The tool appears under the target computer and shows as online. You can now select this runtime when creating or editing an agent.
+Then open Orvilo's **Runtimes** page. The tool appears under the target computer and shows as online. You can now select this runtime when creating or editing an agent.
 
 <Callout type="warning">
 The daemon must detect at least one built-in supported CLI before it will start. Custom runtime profiles sync after the daemon is up, so they cannot be the sole startup condition on a blank machine.
@@ -121,4 +121,4 @@ If the tool shows as online but runs still fail, open the issue's run record to 
 
 - [Create and configure an agent](/agents-create) — select the runtime you just connected.
 - [Daemon and runtimes](/daemon-runtimes) — online status, concurrency, and custom runtimes.
-- [AI coding tools comparison](/providers) — compare what each tool can do in Patchbay.
+- [AI coding tools comparison](/providers) — compare what each tool can do in Orvilo.

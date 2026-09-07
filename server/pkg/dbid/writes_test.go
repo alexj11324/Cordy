@@ -83,8 +83,8 @@ func TestV7QueriesBindAnIDWithADatabaseFallback(t *testing.T) {
 }
 
 const (
-	dbImportPath   = "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	dbidImportPath = "github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	dbImportPath   = "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	dbidImportPath = "github.com/orvilo-ai/orvilo/server/pkg/dbid"
 )
 
 // TestEveryV7ParamsLiteralSetsAnIDAndImportsDBID walks production Go sources

@@ -3,16 +3,16 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { chatPinnedAgentsOptions } from "@patchbay/core/chat/queries";
-import { usePinChatAgent, useUnpinChatAgent } from "@patchbay/core/chat/mutations";
-import type { Agent } from "@patchbay/core/types";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { chatPinnedAgentsOptions } from "@orvilo/core/chat/queries";
+import { usePinChatAgent, useUnpinChatAgent } from "@orvilo/core/chat/mutations";
+import type { Agent } from "@orvilo/core/types";
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
-} from "@patchbay/ui/components/ui/context-menu";
+} from "@orvilo/ui/components/ui/context-menu";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AgentPicker } from "./new-chat-button";
 import { useT } from "../../i18n";

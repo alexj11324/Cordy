@@ -1,4 +1,4 @@
-import type { WebhookEventFilter } from "@patchbay/core/types";
+import type { WebhookEventFilter } from "@orvilo/core/types";
 import type { ScheduleConfig } from "./schedule-editor/model";
 
 export const TEMPLATE_CATEGORY_IDS = [

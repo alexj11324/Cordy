@@ -1,7 +1,7 @@
 "use client";
 
-import { useChatStore } from "@patchbay/core/chat";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+import { useChatStore } from "@orvilo/core/chat";
+import { useWorkspacePaths } from "@orvilo/core/paths";
 import { useNavigation } from "../navigation";
 import { ChatFab } from "./components/chat-fab";
 import { ChatWindow } from "./components/chat-window";

@@ -1,5 +1,5 @@
-import type { Issue, IssueStatus, IssuePriority, IssueExecutorGroup, PropertyFilterValue, PropertyOperatorFilter } from "@patchbay/core/types";
-import type { ActorFilterValue } from "@patchbay/core/issues/stores/view-store";
+import type { Issue, IssueStatus, IssuePriority, IssueExecutorGroup, PropertyFilterValue, PropertyOperatorFilter } from "@orvilo/core/types";
+import type { ActorFilterValue } from "@orvilo/core/issues/stores/view-store";
 import type { IssueActivityState } from "../surface/activity";
 import { getIssueExecutor } from "./issue-executor";
 

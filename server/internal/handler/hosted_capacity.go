@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
+	"github.com/orvilo-ai/orvilo/server/internal/hostedcapacity"
 )
 
 // Hosted-installation-capacity error surface, shared by every install

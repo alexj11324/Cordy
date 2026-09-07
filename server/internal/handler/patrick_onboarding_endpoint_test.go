@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // startPatrickOnboarding drives the endpoint the way the router does: session id
@@ -135,7 +135,7 @@ func TestStartPatrickOnboarding_WritesTheOpeningWithoutRunningAnAgent(t *testing
 	if opening.hasTask {
 		t.Error("no agent produced the opening, so it must carry no task id")
 	}
-	if !strings.Contains(opening.content, "Patchbay") {
+	if !strings.Contains(opening.content, "Orvilo") {
 		t.Errorf("the opening does not read like the product copy: %q", opening.content)
 	}
 	// The kickoff quotes the opening — that is what stops Patrick greeting twice.

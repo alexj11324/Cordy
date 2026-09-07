@@ -11,10 +11,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // This file implements the Slack `/issue`, `/new`, and `/clear` SLASH COMMANDS. They are
@@ -34,7 +34,7 @@ import (
 // of the raw one-liner the user typed. Because creation is asynchronous, the
 // command replies with a PRIVATE (ephemeral) acknowledgement via the command's
 // response_url — there is no issue number to hand back yet — and the agent's
-// completion surfaces to the invoker as a Patchbay inbox notification through the
+// completion surfaces to the invoker as an Orvilo inbox notification through the
 // shared quick-create completion path. It starts no chat session / chat run.
 //
 // The installation routing and identity + membership checks mirror the message
@@ -420,12 +420,12 @@ func (p *SlashCommandProcessor) resolveInstallation(ctx context.Context, appID, 
 		WorkspaceID:     inst.WorkspaceID,
 		AgentID:         inst.AgentID,
 		InstallerUserID: inst.InstallerUserID,
-		Installed:          inst.Status == "installed",
+		Installed:       inst.Status == "installed",
 		Platform:        inst,
 	}, nil
 }
 
-// resolveUser maps the Slack user id to the bound Patchbay user, re-checking
+// resolveUser maps the Slack user id to the bound Orvilo user, re-checking
 // workspace membership (no binding→member FK). Returns engine.ErrSenderUnbound
 // or engine.ErrSenderNotMember for the product cases.
 func (p *SlashCommandProcessor) resolveUser(ctx context.Context, inst engine.ResolvedInstallation, slackUserID string) (pgtype.UUID, error) {

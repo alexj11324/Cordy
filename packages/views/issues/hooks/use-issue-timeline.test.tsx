@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 
-// Mock @patchbay/core/issues/mutations to mimic TanStack Query v5's contract:
+// Mock @orvilo/core/issues/mutations to mimic TanStack Query v5's contract:
 // useMutation returns a fresh result wrapper on every render, but the
 // `mutate` / `mutateAsync` functions inside it are stable across renders.
 // This is exactly the shape that previously fooled the original deps lists
@@ -19,7 +19,7 @@ const stableHandles = vi.hoisted(() => ({
 // server pushes by invoking them directly.
 const wsHandlers = vi.hoisted(() => new Map<string, (payload: unknown) => void>());
 
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@orvilo/core/issues/mutations", () => ({
   useCreateComment: () => ({
     mutateAsync: stableHandles.createMutateAsync,
     mutate: vi.fn(),
@@ -47,7 +47,7 @@ vi.mock("@patchbay/core/issues/mutations", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/issues/queries", () => ({
+vi.mock("@orvilo/core/issues/queries", () => ({
   issueTimelineOptions: (id: string) => ({
     queryKey: ["issues", "timeline", id],
     queryFn: () => Promise.resolve([]),
@@ -97,7 +97,7 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-vi.mock("@patchbay/core/realtime", () => ({
+vi.mock("@orvilo/core/realtime", () => ({
   useWSEvent: (event: string, handler: (payload: unknown) => void) => {
     wsHandlers.set(event, handler);
   },

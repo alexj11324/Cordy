@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 )
 
 const (
@@ -75,8 +75,8 @@ var businessMetricLabels = map[string][]string{
 	"patchbay_issue_created_total":                      {labelSource, labelPlatform},
 	"patchbay_chat_message_sent_total":                  {labelPlatform},
 	"patchbay_agent_created_total":                      {labelRuntimeMode, labelSource},
-	"patchbay_team_created_total":                      {},
-	"patchbay_automation_created_total":                  {labelCadence},
+	"patchbay_team_created_total":                       {},
+	"patchbay_automation_created_total":                 {labelCadence},
 	"patchbay_issue_executed_total":                     {labelSource},
 	"patchbay_runtime_registered_total":                 {labelRuntimeMode, labelProvider},
 	"patchbay_runtime_ready_total":                      {labelRuntimeMode, labelProvider},
@@ -85,9 +85,9 @@ var businessMetricLabels = map[string][]string{
 	"patchbay_runtime_offline_total":                    {labelRuntimeMode, labelProvider},
 	"patchbay_runtime_gc_skipped_total":                 {labelReason},
 	"patchbay_daemon_ws_message_received_total":         {labelKind},
-	"patchbay_automation_run_started_total":              {labelCadence, labelTriggerKind},
-	"patchbay_automation_run_terminal_total":             {labelCadence, labelTriggerKind, labelTerminalStatus},
-	"patchbay_automation_run_skipped_total":              {labelCadence, labelReason},
+	"patchbay_automation_run_started_total":             {labelCadence, labelTriggerKind},
+	"patchbay_automation_run_terminal_total":            {labelCadence, labelTriggerKind, labelTerminalStatus},
+	"patchbay_automation_run_skipped_total":             {labelCadence, labelReason},
 	"patchbay_webhook_delivery_total":                   {labelProvider, labelStatus},
 	"patchbay_webhook_rate_limited_total":               {labelGate},
 	"patchbay_email_rate_limited_total":                 {labelAction, labelGate},
@@ -103,7 +103,7 @@ var businessMetricLabels = map[string][]string{
 	"patchbay_entitlement_refresh_duration_seconds":     {labelOutcome},
 	"patchbay_entitlement_decision_total":               {labelGate, labelAction, labelReason},
 	"patchbay_entitlement_version_regression_total":     {},
-	"patchbay_automation_quota_decision_total":           {labelAction, labelSource, labelResult},
+	"patchbay_automation_quota_decision_total":          {labelAction, labelSource, labelResult},
 }
 
 var forbiddenMetricLabels = map[string]struct{}{
@@ -125,14 +125,14 @@ var forbiddenMetricLabels = map[string]struct{}{
 
 var (
 	knownSources = map[string]string{
-		"issue":           "issue",
-		"chat":            "chat",
+		"issue":            "issue",
+		"chat":             "chat",
 		"automation":       "automation",
 		"automation_issue": "automation_issue",
-		"quick_create":    "quick_create",
-		"manual":          "manual",
-		"api":             "api",
-		"other":           "other",
+		"quick_create":     "quick_create",
+		"manual":           "manual",
+		"api":              "api",
+		"other":            "other",
 	}
 	knownRuntimeModes = map[string]string{
 		"local":   "local",
@@ -140,33 +140,33 @@ var (
 		"unknown": "unknown",
 	}
 	knownRuntimeProviders = map[string]string{
-		"antigravity":   "antigravity",
-		"claude":        "claude",
-		"codearts":      "codearts",
-		"codebuddy":     "codebuddy",
-		"codex":         "codex",
-		"copilot":       "copilot",
-		"cursor":        "cursor",
-		"dsh":           "dsh",
-		"gemini":        "gemini",
-		"grok":          "grok",
-		"hermes":        "hermes",
-		"kiro":          "kiro",
-		"kimi":          "kimi",
-		"reasonix":      "reasonix",
-		"dim":           "dim",
-		"mcode":         "mcode",
-		"zeroclaw":      "zeroclaw",
+		"antigravity":    "antigravity",
+		"claude":         "claude",
+		"codearts":       "codearts",
+		"codebuddy":      "codebuddy",
+		"codex":          "codex",
+		"copilot":        "copilot",
+		"cursor":         "cursor",
+		"dsh":            "dsh",
+		"gemini":         "gemini",
+		"grok":           "grok",
+		"hermes":         "hermes",
+		"kiro":           "kiro",
+		"kimi":           "kimi",
+		"reasonix":       "reasonix",
+		"dim":            "dim",
+		"mcode":          "mcode",
+		"zeroclaw":       "zeroclaw",
 		"patchbay_agent": "patchbay_agent",
-		"openclaw":      "openclaw",
-		"opencode":      "opencode",
-		"deveco":        "deveco",
-		"pi":            "pi",
-		"qoder":         "qoder",
-		"qoderclicn":    "qoderclicn",
-		"qwen":          "qwen",
-		"traecli":       "traecli",
-		"other":         "other",
+		"openclaw":       "openclaw",
+		"opencode":       "opencode",
+		"deveco":         "deveco",
+		"pi":             "pi",
+		"qoder":          "qoder",
+		"qoderclicn":     "qoderclicn",
+		"qwen":           "qwen",
+		"traecli":        "traecli",
+		"other":          "other",
 	}
 	knownTerminalStatuses = map[string]string{
 		"completed": "completed",

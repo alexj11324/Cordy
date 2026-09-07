@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enOnboarding from "../../locales/en/onboarding.json";
 import enWorkspace from "../../locales/en/workspace.json";
-import type { Workspace } from "@patchbay/core/types";
+import type { Workspace } from "@orvilo/core/types";
 
 const TEST_RESOURCES = {
   en: {
@@ -33,7 +33,7 @@ vi.mock("../../auth", () => ({
   useLogout: () => mockLogout,
 }));
 
-vi.mock("@patchbay/core/config", () => ({
+vi.mock("@orvilo/core/config", () => ({
   useConfigStore: (selector: (state: MockConfigState) => unknown) =>
     mockUseConfigStore(selector),
 }));
@@ -61,7 +61,7 @@ vi.mock("../../platform/use-local-daemon-status", () => ({
   useLocalDaemonStatus: mockDaemon,
 }));
 
-vi.mock("@patchbay/core/workspace/mutations", () => ({
+vi.mock("@orvilo/core/workspace/mutations", () => ({
   useCreateWorkspace: () => ({
     mutate: mockCreateMutate,
     mutateAsync: mockCreateMutate,
@@ -69,7 +69,7 @@ vi.mock("@patchbay/core/workspace/mutations", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
     createProject: mockCreateProject,

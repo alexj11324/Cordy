@@ -24,11 +24,11 @@ the RN platform itself:
 **Fact**: as of 2026-05, **no single library satisfies path A + path B
 simultaneously** — i.e. native rendering performance AND custom React
 component for arbitrary leaf nodes. This is an ecosystem-level constraint,
-not a Patchbay problem.
+not an Orvilo problem.
 
 ### Concrete library survey (2026-05)
 
-| Library | Path | Last release | Verdict for Patchbay |
+| Library | Path | Last release | Verdict for Orvilo |
 |---|---|---|---|
 | [`react-native-enriched-markdown`](https://github.com/software-mansion/enriched-markdown) | A | v0.6.0 (May 2026) | **Selected for prose.** Expo officially recommends it in [Edit rich text](https://docs.expo.dev/guides/editing-richtext/) — A-tier endorsement. Software Mansion (same team as Reanimated / Gesture Handler) |
 | [`react-native-streamdown`](https://github.com/software-mansion-labs/react-native-streamdown) | A + worklets | active 2026 | Not adopted. Built on enriched-markdown, optimised for AI streaming. Web/desktop don't use a streaming-specific renderer either, mobile streaming isn't currently a top product pain |
@@ -44,7 +44,7 @@ Closed-source production references like Stream Chat's [`StreamingMessageView`](
 
 ## Decision
 
-Patchbay mobile uses a **segment-based hybrid renderer** that dispatches
+Orvilo mobile uses a **segment-based hybrid renderer** that dispatches
 each markdown token type to the renderer that doesn't trip on that
 token's specific platform trap.
 

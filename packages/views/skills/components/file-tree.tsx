@@ -13,14 +13,14 @@ import {
   PencilLine,
   Trash2,
 } from "lucide-react";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 
 /**

@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // teamOperatingProtocolHeader is the hard-coded system-level briefing
@@ -38,7 +38,7 @@ Your responsibilities, in order:
    Roster below — prefer the member whose skills cover the work.
 2. **Delegate by @mention.** Post a single comment on this issue that
    @mentions the chosen member(s) and tells them what to do.
-   - **Be terse.** Every Patchbay agent already has full context of the
+   - **Be terse.** Every Orvilo agent already has full context of the
      issue (title, description, all prior comments, attachments) and
      the surrounding workspace. Do NOT restate or summarise the
      issue body, prior discussion, or known facts in your delegation
@@ -298,7 +298,7 @@ func renderMemberRow(ctx context.Context, q *db.Queries, m db.TeamMember, skillN
 		}
 		// Mention syntax for humans uses the user_id (matches the rest of
 		// the product — see util.MentionRe and frontend mention payloads).
-		// Humans have no Patchbay skills, so no skills segment is rendered.
+		// Humans have no Orvilo skills, so no skills segment is rendered.
 		userID := util.UUIDToString(m.MemberID)
 		return formatRosterRow(user.Name, "member (human)", role, "", formatMention(user.Name, "member", userID))
 	default:

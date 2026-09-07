@@ -18,25 +18,25 @@ import {
   automationDeliveriesOptions,
   automationDeliveryOptions,
   useReplayAutomationDelivery,
-} from "@patchbay/core/automations";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Badge } from "@patchbay/ui/components/ui/badge";
+} from "@orvilo/core/automations";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Badge } from "@orvilo/ui/components/ui/badge";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { cn } from "@patchbay/ui/lib/utils";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+} from "@orvilo/ui/components/ui/dialog";
+import { cn } from "@orvilo/ui/lib/utils";
+import { copyText } from "@orvilo/ui/lib/clipboard";
 import { toast } from "sonner";
 import { useLocale, useT } from "../../i18n";
 import type {
   WebhookDelivery,
   WebhookDeliveryStatus,
   WebhookSignatureStatus,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 
 // --- Status visuals -------------------------------------------------------
 

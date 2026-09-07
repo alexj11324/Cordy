@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
 )
 
 // The two tests below are composition tests, not text-presence tests. The
@@ -31,7 +31,7 @@ func leaderCommentRuntimeBrief(t *testing.T, instructions string) string {
 		IssueID:           "issue-1",
 		TriggerCommentID:  "comment-1",
 		AgentInstructions: instructions,
-		IsTeamLeader:     true,
+		IsTeamLeader:      true,
 	}); err != nil {
 		t.Fatalf("InjectRuntimeConfig: %v", err)
 	}

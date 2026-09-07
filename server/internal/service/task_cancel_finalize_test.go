@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 func newCancelFinalizePool(t *testing.T) *pgxpool.Pool {
@@ -620,7 +620,7 @@ func (f cancelFinalizeFixture) unbindChannelSession(t *testing.T, ctx context.Co
 }
 
 // Channel-ingested user messages are the durable record of what the platform
-// sender wrote — the sender has no Patchbay composer to restore a draft into.
+// sender wrote — the sender has no Orvilo composer to restore a draft into.
 // The gate is the immutable per-message channel_ingested stamp, so it must
 // hold even after archiving/rebinding deleted the session binding: cancelling
 // the sealed queued task keeps the messages and settles as "Stopped.".

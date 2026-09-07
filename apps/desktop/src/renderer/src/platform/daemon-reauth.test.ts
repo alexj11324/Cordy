@@ -7,7 +7,7 @@ const { mockGetState, logout } = vi.hoisted(() => ({
 
 const { toastError } = vi.hoisted(() => ({ toastError: vi.fn() }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: { getState: mockGetState },
 }));
 

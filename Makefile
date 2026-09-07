@@ -100,7 +100,7 @@ selfhost: ## Create .env if needed, then pull and start the official self-hosted
 		fi; \
 		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and ORVILO_VCS_SECRET_KEY"; \
 	fi
-	@echo "==> Pulling official Patchbay images..."
+	@echo "==> Pulling official Orvilo images..."
 	@if ! $(COMPOSE) -f docker-compose.selfhost.yml pull; then \
 		echo ""; \
 		echo "Official images for tag '$${ORVILO_IMAGE_TAG:-latest}' are not published yet."; \
@@ -108,7 +108,7 @@ selfhost: ## Create .env if needed, then pull and start the official self-hosted
 		echo "  make selfhost-build"; \
 		exit 1; \
 	fi
-	@echo "==> Starting Patchbay via Docker Compose..."
+	@echo "==> Starting Orvilo via Docker Compose..."
 	$(COMPOSE) -f docker-compose.selfhost.yml up -d
 	@bash scripts/selfhost-wait.sh official
 
@@ -133,13 +133,13 @@ selfhost-build: ## Build backend/web from the current checkout and start the sel
 		fi; \
 		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and ORVILO_VCS_SECRET_KEY"; \
 	fi
-	@echo "==> Building Patchbay from the current checkout..."
+	@echo "==> Building Orvilo from the current checkout..."
 	$(COMPOSE) -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build
 	@bash scripts/selfhost-wait.sh build
 
 selfhost-stop: ## Stop the self-hosted Docker Compose stack
 	$(REQUIRE_COMPOSE)
-	@echo "==> Stopping Patchbay services..."
+	@echo "==> Stopping Orvilo services..."
 	$(COMPOSE) -f docker-compose.selfhost.yml down
 	@echo "✓ All services stopped."
 
@@ -328,7 +328,7 @@ cli: ## Run the patchbay CLI with ARGS or ORVILO_ARGS from source
 	@$(MAKE) patchbay ORVILO_ARGS="$(ORVILO_ARGS)"
 
 patchbay: ## Run the patchbay CLI entrypoint directly from the Go source tree
-	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/patchbay $(ORVILO_ARGS)
+	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/orvilo $(ORVILO_ARGS)
 
 VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
@@ -347,7 +347,7 @@ DATE    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 build: EXE = $(if $(filter windows,$(or $(GOOS),$(shell go env GOOS))),.exe,)
 build: ## Build the server, CLI, and migrate binaries into server/bin
 	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o bin/server$(EXE) ./cmd/server
-	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/patchbay$(EXE) ./cmd/patchbay
+	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/patchbay$(EXE) ./cmd/orvilo
 	cd server && go build -o bin/migrate$(EXE) ./cmd/migrate
 
 test: ## Run Go tests after ensuring the target DB exists and migrations are applied

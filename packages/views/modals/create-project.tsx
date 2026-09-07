@@ -22,31 +22,31 @@ function GithubIcon({ className }: { className?: string }) {
   );
 }
 import { useQuery } from "@tanstack/react-query";
-import { useCreateProject } from "@patchbay/core/projects/mutations";
-import { useProjectDraftStore } from "@patchbay/core/projects";
+import { useCreateProject } from "@orvilo/core/projects/mutations";
+import { useProjectDraftStore } from "@orvilo/core/projects";
 import {
   PROJECT_STATUS_CONFIG,
   PROJECT_STATUS_ORDER,
   PROJECT_PRIORITY_ORDER,
-} from "@patchbay/core/projects/config";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
-import { memberListOptions, agentListOptions } from "@patchbay/core/workspace/queries";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import type { ProjectStatus, ProjectPriority } from "@patchbay/core/types";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/core/projects/config";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useCurrentWorkspace, useWorkspacePaths } from "@orvilo/core/paths";
+import { memberListOptions, agentListOptions } from "@orvilo/core/workspace/queries";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import type { ProjectStatus, ProjectPriority } from "@orvilo/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogTitle } from "@patchbay/ui/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@orvilo/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Popover, PopoverTrigger, PopoverContent } from "@patchbay/ui/components/ui/popover";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { EmojiPicker } from "@patchbay/ui/components/common/emoji-picker";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Popover, PopoverTrigger, PopoverContent } from "@orvilo/ui/components/ui/popover";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@orvilo/ui/components/ui/tooltip";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { EmojiPicker } from "@orvilo/ui/components/common/emoji-picker";
 import { ContentEditor, type ContentEditorRef, TitleEditor } from "../editor";
 import { PriorityIcon } from "../issues/components/priority-icon";
 import { ActorAvatar } from "../common/actor-avatar";
@@ -67,12 +67,12 @@ import {
   validateLocalDirectory,
 } from "../platform/local-directory";
 import { useLocalDaemonStatus } from "../platform/use-local-daemon-status";
-import { useConfigStore } from "@patchbay/core/config";
-import type { LocalDirectoryExecutionMode } from "@patchbay/core/types";
+import { useConfigStore } from "@orvilo/core/config";
+import type { LocalDirectoryExecutionMode } from "@orvilo/core/types";
 import {
   runtimeAdvertisesLocalWorktreeCommittedBase,
   runtimeListOptions,
-} from "@patchbay/core/runtimes";
+} from "@orvilo/core/runtimes";
 import { LocalDirectoryModeOptions } from "../projects/components/local-directory-mode-dialog";
 
 /**

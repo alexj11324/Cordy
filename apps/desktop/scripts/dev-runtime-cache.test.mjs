@@ -35,7 +35,7 @@ describe("Go development runtime cache", () => {
         home: "/Users/dev",
         env: {},
       }),
-    ).toBe("/Users/dev/Library/Caches/Patchbay/dev-runtime");
+    ).toBe("/Users/dev/Library/Caches/Orvilo/dev-runtime");
     expect(
       defaultDevRuntimeCacheDir({
         platform: "linux",

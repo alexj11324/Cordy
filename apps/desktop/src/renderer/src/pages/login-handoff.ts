@@ -1,4 +1,4 @@
-import { ApiClient, ApiError } from "@patchbay/core/api";
+import { ApiClient, ApiError } from "@orvilo/core/api";
 import { DEFAULT_RUNTIME_CONFIG, loopbackSessionApiUrl } from "../../../shared/runtime-config";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";

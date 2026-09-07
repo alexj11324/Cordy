@@ -3,7 +3,7 @@
 Use the packaged preview to validate native login and callbacks:
 
 ```sh
-pnpm --filter @patchbay/desktop preview
+pnpm --filter @orvilo/desktop preview
 ```
 
 Quit that checkout's existing preview first. The command prepares Go binaries

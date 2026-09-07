@@ -1,5 +1,5 @@
 {
-  "extends": "@patchbay/tsconfig/react-library.json",
+  "extends": "@orvilo/tsconfig/react-library.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "."

@@ -1,15 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { buildIssueStatusCatalog } from "@patchbay/core/issue-statuses";
-import type { Issue, IssueStatusEntry } from "@patchbay/core/types";
+import { buildIssueStatusCatalog } from "@orvilo/core/issue-statuses";
+import type { Issue, IssueStatusEntry } from "@orvilo/core/types";
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 const mockOpenModal = vi.fn();
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@orvilo/core/modals", () => ({
   useModalStore: Object.assign(
     (selector?: any) => {
       const state = { open: mockOpenModal };
@@ -20,7 +20,7 @@ vi.mock("@patchbay/core/modals", () => ({
 }));
 
 const mockAuthState = { user: { id: "user-1" }, isAuthenticated: true };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => (selector ? selector(mockAuthState) : mockAuthState),
     { getState: () => mockAuthState },
@@ -34,7 +34,7 @@ const pinListRef: { value: Array<{ item_type: string; item_id: string }> } = {
 };
 const mockCreatePinMutate = vi.fn();
 const mockDeletePinMutate = vi.fn();
-vi.mock("@patchbay/core/pins", () => ({
+vi.mock("@orvilo/core/pins", () => ({
   pinListOptions: () => ({
     queryKey: ["pins", "ws-1", "user-1"],
     queryFn: () => Promise.resolve(pinListRef.value),
@@ -44,7 +44,7 @@ vi.mock("@patchbay/core/pins", () => ({
 }));
 
 const mockUpdateMutate = vi.fn();
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@orvilo/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutate: mockUpdateMutate }),
 }));
 
@@ -76,13 +76,13 @@ function statusEntry(overrides: Partial<IssueStatusEntry>): IssueStatusEntry {
     ...overrides,
   };
 }
-vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
+vi.mock("@orvilo/core/issue-statuses/hooks", () => ({
   useIssueStatuses: () => buildIssueStatusCatalog(catalogEntries),
 }));
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@orvilo/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/paths")>(
+    "@orvilo/core/paths",
   );
   return {
     ...actual,

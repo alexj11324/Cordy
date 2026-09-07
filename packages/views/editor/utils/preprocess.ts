@@ -3,8 +3,8 @@ import {
   preprocessMentionShortcodes,
   preprocessFileCards,
   preprocessIssueIdentifiers,
-} from "@patchbay/ui/markdown";
-import { stripChannelMediaMarkers } from "@patchbay/core/types";
+} from "@orvilo/ui/markdown";
+import { stripChannelMediaMarkers } from "@orvilo/core/types";
 
 /**
  * Preprocess a markdown string before loading into Tiptap via contentType: 'markdown'.

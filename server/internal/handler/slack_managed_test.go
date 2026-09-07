@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/slack"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
 )
 
 const managedTestPublicURL = "https://api.example.test"

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // TestDetectBuiltinRuntimes_ProbesRunConcurrently proves the registration

@@ -4,9 +4,9 @@ import { useEffect, useRef } from "react";
 import {
   registerSystemNotificationClickHandler,
   type SystemNotificationPayload,
-} from "@patchbay/core/platform";
-import { paths } from "@patchbay/core/paths";
-import { useNavigation } from "@patchbay/views/navigation";
+} from "@orvilo/core/platform";
+import { paths } from "@orvilo/core/paths";
+import { useNavigation } from "@orvilo/views/navigation";
 
 /**
  * Routes browser notification clicks to the source workspace's inbox, focused

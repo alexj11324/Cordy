@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
 )
 
 // addSecondWorkspaceMember creates another member of the handler test

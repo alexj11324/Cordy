@@ -11,9 +11,9 @@ import {
   Search,
   X,
 } from "lucide-react";
-import type { Agent, MemberWithUser } from "@patchbay/core/types";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
-import { Button } from "@patchbay/ui/components/ui/button";
+import type { Agent, MemberWithUser } from "@orvilo/core/types";
+import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -24,20 +24,20 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Input } from "@patchbay/ui/components/ui/input";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+} from "@orvilo/ui/components/ui/popover";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
+} from "@orvilo/ui/components/ui/tooltip";
+import { ActorAvatar } from "@orvilo/ui/components/common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import {
   type SkillColumnKey,
@@ -45,7 +45,7 @@ import {
   type SkillOriginType,
   type SkillSortDirection,
   type SkillSortField,
-} from "@patchbay/core/skills/stores";
+} from "@orvilo/core/skills/stores";
 import { useT } from "../../i18n";
 import type { SkillRow } from "./skills-page";
 import { PAGE_TOOLBAR } from "../../layout/page-header";

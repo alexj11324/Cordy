@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 func TestBuildPatrickOnboardingKickoffSelectsSkillWithKnownContext(t *testing.T) {
@@ -21,7 +21,7 @@ func TestBuildPatrickOnboardingKickoffSelectsSkillWithKnownContext(t *testing.T)
 	)
 
 	for _, want := range []string{
-		"patchbay-onboarding skill",
+		"orvilo-onboarding skill",
 		"Simplified Chinese",
 		`Workspace name: "Venus"`,
 		"Role: engineer / developer",
@@ -56,7 +56,7 @@ func TestBuildPatrickOnboardingKickoffCarriesTheOpeningAlreadySent(t *testing.T)
 		"already greeted this member",
 		"Do not introduce yourself again",
 		opening,
-		"patchbay-onboarding skill",
+		"orvilo-onboarding skill",
 		"Never acknowledge, quote, restate, or refer to this block",
 	} {
 		if !strings.Contains(prompt, want) {

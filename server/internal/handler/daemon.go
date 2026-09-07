@@ -19,22 +19,22 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	"github.com/patchbay-ai/patchbay/server/internal/runtimeapps"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
-	"github.com/patchbay-ai/patchbay/server/pkg/redact"
-	"github.com/patchbay-ai/patchbay/server/pkg/skillbundle"
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/daemonws"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/slack"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/runtimeapps"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/pkg/redact"
+	"github.com/orvilo-ai/orvilo/server/pkg/skillbundle"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 )
 
 // ---------------------------------------------------------------------------
@@ -2698,7 +2698,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// A task-level delivery snapshot, not the Chat's historical binding,
 		// decides whether this run is operating for an external audience.
 		// Web/Desktop/Mobile turns in an old channel-originated Chat have no
-		// snapshot and remain private to Patchbay after /new rotates the route.
+		// snapshot and remain private to Orvilo after /new rotates the route.
 		delivery, deliveryErr := h.Queries.GetChannelTaskDelivery(r.Context(), task.ID)
 		if deliveryErr == nil {
 			resp.ChatChannelType = delivery.ChannelType
@@ -3388,14 +3388,14 @@ func worktreeClaimBlockReason(resources []ProjectResourceData, runtime db.AgentR
 		}
 		if ref.WorktreeBase == "head" && !hasCommittedBaseCapability {
 			return fmt.Sprintf(
-				"This machine's Patchbay runtime does not support the committed HEAD baseline requested by %q. "+
-					"Update the Patchbay app on that machine to the latest version, then re-run this task. "+
+				"This machine's Orvilo runtime does not support the committed HEAD baseline requested by %q. "+
+					"Update the Orvilo app on that machine to the latest version, then re-run this task. "+
 					"Refusing to run with a legacy dirty snapshot while the project is configured for a committed baseline.",
 				ref.LocalPath)
 		}
 		return fmt.Sprintf(
-			"This machine's Patchbay runtime does not support parallel (worktree) mode, which %q is set to use. "+
-				"Update the Patchbay app on that machine to the latest version, then re-run this task. "+
+			"This machine's Orvilo runtime does not support parallel (worktree) mode, which %q is set to use. "+
+				"Update the Orvilo app on that machine to the latest version, then re-run this task. "+
 				"Refusing to run rather than falling back to editing the directory directly, which is what this mode exists to prevent.",
 			ref.LocalPath)
 	}

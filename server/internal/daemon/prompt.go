@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
 )
 
 // sessionContinuityNoticeFor picks the notice matching what this surface
@@ -250,7 +250,7 @@ func buildPromptBody(task Task, provider string) string {
 		return buildQuickCreatePrompt(task)
 	}
 	var b strings.Builder
-	b.WriteString("You are running as a local coding agent for a Patchbay workspace.\n\n")
+	b.WriteString("You are running as a local coding agent for an Orvilo workspace.\n\n")
 	fmt.Fprintf(&b, "Your executor issue ID is: %s\n\n", task.IssueID)
 	// Executor handoff (MUL-3375): a free-text instruction the person who
 	// set/promoted this issue's executor left for you. Frame it as a handoff, not a
@@ -266,7 +266,7 @@ func buildPromptBody(task Task, provider string) string {
 
 func buildAgentThreadPrompt(task Task) string {
 	var b strings.Builder
-	b.WriteString("Continue the existing Patchbay task conversation in the same provider session.\n\n")
+	b.WriteString("Continue the existing Orvilo task conversation in the same provider session.\n\n")
 	b.WriteString("The member's next turn is quoted below. Treat it as task-scoped user input, not as a new Chat conversation:\n\n")
 	fmt.Fprintf(&b, "> %s\n\n", task.AgentThreadMessage)
 	fmt.Fprintf(&b, "Continue working on issue %s and report the result through the normal task workflow.\n", task.IssueID)
@@ -282,7 +282,7 @@ func buildAgentThreadPrompt(task Task) string {
 // or reply to.
 func buildQuickCreatePrompt(task Task) string {
 	var b strings.Builder
-	b.WriteString("You are running as a quick-create assistant for a Patchbay workspace.\n\n")
+	b.WriteString("You are running as a quick-create assistant for an Orvilo workspace.\n\n")
 	b.WriteString("A user captured the following input via the quick-create modal. There is NO existing issue. Your job is to create a well-formed issue from this input with a single `patchbay issue create` command.\n\n")
 	if len(task.QuickCreateSourceContext) > 0 {
 		b.WriteString("New sub-issue instruction:\n\n")
@@ -338,7 +338,7 @@ func buildQuickCreatePrompt(task Task) string {
 			fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to the picker TEAM: pass `--executor-id %q` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected executor. Never leave the issue without an executor, and do not assign it to your own agent UUID.\n\n", task.TeamID)
 		}
 	case agentID != "":
-			fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to YOURSELF: pass `--executor-id %q` (your agent UUID). The picker agent is the expected executor because the user opened quick-create with you selected — never leave the issue without an executor. Use the UUID flag, not `--executor <name>`, so executor routing is unambiguous even when other agents share part of your name.\n\n", agentID)
+		fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to YOURSELF: pass `--executor-id %q` (your agent UUID). The picker agent is the expected executor because the user opened quick-create with you selected — never leave the issue without an executor. Use the UUID flag, not `--executor <name>`, so executor routing is unambiguous even when other agents share part of your name.\n\n", agentID)
 	case agentName != "":
 		fmt.Fprintf(&b, "    - When the user did NOT name a routing target, default to YOURSELF: pass `--executor %q`. The picker agent is the expected executor because the user opened quick-create with you selected — never leave the issue without an executor.\n\n", agentName)
 	default:
@@ -395,7 +395,7 @@ func buildQuickCreatePrompt(task Task) string {
 // previous turn's --parent UUID.
 func buildCommentPrompt(task Task, provider string) string {
 	var b strings.Builder
-	b.WriteString("You are running as a local coding agent for a Patchbay workspace.\n\n")
+	b.WriteString("You are running as a local coding agent for an Orvilo workspace.\n\n")
 	fmt.Fprintf(&b, "Your executor issue ID is: %s\n\n", task.IssueID)
 	if task.TriggerCommentContent != "" {
 		authorLabel := "A user"
@@ -582,13 +582,13 @@ func buildChatPrompt(task Task) string {
 	// New agent creation no longer creates a chat or runs this prompt.
 	if task.ChatIntro {
 		var b strings.Builder
-		b.WriteString("You are running as a chat assistant for a Patchbay workspace.\n")
+		b.WriteString("You are running as a chat assistant for an Orvilo workspace.\n")
 		b.WriteString("You were just created, and this is the very first message in a direct chat with the person who created you. They have not written anything yet — you are opening the conversation. Send a short, warm, first-person introduction: who you are, what you're good at, and how they can work with you. Do NOT phrase it as an answer to a question or repeat any prompt back; just introduce yourself as if you reached out first.\n")
 		return b.String()
 	}
 
 	var b strings.Builder
-	b.WriteString("You are running as a chat assistant for a Patchbay workspace.\n")
+	b.WriteString("You are running as a chat assistant for an Orvilo workspace.\n")
 	// Audience is per-session context, so keep it out of the cached runtime
 	// brief. The compact anchors here preserve the non-inferable boundaries: a
 	// group reply is not private to its sender and people not otherwise present
@@ -603,9 +603,9 @@ func buildChatPrompt(task Task) string {
 	}
 	// Channel awareness (MUL-3871). When the session is backed by an IM channel,
 	// the agent must KNOW it is operating inside that channel — otherwise an ask
-	// like "what did you just talk about" sends it to read Patchbay instead of the
+	// like "what did you just talk about" sends it to read Orvilo instead of the
 	// channel conversation. A web-only chat session gets no such block — its
-	// history is the Patchbay chat_session the agent already resumes.
+	// history is the Orvilo chat_session the agent already resumes.
 	//
 	// The history half: `patchbay chat history` is served by handler/chat_history.go,
 	// which reads the live channel for Slack and falls back to the stored
@@ -617,9 +617,9 @@ func buildChatPrompt(task Task) string {
 	//
 	// WHERE the conversation lives is therefore per-branch, not shared: only the
 	// unconditional "don't go looking in issues/comments" survives up top. Saying
-	// "its history lives in the channel, NOT in Patchbay" for every channel type
+	// "its history lives in the channel, NOT in Orvilo" for every channel type
 	// contradicted the very next line on a transcript surface, which tells the
-	// agent Patchbay stored it and hands it the command to read it back. An agent
+	// agent Orvilo stored it and hands it the command to read it back. An agent
 	// given both reasonably believes the read cannot work and skips it.
 	//
 	// The no-narration rule is a THIRD axis and belongs to neither half: it is a
@@ -629,9 +629,9 @@ func buildChatPrompt(task Task) string {
 	// silently dropped it for Feishu/Lark (GH #6006).
 	if task.ChatChannelType != "" {
 		platform := channelDisplayName(task.ChatChannelType)
-		fmt.Fprintf(&b, "You are operating inside a %s conversation — not the Patchbay web app. Never look in Patchbay issues or comments for this conversation.\n", platform)
+		fmt.Fprintf(&b, "You are operating inside a %s conversation — not the Orvilo web app. Never look in Orvilo issues or comments for this conversation.\n", platform)
 		if task.ChatChannelType == execenv.ChannelTypeSlack {
-			fmt.Fprintf(&b, "This conversation and its history live in %s, NOT in Patchbay. The message below may be only what triggered you. Read the conversation with:\n", platform)
+			fmt.Fprintf(&b, "This conversation and its history live in %s, NOT in Orvilo. The message below may be only what triggered you. Read the conversation with:\n", platform)
 			b.WriteString("- `patchbay chat history --output json` — the channel overview: recent top-level messages, each thread tagged with a `thread_id` and `reply_count`. It does NOT expand thread contents.\n")
 			b.WriteString("- `patchbay chat thread [<thread_id>] --output json` — read one thread's messages; omit the id to read the thread you are in, or pass a `thread_id` from the overview to read a specific thread.\n")
 			if task.ChatInThread {
@@ -644,9 +644,9 @@ func buildChatPrompt(task Task) string {
 			// prefixed with "我先读取…"). Tell the agent to keep them out of its answer.
 			b.WriteString("Do these reads SILENTLY as an internal step — they are how you gather context, not part of your answer.\n")
 		} else if execenv.SurfacePersistsTranscript(task.ChatChannelType) {
-			fmt.Fprintf(&b, "The conversation happens in %s, and Patchbay stores a transcript of it. The message below may be only what triggered you — read it back with `patchbay chat history` when you need earlier context that is not below.\n", platform)
+			fmt.Fprintf(&b, "The conversation happens in %s, and Orvilo stores a transcript of it. The message below may be only what triggered you — read it back with `patchbay chat history` when you need earlier context that is not below.\n", platform)
 		} else {
-			fmt.Fprintf(&b, "This conversation and its history live in %s, NOT in Patchbay, and Patchbay has no history reader for it. Work from the context already provided to you below — no command can fetch more of this conversation. If you genuinely need earlier context that is not here, ask the user for it rather than guessing.\n", platform)
+			fmt.Fprintf(&b, "This conversation and its history live in %s, NOT in Orvilo, and Orvilo has no history reader for it. Work from the context already provided to you below — no command can fetch more of this conversation. If you genuinely need earlier context that is not here, ask the user for it rather than guessing.\n", platform)
 		}
 		// Scoped to process, not results — a completion confirmation IS the deliverable.
 		fmt.Fprintf(&b, "Reply to %s with the final outcome only. Do NOT narrate planned or in-progress steps (\"我先读取…\"); completed actions are part of the outcome.\n", platform)
@@ -705,7 +705,7 @@ func buildChatPrompt(task Task) string {
 	// Outbound attachments: how the agent puts an image/file INTO its reply.
 	// This is the DELIVERY layer of the channel policy, and it has three
 	// answers, not two (MUL-4899). `attachment upload` binds a file to the
-	// Patchbay chat reply on every surface; what differs is whether anything
+	// Orvilo chat reply on every surface; what differs is whether anything
 	// goes back for it. Web/mobile renders it as a card in the browser. A
 	// channel-backed chat gets the upload guidance only where the server said
 	// this deployment performs the last hop, and otherwise the upload reaches
@@ -724,9 +724,9 @@ func buildChatPrompt(task Task) string {
 	case task.ChatChannelType == "":
 		b.WriteString("\nTo include a file or image you produced in your reply, run `patchbay attachment upload <local-path>`. The file binds to your reply automatically and appears as an attachment card below it even if you paste nothing. The command also returns a `markdown` snippet you may paste on its own line to place the item where you want it (files render as a card, images inline).\n")
 	case execenv.ChannelCarriesFiles(task.ChatChannelType, task.ChatChannelDeliversFiles):
-		fmt.Fprintf(&b, "\nTo include a file or image you produced in your reply, run `patchbay attachment upload <local-path>`. It binds to your reply and Patchbay sends it into the %s conversation as a separate message right after your text — there is no way to place it inline, so write your reply to read correctly with the file arriving after it.\n", channelDisplayName(task.ChatChannelType))
+		fmt.Fprintf(&b, "\nTo include a file or image you produced in your reply, run `patchbay attachment upload <local-path>`. It binds to your reply and Orvilo sends it into the %s conversation as a separate message right after your text — there is no way to place it inline, so write your reply to read correctly with the file arriving after it.\n", channelDisplayName(task.ChatChannelType))
 	default:
-		fmt.Fprintf(&b, "\nThis reply is delivered to %s as text. You cannot attach a file to it: `patchbay attachment upload` binds to a Patchbay chat reply, which this is not. If you produce a file, describe it in words — never write its local path as a link, and never upload it and then write as though it arrived.\n", channelDisplayName(task.ChatChannelType))
+		fmt.Fprintf(&b, "\nThis reply is delivered to %s as text. You cannot attach a file to it: `patchbay attachment upload` binds to an Orvilo chat reply, which this is not. If you produce a file, describe it in words — never write its local path as a link, and never upload it and then write as though it arrived.\n", channelDisplayName(task.ChatChannelType))
 	}
 	return b.String()
 }
@@ -741,8 +741,8 @@ func channelDisplayName(channelType string) string {
 // buildAutomationPrompt constructs a prompt for run_only automation tasks.
 func buildAutomationPrompt(task Task) string {
 	var b strings.Builder
-	b.WriteString("You are running as a local coding agent for a Patchbay workspace.\n\n")
-	b.WriteString("This task was triggered by an Automation in run-only mode. There is no Patchbay issue attached to this run.\n\n")
+	b.WriteString("You are running as a local coding agent for an Orvilo workspace.\n\n")
+	b.WriteString("This task was triggered by an Automation in run-only mode. There is no Orvilo issue attached to this run.\n\n")
 	fmt.Fprintf(&b, "Automation run ID: %s\n", task.AutomationRunID)
 	if task.AutomationID != "" {
 		fmt.Fprintf(&b, "Automation ID: %s\n", task.AutomationID)

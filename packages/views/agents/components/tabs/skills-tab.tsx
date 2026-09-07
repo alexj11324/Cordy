@@ -16,30 +16,30 @@ import type {
   AgentRuntime,
   DisabledRuntimeSkill,
   RuntimeLocalSkillSummary,
-} from "@patchbay/core/types";
-import { api, ApiError } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+} from "@orvilo/core/types";
+import { api, ApiError } from "@orvilo/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import {
   isRuntimeUsableForUser,
   runtimeCapabilitiesOptions,
   runtimeDisplayLabel,
-} from "@patchbay/core/runtimes";
+} from "@orvilo/core/runtimes";
 import {
   skillDetailOptions,
   skillListOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/workspace/queries";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Switch } from "@patchbay/ui/components/ui/switch";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/dialog";
+import { Switch } from "@orvilo/ui/components/ui/switch";
+import { cn } from "@orvilo/ui/lib/utils";
 import { SkillAddDialog } from "../skill-add-dialog";
 import { useT } from "../../../i18n";
 

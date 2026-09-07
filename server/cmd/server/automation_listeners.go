@@ -4,11 +4,11 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/handler"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/handler"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // registerAutomationListeners hooks into issue and task events to keep

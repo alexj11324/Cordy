@@ -20,7 +20,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/redact"
+	"github.com/orvilo-ai/orvilo/server/pkg/redact"
 )
 
 // codexBlockedArgs are flags hardcoded by the daemon that must not be
@@ -652,7 +652,7 @@ func normalizeCodexMcpServerConfig(server map[string]any) map[string]any {
 	if !isCodexRemoteMcpServer(server) {
 		normalized := make(map[string]any, len(server))
 		for k, v := range server {
-			if isPatchbayMcpSelectorKey(k) {
+			if isOrviloMcpSelectorKey(k) {
 				continue
 			}
 			normalized[k] = v
@@ -663,7 +663,7 @@ func normalizeCodexMcpServerConfig(server map[string]any) map[string]any {
 	normalized := make(map[string]any, len(server)+1)
 	for k, v := range server {
 		switch {
-		case isPatchbayMcpSelectorKey(k):
+		case isOrviloMcpSelectorKey(k):
 			continue
 		case k == "type":
 			continue
@@ -679,7 +679,7 @@ func normalizeCodexMcpServerConfig(server map[string]any) map[string]any {
 	return normalized
 }
 
-func isPatchbayMcpSelectorKey(k string) bool {
+func isOrviloMcpSelectorKey(k string) bool {
 	switch k {
 	case "tools", "prompts", "resources":
 		return true
@@ -1353,7 +1353,7 @@ func (b *codexBackend) executeOnce(ctx context.Context, prompt string, opts Exec
 		_, err := c.request(runCtx, "initialize", map[string]any{
 			"clientInfo": map[string]any{
 				"name":    "patchbay-agent-sdk",
-				"title":   "Patchbay Agent SDK",
+				"title":   "Orvilo Agent SDK",
 				"version": "0.2.0",
 			},
 			"capabilities": map[string]any{

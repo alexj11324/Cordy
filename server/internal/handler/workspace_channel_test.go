@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func TestSlugifyWorkspaceChannelName(t *testing.T) {

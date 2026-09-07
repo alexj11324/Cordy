@@ -8,10 +8,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	channelfx "github.com/patchbay-ai/patchbay/server/internal/testutil"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	channelfx "github.com/orvilo-ai/orvilo/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
 )
 
 type fixedChannelConnectionLeases struct {

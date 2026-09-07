@@ -21,8 +21,8 @@ vi.mock("../issues/hooks", () => ({
 
 // Only the workspace hooks are stubbed — the real path helpers stay in place so
 // the reserved-slug rule that decides in-app vs external is the shipped one.
-vi.mock("@patchbay/core/paths", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
+vi.mock("@orvilo/core/paths", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@orvilo/core/paths")>()),
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/test/issues/${id}`,
     projectDetail: (id: string) => `/test/projects/${id}`,
@@ -92,7 +92,7 @@ describe("RichContent link routing", () => {
   });
 
   it("still hands a genuinely external link to the browser", () => {
-    const external = "https://github.com/patchbay-ai/patchbay/pull/1";
+    const external = "https://github.com/alexj11324/Cordy/pull/1";
     renderContent(`[#1](${external})`);
 
     screen.getByText("#1").click();

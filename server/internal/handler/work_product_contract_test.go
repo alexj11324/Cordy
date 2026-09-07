@@ -13,7 +13,7 @@ func TestParseGitHubPRURLRequiresCanonicalPullRequestPath(t *testing.T) {
 	}{
 		{
 			name:   "canonical URL with suffix",
-			url:    " https://github.com/Acme/Patchbay/pull/42?tab=files ",
+			url:    " https://github.com/Acme/Orvilo/pull/42?tab=files ",
 			owner:  "acme",
 			repo:   "patchbay",
 			number: 42,

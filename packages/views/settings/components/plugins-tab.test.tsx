@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -30,7 +30,7 @@ vi.mock("@tanstack/react-query", () => ({
       : { data: data.installed, isLoading: false, isError: false },
 }));
 
-vi.mock("@patchbay/core/plugins", () => ({
+vi.mock("@orvilo/core/plugins", () => ({
   pluginInstallationsOptions: () => ({ queryKey: ["plugins", "installed"] }),
   pluginPackagesOptions: () => ({ queryKey: ["plugins", "packages"] }),
   usePreviewPlugin: () => ({ mutateAsync: mockPreview, isPending: false }),
@@ -42,11 +42,11 @@ vi.mock("@patchbay/core/plugins", () => ({
   useDeletePluginPackage: () => ({ mutateAsync: mockDeletePackage, isPending: false }),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "workspace-1", name: "Acme", slug: "acme" }),
 }));
 
-vi.mock("@patchbay/core/permissions", () => ({
+vi.mock("@orvilo/core/permissions", () => ({
   useCurrentMember: () => ({ role: data.role, isLoading: false }),
 }));
 

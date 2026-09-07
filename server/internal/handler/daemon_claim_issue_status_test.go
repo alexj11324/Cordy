@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 // TestClaimTaskByRuntime_PopulatesIssueStatusCatalog verifies the claim

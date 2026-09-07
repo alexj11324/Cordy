@@ -3,9 +3,9 @@ package main
 import (
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/lark"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/lark"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
 )
 
 // The reconciler's settle delay carries NO correctness weight (the ledger

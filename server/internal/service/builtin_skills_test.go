@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,10 +45,10 @@ func TestBuiltinSkillsConformToTemplate(t *testing.T) {
 
 	for _, skill := range skills {
 		t.Run(skill.Name, func(t *testing.T) {
-			// The patchbay- prefix keeps the on-disk slug from colliding with a
+			// The orvilo- prefix keeps the on-disk slug from colliding with a
 			// user-authored workspace skill.
-			if !strings.HasPrefix(skill.Name, "patchbay-") {
-				t.Errorf("skill name %q must carry the patchbay- prefix", skill.Name)
+			if !strings.HasPrefix(skill.Name, "orvilo-") {
+				t.Errorf("skill name %q must carry the orvilo- prefix", skill.Name)
 			}
 
 			fm, body, ok := splitFrontmatter(skill.Content)
@@ -130,7 +130,7 @@ func TestBuiltinSkillsFrontmatterIsStrictYAML(t *testing.T) {
 // must declare user-invocable:false and fence itself to the patchbay CLI. New
 // contract skills should copy this shape.
 func TestMentioningSkillFollowsContractFrontmatter(t *testing.T) {
-	skill, ok := findSkill(t, "patchbay-mentioning")
+	skill, ok := findSkill(t, "orvilo-mentioning")
 	if !ok {
 		return
 	}
@@ -209,7 +209,7 @@ func TestMentioningSkillTeachesTheParserContract(t *testing.T) {
 }
 
 func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
-	skill, ok := findSkill(t, "patchbay-working-on-issues")
+	skill, ok := findSkill(t, "orvilo-working-on-issues")
 	if !ok {
 		return
 	}
@@ -219,7 +219,7 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 		t.Errorf("user-invocable = %q, want false (issue workflow guidance triggers from context)", got)
 	}
 	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
-		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
+		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
 	// Contract anchors only — exact file:line citations live in the skill's
@@ -228,7 +228,7 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 	mustContain := []string{
 		"patchbay issue pull-requests <issue-id> --output json",
 		"Default for code-changing issue work",
-		"open or update a PR before posting the final Patchbay issue comment",
+		"open or update a PR before posting the final Orvilo issue comment",
 		"This is a default, not",
 		"Use a routable issue key in the PR title, body, or branch",
 		"include the PR URL when a PR exists",
@@ -294,7 +294,7 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 }
 
 func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
-	skill, ok := findSkill(t, "patchbay-skill-importing")
+	skill, ok := findSkill(t, "orvilo-skill-importing")
 	if !ok {
 		return
 	}
@@ -304,7 +304,7 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 		t.Errorf("user-invocable = %q, want false (skill import guidance triggers from context)", got)
 	}
 	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
-		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
+		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
 	mustContain := []string{
@@ -356,7 +356,7 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 }
 
 func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
-	skill, ok := findSkill(t, "patchbay-creating-agents")
+	skill, ok := findSkill(t, "orvilo-creating-agents")
 	if !ok {
 		return
 	}
@@ -366,7 +366,7 @@ func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
 		t.Errorf("user-invocable = %q, want false (agent creation guidance triggers from context)", got)
 	}
 	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
-		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
+		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
 	mustContain := []string{
@@ -417,7 +417,7 @@ func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
 }
 
 func TestTeamsSkillCoversLeaderRoutingContract(t *testing.T) {
-	skill, ok := findSkill(t, "patchbay-teams")
+	skill, ok := findSkill(t, "orvilo-teams")
 	if !ok {
 		return
 	}
@@ -427,7 +427,7 @@ func TestTeamsSkillCoversLeaderRoutingContract(t *testing.T) {
 		t.Errorf("user-invocable = %q, want false (team guidance triggers from context)", got)
 	}
 	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
-		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
+		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
 	mustContain := []string{
@@ -471,7 +471,7 @@ func TestTeamsSkillCoversLeaderRoutingContract(t *testing.T) {
 }
 
 func TestAutomationsSkillCoversDispatchAndSideEffects(t *testing.T) {
-	skill, ok := findSkill(t, "patchbay-automations")
+	skill, ok := findSkill(t, "orvilo-automations")
 	if !ok {
 		return
 	}
@@ -481,7 +481,7 @@ func TestAutomationsSkillCoversDispatchAndSideEffects(t *testing.T) {
 		t.Errorf("user-invocable = %q, want false", got)
 	}
 	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
-		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
+		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
 	mustContain := []string{
@@ -507,7 +507,7 @@ func TestAutomationsSkillCoversDispatchAndSideEffects(t *testing.T) {
 }
 
 func TestRuntimesAndReposSkillCoversClaimAndCheckoutChain(t *testing.T) {
-	skill, ok := findSkill(t, "patchbay-runtimes-and-repos")
+	skill, ok := findSkill(t, "orvilo-runtimes-and-repos")
 	if !ok {
 		return
 	}
@@ -517,7 +517,7 @@ func TestRuntimesAndReposSkillCoversClaimAndCheckoutChain(t *testing.T) {
 		t.Errorf("user-invocable = %q, want false", got)
 	}
 	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
-		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
+		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
 	mustContain := []string{
@@ -548,7 +548,7 @@ func TestRuntimesAndReposSkillCoversClaimAndCheckoutChain(t *testing.T) {
 }
 
 func TestProjectsAndResourcesSkillCoversDurableContext(t *testing.T) {
-	skill, ok := findSkill(t, "patchbay-projects-and-resources")
+	skill, ok := findSkill(t, "orvilo-projects-and-resources")
 	if !ok {
 		return
 	}
@@ -558,7 +558,7 @@ func TestProjectsAndResourcesSkillCoversDurableContext(t *testing.T) {
 		t.Errorf("user-invocable = %q, want false", got)
 	}
 	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
-		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
+		t.Errorf("allowed-tools = %q, want access to the Orvilo CLI", got)
 	}
 
 	mustContain := []string{

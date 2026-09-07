@@ -1,6 +1,6 @@
 # CLI and Agent Daemon Guide
 
-The `patchbay` CLI connects your local machine to Patchbay. It handles authentication, workspace management, issue tracking, and runs the agent daemon that executes AI tasks locally.
+The `patchbay` CLI connects your local machine to Orvilo. It handles authentication, workspace management, issue tracking, and runs the agent daemon that executes AI tasks locally.
 
 ## Installation
 
@@ -115,7 +115,7 @@ Removes the stored authentication token.
 
 ## Agent Daemon
 
-The daemon is the local agent runtime. It detects available AI CLIs on your machine, registers them with the Patchbay server, and executes tasks when agents receive routed executor work.
+The daemon is the local agent runtime. It detects available AI CLIs on your machine, registers them with the Orvilo server, and executes tasks when agents receive routed executor work.
 
 ### Start
 
@@ -169,7 +169,7 @@ patchbay config set disable_auto_reload true
 
 Agent CLIs (codex, claude, ...) are handled differently: when one of them is
 upgraded in place, the daemon re-probes its version and re-registers the runtime
-**without restarting**, so subsequent tasks pick up the new CLI while Patchbay's
+**without restarting**, so subsequent tasks pick up the new CLI while Orvilo's
 availability stays independent of a third party's release cadence.
 
 Desktop-managed daemons ignore both, because the Desktop app owns its bundled
@@ -250,7 +250,7 @@ The daemon auto-detects these AI CLIs on your PATH:
 | [Qwen Code](https://github.com/QwenLM/qwen-code) | `qwen` | Alibaba Qwen Code (`qwen -p` with stream-json) |
 | [QwenPaw](https://github.com/agentscope-ai/QwenPaw) | `qwenpaw` | QwenPaw ACP coding agent (ACP via `qwenpaw acp`; model is fixed by its own configuration) |
 | [MiniMax Code](https://github.com/MiniMax-AI/minimax-code) | `mcode` | MiniMax Code ACP coding agent (ACP via `mcode acp`; model is managed by MCode) |
-| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | `dsh` | DeepSeek Harness (`dsh --profile patchbay --stdio`; requires the Patchbay runtime profile to be installed; reads AGENTS.md and .dsh/skills/) |
+| [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) | `dsh` | DeepSeek Harness (`dsh --profile patchbay --stdio`; requires the Orvilo runtime profile to be installed; reads AGENTS.md and .dsh/skills/) |
 
 You need at least one installed. The daemon registers each detected CLI as an available runtime.
 
@@ -285,7 +285,7 @@ Daemon behavior is configured via flags or environment variables:
 | GC enabled | — | `ORVILO_GC_ENABLED` | `true` (set `false`/`0` to disable) |
 | GC scan interval | — | `ORVILO_GC_INTERVAL` | `2h` |
 | GC TTL (done/cancelled issues) | — | `ORVILO_GC_TTL` | `24h` |
-| GC completed-task TTL (issue tasks) | — | `ORVILO_GC_COMPLETED_TASK_TTL` | `14d` on Patchbay Cloud, `0` (disabled) elsewhere |
+| GC completed-task TTL (issue tasks) | — | `ORVILO_GC_COMPLETED_TASK_TTL` | `14d` on Orvilo Cloud, `0` (disabled) elsewhere |
 | GC orphan TTL (no `.gc_meta.json`) | — | `ORVILO_GC_ORPHAN_TTL` | `72h` |
 | GC artifact TTL (completed tasks) | — | `ORVILO_GC_ARTIFACT_TTL` | `12h` (set `0` to disable) |
 | GC artifact patterns | — | `ORVILO_GC_ARTIFACT_PATTERNS` | `node_modules,.next,.turbo` |
@@ -301,7 +301,7 @@ The daemon periodically scans `ORVILO_WORKSPACES_ROOT` and applies several disk-
 
 - **Full task cleanup** — when an issue's status is `done` or `cancelled` and has been idle for `ORVILO_GC_TTL`, the entire task directory is removed.
 - **Completed-task retention bound** — `ORVILO_GC_COMPLETED_TASK_TTL` fully removes an inactive issue task once its `.gc_meta.json` `completed_at` age exceeds the configured duration, even while the parent issue remains open. Cleanup waits for a successful parent-issue status check, never removes an active environment, and never fully removes a `local_directory` environment. A later rerun provisions a fresh environment instead of resuming the removed checkout.
-  - The default depends on where the daemon points: `14d` against Patchbay Cloud, and `0` (disabled, retain indefinitely) for self-host and every other origin — including cloud staging and previews. Set the variable to opt in or out on either side; an explicit `0` disables the policy on Cloud too.
+  - The default depends on where the daemon points: `14d` against Orvilo Cloud, and `0` (disabled, retain indefinitely) for self-host and every other origin — including cloud staging and previews. Set the variable to opt in or out on either side; an explicit `0` disables the policy on Cloud too.
   - Removing an environment discards work an agent left uncommitted or unpushed on its branch, along with that task's `output/` and `logs/`. The per-issue Codex session store lives outside `ORVILO_WORKSPACES_ROOT` under its own TTL, so a later rerun still resumes the agent's prior session — it just starts from a fresh checkout. Size the TTL against that trade, and keep it comfortably above `ORVILO_GC_INTERVAL`: the active-root guard protects a task that is currently running, not one whose follow-up run is queued but unclaimed.
 - **Orphan cleanup** — task directories with no `.gc_meta.json` (e.g. left over from a daemon crash) are removed once they exceed `ORVILO_GC_ORPHAN_TTL`.
 - **Artifact-only cleanup** — when a task has been completed for at least `ORVILO_GC_ARTIFACT_TTL` but the issue is still open, regenerable build outputs whose directory basename matches `ORVILO_GC_ARTIFACT_PATTERNS` are removed. The daemon also reclaims the exact managed path `codex-home/.sandbox-bin`; old task metadata without `completed_at` becomes eligible for this managed-only cleanup after its `.gc_meta.json` file has been idle for `ORVILO_GC_ORPHAN_TTL`. The rest of the task (source, `.git`, `output/`, `logs/`, `.gc_meta.json`, Codex auth/config/session state) is preserved so the agent can resume it.
@@ -395,13 +395,13 @@ Two consequences are worth knowing before debugging a missing MCP tool:
 If a configured server produces no tools, check the daemon log for those warnings first, then confirm the runtime itself exposes the server's tools to the model — some ACP adapters apply their own tool-profile filtering after connecting.
 
 
-The daemon launches QwenPaw as `qwenpaw acp --workspace <per-task dir>`. It writes the task brief to `AGENTS.md`, and materialises the run's bound skills into `<per-task dir>/skills/` plus a `skill.json` manifest, so QwenPaw discovers them through its own workspace skill discovery. `acp` and `--workspace` are reserved: `custom_args` cannot override them. QwenPaw is the one runtime with no `ORVILO_QWENPAW_MODEL`: its `session/set_model` writes to a shared, persistent agent config rather than the session, so Patchbay never sends it a model and leaves that choice to QwenPaw's own configuration.
+The daemon launches QwenPaw as `qwenpaw acp --workspace <per-task dir>`. It writes the task brief to `AGENTS.md`, and materialises the run's bound skills into `<per-task dir>/skills/` plus a `skill.json` manifest, so QwenPaw discovers them through its own workspace skill discovery. `acp` and `--workspace` are reserved: `custom_args` cannot override them. QwenPaw is the one runtime with no `ORVILO_QWENPAW_MODEL`: its `session/set_model` writes to a shared, persistent agent config rather than the session, so Orvilo never sends it a model and leaves that choice to QwenPaw's own configuration.
 
-The daemon launches MiniMax Code as `mcode acp`, writes the task brief to `AGENTS.md`, and injects bound skills under `.minimax/skills/`. MCode owns model selection and currently advertises `loadSession: false`; Patchbay therefore starts a fresh MCode session when a later run cannot load the saved session.
+The daemon launches MiniMax Code as `mcode acp`, writes the task brief to `AGENTS.md`, and injects bound skills under `.minimax/skills/`. MCode owns model selection and currently advertises `loadSession: false`; Orvilo therefore starts a fresh MCode session when a later run cannot load the saved session.
 
 #### Hermes agent memory
 
-Hermes discovers skills only from its own home, so binding Patchbay skills to a Hermes agent makes the daemon build a per-task `HERMES_HOME` overlay for that agent. The agent's long-term memory (`memories/`) does **not** live inside that task-scoped overlay: it is linked to a persistent store at
+Hermes discovers skills only from its own home, so binding Orvilo skills to a Hermes agent makes the daemon build a per-task `HERMES_HOME` overlay for that agent. The agent's long-term memory (`memories/`) does **not** live inside that task-scoped overlay: it is linked to a persistent store at
 
 ```
 <profile dir>/hermes-state/<agent-id>/<hermes-profile>/
@@ -411,17 +411,17 @@ so the same agent keeps its memory across tasks and issues. `<hermes-profile>` i
 
 Consequences worth knowing:
 
-- **Memory is agent-scoped but runtime-local.** One agent's memory is never visible to another, and the user's own `~/.hermes/memories` is never read or written. The store lives in this runtime's Patchbay profile directory, so it does **not** follow the agent to another machine — an agent that runs on two runtimes has a separate memory line on each. Everything else in the home — auth, config, plugins — is still shared from the user's real home by symlink, so the agent does not need its own login.
+- **Memory is agent-scoped but runtime-local.** One agent's memory is never visible to another, and the user's own `~/.hermes/memories` is never read or written. The store lives in this runtime's Orvilo profile directory, so it does **not** follow the agent to another machine — an agent that runs on two runtimes has a separate memory line on each. Everything else in the home — auth, config, plugins — is still shared from the user's real home by symlink, so the agent does not need its own login.
 - **To carry existing local memory in**, copy it into the store once: `cp -R ~/.hermes/memories/. "<profile dir>/hermes-state/<agent-id>/default/"`. To wipe an agent's memory, delete that directory.
 - **Conversation history is covered too, in a separate store.** Hermes keeps every ACP session in `<HERMES_HOME>/state.db`, which the overlay links to a per-conversation store at `<profile dir>/hermes-sessions/<agent-id>/<hermes-profile>/<issue-id | chat_\<chat-session-id\>>/`, so a follow-up turn resumes the actual transcript. The shard is per conversation rather than per agent on purpose: tasks of one conversation run one after another, so a shard has a single writer at a time, while two issues never share a database. A host that cannot create the link (Windows without symlink privileges) keeps the database task-local instead, untouched — the link is proven creatable before anything is moved, and a copy is never used, because a copied SQLite database would absorb the turn's writes into a file the next task discards.
 - **Concurrent tasks of one agent are last-writer-wins.** Hermes rewrites its memory files whole, so two tasks writing memory at the same time can overwrite each other.
-- **Every Hermes agent gets the overlay in practice**, so every one of them gets a persistent memory store. The daemon builds the overlay only when a task carries skills, but the server appends Patchbay's built-in skills to every agent's skill set (`LoadAgentSkillBundles`), so that list is never empty — leaving an agent's own skill list empty does not opt out of the overlay, and is not a way to keep using the host's `~/.hermes/memories`.
+- **Every Hermes agent gets the overlay in practice**, so every one of them gets a persistent memory store. The daemon builds the overlay only when a task carries skills, but the server appends Orvilo's built-in skills to every agent's skill set (`LoadAgentSkillBundles`), so that list is never empty — leaving an agent's own skill list empty does not opt out of the overlay, and is not a way to keep using the host's `~/.hermes/memories`.
 
-`ORVILO_CLAUDE_ARGS`, `ORVILO_CODEX_ARGS`, `ORVILO_CODEBUDDY_ARGS`, `ORVILO_QWEN_ARGS`, and `ORVILO_QWENPAW_ARGS` are parsed with POSIX shellword quoting, so values such as `--model "gpt-5.1 codex" --sandbox read-only` are split like a shell command line. Agent arguments are applied in this order: hardcoded Patchbay defaults, daemon-wide env defaults, then per-agent `custom_args` from the task.
+`ORVILO_CLAUDE_ARGS`, `ORVILO_CODEX_ARGS`, `ORVILO_CODEBUDDY_ARGS`, `ORVILO_QWEN_ARGS`, and `ORVILO_QWENPAW_ARGS` are parsed with POSIX shellword quoting, so values such as `--model "gpt-5.1 codex" --sandbox read-only` are split like a shell command line. Agent arguments are applied in this order: hardcoded Orvilo defaults, daemon-wide env defaults, then per-agent `custom_args` from the task.
 
 ### Self-Hosted Server
 
-When connecting to a self-hosted Patchbay instance, the easiest approach is:
+When connecting to a self-hosted Orvilo instance, the easiest approach is:
 
 ```bash
 # One command — configures for localhost, authenticates, starts daemon
@@ -808,7 +808,7 @@ patchbay issue list --project <project-id>
 ## Setup
 
 ```bash
-# One-command setup for Patchbay Cloud: configure, authenticate, and start the daemon
+# One-command setup for Orvilo Cloud: configure, authenticate, and start the daemon
 patchbay setup
 
 # For local self-hosted deployments
@@ -821,7 +821,7 @@ patchbay setup self-host --port 9090 --frontend-port 4000
 patchbay setup self-host --server-url https://api.example.com --app-url https://app.example.com
 ```
 
-`patchbay setup` configures the CLI, opens your browser for authentication, and starts the daemon — all in one step. Use `patchbay setup self-host` to connect to a self-hosted server instead of Patchbay Cloud.
+`patchbay setup` configures the CLI, opens your browser for authentication, and starts the daemon — all in one step. Use `patchbay setup self-host` to connect to a self-hosted server instead of Orvilo Cloud.
 
 ## Configuration
 

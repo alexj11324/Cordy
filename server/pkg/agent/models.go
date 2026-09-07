@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 )
 
 // Model describes a single LLM model exposed by an agent provider.
@@ -391,7 +391,7 @@ func ModelSelectionSupported(providerType string) bool {
 		// source of truth. ZeroClaw goes further: `session/set_model` is not in
 		// its ACP dispatch table at all (0.8.4 answers -32601) and no handler
 		// reads a model param, so the model comes from the ZeroClaw agent
-		// profile (`agents.<alias>.model_provider`) and nothing Patchbay sends
+		// profile (`agents.<alias>.model_provider`) and nothing Orvilo sends
 		// can change it.
 		return false
 	default:
@@ -562,7 +562,7 @@ func claudeStaticModels() []Model {
 // so a discovery failure hides the speed picker and fails the override closed.
 func codexStaticModels() []Model {
 	// `Default` here is NOT a user-facing "default model" badge — the picker
-	// stopped rendering that (Patchbay follows the CLI config when the model is
+	// stopped rendering that (Orvilo follows the CLI config when the model is
 	// unset). It only marks the current flagship for the "default must track
 	// the latest release" catalog guard
 	// (TestCodexStaticModelsMatchVerifiedFallbackCatalog,
@@ -999,7 +999,7 @@ func discoverPiModelsWithin(ctx context.Context, runtimeCmd Command, rpcTimeout,
 
 // discoverPiModelsRPC starts a short-lived Pi RPC session and requests both
 // the available models and current state. The state identifies the model Pi
-// will choose when Patchbay omits --model; its thinking level is the runtime's
+// will choose when Orvilo omits --model; its thinking level is the runtime's
 // effective default for that selected model.
 func discoverPiModelsRPC(ctx context.Context, runtimeCmd Command, lookedUp string) ([]Model, bool) {
 	args := []string{
@@ -1131,7 +1131,7 @@ func piModelsFromRPC(rawModels []piRPCModel, state piRPCState) []Model {
 // piThinkingFromRPCModel follows Pi's getSupportedThinkingLevels(model) for
 // reasoning-capable models: off..high are available unless explicitly mapped
 // to null; xhigh/max require an explicit non-null mapping. Pi reports only
-// "off" for reasoning=false; Patchbay intentionally hides that no-op picker.
+// "off" for reasoning=false; Orvilo intentionally hides that no-op picker.
 func piThinkingFromRPCModel(model piRPCModel) *ModelThinking {
 	if !model.Reasoning {
 		return nil

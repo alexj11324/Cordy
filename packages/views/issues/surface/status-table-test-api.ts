@@ -1,4 +1,4 @@
-import { ALL_STATUSES } from "@patchbay/core/issues/config";
+import { ALL_STATUSES } from "@orvilo/core/issues/config";
 import type {
   Issue,
   IssueTableGroupDescriptor,
@@ -9,7 +9,7 @@ import type {
   IssueTableRowsRequest,
   ListIssuesParams,
   ListIssuesResponse,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 
 type LegacyListIssues = (
   params?: ListIssuesParams,

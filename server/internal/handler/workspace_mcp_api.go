@@ -8,8 +8,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // WorkspaceMcpServerResponse is the intentionally non-secret shape of one

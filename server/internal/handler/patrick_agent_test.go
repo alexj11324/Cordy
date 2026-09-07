@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func createPatrick(t *testing.T, body any) *httptest.ResponseRecorder {
@@ -167,7 +167,7 @@ func TestPatrickSystemInstructionsUsesTheCurrentDisplayName(t *testing.T) {
 	}
 	// The product identity is still stated, just not as the display name.
 	if !strings.Contains(renamed, "built-in system agent (Patrick)") {
-		t.Fatal("prompt should still identify itself as Patchbay's built-in agent")
+		t.Fatal("prompt should still identify itself as Orvilo's built-in agent")
 	}
 
 	if blank := service.PatrickSystemInstructions("   "); !strings.HasPrefix(blank, "You are Patrick,") {

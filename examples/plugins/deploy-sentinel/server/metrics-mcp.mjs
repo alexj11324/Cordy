@@ -1,7 +1,7 @@
 // The metrics MCP server behind the `metrics` hook.
 //
 // This is the case the `mcp` transport exists for: the team already runs an MCP
-// server and does not want to re-expose it as HTTP hooks. Patchbay adopts its
+// server and does not want to re-expose it as HTTP hooks. Orvilo adopts its
 // tools — but only the ones an administrator approved, pinned by schema digest.
 //
 //   node server/metrics-mcp.mjs
@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 
 // HTTPS, not HTTP. A hook's transport URL must be an https:// URL or the
 // manifest will not install, and ORVILO_PLUGIN_DEV_CA only changes WHICH
-// certificate Patchbay trusts — it never turns verification off. Generate one:
+// certificate Orvilo trusts — it never turns verification off. Generate one:
 //
 //   openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
 //     -keyout dev-key.pem -out dev-cert.pem \

@@ -23,7 +23,7 @@ func TestNewReturnsGrokBackend(t *testing.T) {
 }
 
 // fakeGrokACPScript impersonates `grok agent --always-approve stdio` for unit
-// tests. Wire format mirrors other Patchbay ACP fakes (traecli/kimi): method
+// tests. Wire format mirrors other Orvilo ACP fakes (traecli/kimi): method
 // "session/update" with update.sessionUpdate discriminators, session/new
 // returning sessionId + models, session/prompt returning stopReason=end_turn.
 func fakeGrokACPScript() string {

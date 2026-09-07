@@ -1,18 +1,18 @@
 import { useEffect, useState } from "react";
 import { Outlet, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { WorkspaceSlugProvider } from "@patchbay/core/paths";
+import { WorkspaceSlugProvider } from "@orvilo/core/paths";
 import {
   workspaceBySlugOptions,
   workspaceListOptions,
-} from "@patchbay/core/workspace";
-import { getCurrentSlug, setCurrentWorkspace } from "@patchbay/core/platform";
-import { isWorkspaceDeletePending } from "@patchbay/core/workspace/pending-delete";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceSeen } from "@patchbay/views/workspace/use-workspace-seen";
-import { WelcomeAfterOnboarding } from "@patchbay/views/workspace/welcome-after-onboarding";
-import { WorkspacePresencePrefetch } from "@patchbay/views/layout";
-import { SourceBackfillModal } from "@patchbay/views/onboarding";
+} from "@orvilo/core/workspace";
+import { getCurrentSlug, setCurrentWorkspace } from "@orvilo/core/platform";
+import { isWorkspaceDeletePending } from "@orvilo/core/workspace/pending-delete";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceSeen } from "@orvilo/views/workspace/use-workspace-seen";
+import { WelcomeAfterOnboarding } from "@orvilo/views/workspace/welcome-after-onboarding";
+import { WorkspacePresencePrefetch } from "@orvilo/views/layout";
+import { SourceBackfillModal } from "@orvilo/views/onboarding";
 import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 

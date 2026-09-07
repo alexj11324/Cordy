@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
 )
 
 // TestBuildQuickCreatePromptRules locks in the rules that govern how the
@@ -146,13 +146,13 @@ func TestBuildQuickCreatePromptTeamDefaultsToTeam(t *testing.T) {
 	const (
 		teamID   = "aaaa1111-2222-3333-4444-555555555555"
 		teamName = "独立团"
-		leaderID  = "bbbb1111-2222-3333-4444-666666666666"
+		leaderID = "bbbb1111-2222-3333-4444-666666666666"
 	)
 	out := buildQuickCreatePrompt(Task{
 		QuickCreatePrompt: "fix the login button color",
 		Agent:             &AgentData{ID: leaderID, Name: "leader-agent"},
-		TeamID:           teamID,
-		TeamName:         teamName,
+		TeamID:            teamID,
+		TeamName:          teamName,
 	})
 
 	// The default-executor instruction must point at the team UUID.
@@ -555,7 +555,7 @@ func TestBuildChatPromptChannelAwareness(t *testing.T) {
 			ChatChannelType: "slack",
 			ChatMessage:     "你刚刚和 xxx 聊了什么",
 		})
-		for _, want := range []string{"Slack", "NOT in Patchbay", "patchbay chat history", "patchbay chat thread", "Do NOT narrate"} {
+		for _, want := range []string{"Slack", "NOT in Orvilo", "patchbay chat history", "patchbay chat thread", "Do NOT narrate"} {
 			if !strings.Contains(out, want) {
 				t.Fatalf("slack-backed prompt missing %q\n--- output ---\n%s", want, out)
 			}
@@ -586,8 +586,8 @@ func TestBuildChatPromptChannelAwareness(t *testing.T) {
 		}
 	})
 
-	// A transcript surface must not be told its history is "NOT in Patchbay" and
-	// then handed a Patchbay command to read that history. The claim used to be
+	// A transcript surface must not be told its history is "NOT in Orvilo" and
+	// then handed an Orvilo command to read that history. The claim used to be
 	// unconditional, so every Feishu/WeCom/DingTalk prompt carried both halves;
 	// an agent that believes the first one has no reason to run the second.
 	for _, channelType := range []string{
@@ -604,12 +604,12 @@ func TestBuildChatPromptChannelAwareness(t *testing.T) {
 			if !strings.Contains(out, "patchbay chat history") {
 				t.Fatalf("transcript surface lost its read-back command\n--- output ---\n%s", out)
 			}
-			if strings.Contains(out, "NOT in Patchbay") {
-				t.Errorf("transcript surface told its history is NOT in Patchbay, then told to read it from Patchbay\n--- output ---\n%s", out)
+			if strings.Contains(out, "NOT in Orvilo") {
+				t.Errorf("transcript surface told its history is NOT in Orvilo, then told to read it from Orvilo\n--- output ---\n%s", out)
 			}
 			// The useful half of the original sentence must survive: the agent
 			// still must not go hunting through issues and comments.
-			if !strings.Contains(out, "Never look in Patchbay issues or comments") {
+			if !strings.Contains(out, "Never look in Orvilo issues or comments") {
 				t.Errorf("lost the issues/comments prohibition\n--- output ---\n%s", out)
 			}
 		})

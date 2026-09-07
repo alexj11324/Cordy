@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/selfexec"
+	"github.com/orvilo-ai/orvilo/server/internal/selfexec"
 )
 
 const maxSearchDepth = 4

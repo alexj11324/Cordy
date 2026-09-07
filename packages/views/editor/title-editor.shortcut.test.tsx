@@ -4,7 +4,7 @@ import {
   configureShortcutPlatform,
   createShortcutChord,
   useShortcutStore,
-} from "@patchbay/core/shortcuts";
+} from "@orvilo/core/shortcuts";
 import { TitleEditor } from "./title-editor";
 
 // Every other editor test mocks `@tiptap/react`, which means nothing verifies

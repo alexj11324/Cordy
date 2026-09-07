@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Plugin storage scopes. There are exactly two, and adding a third is a product

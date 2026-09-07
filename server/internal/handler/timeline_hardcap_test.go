@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Regression tests for MUL-5492: the per-issue timeline cap used to be applied

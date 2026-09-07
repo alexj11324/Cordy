@@ -4,9 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent, AgentRuntime } from "@patchbay/core/types";
-import { ApiError } from "@patchbay/core/api";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent, AgentRuntime } from "@orvilo/core/types";
+import { ApiError } from "@orvilo/core/api";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 import { McpConfigTab } from "./mcp-config-tab";
@@ -27,7 +27,7 @@ const workspaceMcp = vi.hoisted(() => ({
 // The workspace section reads the agent's assignments plus the library.
 // Stubbing the query options keeps this a pure render test — the real ones
 // would hit fetch.
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   agentMcpServersOptions: (agentId: string) => ({
     queryKey: ["agents", agentId, "mcp-servers"],
     queryFn: () => Promise.resolve(workspaceMcp.assigned),
@@ -40,7 +40,7 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/mutations", () => ({
+vi.mock("@orvilo/core/workspace/mutations", () => ({
   useAddAgentMcpServer: () => ({ mutateAsync: mockAddServer, isPending: false }),
   useSetAgentMcpServerEnabled: () => ({ mutateAsync: mockSetEnabled, isPending: false }),
   useRemoveAgentMcpServer: () => ({ mutateAsync: mockRemoveServer, isPending: false }),
@@ -58,10 +58,10 @@ const wsServer = (over: Record<string, unknown>) => ({
 
 // The tab reads discovery through runtimeCapabilitiesOptions; existing tests
 // render with runtime={null} so the query stays disabled and never fires.
-vi.mock("@patchbay/core/runtimes", async () => {
+vi.mock("@orvilo/core/runtimes", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/runtimes")>(
-      "@patchbay/core/runtimes",
+    await vi.importActual<typeof import("@orvilo/core/runtimes")>(
+      "@orvilo/core/runtimes",
     );
   return {
     ...actual,

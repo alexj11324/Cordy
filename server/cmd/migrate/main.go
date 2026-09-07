@@ -12,12 +12,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/patchbay-ai/patchbay/server/internal/attributionbackfill"
-	"github.com/patchbay-ai/patchbay/server/internal/chatoriginbackfill"
-	"github.com/patchbay-ai/patchbay/server/internal/dbstartup"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	"github.com/patchbay-ai/patchbay/server/internal/migrations"
-	"github.com/patchbay-ai/patchbay/server/internal/taskusagebackfill"
+	"github.com/orvilo-ai/orvilo/server/internal/attributionbackfill"
+	"github.com/orvilo-ai/orvilo/server/internal/chatoriginbackfill"
+	"github.com/orvilo-ai/orvilo/server/internal/dbstartup"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	"github.com/orvilo-ai/orvilo/server/internal/migrations"
+	"github.com/orvilo-ai/orvilo/server/internal/taskusagebackfill"
 )
 
 // preMigrationHook runs work that must happen before a specific migration is
@@ -76,7 +76,7 @@ var commentContentBigramIndex = usableIndexRequirement{
 // MUL-4897 / GH #5544: migration 198 VALIDATEs the strict attribution
 // constraint installed by 197, which drops migration 190's
 // originator_source IS NULL exemption. Self-hosted databases never ran the
-// out-of-band backfill that Patchbay's cloud did, so their legacy rows make
+// out-of-band backfill that Orvilo's cloud did, so their legacy rows make
 // 198 fail closed and the backend refuses to start. The hook reconciles
 // those rows (accountable_user_id := originator_user_id) idempotently BEFORE
 // VALIDATE, so a stuck-at-197 instance auto-heals on `migrate up` with no
@@ -322,8 +322,8 @@ var concurrentIndexCleanups = map[string]string{
 	"517_agent_task_execution_provenance_discovery_queue_index": "agent_task_execution_provenance_discovery_queue_idx",
 	"522_issue_category_policy_workspace_category_index":        "uq_workspace_issue_category_policy_workspace_category",
 	"530_channel_receive_state_unique_index":                    "idx_channel_receive_state_installation_type",
-	"587_linear_comment_link_local":                            "uq_linear_comment_link_local",
-	"588_linear_comment_link_remote":                           "uq_linear_comment_link_remote",
+	"587_linear_comment_link_local":                             "uq_linear_comment_link_local",
+	"588_linear_comment_link_remote":                            "uq_linear_comment_link_remote",
 	"532_uq_linear_connection_id":                               "uq_linear_connection_id",
 	"533_uq_linear_connection_workspace":                        "uq_linear_connection_workspace",
 	"534_uq_linear_connection_identity":                         "uq_linear_connection_identity",
@@ -355,7 +355,7 @@ var concurrentIndexCleanups = map[string]string{
 	"574_channel_installation_runtime_observation_index":        "channel_installation_runtime_observation_uidx",
 	"575_idx_chat_message_channel_task":                         "idx_chat_message_channel_task",
 	"579_channel_installation_installed_lease_index":            "idx_channel_installation_installed_lease",
-	"593_automation_trigger_event_index":                       "idx_automation_trigger_native_event",
+	"593_automation_trigger_event_index":                        "idx_automation_trigger_native_event",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction

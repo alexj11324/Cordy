@@ -16,35 +16,35 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@patchbay/core/api";
-import type { Skill } from "@patchbay/core/types";
+import { api } from "@orvilo/core/api";
+import type { Skill } from "@orvilo/core/types";
 import {
   prepareSkillArchiveFromPickerFiles,
   wrapExistingSkillArchive,
   type PreparedSkillArchive,
-} from "@patchbay/core/skills";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@orvilo/core/skills";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { isImeComposing } from "@orvilo/core/utils";
 import {
   skillDetailOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/workspace/queries";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/tooltip";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { useScrollFade } from "@orvilo/ui/hooks/use-scroll-fade";
+import { cn } from "@orvilo/ui/lib/utils";
 import { openExternal } from "../../platform";
 import { RuntimeLocalSkillImportPanel } from "./runtime-local-skill-import-panel";
 import { useT } from "../../i18n";

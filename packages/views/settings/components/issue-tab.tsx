@@ -1,11 +1,11 @@
 "use client";
 
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import {
   MANUAL_CREATE_FIELDS,
   QUICK_CREATE_FIELDS,
   useIssueCreateSettingsStore,
-} from "@patchbay/core/issues/stores/issue-create-settings-store";
+} from "@orvilo/core/issues/stores/issue-create-settings-store";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import {

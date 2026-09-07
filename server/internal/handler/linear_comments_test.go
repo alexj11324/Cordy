@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	linearapi "github.com/patchbay-ai/patchbay/server/internal/integrations/linear"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	linearapi "github.com/orvilo-ai/orvilo/server/internal/integrations/linear"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 type commentMemoryAPI struct {

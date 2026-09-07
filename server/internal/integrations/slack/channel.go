@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
 )
 
 // TypeSlack is the channel discriminator for the Slack adapter. It is defined

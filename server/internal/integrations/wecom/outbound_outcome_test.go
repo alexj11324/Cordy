@@ -5,7 +5,7 @@ package wecom
 //
 // The point is not that these branches exist; most of them are correct. It is
 // that they used to be indistinguishable from outside. One symptom — the answer
-// is in the Patchbay transcript, the WeCom chat stayed quiet — with five
+// is in the Orvilo transcript, the WeCom chat stayed quiet — with five
 // different causes and no way to tell which fired, is a report that can be
 // argued about but not settled.
 
@@ -19,9 +19,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 const (
@@ -236,9 +236,9 @@ func TestReasonStringsArePinned(t *testing.T) {
 func TestSkipReasonStringsArePinned(t *testing.T) {
 	t.Parallel()
 	for want, got := range map[string]skipReason{
-		"origin_not_channel":    skipOriginNotChannel,
+		"origin_not_channel":   skipOriginNotChannel,
 		"installation_revoked": skipInstallationRevoked,
-		"nothing_to_say":        skipNothingToSay,
+		"nothing_to_say":       skipNothingToSay,
 	} {
 		if string(got) != want {
 			t.Errorf("skip reason = %q, want %q", got, want)

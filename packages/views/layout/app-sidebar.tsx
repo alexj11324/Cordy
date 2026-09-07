@@ -1,9 +1,9 @@
 "use client";
 
-import { issueStatusCategory } from "@patchbay/core/issues";
+import { issueStatusCategory } from "@orvilo/core/issues";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { cn } from "@patchbay/ui/lib/utils";
-import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
+import { cn } from "@orvilo/ui/lib/utils";
+import { useScrollFade } from "@orvilo/ui/hooks/use-scroll-fade";
 import { AppLink, useNavigation } from "../navigation";
 import { HelpLauncher } from "./help-launcher";
 import {
@@ -27,13 +27,13 @@ import { Layers,
   X,
 } from "lucide-react";
 import { WorkspaceAvatar } from "../workspace/workspace-avatar";
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@patchbay/ui/components/ui/collapsible";
-import { CappedNumberFlow } from "@patchbay/ui/components/ui/number-flow";
+import { ActorAvatar } from "@orvilo/ui/components/common/actor-avatar";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@orvilo/ui/components/ui/tooltip";
+import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@orvilo/ui/components/ui/collapsible";
+import { CappedNumberFlow } from "@orvilo/ui/components/ui/number-flow";
 import { StatusIcon } from "../issues/components/status-icon";
-import { useIssueDraftStore } from "@patchbay/core/issues/stores/draft-store";
-import { openCreateIssueWithPreference } from "@patchbay/core/issues/stores/create-mode-store";
+import { useIssueDraftStore } from "@orvilo/core/issues/stores/draft-store";
+import { openCreateIssueWithPreference } from "@orvilo/core/issues/stores/create-mode-store";
 import {
   Sidebar,
   SidebarContent,
@@ -47,7 +47,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
   useSidebar,
-} from "@patchbay/ui/components/ui/sidebar";
+} from "@orvilo/ui/components/ui/sidebar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -56,35 +56,35 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { useAuthStore } from "@patchbay/core/auth";
-import { issueViewDetailOptions } from "@patchbay/core/issue-views/queries";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { useAuthStore } from "@orvilo/core/auth";
+import { issueViewDetailOptions } from "@orvilo/core/issue-views/queries";
 import {
   issueViewContainerKey,
   useActiveIssueViewStore,
-} from "@patchbay/core/issue-views/active-view-store";
-import { useCurrentWorkspace, useWorkspacePaths, paths } from "@patchbay/core/paths";
-import { workspaceListOptions, myInvitationListOptions, workspaceKeys } from "@patchbay/core/workspace/queries";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+} from "@orvilo/core/issue-views/active-view-store";
+import { useCurrentWorkspace, useWorkspacePaths, paths } from "@orvilo/core/paths";
+import { workspaceListOptions, myInvitationListOptions, workspaceKeys } from "@orvilo/core/workspace/queries";
+import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { inboxKeys, deduplicateInboxItems, inboxUnreadSummaryOptions, hasOtherWorkspaceUnread, unreadWorkspaceIds } from "@patchbay/core/inbox/queries";
-import { chatSessionsOptions } from "@patchbay/core/chat/queries";
-import { countUnreadChatMessages } from "@patchbay/core/chat/unread";
-import { useChatStore } from "@patchbay/core/chat";
-import { api, ApiError } from "@patchbay/core/api";
-import { useConfigStore } from "@patchbay/core/config";
-import { pinListOptions } from "@patchbay/core/pins/queries";
-import { useDeletePin, useReorderPins } from "@patchbay/core/pins/mutations";
-import { issueDetailOptions } from "@patchbay/core/issues/queries";
-import { projectDetailOptions } from "@patchbay/core/projects/queries";
-import type { PinnedItem } from "@patchbay/core/types";
+import { inboxKeys, deduplicateInboxItems, inboxUnreadSummaryOptions, hasOtherWorkspaceUnread, unreadWorkspaceIds } from "@orvilo/core/inbox/queries";
+import { chatSessionsOptions } from "@orvilo/core/chat/queries";
+import { countUnreadChatMessages } from "@orvilo/core/chat/unread";
+import { useChatStore } from "@orvilo/core/chat";
+import { api, ApiError } from "@orvilo/core/api";
+import { useConfigStore } from "@orvilo/core/config";
+import { pinListOptions } from "@orvilo/core/pins/queries";
+import { useDeletePin, useReorderPins } from "@orvilo/core/pins/mutations";
+import { issueDetailOptions } from "@orvilo/core/issues/queries";
+import { projectDetailOptions } from "@orvilo/core/projects/queries";
+import type { PinnedItem } from "@orvilo/core/types";
 import { useLogout } from "../auth";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { routeIconForPath } from "./route-icon-components";
 import { useT } from "../i18n";
 import {
   useShortcut,
-} from "@patchbay/core/shortcuts";
+} from "@orvilo/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { useAppForeground } from "../common/use-app-foreground";
 

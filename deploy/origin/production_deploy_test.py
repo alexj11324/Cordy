@@ -156,7 +156,7 @@ class ProductionDeployContractTests(unittest.TestCase):
 
         request = urlopen.call_args.args[0]
         self.assertEqual(
-            request.get_header("User-agent"), "PatchbayProductionDeploy/1"
+            request.get_header("User-agent"), "OrviloProductionDeploy/1"
         )
 
     def test_browser_credentials_are_short_lived_and_bound_to_the_smoke_user(self):

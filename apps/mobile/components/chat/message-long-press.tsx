@@ -19,7 +19,7 @@ import { useCallback, useState } from "react";
 import { ActionSheetIOS } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
-import type { ChatMessage } from "@patchbay/core/types";
+import type { ChatMessage } from "@orvilo/core/types";
 import { useChatSelectStore } from "@/data/chat-select-store";
 import { useChatCopy } from "@/lib/use-chat-copy";
 

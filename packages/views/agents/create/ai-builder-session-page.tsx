@@ -2,9 +2,9 @@
 
 import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { agentBuilderSessionListOptions } from "@patchbay/core/agents";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+import { agentBuilderSessionListOptions } from "@orvilo/core/agents";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
 import { useBackOrReplace, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { BuilderWorkspace } from "./builder-workspace";

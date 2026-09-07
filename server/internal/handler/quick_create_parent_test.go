@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement/entitlementtest"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement/entitlementtest"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // TestQuickCreateIssueParentTrustBoundary locks the server-side trust boundary

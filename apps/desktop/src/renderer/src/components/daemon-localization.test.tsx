@@ -1,8 +1,8 @@
 import { act, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { RESOURCES } from "@patchbay/views/locales";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import { RESOURCES } from "@orvilo/views/locales";
 import type { DaemonStatus } from "../../../shared/daemon-types";
 import { DaemonPanel } from "./daemon-panel";
 import { DaemonSettingsTab } from "./daemon-settings-tab";

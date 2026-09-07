@@ -38,11 +38,11 @@ const (
 type ErrorKind string
 
 const (
-	ErrorProvider          ErrorKind = "provider"
-	ErrorInvalidResponse   ErrorKind = "invalid_response"
-	ErrorInvalidGrant      ErrorKind = "invalid_grant"
-	ErrorRateLimited       ErrorKind = "rate_limited"
-	ErrorMutationRejected  ErrorKind = "mutation_rejected"
+	ErrorProvider         ErrorKind = "provider"
+	ErrorInvalidResponse  ErrorKind = "invalid_response"
+	ErrorInvalidGrant     ErrorKind = "invalid_grant"
+	ErrorRateLimited      ErrorKind = "rate_limited"
+	ErrorMutationRejected ErrorKind = "mutation_rejected"
 )
 
 type ProviderError struct {
@@ -68,11 +68,11 @@ func IsKind(err error, kind ErrorKind) bool {
 
 type Issue struct {
 	ID, Identifier, Title, Description, StateID, StateType, ProjectID, TeamID string
-	AssigneeID                                                               string
-	DueDate                                                                  *string
-	Priority                                                                 int
-	UpdatedAt                                                                time.Time
-	Deleted                                                                  bool
+	AssigneeID                                                                string
+	DueDate                                                                   *string
+	Priority                                                                  int
+	UpdatedAt                                                                 time.Time
+	Deleted                                                                   bool
 }
 
 type IssueInput struct {
@@ -112,7 +112,7 @@ type CatalogUser struct {
 
 type CatalogLabel struct {
 	ID, Name, Color, ParentID, TeamID string
-	IsGroup                bool
+	IsGroup                           bool
 }
 
 type Catalog struct {
@@ -126,9 +126,9 @@ type Catalog struct {
 // DryRunCounts is intentionally bounded. A preview must not turn a malformed
 // or unexpectedly large provider project into an unbounded request.
 type DryRunCounts struct {
-	RemoteIssues      int
-	UnmappedStatuses  int
-	Truncated         bool
+	RemoteIssues     int
+	UnmappedStatuses int
+	Truncated        bool
 }
 
 type API interface {
@@ -147,8 +147,8 @@ type API interface {
 }
 
 type HTTPClient struct {
-	HTTP                                              *http.Client
-	AuthorizeURL, GraphQLURL, TokenURL, RevokeURL     string
+	HTTP                                          *http.Client
+	AuthorizeURL, GraphQLURL, TokenURL, RevokeURL string
 }
 
 func NewHTTPClient(client *http.Client) *HTTPClient {
@@ -377,7 +377,7 @@ func (c *HTTPClient) DiscoverIdentity(ctx context.Context, token string) (Identi
 			Name string `json:"name"`
 		} `json:"organization"`
 	}
-	err := c.graphql(ctx, token, `query PatchbayIdentity{viewer{id name} organization{id name}}`, nil, &data)
+	err := c.graphql(ctx, token, `query OrviloIdentity{viewer{id name} organization{id name}}`, nil, &data)
 	if err != nil {
 		return Identity{}, err
 	}
@@ -391,7 +391,7 @@ func (c *HTTPClient) FetchIssue(ctx context.Context, token, issueID string) (Iss
 	var data struct {
 		Issue *issueNode `json:"issue"`
 	}
-	if err := c.graphql(ctx, token, `query PatchbayIssue($id:String!){issue(id:$id){`+issueFields+`}}`, map[string]any{"id": issueID}, &data); err != nil {
+	if err := c.graphql(ctx, token, `query OrviloIssue($id:String!){issue(id:$id){`+issueFields+`}}`, map[string]any{"id": issueID}, &data); err != nil {
 		return Issue{}, false, err
 	}
 	if data.Issue == nil {
@@ -402,7 +402,7 @@ func (c *HTTPClient) FetchIssue(ctx context.Context, token, issueID string) (Iss
 }
 
 func (c *HTTPClient) ListIssues(ctx context.Context, token, projectID, teamID string) ([]Issue, error) {
-	const q = `query PatchbayIssues($project:String!,$after:String){issues(first:100,after:$after,filter:{project:{id:{eq:$project}}}){nodes{` + issueFields + `}pageInfo{hasNextPage endCursor}}}`
+	const q = `query OrviloIssues($project:String!,$after:String){issues(first:100,after:$after,filter:{project:{id:{eq:$project}}}){nodes{` + issueFields + `}pageInfo{hasNextPage endCursor}}}`
 	var all []Issue
 	var after any
 	var previous string
@@ -415,7 +415,7 @@ func (c *HTTPClient) ListIssues(ctx context.Context, token, projectID, teamID st
 				Nodes    []issueNode `json:"nodes"`
 				PageInfo struct {
 					HasNext bool    `json:"hasNextPage"`
-					End    *string `json:"endCursor"`
+					End     *string `json:"endCursor"`
 				} `json:"pageInfo"`
 			} `json:"issues"`
 		}
@@ -451,7 +451,9 @@ type pageInfo struct {
 }
 
 func nextCatalogCursor(previous *string, info pageInfo) (*string, error) {
-	if !info.HasNext { return nil, nil }
+	if !info.HasNext {
+		return nil, nil
+	}
 	if info.End == nil || strings.TrimSpace(*info.End) == "" || (previous != nil && *previous == *info.End) {
 		return nil, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear catalog returned an invalid cursor"}
 	}
@@ -462,145 +464,395 @@ func (c *HTTPClient) Catalog(ctx context.Context, token string) (Catalog, error)
 	var out Catalog
 	var after *string
 	for page := 0; ; page++ {
-		if page >= maxIssuePages { return Catalog{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear team pagination exceeded safety limit"} }
-		var data struct { Teams struct { Nodes []struct { ID, Name, Key string; Organization struct { ID string `json:"id"` } `json:"organization"` }; PageInfo pageInfo `json:"pageInfo"` } `json:"teams"` }
-		if err := c.graphql(ctx, token, `query PatchbayCatalogTeams($after:String){teams(first:250,after:$after){nodes{id name key organization{id}}pageInfo{hasNextPage endCursor}}}`, map[string]any{"after": after}, &data); err != nil { return Catalog{}, err }
-		for _, team := range data.Teams.Nodes { out.Teams = append(out.Teams, CatalogTeam{ID: team.ID, Name: team.Name, Key: team.Key, OrganizationID: team.Organization.ID}) }
-		next, err := nextCatalogCursor(after, data.Teams.PageInfo); if err != nil { return Catalog{}, err }; if next == nil { break }; after = next
+		if page >= maxIssuePages {
+			return Catalog{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear team pagination exceeded safety limit"}
+		}
+		var data struct {
+			Teams struct {
+				Nodes []struct {
+					ID, Name, Key string
+					Organization  struct {
+						ID string `json:"id"`
+					} `json:"organization"`
+				}
+				PageInfo pageInfo `json:"pageInfo"`
+			} `json:"teams"`
+		}
+		if err := c.graphql(ctx, token, `query OrviloCatalogTeams($after:String){teams(first:250,after:$after){nodes{id name key organization{id}}pageInfo{hasNextPage endCursor}}}`, map[string]any{"after": after}, &data); err != nil {
+			return Catalog{}, err
+		}
+		for _, team := range data.Teams.Nodes {
+			out.Teams = append(out.Teams, CatalogTeam{ID: team.ID, Name: team.Name, Key: team.Key, OrganizationID: team.Organization.ID})
+		}
+		next, err := nextCatalogCursor(after, data.Teams.PageInfo)
+		if err != nil {
+			return Catalog{}, err
+		}
+		if next == nil {
+			break
+		}
+		after = next
 	}
 	after = nil
 	for page := 0; ; page++ {
-		if page >= maxIssuePages { return Catalog{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear project pagination exceeded safety limit"} }
-		var data struct { Projects struct { Nodes []struct { ID, Name string; Teams struct { Nodes []struct { ID string `json:"id"` } `json:"nodes"` } `json:"teams"` }; PageInfo pageInfo `json:"pageInfo"` } `json:"projects"` }
-		if err := c.graphql(ctx, token, `query PatchbayCatalogProjects($after:String){projects(first:250,after:$after){nodes{id name teams{nodes{id}}}pageInfo{hasNextPage endCursor}}}`, map[string]any{"after": after}, &data); err != nil { return Catalog{}, err }
-		for _, project := range data.Projects.Nodes { if len(project.Teams.Nodes) == 0 { out.ProjectCatalog = append(out.ProjectCatalog, CatalogProject{ID: project.ID, Name: project.Name}) }; for _, team := range project.Teams.Nodes { out.ProjectCatalog = append(out.ProjectCatalog, CatalogProject{ID: project.ID, Name: project.Name, TeamID: team.ID}) } }
-		next, err := nextCatalogCursor(after, data.Projects.PageInfo); if err != nil { return Catalog{}, err }; if next == nil { break }; after = next
+		if page >= maxIssuePages {
+			return Catalog{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear project pagination exceeded safety limit"}
+		}
+		var data struct {
+			Projects struct {
+				Nodes []struct {
+					ID, Name string
+					Teams    struct {
+						Nodes []struct {
+							ID string `json:"id"`
+						} `json:"nodes"`
+					} `json:"teams"`
+				}
+				PageInfo pageInfo `json:"pageInfo"`
+			} `json:"projects"`
+		}
+		if err := c.graphql(ctx, token, `query OrviloCatalogProjects($after:String){projects(first:250,after:$after){nodes{id name teams{nodes{id}}}pageInfo{hasNextPage endCursor}}}`, map[string]any{"after": after}, &data); err != nil {
+			return Catalog{}, err
+		}
+		for _, project := range data.Projects.Nodes {
+			if len(project.Teams.Nodes) == 0 {
+				out.ProjectCatalog = append(out.ProjectCatalog, CatalogProject{ID: project.ID, Name: project.Name})
+			}
+			for _, team := range project.Teams.Nodes {
+				out.ProjectCatalog = append(out.ProjectCatalog, CatalogProject{ID: project.ID, Name: project.Name, TeamID: team.ID})
+			}
+		}
+		next, err := nextCatalogCursor(after, data.Projects.PageInfo)
+		if err != nil {
+			return Catalog{}, err
+		}
+		if next == nil {
+			break
+		}
+		after = next
 	}
 	after = nil
 	for page := 0; ; page++ {
-		if page >= maxIssuePages { return Catalog{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear workflow state pagination exceeded safety limit"} }
-		var data struct { States struct { Nodes []struct { ID, Name, Type, Color string; Team struct { ID string `json:"id"` } `json:"team"` }; PageInfo pageInfo `json:"pageInfo"` } `json:"workflowStates"` }
-		if err := c.graphql(ctx, token, `query PatchbayCatalogStates($after:String){workflowStates(first:250,after:$after){nodes{id name type color team{id}}pageInfo{hasNextPage endCursor}}}`, map[string]any{"after": after}, &data); err != nil { return Catalog{}, err }
-		for _, state := range data.States.Nodes { out.States = append(out.States, CatalogState{ID: state.ID, Name: state.Name, Type: state.Type, TeamID: state.Team.ID, Color: state.Color}) }
-		next, err := nextCatalogCursor(after, data.States.PageInfo); if err != nil { return Catalog{}, err }; if next == nil { break }; after = next
+		if page >= maxIssuePages {
+			return Catalog{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear workflow state pagination exceeded safety limit"}
+		}
+		var data struct {
+			States struct {
+				Nodes []struct {
+					ID, Name, Type, Color string
+					Team                  struct {
+						ID string `json:"id"`
+					} `json:"team"`
+				}
+				PageInfo pageInfo `json:"pageInfo"`
+			} `json:"workflowStates"`
+		}
+		if err := c.graphql(ctx, token, `query OrviloCatalogStates($after:String){workflowStates(first:250,after:$after){nodes{id name type color team{id}}pageInfo{hasNextPage endCursor}}}`, map[string]any{"after": after}, &data); err != nil {
+			return Catalog{}, err
+		}
+		for _, state := range data.States.Nodes {
+			out.States = append(out.States, CatalogState{ID: state.ID, Name: state.Name, Type: state.Type, TeamID: state.Team.ID, Color: state.Color})
+		}
+		next, err := nextCatalogCursor(after, data.States.PageInfo)
+		if err != nil {
+			return Catalog{}, err
+		}
+		if next == nil {
+			break
+		}
+		after = next
 	}
 	after = nil
 	for page := 0; ; page++ {
-		if page >= maxIssuePages { return Catalog{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear user pagination exceeded safety limit"} }
-		var data struct { Users struct { Nodes []CatalogUser `json:"nodes"`; PageInfo pageInfo `json:"pageInfo"` } `json:"users"` }
-		if err := c.graphql(ctx, token, `query PatchbayCatalogUsers($after:String){users(first:250,after:$after){nodes{id name email active}pageInfo{hasNextPage endCursor}}}`, map[string]any{"after": after}, &data); err != nil { return Catalog{}, err }
+		if page >= maxIssuePages {
+			return Catalog{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear user pagination exceeded safety limit"}
+		}
+		var data struct {
+			Users struct {
+				Nodes    []CatalogUser `json:"nodes"`
+				PageInfo pageInfo      `json:"pageInfo"`
+			} `json:"users"`
+		}
+		if err := c.graphql(ctx, token, `query OrviloCatalogUsers($after:String){users(first:250,after:$after){nodes{id name email active}pageInfo{hasNextPage endCursor}}}`, map[string]any{"after": after}, &data); err != nil {
+			return Catalog{}, err
+		}
 		out.Users = append(out.Users, data.Users.Nodes...)
-		next, err := nextCatalogCursor(after, data.Users.PageInfo); if err != nil { return Catalog{}, err }; if next == nil { break }; after = next
+		next, err := nextCatalogCursor(after, data.Users.PageInfo)
+		if err != nil {
+			return Catalog{}, err
+		}
+		if next == nil {
+			break
+		}
+		after = next
 	}
 	after = nil
 	for page := 0; ; page++ {
-		if page >= maxIssuePages { return Catalog{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear label pagination exceeded safety limit"} }
-		var data struct { Labels struct { Nodes []struct { ID, Name, Color string; IsGroup bool `json:"isGroup"`; Parent *struct { ID string `json:"id"` } `json:"parent"`; Team *struct { ID string `json:"id"` } `json:"team"` }; PageInfo pageInfo `json:"pageInfo"` } `json:"issueLabels"` }
-		if err := c.graphql(ctx, token, `query PatchbayCatalogLabels($after:String){issueLabels(first:250,after:$after){nodes{id name color isGroup parent{id} team{id}}pageInfo{hasNextPage endCursor}}}`, map[string]any{"after": after}, &data); err != nil { return Catalog{}, err }
-		for _, label := range data.Labels.Nodes { parent, team := "", ""; if label.Parent != nil { parent = label.Parent.ID }; if label.Team != nil { team = label.Team.ID }; out.Labels = append(out.Labels, CatalogLabel{ID: label.ID, Name: label.Name, Color: label.Color, ParentID: parent, TeamID: team, IsGroup: label.IsGroup}) }
-		next, err := nextCatalogCursor(after, data.Labels.PageInfo); if err != nil { return Catalog{}, err }; if next == nil { break }; after = next
+		if page >= maxIssuePages {
+			return Catalog{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear label pagination exceeded safety limit"}
+		}
+		var data struct {
+			Labels struct {
+				Nodes []struct {
+					ID, Name, Color string
+					IsGroup         bool `json:"isGroup"`
+					Parent          *struct {
+						ID string `json:"id"`
+					} `json:"parent"`
+					Team *struct {
+						ID string `json:"id"`
+					} `json:"team"`
+				}
+				PageInfo pageInfo `json:"pageInfo"`
+			} `json:"issueLabels"`
+		}
+		if err := c.graphql(ctx, token, `query OrviloCatalogLabels($after:String){issueLabels(first:250,after:$after){nodes{id name color isGroup parent{id} team{id}}pageInfo{hasNextPage endCursor}}}`, map[string]any{"after": after}, &data); err != nil {
+			return Catalog{}, err
+		}
+		for _, label := range data.Labels.Nodes {
+			parent, team := "", ""
+			if label.Parent != nil {
+				parent = label.Parent.ID
+			}
+			if label.Team != nil {
+				team = label.Team.ID
+			}
+			out.Labels = append(out.Labels, CatalogLabel{ID: label.ID, Name: label.Name, Color: label.Color, ParentID: parent, TeamID: team, IsGroup: label.IsGroup})
+		}
+		next, err := nextCatalogCursor(after, data.Labels.PageInfo)
+		if err != nil {
+			return Catalog{}, err
+		}
+		if next == nil {
+			break
+		}
+		after = next
 	}
 	return out, nil
 }
 
 func (c *HTTPClient) ValidateBinding(ctx context.Context, token, projectID, teamID string) error {
-	var data struct { Project *struct { Teams struct { Nodes []struct { ID string `json:"id"` } `json:"nodes"` } `json:"teams"` } `json:"project"` }
-	if err := c.graphql(ctx, token, `query PatchbayBinding($project:String!){project(id:$project){teams{nodes{id}}}}`, map[string]any{"project": projectID}, &data); err != nil { return err }
-	if data.Project == nil { return &ProviderError{Kind: ErrorMutationRejected, Message: "Linear project does not exist"} }
-	for _, team := range data.Project.Teams.Nodes { if team.ID == teamID { return nil } }
+	var data struct {
+		Project *struct {
+			Teams struct {
+				Nodes []struct {
+					ID string `json:"id"`
+				} `json:"nodes"`
+			} `json:"teams"`
+		} `json:"project"`
+	}
+	if err := c.graphql(ctx, token, `query OrviloBinding($project:String!){project(id:$project){teams{nodes{id}}}}`, map[string]any{"project": projectID}, &data); err != nil {
+		return err
+	}
+	if data.Project == nil {
+		return &ProviderError{Kind: ErrorMutationRejected, Message: "Linear project does not exist"}
+	}
+	for _, team := range data.Project.Teams.Nodes {
+		if team.ID == teamID {
+			return nil
+		}
+	}
 	return &ProviderError{Kind: ErrorMutationRejected, Message: "Linear project is not associated with the selected team"}
 }
 
 func (c *HTTPClient) DryRunCounts(ctx context.Context, token, projectID, teamID string, statusMapping map[string]any) (DryRunCounts, error) {
-	const q = `query PatchbayIssuePreview($project:String!,$after:String){issues(first:100,after:$after,filter:{project:{id:{eq:$project}}}){nodes{` + issueFields + `}pageInfo{hasNextPage endCursor}}}`
+	const q = `query OrviloIssuePreview($project:String!,$after:String){issues(first:100,after:$after,filter:{project:{id:{eq:$project}}}){nodes{` + issueFields + `}pageInfo{hasNextPage endCursor}}}`
 	result := DryRunCounts{}
 	var after *string
 	var previous string
 	for page := 0; ; page++ {
-		if page >= maxIssuePages { return DryRunCounts{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear preview pagination exceeded safety limit"} }
-		var data struct { Issues struct { Nodes []issueNode `json:"nodes"`; PageInfo struct { HasNext bool `json:"hasNextPage"`; End *string `json:"endCursor"` } `json:"pageInfo"` } `json:"issues"` }
-		if err := c.graphql(ctx,token,q,map[string]any{"project":projectID,"after":after},&data); err != nil { return DryRunCounts{},err }
+		if page >= maxIssuePages {
+			return DryRunCounts{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear preview pagination exceeded safety limit"}
+		}
+		var data struct {
+			Issues struct {
+				Nodes    []issueNode `json:"nodes"`
+				PageInfo struct {
+					HasNext bool    `json:"hasNextPage"`
+					End     *string `json:"endCursor"`
+				} `json:"pageInfo"`
+			} `json:"issues"`
+		}
+		if err := c.graphql(ctx, token, q, map[string]any{"project": projectID, "after": after}, &data); err != nil {
+			return DryRunCounts{}, err
+		}
 		for _, node := range data.Issues.Nodes {
-			issue, err := issueFromNode(node); if err != nil { return DryRunCounts{},err }
-			if teamID != "" && issue.TeamID != teamID { continue }
-			if result.RemoteIssues >= maxPreviewIssues { result.Truncated=true; break }
+			issue, err := issueFromNode(node)
+			if err != nil {
+				return DryRunCounts{}, err
+			}
+			if teamID != "" && issue.TeamID != teamID {
+				continue
+			}
+			if result.RemoteIssues >= maxPreviewIssues {
+				result.Truncated = true
+				break
+			}
 			result.RemoteIssues++
 			mapped := false
-			if value, ok := statusMapping[issue.StateID]; ok { if text, ok := value.(string); ok { mapped = strings.TrimSpace(text) != "" } else { mapped = value != nil } }
-			if !mapped { result.UnmappedStatuses++ }
+			if value, ok := statusMapping[issue.StateID]; ok {
+				if text, ok := value.(string); ok {
+					mapped = strings.TrimSpace(text) != ""
+				} else {
+					mapped = value != nil
+				}
+			}
+			if !mapped {
+				result.UnmappedStatuses++
+			}
 		}
-		if result.Truncated || !data.Issues.PageInfo.HasNext { break }
-		if data.Issues.PageInfo.End == nil || strings.TrimSpace(*data.Issues.PageInfo.End)=="" || *data.Issues.PageInfo.End==previous { return DryRunCounts{},&ProviderError{Kind:ErrorInvalidResponse,Message:"Linear preview returned an invalid cursor"} }
-		previous,after=*data.Issues.PageInfo.End,data.Issues.PageInfo.End
+		if result.Truncated || !data.Issues.PageInfo.HasNext {
+			break
+		}
+		if data.Issues.PageInfo.End == nil || strings.TrimSpace(*data.Issues.PageInfo.End) == "" || *data.Issues.PageInfo.End == previous {
+			return DryRunCounts{}, &ProviderError{Kind: ErrorInvalidResponse, Message: "Linear preview returned an invalid cursor"}
+		}
+		previous, after = *data.Issues.PageInfo.End, data.Issues.PageInfo.End
 	}
-	return result,nil
+	return result, nil
 }
 
 func inputMap(in IssueInput, create bool) map[string]any {
-	description := DescriptionWithPatchbayMarker(in.Description, in.PatchbayIssueID)
+	description := DescriptionWithOrviloMarker(in.Description, in.PatchbayIssueID)
 	m := map[string]any{"title": in.Title, "description": description, "priority": in.Priority, "dueDate": in.DueDate}
-	if create { m["teamId"], m["projectId"] = in.TeamID, in.ProjectID }
-	if in.StateID != "" { m["stateId"] = in.StateID }
-	if in.AssigneeID != nil { m["assigneeId"] = *in.AssigneeID } else if in.ClearAssignee { m["assigneeId"] = nil }
+	if create {
+		m["teamId"], m["projectId"] = in.TeamID, in.ProjectID
+	}
+	if in.StateID != "" {
+		m["stateId"] = in.StateID
+	}
+	if in.AssigneeID != nil {
+		m["assigneeId"] = *in.AssigneeID
+	} else if in.ClearAssignee {
+		m["assigneeId"] = nil
+	}
 	return m
 }
 
 func (c *HTTPClient) mutateIssue(ctx context.Context, token, operation, id string, input IssueInput) (Issue, error) {
 	query := ""
-	if operation == "create" { query = `mutation PatchbayCreateIssue($input:IssueCreateInput!){issueCreate(input:$input){success userErrors{message} issue{`+issueFields+`}}}` } else { query = `mutation PatchbayUpdateIssue($id:String!,$input:IssueUpdateInput!){issueUpdate(id:$id,input:$input){success userErrors{message} issue{`+issueFields+`}}}` }
+	if operation == "create" {
+		query = `mutation OrviloCreateIssue($input:IssueCreateInput!){issueCreate(input:$input){success userErrors{message} issue{` + issueFields + `}}}`
+	} else {
+		query = `mutation OrviloUpdateIssue($id:String!,$input:IssueUpdateInput!){issueUpdate(id:$id,input:$input){success userErrors{message} issue{` + issueFields + `}}}`
+	}
 	var envelope struct {
-		Create struct { Success bool `json:"success"`; Issue *issueNode `json:"issue"`; UserErrors []struct { Message string `json:"message"` } `json:"userErrors"` } `json:"issueCreate"`
-		Update struct { Success bool `json:"success"`; Issue *issueNode `json:"issue"`; UserErrors []struct { Message string `json:"message"` } `json:"userErrors"` } `json:"issueUpdate"`
+		Create struct {
+			Success    bool       `json:"success"`
+			Issue      *issueNode `json:"issue"`
+			UserErrors []struct {
+				Message string `json:"message"`
+			} `json:"userErrors"`
+		} `json:"issueCreate"`
+		Update struct {
+			Success    bool       `json:"success"`
+			Issue      *issueNode `json:"issue"`
+			UserErrors []struct {
+				Message string `json:"message"`
+			} `json:"userErrors"`
+		} `json:"issueUpdate"`
 	}
 	variables := map[string]any{"input": inputMap(input, operation == "create")}
-	if operation != "create" { variables["id"] = id }
-	if err := c.graphql(ctx, token, query, variables, &envelope); err != nil { return Issue{}, err }
-	var success bool; var node *issueNode; var messages []struct{ Message string `json:"message"` }
-	if operation == "create" { success, node, messages = envelope.Create.Success, envelope.Create.Issue, envelope.Create.UserErrors } else { success, node, messages = envelope.Update.Success, envelope.Update.Issue, envelope.Update.UserErrors }
-	if len(messages) > 0 { return Issue{}, &ProviderError{Kind: ErrorMutationRejected, Message: messages[0].Message} }
-	if !success || node == nil { return Issue{}, &ProviderError{Kind: ErrorMutationRejected, Message: "Linear mutation returned success=false or no issue"} }
+	if operation != "create" {
+		variables["id"] = id
+	}
+	if err := c.graphql(ctx, token, query, variables, &envelope); err != nil {
+		return Issue{}, err
+	}
+	var success bool
+	var node *issueNode
+	var messages []struct {
+		Message string `json:"message"`
+	}
+	if operation == "create" {
+		success, node, messages = envelope.Create.Success, envelope.Create.Issue, envelope.Create.UserErrors
+	} else {
+		success, node, messages = envelope.Update.Success, envelope.Update.Issue, envelope.Update.UserErrors
+	}
+	if len(messages) > 0 {
+		return Issue{}, &ProviderError{Kind: ErrorMutationRejected, Message: messages[0].Message}
+	}
+	if !success || node == nil {
+		return Issue{}, &ProviderError{Kind: ErrorMutationRejected, Message: "Linear mutation returned success=false or no issue"}
+	}
 	return issueFromNode(*node)
 }
 
-func (c *HTTPClient) CreateIssue(ctx context.Context, token string, in IssueInput) (Issue, error) { return c.mutateIssue(ctx, token, "create", "", in) }
-func (c *HTTPClient) UpdateIssue(ctx context.Context, token, id string, in IssueInput) (Issue, error) { return c.mutateIssue(ctx, token, "update", id, in) }
+func (c *HTTPClient) CreateIssue(ctx context.Context, token string, in IssueInput) (Issue, error) {
+	return c.mutateIssue(ctx, token, "create", "", in)
+}
+func (c *HTTPClient) UpdateIssue(ctx context.Context, token, id string, in IssueInput) (Issue, error) {
+	return c.mutateIssue(ctx, token, "update", id, in)
+}
 
 func (c *HTTPClient) DeleteIssue(ctx context.Context, token, id string) error {
-	var data struct { Result struct { Success bool `json:"success"`; UserErrors []struct { Message string `json:"message"` } `json:"userErrors"` } `json:"issueDelete"` }
-	if err := c.graphql(ctx, token, `mutation PatchbayDeleteIssue($id:String!){issueDelete(id:$id){success userErrors{message}}}`, map[string]any{"id": id}, &data); err != nil { return err }
-	if len(data.Result.UserErrors) > 0 { return &ProviderError{Kind: ErrorMutationRejected, Message: data.Result.UserErrors[0].Message} }
-	if !data.Result.Success { return &ProviderError{Kind: ErrorMutationRejected, Message: "Linear issueDelete returned success=false"} }
+	var data struct {
+		Result struct {
+			Success    bool `json:"success"`
+			UserErrors []struct {
+				Message string `json:"message"`
+			} `json:"userErrors"`
+		} `json:"issueDelete"`
+	}
+	if err := c.graphql(ctx, token, `mutation OrviloDeleteIssue($id:String!){issueDelete(id:$id){success userErrors{message}}}`, map[string]any{"id": id}, &data); err != nil {
+		return err
+	}
+	if len(data.Result.UserErrors) > 0 {
+		return &ProviderError{Kind: ErrorMutationRejected, Message: data.Result.UserErrors[0].Message}
+	}
+	if !data.Result.Success {
+		return &ProviderError{Kind: ErrorMutationRejected, Message: "Linear issueDelete returned success=false"}
+	}
 	return nil
 }
 
-func PatchbayIssueMarker(issueID string) string { return patchbayMarker + strings.TrimSpace(issueID) + "]" }
-
-func DescriptionWithPatchbayMarker(description, issueID string) string {
-	description = StripPatchbayIssueMarker(description)
-	if strings.TrimSpace(issueID) == "" { return description }
-	if description == "" { return PatchbayIssueMarker(issueID) }
-	return description + "\n\n" + PatchbayIssueMarker(issueID)
+func OrviloIssueMarker(issueID string) string {
+	return patchbayMarker + strings.TrimSpace(issueID) + "]"
 }
 
-func StripPatchbayIssueMarker(description string) string {
+func DescriptionWithOrviloMarker(description, issueID string) string {
+	description = StripOrviloIssueMarker(description)
+	if strings.TrimSpace(issueID) == "" {
+		return description
+	}
+	if description == "" {
+		return OrviloIssueMarker(issueID)
+	}
+	return description + "\n\n" + OrviloIssueMarker(issueID)
+}
+
+func StripOrviloIssueMarker(description string) string {
 	for {
 		start := strings.Index(description, patchbayMarker)
-		if start < 0 { return strings.TrimSpace(description) }
+		if start < 0 {
+			return strings.TrimSpace(description)
+		}
 		end := strings.Index(description[start:], "]")
-		if end < 0 { return strings.TrimSpace(description) }
+		if end < 0 {
+			return strings.TrimSpace(description)
+		}
 		description = strings.TrimSpace(description[:start] + description[start+end+1:])
 	}
 }
 
 func PatchbayIssueIDFromDescription(description string) string {
 	start := strings.Index(description, patchbayMarker)
-	if start < 0 { return "" }
+	if start < 0 {
+		return ""
+	}
 	value := description[start+len(patchbayMarker):]
 	end := strings.IndexByte(value, ']')
-	if end < 0 { return "" }
+	if end < 0 {
+		return ""
+	}
 	return strings.TrimSpace(value[:end])
 }
 
-func SHA256Hex(value string) string { sum := sha256.Sum256([]byte(value)); return hex.EncodeToString(sum[:]) }
+func SHA256Hex(value string) string {
+	sum := sha256.Sum256([]byte(value))
+	return hex.EncodeToString(sum[:])
+}
 
-func ParseInt64(value string) (int64, error) { return strconv.ParseInt(strings.TrimSpace(value), 10, 64) }
+func ParseInt64(value string) (int64, error) {
+	return strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+}

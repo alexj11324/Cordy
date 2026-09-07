@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/featureflags"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
 )
 
 type MessagingCapabilities struct {
@@ -47,7 +47,7 @@ type AppConfig struct {
 	WorkspaceCreationDisabled bool `json:"workspace_creation_disabled,omitempty"`
 	// Public daemon setup config consumed by the web app at runtime so
 	// self-hosted instances can show `patchbay setup self-host` commands
-	// with the operator's own domains instead of Patchbay Cloud defaults.
+	// with the operator's own domains instead of Orvilo Cloud defaults.
 	DaemonServerURL string `json:"daemon_server_url,omitempty"`
 	DaemonAppURL    string `json:"daemon_app_url,omitempty"`
 
@@ -275,7 +275,7 @@ func normalizePublicURL(raw string) string {
 }
 
 // isOfficialCloudDaemonConfig reports whether this deployment is the official
-// Patchbay Cloud, identified by its frontend host alone
+// Orvilo Cloud, identified by its frontend host alone
 // (patchbay.aspectlylabs.com). The
 // daemon setup for the managed cloud is always
 // `patchbay setup` (which hardcodes api.aspectlylabs.com), so the per-deployment URLs
@@ -289,7 +289,7 @@ func isOfficialCloudDaemonConfig(appURL string) bool {
 	return urlHostEquals(appURL, "patchbay.aspectlylabs.com")
 }
 
-// isOfficialCloudDeployment reports whether this server is the official Patchbay
+// isOfficialCloudDeployment reports whether this server is the official Orvilo
 // Cloud, reusing the same frontend-host signal as the daemon setup
 // (patchbay.aspectlylabs.com).
 // Managed-cloud-only behavior — such as suppressing the Help popover's

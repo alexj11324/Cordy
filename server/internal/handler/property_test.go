@@ -15,7 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func makePropertyDef(propType string, options []PropertyOption) db.IssueProperty {

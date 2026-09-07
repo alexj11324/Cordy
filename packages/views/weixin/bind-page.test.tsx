@@ -3,7 +3,7 @@
 import { StrictMode, type ReactNode } from "react";
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 
 const authState = vi.hoisted(() => ({
@@ -26,7 +26,7 @@ const MockApiError = vi.hoisted(() =>
   },
 );
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@orvilo/core/auth", () => {
   const useAuthStore = Object.assign(
     (selector?: (state: typeof authState) => unknown) =>
       selector ? selector(authState) : authState,
@@ -35,7 +35,7 @@ vi.mock("@patchbay/core/auth", () => {
   return { useAuthStore };
 });
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: { redeemWeixinBindingToken: mockRedeem },
   ApiError: MockApiError,
 }));

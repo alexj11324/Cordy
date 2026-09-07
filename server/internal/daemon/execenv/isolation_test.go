@@ -69,7 +69,7 @@ func TestPreparationHelperRoundTripsReuse(t *testing.T) {
 				{
 					ID:           "resource-helper-reuse",
 					ResourceType: "github_repo",
-					ResourceRef:  json.RawMessage(`{"url":"https://github.com/patchbay-ai/patchbay"}`),
+					ResourceRef:  json.RawMessage(`{"url":"https://github.com/alexj11324/Cordy"}`),
 				},
 			},
 		},
@@ -98,8 +98,8 @@ func TestPreparationHelperRoundTripsProjectResources(t *testing.T) {
 				{
 					ID:           "resource-helper-project-resource",
 					ResourceType: "github_repo",
-					ResourceRef:  json.RawMessage(`{"url":"https://github.com/patchbay-ai/patchbay"}`),
-					Label:        "Patchbay",
+					ResourceRef:  json.RawMessage(`{"url":"https://github.com/alexj11324/Cordy"}`),
+					Label:        "Orvilo",
 				},
 			},
 		},
@@ -131,8 +131,8 @@ func TestPreparationHelperRoundTripsProjectResources(t *testing.T) {
 	}
 	if resource.ID != "resource-helper-project-resource" ||
 		resource.ResourceType != "github_repo" ||
-		ref.URL != "https://github.com/patchbay-ai/patchbay" ||
-		resource.Label != "Patchbay" {
+		ref.URL != "https://github.com/alexj11324/Cordy" ||
+		resource.Label != "Orvilo" {
 		t.Fatalf("project resource = %#v, want all fields preserved", resource)
 	}
 }

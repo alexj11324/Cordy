@@ -1,5 +1,5 @@
 {
-  "name": "@patchbay/ui",
+  "name": "@orvilo/ui",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -63,8 +63,8 @@
     "react-i18next": "catalog:"
   },
   "devDependencies": {
-    "@patchbay/eslint-config": "workspace:*",
-    "@patchbay/tsconfig": "workspace:*",
+    "@orvilo/eslint-config": "workspace:*",
+    "@orvilo/tsconfig": "workspace:*",
     "@types/linkify-it": "^5.0.0",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",

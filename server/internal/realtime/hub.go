@@ -17,7 +17,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
 )
 
 // MembershipChecker verifies a user belongs to a workspace.

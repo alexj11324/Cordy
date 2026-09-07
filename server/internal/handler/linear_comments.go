@@ -12,11 +12,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	linearapi "github.com/patchbay-ai/patchbay/server/internal/integrations/linear"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	linearapi "github.com/orvilo-ai/orvilo/server/internal/integrations/linear"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 type linearCommentAPI interface {
@@ -320,7 +320,7 @@ func (w *LinearWorker) handleCommentOutbox(ctx context.Context, c linearOutboxCl
 			return err
 		}
 	}
-	author := "Patchbay " + payload.AuthorType
+	author := "Orvilo " + payload.AuthorType
 	var name string
 	if payload.AuthorType == "member" {
 		err = w.db.QueryRow(ctx, `SELECT u.name FROM "user" u JOIN member m ON m.user_id=u.id WHERE u.id=$1 AND m.workspace_id=$2`, parseUUID(payload.AuthorID), b.WorkspaceID).Scan(&name)
@@ -331,7 +331,7 @@ func (w *LinearWorker) handleCommentOutbox(ctx context.Context, c linearOutboxCl
 		return err
 	}
 	if name != "" {
-		author = name + " via Patchbay"
+		author = name + " vian Orvilo"
 	}
 	_, err = api.CreateComment(ctx, token, remoteID, issueID, parentID, payload.Body, author)
 	return err

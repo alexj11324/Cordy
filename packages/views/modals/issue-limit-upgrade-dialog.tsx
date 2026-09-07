@@ -6,14 +6,14 @@ import { Gauge, Loader2 } from "lucide-react";
 import {
   useCreateWorkspaceSubscriptionPortal,
   workspaceSubscriptionSummaryOptions,
-} from "@patchbay/core/billing";
-import { useFeatureEnabled } from "@patchbay/core/config";
-import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@patchbay/core/feature-flags";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useModalStore } from "@patchbay/core/modals";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import type { WorkspaceSubscriptionSummary } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/billing";
+import { useFeatureEnabled } from "@orvilo/core/config";
+import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@orvilo/core/feature-flags";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useModalStore } from "@orvilo/core/modals";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import type { WorkspaceSubscriptionSummary } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 import { openExternal } from "../platform";

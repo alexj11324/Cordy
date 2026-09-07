@@ -7,7 +7,7 @@ import {
   createShortcutChord,
   configureShortcutPlatform,
   useShortcutStore,
-} from "@patchbay/core/shortcuts";
+} from "@orvilo/core/shortcuts";
 import { PatchedListItem } from "./list-item";
 import {
   createSubmitShortcutExtension,

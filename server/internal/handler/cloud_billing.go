@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/patchbay-ai/patchbay/server/internal/cloudruntime"
-	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/cloudruntime"
+	"github.com/orvilo-ai/orvilo/server/internal/featureflags"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
 )
 
 // Cloud billing endpoints proxy to the same patchbay-cloud HTTP service

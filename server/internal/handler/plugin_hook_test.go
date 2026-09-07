@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
 )
 
 // hookHandlerTestManifest declares the three host-driven triggers. Its endpoint

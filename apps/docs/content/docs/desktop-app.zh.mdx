@@ -1,11 +1,11 @@
 ---
 title: 桌面应用
-description: 安装 Patchbay Desktop，使用桌面标签页和内置守护进程，并连接自托管实例。
+description: 安装 Orvilo Desktop，使用桌面标签页和内置守护进程，并连接自托管实例。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay Desktop 提供 macOS、Windows 和 Linux 版本。它和 Web 版使用相同的账号与工作区数据，但会在本机自动管理守护进程，并为不同工作区保留各自的标签页。
+Orvilo Desktop 提供 macOS、Windows 和 Linux 版本。它和 Web 版使用相同的账号与工作区数据，但会在本机自动管理守护进程，并为不同工作区保留各自的标签页。
 
 ## Desktop 与 Web
 
@@ -18,7 +18,7 @@ Patchbay Desktop 提供 macOS、Windows 和 Linux 版本。它和 Web 版使用�
 
 临时查看或在公共电脑上使用时，Web 更方便。
 
-两者可以同时登录。只要连接的是同一个 Patchbay 服务，看到的数据就是共享的。
+两者可以同时登录。只要连接的是同一个 Orvilo 服务，看到的数据就是共享的。
 
 ## 安装
 
@@ -30,7 +30,7 @@ Patchbay Desktop 提供 macOS、Windows 和 Linux 版本。它和 Web 版使用�
 | Windows | `.exe` |
 | Linux | `.AppImage`、`.deb` 或 `.rpm` |
 
-安装后使用和 Web 版相同的邮箱登录。登录后，Desktop 会启动自己内置的 Patchbay CLI，并检测本机已有的 AI 编程工具。
+安装后使用和 Web 版相同的邮箱登录。登录后，Desktop 会启动自己内置的 Orvilo CLI，并检测本机已有的 AI 编程工具。
 
 <Callout type="info">
 Desktop 内置的 CLI 只供应用管理运行时使用。如果你还要在终端中运行 `patchbay issue` 等命令，按[快速上手第 2 步](/cloud-quickstart#2-连接一台电脑)单独安装 CLI。
@@ -46,13 +46,13 @@ Desktop 会为每个工作区单独保存标签页。例如，你在工作区 A 
 
 ## 内置守护进程
 
-登录后，Desktop 会为当前 Patchbay 服务创建一个专用 CLI profile，并用它启动守护进程。这个 profile 位于：
+登录后，Desktop 会为当前 Orvilo 服务创建一个专用 CLI profile，并用它启动守护进程。这个 profile 位于：
 
 ```text
 ~/.patchbay/profiles/desktop-<host>/
 ```
 
-它不会读取或覆盖你在终端中使用的默认 profile。如果你同时手动启动了另一个守护进程，Patchbay 会把它们显示为不同的运行时。
+它不会读取或覆盖你在终端中使用的默认 profile。如果你同时手动启动了另一个守护进程，Orvilo 会把它们显示为不同的运行时。
 
 可以在 Desktop 的设置中查看运行状态和日志。工具没有被检测到时，先确认它能在普通终端中运行并且已经登录，再重启 Desktop 的守护进程。
 
@@ -70,7 +70,7 @@ Desktop 会为每个工作区单独保存标签页。例如，你在工作区 A 
 
 ## 连接自托管实例
 
-Desktop 默认连接 Patchbay Cloud。连接自托管实例时，在用户目录的 `.patchbay` 下创建 `desktop.json`：
+Desktop 默认连接 Orvilo Cloud。连接自托管实例时，在用户目录的 `.patchbay` 下创建 `desktop.json`：
 
 | 平台 | 路径 |
 | --- | --- |
@@ -143,7 +143,7 @@ $json = @'
 [System.IO.File]::WriteAllText("$dir\desktop.json", $json)
 ```
 
-## Windows Defender 把 Patchbay 报成病毒
+## Windows Defender 把 Orvilo 报成病毒
 
 **现象**：Windows 安全中心报出 `Trojan:Script/Wacatac.B!ml` 之类的威胁，并隔离 Desktop 安装目录里的某个文件。被隔离的通常是内置的 CLI，而不是应用主程序：
 
@@ -151,7 +151,7 @@ $json = @'
 C:\Users\<你>\AppData\Local\Programs\@patchbaydesktop\resources\app.asar.unpacked\resources\bin\patchbay.exe
 ```
 
-**这是误报。** `!ml` 后缀表示这个结论来自 Defender 的机器学习启发式判断，而不是病毒特征库匹配。Patchbay 的 Windows 构建目前还没有做 Authenticode 代码签名，而一个刚发布、没有签名、又会拉起后台进程并建立网络连接的二进制，正好落在这类启发式最容易判可疑的画像上。所有 Windows 产物都由 GitHub Actions 从本仓库的公开源码构建。
+**这是误报。** `!ml` 后缀表示这个结论来自 Defender 的机器学习启发式判断，而不是病毒特征库匹配。Orvilo 的 Windows 构建目前还没有做 Authenticode 代码签名，而一个刚发布、没有签名、又会拉起后台进程并建立网络连接的二进制，正好落在这类启发式最容易判可疑的画像上。所有 Windows 产物都由 GitHub Actions 从本仓库的公开源码构建。
 
 **可以自己校验** —— 每个 GitHub release 都发布了覆盖全部 CLI 压缩包的 `checksums.txt`：
 
@@ -163,12 +163,12 @@ Get-FileHash .\patchbay-cli-<version>-windows-amd64.zip -Algorithm SHA256
 
 **怎么解决**：
 
-1. **把隔离的文件恢复回来** —— Windows 安全中心 → *病毒和威胁防护* → *保护历史记录* → 选中 Patchbay 那一条 → *操作* → *还原*。
+1. **把隔离的文件恢复回来** —— Windows 安全中心 → *病毒和威胁防护* → *保护历史记录* → 选中 Orvilo 那一条 → *操作* → *还原*。
 2. **加排除项**，避免再次被隔离 —— *病毒和威胁防护* → *管理设置* → *排除项* → *添加或删除排除项* → *文件夹*，两个都要加：
  - `%LOCALAPPDATA%\Programs\@patchbaydesktop`
- - `%APPDATA%\Patchbay`
+ - `%APPDATA%\Orvilo`
 
- 两个路径缺一不可：内置 CLI 被删掉后，Desktop 会把替换版本下载到 `%APPDATA%\Patchbay\bin`，只排除安装目录的话，下载下来的副本还会再被隔离一次，陷入循环。
+ 两个路径缺一不可：内置 CLI 被删掉后，Desktop 会把替换版本下载到 `%APPDATA%\Orvilo\bin`，只排除安装目录的话，下载下来的副本还会再被隔离一次，陷入循环。
 3. **把误报提交给微软** —— 在 [Microsoft Security Intelligence 文件提交页](https://www.microsoft.com/en-us/wdsi/filesubmission)选择 *Software developer* 和 *Incorrectly detected as malware*。这一步才是让检测对所有用户撤销的办法，一般几天内生效。
 
 <Callout type="warning">

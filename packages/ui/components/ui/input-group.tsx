@@ -3,12 +3,12 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
-import { cn } from "@patchbay/ui/lib/utils"
-import { Button } from "@patchbay/ui/components/ui/button"
-import { Input } from "@patchbay/ui/components/ui/input"
-import { SelectTrigger } from "@patchbay/ui/components/ui/select"
-import { Textarea } from "@patchbay/ui/components/ui/textarea"
-import { TimeInput } from "@patchbay/ui/components/ui/time-input"
+import { cn } from "@orvilo/ui/lib/utils"
+import { Button } from "@orvilo/ui/components/ui/button"
+import { Input } from "@orvilo/ui/components/ui/input"
+import { SelectTrigger } from "@orvilo/ui/components/ui/select"
+import { Textarea } from "@orvilo/ui/components/ui/textarea"
+import { TimeInput } from "@orvilo/ui/components/ui/time-input"
 
 function InputGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (

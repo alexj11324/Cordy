@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@orvilo/core/types";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 
 // Mutable selection state shared with the store mock below. The real toolbar
@@ -11,12 +11,12 @@ const selection = vi.hoisted(() => ({
   clear: () => {},
 }));
 
-vi.mock("@patchbay/core/issues/stores/selection-store", () => ({
+vi.mock("@orvilo/core/issues/stores/selection-store", () => ({
   useIssueSelectionStore: (selector: (s: typeof selection) => unknown) =>
     selector(selection),
 }));
 
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@orvilo/core/issues/mutations", () => ({
   useBatchUpdateIssues: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useBatchDeleteIssues: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));

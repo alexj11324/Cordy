@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -54,22 +54,22 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: <T,>(opts: T) => opts,
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => workspaceRef.current,
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
   workspaceKeys: { list: () => ["workspaces"] },
 }));
 
-vi.mock("@patchbay/core/github", async () => {
+vi.mock("@orvilo/core/github", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/github")>("@patchbay/core/github");
+    await vi.importActual<typeof import("@orvilo/core/github")>("@orvilo/core/github");
   return {
     ...actual,
     githubInstallationsOptions: () => ({
@@ -79,7 +79,7 @@ vi.mock("@patchbay/core/github", async () => {
   };
 });
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     updateWorkspace: mockUpdateWorkspace,
     deleteGitHubInstallation: mockDeleteInstallation,
@@ -87,7 +87,7 @@ vi.mock("@patchbay/core/api", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@orvilo/core/auth", () => {
   const useAuthStore = Object.assign(
     (sel?: (s: { user: { id: string } }) => unknown) =>
       sel ? sel({ user: { id: "user-1" } }) : { user: { id: "user-1" } },

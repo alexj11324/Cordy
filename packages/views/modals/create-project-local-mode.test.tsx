@@ -62,11 +62,11 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: (options: unknown) => options,
 }));
 
-vi.mock("@patchbay/core/projects/mutations", () => ({
+vi.mock("@orvilo/core/projects/mutations", () => ({
   useCreateProject: () => ({ mutateAsync: createProjectMock }),
 }));
 
-vi.mock("@patchbay/core/projects", () => ({
+vi.mock("@orvilo/core/projects", () => ({
   useProjectDraftStore: (selector: (state: unknown) => unknown) =>
     selector({
       draft: {
@@ -91,21 +91,21 @@ vi.mock("@patchbay/core/projects", () => ({
 // release before the worktree save gate.
 let serverValidatesWorktree = true;
 let serverSupportsCommittedBase = true;
-vi.mock("@patchbay/core/config", () => ({
+vi.mock("@orvilo/core/config", () => ({
   useConfigStore: (selector: (state: { localWorktreeSupported: boolean; localWorktreeCommittedBaseSupported: boolean }) => unknown) =>
     selector({ localWorktreeSupported: serverValidatesWorktree, localWorktreeCommittedBaseSupported: serverSupportsCommittedBase }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "workspace-1", slug: "ws", repos: [] }),
   useWorkspacePaths: () => ({ projectDetail: (id: string) => `/ws/projects/${id}` }),
 }));
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
   agentListOptions: () => ({ queryKey: ["agents"], queryFn: vi.fn() }),
 }));
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: vi.fn() }),
 }));
 vi.mock("../navigation", () => ({ useNavigation: () => ({ push: vi.fn() }) }));
@@ -146,17 +146,17 @@ vi.mock("../platform/use-local-daemon-status", () => ({
 }));
 
 // Render overlays inline so their contents are assertable.
-vi.mock("@patchbay/ui/components/ui/dialog", () => ({
+vi.mock("@orvilo/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("@patchbay/ui/components/ui/popover", () => ({
+vi.mock("@orvilo/ui/components/ui/popover", () => ({
   Popover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   PopoverTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@orvilo/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,

@@ -2,21 +2,21 @@
 
 import { MessageCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@patchbay/ui/lib/utils";
-import { useChatStore } from "@patchbay/core/chat";
+import { cn } from "@orvilo/ui/lib/utils";
+import { useChatStore } from "@orvilo/core/chat";
 import {
   chatSessionsOptions,
   countUnreadChatSessions,
   hasPendingChatTasksOptions,
-} from "@patchbay/core/chat/queries";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { createLogger } from "@patchbay/core/logger";
-import { useShortcut } from "@patchbay/core/shortcuts";
+} from "@orvilo/core/chat/queries";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { createLogger } from "@orvilo/core/logger";
+import { useShortcut } from "@orvilo/core/shortcuts";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/ui/components/ui/tooltip";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
 import { useT } from "../../i18n";
 

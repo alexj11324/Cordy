@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // Parse actual probe calls to keep the audited inventory aligned with built-in

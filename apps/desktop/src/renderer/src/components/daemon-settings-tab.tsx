@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { AlertCircle, Info, LogIn } from "lucide-react";
-import { Switch } from "@patchbay/ui/components/ui/switch";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Switch } from "@orvilo/ui/components/ui/switch";
+import { cn } from "@orvilo/ui/lib/utils";
 import { toast } from "sonner";
 import {
   SettingsCard,
@@ -9,8 +9,8 @@ import {
   SettingsRow,
   SettingsSection,
   SettingsTab,
-} from "@patchbay/views/settings";
-import { useT } from "@patchbay/views/i18n";
+} from "@orvilo/views/settings";
+import { useT } from "@orvilo/views/i18n";
 import { reauthenticateDaemon } from "../platform/daemon-reauth";
 import type { DaemonPrefs, DaemonStatus } from "../../../shared/daemon-types";
 import {

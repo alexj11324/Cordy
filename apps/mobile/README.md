@@ -1,10 +1,10 @@
-# Patchbay Mobile (iOS)
+# Orvilo Mobile (iOS)
 
-Expo + React Native iOS client for Patchbay. Independent from web/desktop — shares only types from `@patchbay/core/`. See [`CLAUDE.md`](./CLAUDE.md) for the locked tech-stack baseline and import rules.
+Expo + React Native iOS client for Orvilo. Independent from web/desktop — shares only types from `@orvilo/core/`. See [`CLAUDE.md`](./CLAUDE.md) for the locked tech-stack baseline and import rules.
 
 ## Just want to use it on your phone? (no development)
 
-Patchbay isn't on the App Store yet — until that changes, anyone who wants it on their iPhone builds from source. One command:
+Orvilo isn't on the App Store yet — until that changes, anyone who wants it on their iPhone builds from source. One command:
 
 ```bash
 pnpm ios:mobile:device:prod:release
@@ -63,7 +63,7 @@ cp apps/mobile/.env.example apps/mobile/.env.development.local
 # then edit EXPO_PUBLIC_API_URL inside it to your Mac's LAN IP, e.g. http://192.168.1.42:8080
 ```
 
-If your Apple ID isn't on the Patchbay Apple Developer team yet, also uncomment and set `EXPO_BUNDLE_IDENTIFIER_DEV` to a reverse-domain you own (e.g. `com.yourname.patchbay.dev`). This **only** overrides the dev variant — staging / production bundle ids are intentionally not overridable so variants can coexist.
+If your Apple ID isn't on the Orvilo Apple Developer team yet, also uncomment and set `EXPO_BUNDLE_IDENTIFIER_DEV` to a reverse-domain you own (e.g. `com.yourname.patchbay.dev`). This **only** overrides the dev variant — staging / production bundle ids are intentionally not overridable so variants can coexist.
 
 If your Apple ID belongs to more than one Apple Developer team, also set `EXPO_APPLE_TEAM_ID` to the team that should sign your builds. Unlike the bundle id overrides it applies to every variant, and it is re-applied on each run — so it also fixes a checkout that has already latched onto the wrong team.
 

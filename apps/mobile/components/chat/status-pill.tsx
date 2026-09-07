@@ -35,8 +35,8 @@ import Animated, {
 import type {
   ChatPendingTask,
   TaskMessagePayload,
-} from "@patchbay/core/types";
-import type { AgentAvailability } from "@patchbay/core/agents";
+} from "@orvilo/core/types";
+import type { AgentAvailability } from "@orvilo/core/agents";
 import { Text } from "@/components/ui/text";
 import { formatElapsedSecs } from "@/lib/format-elapsed";
 import { useColorScheme } from "@/lib/use-color-scheme";

@@ -18,13 +18,13 @@ export function CommunityLinks({
     },
     {
       label: "GitHub",
-      href: "https://github.com/patchbay-ai/patchbay",
+      href: "https://github.com/alexj11324/Cordy",
       description: githubDescription,
       Icon: GitHubMark,
     },
     {
       label: "X（Twitter）",
-      href: "https://x.com/PatchbayAI",
+      href: "https://x.com/OrviloAI",
       description: xDescription,
       Icon: XMark,
     },

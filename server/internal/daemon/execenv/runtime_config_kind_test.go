@@ -83,7 +83,7 @@ func TestBuildMetaSkillContentIssueBodyFormatting(t *testing.T) {
 
 	fixtures := map[string]TaskContextForEnv{
 		"issue":        {IssueID: "i-1"},
-		"automation":    {AutomationRunID: "r-1"},
+		"automation":   {AutomationRunID: "r-1"},
 		"quick-create": {QuickCreatePrompt: "create an issue"},
 		"chat":         {ChatSessionID: "c-1"},
 	}
@@ -131,7 +131,7 @@ func TestBuildMetaSkillContentSlimKindMatrix(t *testing.T) {
 	}
 	issueKinds := map[taskKind]bool{kindIssue: true}
 	checks := []sectionCheck{
-		{"# Patchbay Agent Runtime", allKinds},
+		{"# Orvilo Agent Runtime", allKinds},
 		{"## Background Task Safety", allKinds},
 		{"## Agent Identity", allKinds},
 		{"## Available Commands", allKinds},

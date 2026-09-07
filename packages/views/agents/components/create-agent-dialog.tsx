@@ -5,15 +5,15 @@ import { Globe, Lock, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ModelDropdown } from "./model-dropdown";
 import { RuntimePicker } from "./runtime-picker";
-import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
+import { isRuntimeUsableForUser } from "@orvilo/core/runtimes";
 import { InstructionsEditor } from "./instructions-editor";
 import { SkillMultiSelect } from "./skill-multi-select";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
-import { api } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useFeatureEnabled } from "@patchbay/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
+import { api } from "@orvilo/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useFeatureEnabled } from "@orvilo/core/config";
+import { COMPOSIO_MCP_APPS_FLAG } from "@orvilo/core/feature-flags";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
 import type {
   Agent,
   AgentInvocationTargetInput,
@@ -22,25 +22,25 @@ import type {
   RuntimeDevice,
   MemberWithUser,
   CreateAgentRequest,
-} from "@patchbay/core/types";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@orvilo/core/types";
+import { isImeComposing } from "@orvilo/core/utils";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@patchbay/ui/components/ui/dialog";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/ui/components/ui/dialog";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
 import { toast } from "sonner";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
   VISIBILITY_DESCRIPTION,
   VISIBILITY_LABEL,
-} from "@patchbay/core/agents";
+} from "@orvilo/core/agents";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { CharCounter } from "./char-counter";
 import { useT } from "../../i18n";

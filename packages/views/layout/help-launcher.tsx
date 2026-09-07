@@ -16,9 +16,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { useModalStore } from "@patchbay/core/modals";
-import { useConfigStore } from "@patchbay/core/config";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { useModalStore } from "@orvilo/core/modals";
+import { useConfigStore } from "@orvilo/core/config";
 import { isDesktopShell } from "../platform/local-directory";
 import { DISCORD_URL, DiscordIcon } from "./discord";
 import { useT } from "../i18n";

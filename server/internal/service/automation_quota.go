@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // AutomationQuotaMetrics deliberately accepts only bounded labels. Workspace

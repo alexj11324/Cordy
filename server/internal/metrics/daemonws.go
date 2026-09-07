@@ -3,7 +3,7 @@ package metrics
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
+	"github.com/orvilo-ai/orvilo/server/internal/daemonws"
 )
 
 type DaemonWSCollector struct {

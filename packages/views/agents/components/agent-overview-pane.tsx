@@ -6,16 +6,16 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
-} from "@patchbay/core/types";
-import { providerSupportsMcpConfig } from "@patchbay/core/agents";
-import { useFeatureEnabled } from "@patchbay/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { larkInstallationsOptions } from "@patchbay/core/lark";
-import { slackInstallationsOptions } from "@patchbay/core/slack";
-import { dingtalkInstallationsOptions } from "@patchbay/core/dingtalk";
-import { wecomInstallationsOptions } from "@patchbay/core/wecom";
-import { telegramInstallationsOptions } from "@patchbay/core/telegram";
+} from "@orvilo/core/types";
+import { providerSupportsMcpConfig } from "@orvilo/core/agents";
+import { useFeatureEnabled } from "@orvilo/core/config";
+import { COMPOSIO_MCP_APPS_FLAG } from "@orvilo/core/feature-flags";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { larkInstallationsOptions } from "@orvilo/core/lark";
+import { slackInstallationsOptions } from "@orvilo/core/slack";
+import { dingtalkInstallationsOptions } from "@orvilo/core/dingtalk";
+import { wecomInstallationsOptions } from "@orvilo/core/wecom";
+import { telegramInstallationsOptions } from "@orvilo/core/telegram";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,8 +25,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { cn } from "@orvilo/ui/lib/utils";
 import { ActivityTab } from "./tabs/activity-tab";
 import { InstructionsTab } from "./tabs/instructions-tab";
 import { SkillsTab } from "./tabs/skills-tab";

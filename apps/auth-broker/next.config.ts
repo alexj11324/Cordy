@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: ["@patchbay/auth-ui"],
+  transpilePackages: ["@orvilo/auth-ui"],
   outputFileTracingRoot: resolve(__dirname, "../.."),
   ...(process.env.STANDALONE === "true" ? { output: "standalone" as const } : {}),
   async headers() { return [{ source: "/:path*", headers: [

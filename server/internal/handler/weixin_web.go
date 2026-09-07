@@ -10,9 +10,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/weixin"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/weixin"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 const (
@@ -22,18 +22,18 @@ const (
 )
 
 type WeixinInstallationResponse struct {
-	Runtime MessagingConnectionStatus `json:"runtime"`
-	ID              string `json:"id"`
-	WorkspaceID     string `json:"workspace_id"`
-	AgentID         string `json:"agent_id"`
-	BotID           string `json:"bot_id"`
-	ILinkUserID     string `json:"ilink_user_id"`
-	InstallerUserID string `json:"installer_user_id"`
-	Status          string `json:"status"`
-	InstallationStatus string `json:"installation_status"`
-	InstalledAt     string `json:"installed_at"`
-	CreatedAt       string `json:"created_at"`
-	UpdatedAt       string `json:"updated_at"`
+	Runtime            MessagingConnectionStatus `json:"runtime"`
+	ID                 string                    `json:"id"`
+	WorkspaceID        string                    `json:"workspace_id"`
+	AgentID            string                    `json:"agent_id"`
+	BotID              string                    `json:"bot_id"`
+	ILinkUserID        string                    `json:"ilink_user_id"`
+	InstallerUserID    string                    `json:"installer_user_id"`
+	Status             string                    `json:"status"`
+	InstallationStatus string                    `json:"installation_status"`
+	InstalledAt        string                    `json:"installed_at"`
+	CreatedAt          string                    `json:"created_at"`
+	UpdatedAt          string                    `json:"updated_at"`
 }
 
 func weixinInstallationToResponse(row db.ChannelInstallation) WeixinInstallationResponse {
@@ -41,11 +41,11 @@ func weixinInstallationToResponse(row db.ChannelInstallation) WeixinInstallation
 	legacyStatus, installationStatus := messagingInstallationWireStatuses(row.Status)
 	return WeixinInstallationResponse{
 		Runtime: initialConnectionStatus(row.Status),
-		ID: uuidToString(row.ID), WorkspaceID: uuidToString(row.WorkspaceID), AgentID: uuidToString(row.AgentID),
+		ID:      uuidToString(row.ID), WorkspaceID: uuidToString(row.WorkspaceID), AgentID: uuidToString(row.AgentID),
 		BotID: public.BotID, ILinkUserID: public.ILinkUserID, InstallerUserID: uuidToString(row.InstallerUserID),
 		Status: legacyStatus, InstallationStatus: installationStatus,
 		InstalledAt: row.InstalledAt.Time.UTC().Format(time.RFC3339),
-		CreatedAt: row.CreatedAt.Time.UTC().Format(time.RFC3339), UpdatedAt: row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+		CreatedAt:   row.CreatedAt.Time.UTC().Format(time.RFC3339), UpdatedAt: row.UpdatedAt.Time.UTC().Format(time.RFC3339),
 	}
 }
 
@@ -322,7 +322,7 @@ func (h *Handler) RedeemWeixinBindingToken(w http.ResponseWriter, r *http.Reques
 		case errors.Is(err, weixin.ErrBindingTokenInvalid):
 			writeError(w, http.StatusGone, "binding token invalid or expired")
 		case errors.Is(err, weixin.ErrBindingAlreadyAssigned):
-			writeError(w, http.StatusConflict, "this Weixin account is already bound to a different Patchbay user")
+			writeError(w, http.StatusConflict, "this Weixin account is already bound to a different Orvilo user")
 		case errors.Is(err, weixin.ErrBindingNotWorkspaceMember):
 			writeError(w, http.StatusForbidden, "binding refused (are you a workspace member?)")
 		default:

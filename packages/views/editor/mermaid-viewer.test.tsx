@@ -21,7 +21,7 @@ vi.mock("./code-block-static", () => ({
 }));
 
 const copyTextMock = vi.hoisted(() => vi.fn().mockResolvedValue(true));
-vi.mock("@patchbay/ui/lib/clipboard", () => ({ copyText: copyTextMock }));
+vi.mock("@orvilo/ui/lib/clipboard", () => ({ copyText: copyTextMock }));
 
 import { MermaidViewer } from "./mermaid-viewer";
 

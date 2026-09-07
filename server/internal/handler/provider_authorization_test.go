@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
 )
 
 // The provider authorization slice answers one question at runtime: may this
@@ -26,11 +26,11 @@ import (
 const providerAuthTestDaemonID = "provider-auth-daemon"
 
 type providerLeaseFixture struct {
-	runtimeID  string
-	agentID    string
-	taskID     string
-	leaseToken string
-	leaseID    string
+	runtimeID        string
+	agentID          string
+	taskID           string
+	leaseToken       string
+	leaseID          string
 	bootstrapGrantID string
 }
 
@@ -98,11 +98,11 @@ func newProviderLeaseFixtureWithBootstrapGrant(t *testing.T, originatorUserID st
 	var leaseID string
 	dbfx.QueryRow(t, `SELECT id FROM task_token WHERE task_id = $1`, taskID).Scan(&leaseID)
 	return providerLeaseFixture{
-		runtimeID:  runtimeID,
-		agentID:    agentID,
-		taskID:     taskID,
-		leaseToken: claimed.AuthToken,
-		leaseID:    leaseID,
+		runtimeID:        runtimeID,
+		agentID:          agentID,
+		taskID:           taskID,
+		leaseToken:       claimed.AuthToken,
+		leaseID:          leaseID,
 		bootstrapGrantID: bootstrapGrantID,
 	}
 }

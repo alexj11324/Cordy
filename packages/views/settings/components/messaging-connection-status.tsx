@@ -4,8 +4,8 @@ import { CheckCircle2, CircleAlert, Loader2, Unplug } from "lucide-react";
 import {
   messagingConnectionState,
   type MessagingConnectionSource,
-} from "@patchbay/core/types";
-import { Badge } from "@patchbay/ui/components/ui/badge";
+} from "@orvilo/core/types";
+import { Badge } from "@orvilo/ui/components/ui/badge";
 import { useT } from "../../i18n";
 
 export function MessagingConnectionStatus({

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Patchbay installer — installs the CLI and optionally provisions a self-host server.
+# Orvilo installer — installs the CLI and optionally provisions a self-host server.
 #
 # Install / upgrade CLI only:
 #   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
@@ -94,7 +94,7 @@ detect_os() {
     MINGW*|MSYS*|CYGWIN*)
             fail "This script does not support Windows. Use the PowerShell installer instead:
   irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex" ;;
-    *)      fail "Unsupported operating system: $(uname -s). Patchbay supports macOS, Linux, and Windows." ;;
+    *)      fail "Unsupported operating system: $(uname -s). Orvilo supports macOS, Linux, and Windows." ;;
   esac
 
   ARCH="$(uname -m)"
@@ -118,7 +118,7 @@ _dump_brew_log() {
 }
 
 install_cli_brew() {
-  info "Installing Patchbay CLI via Homebrew..."
+  info "Installing Orvilo CLI via Homebrew..."
   local brew_log
   brew_log=$(mktemp)
   if ! brew tap alexj11324/tap >"$brew_log" 2>&1; then
@@ -131,7 +131,7 @@ install_cli_brew() {
   if ! brew install "$BREW_PACKAGE" >"$brew_log" 2>&1; then
     if brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
       rm -f "$brew_log"
-      ok "Patchbay CLI already installed via Homebrew"
+      ok "Orvilo CLI already installed via Homebrew"
     else
       warn "Failed to install patchbay via Homebrew. Falling back to GitHub Releases binary install."
       _dump_brew_log "$brew_log"
@@ -140,12 +140,12 @@ install_cli_brew() {
     fi
   else
     rm -f "$brew_log"
-    ok "Patchbay CLI installed via Homebrew"
+    ok "Orvilo CLI installed via Homebrew"
   fi
 }
 
 install_cli_binary() {
-  info "Installing Patchbay CLI from GitHub Releases..."
+  info "Installing Orvilo CLI from GitHub Releases..."
 
   # Get latest release tag
   local latest
@@ -187,7 +187,7 @@ install_cli_binary() {
   fi
 
   rm -rf "$tmp_dir"
-  ok "Patchbay CLI installed to $bin_dir/patchbay"
+  ok "Orvilo CLI installed to $bin_dir/patchbay"
 }
 
 add_to_path() {
@@ -195,7 +195,7 @@ add_to_path() {
   local line="export PATH=\"$dir:\$PATH\""
   for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
     if [ -f "$rc" ] && ! grep -qF "$dir" "$rc"; then
-      printf '\n# Added by Patchbay installer\n%s\n' "$line" >> "$rc"
+      printf '\n# Added by Orvilo installer\n%s\n' "$line" >> "$rc"
     fi
   done
 }
@@ -255,13 +255,13 @@ pull_official_selfhost_images() {
 }
 
 upgrade_cli_brew() {
-  info "Upgrading Patchbay CLI via Homebrew..."
+  info "Upgrading Orvilo CLI via Homebrew..."
   brew update 2>/dev/null || true
   if brew upgrade "$BREW_PACKAGE" 2>/dev/null; then
-    ok "Patchbay CLI upgraded via Homebrew"
+    ok "Orvilo CLI upgraded via Homebrew"
   else
     # brew upgrade exits non-zero if already up to date
-    ok "Patchbay CLI is already the latest version"
+    ok "Orvilo CLI is already the latest version"
   fi
 }
 
@@ -279,11 +279,11 @@ install_cli() {
     local latest_cmp="${latest_ver#v}"
 
     if [ -z "$latest_ver" ] || [ "$current_cmp" = "$latest_cmp" ]; then
-      ok "Patchbay CLI is up to date ($current_ver)"
+      ok "Orvilo CLI is up to date ($current_ver)"
       return 0
     fi
 
-    info "Patchbay CLI $current_ver installed, latest is $latest_ver — upgrading..."
+    info "Orvilo CLI $current_ver installed, latest is $latest_ver — upgrading..."
     if command_exists brew && brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
       upgrade_cli_brew
     else
@@ -292,7 +292,7 @@ install_cli() {
 
     local new_ver
     new_ver=$(patchbay version 2>/dev/null | awk 'NR==1{print $2}' || echo "unknown")
-    ok "Patchbay CLI upgraded ($current_ver → $new_ver)"
+    ok "Orvilo CLI upgraded ($current_ver → $new_ver)"
     return 0
   fi
 
@@ -314,7 +314,7 @@ install_cli() {
 check_docker() {
   if ! command_exists docker; then
     printf "\n"
-    fail "Docker is not installed. Patchbay self-hosting requires Docker and Docker Compose.
+    fail "Docker is not installed. Orvilo self-hosting requires Docker and Docker Compose.
 
 Install Docker:
   macOS:  https://docs.docker.com/desktop/install/mac-install/
@@ -334,7 +334,7 @@ After installing Docker, re-run this script with --with-server."
 # Server setup (self-host / --with-server)
 # ---------------------------------------------------------------------------
 setup_server() {
-  info "Setting up Patchbay server..."
+  info "Setting up Orvilo server..."
   local server_ref
   server_ref=$(get_selfhost_ref)
   info "Using self-host assets from ${server_ref}..."
@@ -343,7 +343,7 @@ setup_server() {
     info "Updating existing installation at $INSTALL_DIR..."
     cd "$INSTALL_DIR"
   else
-    info "Cloning Patchbay repository..."
+    info "Cloning Orvilo repository..."
     if ! command_exists git; then
       fail "Git is not installed. Please install git and re-run."
     fi
@@ -383,9 +383,9 @@ setup_server() {
   fi
 
   # Start Docker Compose
-  info "Pulling official Patchbay images..."
+  info "Pulling official Orvilo images..."
   pull_official_selfhost_images
-  info "Starting Patchbay services (this may take a few minutes on first run)..."
+  info "Starting Orvilo services (this may take a few minutes on first run)..."
   docker compose -f docker-compose.selfhost.yml up -d
 
   # Read the ports Compose actually published, once, and reuse them for both the
@@ -411,7 +411,7 @@ setup_server() {
   done
 
   if [ "$ready" = true ]; then
-    ok "Patchbay server is running"
+    ok "Orvilo server is running"
   else
     warn "Server is still starting. You can check logs with:"
     echo "  cd $INSTALL_DIR && docker compose -f docker-compose.selfhost.yml logs"
@@ -425,7 +425,7 @@ setup_server() {
 # ---------------------------------------------------------------------------
 run_default() {
   printf "\n"
-  printf "${BOLD}  Patchbay — Installer${RESET}\n"
+  printf "${BOLD}  Orvilo — Installer${RESET}\n"
   printf "\n"
 
   detect_os
@@ -433,12 +433,12 @@ run_default() {
 
   printf "\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-  printf "${BOLD}${GREEN}  ✓ Patchbay CLI is ready!${RESET}\n"
+  printf "${BOLD}${GREEN}  ✓ Orvilo CLI is ready!${RESET}\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
   printf "\n"
   printf "  ${BOLD}Next: configure your environment${RESET}\n"
   printf "\n"
-  printf "     ${CYAN}patchbay setup${RESET}                # Connect to Patchbay Cloud\n"
+  printf "     ${CYAN}patchbay setup${RESET}                # Connect to Orvilo Cloud\n"
   printf "     ${CYAN}patchbay setup self-host${RESET}       # Connect to a self-hosted server\n"
   printf "\n"
   print_remote_server_token_hint
@@ -452,7 +452,7 @@ run_default() {
 # ---------------------------------------------------------------------------
 run_with_server() {
   printf "\n"
-  printf "${BOLD}  Patchbay — Self-Host Installer${RESET}\n"
+  printf "${BOLD}  Orvilo — Self-Host Installer${RESET}\n"
   printf "  Provisioning server infrastructure + installing CLI\n"
   printf "\n"
 
@@ -463,7 +463,7 @@ run_with_server() {
 
   printf "\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-  printf "${BOLD}${GREEN}  ✓ Patchbay server is running and CLI is ready!${RESET}\n"
+  printf "${BOLD}${GREEN}  ✓ Orvilo server is running and CLI is ready!${RESET}\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
   printf "\n"
   printf "  ${BOLD}Frontend:${RESET}  http://localhost:%s\n" "$SELFHOST_FRONTEND_PORT"
@@ -487,7 +487,7 @@ run_with_server() {
 # ---------------------------------------------------------------------------
 run_stop() {
   printf "\n"
-  info "Stopping Patchbay services..."
+  info "Stopping Orvilo services..."
 
   if [ -d "$INSTALL_DIR" ]; then
     cd "$INSTALL_DIR"
@@ -498,7 +498,7 @@ run_stop() {
       warn "No docker-compose.selfhost.yml found at $INSTALL_DIR"
     fi
   else
-    warn "No Patchbay installation found at $INSTALL_DIR"
+    warn "No Orvilo installation found at $INSTALL_DIR"
   fi
 
   if command_exists patchbay; then
@@ -522,7 +522,7 @@ main() {
       --help|-h)
         echo "Usage: install.sh [--with-server | --stop]"
         echo ""
-        echo "  (default)       Install / upgrade the Patchbay CLI"
+        echo "  (default)       Install / upgrade the Orvilo CLI"
         echo "  --with-server   Install CLI + provision a self-host server (Docker)"
         echo "  --stop          Stop a self-hosted installation"
         echo ""

@@ -3,10 +3,10 @@ import {
   closestCenter,
   type CollisionDetection,
 } from "@dnd-kit/core";
-import type { Issue, IssueExecutorType, IssueStatus, UpdateIssueRequest } from "@patchbay/core/types";
-import type { IssueGrouping } from "@patchbay/core/issues/stores/view-store";
-import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
-import { issueColumnCategory } from "@patchbay/core/issues";
+import type { Issue, IssueExecutorType, IssueStatus, UpdateIssueRequest } from "@orvilo/core/types";
+import type { IssueGrouping } from "@orvilo/core/issues/stores/view-store";
+import { propertyIdFromViewKey } from "@orvilo/core/issues/stores/view-store";
+import { issueColumnCategory } from "@orvilo/core/issues";
 import type { BoardColumnGroup } from "../components/board-column";
 
 export type DragMoveTargetUpdates = Pick<
@@ -127,7 +127,7 @@ export function getMoveAnchors(
 /**
  * Insert `id` into `ids` at the slot implied by `position ASC`, reading each
  * id's position from `issueMap`. Mirrors `insertByPosition` in
- * `@patchbay/core/issues/cache-helpers` so the board's optimistic placement on
+ * `@orvilo/core/issues/cache-helpers` so the board's optimistic placement on
  * drop matches the cache the settle reconcile rebuilds from — otherwise the
  * card would land in one slot, then jump when local columns re-derive from TQ.
  */

@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // TestDaemonAuth_DaemonTokenCacheHit pins the daemon-token cache short-circuit:
@@ -284,7 +284,6 @@ func TestDaemonAuth_MCN_FleetUnreachable(t *testing.T) {
 		t.Fatalf("expected 503 when fleet is unavailable, got %d", w.Code)
 	}
 }
-
 
 // TestDaemonAuth_MCN_OwnerNotInLocalDB pins the new owner-existence
 // guard end-to-end through the middleware. Cloud verifies the token

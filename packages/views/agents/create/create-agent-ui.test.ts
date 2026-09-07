@@ -2,12 +2,12 @@ import { createElement } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
-import { ApiError } from "@patchbay/core/api";
-import type { Agent } from "@patchbay/core/types";
+import { ApiError } from "@orvilo/core/api";
+import type { Agent } from "@orvilo/core/types";
 import {
   cacheAgentResponse,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/workspace/queries";
 import { AgentNameField } from "./agent-configuration-panel";
 import { CreateMethodChooser } from "./choose-create-method-page";
 import { CreateAgentFooter } from "./create-agent-footer";

@@ -12,8 +12,8 @@ import {
 } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Clock, Pencil } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { cn } from "@orvilo/ui/lib/utils";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   InputGroup,
   InputGroupAddon,
@@ -21,17 +21,17 @@ import {
   InputGroupSelectTrigger,
   InputGroupText,
   InputGroupTimeInput,
-} from "@patchbay/ui/components/ui/input-group";
+} from "@orvilo/ui/components/ui/input-group";
 import {
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
-} from "@patchbay/ui/components/ui/select";
-import { TimeInput } from "@patchbay/ui/components/ui/time-input";
-import { cronPreviewOptions } from "@patchbay/core/automations/queries";
-import { ApiError } from "@patchbay/core/api";
+} from "@orvilo/ui/components/ui/select";
+import { TimeInput } from "@orvilo/ui/components/ui/time-input";
+import { cronPreviewOptions } from "@orvilo/core/automations/queries";
+import { ApiError } from "@orvilo/core/api";
 import { timezoneOptions } from "../../../common/timezone-select";
 import { useDebouncedValue } from "../../../common/use-debounced-value";
 import { SegmentedToggle } from "../../../common/segmented-toggle";

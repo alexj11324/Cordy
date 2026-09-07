@@ -19,9 +19,9 @@ import {
   getShortcutPlatform,
   type ShortcutChord,
   type ShortcutPlatform,
-} from "@patchbay/core/shortcuts";
-import { Kbd } from "@patchbay/ui/components/ui/kbd";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/core/shortcuts";
+import { Kbd } from "@orvilo/ui/components/ui/kbd";
+import { cn } from "@orvilo/ui/lib/utils";
 
 type ShortcutToken = {
   id: string;

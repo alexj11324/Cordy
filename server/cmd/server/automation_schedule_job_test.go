@@ -6,11 +6,11 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/scheduler"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/scheduler"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // setupAutomationScheduleJob creates the test fixture for the
@@ -53,7 +53,7 @@ func setupAutomationScheduleJob(t *testing.T, cron string) (db.AutomationTrigger
 	}
 
 	trigger, err := queries.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
-		AutomationID:    ap.ID,
+		AutomationID:   ap.ID,
 		Kind:           "schedule",
 		Enabled:        true,
 		CronExpression: pgtype.Text{String: cron, Valid: true},
@@ -635,7 +635,7 @@ func seedColdStartTrigger(t *testing.T, cron string) (db.AutomationTrigger, *db.
 	})
 
 	trigger, err := queries.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
-		AutomationID:    ap.ID,
+		AutomationID:   ap.ID,
 		Kind:           "schedule",
 		Enabled:        true,
 		CronExpression: pgtype.Text{String: cron, Valid: true},

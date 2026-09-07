@@ -469,7 +469,7 @@ features.memories = true
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	t.Setenv(PatchbayCodexMemoryEnv, "1")
+	t.Setenv(OrviloCodexMemoryEnv, "1")
 
 	if err := ensureCodexMemoryConfig(configPath, nil); err != nil {
 		t.Fatalf("ensureCodexMemoryConfig failed: %v", err)
@@ -485,7 +485,7 @@ features.memories = true
 func TestCodexMemoryEnabledTruthy(t *testing.T) {
 	for _, v := range []string{"1", "true", "TRUE", "yes", "On"} {
 		t.Run(v, func(t *testing.T) {
-			t.Setenv(PatchbayCodexMemoryEnv, v)
+			t.Setenv(OrviloCodexMemoryEnv, v)
 			if !codexMemoryEnabled() {
 				t.Errorf("expected %q to be truthy", v)
 			}
@@ -496,7 +496,7 @@ func TestCodexMemoryEnabledTruthy(t *testing.T) {
 func TestCodexMemoryEnabledFalsy(t *testing.T) {
 	for _, v := range []string{"", "0", "false", "no", "off", "anything else"} {
 		t.Run(v, func(t *testing.T) {
-			t.Setenv(PatchbayCodexMemoryEnv, v)
+			t.Setenv(OrviloCodexMemoryEnv, v)
 			if codexMemoryEnabled() {
 				t.Errorf("expected %q to be falsy", v)
 			}

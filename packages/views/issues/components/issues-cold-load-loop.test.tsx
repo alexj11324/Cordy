@@ -21,22 +21,22 @@ import type { ReactNode } from "react";
 import { BoardView } from "./board-view";
 import { SwimLaneView } from "./swimlane-view";
 import { IssueContextMenuProvider } from "../actions";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
-import type { Issue } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { setApiInstance } from "@orvilo/core/api";
+import type { ApiClient } from "@orvilo/core/api/client";
+import type { Issue } from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@orvilo/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/paths")>(
+    "@orvilo/core/paths",
   );
   return {
     ...actual,
@@ -47,7 +47,7 @@ vi.mock("@patchbay/core/paths", async () => {
 });
 
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -71,7 +71,7 @@ vi.mock("../../navigation", () => ({
   NavigationProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-vi.mock("@patchbay/core/issues/config", () => ({
+vi.mock("@orvilo/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_CONFIG: {
@@ -94,15 +94,15 @@ vi.mock("@patchbay/core/issues/config", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/issues/mutations", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/issues/mutations")>();
+vi.mock("@orvilo/core/issues/mutations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@orvilo/core/issues/mutations")>();
   return {
     ...actual,
   };
 });
 
-vi.mock("@patchbay/core/properties", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/properties")>();
+vi.mock("@orvilo/core/properties", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@orvilo/core/properties")>();
   return {
     ...actual,
     useSetIssueProperty: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
@@ -135,13 +135,13 @@ const mockViewState: Record<string, unknown> = {
   cardPropertyIds: [],
   agentRunningFilter: false,
 };
-vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
+vi.mock("@orvilo/core/issues/stores/view-store-context", () => ({
   ViewStoreProvider: ({ children }: { children: ReactNode }) => children,
   useViewStore: (selector?: any) => (selector ? selector(mockViewState) : mockViewState),
   useViewStoreApi: () => ({ getState: () => mockViewState, setState: vi.fn(), subscribe: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@orvilo/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: vi.fn() }),
     { getState: () => ({ open: vi.fn() }) },

@@ -168,7 +168,7 @@ describe("runtime config", () => {
   it("derives dev appUrl by stripping the leading api. label", () => {
     // When the dev renderer is pointed at a remote backend (e.g. a test
     // environment), copy-link / share URLs must reflect that environment's
-    // public web host, not the api host. Patchbay's convention exposes the
+    // public web host, not the api host. Orvilo's convention exposes the
     // api at `api.<web-host>`, so stripping the leading label gives the
     // right web origin without a separate VITE_APP_URL.
     expect(

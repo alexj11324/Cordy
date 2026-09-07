@@ -8,11 +8,11 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@orvilo/ui/components/ui/dialog";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { isImeComposing } from "@orvilo/core/utils";
 import { useT } from "../../i18n";
 
 /**

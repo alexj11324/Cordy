@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 
@@ -10,19 +10,19 @@ const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
 // useWorkspaceId is a Context-backed hook in core; stub it to a static id so
 // the card runs outside a WorkspaceIdProvider in tests.
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 // Paths only needs issueDetail for the "Now on" link. A simple stub keeps the
 // test free of WorkspaceSlugProvider wiring.
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/test/issues/${id}`,
   }),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
   },
@@ -89,10 +89,10 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-vi.mock("@patchbay/core/agents", async () => {
+vi.mock("@orvilo/core/agents", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/agents")>(
-      "@patchbay/core/agents",
+    await vi.importActual<typeof import("@orvilo/core/agents")>(
+      "@orvilo/core/agents",
     );
   return {
     ...actual,

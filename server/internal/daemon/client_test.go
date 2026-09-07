@@ -11,10 +11,10 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/remotemcp"
+	"github.com/orvilo-ai/orvilo/server/pkg/remotemcp"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 func TestClient_IdentityHeaders_PostJSON(t *testing.T) {

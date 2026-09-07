@@ -1,2 +1,2 @@
-import baseConfig from "@patchbay/eslint-config/base";
+import baseConfig from "@orvilo/eslint-config/base";
 export default [...baseConfig];

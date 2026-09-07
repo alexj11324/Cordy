@@ -10,10 +10,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // ---------------------------------------------------------------------------
@@ -24,7 +24,7 @@ import (
 // for their workspace, resolve command_name on PATH, and register an
 // agent_runtime instance carrying the profile_id. The profile only changes how
 // a runtime is launched/displayed; the underlying protocol_family must be a
-// backend Patchbay officially supports (validated against agent.SupportedTypes).
+// backend Orvilo officially supports (validated against agent.SupportedTypes).
 //
 // Iron rule: a profile carries NO generic per-agent args. Per-agent launch args
 // stay on agent.custom_args. The only args field is fixed_args — args every

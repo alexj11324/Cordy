@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Copy, Check, Info } from "lucide-react";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
-import type { PersonalAccessToken } from "@patchbay/core/types";
-import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@orvilo/ui/components/ui/tooltip";
+import type { PersonalAccessToken } from "@orvilo/core/types";
+import { Alert, AlertDescription } from "@orvilo/ui/components/ui/alert";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   SettingsCard,
   SettingsEmpty,
@@ -22,14 +22,14 @@ import {
   SelectValue,
   SelectContent,
   SelectItem,
-} from "@patchbay/ui/components/ui/select";
+} from "@orvilo/ui/components/ui/select";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,11 +39,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { copyText } from "@orvilo/ui/lib/clipboard";
 import { toast } from "sonner";
-import { api } from "@patchbay/core/api";
+import { api } from "@orvilo/core/api";
 import { useLocale, useT } from "../../i18n";
 
 const EXPIRY_KEYS = ["30", "90", "365", "never"] as const;

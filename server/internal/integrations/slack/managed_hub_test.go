@@ -11,7 +11,7 @@ import (
 
 	"github.com/slack-go/slack"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
 )
 
 func TestManagedAgentsCommandReentersTheSharedRouter(t *testing.T) {

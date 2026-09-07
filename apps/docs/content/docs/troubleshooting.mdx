@@ -5,7 +5,7 @@ description: Diagnose common problems with connections, execution, realtime upda
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-First work out which layer the problem lives in: the Patchbay service, the daemon, the runtime, or the AI coding tool. These commands are usually enough to surface the first meaningful error:
+First work out which layer the problem lives in: the Orvilo service, the daemon, the runtime, or the AI coding tool. These commands are usually enough to surface the first meaningful error:
 
 ```bash
 patchbay version
@@ -36,7 +36,7 @@ patchbay daemon logs --lines 100
 Common causes include:
 
 - The CLI has not signed in, or the token stored on this machine has expired.
-- The daemon is connected to the wrong Patchbay service.
+- The daemon is connected to the wrong Orvilo service.
 - The executing computer cannot reach the API, or DNS, TLS, or a firewall blocks the connection.
 - The current account is no longer a member of the target workspace.
 - No supported AI coding tool is installed on this machine, so the daemon cannot start.
@@ -79,7 +79,7 @@ If the runtime list is missing an expected tool, first confirm the tool runs and
 
 ### `waiting_local_directory` status
 
-This means another in-flight task is using the same local directory. Patchbay waits for the directory lock to be released so two agents never modify the same files at once.
+This means another in-flight task is using the same local directory. Orvilo waits for the directory lock to be released so two agents never modify the same files at once.
 
 This wait only exists in the directory's `in_place` ("Direct") mode. If the directory is a git repository, switching the resource to `worktree` ("Parallel") removes the queue altogether: each task gets its own worktree and hands its work back as a branch, so nothing waits on anything. See [Project resources](/project-resources#how-tasks-share-the-directory).
 
@@ -143,7 +143,7 @@ docker compose -f docker-compose.selfhost.yml logs backend \
 - **Resend**: confirm the API key is valid and the sender address's domain is verified.
 - **SMTP**: confirm the host, port, credentials, and sender address, and use the error log to tell whether the failure happened at the connection, TLS, authentication, or delivery stage.
 
-When `SMTP_HOST` and Resend are both configured, Patchbay prefers SMTP. For configuration, see [Sign-in and signup](/auth-setup#email-verification-codes).
+When `SMTP_HOST` and Resend are both configured, Orvilo prefers SMTP. For configuration, see [Sign-in and signup](/auth-setup#email-verification-codes).
 
 <Callout type="warning">
 Do not rely on codes in the log in production, and do not enable the fixed local test code.
@@ -205,7 +205,7 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN   # macOS / Linux
 netstat -ano | findstr :8080       # Windows
 ```
 
-If it is another Patchbay checkout, run `make stop` in that directory first. Otherwise stop the offending program normally, or change the current service's port. Public ports 80/443 are listened on by a reverse proxy such as Caddy or Nginx.
+If it is another Orvilo checkout, run `make stop` in that directory first. Otherwise stop the offending program normally, or change the current service's port. Public ports 80/443 are listened on by a reverse proxy such as Caddy or Nginx.
 
 ## Log locations
 
@@ -228,7 +228,7 @@ patchbay daemon stop
 patchbay daemon start --foreground
 ```
 
-If you still cannot pin it down, search existing issues or file a new one on [GitHub Issues](https://github.com/patchbay-ai/patchbay/issues).
+If you still cannot pin it down, search existing issues or file a new one on [GitHub Issues](https://github.com/alexj11324/Cordy/issues).
 
 ## Next steps
 

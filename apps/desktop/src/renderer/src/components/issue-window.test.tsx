@@ -9,12 +9,12 @@ const state = vi.hoisted(() => ({
   refetch: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (selector: (auth: { user: { id: string } }) => unknown) =>
     selector({ user: { id: "user-1" } }),
 }));
 
-vi.mock("@patchbay/core/workspace", () => ({
+vi.mock("@orvilo/core/workspace", () => ({
   useWorkspaceList: () => ({
     workspaces: state.workspaces,
     ready: state.ready,
@@ -24,29 +24,29 @@ vi.mock("@patchbay/core/workspace", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/platform", () => ({
+vi.mock("@orvilo/core/platform", () => ({
   setCurrentWorkspace: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   WorkspaceSlugProvider: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>
   ),
 }));
 
-vi.mock("@patchbay/ui/components/common/patchbay-icon", () => ({
-  PatchbayIcon: () => <div data-testid="workspace-loading" />,
+vi.mock("@orvilo/ui/components/common/orvilo-icon", () => ({
+  OrviloIcon: () => <div data-testid="workspace-loading" />,
 }));
 
-vi.mock("@patchbay/views/modals/registry", () => ({
+vi.mock("@orvilo/views/modals/registry", () => ({
   ModalRegistry: () => null,
 }));
 
-vi.mock("@patchbay/views/layout", () => ({
+vi.mock("@orvilo/views/layout", () => ({
   WorkspacePresencePrefetch: () => null,
 }));
 
-vi.mock("@patchbay/views/platform", () => ({
+vi.mock("@orvilo/views/platform", () => ({
   DragStrip: () => null,
 }));
 

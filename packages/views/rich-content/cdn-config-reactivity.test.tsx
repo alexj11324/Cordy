@@ -12,7 +12,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
-import { configStore } from "@patchbay/core/config";
+import { configStore } from "@orvilo/core/config";
 
 vi.mock("../issues/hooks", () => ({
   useResolveIssueIdentifier: () => null,
@@ -28,13 +28,13 @@ vi.mock("../i18n", async () => {
   };
 });
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: { getAttachmentTextContent: vi.fn() },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/acme/issues/${id}`,
     projectDetail: (id: string) => `/acme/projects/${id}`,

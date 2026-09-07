@@ -251,7 +251,7 @@ desktop_app_data_root() {
 }
 
 desktop_user_data_dir() {
-  printf '%s/Patchbay Canary %s' "$(desktop_app_data_root)" "$1"
+  printf '%s/Orvilo Canary %s' "$(desktop_app_data_root)" "$1"
 }
 
 offset_registered() {
@@ -742,7 +742,7 @@ start_daemon() {
   # daemon registers, heartbeats, and then fails every task with
   # "fork/exec .../go-build.../exe/patchbay: no such file or directory".
   info "Building $ORVILO_BIN (a go run daemon would fail every task later)."
-  (cd "$REPO_ROOT/server" && go build -o bin/patchbay ./cmd/patchbay) || die "Failed to build the patchbay CLI."
+  (cd "$REPO_ROOT/server" && go build -o bin/patchbay ./cmd/orvilo) || die "Failed to build the patchbay CLI."
 
   "${CLEAN_ENV[@]}" ORVILO_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
     "$ORVILO_BIN" daemon start --profile "$PROFILE" 2>&1 | sed 's/^/    /' || true

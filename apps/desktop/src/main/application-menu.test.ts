@@ -14,7 +14,7 @@ const ctx = vi.hoisted(() => ({
 
 vi.mock("electron", () => ({
   app: {
-    name: "Patchbay",
+    name: "Orvilo",
     getPreferredSystemLanguages: () => ctx.preferredLanguages,
   },
   Menu: {
@@ -36,7 +36,7 @@ import {
 function darwinAppSubmenu(): MenuItemConstructorOptions[] {
   const template = buildApplicationMenuTemplate(() => undefined, "darwin");
   const appMenu = template[0];
-  expect(appMenu?.label).toBe("Patchbay");
+  expect(appMenu?.label).toBe("Orvilo");
   expect(Array.isArray(appMenu?.submenu)).toBe(true);
   return appMenu?.submenu as MenuItemConstructorOptions[];
 }

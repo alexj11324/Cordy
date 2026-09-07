@@ -11,8 +11,8 @@ import (
 	"net/url"
 
 	chimw "github.com/go-chi/chi/v5/middleware"
-	"github.com/patchbay-ai/patchbay/server/internal/cloudruntime"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
+	"github.com/orvilo-ai/orvilo/server/internal/cloudruntime"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
 )
 
 const maxCloudRuntimeRequestBodySize = 1 << 20

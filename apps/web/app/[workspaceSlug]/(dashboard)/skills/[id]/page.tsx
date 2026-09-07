@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { SkillDetailPage } from "@patchbay/views/skills";
+import { SkillDetailPage } from "@orvilo/views/skills";
 
 export default function SkillDetailRoute({
   params,

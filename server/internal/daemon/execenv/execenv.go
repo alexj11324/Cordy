@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/runtimeapps"
+	"github.com/orvilo-ai/orvilo/server/internal/runtimeapps"
 )
 
 // RepoContextForEnv describes a workspace repo available for checkout.
@@ -100,12 +100,12 @@ type PrepareParams struct {
 	// HermesMemoryStore is the agent's persistent Hermes memory store
 	// (HermesMemoryStorePath) the overlay links memories/ to, so memory outlives
 	// the task. Empty keeps memories/ task-local — no agent to key on, or the
-	// Patchbay profile dir could not be resolved.
+	// Orvilo profile dir could not be resolved.
 	HermesMemoryStore string
 	// HermesSessionStore is the conversation's persistent Hermes session store
 	// (HermesSessionStorePath) the overlay links state.db to, so the transcript
 	// outlives the task and a follow-up turn can actually resume it. Empty keeps
-	// state.db task-local — no agent or conversation to key on, or the Patchbay
+	// state.db task-local — no agent or conversation to key on, or the Orvilo
 	// profile dir could not be resolved.
 	HermesSessionStore string
 	// HermesEnv is the sanitized effective env (agent custom_env minus the daemon
@@ -194,9 +194,9 @@ type TaskContextForEnv struct {
 	AutomationDescription    string
 	AutomationSource         string
 	AutomationTriggerPayload string
-	QuickCreatePrompt       string // non-empty for quick-create tasks
-	HandoffNote             string // executor handoff instruction; rendered into issue_context.md (MUL-3375)
-	IsTeamLeader           bool   // true when THIS TASK runs the agent in the team-leader role (may exit silently on no_action); derived from the claim's is_leader_task / team_id, never sniffed from instructions text (MUL-5811)
+	QuickCreatePrompt        string // non-empty for quick-create tasks
+	HandoffNote              string // executor handoff instruction; rendered into issue_context.md (MUL-3375)
+	IsTeamLeader             bool   // true when THIS TASK runs the agent in the team-leader role (may exit silently on no_action); derived from the claim's is_leader_task / team_id, never sniffed from instructions text (MUL-5811)
 	// WorkspaceContext is the workspace-level system prompt (workspace.context
 	// in the DB). Rendered into the brief as `## Workspace Context` when
 	// non-empty so every agent in the workspace sees the same shared context,
@@ -283,10 +283,10 @@ type Environment struct {
 	// scratch that the GC should reclaim on the normal schedule, and the
 	// sidecar rollback that protects a user's directory is unnecessary.
 	LocalDirectory bool
-	// PatchbayConfigRoot is the private per-task config directory exported to
+	// OrviloConfigRoot is the private per-task config directory exported to
 	// child CLI invocations. It prevents implicit discovery of the daemon
 	// owner's ~/.patchbay profile without changing the provider-facing HOME.
-	PatchbayConfigRoot string
+	OrviloConfigRoot string
 	// LocalWorktree is set when the task runs in worktree mode against a
 	// local_directory resource. The daemon calls Finalize on it after the
 	// agent exits to commit leftovers, drop the worktree, and learn the
@@ -507,10 +507,10 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	}
 	patchbayConfigRoot := filepath.Join(envRoot, "patchbay-config")
 	if err := os.MkdirAll(patchbayConfigRoot, 0o700); err != nil {
-		return nil, fmt.Errorf("execenv: create task-local Patchbay config directory: %w", err)
+		return nil, fmt.Errorf("execenv: create task-local Orvilo config directory: %w", err)
 	}
 	if err := os.Chmod(patchbayConfigRoot, 0o700); err != nil {
-		return nil, fmt.Errorf("execenv: restrict task-local Patchbay config directory: %w", err)
+		return nil, fmt.Errorf("execenv: restrict task-local Orvilo config directory: %w", err)
 	}
 
 	// Worktree mode: build the task's own checkout of the user's repo inside
@@ -555,13 +555,13 @@ func Prepare(params PrepareParams, logger *slog.Logger) (*Environment, error) {
 	}
 
 	env := &Environment{
-		RootDir:           envRoot,
-		WorkDir:           workDir,
-		LocalDirectory:    params.LocalWorkDir != "",
-		LocalWorktree:     localWorktree,
-		PatchbayConfigRoot: patchbayConfigRoot,
-		logger:            logger,
-		lockFile:          lockFile,
+		RootDir:          envRoot,
+		WorkDir:          workDir,
+		LocalDirectory:   params.LocalWorkDir != "",
+		LocalWorktree:    localWorktree,
+		OrviloConfigRoot: patchbayConfigRoot,
+		logger:           logger,
+		lockFile:         lockFile,
 	}
 
 	// Write context files into workdir (skills go to provider-native paths).
@@ -842,13 +842,13 @@ func Reuse(params ReuseParams, logger *slog.Logger) *Environment {
 		logger:         logger,
 	}
 	if env.RootDir != "" {
-		env.PatchbayConfigRoot = filepath.Join(env.RootDir, "patchbay-config")
-		if err := os.MkdirAll(env.PatchbayConfigRoot, 0o700); err != nil {
-			logger.Warn("execenv: restore task-local Patchbay config directory failed; forcing fresh prepare", "error", err)
+		env.OrviloConfigRoot = filepath.Join(env.RootDir, "patchbay-config")
+		if err := os.MkdirAll(env.OrviloConfigRoot, 0o700); err != nil {
+			logger.Warn("execenv: restore task-local Orvilo config directory failed; forcing fresh prepare", "error", err)
 			return nil
 		}
-		if err := os.Chmod(env.PatchbayConfigRoot, 0o700); err != nil {
-			logger.Warn("execenv: restrict task-local Patchbay config directory failed; forcing fresh prepare", "error", err)
+		if err := os.Chmod(env.OrviloConfigRoot, 0o700); err != nil {
+			logger.Warn("execenv: restrict task-local Orvilo config directory failed; forcing fresh prepare", "error", err)
 			return nil
 		}
 	}
@@ -1071,10 +1071,10 @@ func hydrateCodexSkills(codexHome string, workspaceSkills []SkillContextForEnv, 
 type GCMetaKind string
 
 const (
-	GCKindIssue        GCMetaKind = "issue"
-	GCKindChat         GCMetaKind = "chat"
+	GCKindIssue         GCMetaKind = "issue"
+	GCKindChat          GCMetaKind = "chat"
 	GCKindAutomationRun GCMetaKind = "automation_run"
-	GCKindQuickCreate  GCMetaKind = "quick_create"
+	GCKindQuickCreate   GCMetaKind = "quick_create"
 )
 
 // GCMeta is persisted to .gc_meta.json inside the env root so the GC loop
@@ -1088,13 +1088,13 @@ const (
 // Kind to GCKindIssue for backward compatibility — only IssueID was written
 // before, and only issue-centric tasks ever produced a meta file.
 type GCMeta struct {
-	Kind           GCMetaKind `json:"kind,omitempty"`
-	IssueID        string     `json:"issue_id,omitempty"`
-	ChatSessionID  string     `json:"chat_session_id,omitempty"`
+	Kind            GCMetaKind `json:"kind,omitempty"`
+	IssueID         string     `json:"issue_id,omitempty"`
+	ChatSessionID   string     `json:"chat_session_id,omitempty"`
 	AutomationRunID string     `json:"automation_run_id,omitempty"`
-	TaskID         string     `json:"task_id,omitempty"`
-	WorkspaceID    string     `json:"workspace_id"`
-	CompletedAt    time.Time  `json:"completed_at"`
+	TaskID          string     `json:"task_id,omitempty"`
+	WorkspaceID     string     `json:"workspace_id"`
+	CompletedAt     time.Time  `json:"completed_at"`
 	// LocalDirectory marks tasks whose WorkDir pointed at a user-owned
 	// path rather than the synthesised envRoot/workdir. The GC loop honours
 	// this by never falling into the gcActionClean branch (which would

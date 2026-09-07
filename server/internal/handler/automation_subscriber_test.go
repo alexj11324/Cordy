@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func installAutomationSubscriberInsertFailure(t *testing.T) {
@@ -247,8 +247,8 @@ func TestAutomationSubscriberSave_LosesToConcurrentRevoke(t *testing.T) {
 			}
 
 			type result struct {
-				status      int
-				body        string
+				status       int
+				body         string
 				automationID string
 			}
 			done := make(chan result, 1)

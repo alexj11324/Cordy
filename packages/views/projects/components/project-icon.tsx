@@ -1,5 +1,5 @@
-import type { Project } from "@patchbay/core/types";
-import { cn } from "@patchbay/ui/lib/utils";
+import type { Project } from "@orvilo/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
 
 export type ProjectIconSize = "sm" | "md" | "lg";
 

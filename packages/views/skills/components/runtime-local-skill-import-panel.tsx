@@ -19,28 +19,28 @@ import type {
   RuntimeLocalSkillImportConflict,
   RuntimeLocalSkillSummary,
   Skill,
-} from "@patchbay/core/types";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+} from "@orvilo/core/types";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import {
   runtimeDisplayLabel,
   runtimeListOptions,
   runtimeLocalSkillsKeys,
   runtimeLocalSkillsOptions,
   resolveRuntimeLocalSkillImport,
-} from "@patchbay/core/runtimes";
+} from "@orvilo/core/runtimes";
 import {
   memberListOptions,
   skillDetailOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
-import { Progress } from "@patchbay/ui/components/ui/progress";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
+} from "@orvilo/core/workspace/queries";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
+import { Progress } from "@orvilo/ui/components/ui/progress";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -49,13 +49,13 @@ import {
   SelectLabel,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
+} from "@orvilo/ui/components/ui/select";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { useScrollFade } from "@orvilo/ui/hooks/use-scroll-fade";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@patchbay/ui/lib/motion";
+} from "@orvilo/ui/lib/motion";
 import { useT } from "../../i18n";
 import { HighlightText } from "../../search/highlight-text";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";

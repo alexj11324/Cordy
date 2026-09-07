@@ -95,10 +95,10 @@ func kimiSmokeModel() string {
 }
 
 // TestKimiRealMcpConfigReachesSessionSmoke drives the real `kimi acp` binary
-// through this package's own backend with a Patchbay-shaped agent.mcp_config
+// through this package's own backend with an Orvilo-shaped agent.mcp_config
 // and asserts the server is actually connected and callable.
 //
-// Users reported that MCP configured in Patchbay "never reaches kimi", pointing
+// Users reported that MCP configured in Orvilo "never reaches kimi", pointing
 // at the bare `kimi acp` launch line as evidence (MUL-5846). That line carries
 // no MCP flags because the CLI has none — kimi takes MCP over ACP session/new
 // instead — so only an end-to-end run against the real binary can settle it.

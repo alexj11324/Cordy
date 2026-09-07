@@ -7,12 +7,12 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
 )
 
 // Publishing endpoints.
 //
-// An author uploads an artifact bundle and Patchbay stores it. There is no
+// An author uploads an artifact bundle and Orvilo stores it. There is no
 // install-by-URL any more, and no second way for plugin code to reach a reader's
 // browser: the settings page publishes here, and installing names a version this
 // endpoint created.

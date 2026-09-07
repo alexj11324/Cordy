@@ -1,4 +1,4 @@
-import type { IssueActorType } from "@patchbay/core/types";
+import type { IssueActorType } from "@orvilo/core/types";
 
 export type RoleValue = { type: IssueActorType; id: string } | null;
 export type RolePickerKind = "owner" | "reviewer";

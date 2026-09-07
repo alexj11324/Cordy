@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/metrics"
 )
 
 func TestNormalizePR3LabelsCollapseUnknownValues(t *testing.T) {

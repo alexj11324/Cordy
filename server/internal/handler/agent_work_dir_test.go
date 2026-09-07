@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // TestRelativeWorkDir covers the privacy-safe display derivation that

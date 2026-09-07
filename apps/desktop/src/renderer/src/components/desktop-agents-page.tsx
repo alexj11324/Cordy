@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { AgentsPage } from "@patchbay/views/agents";
+import { AgentsPage } from "@orvilo/views/agents";
 import type { DaemonStatus } from "../../../shared/daemon-types";
 
 /**

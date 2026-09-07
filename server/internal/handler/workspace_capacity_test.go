@@ -11,9 +11,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement/entitlementtest"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement/entitlementtest"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 func TestAdmitHostedWorkspaceOwnership(t *testing.T) {

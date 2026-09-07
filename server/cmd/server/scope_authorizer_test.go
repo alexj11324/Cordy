@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // fakeScopeQuerier implements scopeAuthQuerier with in-memory maps.

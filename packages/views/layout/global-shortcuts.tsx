@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useSidebar } from "@patchbay/ui/components/ui/sidebar";
+import { useSidebar } from "@orvilo/ui/components/ui/sidebar";
 import {
   getShortcut,
   isEditableShortcutTarget,
@@ -9,12 +9,12 @@ import {
   SHORTCUT_ACTION_BY_ID,
   useShortcutStore,
   type ShortcutActionId,
-} from "@patchbay/core/shortcuts";
-import { useChatStore } from "@patchbay/core/chat";
-import { openCreateIssueWithPreference } from "@patchbay/core/issues/stores";
-import { useModalStore } from "@patchbay/core/modals";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@orvilo/core/shortcuts";
+import { useChatStore } from "@orvilo/core/chat";
+import { openCreateIssueWithPreference } from "@orvilo/core/issues/stores";
+import { useModalStore } from "@orvilo/core/modals";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { isImeComposing } from "@orvilo/core/utils";
 import { isFloatingChatRouteSuppressed } from "../chat/floating-chat-visibility";
 import { useNavigation } from "../navigation";
 import { useSearchStore } from "../search/search-store";

@@ -1,8 +1,8 @@
 "use client";
 
 import { LogOut } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useLogout } from "../../auth";
 import { useT } from "../../i18n";
 

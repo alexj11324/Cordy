@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense } from "react";
-import { MyIssuesPage } from "@patchbay/views/my-issues";
+import { MyIssuesPage } from "@orvilo/views/my-issues";
 import { useIssueViewUrlSync } from "../../../../platform/use-issue-view-url-sync";
 
 function IssueViewUrlSync() {

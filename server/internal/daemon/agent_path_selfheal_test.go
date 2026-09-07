@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // newSelfHealTestDaemon builds a Daemon with just the state resolveAgentEntry

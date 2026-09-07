@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
 )
 
 func TestParseSlackAppID(t *testing.T) {

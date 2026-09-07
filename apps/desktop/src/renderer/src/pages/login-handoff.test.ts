@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@patchbay/core/api";
+import { ApiError } from "@orvilo/core/api";
 import { cancelDesktopLogin, completeDesktopHandoff, createDesktopLoginUrl, hostedDesktopHandoffApiUrl } from "./login-handoff";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";

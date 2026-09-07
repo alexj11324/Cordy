@@ -1,8 +1,8 @@
 "use client";
 
 import { Suspense } from "react";
-import { IssuesPage } from "@patchbay/views/issues/components";
-import { ErrorBoundary } from "@patchbay/ui/components/common/error-boundary";
+import { IssuesPage } from "@orvilo/views/issues/components";
+import { ErrorBoundary } from "@orvilo/ui/components/common/error-boundary";
 import { useIssueViewUrlSync } from "../../../../platform/use-issue-view-url-sync";
 
 function IssueViewUrlSync() {

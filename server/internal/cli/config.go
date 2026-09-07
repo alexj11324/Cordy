@@ -13,7 +13,7 @@ const (
 	defaultCLIConfigPath = ".patchbay/config.json"
 
 	// TaskConfigRootEnv points daemon-managed CLI invocations at a private,
-	// per-task Patchbay config directory. It is deliberately Patchbay-specific:
+	// per-task Orvilo config directory. It is deliberately Orvilo-specific:
 	// phase-one hardening keeps the real HOME/XDG environment available to
 	// provider tooling while preventing implicit Owner-profile discovery.
 	TaskConfigRootEnv = "ORVILO_TASK_CONFIG_ROOT"
@@ -115,7 +115,7 @@ type CLIConfig struct {
 	// DisableAutoUpdate, when true, turns off the daemon's periodic CLI
 	// self-update poll. Only a single direction is persistable — the
 	// --no-auto-update flag is likewise one-way — because the env/default
-	// already resolves to enabled on Patchbay Cloud. Absent / false means
+	// already resolves to enabled on Orvilo Cloud. Absent / false means
 	// "let env/default decide". Resolution precedence:
 	// --no-auto-update flag, ORVILO_DAEMON_AUTO_UPDATE=false env, this
 	// field, cloud/self-host default.
@@ -295,7 +295,7 @@ func validateTaskLocalProfile(profile string) error {
 		return nil
 	}
 	if profile == "." || profile == ".." || filepath.IsAbs(profile) || strings.ContainsAny(profile, `/\\`) || filepath.Clean(profile) != profile {
-		return fmt.Errorf("invalid task-local Patchbay profile name %q", profile)
+		return fmt.Errorf("invalid task-local Orvilo profile name %q", profile)
 	}
 	return nil
 }

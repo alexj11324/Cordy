@@ -1,4 +1,4 @@
-module github.com/patchbay-ai/patchbay/server
+module github.com/orvilo-ai/orvilo/server
 
 go 1.26.6
 

@@ -12,7 +12,7 @@ package execenv
 type taskKind int
 
 const (
-	// kindIssue: this run operates on a real Patchbay issue. It deliberately
+	// kindIssue: this run operates on a real Orvilo issue. It deliberately
 	// does NOT distinguish comment-triggered from executor-triggered runs.
 	//
 	// Those were two kinds until MUL-5377. Splitting them made the rendered
@@ -55,7 +55,7 @@ func classifyTask(ctx TaskContextForEnv) taskKind {
 	}
 }
 
-// hasIssueContext returns true for the kinds that operate on a real Patchbay
+// hasIssueContext returns true for the kinds that operate on a real Orvilo
 // issue and therefore can read / pin issue-scoped state. The slim
 // dispatcher gates these two sections on this predicate:
 //

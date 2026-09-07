@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { RESOURCES } from "@patchbay/views/locales";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import { RESOURCES } from "@orvilo/views/locales";
 import { DesktopEntryPage } from "./desktop-entry";
 
 function installDesktopAPI(createGuestSession: ReturnType<typeof vi.fn>) {

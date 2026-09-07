@@ -14,10 +14,10 @@ import { renderWithI18n } from "../../test/i18n";
 const mockCreateAutomation = vi.hoisted(() => vi.fn());
 const mockCreateTrigger = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
-vi.mock("@patchbay/core/paths", () => ({ useCurrentWorkspace: () => ({ name: "Acme" }) }));
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
+vi.mock("@orvilo/core/paths", () => ({ useCurrentWorkspace: () => ({ name: "Acme" }) }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({
     queryKey: ["agents", wsId],
     queryFn: async () => [
@@ -36,14 +36,14 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/projects/queries", () => ({
+vi.mock("@orvilo/core/projects/queries", () => ({
   projectListOptions: (wsId: string) => ({
     queryKey: ["projects", wsId],
     queryFn: async () => [],
   }),
 }));
 
-vi.mock("@patchbay/core/automations/queries", () => ({
+vi.mock("@orvilo/core/automations/queries", () => ({
   cronPreviewOptions: (wsId: string, expr: string, tz: string) => ({
     queryKey: ["cron-preview", wsId, expr, tz],
     queryFn: async () => ({ next_runs: ["2126-07-14T01:00:00Z"] }),
@@ -51,7 +51,7 @@ vi.mock("@patchbay/core/automations/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/automations/mutations", () => ({
+vi.mock("@orvilo/core/automations/mutations", () => ({
   useCreateAutomation: () => ({ mutateAsync: mockCreateAutomation }),
   useCreateAutomationTrigger: () => ({ mutateAsync: mockCreateTrigger }),
   useUpdateAutomation: () => ({ mutateAsync: vi.fn() }),

@@ -3,7 +3,7 @@ package metrics
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
 )
 
 type RealtimeCollector struct {

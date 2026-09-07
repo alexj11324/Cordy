@@ -1,6 +1,6 @@
-import { statusCategoryOfKey } from "@patchbay/core/issues";
-import type { IssueStatus, IssueStatusCategory } from "@patchbay/core/types";
-import { STATUS_CONFIG } from "@patchbay/core/issues/config";
+import { statusCategoryOfKey } from "@orvilo/core/issues";
+import type { IssueStatus, IssueStatusCategory } from "@orvilo/core/types";
+import { STATUS_CONFIG } from "@orvilo/core/issues/config";
 
 // ---------------------------------------------------------------------------
 // Geometry constants (viewBox 0 0 14 14, center 7,7)

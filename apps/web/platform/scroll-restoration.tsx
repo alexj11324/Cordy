@@ -4,7 +4,7 @@ import { useEffect, useMemo, type ReactNode } from "react";
 import {
   ScrollRestorationProvider,
   type ScrollRestorationAdapter,
-} from "@patchbay/views/platform";
+} from "@orvilo/views/platform";
 
 /**
  * Web half of the MUL-4741 scroll-restoration protocol (desktop's half lives

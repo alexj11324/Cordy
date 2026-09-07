@@ -7,34 +7,34 @@ import {
   Server,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { automationDetailOptions, automationRunsOptions, automationRunOptions } from "@patchbay/core/automations/queries";
-import { projectDetailOptions } from "@patchbay/core/projects/queries";
-import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
-import { isAgentRuntimeBound } from "@patchbay/core/agents";
-import type { AutomationTriggerPreset } from "@patchbay/core/automations";
+import { automationDetailOptions, automationRunsOptions, automationRunOptions } from "@orvilo/core/automations/queries";
+import { projectDetailOptions } from "@orvilo/core/projects/queries";
+import { agentListOptions, teamListOptions } from "@orvilo/core/workspace/queries";
+import { isAgentRuntimeBound } from "@orvilo/core/agents";
+import type { AutomationTriggerPreset } from "@orvilo/core/automations";
 import {
   useUpdateAutomation,
   useDeleteAutomation,
   useTriggerAutomation,
   useCreateAutomationTrigger,
-} from "@patchbay/core/automations/mutations";
-import { clientErrorMessage, dispatchReasonCode } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useActorName } from "@patchbay/core/workspace/hooks";
+} from "@orvilo/core/automations/mutations";
+import { clientErrorMessage, dispatchReasonCode } from "@orvilo/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useActorName } from "@orvilo/core/workspace/hooks";
 import { useNavigation, AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Switch } from "@patchbay/ui/components/ui/switch";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Switch } from "@orvilo/ui/components/ui/switch";
+import { cn } from "@orvilo/ui/lib/utils";
 import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,7 +44,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import { ScheduleEditor } from "./schedule-editor/schedule-editor";
 import { getDefaultScheduleConfig, type ScheduleConfig } from "./schedule-editor/model";
 import { browserTimezone } from "../../common/timezone-select";
@@ -57,8 +57,8 @@ import type {
   AutomationExecutionMode,
   AutomationRun,
   AutomationSubscriber,
-} from "@patchbay/core/types";
-import type { AgentTask } from "@patchbay/core/types/agent";
+} from "@orvilo/core/types";
+import type { AgentTask } from "@orvilo/core/types/agent";
 import { ContentEditor, ReadonlyContent } from "../../editor";
 import { TranscriptButton } from "../../common/task-transcript";
 import { AutomationDialog } from "./automation-dialog";

@@ -6,14 +6,14 @@ import {
   dateOnlyToLocalDate,
   formatDateOnly,
   isPastDateOnly,
-} from "@patchbay/core/issues/date";
+} from "@orvilo/core/issues/date";
 import { Check } from "lucide-react";
-import { Calendar } from "@patchbay/ui/components/ui/calendar";
+import { Calendar } from "@orvilo/ui/components/ui/calendar";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@patchbay/ui/components/ui/popover";
+} from "@orvilo/ui/components/ui/popover";
 import { DeferredPopup } from "./deferred-popup";
 import { useLocale } from "../i18n";
 
@@ -53,7 +53,7 @@ interface DateOnlyPickerProps {
  * Entity-agnostic calendar-day picker: the shared behaviour behind every
  * start/due-date pill (issues, projects, …). It owns the Popover + Calendar +
  * clear wiring and the calendar-day transport ("YYYY-MM-DD", no timezone shift,
- * via @patchbay/core/issues/date); each entity wraps it to supply only the field
+ * via @orvilo/core/issues/date); each entity wraps it to supply only the field
  * name (through `onChange`), the icon, and the localized copy. Keeping this in
  * one place stops the per-entity pills from drifting in behaviour or display
  * formatting.

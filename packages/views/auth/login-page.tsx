@@ -15,30 +15,30 @@ import {
   CardDescription,
   CardContent,
   CardFooter,
-} from "@patchbay/ui/components/ui/card";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/ui/components/ui/card";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Label } from "@orvilo/ui/components/ui/label";
 import {
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
-} from "@patchbay/ui/components/ui/input-otp";
+} from "@orvilo/ui/components/ui/input-otp";
 import {
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
   FieldSeparator,
-} from "@patchbay/ui/components/ui/field";
-import { useAuthStore } from "@patchbay/core/auth";
+} from "@orvilo/ui/components/ui/field";
+import { useAuthStore } from "@orvilo/core/auth";
 import {
   PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
   isDesktopCallbackProtocol,
-} from "@patchbay/core/auth";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { api } from "@patchbay/core/api";
-import type { User } from "@patchbay/core/types";
+} from "@orvilo/core/auth";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
+import { api } from "@orvilo/core/api";
+import type { User } from "@orvilo/core/types";
 import { useT } from "../i18n";
 
 // ---------------------------------------------------------------------------

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Agent, AgentRuntime, AgentTask } from "@patchbay/core/types";
+import type { Agent, AgentRuntime, AgentTask } from "@orvilo/core/types";
 import { buildWorkloadIndex, canReadRuntimeUsage } from "./runtime-list";
 
 function makeAgent(overrides: Partial<Agent> = {}): Agent {

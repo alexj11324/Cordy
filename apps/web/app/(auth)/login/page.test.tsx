@@ -25,7 +25,7 @@ const {
   exchangeReady: { current: true },
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (selector: (state: { status: string }) => unknown) =>
     selector(authStoreState.current),
 }));
@@ -45,17 +45,17 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(search.current),
 }));
 
-vi.mock("@patchbay/core/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@patchbay/core/api")>();
+vi.mock("@orvilo/core/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@orvilo/core/api")>();
   return {
     ...original,
     api: { issueCliToken, completeDesktopAuthHandoff },
   };
 });
 
-vi.mock("@patchbay/views/auth", async (importOriginal) => {
+vi.mock("@orvilo/views/auth", async (importOriginal) => {
   const original =
-    await importOriginal<typeof import("@patchbay/views/auth")>();
+    await importOriginal<typeof import("@orvilo/views/auth")>();
   return { ...original, redirectToCliCallback, redirectToDesktopApp };
 });
 
@@ -63,7 +63,7 @@ vi.mock("@/components/clerk-auth-adapter", () => ({
   useClerkSessionExchangeReady: () => exchangeReady.current,
 }));
 
-vi.mock("@patchbay/views/i18n", () => ({
+vi.mock("@orvilo/views/i18n", () => ({
   useT: () => ({
     t: (
       selector: (resources: {
@@ -82,10 +82,10 @@ vi.mock("@patchbay/views/i18n", () => ({
             invalid_callback: "Localized invalid CLI callback",
           },
           desktop_handoff: {
-            opening_title: "Opening Patchbay",
+            opening_title: "Opening Orvilo",
             preparing: "Preparing Desktop sign-in...",
-            opening_description: "Opening Patchbay Desktop",
-            open_button: "Open Patchbay Desktop",
+            opening_description: "Opening Orvilo Desktop",
+            open_button: "Open Orvilo Desktop",
             prepare_failed: "Failed to prepare Desktop sign-in",
           },
         },
@@ -194,7 +194,7 @@ describe("LoginPage", () => {
     expect(screen.queryByTestId("accounts-login-form")).not.toBeInTheDocument();
   });
 
-  it("exchanges the Clerk session for a native Patchbay CLI token", async () => {
+  it("exchanges the Clerk session for a native Orvilo CLI token", async () => {
     search.current =
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
     authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
@@ -239,7 +239,7 @@ describe("LoginPage", () => {
     expect(redirectToCliCallback).not.toHaveBeenCalled();
   });
 
-  it("does not authorize CLI before the Patchbay session exchange completes", () => {
+  it("does not authorize CLI before the Orvilo session exchange completes", () => {
     search.current =
       "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
     authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
@@ -257,7 +257,7 @@ describe("LoginPage", () => {
     expect(issueCliToken).not.toHaveBeenCalled();
   });
 
-  it("automatically hands a signed-in desktop session to the Patchbay app", async () => {
+  it("automatically hands a signed-in desktop session to the Orvilo app", async () => {
     search.current =
       "platform=desktop&code_challenge=challenge-value&state=opaque-state&callback_protocol=patchbay-canary-attacker";
     authState.current = {
@@ -303,7 +303,7 @@ describe("LoginPage", () => {
   });
 
   it("shows an expired self-hosted handoff error without redirecting to a missing broker route", async () => {
-    const { ApiError } = await import("@patchbay/core/api");
+    const { ApiError } = await import("@orvilo/core/api");
     const codeChallenge = "c".repeat(43);
     const state = "s".repeat(43);
     search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;

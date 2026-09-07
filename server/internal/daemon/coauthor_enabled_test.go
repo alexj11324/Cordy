@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/repocache"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/repocache"
 )
 
 // workspaceCoAuthoredByEnabled gates the prepare-commit-msg hook installed in

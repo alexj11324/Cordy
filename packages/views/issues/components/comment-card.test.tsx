@@ -7,7 +7,7 @@ const { getAttachmentTextContentMock } = vi.hoisted(() => ({
   getAttachmentTextContentMock: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     getAttachmentTextContent: getAttachmentTextContentMock,
     getAttachment: vi.fn(),
@@ -33,8 +33,8 @@ vi.mock("../../navigation", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/paths")>();
+vi.mock("@orvilo/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@orvilo/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",

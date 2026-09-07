@@ -11,10 +11,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // This file is the Slack OutboundReplier — the engine seam that delivers a
@@ -65,7 +65,7 @@ type OutboundReplier struct {
 type OutboundReplierConfig struct {
 	Binding bindingMinter
 	Decrypt Decrypter
-	// AppURL is the Patchbay web app host the user clicks into to redeem the
+	// AppURL is the Orvilo web app host the user clicks into to redeem the
 	// binding token (e.g. https://patchbay.example). It comes from ORVILO_APP_URL
 	// (falling back to FRONTEND_ORIGIN) and is intentionally separate from
 	// ORVILO_PUBLIC_URL, which is the backend/API public URL used for webhook and

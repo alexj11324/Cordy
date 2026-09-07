@@ -9,7 +9,7 @@ describe("desktop callback protocols", () => {
   it.each([
     PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
     "patchbay-canary-5718c47b86bf9ece",
-  ])("accepts a Patchbay-owned callback protocol: %s", (protocol) => {
+  ])("accepts an Orvilo-owned callback protocol: %s", (protocol) => {
     expect(isDesktopCallbackProtocol(protocol)).toBe(true);
   });
 

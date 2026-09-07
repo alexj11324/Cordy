@@ -69,7 +69,7 @@ services:
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:3000}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
-      # Never inherit the Patchbay cloud sender in a self-hosted install. Set
+      # Never inherit the Orvilo cloud sender in a self-hosted install. Set
       # RESEND_FROM_EMAIL to a sender verified in the operator's Resend account
       # whenever RESEND_API_KEY is configured.
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-noreply@invalid.invalid}

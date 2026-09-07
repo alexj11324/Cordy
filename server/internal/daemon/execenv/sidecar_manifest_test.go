@@ -168,8 +168,8 @@ var allFileBasedProviders = []string{
 
 // TestPrepareThenCleanupSidecarsRoundTripEmptyWorkdir is the headline
 // invariant the issue (MUL-2784) calls out: a user repo that contained
-// nothing related to Patchbay before a task ran must contain nothing
-// related to Patchbay after the task finishes — no .agent_context/,
+// nothing related to Orvilo before a task ran must contain nothing
+// related to Orvilo after the task finishes — no .agent_context/,
 // no .claude/skills/, no .patchbay/, no stub directories. The test
 // runs the full Prepare → Inject → Cleanup cycle for every file-based
 // provider against a fresh empty workdir and asserts the directory is
@@ -217,7 +217,7 @@ func TestPrepareThenCleanupSidecarsRoundTripEmptyWorkdir(t *testing.T) {
 // hand-authored skill under the same parent directory we use, Cleanup
 // must leave it bit-for-bit intact. The user-skill payload is laid down
 // BEFORE Prepare runs and snapshotted; after Cleanup the user's skill
-// must still exist and the Patchbay-written sibling must be gone.
+// must still exist and the Orvilo-written sibling must be gone.
 func TestPrepareThenCleanupSidecarsPreservesUserSkillSibling(t *testing.T) {
 	t.Parallel()
 	// One representative case per provider that writes into a
@@ -650,11 +650,11 @@ var sameSlugSkillProviderCases = []struct {
 
 // TestPrepareThenCleanupSidecarsSameSlugCollisionPerProvider is the
 // must-fix byte-exact matrix the PR #3444 review required: per
-// provider, seed a user skill at the exact slug Patchbay would use
+// provider, seed a user skill at the exact slug Orvilo would use
 // (`.claude/skills/issue-review/SKILL.md` etc.), run the full
-// Prepare → Inject → Cleanup cycle with a Patchbay skill of the same
+// Prepare → Inject → Cleanup cycle with an Orvilo skill of the same
 // name, and assert the workdir snapshot is byte-identical to the
-// seed. The user's SKILL.md must not be touched, and the Patchbay
+// seed. The user's SKILL.md must not be touched, and the Orvilo
 // sibling (which lives at `<slug>-patchbay`) must be fully removed by
 // CleanupSidecars.
 func TestPrepareThenCleanupSidecarsSameSlugCollisionPerProvider(t *testing.T) {
@@ -690,8 +690,8 @@ func TestPrepareThenCleanupSidecarsSameSlugCollisionPerProvider(t *testing.T) {
 				AgentSkills: []SkillContextForEnv{
 					{
 						Name:        "Issue Review",
-						Description: "Patchbay's version",
-						Content:     "---\nname: issue-review\n---\n\nPatchbay skill content.\n",
+						Description: "Orvilo's version",
+						Content:     "---\nname: issue-review\n---\n\nOrvilo skill content.\n",
 						Files: []SkillFileContextForEnv{
 							{Path: "templates/checklist.md", Content: "- [ ] check"},
 						},
@@ -725,7 +725,7 @@ func TestPrepareThenCleanupSidecarsSameSlugCollisionPerProvider(t *testing.T) {
 
 // TestPrepareThenCleanupSidecarsIssueContextCollisionPerProvider is
 // the matching byte-exact matrix for `.agent_context/issue_context.md`
-// — a Patchbay-only namespace file. If the user already has a file at
+// — an Orvilo-only namespace file. If the user already has a file at
 // that path, the writer must refuse to overwrite it (the runtime
 // brief carries the same facts anyway) and CleanupSidecars must
 // leave the user's file alone. This covers EVERY file-based provider
@@ -772,7 +772,7 @@ func TestPrepareThenCleanupSidecarsIssueContextCollisionPerProvider(t *testing.T
 
 // TestPrepareThenCleanupSidecarsProjectResourcesCollisionPerProvider
 // is the matching byte-exact matrix for `.patchbay/project/
-// resources.json` — the other Patchbay-only namespace file. Same
+// resources.json` — the other Orvilo-only namespace file. Same
 // invariant: pre-existing user content survives the round-trip
 // untouched even when the task ships project resources of its own.
 func TestPrepareThenCleanupSidecarsProjectResourcesCollisionPerProvider(t *testing.T) {
@@ -825,7 +825,7 @@ func TestPrepareThenCleanupSidecarsProjectResourcesCollisionPerProvider(t *testi
 
 // TestAllocateCollisionFreeSkillDir pins the slug-suffix policy:
 // first try the natural slug, then `-patchbay`, then `-patchbay-2`,
-// `-patchbay-3`, … The PR-review concern is "Patchbay skill must still
+// `-patchbay-3`, … The PR-review concern is "Orvilo skill must still
 // be discoverable" — this test demonstrates that we pick a sibling
 // path under the same skillsParent rather than dropping the skill or
 // nesting it under the user's directory.
@@ -879,9 +879,9 @@ func TestAllocateCollisionFreeSkillDir(t *testing.T) {
 // TestPrepareThenCleanupSidecarsMultiSkillCollisionFreeAllocation is
 // the end-to-end coverage for the collision-free sibling: a user has
 // `.claude/skills/issue-review/SKILL.md`, the task ships an
-// `Issue Review` skill, the Patchbay sibling must land at a different
+// `Issue Review` skill, the Orvilo sibling must land at a different
 // slug (so the agent still sees it), AND Cleanup must remove the
-// Patchbay sibling entirely without touching the user's.
+// Orvilo sibling entirely without touching the user's.
 func TestPrepareThenCleanupSidecarsMultiSkillCollisionFreeAllocation(t *testing.T) {
 	t.Parallel()
 	workDir := t.TempDir()
@@ -897,14 +897,14 @@ func TestPrepareThenCleanupSidecarsMultiSkillCollisionFreeAllocation(t *testing.
 		t.Fatalf("seed file: %v", err)
 	}
 
-	// Run only the inject side first — verify the Patchbay skill
+	// Run only the inject side first — verify the Orvilo skill
 	// landed at a NEW path under the same parent, AND the user's
 	// path is untouched.
 	manifest := &sidecarManifest{}
 	if err := writeContextFiles(workDir, "claude", TaskContextForEnv{
 		IssueID: "11111111-2222-3333-4444-555555555555",
 		AgentSkills: []SkillContextForEnv{
-			{Name: "Issue Review", Content: "Patchbay's version\n"},
+			{Name: "Issue Review", Content: "Orvilo's version\n"},
 		},
 	}, manifest); err != nil {
 		t.Fatalf("writeContextFiles: %v", err)
@@ -912,7 +912,7 @@ func TestPrepareThenCleanupSidecarsMultiSkillCollisionFreeAllocation(t *testing.
 
 	patchbayDir := filepath.Join(workDir, ".claude", "skills", "issue-review-patchbay")
 	if _, err := os.Stat(filepath.Join(patchbayDir, "SKILL.md")); err != nil {
-		t.Errorf("Patchbay sibling skill should exist at %s: %v", patchbayDir, err)
+		t.Errorf("Orvilo sibling skill should exist at %s: %v", patchbayDir, err)
 	}
 	got, err := os.ReadFile(userFile)
 	if err != nil {
@@ -923,7 +923,7 @@ func TestPrepareThenCleanupSidecarsMultiSkillCollisionFreeAllocation(t *testing.
 	}
 
 	// Now persist manifest + run cleanup. After cleanup the
-	// Patchbay sibling is gone; user's path survives.
+	// Orvilo sibling is gone; user's path survives.
 	if err := writeSidecarManifest(envRoot, manifest); err != nil {
 		t.Fatalf("write manifest: %v", err)
 	}
@@ -931,7 +931,7 @@ func TestPrepareThenCleanupSidecarsMultiSkillCollisionFreeAllocation(t *testing.
 		t.Fatalf("CleanupSidecars: %v", err)
 	}
 	if _, err := os.Stat(patchbayDir); !os.IsNotExist(err) {
-		t.Errorf("Patchbay sibling should be removed by Cleanup; stat err=%v", err)
+		t.Errorf("Orvilo sibling should be removed by Cleanup; stat err=%v", err)
 	}
 	got, err = os.ReadFile(userFile)
 	if err != nil {

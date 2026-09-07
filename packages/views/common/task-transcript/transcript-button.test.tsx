@@ -12,18 +12,18 @@ import {
   QueryClient,
   QueryClientProvider,
 } from "@tanstack/react-query";
-import { api } from "@patchbay/core/api";
+import { api } from "@orvilo/core/api";
 import {
   chatKeys,
   mergeTaskMessagesBySeq,
-} from "@patchbay/core/chat/queries";
-import type { AgentTask } from "@patchbay/core/types/agent";
-import type { TaskMessagePayload } from "@patchbay/core/types/events";
+} from "@orvilo/core/chat/queries";
+import type { AgentTask } from "@orvilo/core/types/agent";
+import type { TaskMessagePayload } from "@orvilo/core/types/events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TranscriptButton } from "./transcript-button";
 import type { TimelineItem } from "./build-timeline";
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     listTaskMessages: vi.fn(),
   },

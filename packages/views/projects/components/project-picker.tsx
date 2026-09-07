@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { FolderKanban } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import type { UpdateIssueRequest } from "@patchbay/core/types";
+import { projectListOptions } from "@orvilo/core/projects/queries";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import type { UpdateIssueRequest } from "@orvilo/core/types";
 import { ProjectIcon } from "./project-icon";
 import {
   PropertyPicker,

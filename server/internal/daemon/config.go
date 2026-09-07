@@ -13,9 +13,9 @@ import (
 
 	"github.com/mattn/go-shellwords"
 
-	"github.com/patchbay-ai/patchbay/server/internal/cli"
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/internal/cli"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 const (
@@ -65,7 +65,7 @@ const (
 	DefaultMaxConcurrentTasks             = 20
 	DefaultGCInterval                     = 2 * time.Hour
 	DefaultGCTTL                          = 24 * time.Hour      // 1 day — AI-coding issues rarely stay open long
-	DefaultGCCompletedTaskTTLCloud        = 14 * 24 * time.Hour // 14 days — Patchbay Cloud bounds completed issue-task env retention by default; see defaultGCCompletedTaskTTL
+	DefaultGCCompletedTaskTTLCloud        = 14 * 24 * time.Hour // 14 days — Orvilo Cloud bounds completed issue-task env retention by default; see defaultGCCompletedTaskTTL
 	DefaultGCCompletedTaskTTLSelfHost     = 0                   // disabled — self-host keeps every completed env until its issue goes terminal, unless an operator opts in
 	DefaultGCOrphanTTL                    = 72 * time.Hour      // 3 days — orphans with no meta (crashes, pre-GC leftovers)
 	DefaultGCArtifactTTL                  = 12 * time.Hour      // 12h — drop regenerable artifacts once a task has been completed this long
@@ -111,7 +111,7 @@ type Config struct {
 	GCEnabled                      bool                  // enable periodic workspace garbage collection (default: true)
 	GCInterval                     time.Duration         // how often the GC loop runs (default: 2h)
 	GCTTL                          time.Duration         // clean dirs whose issue is done/cancelled and updated_at < now()-TTL (default: 24h)
-	GCCompletedTaskTTL             time.Duration         // fully clean inactive issue-task envs completed at least this long ago, regardless of parent issue status (default: 14d on Patchbay Cloud, 0/disabled elsewhere; local_directory envs are never fully removed)
+	GCCompletedTaskTTL             time.Duration         // fully clean inactive issue-task envs completed at least this long ago, regardless of parent issue status (default: 14d on Orvilo Cloud, 0/disabled elsewhere; local_directory envs are never fully removed)
 	GCOrphanTTL                    time.Duration         // clean orphan dirs with no meta, or dirs whose issue gc-check returns 404, once they exceed this age (default: 72h). The 404 path uses the same TTL — a scoped-down token can't instantly wipe live workspaces.
 	GCArtifactTTL                  time.Duration         // once a task has been completed for at least this long, drop regenerable artifacts: pattern-matched build outputs when the parent record keeps the directory (an open issue), and the exact daemon-managed Codex cache for every task kind (default: 12h, set 0 to disable both)
 	GCArtifactPatterns             []string              // basename patterns whose subtrees are removed during artifact cleanup (default: node_modules, .next, .turbo)
@@ -121,7 +121,7 @@ type Config struct {
 	GCHermesMemoryTTL              time.Duration         // reclaim a per-agent Hermes memory store (<profile dir>/hermes-state/<agent>/<profile>) untouched for at least this long, so a deleted agent's memory does not sit on disk forever (default: 90d, set 0 to disable)
 	GCHermesSessionTTL             time.Duration         // reclaim a per-conversation Hermes session store (<profile dir>/hermes-sessions/<agent>/<profile>/<conversation>) untouched for at least this long, so a done or abandoned conversation's transcript does not accumulate forever (default: 14d, set 0 to disable)
 	GCTaskTempLegacyTTL            time.Duration         // reclaim a per-task temp dir (<temp base>/patchbay-task-*) that carries no execution lock — i.e. left by a daemon predating the lock — once nothing inside it has been touched for this long. Dirs that DO carry the lock are reclaimed on liveness, never on age, so this knob does not apply to them. Neither does it reclaim a dir holding no task content — an old empty leftover, or a shell left by a daemon that died between creating the dir and publishing its lock — because holding no content is exactly what a dir currently being published looks like (default: 0, disabled — see DefaultGCTaskTempLegacyTTL)
-	AutoUpdateEnabled              bool                  // periodically check for a newer CLI release and self-update when idle (default: true on Patchbay Cloud, false on self-host)
+	AutoUpdateEnabled              bool                  // periodically check for a newer CLI release and self-update when idle (default: true on Orvilo Cloud, false on self-host)
 	AutoUpdateCheckInterval        time.Duration         // how often the auto-update loop polls for a new release (default: 6h)
 	AutoReloadEnabled              bool                  // restart when the patchbay binary on disk no longer matches the running version (default: true for CLI-launched daemons)
 	PollInterval                   time.Duration
@@ -553,7 +553,7 @@ func LoadConfig(overrides Overrides) (Config, error) {
 
 	// Auto-update config: default -> env override -> CLI override.
 	//
-	// Default is opt-in on Patchbay Cloud (api.aspectlylabs.com) and opt-out for
+	// Default is opt-in on Orvilo Cloud (api.aspectlylabs.com) and opt-out for
 	// self-hosted instances. Self-host operators frequently run a fork with
 	// their own patches, and silently upgrading their daemon to an upstream
 	// GitHub release would clobber that work; they also commonly stay on an
@@ -630,14 +630,14 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	}, nil
 }
 
-// officialCloudHost is the hostname of Patchbay's hosted cloud. It's the only
+// officialCloudHost is the hostname of Orvilo's hosted cloud. It's the only
 // origin we treat as "official" for the auto-update default — staging,
 // preview, and any future *.aspectlylabs.com subdomains are deliberately excluded
 // so they inherit the safer self-host default until explicitly opted in.
 const officialCloudHost = "api.aspectlylabs.com"
 
 // isOfficialCloudServer reports whether the resolved server base URL points
-// at Patchbay's hosted cloud. Used to pick defaults that are safe on
+// at Orvilo's hosted cloud. Used to pick defaults that are safe on
 // infrastructure we operate but not on someone else's: auto-update (cloud
 // users run a server that publishes the matching CLI release, so opt-in
 // self-update is safe, while self-host users may run a fork or pin to an
@@ -657,7 +657,7 @@ func isOfficialCloudServer(baseURL string) bool {
 //
 // Full removal of a completed task environment is irreversible: it takes the
 // checkout, .git (including work an agent left uncommitted), output/ and logs/
-// with it. On Patchbay Cloud that trade is ours to make — we operate the nodes,
+// with it. On Orvilo Cloud that trade is ours to make — we operate the nodes,
 // a full disk is our incident rather than a user's, and unbounded retention has
 // no operator watching it. On self-host the same default would turn a routine
 // daemon upgrade into a silent deletion of data the operator never agreed to
@@ -799,8 +799,8 @@ func resolveAgentExecutablePath(cmd string) (string, error) {
 	if strings.ContainsAny(cmd, "/\\") {
 		return canonicalConfiguredExecutablePath(resolved), nil
 	}
-	if isInPatchbayHooksDir(resolved) {
-		if unshadowed, err := lookPathExcludingPatchbayHooks(cmd); err == nil {
+	if isInOrviloHooksDir(resolved) {
+		if unshadowed, err := lookPathExcludingOrviloHooks(cmd); err == nil {
 			return unshadowed, nil
 		}
 	}
@@ -838,12 +838,12 @@ func reresolveAgentCommand(cmd string) (string, bool) {
 	return "", false
 }
 
-func lookPathExcludingPatchbayHooks(cmd string) (string, error) {
+func lookPathExcludingOrviloHooks(cmd string) (string, error) {
 	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
 		if dir == "" {
 			dir = "."
 		}
-		if isPatchbayHooksDir(dir) {
+		if isOrviloHooksDir(dir) {
 			continue
 		}
 		candidate := filepath.Join(dir, cmd)
@@ -854,14 +854,14 @@ func lookPathExcludingPatchbayHooks(cmd string) (string, error) {
 	return "", exec.ErrNotFound
 }
 
-func isInPatchbayHooksDir(path string) bool {
+func isInOrviloHooksDir(path string) bool {
 	if path == "" {
 		return false
 	}
-	return isPatchbayHooksDir(filepath.Dir(path))
+	return isOrviloHooksDir(filepath.Dir(path))
 }
 
-func isPatchbayHooksDir(dir string) bool {
+func isOrviloHooksDir(dir string) bool {
 	home, err := os.UserHomeDir()
 	if err != nil || home == "" {
 		return false
@@ -969,12 +969,12 @@ var resolveAgentsFromInstallPaths = func(names []string) map[string]string {
 			continue
 		}
 		for _, dir := range agentInstallDirectories() {
-			if isPatchbayHooksDir(dir) {
+			if isOrviloHooksDir(dir) {
 				continue
 			}
 			candidate := filepath.Join(dir, name)
 			resolved, err := exec.LookPath(candidate)
-			if err != nil || isInPatchbayHooksDir(canonicalExecutablePath(resolved)) {
+			if err != nil || isInOrviloHooksDir(canonicalExecutablePath(resolved)) {
 				continue
 			}
 			out[name] = discoveredExecutablePath(resolved)

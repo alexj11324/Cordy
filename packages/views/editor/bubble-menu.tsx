@@ -33,25 +33,25 @@ import type { Editor } from "@tiptap/core";
 import { posToDOMRect } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { toast } from "sonner";
-import { useCreateIssue } from "@patchbay/core/issues/mutations";
+import { useCreateIssue } from "@orvilo/core/issues/mutations";
 import { useT } from "../i18n";
-import { createShortcutChord, type ShortcutChord } from "@patchbay/core/shortcuts";
+import { createShortcutChord, type ShortcutChord } from "@orvilo/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
-import { Toggle } from "@patchbay/ui/components/ui/toggle";
-import { Separator } from "@patchbay/ui/components/ui/separator";
+import { Toggle } from "@orvilo/ui/components/ui/toggle";
+import { Separator } from "@orvilo/ui/components/ui/separator";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
   TooltipProvider,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/ui/components/ui/tooltip";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@patchbay/ui/components/ui/popover";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/ui/components/ui/popover";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Bold,
   Italic,

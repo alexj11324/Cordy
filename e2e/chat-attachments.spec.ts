@@ -3,7 +3,7 @@
  *
  * Stays at the HTTP layer (auth → upload-file → send-chat-message → DB
  * check) so the test doesn't depend on a real agent runtime being online.
- * The UI wiring is covered by `chat-input.test.tsx` in @patchbay/views; this
+ * The UI wiring is covered by `chat-input.test.tsx` in @orvilo/views; this
  * spec is the end-to-end contract proof: the backend really does persist
  * chat_session_id at upload and back-fill chat_message_id at send.
  */

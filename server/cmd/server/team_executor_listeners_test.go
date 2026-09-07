@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/handler"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/handler"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 func createAssignmentListenerTestTeam(t *testing.T) string {
@@ -112,7 +112,7 @@ func TestTeamExecutorListenersSkipUnsupportedRecipientWrites(t *testing.T) {
 		"SQLSTATE 23514",
 	} {
 		if strings.Contains(issueLogs, unexpected) {
-		t.Fatalf("team executor routing attempted an unsupported recipient write (%q):\n%s", unexpected, issueLogs)
+			t.Fatalf("team executor routing attempted an unsupported recipient write (%q):\n%s", unexpected, issueLogs)
 		}
 	}
 

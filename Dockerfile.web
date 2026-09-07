@@ -48,7 +48,7 @@ ENV NEXT_PUBLIC_COMMIT_SHA=$COMMIT_SHA
 ENV STANDALONE=true
 
 # Build the web app (standalone output for minimal runtime)
-RUN pnpm --filter @patchbay/web build
+RUN pnpm --filter @orvilo/web build
 
 # --- Runtime ---
 FROM node:22-alpine AS runner

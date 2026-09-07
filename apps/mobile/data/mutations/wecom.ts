@@ -2,7 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type {
   ListWecomInstallationsResponse,
   RegisterWecomBYORequest,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { api } from "@/data/api";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { wecomKeys } from "@/data/queries/wecom";

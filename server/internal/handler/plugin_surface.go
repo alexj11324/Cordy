@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
 )
 
 const (

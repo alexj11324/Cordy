@@ -10,23 +10,23 @@ import {
   parseAutomationTriggerConfig,
   settingsPathForTriggerProvider,
   type AutomationTriggerConfig,
-} from "@patchbay/core/automations";
-import { githubInstallationsOptions } from "@patchbay/core/github/queries";
-import { slackInstallationsOptions } from "@patchbay/core/slack/queries";
-import { linearConnectionOptions } from "@patchbay/core/linear/queries";
+} from "@orvilo/core/automations";
+import { githubInstallationsOptions } from "@orvilo/core/github/queries";
+import { slackInstallationsOptions } from "@orvilo/core/slack/queries";
+import { linearConnectionOptions } from "@orvilo/core/linear/queries";
 import {
   useDeleteAutomationTrigger,
   useRotateAutomationTriggerWebhookToken,
   useUpdateAutomationTrigger,
-} from "@patchbay/core/automations/mutations";
-import { api } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import type { AutomationTrigger } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+} from "@orvilo/core/automations/mutations";
+import { api } from "@orvilo/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import type { AutomationTrigger } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import { toast } from "sonner";
 import { AppLink } from "../../navigation";
 import { useDescribeSchedule } from "./schedule-editor/describe";
@@ -42,7 +42,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 
 function compactConfig(config: AutomationTriggerConfig): AutomationTriggerConfig {
   const next: AutomationTriggerConfig = {};

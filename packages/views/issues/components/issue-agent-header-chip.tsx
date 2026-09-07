@@ -6,12 +6,12 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { cn } from "@patchbay/ui/lib/utils";
-import { api } from "@patchbay/core/api";
-import { issueKeys } from "@patchbay/core/issues/queries";
-import type { AgentTask } from "@patchbay/core/types";
+} from "@orvilo/ui/components/ui/popover";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { cn } from "@orvilo/ui/lib/utils";
+import { api } from "@orvilo/core/api";
+import { issueKeys } from "@orvilo/core/issues/queries";
+import type { AgentTask } from "@orvilo/core/types";
 import { AgentThreadButton } from "../../agent-thread";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { ActiveTaskRow } from "./execution-log-section";

@@ -1,11 +1,11 @@
 ---
 title: Self-hosted messaging
-description: Configure Patchbay IM transports from the server deployment without exposing credentials or localhost links in the app.
+description: Configure Orvilo IM transports from the server deployment without exposing credentials or localhost links in the app.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Self-hosted IM is server-managed. The Patchbay app only displays the platforms
+Self-hosted IM is server-managed. The Orvilo app only displays the platforms
 that the server enabled and their observed runtime state; it does not provide
 credential fields, manifest upload, QR configuration, or an install button.
 
@@ -32,7 +32,7 @@ scripts/messaging-self-host-setup.sh init \
    `ORVILO_MESSAGING_AGENT_ID` scopes the installation to one Agent; leave it
    blank for a workspace-level installation.
 4. Keep each provider credential in the server secret manager. Never paste it
-   into the Patchbay app or commit it to `deploy/messaging/manifest.yaml`.
+   into the Orvilo app or commit it to `deploy/messaging/manifest.yaml`.
    Slack bootstrap requires the `xapp-`/`xoxb-` tokens plus the app, team, and
    bot-user ids; the other provider variable names are listed in the manifest
    and generated template.
@@ -73,19 +73,19 @@ scripts/messaging-self-host-setup.sh slack-manifest
 ```
 
 Socket Mode is an outbound connection from the server to Slack, so no Slack
-Request URL or OAuth callback points at the operator's computer. The Patchbay
+Request URL or OAuth callback points at the operator's computer. The Orvilo
 app remains read-only in `server_configured` mode; the server deployment is the
 authority for credentials and installation lifecycle.
 
 <Callout type="warning">
 Pure localhost self-hosting can still be used for the web app and local ACP,
 but cross-device IM binding is disabled until a public HTTPS origin is
-configured. Patchbay will never send a localhost URL in an IM message or QR code.
+configured. Orvilo will never send a localhost URL in an IM message or QR code.
 </Callout>
 
 ## Message storage and execution
 
-Patchbay follows the Multica-style split: the server stores the workspace-scoped
+Orvilo follows the Multica-style split: the server stores the workspace-scoped
 IM session, the durable `chat_message` transcript, deduplication record, and
 task linkage in PostgreSQL. A browser or phone only caches that server state.
 The local computer stores provider-native agent sessions, worktrees, and
@@ -106,4 +106,4 @@ not require rebinding an IM identity.
 - A provider is shown as connected only after its supervisor lease/transport
   heartbeat is current. An installation row with desired status `installed`
   alone does not prove a live connection.
-- Self-hosted transports do not consume Patchbay Cloud hosted IM quotas.
+- Self-hosted transports do not consume Orvilo Cloud hosted IM quotas.

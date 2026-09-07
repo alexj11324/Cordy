@@ -1,6 +1,6 @@
 import { cache } from "react";
 import { cookies, headers } from "next/headers";
-import { LOCALE_COOKIE, type SupportedLocale } from "@patchbay/core/i18n";
+import { LOCALE_COOKIE, type SupportedLocale } from "@orvilo/core/i18n";
 import {
   isSupportedLocale,
   ORVILO_LOCALE_HEADER,

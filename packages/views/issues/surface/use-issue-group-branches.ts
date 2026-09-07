@@ -17,15 +17,15 @@ import {
   issueKeys,
   issueTableGroupsOptions,
   issueTableRowPageOptions,
-} from "@patchbay/core/issues/queries";
-import { issueStatusCategory } from "@patchbay/core/issues";
+} from "@orvilo/core/issues/queries";
+import { issueStatusCategory } from "@orvilo/core/issues";
 import type {
   Issue,
   IssueTableGroupDescriptor,
   IssueTableGroupsRequest,
   IssueTableQuerySpec,
   IssueTableRowsResponse,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { getIssueExecutor } from "../utils/issue-executor";
 
 export interface IssueGroupPageState {

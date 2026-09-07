@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // TestTeamOperatingProtocolRecordsAgainstTheTurnsIssue locks the recording
@@ -161,7 +161,7 @@ func seedTeamForBriefing(t *testing.T, leaderID string, name, instructions strin
 func addAgentMember(t *testing.T, teamID pgtype.UUID, agentID, role string) {
 	t.Helper()
 	if _, err := testHandler.Queries.AddTeamMember(context.Background(), db.AddTeamMemberParams{
-		TeamID:    teamID,
+		TeamID:     teamID,
 		MemberType: "agent",
 		MemberID:   util.MustParseUUID(agentID),
 		Role:       role,
@@ -173,7 +173,7 @@ func addAgentMember(t *testing.T, teamID pgtype.UUID, agentID, role string) {
 func addHumanMember(t *testing.T, teamID pgtype.UUID, userID, role string) {
 	t.Helper()
 	if _, err := testHandler.Queries.AddTeamMember(context.Background(), db.AddTeamMemberParams{
-		TeamID:    teamID,
+		TeamID:     teamID,
 		MemberType: "member",
 		MemberID:   util.MustParseUUID(userID),
 		Role:       role,

@@ -16,17 +16,17 @@ import {
 } from "lucide-react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
+import { useCurrentWorkspace, useWorkspacePaths } from "@orvilo/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   teamListOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
-import { useAuthStore } from "@patchbay/core/auth";
-import { api } from "@patchbay/core/api";
-import { useModalStore } from "@patchbay/core/modals";
+} from "@orvilo/core/workspace/queries";
+import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
+import { useAuthStore } from "@orvilo/core/auth";
+import { api } from "@orvilo/core/api";
+import { useModalStore } from "@orvilo/core/modals";
 import {
   useTeamsViewStore,
   TEAM_SCOPES,
@@ -35,9 +35,9 @@ import {
   type TeamListFilters,
   type TeamsScope,
   type TeamSortField,
-} from "@patchbay/core/teams/stores";
-import type { Agent, MemberWithUser, Team } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/teams/stores";
+import type { Agent, MemberWithUser, Team } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -45,7 +45,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -58,7 +58,7 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import {
   ListGrid,
   ListGridCell,
@@ -67,20 +67,20 @@ import {
   ListGridRow,
   LIST_GRID_BOTTOM_CLEARANCE,
   type ListGridSortDirection,
-} from "@patchbay/ui/components/ui/list-grid";
+} from "@orvilo/ui/components/ui/list-grid";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+} from "@orvilo/ui/components/ui/popover";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
+} from "@orvilo/ui/components/ui/tooltip";
+import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import { useIntentNavigate, useRowLink } from "../../navigation";

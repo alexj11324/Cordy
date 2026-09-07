@@ -11,25 +11,25 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
   AlertDialogAction,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useLeaveWorkspace, useDeleteWorkspace } from "@patchbay/core/workspace/mutations";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useLeaveWorkspace, useDeleteWorkspace } from "@orvilo/core/workspace/mutations";
 import {
   memberListOptions,
   workspaceKeys,
   workspaceListOptions,
-} from "@patchbay/core/workspace/queries";
-import { issueKeys } from "@patchbay/core/issues/queries";
-import { api } from "@patchbay/core/api";
+} from "@orvilo/core/workspace/queries";
+import { issueKeys } from "@orvilo/core/issues/queries";
+import { api } from "@orvilo/core/api";
 import {
   resolvePostAuthDestination,
   useCurrentWorkspace,
   useHasOnboarded,
-} from "@patchbay/core/paths";
-import { setCurrentWorkspace } from "@patchbay/core/platform";
-import type { Workspace } from "@patchbay/core/types";
+} from "@orvilo/core/paths";
+import { setCurrentWorkspace } from "@orvilo/core/platform";
+import type { Workspace } from "@orvilo/core/types";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useNavigation } from "../../navigation";
 import { DeleteWorkspaceDialog } from "./delete-workspace-dialog";

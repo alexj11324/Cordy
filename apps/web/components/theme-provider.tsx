@@ -1,7 +1,7 @@
 "use client"
 
-// Re-export the shared ThemeProvider from @patchbay/ui
-export { ThemeProvider } from "@patchbay/ui/components/common/theme-provider"
+// Re-export the shared ThemeProvider from @orvilo/ui
+export { ThemeProvider } from "@orvilo/ui/components/common/theme-provider"
 
 // Suppress React 19 false-positive about next-themes' inline <script>.
 // The script works correctly; React 19 just warns about any <script> in components.

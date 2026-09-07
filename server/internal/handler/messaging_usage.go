@@ -7,7 +7,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/patchbay-ai/patchbay/server/internal/channelquota"
+	"github.com/orvilo-ai/orvilo/server/internal/channelquota"
 )
 
 type MessagingQuotaUsageResponse struct {

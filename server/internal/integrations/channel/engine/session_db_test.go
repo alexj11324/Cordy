@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/patchbay-ai/patchbay/server/internal/channelmedia"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/channelmedia"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func sessionPersistenceTestDB(t *testing.T) *pgxpool.Pool {

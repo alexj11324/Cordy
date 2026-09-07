@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 import type {
   SourceContextCommentSnapshot,
   SourceContextIssueSnapshot,
-} from "@patchbay/core/types";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
 import { ReadonlyContent } from "../../editor";
 import { SourceContextCommentList } from "./source-context-comment-list";
 

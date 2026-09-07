@@ -8,9 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // fakeIdentityQueries implements identityQueries so the cross-installation
@@ -50,7 +50,7 @@ func (f *fakeIdentityQueries) CreateChannelUserBinding(_ context.Context, arg db
 }
 
 // TestResolveSenderReuse covers the identity resolver's decision to reuse an
-// existing account link across installations of the same Slack team + Patchbay
+// existing account link across installations of the same Slack team + Orvilo
 // workspace, instead of re-prompting the user for every new Slack app.
 func TestResolveSenderReuse(t *testing.T) {
 	const senderID = "U123"

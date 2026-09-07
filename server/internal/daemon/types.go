@@ -3,8 +3,8 @@ package daemon
 import (
 	"encoding/json"
 
-	"github.com/patchbay-ai/patchbay/server/internal/runtimeapps"
-	"github.com/patchbay-ai/patchbay/server/pkg/remotemcp"
+	"github.com/orvilo-ai/orvilo/server/internal/runtimeapps"
+	"github.com/orvilo-ai/orvilo/server/pkg/remotemcp"
 )
 
 // AgentEntry describes a single available agent CLI.

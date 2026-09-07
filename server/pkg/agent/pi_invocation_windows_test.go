@@ -29,7 +29,7 @@ func TestPlatformPiInvocation_RewritesCmdLauncherToPowerShellCommand(t *testing.
 	writeFile(t, fakePS, "")
 	stubPowerShell(t, fakePS, true)
 
-	multiLinePrompt := "You are running as a chat assistant for a Patchbay workspace.\n\nUser message:\n我需要创建一个issue\n"
+	multiLinePrompt := "You are running as a chat assistant for an Orvilo workspace.\n\nUser message:\n我需要创建一个issue\n"
 	args := []string{
 		"-p",
 		"--mode", "json",

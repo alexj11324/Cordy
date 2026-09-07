@@ -11,9 +11,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func uuidToString(u pgtype.UUID) string { return util.UUIDToString(u) }
@@ -46,7 +46,7 @@ func rejectTemporarilyDisabledUser(w http.ResponseWriter, r *http.Request, userI
 // at most once per TTL window per token, not per request.
 //
 // cloudPAT is optional; when non-nil, tokens with the mcn_ prefix are
-// validated by calling the Patchbay Cloud Fleet service rather than the
+// validated by calling the Orvilo Cloud Fleet service rather than the
 // local DB. When nil (Fleet URL unset) mcn_ tokens are rejected at the
 // prefix branch — we don't fall through to the pby_ / JWT paths, since
 // an mcn_ string is by construction not a valid pby_ PAT or JWT.
@@ -161,7 +161,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 			}
 
 			// Cloud Node PAT: "mcn_" prefix. Verified by calling the
-			// Patchbay Cloud Fleet service — Cloud (not us) is the
+			// Orvilo Cloud Fleet service — Cloud (not us) is the
 			// authoritative owner of the token's status and owner_id
 			// binding. We never look at the local
 			// personal_access_tokens table for this prefix; an mcn_

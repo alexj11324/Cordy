@@ -34,7 +34,7 @@ func TestNewReturnsQwenpawBackend(t *testing.T) {
 }
 
 // fakeQwenpawACPScript impersonates `qwenpaw acp` for unit tests.
-// Wire format mirrors other Patchbay ACP fakes (grok/kimi):
+// Wire format mirrors other Orvilo ACP fakes (grok/kimi):
 // session/new returns sessionId, session/load accepts an existing session,
 // session/prompt returns stopReason=end_turn.
 // session/set_model is also handled for backward compatibility with older

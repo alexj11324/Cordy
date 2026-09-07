@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // The claim path resolves project context from a SOFT reference: issue.project_id,
@@ -316,12 +316,12 @@ func TestClaimTask_AutomationRunOnlyForeignWorkspace_CancelsTask(t *testing.T) {
 	})
 	foreignRunID := dbfx.Insert(t, "automation_run", testutil.Cols{
 		"automation_id": foreignAutomationID,
-		"source":       "manual",
-		"status":       "running",
+		"source":        "manual",
+		"status":        "running",
 	})
 	taskID := dbfx.Task(t, localAgentID, testutil.Cols{
-		"runtime_id":       localRuntimeID,
-		"issue_id":         nil,
+		"runtime_id":        localRuntimeID,
+		"issue_id":          nil,
 		"automation_run_id": foreignRunID,
 	})
 

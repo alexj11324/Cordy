@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { isRouteErrorResponse, useLocation, useRouteError } from "react-router-dom";
 import { AlertTriangle, Compass, RotateCw, Send, X } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import type { DesktopRouteErrorFeedbackContext } from "@patchbay/core/feedback";
-import { useModalStore } from "@patchbay/core/modals";
+import { Button } from "@orvilo/ui/components/ui/button";
+import type { DesktopRouteErrorFeedbackContext } from "@orvilo/core/feedback";
+import { useModalStore } from "@orvilo/core/modals";
 import { useTabStore } from "@/stores/tab-store";
 
 export function createRouteErrorFeedbackContext({

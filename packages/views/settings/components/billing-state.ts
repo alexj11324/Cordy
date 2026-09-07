@@ -2,7 +2,7 @@ import type {
   AutomationQuotaUsage,
   WorkspaceSubscriptionEntitlements,
   WorkspaceSubscriptionSummary,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 
 export type AutomationUsageView =
   | { kind: "unlimited" }

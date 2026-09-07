@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
 )
 
 func TestWecomSubscribeAckConfirmsConnection(t *testing.T) {
 	adapter := &wecomChannel{
 		installationID: mustTestUUID(t), botID: "fixture-bot", secret: "fixture-secret",
 		handler: func(context.Context, channel.InboundMessage) error { return nil },
-		dialer: scriptedDialer{conn: &scriptedConn{}}, wsURL: "wss://example.test/ws",
+		dialer:  scriptedDialer{conn: &scriptedConn{}}, wsURL: "wss://example.test/ws",
 	}
 	confirmed := false
 	ctx := channel.WithRuntimeReporter(context.Background(), func(_ context.Context, observation channel.RuntimeObservation) bool {

@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/lark"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/lark"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // LarkInstallationResponse is the wire shape for an installation row.
@@ -21,16 +21,16 @@ import (
 // InstallationService.DecryptAppSecret server-side). Likewise, the WS
 // lease columns are omitted; they are runtime state, not API surface.
 type LarkInstallationResponse struct {
-	Runtime MessagingConnectionStatus `json:"runtime"`
-	ID              string  `json:"id"`
-	WorkspaceID     string  `json:"workspace_id"`
-	AgentID         string  `json:"agent_id"`
-	AppID           string  `json:"app_id"`
-	TenantKey       *string `json:"tenant_key,omitempty"`
-	BotOpenID       string  `json:"bot_open_id"`
-	InstallerUserID string  `json:"installer_user_id"`
-	Status          string  `json:"status"`
-	InstallationStatus string `json:"installation_status"`
+	Runtime            MessagingConnectionStatus `json:"runtime"`
+	ID                 string                    `json:"id"`
+	WorkspaceID        string                    `json:"workspace_id"`
+	AgentID            string                    `json:"agent_id"`
+	AppID              string                    `json:"app_id"`
+	TenantKey          *string                   `json:"tenant_key,omitempty"`
+	BotOpenID          string                    `json:"bot_open_id"`
+	InstallerUserID    string                    `json:"installer_user_id"`
+	Status             string                    `json:"status"`
+	InstallationStatus string                    `json:"installation_status"`
 	// Region is the Lark cloud this installation lives on: "feishu"
 	// (mainland) or "lark" (international). The UI uses it to render a
 	// badge and to build the correct "Manage in Lark" dev-console host.
@@ -43,19 +43,19 @@ type LarkInstallationResponse struct {
 func larkInstallationToResponse(row lark.Installation) LarkInstallationResponse {
 	legacyStatus, installationStatus := messagingInstallationWireStatuses(row.Status)
 	resp := LarkInstallationResponse{
-		Runtime: initialConnectionStatus(row.Status),
-		ID:              uuidToString(row.ID),
-		WorkspaceID:     uuidToString(row.WorkspaceID),
-		AgentID:         uuidToString(row.AgentID),
-		AppID:           row.AppID,
-		BotOpenID:       row.BotOpenID,
-		InstallerUserID: uuidToString(row.InstallerUserID),
-		Status:          legacyStatus,
+		Runtime:            initialConnectionStatus(row.Status),
+		ID:                 uuidToString(row.ID),
+		WorkspaceID:        uuidToString(row.WorkspaceID),
+		AgentID:            uuidToString(row.AgentID),
+		AppID:              row.AppID,
+		BotOpenID:          row.BotOpenID,
+		InstallerUserID:    uuidToString(row.InstallerUserID),
+		Status:             legacyStatus,
 		InstallationStatus: installationStatus,
-		Region:          row.Region,
-		InstalledAt:     row.InstalledAt.Time.UTC().Format(time.RFC3339),
-		CreatedAt:       row.CreatedAt.Time.UTC().Format(time.RFC3339),
-		UpdatedAt:       row.UpdatedAt.Time.UTC().Format(time.RFC3339),
+		Region:             row.Region,
+		InstalledAt:        row.InstalledAt.Time.UTC().Format(time.RFC3339),
+		CreatedAt:          row.CreatedAt.Time.UTC().Format(time.RFC3339),
+		UpdatedAt:          row.UpdatedAt.Time.UTC().Format(time.RFC3339),
 	}
 	if row.TenantKey.Valid {
 		tk := row.TenantKey.String
@@ -217,7 +217,7 @@ type RedeemLarkBindingTokenResponse struct {
 // path that writes a lark_user_binding row from user-driven action.
 // The redeemer's identity is taken from the session, not the token,
 // so a stolen token cannot bind a Lark open_id to an attacker's
-// Patchbay account. The token only proves "this open_id requested
+// Orvilo account. The token only proves "this open_id requested
 // binding" — combining it with the logged-in user is what creates
 // the (open_id ↔ user) mapping.
 //
@@ -257,7 +257,7 @@ func (h *Handler) RedeemLarkBindingToken(w http.ResponseWriter, r *http.Request)
 		case errors.Is(err, lark.ErrBindingTokenInvalid):
 			writeError(w, http.StatusGone, "binding token invalid or expired")
 		case errors.Is(err, lark.ErrBindingAlreadyAssigned):
-			writeError(w, http.StatusConflict, "this Lark account is already bound to a different Patchbay user")
+			writeError(w, http.StatusConflict, "this Lark account is already bound to a different Orvilo user")
 		case errors.Is(err, lark.ErrBindingNotWorkspaceMember):
 			writeError(w, http.StatusForbidden, "binding refused (are you a workspace member?)")
 		default:
@@ -290,7 +290,7 @@ type BeginLarkInstallResponse struct {
 // via canManageAgent (the agent's owner OR a workspace owner/admin), so
 // an agent owner can bind their own agent's Bot without being a
 // workspace admin (MUL-4213). The agent_id query param picks which
-// Patchbay Agent the new Bot will be bound to; the agent must belong to
+// Orvilo Agent the new Bot will be bound to; the agent must belong to
 // this workspace (RegistrationService re-checks that defense-in-depth).
 //
 // Returns 503 when the integration is not wired (no at-rest key, no

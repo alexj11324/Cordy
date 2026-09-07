@@ -1,9 +1,9 @@
-# Patchbay installer for Windows — one command to get started.
+# Orvilo installer for Windows — one command to get started.
 #
-# Install CLI (default): connects to Patchbay Cloud
+# Install CLI (default): connects to Orvilo Cloud
 #   irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 #
-# Self-host: starts a local Patchbay server + installs CLI + configures
+# Self-host: starts a local Orvilo server + installs CLI + configures
 #   $env:ORVILO_MODE="local"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 #
 
@@ -233,10 +233,10 @@ function Get-InstalledCliVersion {
 # CLI Installation
 # ---------------------------------------------------------------------------
 function Install-CliBinary {
-    Write-Info "Installing Patchbay CLI from GitHub Releases..."
+    Write-Info "Installing Orvilo CLI from GitHub Releases..."
 
     if (-not [Environment]::Is64BitOperatingSystem) {
-        Write-Fail "Patchbay requires a 64-bit Windows installation."
+        Write-Fail "Orvilo requires a 64-bit Windows installation."
     }
 
     $arch = Get-WindowsCliArch
@@ -314,7 +314,7 @@ function Install-CliBinary {
     Remove-Item $tmpDir -Recurse -Force
 
     Add-ToUserPath $binDir
-    Write-Ok "Patchbay CLI installed to $binDir\patchbay.exe"
+    Write-Ok "Orvilo CLI installed to $binDir\patchbay.exe"
 }
 
 function Add-ToUserPath {
@@ -350,15 +350,15 @@ function Install-Cli {
         }
 
         if ($isUpToDate) {
-            Write-Ok "Patchbay CLI is up to date ($currentVer)"
+            Write-Ok "Orvilo CLI is up to date ($currentVer)"
             return
         }
 
-        Write-Info "Patchbay CLI $currentVer installed, latest is $latestVer - upgrading..."
+        Write-Info "Orvilo CLI $currentVer installed, latest is $latestVer - upgrading..."
         Install-CliBinary
 
         $newVer = Get-InstalledCliVersion
-        Write-Ok "Patchbay CLI upgraded ($currentVer -> $newVer)"
+        Write-Ok "Orvilo CLI upgraded ($currentVer -> $newVer)"
         return
     }
 
@@ -375,7 +375,7 @@ function Install-Cli {
 function Test-Docker {
     if (-not (Test-CommandExists "docker")) {
         Write-Fail @"
-Docker is not installed. Patchbay self-hosting requires Docker and Docker Compose.
+Docker is not installed. Orvilo self-hosting requires Docker and Docker Compose.
 
 Install Docker Desktop for Windows:
   https://docs.docker.com/desktop/install/windows-install/
@@ -397,7 +397,7 @@ After installing Docker, re-run this script with `$env:ORVILO_MODE="local"`.
 # Server setup (self-host / local)
 # ---------------------------------------------------------------------------
 function Install-Server {
-    Write-Info "Setting up Patchbay server..."
+    Write-Info "Setting up Orvilo server..."
     $serverRef = Get-SelfHostRef
     Write-Info "Using self-host assets from $serverRef..."
 
@@ -405,7 +405,7 @@ function Install-Server {
         Write-Info "Updating existing installation at $InstallDir..."
         Write-Warn "Any local changes in $InstallDir will be overwritten."
     } else {
-        Write-Info "Cloning Patchbay repository..."
+        Write-Info "Cloning Orvilo repository..."
         if (-not (Test-CommandExists "git")) {
             Write-Fail "Git is not installed. Please install git and re-run."
         }
@@ -439,9 +439,9 @@ function Install-Server {
         Write-Ok "Using existing .env"
     }
 
-    Write-Info "Pulling official Patchbay images..."
+    Write-Info "Pulling official Orvilo images..."
     Pull-OfficialSelfHostImages
-    Write-Info "Starting Patchbay services (this may take a few minutes on first run)..."
+    Write-Info "Starting Orvilo services (this may take a few minutes on first run)..."
     docker compose -f docker-compose.selfhost.yml up -d
 
     # Read the ports Compose actually published, once, and reuse them for both
@@ -468,7 +468,7 @@ function Install-Server {
     }
 
     if ($ready) {
-        Write-Ok "Patchbay server is running"
+        Write-Ok "Orvilo server is running"
     } else {
         Write-Warn "Server is still starting. Check logs with:"
         Write-Host "  cd $InstallDir; docker compose -f docker-compose.selfhost.yml logs"
@@ -483,19 +483,19 @@ function Install-Server {
 # ---------------------------------------------------------------------------
 function Start-DefaultInstall {
     Write-Host ""
-    Write-Host "  Patchbay - Installer" -ForegroundColor White
+    Write-Host "  Orvilo - Installer" -ForegroundColor White
     Write-Host ""
 
     Install-Cli
 
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor Green
-    Write-Host "  [OK] Patchbay CLI is ready!" -ForegroundColor Green
+    Write-Host "  [OK] Orvilo CLI is ready!" -ForegroundColor Green
     Write-Host "  ============================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Next: configure your environment"
     Write-Host ""
-    Write-Host "     patchbay setup               " -NoNewline; Write-Host "# Connect to Patchbay Cloud" -ForegroundColor DarkGray
+    Write-Host "     patchbay setup               " -NoNewline; Write-Host "# Connect to Orvilo Cloud" -ForegroundColor DarkGray
     Write-Host "     patchbay setup self-host      " -NoNewline; Write-Host "# Connect to a self-hosted server" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  Self-hosting? Install the server first:"
@@ -508,7 +508,7 @@ function Start-DefaultInstall {
 # ---------------------------------------------------------------------------
 function Start-LocalInstall {
     Write-Host ""
-    Write-Host "  Patchbay - Self-Host Installer" -ForegroundColor White
+    Write-Host "  Orvilo - Self-Host Installer" -ForegroundColor White
     Write-Host "  Provisioning server infrastructure + installing CLI"
     Write-Host ""
 
@@ -518,7 +518,7 @@ function Start-LocalInstall {
 
     Write-Host ""
     Write-Host "  ============================================" -ForegroundColor Green
-    Write-Host "  [OK] Patchbay server is running and CLI is ready!" -ForegroundColor Green
+    Write-Host "  [OK] Orvilo server is running and CLI is ready!" -ForegroundColor Green
     Write-Host "  ============================================" -ForegroundColor Green
     Write-Host ""
     Write-Host "  Frontend:  http://localhost:$($script:SelfHostFrontendPort)"
@@ -542,7 +542,7 @@ function Start-LocalInstall {
 # ---------------------------------------------------------------------------
 function Start-Stop {
     Write-Host ""
-    Write-Info "Stopping Patchbay services..."
+    Write-Info "Stopping Orvilo services..."
 
     if (Test-Path $InstallDir) {
         Push-Location $InstallDir
@@ -554,7 +554,7 @@ function Start-Stop {
         }
         Pop-Location
     } else {
-        Write-Warn "No Patchbay installation found at $InstallDir"
+        Write-Warn "No Orvilo installation found at $InstallDir"
     }
 
     if (Test-CommandExists "patchbay") {

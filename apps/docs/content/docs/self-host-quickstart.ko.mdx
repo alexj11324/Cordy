@@ -1,24 +1,24 @@
 ---
 title: 자체 호스팅 빠른 시작
-description: Docker Compose로 Patchbay를 시작하고 로그인한 뒤 첫 실행 컴퓨터를 연결합니다.
+description: Docker Compose로 Orvilo를 시작하고 로그인한 뒤 첫 실행 컴퓨터를 연결합니다.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-자체 호스팅 Patchbay는 두 부분으로 나뉩니다.
+자체 호스팅 Orvilo는 두 부분으로 나뉩니다.
 
 | 부분 | 실행하는 항목 | 설치 위치 |
 |---|---|---|
-| **Patchbay 서비스** | Web, API, PostgreSQL | Docker가 설치된 컴퓨터 |
-| **실행 컴퓨터** | Patchbay 데몬과 AI 코딩 도구 | 개발자가 실제로 작업하는 컴퓨터 |
+| **Orvilo 서비스** | Web, API, PostgreSQL | Docker가 설치된 컴퓨터 |
+| **실행 컴퓨터** | Orvilo 데몬과 AI 코딩 도구 | 개발자가 실제로 작업하는 컴퓨터 |
 
-두 부분을 같은 컴퓨터에 둘 수도 있고 분리할 수도 있습니다. 자체 호스팅으로 대체하는 것은 Patchbay Cloud 부분뿐입니다.
+두 부분을 같은 컴퓨터에 둘 수도 있고 분리할 수도 있습니다. 자체 호스팅으로 대체하는 것은 Orvilo Cloud 부분뿐입니다.
 
 이 문서에서는 Docker Compose를 사용합니다. Kubernetes 배포는 저장소의 [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)를 참고하세요.
 
 ## 시작하기 전에
 
-Patchbay 서비스를 실행할 컴퓨터에는 다음 항목이 필요합니다.
+Orvilo 서비스를 실행할 컴퓨터에는 다음 항목이 필요합니다.
 
 - Docker Engine 또는 Docker Desktop, 실행 가능한 `docker compose`
 - Git, Make, curl, OpenSSL
@@ -31,11 +31,11 @@ docker info
 docker compose version
 ```
 
-Patchbay는 Compose v2인 `docker compose`를 사용합니다. 이전 `docker-compose` v1은 지원하지 않습니다.
+Orvilo는 Compose v2인 `docker compose`를 사용합니다. 이전 `docker-compose` v1은 지원하지 않습니다.
 
-실행 컴퓨터에는 Claude Code, Codex, Cursor 같은 [AI 코딩 도구](/providers)가 하나 이상 설치되어 로그인된 상태여야 합니다. Patchbay CLI는 5단계에서 설치합니다.
+실행 컴퓨터에는 Claude Code, Codex, Cursor 같은 [AI 코딩 도구](/providers)가 하나 이상 설치되어 로그인된 상태여야 합니다. Orvilo CLI는 5단계에서 설치합니다.
 
-## 1. Patchbay 시작
+## 1. Orvilo 시작
 
 서비스를 실행할 컴퓨터에서 다음을 실행합니다.
 
@@ -49,7 +49,7 @@ make selfhost
 
 1. `.env.example`에서 `.env` 생성
 2. `JWT_SECRET`, PostgreSQL 비밀번호, `ORVILO_VCS_SECRET_KEY`(자체 호스팅 Git 연동 암호화 키)를 임의 생성
-3. PostgreSQL, Patchbay backend, Patchbay frontend 이미지 pull
+3. PostgreSQL, Orvilo backend, Orvilo frontend 이미지 pull
 4. persistent data volume 생성 및 세 컨테이너 시작
 5. backend가 health check에 응답할 때까지 대기
 
@@ -100,7 +100,7 @@ Docker Compose는 기본적으로 `3000`과 `8080`을 `127.0.0.1`에만 bind합�
 
 다음 두 도메인을 예로 사용합니다.
 
-- `app.example.com`: Patchbay Web
+- `app.example.com`: Orvilo Web
 - `api.example.com`: API, health check, 데몬 연결
 
 먼저 `.env`에 공개 주소를 설정합니다.
@@ -217,7 +217,7 @@ docker compose -f docker-compose.selfhost.yml logs backend \
 작업은 데몬을 실행하는 사용자의 모든 권한으로 동작하며, 그 사용자가 읽고 쓸 수 있는 모든 것에 접근할 수 있습니다. 개인 계정 대신 전용 Unix 사용자, 컨테이너, 또는 VM에서 데몬을 실행하세요. [보안 모델](/security-model)을 참고하세요.
 </Callout>
 
-먼저 Patchbay CLI를 설치합니다.
+먼저 Orvilo CLI를 설치합니다.
 
 **macOS / Linux**
 
@@ -231,13 +231,13 @@ curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/insta
 irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 ```
 
-Patchbay 서비스가 같은 컴퓨터에 있다면 다음을 실행합니다.
+Orvilo 서비스가 같은 컴퓨터에 있다면 다음을 실행합니다.
 
 ```bash
 patchbay setup self-host
 ```
 
-Patchbay 서비스가 다른 컴퓨터에 있다면 앞에서 설정한 두 주소를 전달합니다.
+Orvilo 서비스가 다른 컴퓨터에 있다면 앞에서 설정한 두 주소를 전달합니다.
 
 ```bash
 patchbay setup self-host \
@@ -261,7 +261,7 @@ patchbay daemon status
 
 ## 6. 첫 실행 완료
 
-Patchbay로 돌아옵니다. 런타임 목록에 온라인 런타임이 나타나면 에이전트를 만들고 첫 태스크의 executor로 지정합니다.
+Orvilo로 돌아옵니다. 런타임 목록에 온라인 런타임이 나타나면 에이전트를 만들고 첫 태스크의 executor로 지정합니다.
 
 실행 로그가 "완료됨"으로 바뀌고 타임라인에 에이전트의 답변이 나타나면 자체 호스팅 서비스, 실행 컴퓨터, AI 코딩 도구가 연결된 것입니다. 자세한 단계는 [빠른 시작](/cloud-quickstart)의 3~5단계를 참고하세요.
 
@@ -309,7 +309,7 @@ docker compose -f docker-compose.selfhost.yml up -d
 
 ### `git pull`이 실제로 하는 일
 
-`git pull`이 갱신하는 것은 **`docker-compose.selfhost.yml` 자체**입니다 — 새로 추가된 환경 변수, 새 서비스, 변경된 healthcheck. 새 Patchbay 버전을 받아오는 수단이 **아닙니다**.
+`git pull`이 갱신하는 것은 **`docker-compose.selfhost.yml` 자체**입니다 — 새로 추가된 환경 변수, 새 서비스, 변경된 healthcheck. 새 Orvilo 버전을 받아오는 수단이 **아닙니다**.
 
 실제로 어떤 버전이 뜰지는 `docker compose pull`이 결정합니다. 이 명령이 GHCR에 해당 태그가 지금 어떤 이미지를 가리키는지 물어보기 때문입니다. 그래서 몇 달 묵은 checkout에서도 오늘자 `latest` 이미지를 받을 수 있고, 반대로 `git pull`만 해서는 이미지를 받아 컨테이너를 다시 만들기 전까지 아무것도 바뀌지 않습니다.
 

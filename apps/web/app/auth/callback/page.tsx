@@ -2,17 +2,17 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { paths } from "@patchbay/core/paths";
-import { api } from "@patchbay/core/api";
-import { validateCliCallback, redirectToCliCallback } from "@patchbay/views/auth";
+import { paths } from "@orvilo/core/paths";
+import { api } from "@orvilo/core/api";
+import { validateCliCallback, redirectToCliCallback } from "@orvilo/views/auth";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-} from "@patchbay/ui/components/ui/card";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/ui/components/ui/card";
+import { Button } from "@orvilo/ui/components/ui/button";
 import { Loader2 } from "lucide-react";
 
 function redirectToDesktopHandoff(code: string, state: string): void {

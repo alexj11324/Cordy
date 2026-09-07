@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/processtree"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/processtree"
 )
 
 // gitEnv returns an environment for git subprocesses that contact remotes.
@@ -1003,7 +1003,7 @@ func (c *Cache) createOrUpdateIsolatedCheckoutContext(ctx context.Context, bareP
 		}
 	}
 	if _, err := os.Stat(checkoutPath); err == nil {
-		return "", fmt.Errorf("checkout path already exists and is not a Patchbay isolated checkout: %s", checkoutPath)
+		return "", fmt.Errorf("checkout path already exists and is not an Orvilo isolated checkout: %s", checkoutPath)
 	} else if !os.IsNotExist(err) {
 		return "", fmt.Errorf("stat checkout path: %w", err)
 	}
@@ -1248,7 +1248,7 @@ func deleteAllLocalBranchesContext(ctx context.Context, repoPath string) error {
 	return deleteLocalBranchesUnderContext(ctx, repoPath, "refs/heads/", "")
 }
 
-// deleteStaleAgentBranches prunes branches left by earlier Patchbay tasks while
+// deleteStaleAgentBranches prunes branches left by earlier Orvilo tasks while
 // preserving the current task branch and every user-created local branch.
 func deleteStaleAgentBranches(repoPath, keepBranch string) error {
 	return deleteStaleAgentBranchesContext(context.Background(), repoPath, keepBranch)
@@ -1566,7 +1566,7 @@ const patchbayHookMarker = "# patchbay:prepare-commit-msg:co-authored-by"
 
 // daemonInstalledHookSignatures lists substrings that identify a
 // prepare-commit-msg hook as one the daemon installed. removeCoAuthoredByHook
-// treats a hook as Patchbay-owned if its content contains ANY of these
+// treats a hook as Orvilo-owned if its content contains ANY of these
 // substrings. The list deliberately includes the legacy comment that the
 // daemon used before patchbayHookMarker existed, so disabling the toggle on
 // existing installations still cleans up old hooks seeded by previous daemon
@@ -1574,7 +1574,7 @@ const patchbayHookMarker = "# patchbay:prepare-commit-msg:co-authored-by"
 // prepareCommitMsgHook keep recognizing every previously-shipped variant.
 var daemonInstalledHookSignatures = []string{
 	patchbayHookMarker,
-	"# Installed by the Patchbay daemon.",
+	"# Installed by the Orvilo daemon.",
 }
 
 // coAuthoredByStateFile records the workspace's current Co-authored-by setting
@@ -1797,7 +1797,7 @@ func (c *Cache) reconcileHookAt(hooksDir, workspaceID string, enabled bool) erro
 }
 
 // prepareCommitMsgHook builds the prepare-commit-msg hook script that appends
-// a Co-authored-by trailer for the Patchbay Agent to every commit message.
+// a Co-authored-by trailer for the Orvilo Agent to every commit message.
 //
 // The script re-reads statePath on every commit instead of trusting its own
 // presence on disk: the hook is installed in the git common directory and
@@ -1825,8 +1825,8 @@ fi
 	}
 	return `#!/bin/sh
 # patchbay:prepare-commit-msg:co-authored-by
-# Patchbay: add Co-authored-by trailer for the Patchbay Agent.
-# Installed by the Patchbay daemon. Do not edit — it will be overwritten.
+# Orvilo: add Co-authored-by trailer for the Orvilo Agent.
+# Installed by the Orvilo daemon. Do not edit — it will be overwritten.
 
 COMMIT_MSG_FILE="$1"
 COMMIT_SOURCE="$2"
@@ -1855,7 +1855,7 @@ func shellSingleQuoted(s string) string {
 }
 
 // installCoAuthoredByHook installs a prepare-commit-msg git hook that appends
-// a Co-authored-by trailer for the Patchbay Agent. The hook is installed in the
+// a Co-authored-by trailer for the Orvilo Agent. The hook is installed in the
 // git common directory (the bare repo for worktrees) so it applies to all
 // worktrees created from this cache.
 //
@@ -1918,7 +1918,7 @@ func writeHookFile(hookPath, contents string) error {
 }
 
 // isDaemonInstalledHook reports whether a prepare-commit-msg hook on disk was
-// installed by the Patchbay daemon (current or any previously released
+// installed by the Orvilo daemon (current or any previously released
 // version). It returns false for hooks that don't carry any known daemon
 // signature, so a user-installed hook at the same path is left alone.
 func isDaemonInstalledHook(contents []byte) bool {

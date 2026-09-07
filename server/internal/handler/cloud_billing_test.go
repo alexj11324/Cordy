@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/cloudruntime"
-	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/cloudruntime"
+	"github.com/orvilo-ai/orvilo/server/internal/featureflags"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // proxyExpectation captures the assertions every standard

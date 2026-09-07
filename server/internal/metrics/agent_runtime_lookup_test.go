@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/metrics"
 	dto "github.com/prometheus/client_model/go"
 )
 

@@ -12,12 +12,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // The database CHECK constraint is deliberately the source of truth for this
@@ -86,10 +86,10 @@ type coordinationEventPayload struct {
 	HandoffNote     string `json:"handoff_note,omitempty"`
 	SourceTaskID    string `json:"source_task_id,omitempty"`
 
-	ExplicitReviewer      bool   `json:"explicit_reviewer,omitempty"`
+	ExplicitReviewer     bool   `json:"explicit_reviewer,omitempty"`
 	ReviewerReassignment bool   `json:"reviewer_reassignment,omitempty"`
-	ReviewerType          string `json:"reviewer_type,omitempty"`
-	ReviewerID            string `json:"reviewer_id,omitempty"`
+	ReviewerType         string `json:"reviewer_type,omitempty"`
+	ReviewerID           string `json:"reviewer_id,omitempty"`
 
 	OriginatorUserID     string `json:"originator_user_id,omitempty"`
 	AccountableUserID    string `json:"accountable_user_id,omitempty"`
@@ -100,16 +100,16 @@ type coordinationEventPayload struct {
 }
 
 type coordinationReviewPublication struct {
-	eventID          pgtype.UUID
-	assignmentID     pgtype.UUID
-	eventLeaseOwner  pgtype.Text
-	publication      string
-	statusChanged    bool
-	reviewerChanged  bool
-	publicationKey   string
-	previous         db.Issue
-	updated          db.Issue
-	activity         db.ActivityLog
+	eventID         pgtype.UUID
+	assignmentID    pgtype.UUID
+	eventLeaseOwner pgtype.Text
+	publication     string
+	statusChanged   bool
+	reviewerChanged bool
+	publicationKey  string
+	previous        db.Issue
+	updated         db.Issue
+	activity        db.ActivityLog
 }
 
 // AgentCoordinationService is the durable producer/consumer for the
@@ -682,9 +682,9 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 				// leave its inert reviewer task behind or select a second reviewer.
 				if candidateID := optionalUUID(coordinationDecisionField(assignment.Decision, "candidate_agent_id")); candidateID.Valid {
 					activeTask, activeErr := qtx.GetActiveCoordinationTask(ctx, db.GetActiveCoordinationTaskParams{
-						WorkspaceID: event.WorkspaceID,
-						IssueID:     event.IssueID,
-						AgentID:     candidateID,
+						WorkspaceID:  event.WorkspaceID,
+						IssueID:      event.IssueID,
+						AgentID:      candidateID,
 						AssignmentID: assignment.ID,
 					})
 					if activeErr == nil && (activeTask.Status == "deferred" || activeTask.Status == "queued") {
@@ -755,14 +755,14 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 			if coordinationText(issue.ExecutorType) == "team" {
 				teamID = issue.ExecutorID
 			}
-				candidate, err := qtx.SelectCoordinationReviewer(ctx, db.SelectCoordinationReviewerParams{
-					WorkspaceID:         issue.WorkspaceID,
-					ReviewerID:          reviewerID,
-					SourceAgentID:       optionalUUID(payload.AgentID),
-					TeamID:              teamID,
-					AssignmentID:        assignment.ID,
-					RuntimeStaleSeconds: coordinationRuntimeStaleAfter.Seconds(),
-				})
+			candidate, err := qtx.SelectCoordinationReviewer(ctx, db.SelectCoordinationReviewerParams{
+				WorkspaceID:         issue.WorkspaceID,
+				ReviewerID:          reviewerID,
+				SourceAgentID:       optionalUUID(payload.AgentID),
+				TeamID:              teamID,
+				AssignmentID:        assignment.ID,
+				RuntimeStaleSeconds: coordinationRuntimeStaleAfter.Seconds(),
+			})
 			if errors.Is(err, pgx.ErrNoRows) {
 				return s.deferClaim(ctx, qtx, event, assignment, "no reviewer with role=reviewer and a bound runtime")
 			}
@@ -787,19 +787,19 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 				"review_handoff", updated, previousIssue.ReviewerType, previousIssue.ReviewerID,
 			)
 			decision, err := json.Marshal(map[string]any{
-				"policy":                         map[bool]string{true: "team_reviewer_role", false: "workspace_reviewer_role"}[teamID.Valid],
-				"role":                           CoordinationAssignmentReviewer,
-				"review_publication":             "review_handoff",
-				"issue_update_publication_key":   publicationKey,
+				"policy":                        map[bool]string{true: "team_reviewer_role", false: "workspace_reviewer_role"}[teamID.Valid],
+				"role":                          CoordinationAssignmentReviewer,
+				"review_publication":            "review_handoff",
+				"issue_update_publication_key":  publicationKey,
 				"assignment_activity_published": false,
-				"candidate_agent_id":             util.UUIDToString(candidate.ID),
-				"candidate_agent_name":           candidate.Name,
-				"explicit_reviewer":              explicitReviewerType != "",
-				"previous_status":                previousIssue.Status,
-				"previous_executor_type":         coordinationText(previousIssue.ExecutorType),
-				"previous_executor_id":           util.UUIDToString(previousIssue.ExecutorID),
-				"previous_reviewer_type":           coordinationText(previousIssue.ReviewerType),
-				"previous_reviewer_id":           util.UUIDToString(previousIssue.ReviewerID),
+				"candidate_agent_id":            util.UUIDToString(candidate.ID),
+				"candidate_agent_name":          candidate.Name,
+				"explicit_reviewer":             explicitReviewerType != "",
+				"previous_status":               previousIssue.Status,
+				"previous_executor_type":        coordinationText(previousIssue.ExecutorType),
+				"previous_executor_id":          util.UUIDToString(previousIssue.ExecutorID),
+				"previous_reviewer_type":        coordinationText(previousIssue.ReviewerType),
+				"previous_reviewer_id":          util.UUIDToString(previousIssue.ReviewerID),
 			})
 			if err != nil {
 				return fmt.Errorf("coordination: encode reviewer decision: %w", err)
@@ -848,16 +848,16 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 			if err != nil {
 				return fmt.Errorf("coordination: record reviewer activity: %w", err)
 			}
-				reviewPublication = &coordinationReviewPublication{
-					eventID:        event.ID,
-					assignmentID:   assignment.ID,
-					eventLeaseOwner: event.LeaseOwner,
-					publication:    "review_handoff",
-					statusChanged:  true,
-					publicationKey: publicationKey,
-				previous:       previousIssue,
-				updated:        updated,
-				activity:       activity,
+			reviewPublication = &coordinationReviewPublication{
+				eventID:         event.ID,
+				assignmentID:    assignment.ID,
+				eventLeaseOwner: event.LeaseOwner,
+				publication:     "review_handoff",
+				statusChanged:   true,
+				publicationKey:  publicationKey,
+				previous:        previousIssue,
+				updated:         updated,
+				activity:        activity,
 			}
 		}
 
@@ -1264,20 +1264,20 @@ func (s *AgentCoordinationService) recoverPersistedReviewerAssignment(
 	}
 	publicationKey := coordinationIssueUpdatePublicationKey("reviewer_replacement", updated, previous.ReviewerType, previous.ReviewerID)
 	decision, err := json.Marshal(map[string]any{
-		"policy":                         "reviewer_recovery_replacement",
-		"role":                           CoordinationAssignmentReviewer,
-		"review_publication":             "reviewer_replacement",
-		"issue_update_publication_key":   publicationKey,
+		"policy":                        "reviewer_recovery_replacement",
+		"role":                          CoordinationAssignmentReviewer,
+		"review_publication":            "reviewer_replacement",
+		"issue_update_publication_key":  publicationKey,
 		"assignment_activity_published": false,
-		"candidate_agent_id":             util.UUIDToString(candidate.ID),
-		"candidate_agent_name":           candidate.Name,
-		"explicit_reviewer":              false,
-		"previous_status":                previous.Status,
-		"previous_executor_type":         coordinationText(previous.ExecutorType),
-		"previous_executor_id":           util.UUIDToString(previous.ExecutorID),
-		"previous_reviewer_type":          coordinationText(previous.ReviewerType),
-		"previous_reviewer_id":            util.UUIDToString(previous.ReviewerID),
-		"source_agent_id":                payload.AgentID,
+		"candidate_agent_id":            util.UUIDToString(candidate.ID),
+		"candidate_agent_name":          candidate.Name,
+		"explicit_reviewer":             false,
+		"previous_status":               previous.Status,
+		"previous_executor_type":        coordinationText(previous.ExecutorType),
+		"previous_executor_id":          util.UUIDToString(previous.ExecutorID),
+		"previous_reviewer_type":        coordinationText(previous.ReviewerType),
+		"previous_reviewer_id":          util.UUIDToString(previous.ReviewerID),
+		"source_agent_id":               payload.AgentID,
 	})
 	if err != nil {
 		return false, nil, "", fmt.Errorf("coordination: encode reviewer replacement: %w", err)
@@ -1426,25 +1426,25 @@ func (s *AgentCoordinationService) publishCoordinationReviewHandoff(ctx context.
 	workspaceID := util.UUIDToString(publication.updated.WorkspaceID)
 	issuePayload := IssueToMapResolved(ctx, s.Tasks.Queries, publication.updated, s.Tasks.getIssuePrefix(publication.updated.WorkspaceID))
 	payload := map[string]any{
-		"issue":                         issuePayload,
-		"executor_changed":              false,
-		"status_changed":                publication.statusChanged,
-		"review_handoff":                publication.publication == "review_handoff",
-		"reviewer_changed":              publication.reviewerChanged,
-		"coordination_publication":      publication.publication,
-		"coordination_publication_key":  publication.publicationKey,
-		"coordination_event_id":         util.UUIDToString(publication.eventID),
-		"priority_changed":              false,
-		"project_changed":               false,
-		"start_date_changed":            false,
-		"due_date_changed":              false,
-		"description_changed":           false,
-		"title_changed":                 false,
-		"prev_status":                   publication.previous.Status,
-		"prev_executor_type":            util.TextToPtr(publication.previous.ExecutorType),
-		"prev_executor_id":              util.UUIDToPtr(publication.previous.ExecutorID),
-		"prev_reviewer_type":            util.TextToPtr(publication.previous.ReviewerType),
-		"prev_reviewer_id":              util.UUIDToPtr(publication.previous.ReviewerID),
+		"issue":                        issuePayload,
+		"executor_changed":             false,
+		"status_changed":               publication.statusChanged,
+		"review_handoff":               publication.publication == "review_handoff",
+		"reviewer_changed":             publication.reviewerChanged,
+		"coordination_publication":     publication.publication,
+		"coordination_publication_key": publication.publicationKey,
+		"coordination_event_id":        util.UUIDToString(publication.eventID),
+		"priority_changed":             false,
+		"project_changed":              false,
+		"start_date_changed":           false,
+		"due_date_changed":             false,
+		"description_changed":          false,
+		"title_changed":                false,
+		"prev_status":                  publication.previous.Status,
+		"prev_executor_type":           util.TextToPtr(publication.previous.ExecutorType),
+		"prev_executor_id":             util.UUIDToPtr(publication.previous.ExecutorID),
+		"prev_reviewer_type":           util.TextToPtr(publication.previous.ReviewerType),
+		"prev_reviewer_id":             util.UUIDToPtr(publication.previous.ReviewerID),
 	}
 	s.Tasks.Bus.Publish(events.Event{
 		Type:        protocol.EventIssueUpdated,
@@ -1486,17 +1486,17 @@ func (s *AgentCoordinationService) publishCoordinationReviewHandoff(ctx context.
 func (s *AgentCoordinationService) publishAndFinalizeCoordinationReviewDispatch(ctx context.Context, publication coordinationReviewPublication) error {
 	return s.runInTx(ctx, func(qtx *db.Queries) error {
 		currentIssue, err := qtx.LockAgentCoordinationIssueForUpdate(ctx, db.LockAgentCoordinationIssueForUpdateParams{
-			IssueID: publication.updated.ID,
+			IssueID:     publication.updated.ID,
 			WorkspaceID: publication.updated.WorkspaceID,
 		})
 		if err != nil {
 			return fmt.Errorf("coordination: revalidate review issue: %w", err)
 		}
 		assignment, err := qtx.GetAgentCoordinationAssignmentForLease(ctx, db.GetAgentCoordinationAssignmentForLeaseParams{
-			EventID:      publication.eventID,
-			WorkspaceID:  publication.updated.WorkspaceID,
-			IssueID:      publication.updated.ID,
-			LeaseOwner:   publication.eventLeaseOwner,
+			EventID:     publication.eventID,
+			WorkspaceID: publication.updated.WorkspaceID,
+			IssueID:     publication.updated.ID,
+			LeaseOwner:  publication.eventLeaseOwner,
 		})
 		if err != nil {
 			return fmt.Errorf("coordination: reload review assignment: %w", err)
@@ -1542,7 +1542,7 @@ func (s *AgentCoordinationService) publishAndFinalizeCoordinationReviewDispatch(
 			return fmt.Errorf("coordination: promote review task: %w", err)
 		}
 		decision, err := json.Marshal(map[string]any{
-			"issue_update_published_key":   publication.publicationKey,
+			"issue_update_published_key":    publication.publicationKey,
 			"assignment_activity_published": true,
 			"task_id":                       util.UUIDToString(task.ID),
 		})

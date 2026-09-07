@@ -2,8 +2,8 @@ import { act, type ReactNode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { WORKSPACE_PAGES } from "@patchbay/core/paths";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import { WORKSPACE_PAGES } from "@orvilo/core/paths";
 import { SearchCommand } from "./search-command";
 import { useSearchStore } from "./search-store";
 import enCommon from "../locales/en/common.json";
@@ -131,7 +131,7 @@ const {
   mockResolvedExpandAll: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
     searchIssues: mockSearchIssues,
@@ -164,7 +164,7 @@ vi.mock("../common/actor-avatar", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/issues/stores", () => {
+vi.mock("@orvilo/core/issues/stores", () => {
   const EMPTY: Array<{ id: string; visitedAt: number }> = [];
   return {
     useRecentIssuesStore: (
@@ -196,14 +196,14 @@ vi.mock("@patchbay/core/issues/stores", () => {
   };
 });
 
-vi.mock("@patchbay/core", () => ({
+vi.mock("@orvilo/core", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@patchbay/core/paths", async (importOriginal) => ({
+vi.mock("@orvilo/core/paths", async (importOriginal) => ({
   // Spread the real module so pure helpers (resolveRouteIconName, used to
   // derive each nav page's icon from its href) stay intact.
-  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
+  ...(await importOriginal<typeof import("@orvilo/core/paths")>()),
   useWorkspacePaths: () => ({
     inbox: () => "/ws-test/inbox",
     chat: () => "/ws-test/chat",
@@ -228,7 +228,7 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
   }),
 }));
 
-vi.mock("@patchbay/core/issues/queries", () => ({
+vi.mock("@orvilo/core/issues/queries", () => ({
   issueDetailOptions: (_wsId: string, id: string) => ({
     queryKey: ["issues", "ws-test", "detail", id],
   }),
@@ -237,13 +237,13 @@ vi.mock("@patchbay/core/issues/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["workspaces", "ws-test", "members"] }),
   agentListOptions: () => ({ queryKey: ["workspaces", "ws-test", "agents"] }),
   teamListOptions: () => ({ queryKey: ["workspaces", "ws-test", "teams"] }),
 }));
 
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@orvilo/core/modals", () => ({
   useModalStore: Object.assign(vi.fn(), {
     getState: () => ({ open: mockOpenModal }),
   }),
@@ -298,7 +298,7 @@ vi.mock("../navigation/context", () => {
   };
 });
 
-vi.mock("@patchbay/ui/components/common/theme-provider", () => ({
+vi.mock("@orvilo/ui/components/common/theme-provider", () => ({
   useTheme: () => ({ theme: mockTheme.current, setTheme: mockSetTheme }),
 }));
 

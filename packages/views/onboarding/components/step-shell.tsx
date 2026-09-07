@@ -1,10 +1,10 @@
 "use client";
 
 import { useRef, type ReactNode } from "react";
-import { cn } from "@patchbay/ui/lib/utils";
-import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
-import { DragStrip } from "@patchbay/views/platform";
-import type { OnboardingStep } from "@patchbay/core/onboarding";
+import { cn } from "@orvilo/ui/lib/utils";
+import { useScrollFade } from "@orvilo/ui/hooks/use-scroll-fade";
+import { DragStrip } from "@orvilo/views/platform";
+import type { OnboardingStep } from "@orvilo/core/onboarding";
 import { StepProgressBar, StepSidebar } from "./step-sidebar";
 
 /**

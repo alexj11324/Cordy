@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSkills from "../../locales/en/skills.json";
 
@@ -13,20 +13,20 @@ const mockImportSkillArchive = vi.hoisted(() => vi.fn());
 const mockPrepareFromPicker = vi.hoisted(() => vi.fn());
 const mockWrap = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     importSkillArchive: (...args: unknown[]) => mockImportSkillArchive(...args),
   },
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/skills", async () => {
+vi.mock("@orvilo/core/skills", async () => {
   const actual = await vi.importActual<
-    typeof import("@patchbay/core/skills")
-  >("@patchbay/core/skills");
+    typeof import("@orvilo/core/skills")
+  >("@orvilo/core/skills");
   return {
     ...actual,
     prepareSkillArchiveFromPickerFiles: (...args: unknown[]) =>

@@ -1,11 +1,11 @@
 ---
 title: 開発に参加する
-description: Patchbay のローカル開発環境を構築し、テストを実行して、リポジトリの規約に従って変更を提出します。
+description: Orvilo のローカル開発環境を構築し、テストを実行して、リポジトリの規約に従って変更を提出します。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay は Go バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `make dev` です。現在の checkout 用に環境、データベース、migration を準備し、Web と API を起動します。
+Orvilo は Go バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `make dev` です。現在の checkout 用に環境、データベース、migration を準備し、Web と API を起動します。
 
 ## 必要な環境
 
@@ -20,7 +20,7 @@ Patchbay は Go バックエンドと pnpm monorepo で構成されています�
 ## 初回起動
 
 ```bash
-git clone https://github.com/patchbay-ai/patchbay.git
+git clone https://github.com/alexj11324/Cordy.git
 cd patchbay
 make up C=desktop   # 依存関係のインストール、データベース準備、バックエンドと Electron の起動
 make seed-dev       # 任意: サンプル issue を dev-fixtures ワークスペースに投入
@@ -36,7 +36,7 @@ make seed-dev       # 任意: サンプル issue を dev-fixtures ワークス�
 
 `make dev-login` が使えるのは、`make up` がローカルの env ファイルに `ORVILO_DEV_LOGIN=1` を書き込むためです — [サインインとサインアップ](/auth-setup#開発環境でログイン画面を省く)を参照。公開インスタンスでは絶対に有効化せず、ローカルの `.env` を公開デプロイに使わないでください。
 
-環境、worktree、テストの階層、トラブルシューティング、破壊的リセットまで含む完全な貢献ガイドは、リポジトリの [CONTRIBUTING.md](https://github.com/patchbay-ai/patchbay/blob/main/CONTRIBUTING.md) です。このページは短縮版です。
+環境、worktree、テストの階層、トラブルシューティング、破壊的リセットまで含む完全な貢献ガイドは、リポジトリの [CONTRIBUTING.md](https://github.com/alexj11324/Cordy/blob/main/CONTRIBUTING.md) です。このページは短縮版です。
 
 ## worktree での開発
 
@@ -150,7 +150,7 @@ Migration は `server/migrations/`、クエリは `server/pkg/db/queries/` に�
 まず変更に最も近いチェックを実行し、その後に範囲を広げます。Docs だけの変更例:
 
 ```bash
-pnpm --filter @patchbay/docs typecheck
+pnpm --filter @orvilo/docs typecheck
 ```
 
 共有フロントエンドの変更:

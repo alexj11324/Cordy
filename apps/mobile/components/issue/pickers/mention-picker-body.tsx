@@ -29,7 +29,7 @@ import type {
   Issue,
   MemberWithUser,
   Team,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { StatusIcon } from "@/components/ui/status-icon";

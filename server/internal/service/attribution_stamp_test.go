@@ -9,10 +9,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/patchbay-ai/patchbay/server/internal/attribution"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/attribution"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // seedAttributionFixture creates the minimal user/workspace/member/runtime/agent
@@ -559,7 +559,7 @@ func TestTriggerOwnerAttribution_TransfersToSubstantiveEditor(t *testing.T) {
 	// C makes an automation-level substantive edit — the SAME bump-all query
 	// UpdateAutomation runs — which governs every trigger of the automation.
 	if err := q.SetAutomationTriggerPublishersByAutomation(ctx, db.SetAutomationTriggerPublishersByAutomationParams{
-		AutomationID:     util.MustParseUUID(automationID),
+		AutomationID:    util.MustParseUUID(automationID),
 		PublishedByType: pgtype.Text{String: "member", Valid: true},
 		PublishedByID:   util.MustParseUUID(editorC),
 	}); err != nil {

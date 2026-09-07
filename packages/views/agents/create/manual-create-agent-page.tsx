@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
-import { agentListOptions } from "@patchbay/core/workspace/queries";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { runtimeDisplayLabel } from "@orvilo/core/runtimes";
+import { agentListOptions } from "@orvilo/core/workspace/queries";
 import { useBackOrReplace, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { AgentConfigurationPanel } from "./agent-configuration-panel";

@@ -12,7 +12,7 @@ import type {
   DependencyGraphEdge,
   DependencyGraphNode,
   DependencyGraphResponse,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { dependencyGraphsOptions } from "@/data/queries/dependency-graphs";

@@ -51,8 +51,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // TypeWecom is the channel discriminator for the WeCom smart-bot adapter.
@@ -68,8 +68,8 @@ const channelTypeWecom = string(TypeWecom)
 type InstallationStatus string
 
 const (
-	InstallationInstalled  InstallationStatus = "installed"
-	InstallationRevoked InstallationStatus = "revoked"
+	InstallationInstalled InstallationStatus = "installed"
+	InstallationRevoked   InstallationStatus = "revoked"
 )
 
 // Installation is the decoded, in-memory view of a WeCom smart-bot
@@ -96,7 +96,7 @@ type Installation struct {
 	SecretEncrypted []byte
 
 	// BotDisplayName is what the bot is called in a chat. A WeCom group
-	// mention arrives as literal text — "@Patchbay Bot /new 重新分析" — with no
+	// mention arrives as literal text — "@Orvilo Bot /new 重新分析" — with no
 	// structured mention list anywhere in the payload, so recognising where
 	// the mention ends is the only way a name containing a space does not
 	// swallow the command after it.

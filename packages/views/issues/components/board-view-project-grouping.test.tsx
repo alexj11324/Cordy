@@ -10,18 +10,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
-import { getIssueSurfaceViewStore } from "@patchbay/core/issues/stores/surface-view-store";
-import type { Issue, Project } from "@patchbay/core/types";
+import { ViewStoreProvider } from "@orvilo/core/issues/stores/view-store-context";
+import { getIssueSurfaceViewStore } from "@orvilo/core/issues/stores/surface-view-store";
+import type { Issue, Project } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueContextMenuProvider } from "../actions/issue-actions-context-menu";
 import type { IssueGroupBranches } from "../surface/use-issue-group-branches";
 import { BoardView } from "./board-view";
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
 
-vi.mock("@patchbay/core/properties", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@patchbay/core/properties")>()),
+vi.mock("@orvilo/core/properties", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@orvilo/core/properties")>()),
   propertyListOptions: () => ({
     queryKey: ["properties"],
     queryFn: async () => [],
@@ -30,26 +30,26 @@ vi.mock("@patchbay/core/properties", async (importOriginal) => ({
   useUnsetIssueProperty: () => ({ mutate: () => {} }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@patchbay/core/workspace/hooks")>()),
+vi.mock("@orvilo/core/workspace/hooks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@orvilo/core/workspace/hooks")>()),
   useActorName: () => ({ getActorName: () => "Someone" }),
 }));
 
-vi.mock("@patchbay/core/auth", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@patchbay/core/auth")>()),
+vi.mock("@orvilo/core/auth", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@orvilo/core/auth")>()),
   useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
     selector({ user: { id: "viewer-1" } }),
 }));
 
-vi.mock("@patchbay/core/agents", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@patchbay/core/agents")>()),
+vi.mock("@orvilo/core/agents", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@orvilo/core/agents")>()),
   isAgentRuntimeBound: () => true,
   useAgentPresenceDetail: () => ({ availability: "offline", workload: null }),
 }));
 
-vi.mock("@patchbay/core/paths", async (importOriginal) => {
+vi.mock("@orvilo/core/paths", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("@patchbay/core/paths")>();
+    await importOriginal<typeof import("@orvilo/core/paths")>();
   return {
     ...actual,
     useCurrentWorkspace: () => ({ id: "ws-1", slug: "acme" }),

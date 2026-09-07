@@ -1,6 +1,6 @@
 "use client";
 
-import type { AgentRuntime } from "@patchbay/core/types";
+import type { AgentRuntime } from "@orvilo/core/types";
 import { ModelDropdown } from "../../agents/components/model-dropdown";
 import { RuntimePicker } from "../../agents/components/runtime-picker";
 import { CompactRuntimeRow } from "./compact-runtime-row";

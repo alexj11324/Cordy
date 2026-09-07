@@ -15,8 +15,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/patchbay-ai/patchbay/server/internal/migrations"
-	"github.com/patchbay-ai/patchbay/server/internal/taskusagebackfill"
+	"github.com/orvilo-ai/orvilo/server/internal/migrations"
+	"github.com/orvilo-ai/orvilo/server/internal/taskusagebackfill"
 )
 
 // TestHook_DirectV034Upgrade simulates the path described in

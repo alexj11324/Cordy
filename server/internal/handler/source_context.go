@@ -15,14 +15,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	agentpkg "github.com/patchbay-ai/patchbay/server/pkg/agent"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	agentpkg "github.com/orvilo-ai/orvilo/server/pkg/agent"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 type sourceContextStreamUploader interface {
@@ -728,9 +728,9 @@ func (h *Handler) createManualCommentSubIssue(w http.ResponseWriter, r *http.Req
 
 type preparedAgentCommentSubIssue struct {
 	agentID, teamID, runtimeID pgtype.UUID
-	prompt, priority, dueDate   string
-	projectID                   pgtype.UUID
-	attachmentIDs               []pgtype.UUID
+	prompt, priority, dueDate  string
+	projectID                  pgtype.UUID
+	attachmentIDs              []pgtype.UUID
 }
 
 func (h *Handler) prepareAgentCommentSubIssue(w http.ResponseWriter, r *http.Request, workspaceID pgtype.UUID, input QuickCreateIssueRequest) (*preparedAgentCommentSubIssue, error) {

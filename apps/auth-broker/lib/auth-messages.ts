@@ -1,6 +1,6 @@
 "use client";
 import { createContext, createElement, useContext, type ReactNode } from "react";
-import { authMessages, type AuthMessages } from '@patchbay/auth-ui/messages';
+import { authMessages, type AuthMessages } from '@orvilo/auth-ui/messages';
 import { type AuthLocale } from './auth-locale';
 type Messages = AuthMessages;
 const locales = authMessages;

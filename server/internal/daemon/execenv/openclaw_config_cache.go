@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/cli"
+	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
 // OpenClaw config discovery costs two serial CLI round-trips per task

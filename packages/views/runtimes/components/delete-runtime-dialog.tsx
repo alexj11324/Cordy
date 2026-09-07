@@ -4,28 +4,28 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Globe, Info, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import { ApiError } from "@patchbay/core/api";
-import type { Agent, AgentRuntime, MemberWithUser } from "@patchbay/core/types";
-import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
+import { ApiError } from "@orvilo/core/api";
+import type { Agent, AgentRuntime, MemberWithUser } from "@orvilo/core/types";
+import { runtimeDisplayLabel } from "@orvilo/core/runtimes";
 import {
   useDeleteRuntime,
   useUnbindAgentsAndDeleteRuntime,
-} from "@patchbay/core/runtimes/mutations";
+} from "@orvilo/core/runtimes/mutations";
 import {
   agentListOptions,
   memberListOptions,
-} from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/workspace/queries";
 import {
   type AgentPresenceDetail,
   useWorkspacePresenceMap,
-} from "@patchbay/core/agents";
-import { useAuthStore } from "@patchbay/core/auth";
+} from "@orvilo/core/agents";
+import { useAuthStore } from "@orvilo/core/auth";
 import {
   AlertDialog,
   AlertDialogContent,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { availabilityConfig, workloadConfig } from "../../agents/presence";
 import { useT } from "../../i18n";

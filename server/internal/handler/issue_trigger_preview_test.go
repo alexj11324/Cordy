@@ -102,10 +102,10 @@ func TestPreviewIssueTrigger_CreateAgentVsBacklog(t *testing.T) {
 // previews a run.
 func TestPreviewIssueTrigger_MemberNoTrigger(t *testing.T) {
 	resp := previewIssueTrigger(t, map[string]any{
-		"is_create":     true,
+		"is_create":  true,
 		"owner_type": "member",
 		"owner_id":   testUserID,
-		"status":        "todo",
+		"status":     "todo",
 	})
 	if resp.TotalCount != 0 {
 		t.Fatalf("member owner: expected 0 triggers, got %+v", resp)

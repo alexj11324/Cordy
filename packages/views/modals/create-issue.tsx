@@ -1,6 +1,6 @@
 "use client";
 
-import { issueStatusCategory } from "@patchbay/core/issues";
+import { issueStatusCategory } from "@orvilo/core/issues";
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppLink, resolveClickIntent, useNavigation } from "../navigation";
@@ -23,7 +23,7 @@ import {
   Tag,
   X as XIcon,
 } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 import { toast } from "sonner";
 import type {
   Issue,
@@ -33,12 +33,12 @@ import type {
   IssueReviewerType,
   IssuePropertyValue,
   SourceContextPreview,
-} from "@patchbay/core/types";
-import { contentReferencesAttachment } from "@patchbay/core/types";
+} from "@orvilo/core/types";
+import { contentReferencesAttachment } from "@orvilo/core/types";
 import {
   DialogContent,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,47 +48,47 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@patchbay/ui/components/ui/tooltip";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@orvilo/ui/components/ui/tooltip";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useUploadGate, useComposerSubmit } from "../editor";
 import { useIssueCreateUploads } from "./use-issue-create-uploads";
-import { useShortcut } from "@patchbay/core/shortcuts";
+import { useShortcut } from "@orvilo/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { StatusIcon, StatusPicker, PriorityIcon, PriorityPicker, StagePicker, OwnerPicker, ExecutorPicker, ReviewerPicker, StartDatePicker, DueDatePicker, LabelPicker } from "../issues/components";
 import { maxSiblingStage } from "../issues/components/pickers/stage-picker";
 import { ProjectPicker } from "../projects/components/project-picker";
 import { useIssueTriggerPreview } from "../issues/hooks/use-issue-trigger-preview";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { useIssueDraftStore, type IssueCreateDraft } from "@patchbay/core/issues/stores/draft-store";
-import { useCreateModeStore } from "@patchbay/core/issues/stores/create-mode-store";
-import { useQuickCreateStore } from "@patchbay/core/issues/stores/quick-create-store";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { useCurrentWorkspace, useWorkspacePaths } from "@orvilo/core/paths";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
+import { useIssueDraftStore, type IssueCreateDraft } from "@orvilo/core/issues/stores/draft-store";
+import { useCreateModeStore } from "@orvilo/core/issues/stores/create-mode-store";
+import { useQuickCreateStore } from "@orvilo/core/issues/stores/quick-create-store";
 import {
   useIssueCreateSettingsStore,
   type ManualCreateField,
-} from "@patchbay/core/issues/stores/issue-create-settings-store";
-import { issueDetailOptions, childIssuesOptions } from "@patchbay/core/issues/queries";
+} from "@orvilo/core/issues/stores/issue-create-settings-store";
+import { issueDetailOptions, childIssuesOptions } from "@orvilo/core/issues/queries";
 import {
   useCreateCommentSubIssue,
   useCreateIssue,
   useUpdateIssue,
-} from "@patchbay/core/issues/mutations";
-import { useAttachLabelToIssue } from "@patchbay/core/labels";
+} from "@orvilo/core/issues/mutations";
+import { useAttachLabelToIssue } from "@orvilo/core/labels";
 import {
   propertyListOptions,
   useSetIssueProperty,
-} from "@patchbay/core/properties";
+} from "@orvilo/core/properties";
 import {
   ApiError,
   DuplicateIssueErrorBodySchema,
   type DuplicateIssueErrorBody,
   parseWithFallback,
-} from "@patchbay/core/api";
-import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
+} from "@orvilo/core/api";
+import { FileUploadButton } from "@orvilo/ui/components/common/file-upload-button";
 import { ClearablePillButton, PillButton } from "../common/pill-button";
 import { ActorAvatar } from "../common/actor-avatar";
 import { PropertyIcon } from "../common/property-icon";
@@ -100,7 +100,7 @@ import { IssuePickerModal } from "./issue-picker-modal";
 import { useT } from "../i18n";
 import { SourceContextPreviewCard, useSourceContextFailureMessage } from "./source-context-preview";
 import { useIssueLimitUpgradePrompt } from "./use-issue-limit-upgrade-prompt";
-import { useAuthStore } from "@patchbay/core/auth";
+import { useAuthStore } from "@orvilo/core/auth";
 
 // ---------------------------------------------------------------------------
 // ManualCreatePanel — manual-mode body of the create-issue dialog. Renders
@@ -1558,7 +1558,7 @@ export function manualDialogContentClass(isExpanded: boolean) {
 // shell's shared Dialog, but a few legacy callers (and the test suite) still
 // import this module's modal version. Equivalent runtime behavior to the
 // pre-refactor component when used standalone.
-import { Dialog as DialogRoot } from "@patchbay/ui/components/ui/dialog";
+import { Dialog as DialogRoot } from "@orvilo/ui/components/ui/dialog";
 export function CreateIssueModal(props: {
   onClose: () => void;
   data?: Record<string, unknown> | null;

@@ -9,9 +9,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 type fakeReplySender struct {
@@ -59,7 +59,7 @@ func testResolvedInstallation(t *testing.T) engine.ResolvedInstallation {
 		ID:          mustUUID(t, "44444444-4444-4444-4444-444444444444"),
 		WorkspaceID: mustUUID(t, "11111111-1111-1111-1111-111111111111"),
 		AgentID:     mustUUID(t, "22222222-2222-2222-2222-222222222222"),
-		Installed:      true,
+		Installed:   true,
 		Platform:    db.ChannelInstallation{Config: []byte(replierConfigJSON)},
 	}
 }

@@ -9,10 +9,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
 )
 
 // Slack resolvers connect the channel-agnostic inbound pipeline to Slack
@@ -171,7 +171,7 @@ func (r *installationResolver) ResolveInstallation(ctx context.Context, msg chan
 		WorkspaceID:     inst.WorkspaceID,
 		AgentID:         inst.AgentID,
 		InstallerUserID: inst.InstallerUserID,
-		Installed:          inst.Status == "installed",
+		Installed:       inst.Status == "installed",
 		Platform:        inst,
 	}, nil
 }
@@ -237,7 +237,7 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 		// first message that already wrote it returns the same row.
 		if _, err := r.q.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
 			WorkspaceID:    inst.WorkspaceID,
-			PatchbayUserID:  binding.PatchbayUserID,
+			PatchbayUserID: binding.PatchbayUserID,
 			InstallationID: inst.ID,
 			ChannelType:    string(TypeSlack),
 			ChannelUserID:  senderID,

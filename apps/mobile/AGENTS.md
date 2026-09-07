@@ -14,7 +14,7 @@ web and desktop clients:
   inspect the relevant `packages/core/<feature>/` and
   `packages/views/<feature>/` code. Look specifically for display transforms
   such as deduplication, coalescing, filtering, and grouping.
-- Reuse pure functions and types from `@patchbay/core`. Mobile owns
+- Reuse pure functions and types from `@orvilo/core`. Mobile owns
   platform-specific rendering, navigation, query keys, and cache shapes.
 - Document intentional UI divergence at the implementation boundary so a
   maintainer can find the shared semantic source.
@@ -60,7 +60,7 @@ UI primitives or migration-owned components.
   state synchronously before awaiting cancellation. Unpredictable create/delete
   results wait for the server.
 
-Event types are defined in `@patchbay/core/types/events.ts`. Inspect the
+Event types are defined in `@orvilo/core/types/events.ts`. Inspect the
 matching web updater for semantic coverage, then implement against mobile's own
 cache shapes.
 

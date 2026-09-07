@@ -27,8 +27,8 @@
  */
 
 import { Download, ExternalLink, Maximize2, Trash2 } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
-import { paths, useWorkspaceSlug } from "@patchbay/core/paths";
+import { cn } from "@orvilo/ui/lib/utils";
+import { paths, useWorkspaceSlug } from "@orvilo/core/paths";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 import { useAttachmentHtmlText } from "./hooks/use-attachment-html-text";

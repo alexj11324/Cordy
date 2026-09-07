@@ -2,7 +2,7 @@ import type {
   PurchaseWorkspaceSeatsResponse,
   WorkspaceSeatPurchasePreview,
   WorkspaceSubscriptionSummary,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 
 export type SeatInvitationCapacityFailure =
   | "full"

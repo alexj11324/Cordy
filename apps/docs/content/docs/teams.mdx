@@ -5,7 +5,7 @@ description: A leader coordinates multiple agents or members and hands work to t
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-A team consists of one leader agent and any number of members. Assigning an issue to a team does not run every agent at once. Patchbay wakes the leader first; it reads the context and decides who takes the next step.
+A team consists of one leader agent and any number of members. Assigning an issue to a team does not run every agent at once. Orvilo wakes the leader first; it reads the context and decides who takes the next step.
 
 Teams solve the question of who the work goes to. They don't merge multiple agents into a new agent, and they don't automatically raise concurrency.
 
@@ -28,10 +28,10 @@ Creating a team requires a name and a leader. The team leader automatically beco
 
 ## Execution flow after setting a team executor
 
-When a non-Backlog issue has a team executor, Patchbay immediately enqueues a `task` for the **leader agent** (not for every member). The flow then looks like this:
+When a non-Backlog issue has a team executor, Orvilo immediately enqueues a `task` for the **leader agent** (not for every member). The flow then looks like this:
 
 1. **Leader claims the task.** The agent runtime picks up the task on its next poll, same as any other executor run.
-2. **Leader is briefed.** On claim, Patchbay appends three sections to the leader's system prompt — see [What the leader sees on every turn](#what-the-leader-sees-on-every-turn) below.
+2. **Leader is briefed.** On claim, Orvilo appends three sections to the leader's system prompt — see [What the leader sees on every turn](#what-the-leader-sees-on-every-turn) below.
 3. **Leader posts one delegation comment.** The comment `@`-mentions the chosen member(s) using the exact mention markdown from the roster — that mention triggers a new `task` for each mentioned agent.
 4. **Leader records its evaluation** via `patchbay team activity <issue-id> action --reason "..."`. This writes an entry to the issue's activity timeline so humans can see the leader actually evaluated the trigger.
 5. **The dispatch turn leaves the parent `in_progress`.** Same agent-managed status contract as a direct executor run — coordinating the team is working the parent's ask, so the parent moves from `todo` to `in_progress`, and dispatching members is not delivery, so it stays there while the team works.
@@ -74,7 +74,7 @@ Dedup applies on top of these rules: if the leader already has a `queued` or `di
 | **Set a team as an issue executor** | Yes | The team becomes the executor and the leader is triggered. |
 | **@-mention a team in a comment** | No | The leader handles that comment only; the current executor is unchanged. |
 
-@-mentioning a specific member directly hands the work to that member. Patchbay also dedupes repeated triggers and prevents the leader's comments from re-triggering itself, avoiding execution loops.
+@-mentioning a specific member directly hands the work to that member. Orvilo also dedupes repeated triggers and prevents the leader's comments from re-triggering itself, avoiding execution loops.
 
 ## Teams and Access
 

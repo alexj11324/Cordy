@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Board, list and swimlane columns are CATEGORIES, not status keys (MUL-6243).

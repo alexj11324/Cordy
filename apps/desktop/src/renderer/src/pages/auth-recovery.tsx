@@ -1,8 +1,8 @@
-import { useAuthStore } from "@patchbay/core/auth";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { useT } from "@patchbay/views/i18n";
-import { DragStrip } from "@patchbay/views/platform";
+import { useAuthStore } from "@orvilo/core/auth";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { OrviloIcon } from "@orvilo/ui/components/common/orvilo-icon";
+import { useT } from "@orvilo/views/i18n";
+import { DragStrip } from "@orvilo/views/platform";
 
 export function DesktopAuthRecoveryPage({
   onRetry,
@@ -21,7 +21,7 @@ export function DesktopAuthRecoveryPage({
       <DragStrip />
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="flex max-w-sm flex-col items-center text-center">
-          <PatchbayIcon bordered size="lg" />
+          <OrviloIcon bordered size="lg" />
           <h1 className="mt-6 text-title font-semibold">
             {t(($) => $.desktop.recovery.title)}
           </h1>

@@ -14,7 +14,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: state.replace }),
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (
     selector: (auth: {
       user: typeof state.user;
@@ -23,14 +23,14 @@ vi.mock("@patchbay/core/auth", () => ({
   ) => selector({ user: state.user, isLoading: state.isLoading }),
 }));
 
-vi.mock("@patchbay/core/workspace", () => ({
+vi.mock("@orvilo/core/workspace", () => ({
   useWorkspaceList: () => ({
     workspaces: state.workspaces,
     ready: state.ready,
   }),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   paths: { login: () => "/login" },
   useHasOnboarded: () => state.hasOnboarded,
   resolvePostAuthDestination: (

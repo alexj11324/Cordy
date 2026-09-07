@@ -14,7 +14,7 @@ Orvilo 是一个开源的团队工作区。你像给同事派活一样，把任�
 [![GitHub stars](https://img.shields.io/github/stars/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
 
-[Web 应用](https://patchbay.aspectlylabs.com) · [文档](https://patchbay.aspectlylabs.com/docs) · [快速开始](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [下载](https://github.com/alexj11324/Cordy/releases/latest) · [自部署](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/PatchbayAI)
+[Web 应用](https://patchbay.aspectlylabs.com) · [文档](https://patchbay.aspectlylabs.com/docs) · [快速开始](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [下载](https://github.com/alexj11324/Cordy/releases/latest) · [自部署](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/OrviloAI)
 
 **[English](README.md) | 简体中文**
 
@@ -248,6 +248,6 @@ iOS 客户端在 [`apps/mobile/`](apps/mobile/)，怎么编译装到自己 iPhon
 
 ## 开源协议
 
-[Patchbay License](LICENSE) —— Apache License 2.0 全文并入，外加针对托管服务、商业嵌入和品牌标识的
+[Orvilo License](LICENSE) —— Apache License 2.0 全文并入，外加针对托管服务、商业嵌入和品牌标识的
 附加条件。自部署、改代码、在它之上做东西都可以；准确条款以 [LICENSE](LICENSE) 为准，署名信息见
 [NOTICE](NOTICE)。

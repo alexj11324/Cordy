@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/handler"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/handler"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // notificationTest helpers — reuse the integration test fixtures from TestMain
@@ -741,22 +741,22 @@ func TestNotification_ReviewHandoffRequestsReview(t *testing.T) {
 		ActorID:     testUserID,
 		Payload: map[string]any{
 			"issue": map[string]any{
-				"id": issueID,
-				"workspace_id": testWorkspaceID,
-				"title": "review handoff issue",
-				"status": "in_review",
-				"priority": "medium",
-				"creator_type": "member",
-				"creator_id": testUserID,
+				"id":            issueID,
+				"workspace_id":  testWorkspaceID,
+				"title":         "review handoff issue",
+				"status":        "in_review",
+				"priority":      "medium",
+				"creator_type":  "member",
+				"creator_id":    testUserID,
 				"reviewer_type": &reviewerType,
 				"reviewer_id":   &reviewerID,
 			},
 			"coordination_event_id": "00000000-0000-0000-0000-000000000001",
-			"owner_changed":    false,
-			"executor_changed": false,
-			"reviewer_changed": true,
-			"review_handoff":   true,
-			"status_changed":   false,
+			"owner_changed":         false,
+			"executor_changed":      false,
+			"reviewer_changed":      true,
+			"review_handoff":        true,
+			"status_changed":        false,
 		},
 	})
 

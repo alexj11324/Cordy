@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { Bot, Users } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   AVATAR_SIZE_PX,
   DEFAULT_AVATAR_SIZE,
   type AvatarSize,
-} from "@patchbay/ui/lib/avatar-size";
-import { parseAvatarEmoji } from "@patchbay/ui/lib/avatar-emoji";
-import { PatchbayIcon } from "./patchbay-icon";
+} from "@orvilo/ui/lib/avatar-size";
+import { parseAvatarEmoji } from "@orvilo/ui/lib/avatar-emoji";
+import { OrviloIcon } from "./orvilo-icon";
 
 interface ActorAvatarProps {
   name: string;
@@ -73,7 +73,7 @@ function ActorAvatar({
           onError={() => setImgError(true)}
         />
       ) : isSystem ? (
-        <PatchbayIcon noSpin style={{ width: px * 0.55, height: px * 0.55 }} />
+        <OrviloIcon noSpin style={{ width: px * 0.55, height: px * 0.55 }} />
       ) : isAgent ? (
         <Bot style={{ width: px * 0.55, height: px * 0.55 }} />
       ) : isTeam ? (

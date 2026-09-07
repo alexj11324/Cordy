@@ -7,14 +7,14 @@ import type {
   Issue,
   IssueTableFacetSpec,
   IssueTableFacetsResponse,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   actorIssuesViewStore,
   type ActorIssuesScope,
-} from "@patchbay/core/issues/stores/actor-issues-view-store";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/core/issues/stores/actor-issues-view-store";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@orvilo/ui/components/ui/tooltip";
 import {
   IssueDisplayControls,
   ViewRefreshIndicator,

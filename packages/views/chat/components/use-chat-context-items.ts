@@ -1,12 +1,12 @@
 "use client";
 
-import { issueStatusCategory } from "@patchbay/core/issues";
+import { issueStatusCategory } from "@orvilo/core/issues";
 import { useMemo } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { selectRecentContexts, useRecentContextStore, type RecentContextEntry } from "@patchbay/core/chat";
-import { issueDetailOptions } from "@patchbay/core/issues/queries";
-import { projectDetailOptions } from "@patchbay/core/projects/queries";
-import type { Issue, Project } from "@patchbay/core/types";
+import { selectRecentContexts, useRecentContextStore, type RecentContextEntry } from "@orvilo/core/chat";
+import { issueDetailOptions } from "@orvilo/core/issues/queries";
+import { projectDetailOptions } from "@orvilo/core/projects/queries";
+import type { Issue, Project } from "@orvilo/core/types";
 import type { MentionItem } from "../../editor/extensions/mention-suggestion";
 import { useNavigation } from "../../navigation";
 

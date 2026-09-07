@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // Translating the internal event bus into the seven events a plugin may

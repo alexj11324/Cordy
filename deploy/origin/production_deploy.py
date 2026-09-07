@@ -209,7 +209,7 @@ def clerk_api_request(
     headers = {
         "Authorization": f"Bearer {secret_key}",
         "Accept": "application/json",
-        "User-Agent": "PatchbayProductionDeploy/1",
+        "User-Agent": "OrviloProductionDeploy/1",
     }
     if data is not None:
         headers["Content-Type"] = "application/json"

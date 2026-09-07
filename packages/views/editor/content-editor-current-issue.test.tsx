@@ -34,8 +34,8 @@ vi.mock("./link-hover-card", () => ({
   LinkHoverCard: () => null,
 }));
 
-vi.mock("@patchbay/core/paths", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
+vi.mock("@orvilo/core/paths", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@orvilo/core/paths")>()),
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/acme/issues/${id}`,
     projectDetail: (id: string) => `/acme/projects/${id}`,

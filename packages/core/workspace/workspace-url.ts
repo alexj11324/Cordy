@@ -1,4 +1,4 @@
-// Brand host shown as the workspace URL prefix on the managed Patchbay Cloud,
+// Brand host shown as the workspace URL prefix on the managed Orvilo Cloud,
 // and the fallback whenever the deployment exposes no app URL. `/api/config`
 // deliberately omits `daemon_app_url` for the managed cloud (and for any
 // self-hosted server that has not set ORVILO_APP_URL / FRONTEND_ORIGIN), so

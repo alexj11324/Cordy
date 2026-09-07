@@ -17,22 +17,22 @@ import type {
   MemberWithUser,
   Skill,
   SkillSummary,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   selectSkillAssignments,
   skillListOptions,
-} from "@patchbay/core/workspace/queries";
-import { runtimeDisplayLabel, runtimeListOptions } from "@patchbay/core/runtimes";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+} from "@orvilo/core/workspace/queries";
+import { runtimeDisplayLabel, runtimeListOptions } from "@orvilo/core/runtimes";
+import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
 import {
   LIST_GRID_BOTTOM_CLEARANCE,
   ListGrid,
@@ -42,14 +42,14 @@ import {
   ListGridHeaderCell,
   ListGridRow,
   type ListGridSortDirection,
-} from "@patchbay/ui/components/ui/list-grid";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/ui/components/ui/list-grid";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
+} from "@orvilo/ui/components/ui/tooltip";
+import { ActorAvatar } from "@orvilo/ui/components/common/actor-avatar";
 import {
   rowLinkInteractiveProps,
   useNavigation,
@@ -68,7 +68,7 @@ import {
   DEFAULT_HIDDEN_COLUMNS,
   type SkillColumnKey,
   type SkillSortField,
-} from "@patchbay/core/skills/stores";
+} from "@orvilo/core/skills/stores";
 import { SkillListToolbar } from "./skill-list-toolbar";
 import {
   SkillBatchToolbar,
@@ -149,7 +149,7 @@ function columnTrackVars(
 }
 
 // Sort/filter/column types and defaults live in the core view store
-// (@patchbay/core/skills/stores/view-store) so the persisted state and the
+// (@orvilo/core/skills/stores/view-store) so the persisted state and the
 // UI share one definition. Re-exported here for the toolbar's convenience.
 export type SortField = SkillSortField;
 

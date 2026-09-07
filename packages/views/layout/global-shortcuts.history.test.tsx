@@ -1,19 +1,19 @@
 import { render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { configureShortcutPlatform } from "@patchbay/core/shortcuts";
+import { configureShortcutPlatform } from "@orvilo/core/shortcuts";
 import { NavigationProvider, type NavigationAdapter } from "../navigation";
 import { GlobalShortcuts } from "./global-shortcuts";
 
 // GlobalShortcuts pulls workspace paths and the sidebar/chat stores at render
 // time; none of that is exercised by the history chords, so stub them to keep
 // the test focused on the back/forward wiring and free of provider setup.
-vi.mock("@patchbay/ui/components/ui/sidebar", () => ({
+vi.mock("@orvilo/ui/components/ui/sidebar", () => ({
   useSidebar: () => ({ toggleSidebar: vi.fn() }),
 }));
-vi.mock("@patchbay/core/chat", () => ({
+vi.mock("@orvilo/core/chat", () => ({
   useChatStore: { getState: () => ({ floatingChatEnabled: false }) },
 }));
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({
     inbox: () => "/w/inbox",
     chat: () => "/w/chat",

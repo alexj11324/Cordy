@@ -7,18 +7,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
 import { TelegramMark } from "./telegram-mark";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { cn } from "@orvilo/ui/lib/utils";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/ui/components/ui/dialog";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,14 +28,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { telegramInstallationsOptions, telegramKeys } from "@patchbay/core/telegram";
-import { api } from "@patchbay/core/api";
-import type { TelegramInstallation } from "@patchbay/core/types";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { memberListOptions } from "@orvilo/core/workspace/queries";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { telegramInstallationsOptions, telegramKeys } from "@orvilo/core/telegram";
+import { api } from "@orvilo/core/api";
+import type { TelegramInstallation } from "@orvilo/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
 import { useLocale, useT } from "../../i18n";

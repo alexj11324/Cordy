@@ -24,14 +24,14 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 
-	"github.com/patchbay-ai/patchbay/server/internal/cli"
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/repocache"
-	"github.com/patchbay-ai/patchbay/server/internal/selfexec"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
-	"github.com/patchbay-ai/patchbay/server/pkg/redact"
-	"github.com/patchbay-ai/patchbay/server/pkg/skillbundle"
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/internal/cli"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/repocache"
+	"github.com/orvilo-ai/orvilo/server/internal/selfexec"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/redact"
+	"github.com/orvilo-ai/orvilo/server/pkg/skillbundle"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 )
 
 // ErrRepoNotConfigured is returned by ensureRepoReady when the requested repo
@@ -160,11 +160,11 @@ func taskScopedAuthToken(task Task) (string, error) {
 	return token, nil
 }
 
-func taskPatchbayEnvironment(task Task, agentName, token, configRoot, workspacesRoot, serverURL string, healthPort, slot int, tempDir string) map[string]string {
+func taskOrviloEnvironment(task Task, agentName, token, configRoot, workspacesRoot, serverURL string, healthPort, slot int, tempDir string) map[string]string {
 	return map[string]string{
 		"ORVILO_TOKEN":        token,
-		cli.TaskConfigRootEnv:   configRoot,
-		TaskWorkspacesRootEnv:   workspacesRoot,
+		cli.TaskConfigRootEnv: configRoot,
+		TaskWorkspacesRootEnv: workspacesRoot,
 		"ORVILO_SERVER_URL":   serverURL,
 		"ORVILO_DAEMON_PORT":  strconv.Itoa(healthPort),
 		"ORVILO_WORKSPACE_ID": task.WorkspaceID,
@@ -172,9 +172,9 @@ func taskPatchbayEnvironment(task Task, agentName, token, configRoot, workspaces
 		"ORVILO_AGENT_ID":     task.AgentID,
 		"ORVILO_TASK_ID":      task.ID,
 		"ORVILO_TASK_SLOT":    strconv.Itoa(slot),
-		"TMPDIR":                tempDir,
-		"TMP":                   tempDir,
-		"TEMP":                  tempDir,
+		"TMPDIR":              tempDir,
+		"TMP":                 tempDir,
+		"TEMP":                tempDir,
 	}
 }
 
@@ -4644,7 +4644,7 @@ func (d *Daemon) handleUpdate(ctx context.Context, runtimeID string, update *Pen
 		d.logger.Info("refusing CLI self-update: daemon is managed by Desktop", "runtime_id", runtimeID, "update_id", update.ID)
 		d.reportUpdateResult(ctx, runtimeID, update.ID, map[string]any{
 			"status": "failed",
-			"error":  "CLI is managed by Patchbay Desktop — update the Desktop app to upgrade the CLI",
+			"error":  "CLI is managed by Orvilo Desktop — update the Desktop app to upgrade the CLI",
 		})
 		return
 	}
@@ -7420,7 +7420,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		// the user's provider config at all, and it is derived from the daemon
 		// PROCESS environment — invisible from the shell the user tests
 		// `hermes acp` in, which is why a mismatch reads as "works by hand,
-		// fails under Patchbay" (GH #6872). One line, at Info, so the answer is
+		// fails under Orvilo" (GH #6872). One line, at Info, so the answer is
 		// in the daemon log before anything fails rather than reconstructed
 		// afterwards.
 		taskLog.Info("hermes home resolved",
@@ -7731,7 +7731,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// already disabled above (see localAssignment == nil), and the brief
 	// would otherwise live on inside the user's repository — a subsequent
 	// manual `claude` / `codex` run in that directory would pick
-	// up stale Patchbay instructions (issue id, trigger comment id, reply
+	// up stale Orvilo instructions (issue id, trigger comment id, reply
 	// rules) and start acting on the previous task's context. Excise the
 	// marker block on the way out instead.
 	//
@@ -7750,7 +7750,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	// also precede every early return between here and provider launch
 	// (temp-dir setup, StartTask): those paths still run Finalize, and without
 	// this pass Finalize would auto-commit the sidecars Prepare just wrote and
-	// deliver a branch whose only content is Patchbay's own runtime files — or,
+	// deliver a branch whose only content is Orvilo's own runtime files — or,
 	// in place, leave them behind in the user's tree.
 	if env.LocalDirectory || env.LocalWorktree != nil {
 		defer func() {
@@ -7776,7 +7776,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 			// In worktree mode a failed cleanup is NOT survivable: Finalize is
 			// about to `git add -A`, so whatever the cleanup could not remove
 			// gets committed and delivered as the task's branch — a diff whose
-			// content is Patchbay's own runtime files, which is precisely what
+			// content is Orvilo's own runtime files, which is precisely what
 			// this mode promises never to produce. Tell Finalize to abort
 			// instead, so nothing is committed and the worktree is kept for
 			// inspection. (In place there is no commit and no branch, so a
@@ -7896,7 +7896,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	prompt := BuildPrompt(task, provider, promptOptions...)
 
 	// Pass task-scoped auth credentials and context so the spawned agent CLI
-	// can call the Patchbay API and the local daemon (e.g. `patchbay repo checkout`).
+	// can call the Orvilo API and the local daemon (e.g. `patchbay repo checkout`).
 	// ORVILO_TASK_SLOT is allocated from the daemon-wide concurrency pool, not
 	// per-agent. When one daemon hosts multiple agents, slots index shared
 	// daemon-level resources such as GPUs.
@@ -7908,7 +7908,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 		taskLog.Error("task auth token invalid; refusing to start agent", "error", err)
 		return TaskResult{}, err
 	}
-	agentEnv := taskPatchbayEnvironment(task, agentName, agentToken, env.PatchbayConfigRoot, d.cfg.WorkspacesRoot, d.cfg.ServerBaseURL, d.cfg.HealthPort, slot, taskTempDir)
+	agentEnv := taskOrviloEnvironment(task, agentName, agentToken, env.OrviloConfigRoot, d.cfg.WorkspacesRoot, d.cfg.ServerBaseURL, d.cfg.HealthPort, slot, taskTempDir)
 	if checkoutMode := repoCheckoutModeFor(provider, runtime.GOOS); checkoutMode != "" {
 		agentEnv[repoCheckoutModeEnv] = checkoutMode
 	}
@@ -7947,7 +7947,7 @@ func (d *Daemon) runTask(ctx context.Context, task Task, provider string, slot i
 	}
 	// HOME and the XDG base dirs are deliberately not touched here: provider
 	// tools such as gh, aws, kubectl, and npm continue resolving the daemon
-	// user's existing state (MUL-5578). The Patchbay CLI is the exception:
+	// user's existing state (MUL-5578). The Orvilo CLI is the exception:
 	// ORVILO_TASK_CONFIG_ROOT above redirects its implicit profile lookup to
 	// private task-local state and prevents Owner-profile fallback.
 	// (Hermes HERMES_HOME is applied after custom_env below so the per-task
@@ -9603,7 +9603,7 @@ const hermesProviderUnconfiguredHint = " [patchbay] hermes did not read the HERM
 // failure that Hermes itself cannot explain.
 //
 // Hermes reports it against whichever HERMES_HOME it was started with and tells
-// the user to run `hermes model` — but under Patchbay it was started with a
+// the user to run `hermes model` — but under Orvilo it was started with a
 // per-task overlay, seeded from a source home the daemon resolved from ITS OWN
 // process environment. When that disagrees with where the user keeps their
 // config, the remedy Hermes names edits a file the task will never read, and
@@ -9647,7 +9647,7 @@ func layerCustomEnvAndHermesHome(agentEnv, customEnv map[string]string, overlayH
 // (runtime, agent) while leaving REASONIX_HOME untouched. Current Reasonix
 // reads credentials/config from REASONIX_HOME and state from
 // REASONIX_STATE_HOME, so `reasonix setup` remains the sole credential owner
-// and Patchbay never copies API keys into task-managed files.
+// and Orvilo never copies API keys into task-managed files.
 func prepareReasonixTaskStateHome(profile, runtimeID, agentID string) (string, error) {
 	profileDir, err := cli.ProfileDir(profile)
 	if err != nil {
@@ -9671,7 +9671,7 @@ func prepareReasonixTaskStateHome(profile, runtimeID, agentID string) (string, e
 	return path, nil
 }
 
-// prepareDshTaskSessionRoot keeps DSH transcripts private to one Patchbay
+// prepareDshTaskSessionRoot keeps DSH transcripts private to one Orvilo
 // runtime/agent pair. Credentials and the user's DSH profile remain in the
 // ordinary DSH_HOME; only session persistence is redirected.
 func prepareDshTaskSessionRoot(profile, runtimeID, agentID string) (string, error) {

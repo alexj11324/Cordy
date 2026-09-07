@@ -813,7 +813,7 @@ func commitIdentityArgs(dir string) []string {
 		return nil
 	}
 	return []string{
-		"-c", "user.name=Patchbay Agent",
+		"-c", "user.name=Orvilo Agent",
 		"-c", "user.email=agent@patchbay.local",
 	}
 }
@@ -1016,9 +1016,9 @@ func (o branchOwner) fingerprint() string {
 }
 
 const (
-	ownerTrailerWorkspace    = "Patchbay-Workspace"
-	ownerTrailerAgent        = "Patchbay-Agent"
-	ownerTrailerConversation = "Patchbay-Conversation"
+	ownerTrailerWorkspace    = "Orvilo-Workspace"
+	ownerTrailerAgent        = "Orvilo-Agent"
+	ownerTrailerConversation = "Orvilo-Conversation"
 )
 
 // branchRecord is what refs/patchbay/local-state/<branch> holds: a commit whose
@@ -1026,7 +1026,7 @@ const (
 // PARENT is the branch tip at that moment, and whose message names the owner.
 //
 // The checkpoint is what makes the record about this BRANCH rather than merely
-// about its name. Owner alone proved only that Patchbay once wrote a branch
+// about its name. Owner alone proved only that Orvilo once wrote a branch
 // called this, and that stayed true after the user deleted it and created their
 // own under the same name — the next task then continued into their work
 // (MUL-6881 review). Requiring the checkpoint to still be an ancestor of the
@@ -1067,7 +1067,7 @@ func writeBranchRecord(gitRoot, branch, userState, checkpoint string, owner bran
 func branchRecordMessage(owner branchOwner) string {
 	var b strings.Builder
 	b.WriteString("patchbay: task branch record\n\n")
-	b.WriteString("Written by Patchbay for a local_directory task running in worktree mode. Its\n")
+	b.WriteString("Written by Orvilo for a local_directory task running in worktree mode. Its\n")
 	b.WriteString("tree is the user's working directory as this branch last carried it, and its\n")
 	b.WriteString("second parent is the branch tip at that moment — together they let the next\n")
 	b.WriteString("turn replay only what changed since, and prove the branch is still the one\n")
@@ -1527,7 +1527,7 @@ func dropBranch(gitRoot, branch string, logger *slog.Logger) {
 }
 
 // pruneOrphanedStateRefs drops the snapshot of any branch that is no longer
-// there. Patchbay deletes both together, but the branch is the user's to delete,
+// there. Orvilo deletes both together, but the branch is the user's to delete,
 // rename or merge away at any time, and a ref left behind would pin their whole
 // working tree as of some past turn against `git gc` forever.
 //
@@ -1588,7 +1588,7 @@ func checkUntrackedReplayable(gitRoot string, logger *slog.Logger) error {
 		skipped int
 	)
 	for _, rel := range strings.Split(out, "\x00") {
-		if rel == "" || isPatchbaySidecarPath(rel) {
+		if rel == "" || isOrviloSidecarPath(rel) {
 			continue
 		}
 		info, statErr := os.Lstat(filepath.Join(gitRoot, rel))
@@ -1634,13 +1634,13 @@ var patchbaySidecarDirNames = []string{
 	".patchbay",
 }
 
-// isPatchbaySidecarPath reports whether a repo-relative path is one of the
+// isOrviloSidecarPath reports whether a repo-relative path is one of the
 // daemon's own sidecars rather than the user's content. Matched as a whole
 // path segment at ANY depth, not just the repo root: an in_place resource may
 // point at a subdirectory of this repo, in which case its sidecars sit at
 // <subdir>/.agent_context — replaying those would put another issue's brief
 // inside this task's worktree and commit it to the delivered branch.
-func isPatchbaySidecarPath(rel string) bool {
+func isOrviloSidecarPath(rel string) bool {
 	for _, seg := range strings.Split(filepath.ToSlash(rel), "/") {
 		for _, name := range patchbaySidecarDirNames {
 			if seg == name {

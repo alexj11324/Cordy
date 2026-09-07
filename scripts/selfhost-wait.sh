@@ -76,7 +76,7 @@ if ! health_ok; then
 fi
 
 echo ""
-echo "✓ Patchbay is running!"
+echo "✓ Orvilo is running!"
 echo "  Frontend: ${frontend_url}"
 echo "  Backend:  ${backend_url}"
 echo ""

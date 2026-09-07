@@ -14,7 +14,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
 )
 
 // TypeWeixin is the durable channel discriminator used in channel_installation

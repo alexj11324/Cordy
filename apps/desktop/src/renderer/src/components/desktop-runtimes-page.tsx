@@ -1,4 +1,4 @@
-import { RuntimesPage } from "@patchbay/views/runtimes";
+import { RuntimesPage } from "@orvilo/views/runtimes";
 import { useDesktopRuntimeContext } from "./use-desktop-runtime-context";
 
 /**

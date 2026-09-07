@@ -34,12 +34,12 @@ export function defaultDevRuntimeCacheDir({
   const configured = env.ORVILO_DEV_RUNTIME_CACHE_DIR;
   if (configured) return resolve(configured);
   if (platform === "darwin") {
-    return join(home, "Library", "Caches", "Patchbay", "dev-runtime");
+    return join(home, "Library", "Caches", "Orvilo", "dev-runtime");
   }
   if (platform === "win32") {
     return join(
       env.LOCALAPPDATA || join(home, "AppData", "Local"),
-      "Patchbay",
+      "Orvilo",
       "dev-runtime",
     );
   }

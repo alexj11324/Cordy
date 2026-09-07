@@ -12,7 +12,7 @@ vi.mock("../stores/tab-store", () => ({
 vi.mock("../stores/window-overlay-store", () => ({
   useWindowOverlayStore: { getState: () => ({ close: cleanup.overlay }) },
 }));
-vi.mock("@patchbay/core/onboarding", () => ({
+vi.mock("@orvilo/core/onboarding", () => ({
   useWelcomeStore: { getState: () => ({ reset: cleanup.welcome }) },
 }));
 

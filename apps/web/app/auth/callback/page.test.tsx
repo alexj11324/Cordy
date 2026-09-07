@@ -15,7 +15,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => mockSearchParams,
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     googleLogin: mockGoogleLogin,
     completeDesktopAuthHandoff: mockCompleteDesktopAuthHandoff,

@@ -19,7 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/remotemcp"
+	"github.com/orvilo-ai/orvilo/server/pkg/remotemcp"
 )
 
 const (

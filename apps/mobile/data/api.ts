@@ -3,9 +3,9 @@
  * packages/core/api/client.ts that mobile actually uses, but lives in
  * apps/mobile/ so we control retry/timeout/error handling independently.
  *
- * Types are imported via `import type` from @patchbay/core/types — zero
+ * Types are imported via `import type` from @orvilo/core/types — zero
  * runtime coupling. Zod schemas + fallbacks are imported from
- * @patchbay/core/api/schemas (pure data, on the mobile sharing whitelist).
+ * @orvilo/core/api/schemas (pure data, on the mobile sharing whitelist).
  *
  * Design checklist (apps/mobile/CLAUDE.md "Lessons → ApiClient capability list"):
  *   1. Zod parseWithFallback for endpoints with schemas (drift defense)
@@ -69,7 +69,7 @@ import type {
   UpdateProjectRequest,
   User,
   Workspace,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   EMPTY_LIST_ISSUE_STATUSES_RESPONSE,
   EMPTY_LIST_ISSUES_RESPONSE,
@@ -90,7 +90,7 @@ import {
   EMPTY_WORK_PRODUCT_PAGE,
   WorkProductPageSchema,
   WorkProductSchema,
-} from "@patchbay/core/api/schemas";
+} from "@orvilo/core/api/schemas";
 import {
   ActiveTasksResponseSchema,
   AgentListSchema,
@@ -207,7 +207,7 @@ const MAX_FILE_SIZE = 100 * 1024 * 1024;
  *  timeout, a refetch fired after returning to foreground can leave the
  *  query stuck in `isRefetching` state forever (visible as the
  *  pull-to-refresh spinner never going away). 30s is generous for any
- *  reasonable Patchbay payload size on cellular. */
+ *  reasonable Orvilo payload size on cellular. */
 const FETCH_TIMEOUT_MS = 30_000;
 
 export class ApiError extends Error {

@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { useT } from "@patchbay/views/i18n";
-import { DragStrip } from "@patchbay/views/platform";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { OrviloIcon } from "@orvilo/ui/components/common/orvilo-icon";
+import { useT } from "@orvilo/views/i18n";
+import { DragStrip } from "@orvilo/views/platform";
 
 type DesktopEntryPageProps = {
   onSignIn: () => Promise<void>;
@@ -47,7 +47,7 @@ export function DesktopEntryPage({
             data-testid="desktop-entry-brand"
             className="flex items-center gap-4"
           >
-            <PatchbayIcon
+            <OrviloIcon
               className="size-16 shrink-0 text-white sm:size-20"
               noSpin
             />

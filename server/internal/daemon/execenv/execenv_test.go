@@ -499,15 +499,15 @@ func TestPrepareDirectoryMode(t *testing.T) {
 			t.Fatalf("expected %s to exist", path)
 		}
 	}
-	if env.PatchbayConfigRoot != filepath.Join(env.RootDir, "patchbay-config") {
-		t.Fatalf("PatchbayConfigRoot = %q, want task-local config directory", env.PatchbayConfigRoot)
+	if env.OrviloConfigRoot != filepath.Join(env.RootDir, "patchbay-config") {
+		t.Fatalf("OrviloConfigRoot = %q, want task-local config directory", env.OrviloConfigRoot)
 	}
-	info, err := os.Stat(env.PatchbayConfigRoot)
+	info, err := os.Stat(env.OrviloConfigRoot)
 	if err != nil {
-		t.Fatalf("stat PatchbayConfigRoot: %v", err)
+		t.Fatalf("stat OrviloConfigRoot: %v", err)
 	}
 	if got := info.Mode().Perm(); got != 0o700 {
-		t.Fatalf("PatchbayConfigRoot mode = %o, want 700", got)
+		t.Fatalf("OrviloConfigRoot mode = %o, want 700", got)
 	}
 
 	// Verify context file contains issue ID and CLI hints.
@@ -564,7 +564,7 @@ func TestPrepareWithProjectResources(t *testing.T) {
 			{
 				ID:           "33333333-4444-5555-6666-777777777777",
 				ResourceType: "github_repo",
-				ResourceRef:  json.RawMessage(`{"url":"https://github.com/patchbay-ai/patchbay","ref":"release/v2","default_branch_hint":"main"}`),
+				ResourceRef:  json.RawMessage(`{"url":"https://github.com/alexj11324/Cordy","ref":"release/v2","default_branch_hint":"main"}`),
 			},
 		},
 	}
@@ -627,7 +627,7 @@ func TestPrepareWithProjectResources(t *testing.T) {
 		"Agent UX 2026",
 		"Always write copy in British English. Ship behind a feature flag.",
 		"GitHub repo",
-		"https://github.com/patchbay-ai/patchbay",
+		"https://github.com/alexj11324/Cordy",
 		"checkout ref: `release/v2`",
 		"default branch hint: `main`",
 		".patchbay/project/resources.json",
@@ -922,7 +922,7 @@ func TestWriteContextFilesAutomationRunOnly(t *testing.T) {
 		"automation-1",
 		"Check dependencies and report outdated packages.",
 		"patchbay automation get automation-1 --output json",
-		"no Patchbay issue attached",
+		"no Orvilo issue attached",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("automation context missing %q\n---\n%s", want, s)
@@ -1332,7 +1332,7 @@ func TestInjectRuntimeConfigClaude(t *testing.T) {
 
 	s := string(content)
 	for _, want := range []string{
-		"Patchbay Agent Runtime",
+		"Orvilo Agent Runtime",
 		"patchbay issue get",
 		"patchbay issue comment list",
 		// Skills are listed by on-disk slug: that is the directory
@@ -1561,7 +1561,7 @@ func TestInjectRuntimeConfigCodex(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Patchbay Agent Runtime") {
+	if !strings.Contains(s, "Orvilo Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	// Listed by on-disk slug rather than the display name (MUL-5529).
@@ -1757,7 +1757,7 @@ func TestWriteContextFilesForcesSkillFrontmatterNameToSlug(t *testing.T) {
 
 // The directory-name == frontmatter-name invariant must survive collision
 // fallback, where the allocated slug is NOT sanitizeSkillName(Name). A
-// user-installed skill already sitting at the natural slug pushes Patchbay's
+// user-installed skill already sitting at the natural slug pushes Orvilo's
 // copy to `<slug>-patchbay`; the frontmatter has to follow it there, or the
 // skill answers to the user's slug on Claude and to its own stale name on
 // OpenCode.
@@ -1795,7 +1795,7 @@ func TestWriteContextFilesFrontmatterNameFollowsCollisionSlug(t *testing.T) {
 		t.Errorf("user skill was overwritten; got:\n%s", got)
 	}
 
-	// Patchbay's copy landed at the fallback slug and names itself after it.
+	// Orvilo's copy landed at the fallback slug and names itself after it.
 	moved, err := os.ReadFile(filepath.Join(dir, ".opencode", "skills", "review-patchbay", "SKILL.md"))
 	if err != nil {
 		t.Fatalf("read relocated SKILL.md: %v", err)
@@ -2058,7 +2058,7 @@ func TestInjectRuntimeConfigOpencode(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Patchbay Agent Runtime") {
+	if !strings.Contains(s, "Orvilo Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	// Listed by on-disk slug rather than the display name (MUL-5529).
@@ -2094,7 +2094,7 @@ func TestInjectRuntimeConfigKiro(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Patchbay Agent Runtime") {
+	if !strings.Contains(s, "Orvilo Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	// Listed by on-disk slug rather than the display name (MUL-5529).
@@ -2125,7 +2125,7 @@ func TestInjectRuntimeConfigQoder(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Patchbay Agent Runtime") {
+	if !strings.Contains(s, "Orvilo Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	// Listed by on-disk slug rather than the display name (MUL-5529).
@@ -2154,7 +2154,7 @@ func TestInjectRuntimeConfigQoderCN(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read AGENTS.md: %v", err)
 	}
-	if !strings.Contains(string(content), "Patchbay Agent Runtime") {
+	if !strings.Contains(string(content), "Orvilo Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 }
@@ -2181,7 +2181,7 @@ func TestInjectRuntimeConfigAntigravity(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Patchbay Agent Runtime") {
+	if !strings.Contains(s, "Orvilo Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	// Listed by on-disk slug rather than the display name (MUL-5529).
@@ -2218,7 +2218,7 @@ func TestInjectRuntimeConfigDim(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Patchbay Agent Runtime") {
+	if !strings.Contains(s, "Orvilo Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	if !strings.Contains(s, "coding") {
@@ -2681,7 +2681,7 @@ func TestInjectRuntimeConfigHermes(t *testing.T) {
 	}
 
 	s := string(content)
-	if !strings.Contains(s, "Patchbay Agent Runtime") {
+	if !strings.Contains(s, "Orvilo Agent Runtime") {
 		t.Error("AGENTS.md missing meta skill header")
 	}
 	// Listed by on-disk slug rather than the display name (MUL-5529).
@@ -4402,13 +4402,13 @@ func TestReuseRestoresCodexHome(t *testing.T) {
 	if reused.CodexHome == "" {
 		t.Fatal("expected CodexHome to be restored after Reuse")
 	}
-	if reused.PatchbayConfigRoot != filepath.Join(reused.RootDir, "patchbay-config") {
-		t.Fatalf("PatchbayConfigRoot = %q, want restored task-local config directory", reused.PatchbayConfigRoot)
+	if reused.OrviloConfigRoot != filepath.Join(reused.RootDir, "patchbay-config") {
+		t.Fatalf("OrviloConfigRoot = %q, want restored task-local config directory", reused.OrviloConfigRoot)
 	}
-	if info, err := os.Stat(reused.PatchbayConfigRoot); err != nil {
-		t.Fatalf("stat restored PatchbayConfigRoot: %v", err)
+	if info, err := os.Stat(reused.OrviloConfigRoot); err != nil {
+		t.Fatalf("stat restored OrviloConfigRoot: %v", err)
 	} else if got := info.Mode().Perm(); got != 0o700 {
-		t.Fatalf("restored PatchbayConfigRoot mode = %o, want 700", got)
+		t.Fatalf("restored OrviloConfigRoot mode = %o, want 700", got)
 	}
 
 	// Verify config.toml has a managed block (exact mode depends on host
@@ -4867,7 +4867,7 @@ func TestReuseUpdatesCodexWorkspaceSkills(t *testing.T) {
 
 // TestPrepareCodexSeedsUserSkills covers the fix for #1922: skills the user
 // installs under ~/.codex/skills/ must be discoverable by the codex CLI
-// inside a Patchbay task, despite the daemon redirecting CODEX_HOME to a
+// inside an Orvilo task, despite the daemon redirecting CODEX_HOME to a
 // per-task directory.
 func TestPrepareCodexSeedsUserSkills(t *testing.T) {
 	// Cannot use t.Parallel() with t.Setenv.
@@ -5528,7 +5528,7 @@ func TestInjectRuntimeConfigTeamLeaderCommentTriggeredNoAction(t *testing.T) {
 	ctx := TaskContextForEnv{
 		IssueID:          "issue-1",
 		TriggerCommentID: "comment-1",
-		IsTeamLeader:    true,
+		IsTeamLeader:     true,
 	}
 	if _, err := InjectRuntimeConfig(dir, "claude", ctx); err != nil {
 		t.Fatalf("InjectRuntimeConfig failed: %v", err)
@@ -5568,7 +5568,7 @@ func TestInjectRuntimeConfigTeamLeaderCommentTriggeredNoAction(t *testing.T) {
 	ctx2 := TaskContextForEnv{
 		IssueID:          "issue-1",
 		TriggerCommentID: "comment-1",
-		IsTeamLeader:    false,
+		IsTeamLeader:     false,
 	}
 	if _, err := InjectRuntimeConfig(dir2, "claude", ctx2); err != nil {
 		t.Fatalf("InjectRuntimeConfig failed: %v", err)
@@ -6011,7 +6011,7 @@ func TestInjectRuntimeConfigExecutorTriggerScansRootsFirst(t *testing.T) {
 	}
 	// Older context must remain reachable through pagination. The cursor
 	// labels and flags now live in the CLI's own --help (MUL-5442, pinned by
-	// TestIssueCommentListHelpCarriesReadContract in cmd/patchbay); the brief
+	// TestIssueCommentListHelpCarriesReadContract in cmd/orvilo); the brief
 	// keeps a pointer in the flag reference.
 	for _, want := range []string{
 		"paging cursors, and full flag semantics: `--help`",
@@ -6074,7 +6074,7 @@ func TestInjectRuntimeConfigCatchUpScansRootsFirst(t *testing.T) {
 		// The headline saturation warning stays in the flag reference; the
 		// deep semantics (per-thread cap, root-thread saturation) moved to the
 		// CLI's own --help (MUL-5442) and are pinned there
-		// (TestIssueCommentListHelpCarriesReadContract in cmd/patchbay).
+		// (TestIssueCommentListHelpCarriesReadContract in cmd/orvilo).
 		"caps THREADS, not comments",
 	} {
 		if !strings.Contains(s, want) {
@@ -6147,7 +6147,7 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 			// express — the read stance, the re-read bar, and the two
 			// write-time boundaries (secrets, length). The full ban list
 			// and the key-naming conventions live in the
-			// patchbay-working-on-issues skill, pinned by
+			// orvilo-working-on-issues skill, pinned by
 			// TestWorkingOnIssuesSkillCoversIssueLoopContracts so this
 			// pointer cannot dangle. The recommended-keys block was
 			// removed outright: metadata is deliberately free-form custom
@@ -6155,7 +6155,7 @@ func TestInjectRuntimeConfigIssueMetadataSectionScope(t *testing.T) {
 			// platform curates in every brief.
 			"never secrets or long content",
 			"patchbay issue metadata delete",
-			"the `patchbay-working-on-issues` skill",
+			"the `orvilo-working-on-issues` skill",
 		},
 	}
 	withoutSection := wantSection{

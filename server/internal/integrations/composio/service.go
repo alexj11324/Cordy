@@ -1,5 +1,5 @@
-// Package composio is the Stage 2 business-integration glue between Patchbay and
-// the standalone Composio SDK (server/pkg/composio). It owns Patchbay semantics:
+// Package composio is the Stage 2 business-integration glue between Orvilo and
+// the standalone Composio SDK (server/pkg/composio). It owns Orvilo semantics:
 // the signed-state connect handshake, the local user_composio_connection
 // mirror, idempotent disconnect, and the per-user MCP session helper.
 //
@@ -22,11 +22,11 @@ import (
 	"sync"
 	"time"
 
-	sdk "github.com/patchbay-ai/patchbay/server/pkg/composio"
+	sdk "github.com/orvilo-ai/orvilo/server/pkg/composio"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Service-level errors surfaced to the handler layer.
@@ -236,7 +236,7 @@ func toolkitLogoURL(slug, upstreamLogoURL string) string {
 // config for it — no static env map. A toolkit with none yields
 // ErrToolkitNotSupported.
 //
-// The composio_user_id sent to Composio is the Patchbay user id verbatim — the
+// The composio_user_id sent to Composio is the Orvilo user id verbatim — the
 // invariant the rest of the integration relies on.
 func (s *Service) BeginConnect(ctx context.Context, userID pgtype.UUID, toolkitSlug string) (string, error) {
 	slug := strings.ToLower(strings.TrimSpace(toolkitSlug))
@@ -329,7 +329,7 @@ func (s *Service) CompleteCallback(ctx context.Context, state, status, connected
 		ToolkitSlug:        claims.ToolkitSlug,
 		AuthConfigID:       authConfigID,
 		ConnectedAccountID: connectedAccountID,
-		// Invariant: composio_user_id == Patchbay user id.
+		// Invariant: composio_user_id == Orvilo user id.
 		ComposioUserID: claims.UserID,
 	}); err != nil {
 		return claims.ToolkitSlug, fmt.Errorf("composio: upsert connection: %w", err)

@@ -12,7 +12,7 @@ import (
 )
 
 // TestDshRealRuntimeSmoke is opt-in because it calls the configured DeepSeek
-// model and consumes API quota. It exercises the complete Patchbay backend,
+// model and consumes API quota. It exercises the complete Orvilo backend,
 // installed DSH profile, model provider, and terminal-result path.
 func TestDshRealRuntimeSmoke(t *testing.T) {
 	if os.Getenv("ORVILO_RUN_REAL_AGENT_SMOKE") != "1" {

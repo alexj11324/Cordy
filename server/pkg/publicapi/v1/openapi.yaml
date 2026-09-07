@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: Patchbay Public API
+  title: Orvilo Public API
   version: v1
   description: >-
-    Canonical v1 resource contract shared by Patchbay API surfaces. The Plugin
+    Canonical v1 resource contract shared by Orvilo API surfaces. The Plugin
     API is the first deployed consumer and applies installation identity plus
     manifest scopes. Plugin-specific context and storage remain extensions.
 servers:

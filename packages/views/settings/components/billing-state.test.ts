@@ -5,7 +5,7 @@ import type {
   AutomationQuotaUsage,
   WorkspaceSubscriptionEntitlements,
   WorkspaceSubscriptionSummary,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   hasActiveWorkspaceSeatCapacity,
   resolveAutomationUsage,

@@ -4,17 +4,17 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, GitBranch, RefreshCw, Trash2 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
+} from "@orvilo/ui/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,11 +24,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { vcsConnectionsOptions } from "@patchbay/core/vcs";
-import { api } from "@patchbay/core/api";
-import type { ConnectVCSResponse, VCSProvider } from "@patchbay/core/types";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { vcsConnectionsOptions } from "@orvilo/core/vcs";
+import { api } from "@orvilo/core/api";
+import type { ConnectVCSResponse, VCSProvider } from "@orvilo/core/types";
 import { useT } from "../../i18n";
 
 const PROVIDERS: VCSProvider[] = ["forgejo", "gitea", "gitlab"];

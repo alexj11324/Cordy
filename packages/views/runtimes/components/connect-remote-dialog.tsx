@@ -4,11 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Check, ChevronRight, Copy, Terminal } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { runtimeKeys } from "@patchbay/core/runtimes/queries";
-import { useWSEvent } from "@patchbay/core/realtime";
-import { paths, useWorkspaceSlug } from "@patchbay/core/paths";
-import { useConfigStore } from "@patchbay/core/config";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { runtimeKeys } from "@orvilo/core/runtimes/queries";
+import { useWSEvent } from "@orvilo/core/realtime";
+import { paths, useWorkspaceSlug } from "@orvilo/core/paths";
+import { useConfigStore } from "@orvilo/core/config";
 import {
   Dialog,
   DialogContent,
@@ -16,15 +16,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { CODE_LIGATURE_CLASS } from "@patchbay/ui/lib/code-style";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+} from "@orvilo/ui/components/ui/dialog";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { CODE_LIGATURE_CLASS } from "@orvilo/ui/lib/code-style";
+import { copyText } from "@orvilo/ui/lib/clipboard";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@patchbay/ui/lib/motion";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/lib/motion";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 

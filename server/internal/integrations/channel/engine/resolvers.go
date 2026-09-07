@@ -7,9 +7,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // This file defines the pluggable seams the Router runs the inbound pipeline
@@ -23,16 +23,16 @@ import (
 type Outcome string
 
 const (
-	OutcomeDropped       Outcome = "dropped"
-	OutcomeNeedsBinding  Outcome = "needs_binding"
-	OutcomeIngested      Outcome = "ingested"
-	OutcomeFreshPending  Outcome = "fresh_pending"
-	OutcomeChatStarted   Outcome = "chat_started"
-	OutcomeHubCommand    Outcome = "hub_command"
-	OutcomeIssueUsage    Outcome = "issue_usage"
-	OutcomeAgentOffline  Outcome = "agent_offline"
-	OutcomeAgentArchived Outcome = "agent_archived"
-	OutcomeQuotaExceeded Outcome = "quota_exceeded"
+	OutcomeDropped          Outcome = "dropped"
+	OutcomeNeedsBinding     Outcome = "needs_binding"
+	OutcomeIngested         Outcome = "ingested"
+	OutcomeFreshPending     Outcome = "fresh_pending"
+	OutcomeChatStarted      Outcome = "chat_started"
+	OutcomeHubCommand       Outcome = "hub_command"
+	OutcomeIssueUsage       Outcome = "issue_usage"
+	OutcomeAgentOffline     Outcome = "agent_offline"
+	OutcomeAgentArchived    Outcome = "agent_archived"
+	OutcomeQuotaExceeded    Outcome = "quota_exceeded"
 	OutcomeQuotaUnavailable Outcome = "quota_unavailable"
 )
 
@@ -53,7 +53,7 @@ const (
 // consumed by the outbound side (OutboundReplier / typing). It mirrors the
 // legacy lark.DispatchResult.
 type Result struct {
-	Outcome              Outcome
+	Outcome Outcome
 	// ReplyText is localized control-plane copy; it is never Agent input.
 	ReplyText            string
 	DropReason           DropReason
@@ -95,7 +95,7 @@ type ResolvedInstallation struct {
 	Platform        any
 }
 
-// ResolvedIdentity is the sender mapped to a Patchbay user.
+// ResolvedIdentity is the sender mapped to an Orvilo user.
 type ResolvedIdentity struct {
 	UserID pgtype.UUID
 }
@@ -271,7 +271,7 @@ type InstallationResolver interface {
 	ResolveInstallation(ctx context.Context, msg channel.InboundMessage) (ResolvedInstallation, error)
 }
 
-// IdentityResolver maps the message sender to a Patchbay user within the
+// IdentityResolver maps the message sender to an Orvilo user within the
 // installation, re-checking workspace membership. Return ErrSenderUnbound or
 // ErrSenderNotMember for the product cases.
 type IdentityResolver interface {

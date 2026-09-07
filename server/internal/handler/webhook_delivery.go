@@ -11,10 +11,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
 )
 
 // ── Response types ──────────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ import (
 type WebhookDeliveryResponse struct {
 	ID                     string  `json:"id"`
 	WorkspaceID            string  `json:"workspace_id"`
-	AutomationID            string  `json:"automation_id"`
+	AutomationID           string  `json:"automation_id"`
 	TriggerID              string  `json:"trigger_id"`
 	Provider               string  `json:"provider"`
 	Event                  string  `json:"event"`
@@ -39,7 +39,7 @@ type WebhookDeliveryResponse struct {
 	AvailableAt            string  `json:"available_at"`
 	ContentType            *string `json:"content_type"`
 	ResponseStatus         *int32  `json:"response_status"`
-	AutomationRunID         *string `json:"automation_run_id"`
+	AutomationRunID        *string `json:"automation_run_id"`
 	ReplayedFromDeliveryID *string `json:"replayed_from_delivery_id"`
 	Error                  *string `json:"error"`
 	ReasonCode             *string `json:"reason_code"`
@@ -62,7 +62,7 @@ func slimDeliveryToResponse(d db.ListWebhookDeliveriesByAutomationRow) WebhookDe
 	resp := WebhookDeliveryResponse{
 		ID:                   uuidToString(d.ID),
 		WorkspaceID:          uuidToString(d.WorkspaceID),
-		AutomationID:          uuidToString(d.AutomationID),
+		AutomationID:         uuidToString(d.AutomationID),
 		TriggerID:            uuidToString(d.TriggerID),
 		Provider:             d.Provider,
 		Event:                d.Event,
@@ -103,7 +103,7 @@ func deliveryToResponse(d db.WebhookDelivery, detail bool) WebhookDeliveryRespon
 	resp := WebhookDeliveryResponse{
 		ID:                   uuidToString(d.ID),
 		WorkspaceID:          uuidToString(d.WorkspaceID),
-		AutomationID:          uuidToString(d.AutomationID),
+		AutomationID:         uuidToString(d.AutomationID),
 		TriggerID:            uuidToString(d.TriggerID),
 		Provider:             d.Provider,
 		Event:                d.Event,
@@ -185,9 +185,9 @@ func (h *Handler) ListAutomationDeliveries(w http.ResponseWriter, r *http.Reques
 
 	rows, err := h.Queries.ListWebhookDeliveriesByAutomation(r.Context(), db.ListWebhookDeliveriesByAutomationParams{
 		AutomationID: automation.ID,
-		WorkspaceID: automation.WorkspaceID,
-		Limit:       limit,
-		Offset:      offset,
+		WorkspaceID:  automation.WorkspaceID,
+		Limit:        limit,
+		Offset:       offset,
 	})
 	if err != nil {
 		slog.Error("list deliveries failed", "error", err, "automation_id", automationID)
@@ -311,7 +311,7 @@ func (h *Handler) ReplayAutomationDelivery(w http.ResponseWriter, r *http.Reques
 	replay, err := h.Queries.CreateWebhookDelivery(r.Context(), db.CreateWebhookDeliveryParams{
 		ID:                     dbid.NewV7(),
 		WorkspaceID:            automation.WorkspaceID,
-		AutomationID:            automation.ID,
+		AutomationID:           automation.ID,
 		TriggerID:              original.TriggerID,
 		Provider:               original.Provider,
 		Event:                  envelope.Event,

@@ -3,9 +3,9 @@ package handler
 import (
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // A successful BYO install must broadcast slack_installation:created so all open

@@ -5,7 +5,7 @@ import "@testing-library/jest-dom/vitest";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement, ReactNode } from "react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enAuth from "../locales/en/auth.json";
 import enSettings from "../locales/en/settings.json";
@@ -46,7 +46,7 @@ vi.mock("@tanstack/react-query", async () => {
   return { ...actual, useQueryClient: () => ({ setQueryData: mockSetQueryData }) };
 });
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(
     // Zustand hook form — component may call useAuthStore(selector)
     (selector?: (s: unknown) => unknown) => {
@@ -62,7 +62,7 @@ vi.mock("@patchbay/core/auth", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     listWorkspaces: mockApiListWorkspaces,
     verifyCode: mockApiVerifyCode,
@@ -72,7 +72,7 @@ vi.mock("@patchbay/core/api", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/types", () => ({}));
+vi.mock("@orvilo/core/types", () => ({}));
 
 // ---------------------------------------------------------------------------
 // Import after mocks

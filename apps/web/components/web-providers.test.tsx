@@ -27,11 +27,11 @@ vi.mock("@clerk/nextjs", () => ({
   useAuth: () => ({ isSignedIn: true, signOut }),
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: { getState: () => ({ retryAuthentication }) },
 }));
 
-vi.mock("@patchbay/core/platform", () => ({
+vi.mock("@orvilo/core/platform", () => ({
   CoreProvider: (props: {
     children: ReactNode;
     onLogout?: (
@@ -44,11 +44,11 @@ vi.mock("@patchbay/core/platform", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/i18n/browser", () => ({
+vi.mock("@orvilo/core/i18n/browser", () => ({
   createBrowserCookieLocaleAdapter: () => ({}),
 }));
 
-vi.mock("@patchbay/core/onboarding", () => ({
+vi.mock("@orvilo/core/onboarding", () => ({
   useWelcomeStore: {
     getState: () => ({ reset: resetWelcome }),
   },

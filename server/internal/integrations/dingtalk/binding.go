@@ -13,14 +13,14 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // This file is the DingTalk user-binding token flow: an unbound DingTalk user
 // who messages the bot gets a "link your account" prompt (minted here, delivered
 // by the OutboundReplier), clicks through to the in-product redeem page, and
-// their DingTalk staff id is bound to their Patchbay account. It mirrors
+// their DingTalk staff id is bound to their Orvilo account. It mirrors
 // slack.BindingTokenService but runs on the generic channel_* queries with
 // channel_type='dingtalk'.
 
@@ -33,7 +33,7 @@ var (
 	// opaque error for all three avoids a replay timing oracle.
 	ErrBindingTokenInvalid = errors.New("dingtalk: binding token invalid or expired")
 	// ErrBindingAlreadyAssigned: this DingTalk user id is already bound to a
-	// different Patchbay user (account transfer must go through explicit unbind).
+	// different Orvilo user (account transfer must go through explicit unbind).
 	ErrBindingAlreadyAssigned = errors.New("dingtalk: user id is already bound to a different user")
 	// ErrBindingNotWorkspaceMember: the redeemer is not a member of the token's
 	// workspace. Translated to 403 at the HTTP boundary.
@@ -133,7 +133,7 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, pat
 
 	if _, err := qtx.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
 		WorkspaceID:    row.WorkspaceID,
-		PatchbayUserID:  patchbayUserID,
+		PatchbayUserID: patchbayUserID,
 		InstallationID: row.InstallationID,
 		ChannelType:    string(TypeDingTalk),
 		ChannelUserID:  row.ChannelUserID,

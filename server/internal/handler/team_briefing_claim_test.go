@@ -62,7 +62,7 @@ func claimAgentInstructionsForTest(t *testing.T, runtimeID string) (taskID strin
 type teamBriefingClaimFixture struct {
 	RuntimeID string
 	AgentID   string // team leader, has the runtime and empty instructions
-	TeamID   string
+	TeamID    string
 	IssueID   string // executor_type='agent' (NOT team) — reproduces MUL-3724
 }
 
@@ -98,7 +98,7 @@ func newTeamBriefingClaimFixture(t *testing.T, ctx context.Context, name string)
 	return teamBriefingClaimFixture{
 		RuntimeID: runtimeID,
 		AgentID:   agentID,
-		TeamID:   teamID,
+		TeamID:    teamID,
 		IssueID:   issueID,
 	}
 }

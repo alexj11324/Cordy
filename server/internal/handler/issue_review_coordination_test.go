@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 func TestUpdateIssue_ReviewReturnRetiresReviewerTaskAndRecordsExecutorHandoff(t *testing.T) {
@@ -161,13 +161,13 @@ func TestAgentCoordinationRunOnceSelectsReviewerAndPublishesHandoff(t *testing.T
 		"context":      testutil.Raw("'{}'::jsonb"),
 	})
 	sourceEventID := dbfx.Insert(t, "agent_coordination_outbox", testutil.Cols{
-		"event_key":    "coordination-source-" + uuid.NewString(),
-		"workspace_id": testWorkspaceID,
-		"issue_id":     issueID,
+		"event_key":      "coordination-source-" + uuid.NewString(),
+		"workspace_id":   testWorkspaceID,
+		"issue_id":       issueID,
 		"source_task_id": nil,
-		"event_type":   "task_completed",
-		"status":       "completed",
-		"payload":      testutil.Raw("'{}'::jsonb"),
+		"event_type":     "task_completed",
+		"status":         "completed",
+		"payload":        testutil.Raw("'{}'::jsonb"),
 	})
 	assignmentID := dbfx.Insert(t, "agent_coordination_assignment", testutil.Cols{
 		"event_id":           sourceEventID,
@@ -257,7 +257,7 @@ func TestAgentCoordinationRunOnceRecoversUnpublishedReviewHandoff(t *testing.T) 
 		"issue_id":     issueID,
 		"event_type":   "task_completed",
 		"status":       "pending",
-		"payload": testutil.Raw(`'{"assignment_role":"executor","agent_id":"` + executorID + `"}'::jsonb`),
+		"payload":      testutil.Raw(`'{"assignment_role":"executor","agent_id":"` + executorID + `"}'::jsonb`),
 	})
 	assignmentID := dbfx.Insert(t, "agent_coordination_assignment", testutil.Cols{
 		"event_id":     eventID,

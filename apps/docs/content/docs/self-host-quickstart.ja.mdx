@@ -1,24 +1,24 @@
 ---
 title: セルフホストクイックスタート
-description: Docker Compose で Patchbay を起動し、ログインして、最初の実行用コンピュータを接続します。
+description: Docker Compose で Orvilo を起動し、ログインして、最初の実行用コンピュータを接続します。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay のセルフホストは 2 つの部分に分かれます。
+Orvilo のセルフホストは 2 つの部分に分かれます。
 
 | 構成要素 | 実行するもの | 置く場所 |
 |---|---|---|
-| **Patchbay サービス** | Web、API、PostgreSQL | Docker をインストールした 1 台のマシン |
-| **実行用コンピュータ** | Patchbay デーモンと AI コーディングツール | 開発者が実際に作業するコンピュータ |
+| **Orvilo サービス** | Web、API、PostgreSQL | Docker をインストールした 1 台のマシン |
+| **実行用コンピュータ** | Orvilo デーモンと AI コーディングツール | 開発者が実際に作業するコンピュータ |
 
-両者は同じマシンでも、別々のマシンでも構いません。セルフホストで置き換えるのは Patchbay Cloud の部分だけです。
+両者は同じマシンでも、別々のマシンでも構いません。セルフホストで置き換えるのは Orvilo Cloud の部分だけです。
 
 このページでは Docker Compose を使います。Kubernetes でのデプロイは、リポジトリの [Self-hosting guide](https://github.com/alexj11324/Cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) を参照してください。
 
 ## 始める前に
 
-Patchbay サービスを実行するマシンには次が必要です。
+Orvilo サービスを実行するマシンには次が必要です。
 
 - Docker Engine または Docker Desktop（`docker compose` が実行できること）
 - Git、Make、curl、OpenSSL
@@ -31,11 +31,11 @@ docker info
 docker compose version
 ```
 
-Patchbay は Compose v2（`docker compose`）を使います。旧版の `docker-compose` v1 はサポートされません。
+Orvilo は Compose v2（`docker compose`）を使います。旧版の `docker-compose` v1 はサポートされません。
 
-実行用コンピュータには、Claude Code、Codex、Cursor などの [AI コーディングツール](/providers)を最低 1 つインストールし、ログインしておく必要があります。Patchbay CLI はステップ 5 でインストールします。
+実行用コンピュータには、Claude Code、Codex、Cursor などの [AI コーディングツール](/providers)を最低 1 つインストールし、ログインしておく必要があります。Orvilo CLI はステップ 5 でインストールします。
 
-## 1. Patchbay を起動する
+## 1. Orvilo を起動する
 
 サービスを実行するマシンで次を実行します。
 
@@ -49,7 +49,7 @@ make selfhost
 
 1. `.env.example` から `.env` を作成する
 2. `JWT_SECRET`、PostgreSQL パスワード、`ORVILO_VCS_SECRET_KEY`（セルフホストの Git 連携用の暗号化キー）をランダム生成する
-3. PostgreSQL、Patchbay backend、Patchbay frontend のイメージを取得する
+3. PostgreSQL、Orvilo backend、Orvilo frontend のイメージを取得する
 4. 永続化ボリュームを作成し、3 つのコンテナを起動する
 5. backend がヘルスチェックに応答し始めるまで待機する
 
@@ -100,7 +100,7 @@ Docker Compose はデフォルトで `3000` と `8080` を `127.0.0.1` だけに
 
 以下では 2 つのドメインを例にします。
 
-- `app.example.com`: Patchbay Web
+- `app.example.com`: Orvilo Web
 - `api.example.com`: API、ヘルスチェック、デーモン接続
 
 まず `.env` に公開 URL を設定します。
@@ -217,7 +217,7 @@ docker compose -f docker-compose.selfhost.yml logs backend \
 作業はデーモンを実行しているユーザーの全権限で動作し、そのユーザーが読み書きできるものはすべて読み書きできます。個人アカウントではなく、専用の Unix ユーザー、コンテナ、または VM でデーモンを実行してください。[セキュリティモデル](/security-model)を参照してください。
 </Callout>
 
-まず Patchbay CLI をインストールします。
+まず Orvilo CLI をインストールします。
 
 **macOS / Linux**
 
@@ -231,13 +231,13 @@ curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/insta
 irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 ```
 
-Patchbay サービスがこのコンピュータでも動いている場合は、次を実行します。
+Orvilo サービスがこのコンピュータでも動いている場合は、次を実行します。
 
 ```bash
 patchbay setup self-host
 ```
 
-Patchbay サービスが別のマシンで動いている場合は、先ほど設定した 2 つの URL を渡します。
+Orvilo サービスが別のマシンで動いている場合は、先ほど設定した 2 つの URL を渡します。
 
 ```bash
 patchbay setup self-host \
@@ -261,7 +261,7 @@ patchbay daemon status
 
 ## 6. 最初の実行を完了する
 
-Patchbay に戻ります。ランタイム一覧にオンラインのランタイムが表示されたら、エージェントを作成し、最初のタスクの executor を設定します。
+Orvilo に戻ります。ランタイム一覧にオンラインのランタイムが表示されたら、エージェントを作成し、最初のタスクの executor を設定します。
 
 実行ログが完了になり、タイムラインにエージェントの返信が現れれば、セルフホストのサービス、実行用コンピュータ、AI コーディングツールがつながっています。詳しい手順は[クイックスタート](/cloud-quickstart)のステップ 3〜5 を参照してください。
 
@@ -309,7 +309,7 @@ docker compose -f docker-compose.selfhost.yml up -d
 
 ### `git pull` が実際に更新するもの
 
-`git pull` が更新するのは **`docker-compose.selfhost.yml` そのもの**です — 新しい環境変数、新しいサービス、変更された healthcheck。新しい Patchbay のバージョンを取得する仕組み**ではありません**。
+`git pull` が更新するのは **`docker-compose.selfhost.yml` そのもの**です — 新しい環境変数、新しいサービス、変更された healthcheck。新しい Orvilo のバージョンを取得する仕組み**ではありません**。
 
 実際に動くバージョンを決めるのは `docker compose pull` で、そのタグが今どのイメージを指しているかを GHCR に問い合わせます。したがって数か月更新していない checkout でも今日の `latest` イメージを取得できますし、逆に `git pull` だけではイメージを取得してコンテナを作り直すまで何も変わりません。
 

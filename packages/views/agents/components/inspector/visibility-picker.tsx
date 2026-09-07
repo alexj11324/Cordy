@@ -6,8 +6,8 @@ import {
   VISIBILITY_DESCRIPTION,
   VISIBILITY_LABEL,
   VISIBILITY_TOOLTIP,
-} from "@patchbay/core/agents";
-import type { AgentVisibility } from "@patchbay/core/types";
+} from "@orvilo/core/agents";
+import type { AgentVisibility } from "@orvilo/core/types";
 import {
   PickerItem,
   PropertyPicker,

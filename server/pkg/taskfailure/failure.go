@@ -55,7 +55,7 @@ type Reason string
 const agentErrorPrefix = "agent_error."
 
 const (
-	// Platform / scheduler side: failure attributable to Patchbay
+	// Platform / scheduler side: failure attributable to Orvilo
 	// infrastructure rather than anything the agent process did. These
 	// are emitted by server-side sweepers (ExpireStaleQueuedTasks,
 	// FailStaleTasks, FailTasksForOfflineRuntimes,
@@ -90,7 +90,7 @@ const (
 
 	// ReasonIterationLimit: the agent reached its per-run iteration
 	// cap and emitted a fallback "I reached the iteration limit"
-	// message. Treated as platform-side because it is a Patchbay-imposed
+	// message. Treated as platform-side because it is an Orvilo-imposed
 	// budget rather than an external API rejection.
 	ReasonIterationLimit Reason = "iteration_limit"
 

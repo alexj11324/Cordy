@@ -32,7 +32,7 @@ import type {
   TaskFailedPayload,
   TaskMessagePayload,
   TaskQueuedPayload,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { issueKeys } from "@/data/queries/issue-keys";
 import { useWSSubscriptions } from "@/lib/use-ws-subscriptions";
 import {

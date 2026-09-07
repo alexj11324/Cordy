@@ -1,18 +1,18 @@
 ---
-title: How Patchbay works
-description: Patchbay records and coordinates the work; connected computers execute it.
+title: How Orvilo works
+description: Orvilo records and coordinates the work; connected computers execute it.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-When you set an issue's executor to an agent, Patchbay creates a task that a runtime on a connected computer claims. The runtime invokes a local AI coding tool and writes progress and results back to the original issue.
+When you set an issue's executor to an agent, Orvilo creates a task that a runtime on a connected computer claims. The runtime invokes a local AI coding tool and writes progress and results back to the original issue.
 
 ## The full path of a run
 
-![Diagram of a run: on the left, the Patchbay area records and schedules — an issue triggers the creation of a task; on the right, in the "your computer" area, the daemon claims the task, launches the AI coding tool, and reads and writes the working directory; progress messages stream back to the execution log in real time, and the daemon writes the final result back to the issue](/images/docs/how-a-run-works.webp)
+![Diagram of a run: on the left, the Orvilo area records and schedules — an issue triggers the creation of a task; on the right, in the "your computer" area, the daemon claims the task, launches the AI coding tool, and reads and writes the working directory; progress messages stream back to the execution log in real time, and the daemon writes the final result back to the issue](/images/docs/how-a-run-works.webp)
 
 1. **The issue provides the context.** The issue holds the work description, the discussion, and its independent owner, executor, and reviewer roles. When its executor is an agent, the system uses that agent's instructions, model, skills, and runtime configuration.
-2. **Patchbay creates a task.** The task enters the queue; if no runtime is online, it waits there.
+2. **Orvilo creates a task.** The task enters the queue; if no runtime is online, it waits there.
 3. **A runtime claims the task.** An online runtime on a connected computer claims the task and invokes the AI coding tool the agent is configured to use.
 4. **The AI coding tool executes locally.** The tool reads the working directory, runs commands, and produces results.
 5. **Results are written back to the issue.** Progress, comments, and results appear in the issue's timeline and execution log.
@@ -21,16 +21,16 @@ For the full list of issues, agents, tasks, and runtimes and how they relate, se
 
 ## The data and execution boundary
 
-| Patchbay | Connected computer |
+| Orvilo | Connected computer |
 |---|---|
 | Workspaces, issues, comments, and statuses | AI coding tools and their credentials |
 | Agent configuration and skills | Code directories and local files |
 | Task status, run records, and results | Actual file changes and command execution |
 
-This boundary is the same on Patchbay Cloud and in self-hosted deployments.
+This boundary is the same on Orvilo Cloud and in self-hosted deployments.
 
 <Callout type="warning">
-One exception: anything saved to an agent's `custom_env` is stored on the Patchbay server and passed to the runtime at execution time. Do not put secrets in `custom_env` that must never leave your computer.
+One exception: anything saved to an agent's `custom_env` is stored on the Orvilo server and passed to the runtime at execution time. Do not put secrets in `custom_env` that must never leave your computer.
 </Callout>
 
 ## How agents are triggered
@@ -43,6 +43,6 @@ When the execution log shows Completed, it only means that one run has ended. Th
 
 ## Next steps
 
-- [Daemon and runtimes](/daemon-runtimes) — how computers connect to Patchbay, and what happens when runtimes go online or offline.
+- [Daemon and runtimes](/daemon-runtimes) — how computers connect to Orvilo, and what happens when runtimes go online or offline.
 - [Tasks](/tasks) — task statuses, retries, and cancellation rules.
 - [Assign issues to agents](/assigning-issues) — the most common way to collaborate.

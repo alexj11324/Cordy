@@ -1,5 +1,5 @@
 import { Lock } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 
 type Resource = "agent" | "skill" | "comment" | "runtime" | "workspace";
 

@@ -1,4 +1,4 @@
-import type { Skill, SkillSummary } from "@patchbay/core/types";
+import type { Skill, SkillSummary } from "@orvilo/core/types";
 
 /**
  * Discriminated view over `Skill.config.origin` — the JSONB blob the backend

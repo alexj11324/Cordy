@@ -141,7 +141,7 @@ func (b *codeartsBackend) Execute(ctx context.Context, prompt string, opts ExecO
 	// CodeArts's general inline-config injection mechanism that merges at
 	// "local" scope (after the project-config loop, before remote / managed
 	// configs). MCP is the only field we currently project there; if a
-	// future Patchbay field needs the same channel it would assemble a
+	// future Orvilo field needs the same channel it would assemble a
 	// combined CodeArts config slice before the env append.
 	//
 	// This deliberately leaves project configuration untouched because the

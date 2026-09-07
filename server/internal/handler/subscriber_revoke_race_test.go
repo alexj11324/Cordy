@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // TestSubtreeUnsubscribe_LosesToConcurrentRevoke covers MUL-5483 review round 8,

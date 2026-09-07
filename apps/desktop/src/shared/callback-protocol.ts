@@ -1,5 +1,5 @@
 // Keep in sync with packages/core/auth/desktop-callback-protocol.ts.
-// Main must not import `@patchbay/core` (electron-vite externalizes it).
+// Main must not import `@orvilo/core` (electron-vite externalizes it).
 
 export const PRODUCTION_DESKTOP_CALLBACK_PROTOCOL = "patchbay";
 const DEVELOPMENT_DESKTOP_CALLBACK_PROTOCOL =

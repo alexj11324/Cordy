@@ -3,33 +3,33 @@
 import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, UserPlus, X } from "lucide-react";
-import { api } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+import { api } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import { AGENT_DESCRIPTION_MAX_LENGTH } from "@patchbay/core/agents";
-import { isImeComposing } from "@patchbay/core/utils";
-import type { Agent, MemberWithUser } from "@patchbay/core/types";
+} from "@orvilo/core/workspace/queries";
+import { AGENT_DESCRIPTION_MAX_LENGTH } from "@orvilo/core/agents";
+import { isImeComposing } from "@orvilo/core/utils";
+import type { Agent, MemberWithUser } from "@orvilo/core/types";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/ui/components/ui/popover";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
 import { toast } from "sonner";
 
 import { useNavigation } from "../navigation";

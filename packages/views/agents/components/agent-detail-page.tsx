@@ -19,28 +19,28 @@ import type {
   Agent,
   AgentRuntime,
   UpdateAgentRequest,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   type AgentPresenceDetail,
   isAgentRuntimeBound,
   useWorkspacePresenceMap,
-} from "@patchbay/core/agents";
-import { api, ApiError } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useModalStore } from "@patchbay/core/modals";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+} from "@orvilo/core/agents";
+import { api, ApiError } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useModalStore } from "@orvilo/core/modals";
+import { useWorkspacePaths } from "@orvilo/core/paths";
 import {
   agentDetailOptions,
   agentListOptions,
   cacheAgentResponse,
   memberListOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import { runtimeDisplayLabel, runtimeListOptions } from "@patchbay/core/runtimes";
-import { useAgentPermissions } from "@patchbay/core/permissions";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { CapabilityBanner } from "@patchbay/ui/components/common/capability-banner";
+} from "@orvilo/core/workspace/queries";
+import { runtimeDisplayLabel, runtimeListOptions } from "@orvilo/core/runtimes";
+import { useAgentPermissions } from "@orvilo/core/permissions";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { CapabilityBanner } from "@orvilo/ui/components/common/capability-banner";
 import {
   Dialog,
   DialogContent,
@@ -48,14 +48,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { AppLink, useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -490,7 +490,7 @@ function DetailHeader({
    *  the chat, which is what stops AppLink from pushing. */
   onDm: (e: React.MouseEvent<HTMLAnchorElement>) => void;
   onAssign: () => void;
-  /** Absent for Patchbay's built-in agents, which the server refuses to
+  /** Absent for Orvilo's built-in agents, which the server refuses to
    *  archive — the menu hides the action rather than offering a failure. */
   onArchive?: () => void;
 }) {

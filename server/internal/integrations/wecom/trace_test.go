@@ -33,8 +33,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
 )
 
 // ---- capture helpers ----
@@ -294,7 +294,7 @@ func TestBindingPromptFitsInsideThePreviewCap(t *testing.T) {
 	}
 	// Mirrors replier.go sendBindingPrompt.
 	bindURL := "https://patchbay.example" + "/wecom/bind" + "?token=" + url.QueryEscape(rawToken)
-	upToTokenEnd := "👋 请先绑定你的 Patchbay 账号，才能与我对话：\n" + bindURL
+	upToTokenEnd := "👋 请先绑定你的 Orvilo 账号，才能与我对话：\n" + bindURL
 
 	if n := utf8.RuneCountInString(upToTokenEnd); n > tracePreviewRunes {
 		t.Fatalf("the token ends at rune %d, past the %d-rune cap — the leak this "+

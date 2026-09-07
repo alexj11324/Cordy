@@ -45,13 +45,13 @@ import type {
   Agent,
   ChatMessage,
   ChatPendingTask,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   enqueuePendingChatTask,
   hideQueuedChatMessages,
   removePendingChatTask,
-} from "@patchbay/core/chat/pending";
-import { canAssignAgentToIssue } from "@patchbay/core/permissions";
+} from "@orvilo/core/chat/pending";
+import { canAssignAgentToIssue } from "@orvilo/core/permissions";
 import { api } from "@/data/api";
 import { useAuthStore } from "@/data/auth-store";
 import { useWorkspaceStore } from "@/data/workspace-store";

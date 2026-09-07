@@ -1,4 +1,4 @@
-import type { SupportedLocale } from "@patchbay/core/i18n";
+import type { SupportedLocale } from "@orvilo/core/i18n";
 
 export interface CelestialWorkspaceName {
   slugBase: string;

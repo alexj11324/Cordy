@@ -242,7 +242,7 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
 
     // This is the browser-side identity boundary: the Web app obtains the
     // active Clerk token, exchanges it at Go /auth/clerk, and only then can
-    // authenticated frontend requests use the Patchbay session cookie.
+    // authenticated frontend requests use the Orvilo session cookie.
     const clerkExchangePromise = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return (

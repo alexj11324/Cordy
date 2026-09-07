@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
 )
 
 func sourceContextStateFixture() service.SourceContextSnapshot {

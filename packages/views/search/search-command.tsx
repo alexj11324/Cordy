@@ -1,6 +1,6 @@
 "use client";
 
-import { issueExecutorRef, issueStatusCategory } from "@patchbay/core/issues";
+import { issueExecutorRef, issueStatusCategory } from "@orvilo/core/issues";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -26,43 +26,43 @@ import type {
   MemberWithUser,
   SearchIssueResult,
   SearchProjectResult,
-} from "@patchbay/core/types";
-import { api } from "@patchbay/core/api";
-import { partitionAggregatedSearchResults } from "@patchbay/core/search/cancelled-rank";
+} from "@orvilo/core/types";
+import { api } from "@orvilo/core/api";
+import { partitionAggregatedSearchResults } from "@orvilo/core/search/cancelled-rank";
 import {
   openCreateIssueWithPreference,
   selectRecentIssues,
   useCommentCollapseStore,
   useRecentIssuesStore,
   useResolvedExpandStore,
-} from "@patchbay/core/issues/stores";
-import { issueDetailOptions, issueTimelineOptions } from "@patchbay/core/issues/queries";
-import { useWorkspaceId } from "@patchbay/core";
-import { useWorkspacePaths, WORKSPACE_PAGES } from "@patchbay/core/paths";
-import type { WorkspacePageKey, WorkspacePaths } from "@patchbay/core/paths";
-import { useModalStore } from "@patchbay/core/modals";
-import { createShortcutChord } from "@patchbay/core/shortcuts";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+} from "@orvilo/core/issues/stores";
+import { issueDetailOptions, issueTimelineOptions } from "@orvilo/core/issues/queries";
+import { useWorkspaceId } from "@orvilo/core";
+import { useWorkspacePaths, WORKSPACE_PAGES } from "@orvilo/core/paths";
+import type { WorkspacePageKey, WorkspacePaths } from "@orvilo/core/paths";
+import { useModalStore } from "@orvilo/core/modals";
+import { createShortcutChord } from "@orvilo/core/shortcuts";
+import { memberListOptions } from "@orvilo/core/workspace/queries";
+import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 import { StatusIcon } from "../issues/components";
 import { resolvedThreadRootIds, rootCommentIds } from "../issues/components/thread-utils";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { useProjectStatusLabels } from "../projects/components/labels";
 import { routeIconForPath } from "../layout/route-icon-components";
-import { PROJECT_STATUS_CONFIG } from "@patchbay/core/projects/config";
-import type { ProjectStatus } from "@patchbay/core/types";
+import { PROJECT_STATUS_CONFIG } from "@orvilo/core/projects/config";
+import type { ProjectStatus } from "@orvilo/core/types";
 import { ActorAvatar } from "../common/actor-avatar";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
+import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@patchbay/ui/components/ui/dialog";
-import { useTheme } from "@patchbay/ui/components/common/theme-provider";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+} from "@orvilo/ui/components/ui/dialog";
+import { useTheme } from "@orvilo/ui/components/common/theme-provider";
+import { copyText } from "@orvilo/ui/lib/clipboard";
 import {
   resolveClickIntent,
   useIntentNavigate,

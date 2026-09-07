@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Builds the `patchbay` CLI from server/cmd/patchbay and copies the binary
+// Builds the `patchbay` CLI from server/cmd/orvilo and copies the binary
 // into apps/desktop/resources/bin/ so electron-builder can package the exact
 // source revision. Development uses prepare-dev-runtime.mjs instead; ordinary
 // frontend/Electron builds do not prepare a CLI.
@@ -114,7 +114,7 @@ execFileSync(
     ldflags,
     "-o",
     srcBinary,
-    "./cmd/patchbay",
+    "./cmd/orvilo",
   ],
   {
     cwd: serverDir,

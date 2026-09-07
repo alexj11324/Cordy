@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func TestCreateWorkspace_RejectsReservedSlug(t *testing.T) {
@@ -181,7 +181,7 @@ VALUES ($1, 123456789, 'patchbay-ai', 'patchbay', 3366, 987654321, 'abc123', 153
 		"pr_number":       5265,
 		"title":           "Workspace cleanup snapshot",
 		"state":           "open",
-		"html_url":        "https://github.com/patchbay-ai/patchbay/pull/5265",
+		"html_url":        "https://github.com/alexj11324/Cordy/pull/5265",
 		"pr_created_at":   testutil.Raw("now()"),
 		"pr_updated_at":   testutil.Raw("now()"),
 		"head_sha":        "head-a",
@@ -239,15 +239,15 @@ VALUES ($1, 'head-a', 0, 'backend', 'completed', 'success', false)
 
 	automationRunID := dbfx.Insert(t, "automation_run", testutil.Cols{
 		"automation_id": automationID,
-		"source":       "manual",
-		"status":       "completed",
-		"issue_id":     issueID,
+		"source":        "manual",
+		"status":        "completed",
+		"issue_id":      issueID,
 	})
 
 	taskID := dbfx.Task(t, agentID, testutil.Cols{
-		"runtime_id":       runtimeID,
-		"issue_id":         issueID,
-		"status":           "completed",
+		"runtime_id":        runtimeID,
+		"issue_id":          issueID,
+		"status":            "completed",
 		"automation_run_id": automationRunID,
 	})
 	dbfx.Exec(t, `
@@ -283,7 +283,7 @@ VALUES (date_trunc('hour', now()), $1, $2, $3, 'delete-test', 'workspace-rollup'
 	})
 
 	ruleVersionID := dbfx.Insert(t, "automation_rule_version", testutil.Cols{
-		"automation_id":      testutil.Raw("gen_random_uuid()"),
+		"automation_id":     testutil.Raw("gen_random_uuid()"),
 		"workspace_id":      wsID,
 		"published_by_type": "member",
 		"published_by_id":   testUserID,
@@ -777,11 +777,11 @@ VALUES ($1, $2, 'owner')
 		req := newRequest("PATCH", "/api/workspaces/"+wsID, map[string]any{
 			"repos": []map[string]any{
 				{
-					"url":         "  https://github.com/patchbay-ai/patchbay.git  ",
+					"url":         "  https://github.com/alexj11324/Cordy.git  ",
 					"description": "  main monorepo  ",
 				},
 				{
-					"url": "https://github.com/patchbay-ai/patchbay.git",
+					"url": "https://github.com/alexj11324/Cordy.git",
 				},
 				{
 					"url": "git@github.com:patchbay-ai/patchbay-cloud.git",
@@ -800,7 +800,7 @@ VALUES ($1, $2, 'owner')
 		if len(repos) != 2 {
 			t.Fatalf("expected duplicate URL to be deduped, got %d repos: %s", len(repos), raw)
 		}
-		if repos[0].URL != "https://github.com/patchbay-ai/patchbay.git" || repos[0].Description != "main monorepo" {
+		if repos[0].URL != "https://github.com/alexj11324/Cordy.git" || repos[0].Description != "main monorepo" {
 			t.Fatalf("first repo not normalized: %+v", repos[0])
 		}
 		if repos[1].URL != "git@github.com:patchbay-ai/patchbay-cloud.git" {

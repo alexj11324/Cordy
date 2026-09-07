@@ -5,7 +5,7 @@ description: An issue holds one piece of work's context, roles, status, and exec
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-An issue is Patchbay's basic unit for organizing work: a feature, a bug, an investigation — anything a member or an agent should own and drive forward. The discussion around it, its status changes, and every run stay in one place, so there is no need to reassemble context from chat logs or terminal output.
+An issue is Orvilo's basic unit for organizing work: a feature, a bug, an investigation — anything a member or an agent should own and drive forward. The discussion around it, its status changes, and every run stay in one place, so there is no need to reassemble context from chat logs or terminal output.
 
 ## Parts of an issue
 
@@ -46,7 +46,7 @@ Reading the graph returns the parent, children, nodes, edges, derived `waves`, a
 
 ## Status
 
-Every workspace starts with seven built-in statuses. They are also the seven **categories** — the fixed set of behaviors Patchbay knows about — so each built-in status names its own category.
+Every workspace starts with seven built-in statuses. They are also the seven **categories** — the fixed set of behaviors Orvilo knows about — so each built-in status names its own category.
 
 | Status | Meaning |
 |---|---|
@@ -60,7 +60,7 @@ Every workspace starts with seven built-in statuses. They are also the seven **c
 
 There is no fixed flow between statuses — members and agents can change them directly.
 
-Agents write the status the issue is in as their work changes it: starting work on what the issue asks for — in whatever form, research, design, or a review the issue itself requests — moves it to `in_progress` right away, so the board shows the work while it runs; delivering moves it to `in_review`; work that continues beyond the turn keeps it `in_progress`; a turn that produces nothing of the issue's own deliverable — answering questions, consulting on work owned elsewhere — leaves the status untouched throughout. These updates are written explicitly by the agent through the Patchbay CLI during the run — the server does not flip issue status when a task starts or completes (apart from the two system exceptions below). `done` is usually a human confirmation, or an integration such as a PR with close intent that merges.
+Agents write the status the issue is in as their work changes it: starting work on what the issue asks for — in whatever form, research, design, or a review the issue itself requests — moves it to `in_progress` right away, so the board shows the work while it runs; delivering moves it to `in_review`; work that continues beyond the turn keeps it `in_progress`; a turn that produces nothing of the issue's own deliverable — answering questions, consulting on work owned elsewhere — leaves the status untouched throughout. These updates are written explicitly by the agent through the Orvilo CLI during the run — the server does not flip issue status when a task starts or completes (apart from the two system exceptions below). `done` is usually a human confirmation, or an integration such as a PR with close intent that merges.
 
 <Callout type="info">
 Two changes are made by the system:

@@ -9,10 +9,10 @@ import {
   Terminal,
   Trash2,
 } from "lucide-react";
-import type { Agent, RuntimeDevice } from "@patchbay/core/types";
-import { createSafeId } from "@patchbay/core/utils";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
+import type { Agent, RuntimeDevice } from "@orvilo/core/types";
+import { createSafeId } from "@orvilo/core/utils";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
 import { toast } from "sonner";
 import { useT } from "../../../i18n";
 import {

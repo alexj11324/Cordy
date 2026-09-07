@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 async function loadSdk(port: MessagePort | null) {
   vi.resetModules();
   if (port) vi.stubGlobal("__patchbayPluginBridgePortV2", port);
-  return import("@patchbay/plugin-sdk");
+  return import("@orvilo/plugin-sdk");
 }
 
 describe("surface SDK guest port", () => {

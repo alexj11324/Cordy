@@ -2,8 +2,8 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AuthShell } from "./auth-shell";
 
-vi.mock("@patchbay/ui/components/common/patchbay-icon", () => ({
-  PatchbayIcon: () => <div data-testid="patchbay-icon" />,
+vi.mock("@orvilo/ui/components/common/orvilo-icon", () => ({
+  OrviloIcon: () => <div data-testid="orvilo-icon" />,
 }));
 
 describe("AuthShell", () => {
@@ -25,6 +25,6 @@ describe("AuthShell", () => {
       "bg-zinc-950",
       "md:flex",
     );
-    expect(screen.getByTestId("patchbay-icon")).toBeInTheDocument();
+    expect(screen.getByTestId("orvilo-icon")).toBeInTheDocument();
   });
 });

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import type { ReactElement, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Attachment as AttachmentRecord } from "@patchbay/core/types";
+import type { Attachment as AttachmentRecord } from "@orvilo/core/types";
 
 const {
   getAttachmentTextContentMock,
@@ -26,7 +26,7 @@ const {
   openByUrlMock: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     getAttachmentTextContent: getAttachmentTextContentMock,
     getAttachment: getAttachmentMock,
@@ -84,8 +84,8 @@ vi.mock("../navigation", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/paths")>();
+vi.mock("@orvilo/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@orvilo/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",
@@ -129,7 +129,7 @@ vi.mock("./attachment-download-context", () => ({
 }));
 
 import { Attachment } from "./attachment";
-import { configStore } from "@patchbay/core/config";
+import { configStore } from "@orvilo/core/config";
 
 function makeRecord(overrides: Partial<AttachmentRecord> = {}): AttachmentRecord {
   return {

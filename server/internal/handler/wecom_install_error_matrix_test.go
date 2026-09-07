@@ -25,7 +25,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/wecom"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/wecom"
 )
 
 // TestWecomInstallErrorMatrix pins status + error + code for every error class
@@ -71,7 +71,7 @@ func TestWecomInstallErrorMatrix(t *testing.T) {
 			err:        wecom.ErrBotOwnedByAnotherWorkspace,
 			wantStatus: http.StatusConflict,
 			wantCode:   "wecom_bot_owned_by_another_workspace",
-			wantError:  "this bot is already installed in a different Patchbay workspace — remove that installation before installing it here",
+			wantError:  "this bot is already installed in a different Orvilo workspace — remove that installation before installing it here",
 			why:        "go disconnect it in the other workspace",
 		},
 		{

@@ -2,8 +2,8 @@ import { act, cleanup, render, screen, waitFor, within } from "@testing-library/
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { dingtalkKeys } from "@patchbay/core/dingtalk";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import { dingtalkKeys } from "@orvilo/core/dingtalk";
 import { toast } from "sonner";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
@@ -12,15 +12,15 @@ const mocks = vi.hoisted(() => ({
   listMembers: vi.fn(), listAgents: vi.fn(), listDingTalkInstallations: vi.fn(),
   listDingTalkGroups: vi.fn(), listDingTalkGroupRoutes: vi.fn(), updateDingTalkGroupRoute: vi.fn(),
 }));
-vi.mock("@patchbay/core/api", () => ({ api: mocks }));
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/api", () => ({ api: mocks }));
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(
     (select: (state: { user: { id: string } }) => unknown) => select({ user: { id: "user-1" } }),
     { getState: () => ({ user: { id: "user-1" } }) },
   ),
 }));
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({ getAgentName: () => "Default agent" }),
 }));
 vi.mock("../../common/actor-avatar", () => ({ ActorAvatar: () => null }));

@@ -1,18 +1,18 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { Agent } from "@patchbay/core/types";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { larkInstallationsOptions } from "@patchbay/core/lark";
-import { slackInstallationsOptions } from "@patchbay/core/slack";
+import type { Agent } from "@orvilo/core/types";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { larkInstallationsOptions } from "@orvilo/core/lark";
+import { slackInstallationsOptions } from "@orvilo/core/slack";
 import {
   dingtalkAgentGroupsOptions,
   dingtalkInstallationsOptions,
-} from "@patchbay/core/dingtalk";
-import { wecomInstallationsOptions } from "@patchbay/core/wecom";
-import { telegramInstallationsOptions } from "@patchbay/core/telegram";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/dingtalk";
+import { wecomInstallationsOptions } from "@orvilo/core/wecom";
+import { telegramInstallationsOptions } from "@orvilo/core/telegram";
+import { memberListOptions } from "@orvilo/core/workspace/queries";
 import { LarkAgentBindButton } from "../../../settings/components/lark-tab";
 import { LarkMark } from "../../../settings/components/lark-mark";
 import { SlackAgentBindButton } from "../../../settings/components/slack-tab";

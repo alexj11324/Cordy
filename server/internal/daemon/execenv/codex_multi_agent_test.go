@@ -455,7 +455,7 @@ features.multi_agent = true
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	t.Setenv(PatchbayCodexMultiAgentEnv, "1")
+	t.Setenv(OrviloCodexMultiAgentEnv, "1")
 
 	if err := ensureCodexMultiAgentConfig(configPath, nil); err != nil {
 		t.Fatalf("ensureCodexMultiAgentConfig failed: %v", err)
@@ -471,7 +471,7 @@ features.multi_agent = true
 func TestCodexMultiAgentEnabledTruthy(t *testing.T) {
 	for _, v := range []string{"1", "true", "TRUE", "yes", "On"} {
 		t.Run(v, func(t *testing.T) {
-			t.Setenv(PatchbayCodexMultiAgentEnv, v)
+			t.Setenv(OrviloCodexMultiAgentEnv, v)
 			if !codexMultiAgentEnabled() {
 				t.Errorf("expected %q to be truthy", v)
 			}
@@ -482,7 +482,7 @@ func TestCodexMultiAgentEnabledTruthy(t *testing.T) {
 func TestCodexMultiAgentEnabledFalsy(t *testing.T) {
 	for _, v := range []string{"", "0", "false", "no", "off", "anything else"} {
 		t.Run(v, func(t *testing.T) {
-			t.Setenv(PatchbayCodexMultiAgentEnv, v)
+			t.Setenv(OrviloCodexMultiAgentEnv, v)
 			if codexMultiAgentEnabled() {
 				t.Errorf("expected %q to be falsy", v)
 			}

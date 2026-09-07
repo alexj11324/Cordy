@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Daemon context keys.
@@ -71,7 +71,7 @@ func WithDaemonContext(ctx context.Context, workspaceID, daemonID string) contex
 //     and a daemon converges on one DB round-trip per AuthCacheTTL window.
 //
 // cloudPAT is optional; when non-nil, tokens with the mcn_ prefix are
-// validated by calling the Patchbay Cloud Fleet service (X-User-ID gets the
+// validated by calling the Orvilo Cloud Fleet service (X-User-ID gets the
 // returned owner_id). When nil, mcn_ tokens are rejected at the prefix
 // branch — same fail-closed contract as the regular Auth middleware.
 //
@@ -146,7 +146,7 @@ func DaemonAuth(queries *db.Queries, patCache *auth.PATCache, daemonCache *auth.
 			}
 
 			// Cloud Node PAT: "mcn_" prefix. Mirrors the mcn_ branch
-			// in Auth — Patchbay Cloud Fleet is authoritative, we only
+			// in Auth — Orvilo Cloud Fleet is authoritative, we only
 			// surface the resolved owner_id as X-User-ID for the
 			// downstream daemon handlers (which then check workspace
 			// membership the usual way). Same fail-closed semantics:

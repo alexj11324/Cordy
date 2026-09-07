@@ -1,4 +1,4 @@
-// Package seatcapacity is the product-side executor for Patchbay Cloud's
+// Package seatcapacity is the product-side executor for Orvilo Cloud's
 // pre-purchased workspace-seat protocol.
 package seatcapacity
 

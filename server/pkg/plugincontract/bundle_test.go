@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
 )
 
 const bundleManifest = `{
@@ -130,7 +130,7 @@ func TestParseBundleRejections(t *testing.T) {
 			name: "surface entry has a top-level import",
 			files: map[string]string{
 				plugincontract.ManifestFilename: bundleManifest,
-				"ui/main.js":                    "import { patchbay } from \"https://esm.sh/@patchbay/plugin-sdk@1\";\n",
+				"ui/main.js":                    "import { patchbay } from \"https://esm.sh/@orvilo/plugin-sdk@1\";\n",
 				"skills/pr-review/SKILL.md":     "Read the diff.\n",
 			},
 			want: "top-level import",
@@ -258,7 +258,7 @@ func TestSurfaceEntryModuleDetection(t *testing.T) {
 	accepted := map[string]string{
 		// The case the line-prefix version got wrong: a surface that renders a
 		// code sample is ordinary, and refusing it leaves the author stuck.
-		"import inside a template literal": "const help = `\nimport { patchbay } from \"@patchbay/plugin-sdk\";\n`;\nconsole.log(help);\n",
+		"import inside a template literal": "const help = `\nimport { patchbay } from \"@orvilo/plugin-sdk\";\n`;\nconsole.log(help);\n",
 		"import inside a string":           "const help = \"import x from 'y'\";\nconsole.log(help);\n",
 		"import inside a comment":          "// import { x } from \"./x.js\";\nconsole.log(1);\n",
 		// Dynamic import is legal in a classic script.

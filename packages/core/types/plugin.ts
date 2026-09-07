@@ -1,6 +1,6 @@
 /**
- * A plugin relates to Patchbay in exactly three ways: Action (plugin calls
- * Patchbay), Hook (Patchbay calls plugin), and Resource (a static contribution
+ * A plugin relates to Orvilo in exactly three ways: Action (plugin calls
+ * Orvilo), Hook (Orvilo calls plugin), and Resource (a static contribution
  * with no call at all). These types mirror the manifest contract the server
  * parses; the client never re-derives them from anything else.
  */
@@ -160,7 +160,7 @@ export interface PluginPackageListResponse {
 
 /** One short-lived, installation-bound launch of a hosted surface. */
 export interface PluginSurfaceLaunch {
-  /** Patchbay's cookie-free content URL, never the plugin author's server. */
+  /** Orvilo's cookie-free content URL, never the plugin author's server. */
   url: string;
   /** Single-use proof the generated document must present to this frame. */
   bridge_token: string;

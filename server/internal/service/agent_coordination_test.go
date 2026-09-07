@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func TestDecodeCoordinationTaskContext(t *testing.T) {
@@ -187,10 +187,10 @@ func TestCoordinationTeamOwnerUsesTeamProvenanceAndLeaderTask(t *testing.T) {
 	}
 	task := db.AgentTaskQueue{ID: assignment.DispatchedTaskID, AgentID: leaderID}
 	context := coordinationTaskContext{
-		AssignmentID:     util.UUIDToString(assignment.ID),
-		AssignmentRole:   CoordinationAssignmentExecutor,
-		OwnerType:        "team",
-		OwnerID:          util.UUIDToString(teamID),
+		AssignmentID:    util.UUIDToString(assignment.ID),
+		AssignmentRole:  CoordinationAssignmentExecutor,
+		OwnerType:       "team",
+		OwnerID:         util.UUIDToString(teamID),
 		OwnerGeneration: int64Ptr(6),
 	}
 	if !coordinationAssignmentMatchesTask(assignment, task, context) {

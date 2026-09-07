@@ -23,7 +23,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { WebNavigationProvider } from "./navigation";
-import { useNavigation, type NavigationAdapter } from "@patchbay/views/navigation";
+import { useNavigation, type NavigationAdapter } from "@orvilo/views/navigation";
 
 function navigate(path: string) {
   window.dispatchEvent(
@@ -80,7 +80,7 @@ describe("WebNavigationProvider internal link bridge", () => {
 
 /**
  * `canGoBack` decides whether a page whose subject was just deleted steps back
- * or replaces with a fallback. A wrong `true` walks the user out of Patchbay,
+ * or replaces with a fallback. A wrong `true` walks the user out of Orvilo,
  * so the adapter must expose the browser's own answer and nothing derived.
  */
 describe("WebNavigationProvider canGoBack", () => {

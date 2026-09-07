@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ExternalLink } from "lucide-react";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,17 +14,17 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { memberListOptions, workspaceKeys } from "@patchbay/core/workspace/queries";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
+import { memberListOptions, workspaceKeys } from "@orvilo/core/workspace/queries";
 import {
   deriveGitHubSettings,
   githubInstallationsOptions,
-} from "@patchbay/core/github";
-import { api } from "@patchbay/core/api";
-import type { Workspace } from "@patchbay/core/types";
+} from "@orvilo/core/github";
+import { api } from "@orvilo/core/api";
+import type { Workspace } from "@orvilo/core/types";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import {

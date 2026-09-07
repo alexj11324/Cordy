@@ -6,19 +6,19 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
   AGENT_MAX_CONCURRENT_TASKS_MAX,
   AGENT_MAX_CONCURRENT_TASKS_MIN,
-} from "@patchbay/core/agents";
+} from "@orvilo/core/agents";
 import {
   isRuntimeUsableForUser,
   runtimeModelsOptions,
-} from "@patchbay/core/runtimes";
-import { isImeComposing } from "@patchbay/core/utils";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
+} from "@orvilo/core/runtimes";
+import { isImeComposing } from "@orvilo/core/utils";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import {
   SettingsCard,

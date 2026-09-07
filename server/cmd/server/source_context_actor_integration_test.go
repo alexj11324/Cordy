@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
 )
 
 func TestSourceContextRoutesRejectAuthoritativeTaskToken(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Phase 1 of MUL-5372 / GitHub #5999: bulk responses stop pre-signing

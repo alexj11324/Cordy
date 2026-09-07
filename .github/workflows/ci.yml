@@ -294,9 +294,9 @@ jobs:
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         # Mobile lives in a parallel mobile-verify workflow. Keep this filter
         # in sync with the root package.json scripts, which also exclude
-        # @patchbay/mobile. Docs must remain in this build: production ships
+        # @orvilo/mobile. Docs must remain in this build: production ships
         # its image and malformed MDX must fail before merge rather than deploy.
-        run: pnpm exec turbo build typecheck lint --filter='!@patchbay/mobile'
+        run: pnpm exec turbo build typecheck lint --filter='!@orvilo/mobile'
 
       # Blocking from the start: it reports nothing today, and it covers the
       # one regression knip structurally cannot see. packages/ui exports four
@@ -376,7 +376,7 @@ jobs:
         # job's responsibility -- frontend-build owns the `typecheck` task.
         # `test` reaches dependency sources through the hash-only
         # `^cache-inputs` edge (see turbo.json), so no `tsc` runs here.
-        run: pnpm exec turbo test --filter='!@patchbay/docs' --filter='!@patchbay/mobile' --filter='!@patchbay/views'
+        run: pnpm exec turbo test --filter='!@orvilo/docs' --filter='!@orvilo/mobile' --filter='!@orvilo/views'
 
   # Split views across two runners. GitHub reports the matrix job's combined
   # result, so the aggregate gate can continue depending on this one job ID.
@@ -434,7 +434,7 @@ jobs:
 
       - name: Test views shard ${{ matrix.index }}/${{ matrix.total }}
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: pnpm exec turbo test --filter='@patchbay/views' -- --shard=${{ matrix.index }}/${{ matrix.total }}
+        run: pnpm exec turbo test --filter='@orvilo/views' -- --shard=${{ matrix.index }}/${{ matrix.total }}
 
   # Aggregate gate. `frontend` is the status-check name the repository's
   # branch rules refer to, so it has to survive the split above: this job
@@ -793,7 +793,7 @@ jobs:
       - name: Build Windows CLI helper entrypoint
         if: ${{ needs.changes.outputs.backend == 'true' }}
         working-directory: server
-        run: go build ./cmd/patchbay
+        run: go build ./cmd/orvilo
 
   image-budget:
     # Soft gate against the 21.7MB of raw PNG/JPG that MUL-6352 cleared out:

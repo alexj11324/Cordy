@@ -135,7 +135,7 @@ it is intentionally absent from this Go worktree and is not counted in the 90.
 The classified inventory covers: Go routes and migration runner under
 `server/cmd`, Go handler and tests under
 `server/internal/handler`, CLI and realtime forwarding under
-`server/cmd/patchbay` and `server/cmd/server`, SQL queries and generated DB
+`server/cmd/orvilo` and `server/cmd/server`, SQL queries and generated DB
 artifacts under `server/pkg/db/{queries,generated}` plus every graph migration;
 Core schemas/types/queries and tests; shared Web/Desktop views and locale
 contracts; Mobile API, query, realtime, route, and view consumers; and the
@@ -357,7 +357,7 @@ unchanged while adding the workspace-owned path.
 runs only `electron-vite build`. The unchanged `package.mjs` still prepares the
 target CLI separately before packaging. A regression first failed because
 `build` invoked `bundle-cli`; all 32 script tests now pass, and focused ESLint
-passes. The actual `pnpm --filter @patchbay/desktop build` command completed
+passes. The actual `pnpm --filter @orvilo/desktop build` command completed
 main, preload and renderer outputs without a Go/Rust invocation. Renderer build
 time was 2.34s on this prepared worktree, not a backend cold-build benchmark.
 Existing CSS highlight and dynamic-import warnings remain.

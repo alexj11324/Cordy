@@ -2,7 +2,7 @@
 
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { WeixinBindPage } from "@patchbay/views/weixin";
+import { WeixinBindPage } from "@orvilo/views/weixin";
 function Content() {
   return <WeixinBindPage token={useSearchParams().get("token")} />;
 }

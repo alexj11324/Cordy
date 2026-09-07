@@ -54,7 +54,7 @@
     "error_missing_token": "The link is missing its binding token. Ask the Bot to send a new one in Lark.",
     "error_expired": "This binding link is invalid or expired (links are valid for 15 minutes). Ask the Bot to send a new one.",
     "error_already_bound": "This Lark account is already bound to a different Orvilo user. Account transfers must go through an explicit unbind first.",
-    "error_not_member": "You're signed in to a Orvilo account that isn't a member of this workspace.",
+    "error_not_member": "You're signed in to an Orvilo account that isn't a member of this workspace.",
     "error_unknown": "Something went wrong. Try again, and if the problem persists, contact the workspace admin."
   },
   "slack_bind": {
@@ -69,7 +69,7 @@
     "error_missing_token": "The link is missing its token. Message the bot again in Slack to get a new one.",
     "error_expired": "This link is invalid or expired (links are valid for 15 minutes). Message the bot again to get a new one.",
     "error_already_bound": "This Slack account is already linked to a different Orvilo user. Account transfers must go through an explicit unbind first.",
-    "error_not_member": "You're signed in to a Orvilo account that isn't a member of this workspace.",
+    "error_not_member": "You're signed in to an Orvilo account that isn't a member of this workspace.",
     "error_unknown": "Something went wrong. Try again, and if the problem persists, contact the workspace admin."
   },
   "dingtalk_bind": {
@@ -84,7 +84,7 @@
     "error_missing_token": "The link is missing its token. Message the bot again in DingTalk to get a new one.",
     "error_expired": "This link is invalid or expired (links are valid for 15 minutes). Message the bot again to get a new one.",
     "error_already_bound": "This DingTalk account is already linked to a different Orvilo user. Account transfers must go through an explicit unbind first.",
-    "error_not_member": "You're signed in to a Orvilo account that isn't a member of this workspace.",
+    "error_not_member": "You're signed in to an Orvilo account that isn't a member of this workspace.",
     "error_unknown": "Something went wrong. Try again, and if the problem persists, contact the workspace admin."
   },
   "telegram_bind": {
@@ -99,7 +99,7 @@
     "error_missing_token": "The link is missing its token. Message the bot again in Telegram to get a new one.",
     "error_expired": "This link is invalid or expired (links are valid for 15 minutes). Message the bot again to get a new one.",
     "error_already_bound": "This Telegram account is already linked to a different Orvilo user. Account transfers must go through an explicit unbind first.",
-    "error_not_member": "You're signed in to a Orvilo account that isn't a member of this workspace.",
+    "error_not_member": "You're signed in to an Orvilo account that isn't a member of this workspace.",
     "error_unknown": "Something went wrong. Try again, and if the problem persists, contact the workspace admin."
   },
   "expandable_description": {
@@ -118,7 +118,7 @@
     "error_missing_token": "The link is missing its token. Message the bot again in WeCom to get a new one.",
     "error_expired": "This link is invalid or expired (links are valid for 15 minutes). Message the bot again to get a new one.",
     "error_already_bound": "This WeCom identity is already linked to a different Orvilo user. Account transfers must go through an explicit unbind first.",
-    "error_not_member": "You're signed in to a Orvilo account that isn't a member of this workspace.",
+    "error_not_member": "You're signed in to an Orvilo account that isn't a member of this workspace.",
     "error_unknown": "Something went wrong. Try again, and if the problem persists, contact the workspace admin."
   },
   "weixin_bind": {
@@ -133,7 +133,7 @@
     "error_missing_token": "The link is missing its token. Message the account again in Weixin to get a new one.",
     "error_expired": "This link is invalid or expired (links are valid for 15 minutes). Message the account again to get a new one.",
     "error_already_bound": "This Weixin identity is already linked to a different Orvilo user. Account transfers must go through an explicit unbind first.",
-    "error_not_member": "You're signed in to a Orvilo account that isn't a member of this workspace.",
+    "error_not_member": "You're signed in to an Orvilo account that isn't a member of this workspace.",
     "error_unknown": "Something went wrong. Try again, and if the problem persists, contact the workspace admin."
   },
   "navigation": {

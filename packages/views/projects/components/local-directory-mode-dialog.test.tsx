@@ -2,8 +2,8 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import type { LocalDirectoryExecutionMode } from "@patchbay/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import type { LocalDirectoryExecutionMode } from "@orvilo/core/types";
 import enProjects from "../../locales/en/projects.json";
 import enCommon from "../../locales/en/common.json";
 import { LocalDirectoryModeDialog } from "./local-directory-mode-dialog";

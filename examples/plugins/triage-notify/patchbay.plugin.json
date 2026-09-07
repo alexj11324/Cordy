@@ -2,7 +2,7 @@
   "manifest_version": 1,
   "key": "ai.patchbay.triage-notify",
   "name": "Triage Notify",
-  "description": "Sends an issue to an external triage service and writes its answer back as a comment. Also demonstrates a no-side-effect Hook that Patchbay wakes every five minutes.",
+  "description": "Sends an issue to an external triage service and writes its answer back as a comment. Also demonstrates a no-side-effect Hook that Orvilo wakes every five minutes.",
   "version": "1.1.0",
   "author": {
     "name": "patchbay",
@@ -66,7 +66,7 @@
       {
         "key": "scheduled_heartbeat",
         "name": "Scheduled heartbeat",
-        "description": "Acknowledges a durable scheduled delivery without writing to Patchbay or another service.",
+        "description": "Acknowledges a durable scheduled delivery without writing to Orvilo or another service.",
         "triggers": [
           "schedule"
         ],

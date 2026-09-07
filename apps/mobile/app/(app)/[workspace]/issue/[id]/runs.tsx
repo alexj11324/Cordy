@@ -13,7 +13,7 @@ import { useMemo } from "react";
 import { ScrollView, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { isAgentTaskActive } from "@patchbay/core/agent-thread";
+import { isAgentTaskActive } from "@orvilo/core/agent-thread";
 import { Text } from "@/components/ui/text";
 import { RunRow } from "@/components/issue/run-row";
 import {

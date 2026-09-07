@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/selfexec"
+	"github.com/orvilo-ai/orvilo/server/internal/selfexec"
 )
 
 const (
@@ -337,7 +337,7 @@ func GetBrewPrefix() string {
 	return strings.TrimSpace(string(out))
 }
 
-// UpdateViaBrew upgrades the canonical Patchbay Homebrew cask.
+// UpdateViaBrew upgrades the canonical Orvilo Homebrew cask.
 func UpdateViaBrew() (string, error) {
 	cmd := exec.Command("brew", "upgrade", HomebrewPackage)
 	output, err := cmd.CombinedOutput()

@@ -3,20 +3,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, ScrollText } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { api } from "@patchbay/core/api";
+} from "@orvilo/ui/components/ui/tooltip";
+import { api } from "@orvilo/core/api";
 import {
   chatKeys,
   isTaskMessageTaskId,
   taskMessagesOptions,
-} from "@patchbay/core/chat/queries";
-import type { AgentTask } from "@patchbay/core/types/agent";
-import type { TaskMessagePayload } from "@patchbay/core/types/events";
+} from "@orvilo/core/chat/queries";
+import type { AgentTask } from "@orvilo/core/types/agent";
+import type { TaskMessagePayload } from "@orvilo/core/types/events";
 import { AgentTranscriptDialog } from "./agent-transcript-dialog";
 import { buildTimeline, type TimelineItem } from "./build-timeline";
 

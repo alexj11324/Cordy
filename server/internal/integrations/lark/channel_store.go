@@ -20,8 +20,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
 )
 
 // channelTypeFeishu is the channel_type discriminator for every row this
@@ -268,7 +268,7 @@ func (s *ChannelStore) CreateLarkUserBinding(ctx context.Context, arg CreateUser
 	}
 	row, err := s.Queries.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
 		WorkspaceID:    arg.WorkspaceID,
-		PatchbayUserID:  arg.PatchbayUserID,
+		PatchbayUserID: arg.PatchbayUserID,
 		InstallationID: arg.InstallationID,
 		ChannelType:    channelTypeFeishu,
 		ChannelUserID:  arg.ChannelUserID,

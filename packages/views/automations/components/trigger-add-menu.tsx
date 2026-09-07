@@ -7,8 +7,8 @@ import {
   searchTriggerCatalog,
   type AutomationTriggerPreset,
   type AutomationTriggerSource,
-} from "@patchbay/core/automations";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/automations";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,8 +20,8 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Input } from "@patchbay/ui/components/ui/input";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Input } from "@orvilo/ui/components/ui/input";
 import { useT } from "../../i18n";
 
 function sourceIcon(source: AutomationTriggerSource["id"]) {

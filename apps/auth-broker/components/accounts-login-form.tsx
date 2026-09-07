@@ -1,5 +1,5 @@
 "use client";
-import { AccountsLoginForm as SharedLoginForm } from '@patchbay/auth-ui/login-form';
+import { AccountsLoginForm as SharedLoginForm } from '@orvilo/auth-ui/login-form';
 import { useAuthMessages } from '@/lib/auth-messages';
 import { resolveAccountsReturnUrl } from '@/lib/redirect';
 

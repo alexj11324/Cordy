@@ -14,27 +14,27 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 type fakeTelegramInstallQueries struct {
-	upsertCalled bool
-	upsert       db.UpsertChannelInstallationParams
+	upsertCalled    bool
+	upsert          db.UpsertChannelInstallationParams
 	hubUpsertCalled bool
 	hubUpsert       db.UpsertChannelInstallationHubParams
-	rowID        pgtype.UUID
-	appIDTaken   bool
-	owner        db.GetChannelInstallationOwnerByAppIDRow
-	ownerErr     error
-	listed       []db.ChannelInstallation
-	listParams   db.ListChannelInstallationsByWorkspaceParams
-	listErr      error
-	got          db.ChannelInstallation
-	getParams    db.GetChannelInstallationInWorkspaceParams
-	getErr       error
-	statusParams db.SetChannelInstallationStatusParams
-	statusErr    error
+	rowID           pgtype.UUID
+	appIDTaken      bool
+	owner           db.GetChannelInstallationOwnerByAppIDRow
+	ownerErr        error
+	listed          []db.ChannelInstallation
+	listParams      db.ListChannelInstallationsByWorkspaceParams
+	listErr         error
+	got             db.ChannelInstallation
+	getParams       db.GetChannelInstallationInWorkspaceParams
+	getErr          error
+	statusParams    db.SetChannelInstallationStatusParams
+	statusErr       error
 }
 
 func (f *fakeTelegramInstallQueries) WithTx(pgx.Tx) installQueries { return f }
@@ -117,9 +117,9 @@ func TestPersistInstallUsesWorkspaceHubSlotWithoutAgent(t *testing.T) {
 	q := &fakeTelegramInstallQueries{rowID: pgtype.UUID{Bytes: [16]byte{1}, Valid: true}}
 	svc := newTelegramInstallTestService(t, q)
 	_, err := svc.persistInstall(context.Background(), installPersist{
-		wsID: pgtype.UUID{Bytes: [16]byte{2}, Valid: true},
+		wsID:        pgtype.UUID{Bytes: [16]byte{2}, Valid: true},
 		installerID: pgtype.UUID{Bytes: [16]byte{3}, Valid: true},
-		appIDKey: "12345", configJSON: []byte(`{"app_id":"12345"}`),
+		appIDKey:    "12345", configJSON: []byte(`{"app_id":"12345"}`),
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -135,7 +135,7 @@ func telegramInstallAPIServer(t *testing.T, webhookURL string) *httptest.Server 
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/getMe"):
-			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":12345,"is_bot":true,"first_name":"Patchbay","username":"patchbay_test_bot"}}`))
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":12345,"is_bot":true,"first_name":"Orvilo","username":"patchbay_test_bot"}}`))
 		case strings.HasSuffix(r.URL.Path, "/getWebhookInfo"):
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{"url": webhookURL}})
 		default:

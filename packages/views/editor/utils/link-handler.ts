@@ -5,8 +5,8 @@
  * (react-markdown link component), and link-hover-card (Open button).
  */
 
-import { isGlobalPath, isReservedSlug } from "@patchbay/core/paths";
-import { isIssueIdentifier } from "@patchbay/ui/markdown";
+import { isGlobalPath, isReservedSlug } from "@orvilo/core/paths";
+import { isIssueIdentifier } from "@orvilo/ui/markdown";
 import type { LinkClickIntent } from "../../navigation/click-intent";
 
 /**

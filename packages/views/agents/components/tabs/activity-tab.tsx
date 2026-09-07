@@ -15,22 +15,22 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { NumberFlow } from "@patchbay/ui/components/ui/number-flow";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/ui/components/ui/tooltip";
+import { NumberFlow } from "@orvilo/ui/components/ui/number-flow";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import type { Agent, AgentTask, Issue } from "@patchbay/core/types";
+import type { Agent, AgentTask, Issue } from "@orvilo/core/types";
 import {
   type AgentActivity,
   agentTaskSnapshotOptions,
   agentTasksOptions,
   summarizeActivityWindow,
   useWorkspaceActivityMap,
-} from "@patchbay/core/agents";
-import { api } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { issueDetailOptions } from "@patchbay/core/issues/queries";
+} from "@orvilo/core/agents";
+import { api } from "@orvilo/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { issueDetailOptions } from "@orvilo/core/issues/queries";
 import { AppLink } from "../../../navigation";
 import { TranscriptButton } from "../../../common/task-transcript";
 import { AttributionBadge } from "../../../issues/components/attribution-badge";

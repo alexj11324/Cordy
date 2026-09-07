@@ -138,9 +138,9 @@ export function requireDesktopCompletion(payload) {
 }
 
 export function requireRedeemedSession(payload) {
-  const token = requiredString(payload?.token, "redeemed Patchbay session");
+  const token = requiredString(payload?.token, "redeemed Orvilo session");
   if (token.length > 8192 || /[\r\n]/u.test(token)) {
-    throw new Error("redeemed Patchbay session is invalid");
+    throw new Error("redeemed Orvilo session is invalid");
   }
   return token;
 }

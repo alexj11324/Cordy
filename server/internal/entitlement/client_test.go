@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	testIssueLimit     = 137
+	testIssueLimit      = 137
 	testAutomationLimit = 23
 )
 

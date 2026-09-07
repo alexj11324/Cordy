@@ -19,7 +19,7 @@ body:
     attributes:
       label: Area
       description: >-
-        Which part of Patchbay is this about? Areas marked community-maintained are
+        Which part of Orvilo is this about? Areas marked community-maintained are
         looked after by volunteer maintainers — see
         https://patchbay.aspectlylabs.com/docs/community-maintained. Please do not @-mention a
         maintainer directly; we route reports from here.

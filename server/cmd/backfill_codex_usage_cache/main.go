@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
 )
 
 const rollupAdvisoryLockID = 4246

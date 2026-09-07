@@ -15,28 +15,28 @@ import type {
   Agent,
   MemberWithUser,
   RuntimeProfile,
-} from "@patchbay/core/types";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions, agentListOptions } from "@patchbay/core/workspace/queries";
-import { useUpdateRuntime } from "@patchbay/core/runtimes/mutations";
+} from "@orvilo/core/types";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { memberListOptions, agentListOptions } from "@orvilo/core/workspace/queries";
+import { useUpdateRuntime } from "@orvilo/core/runtimes/mutations";
 import {
   deriveRuntimeHealth,
   isRuntimeUsableForUser,
   runtimeDisplayName,
   runtimeProfileListOptions,
-} from "@patchbay/core/runtimes";
+} from "@orvilo/core/runtimes";
 import {
   type AgentPresenceDetail,
   useWorkspacePresenceMap,
-} from "@patchbay/core/agents";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/agents";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { AppLink, useNavigation } from "../../navigation";

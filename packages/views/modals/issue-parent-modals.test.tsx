@@ -9,11 +9,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("sonner", () => ({ toast: mocks.toast }));
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@orvilo/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutate: mocks.mutate }),
 }));
-vi.mock("@patchbay/core/issues/queries", () => ({
+vi.mock("@orvilo/core/issues/queries", () => ({
   issueDetailOptions: (_wsId: string, issueId: string) => ({
     queryKey: ["issues", "detail", issueId],
   }),

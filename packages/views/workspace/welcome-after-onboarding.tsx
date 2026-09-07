@@ -3,20 +3,20 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { api } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
-import { issueKeys } from "@patchbay/core/issues/queries";
-import { useWelcomeStore } from "@patchbay/core/onboarding";
-import { paths, useCurrentWorkspace } from "@patchbay/core/paths";
-import type { CreateIssueRequest, Issue } from "@patchbay/core/types";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { api } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
+import { issueKeys } from "@orvilo/core/issues/queries";
+import { useWelcomeStore } from "@orvilo/core/onboarding";
+import { paths, useCurrentWorkspace } from "@orvilo/core/paths";
+import type { CreateIssueRequest, Issue } from "@orvilo/core/types";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 import {

@@ -1,6 +1,6 @@
 import type { MessagingInstallationRuntime, MessagingInstallationSetup } from "./messaging";
 
-/** A Lark Bot installation bound to a single Patchbay agent.
+/** A Lark Bot installation bound to a single Orvilo agent.
  *
  * Wire shape mirrors `LarkInstallationResponse` in
  * `server/internal/handler/lark.go`. New fields the backend adds in the

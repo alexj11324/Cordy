@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
 	"github.com/redis/go-redis/v9"
 )
 

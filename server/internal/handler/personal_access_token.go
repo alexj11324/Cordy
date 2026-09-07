@@ -10,8 +10,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // PATRenewThreshold is the remaining-lifetime window at which a PAT becomes
@@ -154,7 +154,7 @@ type RenewPATResponse struct {
 //
 // Only pby_ PATs may be renewed: a cookie/JWT session has no PAT row to
 // extend, and an mat_ task token is single-purpose and short-lived. mcn_
-// cloud-node PATs are owned by Patchbay Cloud Fleet, not us — we don't even
+// cloud-node PATs are owned by Orvilo Cloud Fleet, not us — we don't even
 // see the expiry locally.
 func (h *Handler) RenewCurrentPersonalAccessToken(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)

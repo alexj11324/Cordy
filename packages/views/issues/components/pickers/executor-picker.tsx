@@ -10,18 +10,18 @@ import type {
   IssueOwnerType,
   IssueReviewerType,
   UpdateIssueRequest,
-} from "@patchbay/core/types";
-import { useAuthStore } from "@patchbay/core/auth";
-import { isAgentRuntimeBound } from "@patchbay/core/agents";
-import { canAssignAgentToIssue } from "@patchbay/core/permissions";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useActorName } from "@patchbay/core/workspace/hooks";
+} from "@orvilo/core/types";
+import { useAuthStore } from "@orvilo/core/auth";
+import { isAgentRuntimeBound } from "@orvilo/core/agents";
+import { canAssignAgentToIssue } from "@orvilo/core/permissions";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useActorName } from "@orvilo/core/workspace/hooks";
 import {
   agentListOptions,
   executorFrequencyOptions,
   memberListOptions,
   teamListOptions,
-} from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/workspace/queries";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import { DeferredPopup } from "../../../common/deferred-popup";
 import { matchesPinyin } from "../../../editor/extensions/pinyin-match";

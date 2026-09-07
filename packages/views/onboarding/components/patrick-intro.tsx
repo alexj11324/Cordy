@@ -6,7 +6,7 @@ import {
   ItemDescription,
   ItemMedia,
   ItemTitle,
-} from "@patchbay/ui/components/ui/item";
+} from "@orvilo/ui/components/ui/item";
 import { useT } from "../../i18n";
 
 /** Mirrors `patrickAgentAvatarURL` in server/internal/handler/patrick_agent.go.

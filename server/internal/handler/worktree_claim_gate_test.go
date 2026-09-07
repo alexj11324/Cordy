@@ -12,8 +12,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 func localDirRef(t *testing.T, path, daemonID, mode string) json.RawMessage {
@@ -63,7 +63,7 @@ func TestWorktreeClaimBlockReason(t *testing.T) {
 		if reason == "" {
 			t.Fatal("an outdated runtime was allowed to claim a worktree task")
 		}
-		if !strings.Contains(reason, "/Users/dev/game") || !strings.Contains(reason, "Update the Patchbay app") {
+		if !strings.Contains(reason, "/Users/dev/game") || !strings.Contains(reason, "Update the Orvilo app") {
 			t.Errorf("reason should name the directory and tell the user to update, got: %q", reason)
 		}
 	})
@@ -697,7 +697,7 @@ func TestClaimTask_WorktreeGateSingular(t *testing.T) {
 	}
 	if body := w.Body.String(); !strings.Contains(body, "/Users/dev/wtgate") ||
 		!strings.Contains(body, "does not support parallel") ||
-		!strings.Contains(body, "Update the Patchbay app") {
+		!strings.Contains(body, "Update the Orvilo app") {
 		t.Errorf("422 body should name the directory and tell the user to update, got: %s", body)
 	}
 	assertWorktreeGateCancelled(t, ctx, taskID)

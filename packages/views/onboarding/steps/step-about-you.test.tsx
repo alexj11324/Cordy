@@ -1,8 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { QuestionnaireAnswers } from "@patchbay/core/onboarding";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { QuestionnaireAnswers } from "@orvilo/core/onboarding";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enOnboarding from "../../locales/en/onboarding.json";
 import { StepAboutYou } from "./step-about-you";

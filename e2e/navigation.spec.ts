@@ -14,17 +14,17 @@ test.describe("Navigation", () => {
     await expect(page).toHaveURL(/\/inbox/, { timeout: ROUTE_CHANGE_TIMEOUT });
     await waitForPageText(page, "Inbox");
     // Each destination renames the browser tab after itself (MUL-6222).
-    await expect(page).toHaveTitle("Inbox | Patchbay");
+    await expect(page).toHaveTitle("Inbox | Orvilo");
 
     await page.getByRole("link", { name: "Agents" }).click();
     await expect(page).toHaveURL(/\/agents/, { timeout: ROUTE_CHANGE_TIMEOUT });
     await waitForPageText(page, "Agents");
-    await expect(page).toHaveTitle("Agents | Patchbay");
+    await expect(page).toHaveTitle("Agents | Orvilo");
 
     await page.getByRole("link", { name: "Issues", exact: true }).click();
     await expect(page).toHaveURL(/\/issues/, { timeout: ROUTE_CHANGE_TIMEOUT });
     await waitForPageText(page, "Issues");
-    await expect(page).toHaveTitle("Issues | Patchbay");
+    await expect(page).toHaveTitle("Issues | Orvilo");
   });
 
   test("settings page loads via sidebar", async ({ page }) => {

@@ -2,14 +2,14 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { ContentEditor, type ContentEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useUploadGate, useComposerSubmit } from "../../editor";
-import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
-import { SubmitButton } from "@patchbay/ui/components/common/submit-button";
+import { FileUploadButton } from "@orvilo/ui/components/common/file-upload-button";
+import { SubmitButton } from "@orvilo/ui/components/common/submit-button";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { contentReferencesAttachment } from "@patchbay/core/types";
-import { formatShortcut, useShortcut } from "@patchbay/core/shortcuts";
-import { useCommentDraftStore, type CommentDraftKey } from "@patchbay/core/issues/stores";
-import { cn } from "@patchbay/ui/lib/utils";
-import type { AvatarSize } from "@patchbay/ui/lib/avatar-size";
+import { contentReferencesAttachment } from "@orvilo/core/types";
+import { formatShortcut, useShortcut } from "@orvilo/core/shortcuts";
+import { useCommentDraftStore, type CommentDraftKey } from "@orvilo/core/issues/stores";
+import { cn } from "@orvilo/ui/lib/utils";
+import type { AvatarSize } from "@orvilo/ui/lib/avatar-size";
 import { useT } from "../../i18n";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 import { useCommentTriggerPreview } from "../hooks/use-comment-trigger-preview";

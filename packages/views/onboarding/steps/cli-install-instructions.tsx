@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { Check, Copy, Terminal } from "lucide-react";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { CODE_LIGATURE_CLASS } from "@patchbay/ui/lib/code-style";
-import { cn } from "@patchbay/ui/lib/utils";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
+import { CODE_LIGATURE_CLASS } from "@orvilo/ui/lib/code-style";
+import { cn } from "@orvilo/ui/lib/utils";
+import { copyText } from "@orvilo/ui/lib/clipboard";
 import { useT } from "../../i18n";
 
 const INSTALL_CMD =

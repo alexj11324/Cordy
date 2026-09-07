@@ -440,7 +440,7 @@ describe("ordinary Desktop build boundary", () => {
       resolve(process.cwd(), "apps/desktop/package.json"),
     ].find((candidate) => {
       if (!existsSync(candidate)) return false;
-      return JSON.parse(readFileSync(candidate, "utf-8")).name === "@patchbay/desktop";
+      return JSON.parse(readFileSync(candidate, "utf-8")).name === "@orvilo/desktop";
     });
     expect(manifestPath, "Desktop package.json not found").toBeTruthy();
     const { scripts } = JSON.parse(readFileSync(manifestPath, "utf-8"));

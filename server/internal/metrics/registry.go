@@ -7,8 +7,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/internal/daemonws"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
 )
 
 type RegistryOptions struct {
@@ -35,7 +35,7 @@ func NewRegistry(opts RegistryOptions) *Registry {
 
 	buildInfo := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "patchbay_build_info",
-		Help: "Build information for the Patchbay server binary.",
+		Help: "Build information for the Orvilo server binary.",
 	}, []string{"version", "commit"})
 	buildInfo.WithLabelValues(defaultLabel(opts.Version, "dev"), defaultLabel(opts.Commit, "unknown")).Set(1)
 	reg.MustRegister(buildInfo)

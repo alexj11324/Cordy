@@ -1,6 +1,6 @@
 "use client";
 
-import type { Agent, MemberWithUser } from "@patchbay/core/types";
+import type { Agent, MemberWithUser } from "@orvilo/core/types";
 import {
   SettingsCard,
   SettingsSection,

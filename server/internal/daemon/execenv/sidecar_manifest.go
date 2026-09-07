@@ -28,9 +28,9 @@ const sidecarManifestFile = ".patchbay_sidecar_manifest.json"
 //
 //   - For per-skill directories the caller allocates a collision-free
 //     alternative slug (see allocateCollisionFreeSkillDir) and retries
-//     so the agent still discovers the Patchbay skill, just under a
+//     so the agent still discovers the Orvilo skill, just under a
 //     different directory name.
-//   - For Patchbay-only namespaces (.agent_context/issue_context.md,
+//   - For Orvilo-only namespaces (.agent_context/issue_context.md,
 //     .patchbay/project/resources.json) the caller swallows the error
 //     and proceeds — the agent's runtime brief already carries every
 //     fact that would have appeared in those files, so missing-from-
@@ -156,7 +156,7 @@ func recordWriteFile(path string, data []byte, perm os.FileMode, m *sidecarManif
 
 // allocateCollisionFreeSkillDir picks a directory under skillsParent
 // whose path does NOT currently exist, so writeSkillFiles can lay
-// down a Patchbay skill without colliding with a user-installed skill
+// down an Orvilo skill without colliding with a user-installed skill
 // of the same slug. The first attempt is always the natural baseSlug
 // — that's the path provider-native discovery already knows. On
 // collision we append `-patchbay`, then `-patchbay-2`, `-patchbay-3`,

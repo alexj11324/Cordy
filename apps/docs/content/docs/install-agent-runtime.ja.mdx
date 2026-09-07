@@ -1,17 +1,17 @@
 ---
 title: AI コーディングツールをインストールする
-description: 対応する AI コーディングツールをインストールしてログインし、Patchbay がローカル環境で作業を実行できるようにします。
+description: 対応する AI コーディングツールをインストールしてログインし、Orvilo がローカル環境で作業を実行できるようにします。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-ローカルランタイムは、Patchbay デーモンと、デーモンが呼び出せる AI コーディングツールの 2 つで構成されます。使用するツールだけをインストールすればよく、すべてをインストールする必要はありません。
+ローカルランタイムは、Orvilo デーモンと、デーモンが呼び出せる AI コーディングツールの 2 つで構成されます。使用するツールだけをインストールすればよく、すべてをインストールする必要はありません。
 
 ## 1. ツールを選ぶ
 
 すでにインストールしてログイン済みのツールには、追加設定は不要です。モデル、MCP、セッション再開、スキルの対応状況はツールごとに異なります。詳しくは [AI コーディングツール比較](/providers)を参照してください。
 
-Patchbay は現在、次のコマンドを検出します。
+Orvilo は現在、次のコマンドを検出します。
 
 | ツール | 検出するコマンド | 公式インストールガイド |
 | --- | --- | --- |
@@ -41,23 +41,23 @@ Patchbay は現在、次のコマンドを検出します。
 | TRAE CLI | `traecli` | [TRAE 公式サイト](https://www.trae.cn/) |
 | Dim | `dim` | [DimCode](https://dimagent.cn/en/docs/cli) |
 
-ここでの「対応」とは、Patchbay が該当する CLI を呼び出せるという意味です。そのツールのアカウント、サブスクリプション、モデルの利用枠を Patchbay が提供するわけではありません。
+ここでの「対応」とは、Orvilo が該当する CLI を呼び出せるという意味です。そのツールのアカウント、サブスクリプション、モデルの利用枠を Orvilo が提供するわけではありません。
 
 ## 2. ローカル環境でログインする
 
 インストール後、まずターミナルからツールを単独で起動し、各ツールの手順に従ってログインするか、モデルプロバイダーを設定してください。ターミナル上でリクエストを実行できない場合は、デーモンから呼び出しても失敗します。
 
-CodeArts では、TUI だけでなく `codearts run --model provider/model "OK とだけ返してください"` で非対話モードを確認してください。現在の CodeArts CLI では、カスタム provider が TUI で動作しても、`run`、`models`、`serve` には引き続き [`CODEARTS_CLI_AK` / `CODEARTS_CLI_SK`](https://support.huaweicloud.com/usermanual-cli/codeartsagent_cli_0026.html) が必要な場合があります。Patchbay は `~/.codeartsdoer/codearts_cli.json` または `.jsonc` からカスタムモデルを検出できますが、作業実行には `codearts run` を使用するため、その認証要件に従います。
+CodeArts では、TUI だけでなく `codearts run --model provider/model "OK とだけ返してください"` で非対話モードを確認してください。現在の CodeArts CLI では、カスタム provider が TUI で動作しても、`run`、`models`、`serve` には引き続き [`CODEARTS_CLI_AK` / `CODEARTS_CLI_SK`](https://support.huaweicloud.com/usermanual-cli/codeartsagent_cli_0026.html) が必要な場合があります。Orvilo は `~/.codeartsdoer/codearts_cli.json` または `.jsonc` からカスタムモデルを検出できますが、作業実行には `codearts run` を使用するため、その認証要件に従います。
 
 Reasonix を使う場合は、デーモンを起動する前に `reasonix setup` を実行し、デフォルトのプロバイダーとモデルを設定してください。
 
-QwenPaw を使う場合は、QwenPaw 側の設定でプロバイダーとモデルを選んでください。Patchbay が実行時に QwenPaw のモデルを上書きすることはできません。
+QwenPaw を使う場合は、QwenPaw 側の設定でプロバイダーとモデルを選んでください。Orvilo が実行時に QwenPaw のモデルを上書きすることはできません。
 
-MiniMax Code を使う場合は、対応する Node.js バージョン（`>=22.19 <23` または `>=24 <27`）をインストールし、`npm install --global @minimax-ai/code@latest` を実行してください。npm のグローバルインストールによって `mcode` は npm のグローバル実行ファイルディレクトリに配置されます。`command -v mcode` または `Get-Command mcode` で見つからない場合は、そのディレクトリを `PATH` に追加してください。その後 `mcode login` を実行します。モデルは MiniMax Code が管理し、Patchbay から ACP 経由で上書きすることはできません。
+MiniMax Code を使う場合は、対応する Node.js バージョン（`>=22.19 <23` または `>=24 <27`）をインストールし、`npm install --global @minimax-ai/code@latest` を実行してください。npm のグローバルインストールによって `mcode` は npm のグローバル実行ファイルディレクトリに配置されます。`command -v mcode` または `Get-Command mcode` で見つからない場合は、そのディレクトリを `PATH` に追加してください。その後 `mcode login` を実行します。モデルは MiniMax Code が管理し、Orvilo から ACP 経由で上書きすることはできません。
 
-DeepSeek Harness を使う場合は、Node.js 20+ をインストールして `npm install -g @deepseek-ai/dsh` を実行し、Patchbay ランタイムプロファイルを追加してください（`dsh plugin --profile patchbay add <bundle>`）。デーモンは `dsh --profile patchbay --probe` が成功した場合のみ DeepSeek Harness を登録します。デーモンを起動する前に `DEEPSEEK_API_KEY` を設定（または dsh の設定に保存）してください。
+DeepSeek Harness を使う場合は、Node.js 20+ をインストールして `npm install -g @deepseek-ai/dsh` を実行し、Orvilo ランタイムプロファイルを追加してください（`dsh plugin --profile patchbay add <bundle>`）。デーモンは `dsh --profile patchbay --probe` が成功した場合のみ DeepSeek Harness を登録します。デーモンを起動する前に `DEEPSEEK_API_KEY` を設定（または dsh の設定に保存）してください。
 
-ログイン情報はツールがローカル環境に保存します。Patchbay が Claude、Codex、Cursor などの CLI のログイントークンを受け取ることはありません。
+ログイン情報はツールがローカル環境に保存します。Orvilo が Claude、Codex、Cursor などの CLI のログイントークンを受け取ることはありません。
 
 <Callout type="info">
 Claude Code は 2.0.0 以降、Codex は 0.100.0 以降、Copilot は 1.0.0 以降、Grok は 0.2.89 以降、Qwen Code は 0.20.0 以降、MiniMax Code は 0.1.2 以降が必要です。最低バージョンを満たしていない場合、デーモンはそのランタイムを登録しません。
@@ -97,9 +97,9 @@ patchbay daemon start
 patchbay daemon restart
 ```
 
-Patchbay Desktop を使っている場合は、アプリを終了して開き直してください。
+Orvilo Desktop を使っている場合は、アプリを終了して開き直してください。
 
-次に Patchbay の**ランタイム**ページを開きます。対象のコンピューターの下にツールが表示され、オンライン状態になっていることを確認してください。これで、エージェントを作成または編集するときにこのランタイムを選択できます。
+次に Orvilo の**ランタイム**ページを開きます。対象のコンピューターの下にツールが表示され、オンライン状態になっていることを確認してください。これで、エージェントを作成または編集するときにこのランタイムを選択できます。
 
 <Callout type="warning">
 デーモンの起動時には、標準対応している CLI が少なくとも 1 つ検出される必要があります。カスタムランタイム設定はデーモンの起動後に同期されるため、ツールが何もないコンピューターで唯一の起動条件として使うことはできません。
@@ -121,4 +121,4 @@ Patchbay Desktop を使っている場合は、アプリを終了して開き直
 
 - [エージェントを作成・設定する](/agents-create) — 接続したランタイムを選択する
 - [デーモンとランタイム](/daemon-runtimes) — オンライン状態、同時実行、カスタムランタイムについて確認する
-- [AI コーディングツール比較](/providers) — Patchbay で使える機能をツールごとに比較する
+- [AI コーディングツール比較](/providers) — Orvilo で使える機能をツールごとに比較する

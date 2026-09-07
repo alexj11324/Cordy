@@ -17,9 +17,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/linear"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/linear"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
 )
 
 // fakeLinearAPI stands in for Linear's GraphQL and OAuth endpoints. Every call

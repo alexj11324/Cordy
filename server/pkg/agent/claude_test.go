@@ -612,7 +612,7 @@ func TestMergeEnvFiltersClaudeCodeVars(t *testing.T) {
 		"ORVILO_LLM_API_KEY=daemon-secret",
 		"ORVILO_SERVER_URL=https://daemon.example",
 	}, map[string]string{
-		"FOO":                "bar",
+		"FOO":               "bar",
 		"ORVILO_SERVER_URL": "https://task.example",
 		"ORVILO_TOKEN":      "mat_task",
 	})

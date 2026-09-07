@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Trash2 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -10,13 +10,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/ui/components/ui/dialog";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
 import {
   useCustomPricingStore,
   type CustomModelPricing,
-} from "@patchbay/core/runtimes/custom-pricing-store";
+} from "@orvilo/core/runtimes/custom-pricing-store";
 import { useT } from "../../i18n";
 
 // Per-million-token rate fields. Stored as strings during editing so the

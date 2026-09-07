@@ -351,7 +351,7 @@ func (s *EmailService) SendVerificationCode(to, code string) error {
 		</div>`, code)
 
 	if s.smtpHost != "" {
-		return s.sendSMTP(to, "Your Patchbay verification code", body)
+		return s.sendSMTP(to, "Your Orvilo verification code", body)
 	}
 	if s.client == nil {
 		fmt.Printf("[DEV] Verification code for %s: %s\n", to, code)
@@ -363,7 +363,7 @@ func (s *EmailService) SendVerificationCode(to, code string) error {
 	params := &resend.SendEmailRequest{
 		From:    s.fromEmail,
 		To:      []string{to},
-		Subject: "Your Patchbay verification code",
+		Subject: "Your Orvilo verification code",
 		Html:    body,
 	}
 	_, err := s.client.Emails.Send(params)
@@ -407,11 +407,11 @@ func buildInvitationParams(from, to, inviterName, workspaceName, inviteURL strin
 	return &resend.SendEmailRequest{
 		From:    from,
 		To:      []string{to},
-		Subject: fmt.Sprintf("%s invited you to %s on Patchbay", subjectInviter, subjectWorkspace),
+		Subject: fmt.Sprintf("%s invited you to %s on Orvilo", subjectInviter, subjectWorkspace),
 		Html: fmt.Sprintf(
 			`<div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
 				<h2>You're invited to join %s</h2>
-				<p><strong>%s</strong> invited you to collaborate in the <strong>%s</strong> workspace on Patchbay.</p>
+				<p><strong>%s</strong> invited you to collaborate in the <strong>%s</strong> workspace on Orvilo.</p>
 				<p style="margin: 24px 0;">
 					<a href="%s" style="display: inline-block; padding: 12px 24px; background: #000; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 500;">Accept invitation</a>
 				</p>

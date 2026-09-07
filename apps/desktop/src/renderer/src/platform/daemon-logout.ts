@@ -1,5 +1,5 @@
-import type { AuthLogoutHandler } from "@patchbay/core/auth";
-import { useWelcomeStore } from "@patchbay/core/onboarding";
+import type { AuthLogoutHandler } from "@orvilo/core/auth";
+import { useWelcomeStore } from "@orvilo/core/onboarding";
 import { useTabStore } from "../stores/tab-store";
 import { useWindowOverlayStore } from "../stores/window-overlay-store";
 

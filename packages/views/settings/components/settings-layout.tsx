@@ -6,10 +6,10 @@ import type {
   TextareaHTMLAttributes,
 } from "react";
 import { AlertCircle, Check, Loader2, Search, type LucideIcon } from "lucide-react";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { SelectTrigger } from "@patchbay/ui/components/ui/select";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { SelectTrigger } from "@orvilo/ui/components/ui/select";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { cn } from "@orvilo/ui/lib/utils";
 
 export type SettingsSaveStatus = "idle" | "saving" | "saved" | "error";
 

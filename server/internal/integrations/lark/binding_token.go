@@ -12,7 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // BindingToken is the public shape of a freshly minted token. The raw
@@ -57,7 +57,7 @@ type InstallerBinder interface {
 type InstallerBindParams struct {
 	WorkspaceID    pgtype.UUID
 	InstallationID pgtype.UUID
-	PatchbayUserID  pgtype.UUID // the installer's Patchbay account
+	PatchbayUserID pgtype.UUID // the installer's Orvilo account
 	LarkOpenID     OpenID      // the installer's per-installation open_id
 }
 
@@ -130,7 +130,7 @@ func (s *BindingTokenService) Mint(ctx context.Context, workspaceID, installatio
 //     oracle for replay races.
 //
 //   - ErrBindingAlreadyAssigned: a binding already exists for this
-//     (installation, open_id), pointing at a DIFFERENT Patchbay user.
+//     (installation, open_id), pointing at a DIFFERENT Orvilo user.
 //     The token is NOT consumed in this case — we roll back so the
 //     correct holder of the existing binding is not disrupted and
 //     ops can still revoke the surplus token explicitly. Account
@@ -177,7 +177,7 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, pat
 
 	_, err = qtx.CreateLarkUserBinding(ctx, CreateUserBindingParams{
 		WorkspaceID:    row.WorkspaceID,
-		PatchbayUserID:  patchbayUserID,
+		PatchbayUserID: patchbayUserID,
 		InstallationID: row.InstallationID,
 		ChannelUserID:  row.ChannelUserID,
 	})
@@ -251,7 +251,7 @@ func (s *BindingTokenService) BindInstallerTx(ctx context.Context, qtx *ChannelS
 	}
 	_, err = q.CreateLarkUserBinding(ctx, CreateUserBindingParams{
 		WorkspaceID:    p.WorkspaceID,
-		PatchbayUserID:  p.PatchbayUserID,
+		PatchbayUserID: p.PatchbayUserID,
 		InstallationID: p.InstallationID,
 		ChannelUserID:  string(p.LarkOpenID),
 	})
@@ -274,7 +274,7 @@ var ErrBindingTokenInvalid = errors.New("binding token invalid or expired")
 
 // ErrBindingAlreadyAssigned is returned by RedeemAndBind when a
 // lark_user_binding row already exists for the (installation,
-// open_id) pair and points at a different Patchbay user. Account
+// open_id) pair and points at a different Orvilo user. Account
 // transfer must go through an explicit unbind flow; a binding token
 // cannot be used to grab an already-bound open_id from another user.
 var ErrBindingAlreadyAssigned = errors.New("lark open_id is already bound to a different user")

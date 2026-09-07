@@ -8,7 +8,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 
 export interface RowActionItem {
   key: string;

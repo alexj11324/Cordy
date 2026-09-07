@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
 )
 
 // The isolated checkout exists so a Codex task can commit inside its own

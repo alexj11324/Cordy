@@ -3,7 +3,7 @@ import { cleanup, screen } from "@testing-library/react";
 import { renderWithI18n } from "../../test/i18n";
 import { LabelsTab } from "./labels-tab";
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
@@ -11,7 +11,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: [], isLoading: false }),
 }));
 
-vi.mock("@patchbay/core/labels", () => ({
+vi.mock("@orvilo/core/labels", () => ({
   labelListOptions: (wsId: string, resourceType: string) => ({
     queryKey: ["labels", wsId, "list", resourceType],
   }),

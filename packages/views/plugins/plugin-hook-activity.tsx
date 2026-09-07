@@ -2,9 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
-import { pluginInvocationsOptions } from "@patchbay/core/plugins";
-import type { PluginHook, PluginInvocation } from "@patchbay/core/types";
-import { cn } from "@patchbay/ui/lib/utils";
+import { pluginInvocationsOptions } from "@orvilo/core/plugins";
+import type { PluginHook, PluginInvocation } from "@orvilo/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useLocale, useT } from "../i18n";
 
 /**

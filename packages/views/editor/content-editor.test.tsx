@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { createRef, useState } from "react";
-import type { Attachment } from "@patchbay/core/types";
-import type { UploadResult } from "@patchbay/core/hooks/use-file-upload";
+import type { Attachment } from "@orvilo/core/types";
+import type { UploadResult } from "@orvilo/core/hooks/use-file-upload";
 
 const mockFocus = vi.hoisted(() => vi.fn());
 const mockSetContent = vi.hoisted(() => vi.fn());

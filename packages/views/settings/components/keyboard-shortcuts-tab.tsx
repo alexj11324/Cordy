@@ -11,8 +11,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   findShortcutConflict,
   createShortcutChord,
@@ -27,8 +27,8 @@ import {
   type ShortcutActionId,
   type ShortcutCategory,
   type ShortcutChord,
-} from "@patchbay/core/shortcuts";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@orvilo/core/shortcuts";
+import { isImeComposing } from "@orvilo/core/utils";
 import { useT } from "../../i18n";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
 import {

@@ -1,4 +1,4 @@
-import type { AgentConversationStarter } from "@patchbay/core/types";
+import type { AgentConversationStarter } from "@orvilo/core/types";
 import type { DispatchReasonCopy } from "@/lib/dispatch-reason";
 
 export type ChatLocale = "en" | "zh-Hans" | "ja" | "ko";

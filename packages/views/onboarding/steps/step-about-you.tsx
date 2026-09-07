@@ -17,8 +17,8 @@ import {
   Settings2,
   User,
 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import type { QuestionnaireAnswers, Role, UseCase } from "@patchbay/core/onboarding";
+import { Button } from "@orvilo/ui/components/ui/button";
+import type { QuestionnaireAnswers, Role, UseCase } from "@orvilo/core/onboarding";
 import {
   StepFooter,
   StepHeading,

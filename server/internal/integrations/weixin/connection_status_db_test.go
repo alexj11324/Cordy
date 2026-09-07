@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
 )
 
 func TestWeixinSuccessfulPollConfirmsConnectionDB(t *testing.T) {

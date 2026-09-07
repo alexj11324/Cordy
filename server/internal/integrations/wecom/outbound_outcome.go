@@ -5,7 +5,7 @@ package wecom
 //
 // Every branch on the outbound path that ends a turn without putting words in
 // front of the user used to be a bare `return nil` or a lone WARN. That is the
-// shape of GH #7215 and #6890: the answer is in the Patchbay transcript, the
+// shape of GH #7215 and #6890: the answer is in the Orvilo transcript, the
 // WeCom chat stays quiet, and the server-side evidence is either one line with
 // no reason attached or nothing at all. With several distinct causes producing
 // one indistinguishable symptom, neither we nor a deployment's operator can say
@@ -23,7 +23,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
 )
 
 // dropReason names why a reply did not reach the user. Closed set: see the
@@ -76,8 +76,8 @@ const (
 type skipReason string
 
 const (
-	// skipOriginNotChannel — the turn was asked in the Patchbay web UI on a
-	// session that originated in WeCom, so its answer belongs in Patchbay only.
+	// skipOriginNotChannel — the turn was asked in the Orvilo web UI on a
+	// session that originated in WeCom, so its answer belongs in Orvilo only.
 	// Ordinary in a healthy deployment, and the single largest source of this
 	// counter on a busy workspace.
 	skipOriginNotChannel skipReason = "origin_not_channel"

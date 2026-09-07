@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/runtimeapps"
-	sdk "github.com/patchbay-ai/patchbay/server/pkg/composio"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/runtimeapps"
+	sdk "github.com/orvilo-ai/orvilo/server/pkg/composio"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // seedActiveConnection writes a single active row for the user/toolkit pair
@@ -227,7 +227,7 @@ func TestBuildTaskOverlay_NoMatchingConnectionIsNoOp(t *testing.T) {
 
 // TestBuildTaskOverlay_HappyPath_FiltersBothWays — the canonical
 // successful dispatch. Asserts:
-//   - CreateSession was called with the Patchbay user id verbatim
+//   - CreateSession was called with the Orvilo user id verbatim
 //   - both filters were passed (toolkits.enable AND connected_accounts)
 //   - the slug set is exactly the intersection (allowlist ∩ active)
 //   - connected_accounts pins the correct connected_account_id per slug
@@ -261,7 +261,7 @@ func TestBuildTaskOverlay_HappyPath_FiltersBothWays(t *testing.T) {
 		t.Fatalf("expected non-empty overlay, got nil")
 	}
 
-	// composio_user_id == Patchbay user id invariant
+	// composio_user_id == Orvilo user id invariant
 	if sdkFake.lastSessReq.UserID != uuidToString(owner) {
 		t.Errorf("CreateSession user id: got %q, want %q", sdkFake.lastSessReq.UserID, uuidToString(owner))
 	}

@@ -6,15 +6,15 @@ import {
   PROJECT_STATUS_ORDER,
   PROJECT_PRIORITY_CONFIG,
   PROJECT_PRIORITY_ORDER
-} from "@patchbay/core/projects/config";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/core/projects/config";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import type { Project, ProjectStatus, ProjectPriority, UpdateProjectRequest } from "@patchbay/core/types";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import type { Project, ProjectStatus, ProjectPriority, UpdateProjectRequest } from "@orvilo/core/types";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { useProjectStatusLabels, useProjectPriorityLabels } from "./labels";
 

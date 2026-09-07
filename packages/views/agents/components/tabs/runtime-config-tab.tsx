@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Save } from "lucide-react";
-import type { Agent } from "@patchbay/core/types";
+import type { Agent } from "@orvilo/core/types";
 import {
   OPENCLAW_GATEWAY_TOKEN_MASK,
   type OpenclawRoutingMode,
@@ -10,11 +10,11 @@ import {
   openclawRuntimeConfigEquals,
   parseOpenclawRuntimeConfig,
   serializeOpenclawRuntimeConfig,
-} from "@patchbay/core/agents";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+} from "@orvilo/core/agents";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import { toast } from "sonner";
 import { useT } from "../../../i18n";
 

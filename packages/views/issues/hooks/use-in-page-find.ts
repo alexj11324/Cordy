@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getShortcut, shortcutMatchesEvent } from "@patchbay/core/shortcuts";
-import { isImeComposing } from "@patchbay/core/utils";
+import { getShortcut, shortcutMatchesEvent } from "@orvilo/core/shortcuts";
+import { isImeComposing } from "@orvilo/core/utils";
 
 // ---------------------------------------------------------------------------
 // In-page find (Cmd/Ctrl+F) for the issue detail page.

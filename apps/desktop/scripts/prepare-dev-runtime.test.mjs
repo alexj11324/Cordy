@@ -48,7 +48,7 @@ describe("complete Go development runtime artifacts", () => {
       "-X main.version=dev -X main.commit=abc123 -X main.date=2026-09-04T00:00:00Z",
       "-o",
       join("/repo", "server", "bin", "windows-amd64", "patchbay.exe"),
-      "./cmd/patchbay",
+      "./cmd/orvilo",
     ]);
   });
 

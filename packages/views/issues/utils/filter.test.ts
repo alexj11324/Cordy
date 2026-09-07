@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import type { Issue, IssueExecutorGroup, PropertyFilterValue } from "@patchbay/core/types";
+import type { Issue, IssueExecutorGroup, PropertyFilterValue } from "@orvilo/core/types";
 import {
   applyIssueFilters,
   filterExecutorGroups,

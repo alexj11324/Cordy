@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
 )
 
 // The reference manifest for handler tests declares only capabilities this

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
 )
 
 type IssueLimitUsageResponse struct {

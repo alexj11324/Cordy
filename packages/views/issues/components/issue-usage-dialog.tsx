@@ -1,16 +1,16 @@
 "use client";
 
 import { useMemo } from "react";
-import type { AgentTask } from "@patchbay/core/types";
+import type { AgentTask } from "@orvilo/core/types";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useCustomPricingStore } from "@patchbay/core/runtimes/custom-pricing-store";
+} from "@orvilo/ui/components/ui/dialog";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { useCustomPricingStore } from "@orvilo/core/runtimes/custom-pricing-store";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 import { formatDuration } from "../../agents/components/agent-activity-hover-content";

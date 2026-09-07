@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/cli"
+	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
 // Indirections over the real release / version helpers so tests can run the
@@ -38,7 +38,7 @@ var detectSelfVersion = func(ctx context.Context, path string) (string, error) {
 }
 
 // ParseSelfVersion pulls the version out of `patchbay --version` output, whose
-// first line is rendered by cmd/patchbay's version template:
+// first line is rendered by cmd/orvilo's version template:
 //
 //	patchbay 0.3.7 (commit: abc1234, built: 2026-07-29T10:00:00Z)
 //	go: go1.26.1, os/arch: darwin/arm64
@@ -48,7 +48,7 @@ var detectSelfVersion = func(ctx context.Context, path string) (string, error) {
 // Anything that doesn't match the template shape is returned trimmed, which
 // compares unequal and is therefore reported rather than silently ignored.
 //
-// Exported solely so cmd/patchbay can pin that contract from the producing side:
+// Exported solely so cmd/orvilo can pin that contract from the producing side:
 // this parser and the version template have to agree, and nothing else would
 // notice if a template edit silently broke the auto-reload probe.
 func ParseSelfVersion(raw string) string {

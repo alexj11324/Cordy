@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { parseTabSubject } from "@patchbay/core/paths";
-import { useTabPresentation } from "@patchbay/views/layout";
+import { parseTabSubject } from "@orvilo/core/paths";
+import { useTabPresentation } from "@orvilo/views/layout";
 import { SITE_TITLE, formatDocumentTitle } from "./document-title";
 
 /**
  * Names the browser tab after whatever the workspace route has open, e.g.
- * `MUL-123: Fix login | Patchbay` (MUL-6222). Without it every open dashboard
+ * `MUL-123: Fix login | Orvilo` (MUL-6222). Without it every open dashboard
  * tab renders the root metadata title, so several issues side by side are
  * indistinguishable until you click into each one.
  *

@@ -1,15 +1,15 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@patchbay/core/api";
-import { configStore } from "@patchbay/core/config";
-import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@patchbay/core/feature-flags";
+import { ApiError } from "@orvilo/core/api";
+import { configStore } from "@orvilo/core/config";
+import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@orvilo/core/feature-flags";
 import type {
   AutomationQuotaUsage,
   IssueLimitUsage,
   WorkspaceSubscriptionEntitlements,
   WorkspaceSubscriptionSummary,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 const mocks = vi.hoisted(() => ({
@@ -114,7 +114,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: (options: unknown) => mocks.useQuery(options),
 }));
 
-vi.mock("@patchbay/core/billing", () => ({
+vi.mock("@orvilo/core/billing", () => ({
   workspaceSubscriptionPricesOptions: (wsId: string) => ({
     queryKey: ["workspace-subscriptions", wsId, "prices"],
   }),
@@ -142,13 +142,13 @@ vi.mock("@patchbay/core/billing", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/automations", () => ({
+vi.mock("@orvilo/core/automations", () => ({
   automationQuotaUsageOptions: (wsId: string) => ({
     queryKey: ["automations", wsId, "usage"],
   }),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({
     id: mocks.workspaceId,
     slug: "acme",

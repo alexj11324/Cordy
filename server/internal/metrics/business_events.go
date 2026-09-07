@@ -1,7 +1,7 @@
 package metrics
 
 import (
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -42,8 +42,8 @@ type businessEventMetrics struct {
 	issueCreated                    *prometheus.CounterVec
 	chatMessageSent                 *prometheus.CounterVec
 	agentCreated                    *prometheus.CounterVec
-	teamCreated                    *prometheus.CounterVec
-	automationCreated                *prometheus.CounterVec
+	teamCreated                     *prometheus.CounterVec
+	automationCreated               *prometheus.CounterVec
 	issueExecuted                   *prometheus.CounterVec
 	runtimeRegistered               *prometheus.CounterVec
 	runtimeReady                    *prometheus.CounterVec
@@ -51,9 +51,9 @@ type businessEventMetrics struct {
 	runtimeFailed                   *prometheus.CounterVec
 	runtimeOffline                  *prometheus.CounterVec
 	daemonWSMessageReceived         *prometheus.CounterVec
-	automationRunStarted             *prometheus.CounterVec
-	automationRunTerminal            *prometheus.CounterVec
-	automationRunSkipped             *prometheus.CounterVec
+	automationRunStarted            *prometheus.CounterVec
+	automationRunTerminal           *prometheus.CounterVec
+	automationRunSkipped            *prometheus.CounterVec
 	webhookDelivery                 *prometheus.CounterVec
 	webhookRateLimited              *prometheus.CounterVec
 	emailRateLimited                *prometheus.CounterVec

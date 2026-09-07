@@ -18,13 +18,13 @@ import {
   X as XIcon,
   Zap,
 } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/ui/components/ui/dialog";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@orvilo/ui/components/ui/tooltip";
 import {
   Popover,
   PopoverTrigger,
@@ -32,25 +32,25 @@ import {
   PopoverHeader,
   PopoverTitle,
   PopoverDescription,
-} from "@patchbay/ui/components/ui/popover";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
-import { projectListOptions } from "@patchbay/core/projects/queries";
+} from "@orvilo/ui/components/ui/popover";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { agentListOptions, teamListOptions } from "@orvilo/core/workspace/queries";
+import { projectListOptions } from "@orvilo/core/projects/queries";
 import {
   useCreateAutomation,
   useCreateAutomationTrigger,
   useUpdateAutomation,
   useUpdateAutomationTrigger,
-} from "@patchbay/core/automations/mutations";
+} from "@orvilo/core/automations/mutations";
 import type {
   AutomationAssigneeType,
   AutomationCollaborator,
   AutomationExecutionMode,
   AutomationTrigger,
   WebhookEventFilter,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { TitleEditor, ContentEditor, type TitleEditorRef } from "../../editor";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ProjectPicker } from "../../projects/components/project-picker";

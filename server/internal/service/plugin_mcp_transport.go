@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
-	"github.com/patchbay-ai/patchbay/server/pkg/remotemcp"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/pkg/remotemcp"
 )
 
 // The `mcp` transport: a hook that points at an MCP server the plugin author
-// already runs, whose tools Patchbay adopts.
+// already runs, whose tools Orvilo adopts.
 //
 // The whole difference from an `http` hook is who decides the shape. An http
 // hook declares one endpoint in a manifest an administrator read and approved.

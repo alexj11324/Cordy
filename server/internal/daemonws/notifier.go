@@ -5,7 +5,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
 )
 
 // RelayNotifier sends daemon wakeup hints to the local daemon hub and, when

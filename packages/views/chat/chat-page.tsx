@@ -4,21 +4,21 @@ import { useEffect, useRef, useState } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { ArrowLeft, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
-} from "@patchbay/ui/components/ui/resizable";
-import { useIsCompact } from "@patchbay/ui/hooks/use-mobile";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useChatStore } from "@patchbay/core/chat";
-import { chatQuickActionsPendingOptions } from "@patchbay/core/chat/queries";
-import { useRegenerateChatQuickActions } from "@patchbay/core/chat/mutations";
-import { useQuickActionsPendingTimeout } from "@patchbay/core/chat/use-quick-actions-pending-timeout";
+} from "@orvilo/ui/components/ui/resizable";
+import { useIsCompact } from "@orvilo/ui/hooks/use-mobile";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useChatStore } from "@orvilo/core/chat";
+import { chatQuickActionsPendingOptions } from "@orvilo/core/chat/queries";
+import { useRegenerateChatQuickActions } from "@orvilo/core/chat/mutations";
+import { useQuickActionsPendingTimeout } from "@orvilo/core/chat/use-quick-actions-pending-timeout";
 import { useQuickActionsFailureToast } from "./components/use-quick-actions-failure-toast";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, ChatSession } from "@patchbay/core/types";
+import type { Agent, ChatSession } from "@orvilo/core/types";
 import { PageHeader } from "../layout/page-header";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";

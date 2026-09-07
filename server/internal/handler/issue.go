@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"sort"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -20,20 +20,20 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/channelmedia"
-	"github.com/patchbay-ai/patchbay/server/internal/dispatch"
-	"github.com/patchbay-ai/patchbay/server/internal/issueguard"
-	"github.com/patchbay-ai/patchbay/server/internal/issueroles"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	agentpkg "github.com/patchbay-ai/patchbay/server/pkg/agent"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/channelmedia"
+	"github.com/orvilo-ai/orvilo/server/internal/dispatch"
+	"github.com/orvilo-ai/orvilo/server/internal/issueguard"
+	"github.com/orvilo-ai/orvilo/server/internal/issueroles"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	agentpkg "github.com/orvilo-ai/orvilo/server/pkg/agent"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // IssueResponse is the JSON response for an issue.
@@ -3459,11 +3459,11 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		LabelIDs:       labelIDs,
 		AllowDuplicate: req.AllowDuplicate,
 	}, service.IssueCreateOpts{
-		ActorID:          actualCreatorID,
+		ActorID:                actualCreatorID,
 		ConsumeTaskLeaseID:     consumeTaskLeaseID,
 		ConsumeTaskLeaseTaskID: consumeTaskLeaseTaskID,
-		AnalyticsAgentID: analyticsAgentID,
-		Platform:         func() string { p, _, _ := middleware.ClientMetadataFromContext(r.Context()); return p }(),
+		AnalyticsAgentID:       analyticsAgentID,
+		Platform:               func() string { p, _, _ := middleware.ClientMetadataFromContext(r.Context()); return p }(),
 		BroadcastPayload: func(issue db.Issue, atts []db.Attachment, labels []db.IssueLabel) map[string]any {
 			payload := issueToResponse(issue, prefix)
 			// The event other tabs receive must carry the category too — filling

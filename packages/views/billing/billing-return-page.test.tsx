@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enBilling from "../locales/en/billing.json";
 
 const mockReplace = vi.hoisted(() => vi.fn());
@@ -27,11 +27,11 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => workspacesRef.current,
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   workspaceListOptions: () => ({ queryKey: ["workspaces"], queryFn: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@orvilo/core/auth", () => {
   const useAuthStore = Object.assign(
     (selector?: (state: typeof authRef.current) => unknown) =>
       selector ? selector(authRef.current) : authRef.current,

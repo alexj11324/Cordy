@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://accounts.aspectlylabs.com/v1/contract/schema.json",
-  "title": "Patchbay auth broker contract",
+  "title": "Orvilo auth broker contract",
   "type": "object",
   "additionalProperties": false,
   "required": ["name", "version", "origins", "broker", "goApi", "desktop", "client", "authority"],

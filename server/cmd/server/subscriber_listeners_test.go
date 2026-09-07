@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/handler"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/handler"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // subscriberTest helpers — reuse the integration test fixtures from TestMain
@@ -177,15 +177,15 @@ func TestSubscriberIssueCreated_CreatorIsOwner(t *testing.T) {
 		ActorID:     testUserID,
 		Payload: map[string]any{
 			"issue": handler.IssueResponse{
-				ID:           issueID,
-				WorkspaceID:  testWorkspaceID,
-				Title:        "test issue",
-				Status:       "todo",
-				Priority:     "medium",
-				CreatorType:  "member",
-				CreatorID:    testUserID,
-				OwnerType:    &ownerType,
-				OwnerID:      &ownerID,
+				ID:          issueID,
+				WorkspaceID: testWorkspaceID,
+				Title:       "test issue",
+				Status:      "todo",
+				Priority:    "medium",
+				CreatorType: "member",
+				CreatorID:   testUserID,
+				OwnerType:   &ownerType,
+				OwnerID:     &ownerID,
 			},
 		},
 	})

@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/repocache"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/repocache"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -364,9 +364,9 @@ func TestConfigureCodexTaskShellEnvironment(t *testing.T) {
 			"ORVILO_LLM_API_KEY=daemon-secret",
 		}
 		agentEnv := map[string]string{
-			"CUSTOM_ACCESS_TOKEN":       "agent-secret",
-			"CUSTOM_FLAG":               "enabled",
-			"UNAUTHORIZED_TOKEN":        "daemon-secret",
+			"CUSTOM_ACCESS_TOKEN":     "agent-secret",
+			"CUSTOM_FLAG":             "enabled",
+			"UNAUTHORIZED_TOKEN":      "daemon-secret",
 			"ORVILO_TASK_CONFIG_ROOT": "/task/patchbay-config",
 			"ORVILO_SERVER_URL":       "https://task.example",
 			"ORVILO_TOKEN":            "mat_task",
@@ -427,7 +427,7 @@ func TestCodexTaskShellEnvInheritsRealHome(t *testing.T) {
 	// What runTask layers on top for a Codex task: task identity plus the
 	// task-scoped CODEX_HOME, and — since MUL-5578 — no HOME/XDG entry.
 	explicit := map[string]string{
-		"CODEX_HOME":                codexHome,
+		"CODEX_HOME":              codexHome,
 		"ORVILO_TASK_CONFIG_ROOT": "/task/patchbay-config",
 		"ORVILO_TOKEN":            "mat_task",
 		"ORVILO_SERVER_URL":       "https://task.example",
@@ -473,7 +473,7 @@ func TestCodexShellAuthorizedCustomEnvNamesUsesDaemonBlocklist(t *testing.T) {
 	got := codexShellAuthorizedCustomEnvNames(map[string]string{
 		"CUSTOM_ACCESS_TOKEN": "agent-secret",
 		"custom_secret":       "agent-secret",
-		"ORVILO_TOKEN":      "must-not-authorize",
+		"ORVILO_TOKEN":        "must-not-authorize",
 		"PATH":                "/must/not/override",
 		"HOME":                "/must/not/override",
 		"CODEX_HOME":          "/must/not/override",
@@ -535,7 +535,7 @@ func TestTaskScopedAuthToken(t *testing.T) {
 	}
 }
 
-func TestTaskPatchbayEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
+func TestTaskOrviloEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -548,7 +548,7 @@ func TestTaskPatchbayEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 		AgentID:     "agent-test",
 		WorkspaceID: "workspace-test",
 	}
-	env := taskPatchbayEnvironment(task, "agent-name", fakeToken, taskRoot, workspacesRoot, "https://task.example", 19514, 3, "/task/tmp")
+	env := taskOrviloEnvironment(task, "agent-name", fakeToken, taskRoot, workspacesRoot, "https://task.example", 19514, 3, "/task/tmp")
 
 	want := map[string]string{
 		"ORVILO_TOKEN":                fakeToken,
@@ -561,12 +561,12 @@ func TestTaskPatchbayEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 		"ORVILO_AGENT_ID":             "agent-test",
 		"ORVILO_TASK_ID":              "task-test",
 		"ORVILO_TASK_SLOT":            "3",
-		"TMPDIR":                        "/task/tmp",
-		"TMP":                           "/task/tmp",
-		"TEMP":                          "/task/tmp",
+		"TMPDIR":                      "/task/tmp",
+		"TMP":                         "/task/tmp",
+		"TEMP":                        "/task/tmp",
 	}
 	if !maps.Equal(env, want) {
-		t.Fatalf("taskPatchbayEnvironment() = %#v, want %#v", env, want)
+		t.Fatalf("taskOrviloEnvironment() = %#v, want %#v", env, want)
 	}
 
 	layerCustomEnvAndHermesHome(env, map[string]string{
@@ -839,7 +839,7 @@ func TestBuildPromptContainsIssueID(t *testing.T) {
 // one sentence. The dividing question is whether the conversation can still be
 // READ, not whether it is a chat: an issue's comments, a Slack channel's
 // history, and a web chat's / Feishu's / WeCom's / DingTalk's stored
-// chat_message transcript all can; only a surface Patchbay stores no transcript
+// chat_message transcript all can; only a surface Orvilo stores no transcript
 // for cannot. Announcing a loss on the readable ones describes something that
 // did not happen — the user hears "the discussion is gone" when every word
 // survives.
@@ -860,7 +860,7 @@ func TestSessionContinuityNoticeMatchesSurface(t *testing.T) {
 		},
 		{
 			// Slack has a history reader, so the conversation is recoverable —
-			// just from the channel rather than from Patchbay. Telling the user it
+			// just from the channel rather than from Orvilo. Telling the user it
 			// was lost contradicts the commands the same prompt hands the agent.
 			name:         "slack rebuilds from the channel",
 			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeSlack},
@@ -869,7 +869,7 @@ func TestSessionContinuityNoticeMatchesSurface(t *testing.T) {
 		},
 		{
 			// Web chat history is persisted in chat_message, which `patchbay chat
-			// history` reads back — recoverable, just from Patchbay's store.
+			// history` reads back — recoverable, just from Orvilo's store.
 			name:         "web chat rebuilds from the stored transcript",
 			task:         Task{ChatSessionID: "chat-1"},
 			tellUser:     false,
@@ -3208,8 +3208,8 @@ func TestExecuteAndDrain_CodexInactivityReportsMCPToolResultTranscript(t *testin
 		`read line` + "\n" +
 		`echo '{"jsonrpc":"2.0","id":3,"result":{}}'` + "\n" +
 		`echo '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thr-drain","turn":{"id":"turn-drain"}}}'` + "\n" +
-		`echo '{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr-drain","item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Patchbay news"},"status":"inProgress"}}}'` + "\n" +
-		`echo '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr-drain","item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Patchbay news"},"status":"completed","durationMs":1627,"result":{"content":[{"type":"text","text":"private provider payload"}]}}}}'` + "\n" +
+		`echo '{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr-drain","item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Orvilo news"},"status":"inProgress"}}}'` + "\n" +
+		`echo '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr-drain","item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Orvilo news"},"status":"completed","durationMs":1627,"result":{"content":[{"type":"text","text":"private provider payload"}]}}}}'` + "\n" +
 		`sleep 5` + "\n"
 	if err := os.WriteFile(fakePath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake codex: %v", err)
@@ -3266,7 +3266,7 @@ func TestExecuteAndDrain_CodexInactivityReportsMCPToolResultTranscript(t *testin
 		for _, msg := range reported {
 			if msg.Seq == 1 && msg.Type == "tool_use" && msg.Tool == "web_search_exa" {
 				arguments, _ := msg.Input["arguments"].(map[string]any)
-				gotToolUse = msg.Input["server"] == "plugin-exa-search" && arguments["query"] == "latest Patchbay news"
+				gotToolUse = msg.Input["server"] == "plugin-exa-search" && arguments["query"] == "latest Orvilo news"
 			}
 			if msg.Seq == 2 && msg.Type == "tool_result" && msg.Tool == "web_search_exa" && msg.Output == "completed\nduration: 1627 ms" {
 				gotToolResult = true
@@ -4606,7 +4606,7 @@ func TestHandleTask_BareErrorReportsFailureWithCancelledParent(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-		d.handleTask(ctx, Task{ID: "task-bare-error", RuntimeID: "rt-1"}, 0)
+	d.handleTask(ctx, Task{ID: "task-bare-error", RuntimeID: "rt-1"}, 0)
 
 	if got := failCalls.Load(); got != 1 {
 		t.Fatalf("fail callback calls = %d, want 1", got)
@@ -5378,7 +5378,7 @@ func TestSanitizeAgentEnv(t *testing.T) {
 	in := map[string]string{
 		"HOME":        "/evil",
 		"PATH":        "/evil/bin",
-		"ORVILO_X":  "1",
+		"ORVILO_X":    "1",
 		"TEAM_SKILLS": "/srv/team",
 		"HERMES_HOME": "/some/home",
 	}

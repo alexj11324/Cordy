@@ -6,24 +6,24 @@ import { useRender } from "@base-ui/react/use-render"
 import { cva, type VariantProps } from "class-variance-authority"
 import { useTranslation } from "react-i18next"
 
-import { useIsCompact } from "@patchbay/ui/hooks/use-mobile"
-import { cn } from "@patchbay/ui/lib/utils"
-import { Button } from "@patchbay/ui/components/ui/button"
-import { Input } from "@patchbay/ui/components/ui/input"
-import { Separator } from "@patchbay/ui/components/ui/separator"
+import { useIsCompact } from "@orvilo/ui/hooks/use-mobile"
+import { cn } from "@orvilo/ui/lib/utils"
+import { Button } from "@orvilo/ui/components/ui/button"
+import { Input } from "@orvilo/ui/components/ui/input"
+import { Separator } from "@orvilo/ui/components/ui/separator"
 import {
   Sheet,
   SheetContent,
   SheetDescription,
   SheetHeader,
   SheetTitle,
-} from "@patchbay/ui/components/ui/sheet"
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton"
+} from "@orvilo/ui/components/ui/sheet"
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip"
+} from "@orvilo/ui/components/ui/tooltip"
 import { PanelLeftIcon } from "lucide-react"
 
 const SIDEBAR_WIDTH_DEFAULT = 256

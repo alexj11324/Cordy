@@ -1,19 +1,19 @@
 "use client";
 
 import type { ComponentProps, ReactNode } from "react";
-import type { AgentAvailability } from "@patchbay/core/agents";
+import type { AgentAvailability } from "@orvilo/core/agents";
 import type {
   ChatMessage,
   ChatPendingTask,
   ChatQueuedTask,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ChatInput } from "../../chat/components/chat-input";
 import { ChatQueue } from "../../chat/components/chat-queue";

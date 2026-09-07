@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCall = vi.hoisted(() => vi.fn());
-vi.mock("@patchbay/core/api", () => ({ api: { callPluginAction: mockCall } }));
+vi.mock("@orvilo/core/api", () => ({ api: { callPluginAction: mockCall } }));
 
 import { createSurfaceBridge } from "./surface-bridge";
 

@@ -2,7 +2,7 @@ import type {
   QuestionnaireAnswers,
   Role,
   UseCase,
-} from "@patchbay/core/onboarding";
+} from "@orvilo/core/onboarding";
 
 /**
  * `PATCH /api/me/onboarding` overwrites the JSONB column wholesale —

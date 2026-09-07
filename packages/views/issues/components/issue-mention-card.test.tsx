@@ -10,7 +10,7 @@ import {
   type CurrentIssueRenderContextValue,
 } from "../current-issue-render-context";
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/acme/issues/${id}`,
   }),

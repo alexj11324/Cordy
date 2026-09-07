@@ -8,22 +8,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
-import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
-import { getIssueSurfaceViewStore } from "@patchbay/core/issues/stores/surface-view-store";
+import { setApiInstance } from "@orvilo/core/api";
+import type { ApiClient } from "@orvilo/core/api/client";
+import { ViewStoreProvider } from "@orvilo/core/issues/stores/view-store-context";
+import { getIssueSurfaceViewStore } from "@orvilo/core/issues/stores/surface-view-store";
 import type {
   Issue,
   IssueTableGroupsRequest,
   IssueTableQuerySpec,
   IssueTableRowsRequest,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueSurfaceSelectionProvider } from "../surface/selection-context";
 import type { IssueSurfaceSelection } from "../surface/selection-context";
 import { TableView } from "./table-view";
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
 
 // jsdom has no layout, so the real row virtualizer sees a 0-height viewport and
 // renders nothing. Render every row inline instead.
@@ -46,13 +46,13 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Someone" }),
   buildActorNameResolver: () => () => "Someone",
 }));
 
 const authState = { user: { id: "user-1", email: "t@t.co", name: "Tester" }, isAuthenticated: true };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (state: unknown) => unknown) =>
       selector ? selector(authState) : authState,
@@ -74,10 +74,10 @@ vi.mock("../../navigation", () => ({
   useIntentNavigate: () => () => {},
 }));
 
-vi.mock("@patchbay/core/paths", async () => {
+vi.mock("@orvilo/core/paths", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/paths")>(
-      "@patchbay/core/paths",
+    await vi.importActual<typeof import("@orvilo/core/paths")>(
+      "@orvilo/core/paths",
     );
   return { ...actual, useWorkspacePaths: () => actual.paths.workspace("test") };
 });

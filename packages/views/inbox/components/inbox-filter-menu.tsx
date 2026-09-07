@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { CircleDot, Filter, Mail, RotateCcw, SignalHigh, UserRound } from "lucide-react";
-import { PRIORITY_DISPLAY_ORDER } from "@patchbay/core/issues/config";
+import { PRIORITY_DISPLAY_ORDER } from "@orvilo/core/issues/config";
 import {
   filterInboxItems,
   inboxActorKey,
@@ -12,11 +12,11 @@ import {
   type InboxPriorityFilterSupport,
   useInboxFilters,
   useInboxFilterStore,
-} from "@patchbay/core/inbox/filter-store";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import type { InboxItem } from "@patchbay/core/types";
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/inbox/filter-store";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import type { InboxItem } from "@orvilo/core/types";
+import { ActorAvatar } from "@orvilo/ui/components/common/actor-avatar";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -27,8 +27,8 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { cn } from "@orvilo/ui/lib/utils";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { useStatusOptions } from "../../issues/utils/status-options";

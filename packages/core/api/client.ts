@@ -5483,8 +5483,8 @@ export class ApiClient {
   }
 
   // redeemWecomBindingToken binds the WeCom aibot userid carried by the
-  // token to the logged-in Patchbay user. Called by the /wecom/bind redeem
-  // page after the user clicks through the "link your Patchbay account"
+  // token to the logged-in Orvilo user. Called by the /wecom/bind redeem
+  // page after the user clicks through the "link your Orvilo account"
   // prompt the bot sent in WeCom. Status codes:
   //   410 Gone      → invalid / expired / already consumed
   //   409 Conflict  → the WeCom user is already bound to a different user

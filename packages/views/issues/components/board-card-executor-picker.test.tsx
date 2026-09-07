@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { Issue, IssueExecutorType } from "@patchbay/core/types";
+import type { Issue, IssueExecutorType } from "@orvilo/core/types";
 import { AppLink, NavigationProvider, type NavigationAdapter } from "../../navigation";
 import {
   IssueSurfaceActionsProvider,
@@ -13,25 +13,25 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   useQuery: () => ({ data: [] }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/properties", () => ({
+vi.mock("@orvilo/core/properties", () => ({
   propertyListOptions: () => ({ queryKey: ["properties"] }),
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
     selector({ user: { id: "viewer-1" } }),
 }));
 
-vi.mock("@patchbay/core/agents", () => ({
+vi.mock("@orvilo/core/agents", () => ({
   isAgentRuntimeBound: () => true,
   useAgentPresenceDetail: () => ({ availability: "offline", workload: null }),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "ws-1", slug: "acme" }),
   useWorkspacePaths: () => ({
     memberDetail: (id: string) => `/acme/members/${id}`,
@@ -54,11 +54,11 @@ const viewState = vi.hoisted(() => ({
   cardPropertyIds: [],
 }));
 
-vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
+vi.mock("@orvilo/core/issues/stores/view-store-context", () => ({
   useViewStore: (selector: (state: typeof viewState) => unknown) => selector(viewState),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (type: string) => `Assigned ${type}`,
     getActorInitials: () => "AA",

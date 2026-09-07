@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback } from "react";
-import { isIssueStatusCategory } from "@patchbay/core/issue-statuses";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import type { IssueStatusCategory } from "@patchbay/core/types";
+import { isIssueStatusCategory } from "@orvilo/core/issue-statuses";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
+import type { IssueStatusCategory } from "@orvilo/core/types";
 import { useT } from "../../i18n";
 
 /**

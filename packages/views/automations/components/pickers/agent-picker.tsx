@@ -3,10 +3,10 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Bot } from "lucide-react";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { isAgentRuntimeBound } from "@patchbay/core/agents";
-import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
-import type { AutomationAssigneeType } from "@patchbay/core/types";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { isAgentRuntimeBound } from "@orvilo/core/agents";
+import { agentListOptions, teamListOptions } from "@orvilo/core/workspace/queries";
+import type { AutomationAssigneeType } from "@orvilo/core/types";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import {
   PropertyPicker,

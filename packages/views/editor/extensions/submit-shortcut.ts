@@ -5,8 +5,8 @@ import {
   isPlainShortcut,
   shortcutMatchesEvent,
   type ShortcutChord,
-} from "@patchbay/core/shortcuts";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@orvilo/core/shortcuts";
+import { isImeComposing } from "@orvilo/core/utils";
 
 export function shouldHandleSubmitShortcut(
   event: KeyboardEvent,

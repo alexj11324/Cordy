@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // freshDaemon builds a Daemon with every map field the production New() seeds

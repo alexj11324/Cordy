@@ -22,10 +22,10 @@ const (
 	dshTerminateGrace  = 2 * time.Second
 )
 
-// dshBackend drives the Patchbay DSH bundle over its versioned JSONL
+// dshBackend drives the Orvilo DSH bundle over its versioned JSONL
 // stdio protocol. The adapter is intentionally independent of ACP: DSH owns
 // the agent loop, session store, model catalog, tools, and MCP clients, while
-// this package only translates those events into Patchbay's Backend contract.
+// this package only translates those events into Orvilo's Backend contract.
 type dshBackend struct {
 	cfg Config
 }

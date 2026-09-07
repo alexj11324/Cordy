@@ -12,11 +12,11 @@
   },
   "iconLibrary": "lucide",
   "aliases": {
-    "components": "@patchbay/ui/components",
-    "ui": "@patchbay/ui/components/ui",
-    "hooks": "@patchbay/ui/hooks",
-    "lib": "@patchbay/ui/lib",
-    "utils": "@patchbay/ui/lib/utils"
+    "components": "@orvilo/ui/components",
+    "ui": "@orvilo/ui/components/ui",
+    "hooks": "@orvilo/ui/hooks",
+    "lib": "@orvilo/ui/lib",
+    "utils": "@orvilo/ui/lib/utils"
   },
   "registries": {
     "@reui": {

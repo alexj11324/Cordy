@@ -5,7 +5,7 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   NavigationProvider,
   type NavigationAdapter,
-} from "@patchbay/views/navigation";
+} from "@orvilo/views/navigation";
 import { canGoBackInApp } from "./in-app-history";
 
 /**

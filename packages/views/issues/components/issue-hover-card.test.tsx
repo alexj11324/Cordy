@@ -9,11 +9,11 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
+vi.mock("@orvilo/core/issue-statuses/hooks", () => ({
   // This suite replaces useQuery wholesale, so the catalog hook is stubbed
   // rather than left to fall through the shared useQuery mock.
   useIssueStatuses: () => ({
@@ -27,7 +27,7 @@ vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/issues/queries", () => ({
+vi.mock("@orvilo/core/issues/queries", () => ({
   issueDetailOptions: (_workspaceId: string, issueId: string) => ({
     queryKey: ["issue", issueId],
   }),
@@ -65,7 +65,7 @@ vi.mock("../../common/actor-avatar", () => ({
 // row from being inlined back into the card body.
 const mockUseActorName = vi.hoisted(() => vi.fn(() => ({ getActorName: () => "zain" })));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: mockUseActorName,
 }));
 

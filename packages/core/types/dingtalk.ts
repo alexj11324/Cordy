@@ -1,6 +1,6 @@
 import type { MessagingInstallationRuntime, MessagingInstallationSetup } from "./messaging";
 
-/** A DingTalk robot installation bound to a single Patchbay agent.
+/** A DingTalk robot installation bound to a single Orvilo agent.
  *
  * Wire shape mirrors `DingTalkInstallationResponse` in
  * `server/internal/handler/dingtalk.go`. New fields the backend adds in the
@@ -22,7 +22,7 @@ export interface DingTalkInstallation {
   /** False only when a workspace admin is viewing an orphaned installation
    * whose Agent no longer exists. Optional for older backends. */
   agent_available?: boolean;
-  /** DingTalk staff ids linked by the currently authenticated Patchbay user for
+  /** DingTalk staff ids linked by the currently authenticated Orvilo user for
    * this bot. Member-scoped so the member-visible installation endpoint does
    * not disclose other members' DingTalk identities. */
   bound_dingtalk_user_ids?: string[];
@@ -58,7 +58,7 @@ export type DingTalkGroupRoute = {
 export type ListDingTalkGroupRoutesResponse = { routes: DingTalkGroupRoute[] };
 export type UpdateDingTalkGroupRouteRequest = { agent_id: string };
 
-/** One connected Patchbay bot observed in a DingTalk group. */
+/** One connected Orvilo bot observed in a DingTalk group. */
 export interface DingTalkGroupBot {
   installation_id: string;
   agent_id: string;
@@ -113,7 +113,7 @@ export interface RegisterDingTalkBYORequest {
 }
 
 /** Post-redemption echo: the DingTalk user id the token carried is now bound to
- * the logged-in Patchbay user in this workspace/installation. */
+ * the logged-in Orvilo user in this workspace/installation. */
 export interface RedeemDingTalkBindingTokenResponse {
   workspace_id: string;
   installation_id: string;

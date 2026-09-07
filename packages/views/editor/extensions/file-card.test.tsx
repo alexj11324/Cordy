@@ -18,7 +18,7 @@ const { getAttachmentTextContentMock, resolveAttachmentMock, openByUrlMock, tryO
     tryOpenMock: vi.fn(),
   }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: { getAttachmentTextContent: getAttachmentTextContentMock },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
@@ -51,8 +51,8 @@ vi.mock("../../navigation", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/paths")>();
+vi.mock("@orvilo/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@orvilo/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",

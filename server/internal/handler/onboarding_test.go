@@ -12,7 +12,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
 )
 
 // newWaitlistTestUser inserts a fresh user row, returns its id, and
@@ -282,7 +282,7 @@ func TestBootstrapOnboardingRuntimeCreatesSingleGuideIssue(t *testing.T) {
 		t.Fatalf("assistant instructions were not seeded with the new identity: %q", instructions)
 	}
 	if avatarURL == nil || *avatarURL != onboardingAssistantAvatarURL {
-		t.Fatalf("agent avatar_url = %v, want seeded Patchbay Helper avatar", avatarURL)
+		t.Fatalf("agent avatar_url = %v, want seeded Orvilo Helper avatar", avatarURL)
 	}
 
 	var (
@@ -393,7 +393,7 @@ func TestBootstrapOnboardingRuntime_WithStarterPrompt(t *testing.T) {
 		testUserID,
 	)
 
-	const wantPrompt = "Introduce Patchbay to me, please."
+	const wantPrompt = "Introduce Orvilo to me, please."
 	body := map[string]string{
 		"workspace_id":   testWorkspaceID,
 		"runtime_id":     testRuntimeID,
@@ -552,7 +552,7 @@ func TestBootstrapOnboardingNoRuntimeCreatesSingleGuideIssue(t *testing.T) {
 		t.Fatalf("issue status/priority = %s/%s, want todo/high", issueStatus, issuePriority)
 	}
 	for _, want := range []string{
-		"Try Patchbay first",
+		"Try Orvilo first",
 		"https://patchbay.aspectlylabs.com/docs/install-agent-runtime",
 		"npm i -g @openai/codex",
 	} {

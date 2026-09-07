@@ -142,7 +142,7 @@ jobs:
           }
 
       - name: Typecheck, lint, and test mobile
-        run: pnpm exec turbo typecheck lint test --filter=@patchbay/mobile
+        run: pnpm exec turbo typecheck lint test --filter=@orvilo/mobile
 
       - name: Install EAS CLI
         run: pnpm dlx eas-cli@latest --version

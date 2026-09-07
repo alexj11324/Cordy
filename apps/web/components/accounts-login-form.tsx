@@ -1,9 +1,9 @@
 "use client";
 
-import { AccountsLoginForm } from "@patchbay/auth-ui/login-form";
-import { messagesForLocale } from "@patchbay/auth-ui/messages";
+import { AccountsLoginForm } from "@orvilo/auth-ui/login-form";
+import { messagesForLocale } from "@orvilo/auth-ui/messages";
 import { useClerk } from "@clerk/nextjs";
-import { useLocale } from "@patchbay/views/i18n";
+import { useLocale } from "@orvilo/views/i18n";
 import { authRouteWithRedirect } from "@/features/auth/safe-redirect";
 
 export function WebAccountsLoginForm({ returnUrl }: { returnUrl: string }) {

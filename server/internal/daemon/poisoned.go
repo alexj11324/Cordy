@@ -3,8 +3,8 @@ package daemon
 import (
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 )
 
 // FailureReason values for tasks whose session is "poisoned" — i.e.

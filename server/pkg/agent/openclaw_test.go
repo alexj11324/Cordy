@@ -1086,7 +1086,7 @@ func TestBuildOpenclawArgsFiltersBlockedCustomArgs(t *testing.T) {
 // ── Mode matrix (issue #3260) ──
 //
 // `openclaw agent` runs through the Gateway by default; `--local` is the
-// embedded-mode escape hatch. Patchbay historically hard-coded `--local` so
+// embedded-mode escape hatch. Orvilo historically hard-coded `--local` so
 // every spawn went embedded. The OpenclawMode field lets a user-configured
 // agent opt into Gateway routing by setting mode="gateway" in runtime_config.
 

@@ -7,7 +7,7 @@ It does not automatically deploy new main commits or gate production.
 - Web: https://patchbay-staging.nebula-spaces.com
 - API: https://patchbay-staging-api.nebula-spaces.com
 - Accounts: https://patchbay-staging-accounts.nebula-spaces.com
-- Clerk application: Patchbay Staging (app_3IthtCgfLn1WhM4DCfzpsKZaF3G), development instance.
+- Clerk application: Orvilo Staging (app_3IthtCgfLn1WhM4DCfzpsKZaF3G), development instance.
 - Secret Manager: general-secrets-store / patchbay-nebula-staging.
 - Compose project: patchbay-nebula-staging; independent pgdata and uploads volumes.
 - Server installation: /home/ubuntu/patchbay-nebula-staging.

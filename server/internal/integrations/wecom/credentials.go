@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
 )
 
 // CredentialsResolver mints per-call InstallationCredentials with plaintext

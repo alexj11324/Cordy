@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/patchbay-ai/patchbay/server/internal/selfexec"
+	"github.com/orvilo-ai/orvilo/server/internal/selfexec"
 )
 
 // oldBinarySuffix is appended to the previous executable while a new one is

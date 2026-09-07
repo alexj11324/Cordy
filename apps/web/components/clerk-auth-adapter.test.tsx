@@ -44,7 +44,7 @@ vi.mock("@clerk/nextjs", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(
     vi.fn((selector: (state: typeof authState.current) => unknown) =>
       selector(authState.current),
@@ -56,7 +56,7 @@ vi.mock("@patchbay/core/auth", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   ApiError: class ApiError extends Error {
     status?: number;
 
@@ -71,7 +71,7 @@ import {
   ClerkAuthAdapter,
   useClerkSessionExchangeReady,
 } from "./clerk-auth-adapter";
-import { ApiError } from "@patchbay/core/api";
+import { ApiError } from "@orvilo/core/api";
 
 function ExchangeStatus() {
   return (

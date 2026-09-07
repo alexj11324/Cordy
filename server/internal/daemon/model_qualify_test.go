@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // stubModelDiscovery replaces the daemon's listModels indirection with a

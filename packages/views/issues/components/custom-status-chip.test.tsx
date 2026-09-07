@@ -1,16 +1,16 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { buildIssueStatusCatalog } from "@patchbay/core/issue-statuses";
-import type { IssueStatusEntry } from "@patchbay/core/types";
+import { buildIssueStatusCatalog } from "@orvilo/core/issue-statuses";
+import type { IssueStatusEntry } from "@orvilo/core/types";
 import { CustomStatusChip } from "./custom-status-chip";
 
 let catalogEntries: IssueStatusEntry[] | undefined;
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
+vi.mock("@orvilo/core/issue-statuses/hooks", () => ({
   useIssueStatuses: () => buildIssueStatusCatalog(catalogEntries),
 }));
 

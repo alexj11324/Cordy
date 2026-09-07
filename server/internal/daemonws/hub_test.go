@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 func TestNotifyTaskAvailable(t *testing.T) {

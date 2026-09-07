@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { useModalStore } from "@patchbay/core/modals";
-import { paths } from "@patchbay/core/paths";
+import { useModalStore } from "@orvilo/core/modals";
+import { paths } from "@orvilo/core/paths";
 import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 

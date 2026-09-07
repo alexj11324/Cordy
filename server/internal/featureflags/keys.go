@@ -3,7 +3,7 @@ package featureflags
 import (
 	"context"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/featureflag"
+	"github.com/orvilo-ai/orvilo/server/pkg/featureflag"
 )
 
 const (

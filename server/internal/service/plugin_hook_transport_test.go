@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
 )
 
 // These exercise the real outbound path — a live HTTPS server, a real request,

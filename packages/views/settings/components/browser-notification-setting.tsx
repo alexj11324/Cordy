@@ -6,7 +6,7 @@ import {
   isWebNotificationSupported,
   requestWebNotificationPermission,
   type WebNotificationPermission,
-} from "@patchbay/core/platform";
+} from "@orvilo/core/platform";
 import { isDesktopShell } from "../../platform";
 import { useT } from "../../i18n";
 import { SettingsCard, SettingsPillButton, SettingsRow } from "./settings-layout";

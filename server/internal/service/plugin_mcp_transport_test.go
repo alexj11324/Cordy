@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/remotemcp"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/remotemcp"
 )
 
 // The approval is the grant, not the install.

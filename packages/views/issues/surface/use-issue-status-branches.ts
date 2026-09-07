@@ -12,21 +12,21 @@ import {
   useQueryClient,
   type UseQueryResult,
 } from "@tanstack/react-query";
-import { ALL_STATUSES } from "@patchbay/core/issues/config";
-import { issueColumnCategory } from "@patchbay/core/issues";
-import type { IssueStatusCatalog } from "@patchbay/core/issue-statuses";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import { ALL_STATUSES } from "@orvilo/core/issues/config";
+import { issueColumnCategory } from "@orvilo/core/issues";
+import type { IssueStatusCatalog } from "@orvilo/core/issue-statuses";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
 import {
   issueKeys,
   issueTableRowPageOptions,
-} from "@patchbay/core/issues/queries";
+} from "@orvilo/core/issues/queries";
 import type {
   Issue,
   IssueStatusCategory,
   IssueTableFacetsResponse,
   IssueTableQuerySpec,
   IssueTableRowsResponse,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 
 export interface IssueStatusPageState {
   total: number;

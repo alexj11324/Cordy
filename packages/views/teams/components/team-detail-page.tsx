@@ -2,34 +2,34 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { api } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
-import { isImeComposing } from "@patchbay/core/utils";
-import { getShortcut, shortcutMatchesEvent } from "@patchbay/core/shortcuts";
+import { api } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useCurrentWorkspace, useWorkspacePaths } from "@orvilo/core/paths";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
+import { isImeComposing } from "@orvilo/core/utils";
+import { getShortcut, shortcutMatchesEvent } from "@orvilo/core/shortcuts";
 import { useTimeAgo } from "../../i18n";
-import { agentListOptions, memberListOptions, teamMemberStatusOptions, workspaceKeys } from "@patchbay/core/workspace/queries";
+import { agentListOptions, memberListOptions, teamMemberStatusOptions, workspaceKeys } from "@orvilo/core/workspace/queries";
 import { useNavigation } from "../../navigation";
 import { AppLink } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { PageHeader } from "../../layout/page-header";
 import { Users, Plus, Trash2, ArrowUpRight, Crown, Loader2, Pencil, FileText, Save } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
+} from "@orvilo/ui/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/ui/components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +37,7 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,8 +47,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { ContentEditor } from "../../editor/content-editor";
@@ -59,7 +59,7 @@ import {
 } from "../../issues/components/pickers/property-picker";
 import { ChevronDown, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import type { Team, TeamMember, TeamMemberStatus, TeamMemberStatusValue, Agent, MemberWithUser } from "@patchbay/core/types";
+import type { Team, TeamMember, TeamMemberStatus, TeamMemberStatusValue, Agent, MemberWithUser } from "@orvilo/core/types";
 import { useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 

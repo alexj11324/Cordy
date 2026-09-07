@@ -1,14 +1,14 @@
 "use client";
 
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { ActorAvatar } from "@orvilo/ui/components/common/actor-avatar";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@patchbay/ui/components/ui/hover-card";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import type { WorkingAgentSummary } from "@patchbay/core/types";
+} from "@orvilo/ui/components/ui/hover-card";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import type { WorkingAgentSummary } from "@orvilo/core/types";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { useT } from "../../i18n";
 

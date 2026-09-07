@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { ArrowLeft } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@orvilo/ui/components/ui/button";
 import { useT } from "../../i18n";
 
 /**

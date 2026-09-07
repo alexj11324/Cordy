@@ -1,4 +1,4 @@
-# Patchbay CLI — Installation Guide for AI Agents
+# Orvilo CLI — Installation Guide for AI Agents
 
 > **Audience:** This document is designed for AI agents (Claude Code, Codex, etc.) to read and execute step-by-step. Each step includes the exact shell commands to run, expected outcomes, and error handling.
 
@@ -7,12 +7,12 @@
 Give this instruction to your AI agent:
 
 ```
-Fetch https://github.com/alexj11324/Cordy/blob/main/CLI_INSTALL.md and follow the instructions to install Patchbay CLI, log in, and start the daemon on this machine.
+Fetch https://github.com/alexj11324/Cordy/blob/main/CLI_INSTALL.md and follow the instructions to install Orvilo CLI, log in, and start the daemon on this machine.
 ```
 
 ---
 
-## Step 1: Check if Patchbay CLI is already installed
+## Step 1: Check if Orvilo CLI is already installed
 
 Run:
 
@@ -25,7 +25,7 @@ patchbay version
 
 ---
 
-## Step 2: Install the Patchbay CLI
+## Step 2: Install the Orvilo CLI
 
 > **Windows users:** Skip to [Option C: Windows (PowerShell)](#option-c-windows-powershell) below.
 
@@ -127,7 +127,7 @@ patchbay login
 
 **Important:** This command opens a browser window for OAuth authentication. Tell the user:
 
-> "A browser window will open for Patchbay login. Please complete the authentication in your browser, then come back here."
+> "A browser window will open for Orvilo login. Please complete the authentication in your browser, then come back here."
 
 Wait for the command to complete. It will automatically discover and watch all workspaces the user belongs to.
 
@@ -190,7 +190,7 @@ Confirm:
 
 If the agents list is empty, tell the user:
 
-> "The Patchbay daemon is running but no AI agent CLIs were detected. Please install at least one supported CLI (`claude`, `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor-agent`, or `grok`), then restart the daemon with `patchbay daemon stop && patchbay daemon start`."
+> "The Orvilo daemon is running but no AI agent CLIs were detected. Please install at least one supported CLI (`claude`, `codex`, `copilot`, `opencode`, `openclaw`, `hermes`, `pi`, `cursor-agent`, or `grok`), then restart the daemon with `patchbay daemon stop && patchbay daemon start`."
 
 ---
 
@@ -198,4 +198,4 @@ If the agents list is empty, tell the user:
 
 When all steps are complete, inform the user:
 
-> "Patchbay CLI is installed and the daemon is running. Agents in your workspaces can now execute tasks on this machine. You can manage workspaces with `patchbay workspace list` and view daemon logs with `patchbay daemon logs -f`."
+> "Orvilo CLI is installed and the daemon is running. Agents in your workspaces can now execute tasks on this machine. You can manage workspaces with `patchbay workspace list` and view daemon logs with `patchbay daemon logs -f`."

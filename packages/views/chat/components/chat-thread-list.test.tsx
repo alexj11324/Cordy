@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import type { Agent, ChatSession } from "@patchbay/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import type { Agent, ChatSession } from "@orvilo/core/types";
 import enChat from "../../locales/en/chat.json";
 import enIssues from "../../locales/en/issues.json";
 
@@ -24,24 +24,24 @@ vi.mock("../../common/actor-avatar", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/agents", () => ({
+vi.mock("@orvilo/core/agents", () => ({
   useWorkspacePresenceMap: () => ({ byAgent: new Map() }),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: { cancelTaskById: vi.fn() },
 }));
 
-vi.mock("@patchbay/core/chat", () => ({
+vi.mock("@orvilo/core/chat", () => ({
   useChatStore: (selector: (s: { setActiveSession: typeof setActiveSession }) => unknown) =>
     selector({ setActiveSession }),
 }));
 
-vi.mock("@patchbay/core/chat/mutations", () => ({
+vi.mock("@orvilo/core/chat/mutations", () => ({
   useDeleteChatSession: () => ({ mutate: vi.fn(), isPending: false }),
   useSetChatSessionPinned: () => ({ mutate: vi.fn(), isPending: false }),
   useSetChatSessionArchived: () => ({ mutate: archiveMutate, isPending: false }),

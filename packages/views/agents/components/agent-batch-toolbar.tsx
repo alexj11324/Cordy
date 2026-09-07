@@ -4,15 +4,15 @@ import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { MemberWithUser } from "@patchbay/core/types";
-import { api } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { Button } from "@patchbay/ui/components/ui/button";
+import type { MemberWithUser } from "@orvilo/core/types";
+import { api } from "@orvilo/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@patchbay/ui/lib/motion";
+} from "@orvilo/ui/lib/motion";
 import {
   Dialog,
   DialogContent,
@@ -20,7 +20,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import { Archive, ArchiveRestore, Loader2, X } from "lucide-react";
 import { useT } from "../../i18n";
 import { AccessPicker, type AccessChange } from "./inspector/access-picker";

@@ -3,18 +3,18 @@
 import { useMemo, useState } from "react";
 import { BarChart3, RefreshCw } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@patchbay/ui/components/ui/tabs";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@orvilo/ui/components/ui/tabs";
 import {
   CompactNumberFlow,
   CurrencyNumberFlow,
   NumberFlow,
-} from "@patchbay/ui/components/ui/number-flow";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import type { Agent } from "@patchbay/core/types";
-import { agentListOptions } from "@patchbay/core/workspace/queries";
-import { projectListOptions } from "@patchbay/core/projects/queries";
+} from "@orvilo/ui/components/ui/number-flow";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import type { Agent } from "@orvilo/core/types";
+import { agentListOptions } from "@orvilo/core/workspace/queries";
+import { projectListOptions } from "@orvilo/core/projects/queries";
 import {
   dashboardKeys,
   dashboardUsageDailyOptions,
@@ -23,8 +23,8 @@ import {
   dashboardRunTimeDailyOptions,
   dashboardFailuresDailyOptions,
   dashboardFailuresByAgentOptions,
-} from "@patchbay/core/dashboard";
-import { useCustomPricingStore } from "@patchbay/core/runtimes/custom-pricing-store";
+} from "@orvilo/core/dashboard";
+import { useCustomPricingStore } from "@orvilo/core/runtimes/custom-pricing-store";
 import { useViewingTimezone } from "../../common/use-viewing-timezone";
 import { PAGE_GUTTER } from "../../layout/page-header";
 import { CollectionPageHeader } from "../../layout/collection-page";
@@ -67,17 +67,17 @@ import { ProjectFilter, TimeRangeFilter } from "./dashboard-filters";
 import { UsageTrendCard } from "./usage-trend-card";
 import { Leaderboard } from "./leaderboard";
 import { ErrorsTab } from "./errors-tab";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 
 // Stable references — `data ?? []` would create a new empty array on
 // every render while the query is loading, which breaks useMemo's
 // reference-equality dep check and trips the exhaustive-deps lint rule.
-const EMPTY_DAILY: import("@patchbay/core/types").DashboardUsageDaily[] = [];
-const EMPTY_BY_AGENT: import("@patchbay/core/types").DashboardUsageByAgent[] = [];
-const EMPTY_RUNTIME: import("@patchbay/core/types").DashboardAgentRunTime[] = [];
-const EMPTY_RUNTIME_DAILY: import("@patchbay/core/types").DashboardRunTimeDaily[] = [];
-const EMPTY_FAILURE_DAILY: import("@patchbay/core/types").DashboardFailureDaily[] = [];
-const EMPTY_FAILURE_BY_AGENT: import("@patchbay/core/types").DashboardFailureByAgent[] =
+const EMPTY_DAILY: import("@orvilo/core/types").DashboardUsageDaily[] = [];
+const EMPTY_BY_AGENT: import("@orvilo/core/types").DashboardUsageByAgent[] = [];
+const EMPTY_RUNTIME: import("@orvilo/core/types").DashboardAgentRunTime[] = [];
+const EMPTY_RUNTIME_DAILY: import("@orvilo/core/types").DashboardRunTimeDaily[] = [];
+const EMPTY_FAILURE_DAILY: import("@orvilo/core/types").DashboardFailureDaily[] = [];
+const EMPTY_FAILURE_BY_AGENT: import("@orvilo/core/types").DashboardFailureByAgent[] =
   [];
 const EMPTY_AGENTS: Agent[] = [];
 

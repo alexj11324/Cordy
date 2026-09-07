@@ -16,9 +16,9 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { Virtuoso } from "react-virtuoso";
-import { Button } from "@patchbay/ui/components/ui/button";
-import type { Issue, IssueStatusCategory, Project } from "@patchbay/core/types";
-import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
+import { Button } from "@orvilo/ui/components/ui/button";
+import type { Issue, IssueStatusCategory, Project } from "@orvilo/core/types";
+import { useViewStore } from "@orvilo/core/issues/stores/view-store-context";
 import { StatusHeading } from "./status-heading";
 import { ListRow, DraggableListRow, type ChildProgress } from "./list-row";
 import { useDragSettle } from "./use-drag-settle";

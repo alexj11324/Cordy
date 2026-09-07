@@ -24,11 +24,11 @@ import {
   FileQuestion,
   type LucideIcon,
 } from "lucide-react";
-import { resolveRouteIconName, type RouteIconName } from "@patchbay/core/paths";
+import { resolveRouteIconName, type RouteIconName } from "@orvilo/core/paths";
 
 /**
  * Icon name → component registry: the rendering half of the route icon
- * contract defined in `@patchbay/core/paths`.
+ * contract defined in `@orvilo/core/paths`.
  *
  * Every {@link RouteIconName} must have an entry — the `Record` type makes a
  * missing key a compile error.

@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import enWorkProducts from "../locales/en/work-products.json";
@@ -85,11 +85,11 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
     queryKey.includes("provenance") ? queryState.provenance : queryState.products,
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({
     workProductDetail: (id: string) => `/acme/work-products/${id}`,
     workProducts: () => "/acme/work-products",

@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { X, Plus, Filter, ExternalLink } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
-import type { WebhookEventFilter } from "@patchbay/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
+import type { WebhookEventFilter } from "@orvilo/core/types";
 import { useT } from "../../i18n";
 
 interface WebhookEventFilterSectionProps {

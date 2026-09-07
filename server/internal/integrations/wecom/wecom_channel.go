@@ -28,8 +28,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
 )
 
 // DefaultWSURL is the aibot long-connection endpoint. WeCom publishes a

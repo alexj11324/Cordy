@@ -7,7 +7,7 @@
  * Mobile only filters on status + priority for now; owner / executor / project /
  * label slots from the web filter are deferred to v2.
  */
-import type { Issue, IssuePriority, IssueStatus } from "@patchbay/core/types";
+import type { Issue, IssuePriority, IssueStatus } from "@orvilo/core/types";
 
 export function filterIssues(
   issues: Issue[],

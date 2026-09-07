@@ -1,4 +1,4 @@
-import { useAuthStore } from "@patchbay/core/auth";
+import { useAuthStore } from "@orvilo/core/auth";
 import { toast } from "sonner";
 import type { DaemonTranslator } from "../components/daemon-i18n";
 

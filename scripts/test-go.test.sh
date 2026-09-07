@@ -26,10 +26,10 @@ case "${1:-}" in
       exit 2
     fi
     printf '%s\n' \
-      github.com/patchbay-ai/patchbay/server \
-      github.com/patchbay-ai/patchbay/server/internal/daemon \
-      github.com/patchbay-ai/patchbay/server/pkg/agent \
-      github.com/patchbay-ai/patchbay/server/pkg/agent/internal/testutil
+      github.com/orvilo-ai/orvilo/server \
+      github.com/orvilo-ai/orvilo/server/internal/daemon \
+      github.com/orvilo-ai/orvilo/server/pkg/agent \
+      github.com/orvilo-ai/orvilo/server/pkg/agent/internal/testutil
     ;;
   test)
     printf '%s\n' "$*" >>"$ORVILO_TEST_GO_CALLS"
@@ -44,7 +44,7 @@ chmod 755 "$BIN_DIR/go"
 
 PATH="$BIN_DIR:$PATH" bash "$SCRIPT_DIR/test-go.sh" --race
 
-expected_calls='test -race github.com/patchbay-ai/patchbay/server github.com/patchbay-ai/patchbay/server/internal/daemon
+expected_calls='test -race github.com/orvilo-ai/orvilo/server github.com/orvilo-ai/orvilo/server/internal/daemon
 test -race -p 2 -parallel 2 ./pkg/agent/...'
 actual_calls=$(cat "$CALLS_FILE")
 if [ "$actual_calls" != "$expected_calls" ]; then

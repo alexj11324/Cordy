@@ -2,9 +2,9 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { pluginSurfaceLaunchOptions } from "@patchbay/core/plugins";
-import type { PluginInstallation, PluginSurface } from "@patchbay/core/types";
-import { cn } from "@patchbay/ui/lib/utils";
+import { pluginSurfaceLaunchOptions } from "@orvilo/core/plugins";
+import type { PluginInstallation, PluginSurface } from "@orvilo/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../i18n";
 import { buildSurfaceFrameDocument, readThemeTokens } from "./surface-document";
 import { createSurfaceBridge } from "./surface-bridge";

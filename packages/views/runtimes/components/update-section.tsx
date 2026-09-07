@@ -7,9 +7,9 @@ import {
   Check,
   Lock,
 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { api } from "@patchbay/core/api";
-import type { RuntimeUpdateStatus } from "@patchbay/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { api } from "@orvilo/core/api";
+import type { RuntimeUpdateStatus } from "@orvilo/core/types";
 import { useT } from "../../i18n";
 
 const GITHUB_RELEASES_URL =

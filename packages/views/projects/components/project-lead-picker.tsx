@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { UserMinus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { memberListOptions, agentListOptions } from "@patchbay/core/workspace/queries";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { Popover, PopoverContent, PopoverTrigger } from "@patchbay/ui/components/ui/popover";
-import type { Project, UpdateProjectRequest } from "@patchbay/core/types";
+import { memberListOptions, agentListOptions } from "@orvilo/core/workspace/queries";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { Popover, PopoverContent, PopoverTrigger } from "@orvilo/ui/components/ui/popover";
+import type { Project, UpdateProjectRequest } from "@orvilo/core/types";
 import { useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { ActorAvatar } from "../../common/actor-avatar";

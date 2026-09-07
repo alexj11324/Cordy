@@ -3,10 +3,10 @@
 import { useState, type ReactNode } from "react";
 import { Check, Copy, Eye, EyeOff } from "lucide-react";
 import { toast } from "sonner";
-import { maskAutomationWebhookUrl } from "@patchbay/core/automations";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { cn } from "@patchbay/ui/lib/utils";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+import { maskAutomationWebhookUrl } from "@orvilo/core/automations";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { cn } from "@orvilo/ui/lib/utils";
+import { copyText } from "@orvilo/ui/lib/clipboard";
 import { useT } from "../../i18n";
 
 const SIZES = {

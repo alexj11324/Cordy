@@ -159,7 +159,7 @@ importers:
       '@clerk/nextjs':
         specifier: ^7.7.9
         version: 7.8.4(next@16.2.6(@opentelemetry/api@1.9.1)(@playwright/test@1.58.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
-      '@patchbay/auth-ui':
+      '@orvilo/auth-ui':
         specifier: workspace:*
         version: link:../../packages/auth-ui
       next:
@@ -172,7 +172,7 @@ importers:
         specifier: 'catalog:'
         version: 19.2.3(react@19.2.3)
     devDependencies:
-      '@patchbay/eslint-config':
+      '@orvilo/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
       '@testing-library/jest-dom':
@@ -226,13 +226,13 @@ importers:
       '@fontsource-variable/source-serif-4':
         specifier: ^5.2.9
         version: 5.2.9
-      '@patchbay/core':
+      '@orvilo/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@patchbay/ui':
+      '@orvilo/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@patchbay/views':
+      '@orvilo/views':
         specifier: workspace:*
         version: link:../../packages/views
       '@tanstack/react-query':
@@ -272,10 +272,10 @@ importers:
       '@electron-toolkit/tsconfig':
         specifier: ^2.0.0
         version: 2.0.0(@types/node@25.5.0)
-      '@patchbay/eslint-config':
+      '@orvilo/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
-      '@patchbay/tsconfig':
+      '@orvilo/tsconfig':
         specifier: workspace:*
         version: link:../../packages/tsconfig
       '@playwright/test':
@@ -332,7 +332,7 @@ importers:
 
   apps/docs:
     dependencies:
-      '@patchbay/ui':
+      '@orvilo/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       fumadocs-core:
@@ -387,7 +387,7 @@ importers:
       '@expo/vector-icons':
         specifier: ^14.1.0
         version: 14.1.0(expo-font@55.0.7)(react-native@0.83.6(@babel/core@7.29.0)(@types/react@19.2.14)(react@19.2.0))(react@19.2.0)
-      '@patchbay/core':
+      '@orvilo/core':
         specifier: workspace:*
         version: link:../../packages/core
       '@react-native-community/datetimepicker':
@@ -592,16 +592,16 @@ importers:
       '@clerk/nextjs':
         specifier: 7.8.4
         version: 7.8.4(next@16.2.6(@opentelemetry/api@1.9.1)(@playwright/test@1.58.2)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
-      '@patchbay/auth-ui':
+      '@orvilo/auth-ui':
         specifier: workspace:*
         version: link:../../packages/auth-ui
-      '@patchbay/core':
+      '@orvilo/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@patchbay/ui':
+      '@orvilo/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@patchbay/views':
+      '@orvilo/views':
         specifier: workspace:*
         version: link:../../packages/views
       '@tanstack/react-query':
@@ -632,7 +632,7 @@ importers:
         specifier: 'catalog:'
         version: 4.3.6
     devDependencies:
-      '@patchbay/eslint-config':
+      '@orvilo/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
       '@tailwindcss/postcss':
@@ -711,10 +711,10 @@ importers:
         specifier: 'catalog:'
         version: 5.0.12(@types/react@19.2.14)(immer@11.1.4)(react@19.2.3)(use-sync-external-store@1.6.0(react@19.2.3))
     devDependencies:
-      '@patchbay/eslint-config':
+      '@orvilo/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@patchbay/tsconfig':
+      '@orvilo/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig
       '@testing-library/react':
@@ -765,10 +765,10 @@ importers:
 
   packages/plugin-sdk:
     devDependencies:
-      '@patchbay/eslint-config':
+      '@orvilo/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@patchbay/tsconfig':
+      '@orvilo/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig
       typescript:
@@ -876,10 +876,10 @@ importers:
         specifier: 'catalog:'
         version: 1.0.3
     devDependencies:
-      '@patchbay/eslint-config':
+      '@orvilo/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@patchbay/tsconfig':
+      '@orvilo/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig
       '@types/linkify-it':
@@ -915,10 +915,10 @@ importers:
       '@floating-ui/dom':
         specifier: ^1.7.6
         version: 1.7.6
-      '@patchbay/core':
+      '@orvilo/core':
         specifier: workspace:*
         version: link:../core
-      '@patchbay/ui':
+      '@orvilo/ui':
         specifier: workspace:*
         version: link:../ui
       '@tanstack/react-query':
@@ -1081,13 +1081,13 @@ importers:
         specifier: 'catalog:'
         version: 5.0.12(@types/react@19.2.14)(immer@11.1.4)(react@19.2.3)(use-sync-external-store@1.6.0(react@19.2.3))
     devDependencies:
-      '@patchbay/eslint-config':
+      '@orvilo/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@patchbay/plugin-sdk':
+      '@orvilo/plugin-sdk':
         specifier: workspace:*
         version: link:../plugin-sdk
-      '@patchbay/tsconfig':
+      '@orvilo/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig
       '@playwright/test':

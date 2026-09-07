@@ -13,9 +13,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // ---- fakes ----
@@ -473,7 +473,7 @@ func installedResolved(t *testing.T) ResolvedInstallation {
 		WorkspaceID:     uuidFromString(t, "22222222-2222-2222-2222-222222222222"),
 		AgentID:         uuidFromString(t, "33333333-3333-3333-3333-333333333333"),
 		InstallerUserID: uuidFromString(t, "99999999-9999-9999-9999-999999999999"),
-		Installed:          true,
+		Installed:       true,
 	}
 }
 

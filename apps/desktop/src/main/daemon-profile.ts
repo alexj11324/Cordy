@@ -1,7 +1,7 @@
 import { homedir } from "os";
 import { join } from "path";
 
-// Keep the Go impl in sync: server/cmd/patchbay/cmd_daemon.go healthPortForProfile.
+// Keep the Go impl in sync: server/cmd/orvilo/cmd_daemon.go healthPortForProfile.
 export const DEFAULT_HEALTH_PORT = 19514;
 
 /**

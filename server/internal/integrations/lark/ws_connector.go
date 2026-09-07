@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
 )
 
 // WSLongConnConnector is the production EventConnector that holds the

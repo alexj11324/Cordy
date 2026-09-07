@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { ArrowRight, Download, Loader2 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -10,10 +10,10 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { cn } from "@patchbay/ui/lib/utils";
-import type { AgentRuntime } from "@patchbay/core/types";
-import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
+} from "@orvilo/ui/components/ui/dialog";
+import { cn } from "@orvilo/ui/lib/utils";
+import type { AgentRuntime } from "@orvilo/core/types";
+import { runtimeDisplayLabel } from "@orvilo/core/runtimes";
 import { StepFooter, StepHeading } from "../components/step-shell";
 import {
   PatrickRuntimeChoice,

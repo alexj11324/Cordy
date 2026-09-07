@@ -49,7 +49,7 @@ func TestLaunchPrefixPrecedesProtocolFlags(t *testing.T) {
 }
 
 // TestLaunchPrefixPlacesFlagStyleWrappersFirst pins where a flag-style prefix
-// lands. It asserts the argv Patchbay builds, not that any particular third-party
+// lands. It asserts the argv Orvilo builds, not that any particular third-party
 // parser accepts the new position — most treat the two orders as equivalent,
 // but a CLI that separates global from subcommand flags may not, which is why
 // the docs call the move out instead of promising it is invisible.

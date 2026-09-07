@@ -4,10 +4,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Agent } from "@patchbay/core/types";
-import { configStore } from "@patchbay/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent } from "@orvilo/core/types";
+import { configStore } from "@orvilo/core/config";
+import { COMPOSIO_MCP_APPS_FLAG } from "@orvilo/core/feature-flags";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 
@@ -47,19 +47,19 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: <T,>(opts: T) => opts,
 }));
 
-vi.mock("@patchbay/core/composio", () => ({
+vi.mock("@orvilo/core/composio", () => ({
   composioConnectionsOptions: () => ({ queryKey: ["composio", "connections"] }),
   composioToolkitsOptions: () => ({ queryKey: ["composio", "toolkits"] }),
 }));
 
-vi.mock("@patchbay/core/agents", () => ({
+vi.mock("@orvilo/core/agents", () => ({
   useUpdateAgentAllowlist: () => ({
     mutate: mutateSpy,
     isPending: isPendingRef.current,
   }),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({ settings: () => "/ws/settings" }),
 }));
 

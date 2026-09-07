@@ -2,10 +2,10 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { pluginInstallationsOptions } from "@patchbay/core/plugins";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { useFeatureEnabled } from "@patchbay/core/config";
-import { PLUGINS_V1_FLAG } from "@patchbay/core/feature-flags";
+import { pluginInstallationsOptions } from "@orvilo/core/plugins";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
+import { useFeatureEnabled } from "@orvilo/core/config";
+import { PLUGINS_V1_FLAG } from "@orvilo/core/feature-flags";
 import { useT } from "../i18n";
 import { isDesktopShell } from "../platform/local-directory";
 import { PluginSurfaceFrame } from "./plugin-surface-frame";

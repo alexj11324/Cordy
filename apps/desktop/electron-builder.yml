@@ -43,7 +43,7 @@ mac:
   target:
     - dmg
     - zip
-  # Hardcoded name avoids the `@patchbay/desktop-*` subdirectory that
+  # Hardcoded name avoids the `@orvilo/desktop-*` subdirectory that
   # `${name}` produces for scoped package names.
   # Naming scheme: patchbay-desktop-<version>-<platform>-<arch>.<ext>
   # so the filename alone surfaces kind, version, platform, and CPU arch.
@@ -57,13 +57,13 @@ dmg:
   artifactName: patchbay-desktop-${version}-mac-${arch}.${ext}
 linux:
   # Override the Linux executable name to avoid leaking the scoped npm
-  # package name (`@patchbay/desktop`) into the installed binary, the
+  # package name (`@orvilo/desktop`) into the installed binary, the
   # `.desktop` file, and the hicolor icon filename. Without this override
   # electron-builder defaults `executableName` to the package `name`,
-  # which after slash-stripping becomes `@patchbaydesktop` — producing
-  # `/usr/share/applications/@patchbaydesktop.desktop`,
-  # `Icon=@patchbaydesktop`, and
-  # `/usr/share/icons/hicolor/*/apps/@patchbaydesktop.png`. The leading `@`
+  # which after slash-stripping becomes `@orvilodesktop` — producing
+  # `/usr/share/applications/@orvilodesktop.desktop`,
+  # `Icon=@orvilodesktop`, and
+  # `/usr/share/icons/hicolor/*/apps/@orvilodesktop.png`. The leading `@`
   # violates the freedesktop desktop-entry naming guidance, so GNOME /
   # Ubuntu fail to associate the running window with the `.desktop` entry
   # and fall back to the theme's default app icon (the Settings gear on
@@ -87,8 +87,8 @@ linux:
   # ASAR's `package.json` — `productName` if present, otherwise `name`.
   # PR #2437 assumed electron-builder.yml's productName fed app.getName()
   # directly; it does not. With our source package.json carrying only
-  # `name: "@patchbay/desktop"`, packaged Electron emitted
-  # `WM_CLASS=@patchbay/desktop`, which broke association with this entry
+  # `name: "@orvilo/desktop"`, packaged Electron emitted
+  # `WM_CLASS=@orvilo/desktop`, which broke association with this entry
   # and reproduced #2515 on Ubuntu 0.2.31. The fix lives in two places
   # outside this file — `productName: "Orvilo"` on the source
   # package.json (so the ASAR carries it) and `app.setName("Orvilo")`

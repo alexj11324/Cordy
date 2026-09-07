@@ -3,10 +3,10 @@ import {
   NavigationProvider,
   type LinkClickIntent,
   type NavigationAdapter,
-} from "@patchbay/views/navigation";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useModalStore } from "@patchbay/core/modals";
-import { isReservedSlug } from "@patchbay/core/paths";
+} from "@orvilo/views/navigation";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useModalStore } from "@orvilo/core/modals";
+import { isReservedSlug } from "@orvilo/core/paths";
 import {
   useTabStore,
   getActiveTab,

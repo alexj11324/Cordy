@@ -117,7 +117,7 @@ if grep -R -n -E 'ghcr\.io/patchbay-ai/(patchbay-backend|patchbay-web)' \
   exit 1
 fi
 
-# A self-hosted deployment must not silently send through the Patchbay cloud
+# A self-hosted deployment must not silently send through the Orvilo cloud
 # sender. The explicit operator value must still pass through unchanged.
 explicit_resend_env="$tmp_dir/.env.resend"
 cp "$tmp_env" "$explicit_resend_env"

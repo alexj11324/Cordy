@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // CancelTaskByUser (POST /api/tasks/{taskId}/cancel) used to key cancellation
@@ -54,12 +54,12 @@ func createAutomationRunOnlyTask(t *testing.T, agentID string) string {
 
 	runID := dbfx.Insert(t, "automation_run", testutil.Cols{
 		"automation_id": automationID,
-		"source":       "manual",
-		"status":       "running",
+		"source":        "manual",
+		"status":        "running",
 	})
 
 	taskID := dbfx.Task(t, agentID, testutil.Cols{
-		"runtime_id":       runtimeID,
+		"runtime_id":        runtimeID,
 		"automation_run_id": runID,
 	})
 	return taskID

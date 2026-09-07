@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enModals from "../locales/en/modals.json";
 import enEditor from "../locales/en/editor.json";
@@ -200,7 +200,7 @@ vi.mock("../navigation/context", () => ({
   useNavigation: () => ({ push: mockPush }),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Test Workspace" }),
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/ws-test/issues/${id}`,
@@ -208,7 +208,7 @@ vi.mock("@patchbay/core/paths", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
@@ -216,7 +216,7 @@ vi.mock("./use-issue-limit-upgrade-prompt", () => ({
   useIssueLimitUpgradePrompt: () => mockShowIssueLimitUpgradePrompt,
 }));
 
-vi.mock("@patchbay/core/issues/queries", () => ({
+vi.mock("@orvilo/core/issues/queries", () => ({
   issueDetailOptions: (wsId: string, id: string) => ({
     queryKey: ["issues", wsId, "detail", id],
     queryFn: () => Promise.resolve(null),
@@ -239,11 +239,11 @@ vi.mock("../issues/hooks/use-issue-trigger-preview", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Agent" }),
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
     selector({ user: { id: "user-1" } }),
 }));
@@ -255,7 +255,7 @@ vi.mock("../common/actor-avatar", () => ({
   ActorAvatar: () => null,
 }));
 
-vi.mock("@patchbay/core/issues/stores/draft-store", () => ({
+vi.mock("@orvilo/core/issues/stores/draft-store", () => ({
   useIssueDraftStore: Object.assign(
     (selector?: (state: typeof mockDraftStore) => unknown) =>
       (selector ? selector(mockDraftStore) : mockDraftStore),
@@ -263,18 +263,18 @@ vi.mock("@patchbay/core/issues/stores/draft-store", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/issues/stores/quick-create-store", () => ({
+vi.mock("@orvilo/core/issues/stores/quick-create-store", () => ({
   useQuickCreateStore: (selector?: (state: typeof mockQuickCreateStore) => unknown) =>
     (selector ? selector(mockQuickCreateStore) : mockQuickCreateStore),
 }));
 
-vi.mock("@patchbay/core/issues/stores/issue-create-settings-store", () => ({
+vi.mock("@orvilo/core/issues/stores/issue-create-settings-store", () => ({
   useIssueCreateSettingsStore: (
     selector?: (state: typeof mockCreateSettingsStore) => unknown,
   ) => (selector ? selector(mockCreateSettingsStore) : mockCreateSettingsStore),
 }));
 
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@orvilo/core/issues/mutations", () => ({
   useCreateIssue: () => ({ mutateAsync: mockCreateIssue }),
   useCreateCommentSubIssue: () => ({
     mutateAsync: ({ anchorCommentId, data }: {
@@ -285,12 +285,12 @@ vi.mock("@patchbay/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/labels", () => ({
+vi.mock("@orvilo/core/labels", () => ({
   useAttachLabelToIssue: () => ({ mutateAsync: mockAttachLabel }),
 }));
 
-vi.mock("@patchbay/core/properties", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/properties")>();
+vi.mock("@orvilo/core/properties", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@orvilo/core/properties")>();
   return {
     ...actual,
     useSetIssueProperty: () => ({
@@ -324,18 +324,18 @@ const { ApiError } = vi.hoisted(() => {
   return { ApiError: ApiErrorImpl };
 });
 
-vi.mock("@patchbay/core/api", async () => {
+vi.mock("@orvilo/core/api", async () => {
   // Pull real `parseWithFallback` + `DuplicateIssueErrorBodySchema` from the
   // schema modules so the drift-fallback branch in create-issue.tsx runs the
   // actual validation logic (not a stub). Only `ApiError` is local — the
   // component imports it from this module and the cross-realm `instanceof`
   // check requires a single class identity.
-  const { parseWithFallback } = await vi.importActual<typeof import("@patchbay/core/api/schema")>(
-    "@patchbay/core/api/schema",
+  const { parseWithFallback } = await vi.importActual<typeof import("@orvilo/core/api/schema")>(
+    "@orvilo/core/api/schema",
   );
   const { DuplicateIssueErrorBodySchema } = await vi.importActual<
-    typeof import("@patchbay/core/api/schemas")
-  >("@patchbay/core/api/schemas");
+    typeof import("@orvilo/core/api/schemas")
+  >("@orvilo/core/api/schemas");
   return {
     api: {
       createCommentSubIssue: mockCreateCommentSubIssue,
@@ -515,7 +515,7 @@ vi.mock("../projects/components/project-picker", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/dialog", () => ({
+vi.mock("@orvilo/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: React.ReactNode }) => <div data-testid="dialog-root">{children}</div>,
   DialogContent: ({ children, className }: { children: React.ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
@@ -525,7 +525,7 @@ vi.mock("@patchbay/ui/components/ui/dialog", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@orvilo/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -556,14 +556,14 @@ vi.mock("./issue-picker-modal", () => ({
   IssuePickerModal: () => null,
 }));
 
-vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
+vi.mock("@orvilo/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock("@patchbay/ui/components/ui/button", () => ({
+vi.mock("@orvilo/ui/components/ui/button", () => ({
   Button: ({
     children,
     disabled,
@@ -585,7 +585,7 @@ vi.mock("@patchbay/ui/components/ui/button", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/switch", () => ({
+vi.mock("@orvilo/ui/components/ui/switch", () => ({
   Switch: ({
     checked,
     onCheckedChange,
@@ -602,7 +602,7 @@ vi.mock("@patchbay/ui/components/ui/switch", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/common/file-upload-button", () => ({
+vi.mock("@orvilo/ui/components/common/file-upload-button", () => ({
   FileUploadButton: ({ onSelect, size }: { onSelect: (file: File) => void; size?: string }) => (
     <button type="button" data-size={size} onClick={() => onSelect(new File(["test"], "test.txt"))}>
       Upload file
@@ -610,7 +610,7 @@ vi.mock("@patchbay/ui/components/common/file-upload-button", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/lib/utils", () => ({
+vi.mock("@orvilo/ui/lib/utils", () => ({
   cn: (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" "),
 }));
 

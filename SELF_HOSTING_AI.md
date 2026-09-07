@@ -1,6 +1,6 @@
 # Self-Hosting Setup (for AI Agents)
 
-This document is designed for AI agents to execute. Follow these steps exactly to deploy a local Patchbay instance and connect to it.
+This document is designed for AI agents to execute. Follow these steps exactly to deploy a local Orvilo instance and connect to it.
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/insta
 patchbay setup self-host
 ```
 
-Wait for the server output `✓ Patchbay server is running and CLI is ready!` before running `patchbay setup self-host`.
+Wait for the server output `✓ Orvilo server is running and CLI is ready!` before running `patchbay setup self-host`.
 
 **Expected result:**
 - Frontend at http://localhost:3000

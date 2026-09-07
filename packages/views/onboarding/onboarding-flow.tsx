@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { useAuthStore } from "@patchbay/core/auth";
+import { useAuthStore } from "@orvilo/core/auth";
 import {
   completeOnboarding,
   ONBOARDING_STEP_ORDER,
@@ -11,9 +11,9 @@ import {
   useWelcomeStore,
   type OnboardingStep,
   type QuestionnaireAnswers,
-} from "@patchbay/core/onboarding";
-import { useWorkspaceList } from "@patchbay/core/workspace";
-import type { AgentRuntime, Workspace } from "@patchbay/core/types";
+} from "@orvilo/core/onboarding";
+import { useWorkspaceList } from "@orvilo/core/workspace";
+import type { AgentRuntime, Workspace } from "@orvilo/core/types";
 import { StepWelcome } from "./steps/step-welcome";
 import { StepShell } from "./components/step-shell";
 import { StepAboutYou } from "./steps/step-about-you";
@@ -104,7 +104,7 @@ interface OnboardingFlowProps {
     destination?: OnboardingDestination,
   ) => void;
   /** "new_workspace" is the same flow run by someone who already uses
-   *  Patchbay: it starts at the workspace step, because the intro and the
+   *  Orvilo: it starts at the workspace step, because the intro and the
    *  questionnaire only make sense once per person, and it always creates a
    *  workspace rather than offering to continue with an existing one. */
   mode?: OnboardingMode;

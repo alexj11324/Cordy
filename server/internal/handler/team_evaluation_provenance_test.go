@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 // These tests pin the authorization contract of RecordTeamLeaderEvaluation
@@ -16,8 +16,8 @@ import (
 
 type teamEvalFixture struct {
 	TeamID      string
-	LeaderID     string
-	OtherID      string
+	LeaderID    string
+	OtherID     string
 	TeamIssueID string // issue executed by the team
 }
 
@@ -34,8 +34,8 @@ func newTeamEvalFixture(t *testing.T) teamEvalFixture {
 
 	return teamEvalFixture{
 		TeamID:      teamID,
-		LeaderID:     leaderID,
-		OtherID:      otherID,
+		LeaderID:    leaderID,
+		OtherID:     otherID,
 		TeamIssueID: issueID,
 	}
 }
@@ -72,7 +72,7 @@ func evaluationRequest(issueID, agentID, taskID, outcome string) *http.Request {
 
 type recordedEvaluation struct {
 	ActorID string
-	TeamID string
+	TeamID  string
 	Outcome string
 }
 
@@ -256,7 +256,7 @@ func TestRecordTeamLeaderEvaluation_RejectsForeignWorkspaceTaskWithoutLeakingIts
 		"issue_id":       foreignIssue,
 		"started_at":     testutil.Raw("now()"),
 		"is_leader_task": true,
-		"team_id":       foreignTeam,
+		"team_id":        foreignTeam,
 	})
 
 	body := testutil.Call(t, testHandler.RecordTeamLeaderEvaluation,

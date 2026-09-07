@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // TestDispatchAutomationForPlanIsIdempotent locks in the
@@ -64,7 +64,7 @@ func TestDispatchAutomationForPlanIsIdempotent(t *testing.T) {
 	})
 
 	trigger, err := queries.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
-		AutomationID:    ap.ID,
+		AutomationID:   ap.ID,
 		Kind:           "schedule",
 		Enabled:        true,
 		CronExpression: pgtype.Text{String: "*/5 * * * *", Valid: true},
@@ -311,7 +311,7 @@ func TestDispatchAutomationForPlanRecoversPartialRun(t *testing.T) {
 			})
 
 			trigger, err := queries.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
-				AutomationID:    ap.ID,
+				AutomationID:   ap.ID,
 				Kind:           "schedule",
 				Enabled:        true,
 				CronExpression: pgtype.Text{String: "*/5 * * * *", Valid: true},
@@ -334,7 +334,7 @@ func TestDispatchAutomationForPlanRecoversPartialRun(t *testing.T) {
 				initialStatus = "issue_created"
 			}
 			partial, err := queries.CreateAutomationRun(ctx, db.CreateAutomationRunParams{
-				AutomationID:    ap.ID,
+				AutomationID:   ap.ID,
 				TriggerID:      trigger.ID,
 				Source:         "schedule",
 				Status:         initialStatus,

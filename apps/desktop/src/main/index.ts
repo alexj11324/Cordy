@@ -340,7 +340,7 @@ function loadRenderer(window: BrowserWindow): void {
 }
 
 function installLocaleRefresh(window: BrowserWindow): void {
-  // Electron has no dedicated OS-language event. Check whenever any Patchbay
+  // Electron has no dedicated OS-language event. Check whenever any Orvilo
   // window regains focus, then broadcast so all open windows remain aligned.
   window.on("focus", () => {
     const current = getSystemLocale();

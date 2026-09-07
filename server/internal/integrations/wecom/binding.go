@@ -3,7 +3,7 @@ package wecom
 // binding.go — the WeCom smart-bot user-binding token flow. An unbound WeCom
 // user who messages the bot gets a "link your account" prompt (minted here,
 // delivered by the OutboundReplier), clicks through to the in-product redeem
-// page, and their WeCom userid is bound to their Patchbay account. Mirrors
+// page, and their WeCom userid is bound to their Orvilo account. Mirrors
 // slack.BindingTokenService — runs on the generic channel_binding_token /
 // channel_user_binding tables with channel_type='wecom'.
 //
@@ -26,8 +26,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // BindingTokenTTL bounds a token's life. The channel_binding_token CHECK
@@ -70,7 +70,7 @@ var (
 	// One opaque error for all three avoids a replay timing oracle.
 	ErrBindingTokenInvalid = errors.New("wecom: binding token invalid or expired")
 	// ErrBindingAlreadyAssigned: this WeCom userid is already bound to a
-	// different Patchbay user (account transfer must go through explicit
+	// different Orvilo user (account transfer must go through explicit
 	// unbind, not implemented in iter 1 — an admin can DELETE the row).
 	ErrBindingAlreadyAssigned = errors.New("wecom: user id is already bound to a different user")
 	// ErrBindingNotWorkspaceMember: the redeemer is not a member of the
@@ -226,7 +226,7 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, pat
 
 	if _, err := qtx.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
 		WorkspaceID:    row.WorkspaceID,
-		PatchbayUserID:  patchbayUserID,
+		PatchbayUserID: patchbayUserID,
 		InstallationID: row.InstallationID,
 		ChannelType:    channelTypeWecom,
 		ChannelUserID:  row.ChannelUserID,

@@ -529,7 +529,7 @@ func TestFinalizeKeepsWorktreeWhenCommitFails(t *testing.T) {
 // in the user's tree while it runs. A concurrent worktree snapshot sees them as
 // untracked files; copying them would hand this task another issue's brief and
 // commit it to the branch.
-func TestPrepareLocalWorktreeSkipsPatchbaySidecars(t *testing.T) {
+func TestPrepareLocalWorktreeSkipsOrviloSidecars(t *testing.T) {
 	repo := newTestRepo(t)
 	writeFile(t, filepath.Join(repo, ".agent_context", "issue_context.md"), "OTHER issue's brief\n")
 	writeFile(t, filepath.Join(repo, ".patchbay", "project", "resources.json"), "{}\n")
@@ -653,7 +653,7 @@ func TestPrepareWorktreeModeUsesPerIssueCodexSessionStore(t *testing.T) {
 }
 
 // The daemon runs its sidecar cleanup before Finalize commits. If that cleanup
-// fails, committing anyway would deliver a branch whose content is Patchbay's
+// fails, committing anyway would deliver a branch whose content is Orvilo's
 // own runtime files — the exact leak this mode promises to prevent. The abort
 // must therefore stop the commit AND keep the worktree, since the agent's work
 // is still in it.
@@ -1371,7 +1371,7 @@ func TestPrepareLocalWorktreePrunesSnapshotsOfDeletedBranches(t *testing.T) {
 
 // The snapshot is the user's directory, not the daemon's view of it: a sidecar
 // left in their tree by a concurrent in_place task must never reach the branch.
-func TestCaptureUserSnapshotExcludesPatchbaySidecars(t *testing.T) {
+func TestCaptureUserSnapshotExcludesOrviloSidecars(t *testing.T) {
 	repo := newTestRepo(t)
 	writeFile(t, filepath.Join(repo, ".agent_context", "brief.md"), "another task's brief\n")
 	writeFile(t, filepath.Join(repo, "sub", ".patchbay", "state.json"), "{}\n")
@@ -1434,7 +1434,7 @@ func TestBranchRecordRoundTrips(t *testing.T) {
 	}
 }
 
-// Ownership is not a property of the NAME. A branch Patchbay delivered, that the
+// Ownership is not a property of the NAME. A branch Orvilo delivered, that the
 // user then deleted and recreated for something of their own, keeps matching
 // the recorded owner — and there is no prepare in between for the orphan sweep
 // to notice the gap. Only the recorded checkpoint distinguishes them.

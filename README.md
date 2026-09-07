@@ -11,7 +11,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/stargazers)
 [![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
 
-[Web App](https://patchbay.aspectlylabs.com) · [Docs](https://patchbay.aspectlylabs.com/docs) · [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Download](https://github.com/alexj11324/Cordy/releases/latest) · [Self-Hosting](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/PatchbayAI)
+[Web App](https://patchbay.aspectlylabs.com) · [Docs](https://patchbay.aspectlylabs.com/docs) · [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Download](https://github.com/alexj11324/Cordy/releases/latest) · [Self-Hosting](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/OrviloAI)
 
 **English | [简体中文](README.zh.md)**
 
@@ -236,6 +236,6 @@ We ship most weekdays, so `main` moves fast. Pull often.
 
 ## License
 
-[Patchbay License](LICENSE) — the complete Apache License 2.0 text plus additional conditions
+[Orvilo License](LICENSE) — the complete Apache License 2.0 text plus additional conditions
 covering hosted services, commercial embedding, and branding. Self-host it, modify it, build on
 it; the exact terms are in [LICENSE](LICENSE), attribution notices in [NOTICE](NOTICE).

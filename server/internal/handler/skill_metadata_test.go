@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 // newLargeSkillFixture builds a skill whose file bodies dwarf its metadata,

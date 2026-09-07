@@ -1,4 +1,4 @@
-import type { Issue, IssueExecutorType } from "@patchbay/core/types";
+import type { Issue, IssueExecutorType } from "@orvilo/core/types";
 
 export type IssueExecutorRef = {
   type: IssueExecutorType;

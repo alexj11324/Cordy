@@ -1,16 +1,16 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { TeamMemberPreview } from "@patchbay/core/types";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import type { TeamMemberPreview } from "@orvilo/core/types";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import {
   teamListOptions,
   agentListOptions,
   memberListOptions,
-} from "@patchbay/core/workspace/queries";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/core/workspace/queries";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";

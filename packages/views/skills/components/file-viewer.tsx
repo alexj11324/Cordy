@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { parseFrontmatter } from "@patchbay/core/skills/frontmatter";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { parseFrontmatter } from "@orvilo/core/skills/frontmatter";
 import { RichContent } from "../../rich-content";
 import { useT } from "../../i18n";
 

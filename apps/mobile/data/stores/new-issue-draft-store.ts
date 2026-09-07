@@ -26,7 +26,7 @@ import type {
   IssuePriority,
   IssueStatus,
   Project,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import type { ExecutorValue } from "@/components/issue/pickers/executor-picker-body";
 import type { RoleValue } from "@/lib/issue-role-options";
 

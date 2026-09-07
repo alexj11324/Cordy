@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
 )
 
 // insertCustomStatus adds one custom status directly, returning its id.

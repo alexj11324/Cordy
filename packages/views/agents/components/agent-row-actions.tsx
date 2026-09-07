@@ -12,12 +12,12 @@ import {
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Agent } from "@patchbay/core/types";
-import type { AgentPresenceDetail } from "@patchbay/core/agents";
-import { api } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
+import type { Agent } from "@orvilo/core/types";
+import type { AgentPresenceDetail } from "@orvilo/core/agents";
+import { api } from "@orvilo/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -27,14 +27,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import { useT } from "../../i18n";
 import { AppLink, useIntentNavigate } from "../../navigation";
 
@@ -89,7 +89,7 @@ export function AgentRowActions({
   // branches.
   const showStop = canManage && !isArchived && hasActiveWork;
   const showDuplicate = !isArchived; // any workspace member can duplicate
-  // Patchbay's built-in agents cannot be archived — the server refuses it, and
+  // Orvilo's built-in agents cannot be archived — the server refuses it, and
   // the workspace's entry point runs through one. Hide the action rather than
   // let it fail with a toast.
   const isSystemAgent = !!agent.system_key;

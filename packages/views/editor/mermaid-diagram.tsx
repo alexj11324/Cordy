@@ -29,7 +29,7 @@ import {
   type CSSProperties,
 } from "react";
 import { Check, Copy, Maximize2 } from "lucide-react";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+import { copyText } from "@orvilo/ui/lib/clipboard";
 import { useT } from "../i18n";
 import { useDragToScroll } from "./hooks/use-drag-to-scroll";
 import { MermaidViewer } from "./mermaid-viewer";

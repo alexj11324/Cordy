@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/cli"
+	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
 // newSelfReloadTestDaemon returns a Daemon wired for trySelfReload: a stubbed

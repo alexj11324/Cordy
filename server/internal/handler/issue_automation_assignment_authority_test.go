@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 func automationChildIssueRequest(t *testing.T, executorType, executorID, parentIssueID, status, actorAgentID, taskID string) *http.Request {
@@ -192,7 +192,7 @@ func TestCreateIssue_AutomationLeaderAssignsPrivateWorker(t *testing.T) {
 		} {
 			t.Run(target.name, func(t *testing.T) {
 				resp := testutil.Call(t, testHandler.CreateIssue,
-				automationChildIssueRequest(t, target.executorType, target.executorID, foreignParentID, "backlog", fx.LeaderAgentID, fx.LeaderTaskID),
+					automationChildIssueRequest(t, target.executorType, target.executorID, foreignParentID, "backlog", fx.LeaderAgentID, fx.LeaderTaskID),
 				).Want(http.StatusBadRequest)
 				if !strings.Contains(resp.Text(), "parent issue not found in this workspace") {
 					t.Fatalf("cross-workspace parent rejection = %q, want workspace boundary error", resp.Text())

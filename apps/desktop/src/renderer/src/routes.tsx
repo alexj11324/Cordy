@@ -13,27 +13,27 @@ import {
   RuntimeSettingsPage,
 } from "./pages/runtime-detail-page";
 import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
-import { IssuesPage } from "@patchbay/views/issues/components";
-import { TaskGraphPage } from "@patchbay/views/task-graph";
-import { ProjectsPage } from "@patchbay/views/projects/components";
-import { WorkProductDetailPage, WorkProductsPage } from "@patchbay/views/work-products";
-import { DashboardPage } from "@patchbay/views/dashboard";
-import { AutomationsPage } from "@patchbay/views/automations/components";
-import { MyIssuesPage } from "@patchbay/views/my-issues";
-import { SkillsPage } from "@patchbay/views/skills";
+import { IssuesPage } from "@orvilo/views/issues/components";
+import { TaskGraphPage } from "@orvilo/views/task-graph";
+import { ProjectsPage } from "@orvilo/views/projects/components";
+import { WorkProductDetailPage, WorkProductsPage } from "@orvilo/views/work-products";
+import { DashboardPage } from "@orvilo/views/dashboard";
+import { AutomationsPage } from "@orvilo/views/automations/components";
+import { MyIssuesPage } from "@orvilo/views/my-issues";
+import { SkillsPage } from "@orvilo/views/skills";
 import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { DesktopAgentsPage } from "./components/desktop-agents-page";
 import {
   AiCreateAgentPage,
   ChooseCreateMethodPage,
   ManualCreateAgentPage,
-} from "@patchbay/views/agents";
-import { TeamsPage, TeamDetailPage as TeamDetailPageView } from "@patchbay/views/teams/components";
-import { InboxPage } from "@patchbay/views/inbox";
-import { ChatPage } from "@patchbay/views/chat";
-import { ChannelsPage } from "@patchbay/views/channels";
+} from "@orvilo/views/agents";
+import { TeamsPage, TeamDetailPage as TeamDetailPageView } from "@orvilo/views/teams/components";
+import { InboxPage } from "@orvilo/views/inbox";
+import { ChatPage } from "@orvilo/views/chat";
+import { ChannelsPage } from "@orvilo/views/channels";
 import { DesktopSettingsPage } from "./components/desktop-settings-page";
-import { useT } from "@patchbay/views/i18n";
+import { useT } from "@orvilo/views/i18n";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { WorkspaceRouteLayout } from "./components/workspace-route-layout";
 import { DesktopRouteErrorPage } from "./components/route-error-page";

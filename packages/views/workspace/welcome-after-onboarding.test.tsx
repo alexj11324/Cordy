@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { useWelcomeStore } from "@patchbay/core/onboarding";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import { useWelcomeStore } from "@orvilo/core/onboarding";
 import enCommon from "../locales/en/common.json";
 import enOnboarding from "../locales/en/onboarding.json";
 import {
@@ -26,7 +26,7 @@ const mockUser = {
   updated_at: "",
 };
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (state: { user: typeof mockUser }) => unknown) => {
       const state = { user: mockUser };
@@ -41,9 +41,9 @@ vi.mock("@patchbay/core/auth", () => ({
 const mockCreateIssue = vi.fn();
 const mockGetWorkspace = vi.fn();
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@orvilo/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/paths")>(
+    "@orvilo/core/paths",
   );
   return {
     ...actual,
@@ -55,7 +55,7 @@ vi.mock("@patchbay/core/paths", async () => {
   };
 });
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     createIssue: (...args: unknown[]) => mockCreateIssue(...args),
     getWorkspace: (...args: unknown[]) => mockGetWorkspace(...args),

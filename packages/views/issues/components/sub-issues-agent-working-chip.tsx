@@ -6,9 +6,9 @@ import {
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
-} from "@patchbay/ui/components/ui/hover-card";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { workspaceWorkingAgentsOptions } from "@patchbay/core/agents";
+} from "@orvilo/ui/components/ui/hover-card";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { workspaceWorkingAgentsOptions } from "@orvilo/core/agents";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { WorkingAgentsHoverContent } from "./workspace-agent-working-chip";
 import { useT } from "../../i18n";

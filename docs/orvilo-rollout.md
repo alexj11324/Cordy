@@ -1,11 +1,18 @@
 # Orvilo rollout
 
-The approved monochrome symbol and Orvilo display names replace Patchbay in
-app chrome, authentication, app icons, documentation chrome, and localized UI.
-Machine identity remains stable: package names, app IDs, callback schemes,
-existing desktop data directories, API headers, artifact names and service URLs.
+The approved monochrome symbol and Orvilo display names are the product
+identity in app chrome, authentication, app icons, documentation, and
+localized UI. Workspace packages are `@orvilo/*`; the Go module is
+`github.com/orvilo-ai/orvilo/server`.
 
-Web and Accounts now use @patchbay/auth-ui, extracted from the existing custom
+Live machine identity that existing installs and production still depend on
+stays in place: the GitHub repository `alexj11324/Cordy`, the `patchbay` CLI
+binary and release artifact names, `patchbay://` callback schemes, existing
+desktop data directories, `X-Patchbay-*` API headers, cookies, Compose project
+names, Helm chart name, container image names, and service URLs such as
+`patchbay.aspectlylabs.com`.
+
+Web and Accounts now use @orvilo/auth-ui, extracted from the existing custom
 Accounts form. Prebuilt Clerk SignIn/SignUp imports, their alias pages, and the
 Clerk theme dependency were removed. Web performs same-origin Google SSO and
 waits for the existing Clerk-to-Go exchange before its post-login redirect.

@@ -2,23 +2,23 @@
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, MessageSquare, MessagesSquare, Search } from "lucide-react";
-import type { TimelineEntry } from "@patchbay/core/types";
-import { useActorName } from "@patchbay/core/workspace/hooks";
+import type { TimelineEntry } from "@orvilo/core/types";
+import { useActorName } from "@orvilo/core/workspace/hooks";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { cn } from "@patchbay/ui/lib/utils";
-import { createShortcutChord, useShortcut } from "@patchbay/core/shortcuts";
-import { preprocessMentionShortcodes } from "@patchbay/core/markdown";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@orvilo/ui/components/ui/popover";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { cn } from "@orvilo/ui/lib/utils";
+import { createShortcutChord, useShortcut } from "@orvilo/core/shortcuts";
+import { preprocessMentionShortcodes } from "@orvilo/core/markdown";
+import { isImeComposing } from "@orvilo/core/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { pickerNavigationDirection } from "../../common/picker-keys";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";

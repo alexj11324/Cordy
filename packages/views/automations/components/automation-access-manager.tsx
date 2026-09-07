@@ -3,14 +3,14 @@
 import { useMemo, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { useActorName } from "@patchbay/core/workspace/hooks";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { memberListOptions } from "@orvilo/core/workspace/queries";
+import { useActorName } from "@orvilo/core/workspace/hooks";
 import {
   useGrantAutomationAccess,
   useRevokeAutomationAccess,
-} from "@patchbay/core/automations/mutations";
-import type { AutomationCollaborator } from "@patchbay/core/types";
+} from "@orvilo/core/automations/mutations";
+import type { AutomationCollaborator } from "@orvilo/core/types";
 import { toast } from "sonner";
 import { ActorAvatar } from "../../common/actor-avatar";
 import {

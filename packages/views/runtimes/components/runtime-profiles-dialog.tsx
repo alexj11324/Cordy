@@ -15,17 +15,17 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import { ApiError } from "@patchbay/core/api";
+import { ApiError } from "@orvilo/core/api";
 import type {
   RuntimeProfile,
   RuntimeProtocolFamily,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   runtimeProfileListOptions,
   useCreateRuntimeProfile,
   useUpdateRuntimeProfile,
-} from "@patchbay/core/runtimes";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/runtimes";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogClose,
@@ -33,11 +33,11 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/dialog";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { cn } from "@orvilo/ui/lib/utils";
 import { ProviderLogo } from "./provider-logo";
 import { DeleteRuntimeProfileDialog } from "./delete-runtime-profile-dialog";
 import {

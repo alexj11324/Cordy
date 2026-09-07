@@ -1,6 +1,6 @@
 // Package telegram is the Telegram integration for the channel-agnostic
 // engine. It follows the Slack BYO model: the workspace admin creates a bot
-// via @BotFather, pastes its bot token into Patchbay, and the installation is
+// via @BotFather, pastes its bot token into Orvilo, and the installation is
 // keyed by the bot's numeric id (the token prefix). Inbound runs on a
 // per-installation getUpdates long-polling loop (telegram_channel.go) —
 // Telegram offers no WebSocket transport, and long polling is the deployment
@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
 )
 
 // TypeTelegram is the channel discriminator for the Telegram adapter. Defined

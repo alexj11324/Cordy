@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // ── Setup helpers ───────────────────────────────────────────────────────────
@@ -711,8 +711,8 @@ func TestWebhookHandler_RunOnlyDedupeOnGitHubDelivery(t *testing.T) {
 	// Count automation_run rows linked to this trigger.
 	rows, err := testHandler.Queries.ListAutomationRuns(context.Background(), db.ListAutomationRunsParams{
 		AutomationID: parseUUID(apID),
-		Limit:       50,
-		Offset:      0,
+		Limit:        50,
+		Offset:       0,
 	})
 	if err != nil {
 		t.Fatalf("list runs: %v", err)
@@ -1045,7 +1045,7 @@ func TestWebhookDelivery_FailedRowDoesNotBlockDedupe(t *testing.T) {
 
 	first, err := testHandler.Queries.CreateWebhookDelivery(ctx, db.CreateWebhookDeliveryParams{
 		WorkspaceID:     parseUUID(testWorkspaceID),
-		AutomationID:     parseUUID(apID),
+		AutomationID:    parseUUID(apID),
 		TriggerID:       parseUUID(trig.ID),
 		Provider:        "github",
 		Event:           "github.pull_request",
@@ -1064,7 +1064,7 @@ func TestWebhookDelivery_FailedRowDoesNotBlockDedupe(t *testing.T) {
 	// row does not consume the slot.
 	second, err := testHandler.Queries.CreateWebhookDelivery(ctx, db.CreateWebhookDeliveryParams{
 		WorkspaceID:     parseUUID(testWorkspaceID),
-		AutomationID:     parseUUID(apID),
+		AutomationID:    parseUUID(apID),
 		TriggerID:       parseUUID(trig.ID),
 		Provider:        "github",
 		Event:           "github.pull_request",

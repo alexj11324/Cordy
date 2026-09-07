@@ -7,10 +7,10 @@ import (
 	"sort"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/runtimeapps"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	sdk "github.com/patchbay-ai/patchbay/server/pkg/composio"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/runtimeapps"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	sdk "github.com/orvilo-ai/orvilo/server/pkg/composio"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // mcpOverlayServerName is the deterministic key under `mcpServers` used to

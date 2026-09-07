@@ -33,7 +33,7 @@ import type {
   Label,
   Reaction,
   TimelineEntry,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { issueKeys } from "@/data/queries/issue-keys";
 
 type TimelinePredicate = (entry: TimelineEntry) => boolean;

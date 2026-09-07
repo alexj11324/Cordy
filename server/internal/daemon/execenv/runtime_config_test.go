@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/runtimeapps"
+	"github.com/orvilo-ai/orvilo/server/internal/runtimeapps"
 )
 
 // Sub-issue Creation section — after MUL-2538 the platform posts the
@@ -48,7 +48,7 @@ func TestSubIssueCreationSectionPresentForIssueRuns(t *testing.T) {
 			}
 			for _, want := range []string{
 				// MUL-5442 demotes the full todo/backlog/stage playbook to the
-				// patchbay-working-on-issues skill. The brief keeps a one-line
+				// orvilo-working-on-issues skill. The brief keeps a one-line
 				// map (all three flags stay discoverable, MUL-3508 follow-up)
 				// plus the skill pointer; the skill side of the contract is
 				// asserted in internal/service
@@ -56,7 +56,7 @@ func TestSubIssueCreationSectionPresentForIssueRuns(t *testing.T) {
 				"`--status todo` starts a child with an agent/team executor immediately",
 				"`--status backlog` parks it",
 				"`--stage <N>` groups children into ordered stages",
-				"read the `patchbay-working-on-issues` skill",
+				"read the `orvilo-working-on-issues` skill",
 			} {
 				if !strings.Contains(out, want) {
 					t.Errorf("[%s] section missing %q", tc.name, want)
@@ -472,7 +472,7 @@ func TestTeamLeaderIssueWorkflowKeepsParentInProgress(t *testing.T) {
 	t.Parallel()
 	const issueID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 	out := buildMetaSkillContent("claude", TaskContextForEnv{
-		IssueID:       issueID,
+		IssueID:      issueID,
 		IsTeamLeader: true,
 	})
 
@@ -504,7 +504,7 @@ func TestProtocolHeadingInInstructionsGetsNoLeaderBrief(t *testing.T) {
 		TriggerCommentID:  "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
 		AgentName:         "Docs writer",
 		AgentInstructions: instructions,
-		IsTeamLeader:     false,
+		IsTeamLeader:      false,
 	})
 
 	if !strings.Contains(out, instructions) {
@@ -707,7 +707,7 @@ func TestWorkspaceContextRenderedAcrossTaskKinds(t *testing.T) {
 		{
 			name: "automation run-only",
 			ctx: TaskContextForEnv{
-				AutomationRunID:   "run-1",
+				AutomationRunID:  "run-1",
 				WorkspaceContext: wsContext,
 			},
 		},
@@ -852,7 +852,7 @@ func TestWriteRuntimeConfigFileCreatesMissingFile(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "CLAUDE.md")
-	const brief = "# Patchbay Agent Runtime\n\nbrief body line"
+	const brief = "# Orvilo Agent Runtime\n\nbrief body line"
 
 	if err := writeRuntimeConfigFile(path, brief); err != nil {
 		t.Fatalf("writeRuntimeConfigFile returned error: %v", err)
@@ -882,7 +882,7 @@ func TestWriteRuntimeConfigFilePreservesUserContent(t *testing.T) {
 		t.Fatalf("seed user file: %v", err)
 	}
 
-	const brief = "## Patchbay brief\n\ninjected body"
+	const brief = "## Orvilo brief\n\ninjected body"
 	if err := writeRuntimeConfigFile(path, brief); err != nil {
 		t.Fatalf("writeRuntimeConfigFile returned error: %v", err)
 	}
@@ -925,7 +925,7 @@ func TestWriteRuntimeConfigFileReplacesExistingBlock(t *testing.T) {
 		t.Fatalf("seed: %v", err)
 	}
 
-	const newBrief = "## New Patchbay brief\n\nfresh body"
+	const newBrief = "## New Orvilo brief\n\nfresh body"
 	if err := writeRuntimeConfigFile(path, newBrief); err != nil {
 		t.Fatalf("writeRuntimeConfigFile returned error: %v", err)
 	}
@@ -961,7 +961,7 @@ func TestWriteRuntimeConfigFileIsIdempotent(t *testing.T) {
 		t.Fatalf("seed user file: %v", err)
 	}
 
-	const brief = "## Patchbay brief\n\nbody"
+	const brief = "## Orvilo brief\n\nbody"
 	for i := 0; i < 5; i++ {
 		if err := writeRuntimeConfigFile(path, brief); err != nil {
 			t.Fatalf("iteration %d: %v", i, err)
@@ -1114,8 +1114,8 @@ func TestWriteRuntimeConfigFileIgnoresStrayEndMarkerBeforeBegin(t *testing.T) {
 
 	// Seed a file whose user-authored portion documents the marker format
 	// (so the *end* marker appears before any *begin* marker), then has a
-	// real block authored by an earlier Patchbay run below.
-	const userDoc = "# Repo CLAUDE.md\n\nExample of what Patchbay writes:\n" +
+	// real block authored by an earlier Orvilo run below.
+	const userDoc = "# Repo CLAUDE.md\n\nExample of what Orvilo writes:\n" +
 		runtimeMarkerEnd + "\n\n# Real config below\n"
 	original := userDoc +
 		runtimeMarkerBegin + "\nFIRST BRIEF\n" + runtimeMarkerEnd + "\n"
@@ -1208,7 +1208,7 @@ func TestWriteRuntimeConfigFileReplacesMalformedHalfBlock(t *testing.T) {
 
 // Cleanup excises the marker block, preserving every byte of surrounding
 // user content. This is the local_directory invariant: a `claude` /
-// `codex` run started by the user after a Patchbay task must see the same
+// `codex` run started by the user after an Orvilo task must see the same
 // file the user wrote.
 func TestCleanupRuntimeConfigPreservesUserContent(t *testing.T) {
 	t.Parallel()
@@ -1708,7 +1708,7 @@ func TestMultiThreadReplyInstructionsFanOut(t *testing.T) {
 	for _, banned := range []string{
 		"For EACH thread above",                // old cookbook opener
 		"UTF-8 file with your file-write tool", // restated mechanism
-		"patchbay issue comment add",            // embedded example commands
+		"patchbay issue comment add",           // embedded example commands
 		"--content-file",                       // restated posting flag (#6517 review)
 		"inline `--content`",                   // restated inline ban (#6517 review)
 		"--content-stdin",                      // restated HEREDOC ban
@@ -1931,7 +1931,7 @@ func TestBriefByteIdenticalAcrossRunsForEveryKind(t *testing.T) {
 	kinds := map[string]TaskContextForEnv{
 		"chat":         {ChatSessionID: "chat-1", ChatChannelType: ChannelTypeSlack, AgentID: "a-1", AgentName: "Eve"},
 		"quick-create": {QuickCreatePrompt: "make an issue", AgentID: "a-1", AgentName: "Eve"},
-		"automation":    {AutomationRunID: "run-1", AutomationID: "ap-1", AgentID: "a-1", AgentName: "Eve"},
+		"automation":   {AutomationRunID: "run-1", AutomationID: "ap-1", AgentID: "a-1", AgentName: "Eve"},
 		// WeCom is the channel a real deployment flips the file-delivery
 		// verdict on. The Slack row above catches the same leak today, but only
 		// because the brief's copy is channel-agnostic; scope that copy to
@@ -2021,7 +2021,7 @@ func TestBriefSkillsListIsNamesOnly(t *testing.T) {
 		AgentSkills: []SkillContextForEnv{
 			{
 				Name:        "PR Review",
-				Description: "Use when reviewing a pull request for the Patchbay project.",
+				Description: "Use when reviewing a pull request for the Orvilo project.",
 				Content:     "---\nname: pr-review\n---\n\nbody",
 			},
 		},

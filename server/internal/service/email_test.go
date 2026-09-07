@@ -360,7 +360,7 @@ func TestBuildInvitationParams_SubjectStripsControls(t *testing.T) {
 	if strings.ContainsAny(p.Subject, "\r\n\t") {
 		t.Errorf("subject still contains control characters: %q", p.Subject)
 	}
-	if p.Subject != "Alice invited you to Acme on Patchbay" {
+	if p.Subject != "Alice invited you to Acme on Orvilo" {
 		t.Errorf("unexpected subject: %q", p.Subject)
 	}
 }
@@ -391,9 +391,9 @@ func TestBuildInvitationParams_SubjectTruncated(t *testing.T) {
 		longWorkspace,
 		"https://patchbay.aspectlylabs.com/invite/abc",
 	)
-	// Template: "Alice invited you to <ws> on Patchbay"
+	// Template: "Alice invited you to <ws> on Orvilo"
 	// ws is capped at maxSubjectFieldRunes; overall subject should also be bounded.
-	maxExpected := len("Alice invited you to  on Patchbay") + maxSubjectFieldRunes
+	maxExpected := len("Alice invited you to  on Orvilo") + maxSubjectFieldRunes
 	if runes := len([]rune(p.Subject)); runes > maxExpected {
 		t.Errorf("subject not bounded: %d runes, max %d: %q", runes, maxExpected, p.Subject)
 	}

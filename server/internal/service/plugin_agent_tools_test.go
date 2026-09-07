@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Two plugins may both contribute a hook called "summarize". The agent sees one

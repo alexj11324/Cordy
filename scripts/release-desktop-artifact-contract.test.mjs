@@ -13,9 +13,9 @@ test("desktop release staging selects installers and updater metadata only", asy
 
   const assetPattern = Function(`"use strict"; return ${literal};`)();
   const candidates = [
-    "win-x64/win-unpacked/Patchbay.exe",
+    "win-x64/win-unpacked/Orvilo.exe",
     "win-x64/win-unpacked/resources/elevate.exe",
-    "win-arm64/win-arm64-unpacked/Patchbay.exe",
+    "win-arm64/win-arm64-unpacked/Orvilo.exe",
     "win-x64/patchbay-desktop-0.2.7-windows-x64.__uninstaller.exe",
     "win-x64/patchbay-desktop-0.2.7-windows-x64.exe",
     "win-x64/patchbay-desktop-0.2.7-windows-x64.exe.blockmap",

@@ -4,9 +4,9 @@ import (
 	"encoding/base64"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
 )
 
 func TestLinearWorkerWiringRequiresCompleteCredentials(t *testing.T) {

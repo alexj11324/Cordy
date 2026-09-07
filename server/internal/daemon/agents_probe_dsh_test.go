@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestProbeDshPatchbayProfile(t *testing.T) {
+func TestProbeDshOrviloProfile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture")
 	}
@@ -27,14 +27,14 @@ func TestProbeDshPatchbayProfile(t *testing.T) {
 			if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if got := probeDshPatchbayProfile(path); got != tc.want {
-				t.Fatalf("probeDshPatchbayProfile() = %v, want %v", got, tc.want)
+			if got := probeDshOrviloProfile(path); got != tc.want {
+				t.Fatalf("probeDshOrviloProfile() = %v, want %v", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestProbeAgentCLIsRequiresDshPatchbayProfile(t *testing.T) {
+func TestProbeAgentCLIsRequiresDshOrviloProfile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture")
 	}

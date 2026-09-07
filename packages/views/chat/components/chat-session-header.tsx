@@ -2,14 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Archive, ArchiveRestore, MoreHorizontal, Pencil, Trash2, UserRound } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,16 +19,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { useWorkspacePaths } from "@orvilo/core/paths";
 import {
   useUpdateChatSession,
   useDeleteChatSession,
   useSetChatSessionArchived,
-} from "@patchbay/core/chat/mutations";
-import { useChatStore } from "@patchbay/core/chat";
-import type { Agent, ChatSession } from "@patchbay/core/types";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@orvilo/core/chat/mutations";
+import { useChatStore } from "@orvilo/core/chat";
+import type { Agent, ChatSession } from "@orvilo/core/types";
+import { isImeComposing } from "@orvilo/core/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";

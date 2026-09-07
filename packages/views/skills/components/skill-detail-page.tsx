@@ -26,28 +26,28 @@ import type {
   Skill,
   SkillFile,
   UpdateSkillRequest,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
+import { api } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
 import { useTimeAgo } from "../../i18n";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   selectSkillAssignments,
   skillDetailOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+} from "@orvilo/core/workspace/queries";
+import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 import {
   runtimeDisplayLabel,
   runtimeListOptions,
-} from "@patchbay/core/runtimes";
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
-import { Button, buttonVariants } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/runtimes";
+import { ActorAvatar } from "@orvilo/ui/components/common/actor-avatar";
+import { Button, buttonVariants } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -55,21 +55,21 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
+} from "@orvilo/ui/components/ui/dialog";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/tooltip";
+import { cn } from "@orvilo/ui/lib/utils";
 import { AppLink, useNavigation } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { useCanEditSkill } from "../hooks/use-can-edit-skill";
-import { useSkillPermissions } from "@patchbay/core/permissions";
-import { CapabilityBanner } from "@patchbay/ui/components/common/capability-banner";
+import { useSkillPermissions } from "@orvilo/core/permissions";
+import { CapabilityBanner } from "@orvilo/ui/components/common/capability-banner";
 import {
   isRefreshableOrigin,
   originSourceUrl,
