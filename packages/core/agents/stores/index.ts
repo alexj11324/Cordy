@@ -5,6 +5,7 @@ export {
   AGENT_DEFAULT_HIDDEN_COLUMNS,
   EMPTY_AGENT_FILTERS,
   type AgentsScope,
+  type AgentViewMode,
   type AgentsViewState,
   type AgentSortField,
   type AgentSortDirection,
