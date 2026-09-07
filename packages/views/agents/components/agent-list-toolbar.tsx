@@ -23,6 +23,7 @@ import {
   type AgentsScope,
   type AgentSortDirection,
   type AgentSortField,
+  type AgentViewMode,
 } from "@orvilo/core/agents/stores";
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Input } from "@orvilo/ui/components/ui/input";
@@ -112,6 +113,7 @@ export function AgentListToolbar({
   allRows,
   members,
   visibleCount,
+  viewMode,
 }: {
   scope: AgentsScope;
   onScopeChange: (scope: AgentsScope) => void;
@@ -134,6 +136,7 @@ export function AgentListToolbar({
   members: MemberWithUser[];
   /** Rows surviving the filters — shown as "n / total" when narrowed. */
   visibleCount: number;
+  viewMode?: AgentViewMode;
 }) {
   const { t } = useT("agents");
 
@@ -594,26 +597,28 @@ export function AgentListToolbar({
               </div>
             </div>
 
-            <div className="px-3 py-2.5">
-              <span className="text-caption font-medium text-muted-foreground">
-                {t(($) => $.toolbar.section_columns)}
-              </span>
-              <div className="mt-2 space-y-2">
-                {COLUMN_KEYS.map((key) => (
-                  <label
-                    key={key}
-                    className="flex cursor-pointer items-center justify-between"
-                  >
-                    <span className="text-body">{COLUMN_LABELS[key]}</span>
-                    <Switch
-                      size="sm"
-                      checked={!hiddenColumns.includes(key)}
-                      onCheckedChange={() => onToggleColumn(key)}
-                    />
-                  </label>
-                ))}
+            {viewMode !== "cards" ? (
+              <div className="px-3 py-2.5">
+                <span className="text-caption font-medium text-muted-foreground">
+                  {t(($) => $.toolbar.section_columns)}
+                </span>
+                <div className="mt-2 space-y-2">
+                  {COLUMN_KEYS.map((key) => (
+                    <label
+                      key={key}
+                      className="flex cursor-pointer items-center justify-between"
+                    >
+                      <span className="text-body">{COLUMN_LABELS[key]}</span>
+                      <Switch
+                        size="sm"
+                        checked={!hiddenColumns.includes(key)}
+                        onCheckedChange={() => onToggleColumn(key)}
+                      />
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
+            ) : null}
           </PopoverContent>
         </Popover>
       </div>
