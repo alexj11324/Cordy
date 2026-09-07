@@ -7,7 +7,7 @@ import {
 
 describe("issue role copy", () => {
   it("provides every role-picker label in all four product locales", () => {
-    expect(ISSUE_ROLE_COPY_LOCALES).toEqual(["en", "zh-Hans", "ja", "ko"]);
+    expect(ISSUE_ROLE_COPY_LOCALES).toEqual(["en", "zh-Hans"]);
     for (const locale of ISSUE_ROLE_COPY_LOCALES) {
       for (const value of Object.values(getIssueRoleCopy(locale))) {
         expect(value.trim()).not.toBe("");
@@ -17,8 +17,9 @@ describe("issue role copy", () => {
 
   it("normalizes account language variants", () => {
     expect(getIssueRoleCopy("zh-CN").owner).toBe("负责人");
-    expect(getIssueRoleCopy("ja-JP").reviewer).toBe("レビュー担当");
-    expect(getIssueRoleCopy("ko-KR").executor).toBe("실행자");
+    expect(getIssueRoleCopy("ja-JP").reviewer).toBe(
+      getIssueRoleCopy("en").reviewer,
+    );
     expect(getIssueRoleCopy("fr").owner).toBe("Owner");
   });
 
@@ -45,14 +46,5 @@ describe("issue role copy", () => {
         name: "小林",
       }),
     ).toBe("已请求小林进行审核");
-    expect(
-      formatIssueRoleCopy(getIssueRoleCopy("ja-JP").reviewerChangedFromTo, {
-        from: "A",
-        to: "B",
-      }),
-    ).toBe("レビュー担当を A から B に変更しました");
-    expect(getIssueRoleCopy("ko-KR").reviewerRemoved).toBe(
-      "검토자를 제거했습니다",
-    );
   });
 });

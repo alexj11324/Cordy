@@ -22,11 +22,10 @@ make up C=desktop   # backend + the Electron app, already signed in
 make seed-dev       # optional: sample issues, in the dev-fixtures workspace
 ```
 
-**Prefer Electron for UI checks.** `make up C=desktop` starts Electron against this checkout's
-backend and signs it in. After a change merges to `main`, production Web deploys through
-`aspectlylabs-production-images` and is also a valid check. If Electron is unavailable or the
-renderer is broken, use `make up C=api,web` and `make dev-login`. Shared product pages live in
-`packages/views`; `apps/web` and `apps/desktop` stay thin routes.
+**Changes are verified in the desktop app, not the browser.** `make up C=desktop` starts Electron
+against this checkout's backend and signs it in, so that is where you look at what you built. Add
+`make up C=api,web` (and `make dev-login` to get a signed-in browser) when the change is web-only
+platform wiring.
 
 `make status` shows what is running and proves it belongs to this checkout, `make down` stops it
 keeping the database, and `make destroy` deletes the database, profile and slot. Everything below
@@ -34,15 +33,15 @@ expands on those; [Environments](#environments) is the section to read first.
 
 ## Contribution Terms
 
-By submitting a contribution to Patchbay — a pull request, a patch, or any
-other work — you agree to condition 2 of the [Patchbay License](LICENSE):
+By submitting a contribution to Orvilo — a pull request, a patch, or any
+other work — you agree to condition 2 of the [Orvilo License](LICENSE):
 
-- your contribution is submitted under the Patchbay License as a whole (the
+- your contribution is submitted under the Orvilo License as a whole (the
   additional conditions in Part I together with the incorporated Apache
   License 2.0 text in Part II), not under the Apache License 2.0 alone;
 - your contributed code may be used for commercial purposes, including the
   producer's cloud business operations;
-- the producer can adjust the Patchbay License to be more strict or relaxed
+- the producer can adjust the Orvilo License to be more strict or relaxed
   as deemed necessary.
 
 See the [LICENSE](LICENSE) file for the full terms.

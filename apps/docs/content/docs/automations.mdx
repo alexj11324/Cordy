@@ -25,7 +25,7 @@ An automation is enabled by default after saving; **Run now** manually executes 
 
 ## Triggers
 
-The detail page **Settings** tab is the editor: a large title, enable switch, project picker, and author line, then a single Triggers card with **+ Add Trigger** at the bottom, Agent Instructions with an inline model picker, and a Tools list (Memories, Slack, MCP). **+ Add Trigger** is a nested menu:
+The detail page **Settings** tab is the editor. **+ Add Trigger** is a nested menu:
 
 | Source | What fires it | Public URL? |
 |---|---|---|
@@ -71,8 +71,6 @@ For example:
 | `0 3 * * *` | `UTC` | Every day at 3:00 |
 
 Cron has no seconds field, and timezones use IANA names like `Asia/Shanghai`. Before saving, check the result against the "next runs" times shown on the page.
-
-![The automation editor: Runbook, schedule settings, and a preview of the next few runs](/images/docs/automation-schedule.webp)
 
 ## Run from a webhook
 

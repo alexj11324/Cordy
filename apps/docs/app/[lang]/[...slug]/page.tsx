@@ -12,7 +12,6 @@ import type { Metadata } from "next";
 import { docsAlternates } from "@/lib/site";
 import { i18n, type Lang } from "@/lib/i18n";
 import { DocsLocaleProvider, LocaleLink } from "@/components/locale-link";
-import { VideoEmbed } from "@/components/video-embed";
 import { docsSlugStaticParams } from "@/lib/static-params";
 
 function asLang(lang: string): Lang {
@@ -44,7 +43,6 @@ export default async function Page(props: {
               // click to zoom to viewport, scroll/Esc/click to dismiss.
               img: (props) => <ImageZoom {...props} />,
               a: LocaleLink,
-              VideoEmbed,
             }}
           />
         </DocsLocaleProvider>

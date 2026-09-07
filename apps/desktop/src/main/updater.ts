@@ -138,34 +138,6 @@ const menuUpdateCopyByLocale: Record<
     checkFailed: "无法检查更新",
     ok: "好",
   },
-  ja: {
-    upToDate: "最新バージョンです",
-    upToDateDetail: (version) => `現在のバージョンは ${version} です。`,
-    updateAvailable: "新しいバージョンがあります",
-    updateAvailableDetail: (version) =>
-      `バージョン ${version} をバックグラウンドでダウンロードしています。準備ができたら通知します。`,
-    readyMessage: "アップデートの準備ができました",
-    readyDetail: (version) =>
-      `バージョン ${version} をインストールする準備ができました。再起動して適用します。`,
-    restartNow: "今すぐ再起動",
-    later: "後で",
-    checkFailed: "更新を確認できませんでした",
-    ok: "OK",
-  },
-  ko: {
-    upToDate: "최신 버전입니다",
-    upToDateDetail: (version) => `현재 버전은 ${version}입니다.`,
-    updateAvailable: "새 버전이 있습니다",
-    updateAvailableDetail: (version) =>
-      `${version}을(를) 백그라운드에서 다운로드하고 있습니다. 준비되면 알려 드립니다.`,
-    readyMessage: "업데이트를 설치할 준비가 되었습니다",
-    readyDetail: (version) =>
-      `${version}을(를) 설치할 준비가 되었습니다. 다시 시작하여 적용하세요.`,
-    restartNow: "지금 다시 시작",
-    later: "나중에",
-    checkFailed: "업데이트를 확인할 수 없습니다",
-    ok: "확인",
-  },
 };
 
 function menuUpdateCopy(

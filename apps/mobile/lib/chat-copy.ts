@@ -1,7 +1,7 @@
 import type { AgentConversationStarter } from "@patchbay/core/types";
 import type { DispatchReasonCopy } from "@/lib/dispatch-reason";
 
-export type ChatLocale = "en" | "zh-Hans" | "ja" | "ko";
+export type ChatLocale = "en" | "zh-Hans";
 type ConversationStarter = Pick<AgentConversationStarter, "label" | "prompt">;
 
 export type ChatCopy = {
@@ -172,64 +172,6 @@ const ZH_FAILURE_LABELS = {
   manual: "用户已取消",
 } satisfies Readonly<Record<string, string>>;
 
-const JA_FAILURE_LABELS = {
-  queued_expired: "キューで期限切れ",
-  runtime_offline: "ランタイムがオフライン",
-  runtime_recovery: "ランタイムが再起動",
-  timeout: "タスクがタイムアウト",
-  iteration_limit: "反復上限に到達",
-  agent_blocked: "人の入力を待機中",
-  api_invalid_request: "モデル API に拒否されました",
-  skill_bundle_unavailable: "エージェントのスキルを取得できません",
-  runtime_cli_timeout: "ローカルランタイム CLI がタイムアウト",
-  "agent_error.provider_auth_or_access": "プロバイダー認証に失敗",
-  "agent_error.provider_quota_limit": "プロバイダーの利用枠を使い切りました",
-  "agent_error.provider_capacity_or_rate_limit": "プロバイダーにより制限中",
-  "agent_error.provider_server_error": "プロバイダーサーバーエラー",
-  "agent_error.provider_network": "プロバイダーへの接続エラー",
-  "agent_error.process_failure": "エージェントプロセスがクラッシュ",
-  "agent_error.empty_or_unparseable_output": "利用できる出力がありません",
-  "agent_error.agent_timeout": "エージェントがタイムアウト",
-  "agent_error.context_overflow": "コンテキスト上限を超過",
-  "agent_error.missing_config": "API キーまたは設定がありません",
-  "agent_error.model_not_found_or_unavailable": "モデルを利用できません",
-  "agent_error.runtime_version_unsupported": "ランナー CLI は未対応のバージョン",
-  "agent_error.runtime_missing_executable": "ランナー CLI が未インストール",
-  "agent_error.unknown": "エージェント実行エラー",
-  agent_error: "エージェント実行エラー",
-  codex_semantic_inactivity: "Codex が応答を停止",
-  manual: "ユーザーがキャンセル",
-} satisfies Readonly<Record<string, string>>;
-
-const KO_FAILURE_LABELS = {
-  queued_expired: "대기열에서 만료됨",
-  runtime_offline: "런타임 오프라인",
-  runtime_recovery: "런타임 재시작됨",
-  timeout: "태스크 시간 초과",
-  iteration_limit: "반복 한도에 도달함",
-  agent_blocked: "사용자 입력 대기 중",
-  api_invalid_request: "모델 API에서 거부됨",
-  skill_bundle_unavailable: "에이전트 스킬을 다운로드하지 못함",
-  runtime_cli_timeout: "로컬 런타임 CLI 시간 초과",
-  "agent_error.provider_auth_or_access": "모델 서비스 인증 실패",
-  "agent_error.provider_quota_limit": "모델 서비스 할당량 소진",
-  "agent_error.provider_capacity_or_rate_limit": "모델 서비스 요청 제한",
-  "agent_error.provider_server_error": "모델 서비스 서버 오류",
-  "agent_error.provider_network": "모델 서비스 연결 오류",
-  "agent_error.process_failure": "에이전트 프로세스 충돌",
-  "agent_error.empty_or_unparseable_output": "사용할 수 있는 출력이 없음",
-  "agent_error.agent_timeout": "에이전트 시간 초과",
-  "agent_error.context_overflow": "컨텍스트 창 초과",
-  "agent_error.missing_config": "API 키 또는 설정 없음",
-  "agent_error.model_not_found_or_unavailable": "모델을 사용할 수 없음",
-  "agent_error.runtime_version_unsupported": "러너 CLI 버전 미지원",
-  "agent_error.runtime_missing_executable": "러너 CLI가 설치되지 않음",
-  "agent_error.unknown": "에이전트 실행 오류",
-  agent_error: "에이전트 실행 오류",
-  codex_semantic_inactivity: "Codex 응답 없음",
-  manual: "사용자가 취소함",
-} satisfies Readonly<Record<string, string>>;
-
 const EN_STARTERS: readonly ConversationStarter[] = [
   {
     label: "What can you help with?",
@@ -258,38 +200,6 @@ const ZH_STARTERS: readonly ConversationStarter[] = [
   {
     label: "推荐一个操作",
     prompt: "根据你对我的工作区的了解，推荐一个有用的初始操作。",
-  },
-];
-
-const JA_STARTERS: readonly ConversationStarter[] = [
-  {
-    label: "何を手伝えますか？",
-    prompt: "あなたが得意な支援を簡潔に教えてください。",
-  },
-  {
-    label: "最初のタスクを提案",
-    prompt: "あなたに任せられる実用的なタスクを3つ提案してください。",
-  },
-  {
-    label: "アクションを提案",
-    prompt:
-      "私のワークスペースについて知っていることを踏まえ、最初に役立つアクションを提案してください。",
-  },
-];
-
-const KO_STARTERS: readonly ConversationStarter[] = [
-  {
-    label: "어떤 일을 도와줄 수 있나요?",
-    prompt: "가장 잘 도울 수 있는 일을 간단히 알려 주세요.",
-  },
-  {
-    label: "첫 태스크 추천",
-    prompt: "당신에게 맡길 수 있는 유용한 태스크 세 가지를 추천해 주세요.",
-  },
-  {
-    label: "작업 추천",
-    prompt:
-      "내 워크스페이스에 대해 알고 있는 내용을 바탕으로 유용한 첫 작업을 추천해 주세요.",
   },
 ];
 
@@ -463,174 +373,6 @@ const COPY_DATA = {
       fallback: "消息发送失败，请重试。",
     },
   },
-  ja: {
-    chat: "チャット",
-    newChat: "新規チャット",
-    sessionsAndAgentPicker: "セッションとエージェントの選択",
-    sessionActions: "セッション操作",
-    chooseAgent: "エージェントを選択",
-    noAgentsAvailable: "利用できるエージェントはありません。",
-    agents: "エージェント",
-    back: "戻る",
-    openChatWithTemplate: "{name} とのチャットを開く",
-    needsRuntime: "ランタイム未設定",
-    archived: "アーカイブ済み",
-    noChatsYet: "チャットはまだありません。",
-    deleteChatTitle: "このチャットを削除しますか？",
-    deleteChatDescriptionTemplate:
-      "「{title}」とメッセージが完全に削除されます。この操作は取り消せません。",
-    cancel: "キャンセル",
-    delete: "削除",
-    messageNotSent: "メッセージを送信できませんでした",
-    permissionAlertTitle: "このエージェントを実行する権限がありません",
-    permissionAlertDescription:
-      "このエージェントを実行する権限がないため、メッセージは送信されませんでした。所有者にアクセスを依頼してください。",
-    runtimeRequiredTitle: "ランタイムが必要です",
-    runtimeRequiredAlertDescription:
-      "メッセージを送る前に、Web またはデスクトップでこのエージェントにランタイムを設定してください。",
-    noAgentBannerTitle: "利用できるエージェントはありません",
-    noAgentBannerDescription:
-      "チャットを始めるには「その他 → エージェント」で追加または有効化してください。",
-    noAgentBannerA11y: "利用できるエージェントはありません。エージェント設定を開く",
-    runtimeFallbackName: "このエージェント",
-    runtimeRequiredBannerTemplate:
-      "{name} を実行するにはランタイムが必要です。Web またはデスクトップで設定してください。",
-    offlineFallbackName: "このエージェント",
-    offlineUnstableTemplate: "{name} は接続が切れた可能性があります。メッセージはキューに入ります。",
-    offlineTemplate: "{name} はオフラインです。ランタイムが戻るまでメッセージは待機します。",
-    inputWorking: "エージェントが作業中…",
-    inputMessage: "メッセージ…",
-    inputUnavailable: "チャットを利用できません",
-    stopAgent: "エージェントを停止",
-    noAgentSelected: "エージェント未選択",
-    accessRevoked: "このエージェントを実行する権限がありません",
-    noAgentsWorkspace: "このワークスペースにエージェントがありません",
-    archivedChat: "このチャットはアーカイブ済みです",
-    agentNeedsRuntime: "エージェントにランタイムが必要です",
-    emptyTitleNamed: "こんにちは、{name} です",
-    emptyTitleDefault: "エージェントとチャット",
-    emptyFirstTimeHint: "例を選んで始め、送信前に編集してください。",
-    fallbackStarters: JA_STARTERS,
-    suggestedFollowUps: "おすすめのフォローアップ",
-    showErrorDetails: "エラーの詳細を表示",
-    showDetails: "詳細を表示",
-    noResponse: "このターンはテキスト返信なしで終了しました。",
-    repliedInTemplate: "{elapsed} で返信",
-    finishedInTemplate: "{elapsed} で完了",
-    failedAfterTemplate: "{elapsed} 後に失敗",
-    processStepOne: "1 ステップ",
-    processStepsOther: "{count} ステップ",
-    toolFallback: "ツール",
-    toolResultNamedTemplate: "{tool} の結果: ",
-    toolResultUnnamed: "結果: ",
-    truncated: "（省略）",
-    status: {
-      retrying: "再試行中",
-      offline: "オフライン",
-      reconnecting: "再接続中",
-      queued: "待機中",
-      startingUp: "起動中",
-      thinking: "思考中",
-      typing: "入力中",
-      working: "作業中",
-      runningCommand: "コマンドを実行中",
-      readingFiles: "ファイルを読み込み中",
-      searchingCode: "コードを検索中",
-      makingEdits: "編集中",
-      searchingWeb: "ウェブを検索中",
-    },
-    longPress: { copy: "コピー", selectText: "テキストを選択", cancel: "キャンセル" },
-    failure: { fallback: "失敗しました", labels: JA_FAILURE_LABELS },
-    sendFailure: {
-      invocationNotAllowed: "このエージェントを実行する権限がないため、メッセージは送信されませんでした。",
-      runtimeRequired: "メッセージを送る前に、このエージェントにランタイムを設定してください。",
-      fallback: "メッセージを送信できませんでした。もう一度お試しください。",
-    },
-  },
-  ko: {
-    chat: "채팅",
-    newChat: "새 채팅",
-    sessionsAndAgentPicker: "세션 및 에이전트 선택",
-    sessionActions: "세션 작업",
-    chooseAgent: "에이전트 선택",
-    noAgentsAvailable: "사용할 수 있는 에이전트가 없습니다.",
-    agents: "에이전트",
-    back: "뒤로",
-    openChatWithTemplate: "{name}와 채팅 열기",
-    needsRuntime: "런타임 필요",
-    archived: "보관됨",
-    noChatsYet: "아직 채팅이 없습니다.",
-    deleteChatTitle: "이 채팅을 삭제할까요?",
-    deleteChatDescriptionTemplate:
-      '"{title}" 및 메시지가 영구 삭제됩니다. 이 작업은 되돌릴 수 없습니다.',
-    cancel: "취소",
-    delete: "삭제",
-    messageNotSent: "메시지가 전송되지 않았습니다",
-    permissionAlertTitle: "이 에이전트를 실행할 권한이 없습니다",
-    permissionAlertDescription:
-      "이 에이전트를 실행할 권한이 없어 메시지가 전송되지 않았습니다. 소유자에게 접근 권한을 요청하세요.",
-    runtimeRequiredTitle: "런타임이 필요합니다",
-    runtimeRequiredAlertDescription:
-      "메시지를 보내기 전에 웹 또는 데스크톱에서 이 에이전트에 런타임을 연결하세요.",
-    noAgentBannerTitle: "사용할 수 있는 에이전트가 없습니다",
-    noAgentBannerDescription:
-      "채팅을 시작하려면 더 보기 → 에이전트에서 에이전트를 추가하거나 활성화하세요.",
-    noAgentBannerA11y: "사용할 수 있는 에이전트 없음, 에이전트 설정 열기",
-    runtimeFallbackName: "이 에이전트",
-    runtimeRequiredBannerTemplate:
-      "{name}을(를) 실행하려면 런타임이 필요합니다. 웹 또는 데스크톱에서 연결하세요.",
-    offlineFallbackName: "이 에이전트",
-    offlineUnstableTemplate: "{name}의 연결이 끊겼을 수 있습니다. 메시지는 대기열에 들어갑니다.",
-    offlineTemplate: "{name}이(가) 오프라인입니다. 런타임이 돌아올 때까지 메시지가 대기합니다.",
-    inputWorking: "에이전트 작업 중…",
-    inputMessage: "메시지…",
-    inputUnavailable: "채팅을 사용할 수 없음",
-    stopAgent: "에이전트 중지",
-    noAgentSelected: "에이전트가 선택되지 않음",
-    accessRevoked: "이 에이전트를 실행할 권한이 없습니다",
-    noAgentsWorkspace: "이 워크스페이스에 에이전트가 없습니다",
-    archivedChat: "이 채팅은 보관되었습니다",
-    agentNeedsRuntime: "에이전트에 런타임이 필요함",
-    emptyTitleNamed: "안녕하세요, 저는 {name}입니다",
-    emptyTitleDefault: "에이전트와 채팅하기",
-    emptyFirstTimeHint: "예시를 골라 시작한 다음 보내기 전에 편집하세요.",
-    fallbackStarters: KO_STARTERS,
-    suggestedFollowUps: "추천 후속 질문",
-    showErrorDetails: "오류 세부 정보 보기",
-    showDetails: "세부 정보 보기",
-    noResponse: "에이전트가 텍스트 답변 없이 이 턴을 마쳤습니다.",
-    repliedInTemplate: "{elapsed} 만에 답변",
-    finishedInTemplate: "{elapsed} 만에 완료",
-    failedAfterTemplate: "{elapsed} 후 실패",
-    processStepOne: "1단계",
-    processStepsOther: "{count}단계",
-    toolFallback: "도구",
-    toolResultNamedTemplate: "{tool} 결과: ",
-    toolResultUnnamed: "결과: ",
-    truncated: "(축약됨)",
-    status: {
-      retrying: "재시도 중",
-      offline: "오프라인",
-      reconnecting: "다시 연결 중",
-      queued: "대기 중",
-      startingUp: "시작 중",
-      thinking: "생각 중",
-      typing: "입력 중",
-      working: "작업 중",
-      runningCommand: "명령 실행 중",
-      readingFiles: "파일 읽는 중",
-      searchingCode: "코드 검색 중",
-      makingEdits: "수정 중",
-      searchingWeb: "웹 검색 중",
-    },
-    longPress: { copy: "복사", selectText: "텍스트 선택", cancel: "취소" },
-    failure: { fallback: "실패", labels: KO_FAILURE_LABELS },
-    sendFailure: {
-      invocationNotAllowed: "이 에이전트를 실행할 권한이 없어 메시지가 전송되지 않았습니다.",
-      runtimeRequired: "메시지를 보내기 전에 이 에이전트에 런타임을 연결하세요.",
-      fallback: "메시지를 보내지 못했습니다. 다시 시도해 주세요.",
-    },
-  },
 } satisfies Record<ChatLocale, ChatCopyData>;
 
 function interpolate(template: string, values: Record<string, string | number>): string {
@@ -669,8 +411,6 @@ function buildChatCopy(data: ChatCopyData): ChatCopy {
 export function normalizeChatLocale(language: string | null | undefined): ChatLocale {
   const normalized = language?.trim().toLowerCase().replaceAll("_", "-");
   if (normalized?.startsWith("zh")) return "zh-Hans";
-  if (normalized?.startsWith("ja")) return "ja";
-  if (normalized?.startsWith("ko")) return "ko";
   return "en";
 }
 

@@ -25,7 +25,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 触发器
 
-详情页的**设置**就是编辑器：大标题、启用开关、关联项目、作者行，然后是一张底部带 **+ Add Trigger** 的触发器卡片、带内嵌模型选择的智能体指令，以及工具列表（记忆、Slack、MCP）。**+ Add Trigger** 是嵌套菜单：
+详情页的**设置**就是编辑器。**+ Add Trigger** 是嵌套菜单：
 
 | 来源 | 何时触发 | 公开 URL？ |
 |---|---|---|
@@ -71,8 +71,6 @@ PagerDuty 和 Sentry 的模板卡片仍会创建自动化；等对应产品接�
 | `0 3 * * *` | `UTC` | 每天 3:00 |
 
 Cron 不包含秒，时区使用 `Asia/Shanghai` 这样的 IANA 名称。保存前，用页面显示的"接下来"时间核对结果。
-
-![自动化编辑器：Runbook、时间表设置与接下来几次运行的预览](/images/docs/automation-schedule.webp)
 
 ## 通过 Webhook 运行
 

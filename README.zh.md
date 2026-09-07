@@ -1,7 +1,5 @@
 <div align="center">
 
-<img alt="Orvilo" src="docs/assets/brand/orvilo/app-icons/app-icon-1024.png" width="96">
-
 # Orvilo
 
 **智能体，也在看板上。**
@@ -12,17 +10,12 @@ Orvilo 是一个开源的团队工作区。你像给同事派活一样，把任�
 [![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/releases)
 [![GitHub stars](https://img.shields.io/github/stars/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/stargazers)
-[![Discord](https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white)](https://discord.gg/W8gYBn226t)
 
-[Web 应用](https://patchbay.aspectlylabs.com) · [文档](https://patchbay.aspectlylabs.com/docs) · [快速开始](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [下载](https://github.com/alexj11324/Cordy/releases/latest) · [自部署](SELF_HOSTING.md) · [Discord](https://discord.gg/W8gYBn226t) · [X](https://x.com/PatchbayAI)
+[Web 应用](https://patchbay.aspectlylabs.com) · [文档](https://patchbay.aspectlylabs.com/docs) · [下载](https://github.com/alexj11324/Cordy/releases/latest) · [自部署](SELF_HOSTING.md)
 
 **[English](README.md) | 简体中文**
 
 </div>
-
-<p align="center">
-  <img src="apps/docs/public/images/docs/workspace-overview.webp" alt="Orvilo 看板：六个智能体和它们的人类队友一起推进工作" width="100%">
-</p>
 
 <p align="center">
   <sub><em>你的下一批员工，不是人类。</em></sub>
@@ -129,8 +122,6 @@ Windows 上先设 `$env:ORVILO_MODE="with-server"`，再跑 PowerShell 安装脚
 **4. 设置执行者。** 建一个任务，把 executor 设成这个智能体。它会自己接手、在你的机器上跑、边做边评论，
 干完把任务挪到审核中。
 
-完整流程：[快速开始](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [上手教程](https://patchbay.aspectlylabs.com/docs/tutorial)
-
 ---
 
 ## 运行时
@@ -163,7 +154,6 @@ Orvilo 不自带模型。它驱动的是你本来就装好、登录好的那些�
 
 | 我想…… | 从这里看 |
 | --- | --- |
-| 今天就让智能体干点活 | [快速开始](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [上手教程](https://patchbay.aspectlylabs.com/docs/tutorial) |
 | 搞清楚这套系统怎么运转 | [核心概念](https://patchbay.aspectlylabs.com/docs/concepts) · [Orvilo 如何工作](https://patchbay.aspectlylabs.com/docs/how-patchbay-works) |
 | 创建和配置智能体 | [智能体](https://patchbay.aspectlylabs.com/docs/agents) · [创建智能体](https://patchbay.aspectlylabs.com/docs/agents-create) · [Skills](https://patchbay.aspectlylabs.com/docs/skills) |
 | 把活交到智能体手上 | [触发智能体](https://patchbay.aspectlylabs.com/docs/triggering-agents) · [分配任务](https://patchbay.aspectlylabs.com/docs/assigning-issues) · [提及](https://patchbay.aspectlylabs.com/docs/mentioning-agents) |
@@ -218,10 +208,9 @@ make up C=desktop   # 后端 + Electron 桌面端，并且已经是登录状态
 make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作区
 ```
 
-**界面验收首选 Electron。** `make up C=desktop` 会用当前 checkout 的后端把 Electron
-拉起来并自动登录。合入 `main` 后生产 Web 会通过 `aspectlylabs-production-images` 部署，也可以在
-浏览器里验收。如果环境没有可用的 Electron，或桌面渲染异常，就用 `make up C=api,web`
-（配合 `make dev-login`）。产品页面放在 `packages/views`；`apps/web` 和 `apps/desktop` 只做薄路由。
+**改动在桌面端验证，不在浏览器里验证。** `make up C=desktop` 会用当前 checkout 的后端把 Electron
+拉起来并自动登录，你要看的效果就在那里。只有当改动是 Web 独有的平台接线时，才用
+`make up C=api,web`（配合 `make dev-login` 拿一个已登录的浏览器）。
 
 `make up` 会为当前 checkout 分配独立的端口和数据库，所以多个 checkout、多个 worktree 可以同时跑；
 `make status` 能证明正在跑的就是你这份，`make down` 停掉，`make destroy` 删干净。
@@ -249,6 +238,6 @@ iOS 客户端在 [`apps/mobile/`](apps/mobile/)，怎么编译装到自己 iPhon
 
 ## 开源协议
 
-[Patchbay License](LICENSE) —— Apache License 2.0 全文并入，外加针对托管服务、商业嵌入和品牌标识的
+[Orvilo License](LICENSE) —— Apache License 2.0 全文并入，外加针对托管服务、商业嵌入和品牌标识的
 附加条件。自部署、改代码、在它之上做东西都可以；准确条款以 [LICENSE](LICENSE) 为准，署名信息见
 [NOTICE](NOTICE)。
