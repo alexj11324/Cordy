@@ -172,6 +172,20 @@ services:
       # which are brought by each workspace via OAuth/BYO and stored encrypted
       # in the database, so this single deployment-wide key is all the operator
       # needs to set here.
+      # The messaging bootstrap values are intentionally explicit environment
+      # mappings. The operator-only setup script documents them as the secure
+      # first-boot path; omitting them here would silently discard that config
+      # before the server can materialize an installation row.
+      ORVILO_MESSAGING_MODE: ${ORVILO_MESSAGING_MODE:-server_configured}
+      ORVILO_MESSAGING_BOOTSTRAP: ${ORVILO_MESSAGING_BOOTSTRAP:-false}
+      ORVILO_MESSAGING_WORKSPACE_ID: ${ORVILO_MESSAGING_WORKSPACE_ID:-}
+      ORVILO_MESSAGING_INSTALLER_USER_ID: ${ORVILO_MESSAGING_INSTALLER_USER_ID:-}
+      ORVILO_MESSAGING_AGENT_ID: ${ORVILO_MESSAGING_AGENT_ID:-}
+      SLACK_APP_TOKEN: ${SLACK_APP_TOKEN:-}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      SLACK_APP_ID: ${SLACK_APP_ID:-}
+      SLACK_TEAM_ID: ${SLACK_TEAM_ID:-}
+      SLACK_BOT_USER_ID: ${SLACK_BOT_USER_ID:-}
       ORVILO_SLACK_SECRET_KEY: ${ORVILO_SLACK_SECRET_KEY:-}
       ORVILO_SLACK_SIGNING_SECRET: ${ORVILO_SLACK_SIGNING_SECRET:-}
       # Self-hosted Git provider integration (Forgejo / Gitea / GitLab). This

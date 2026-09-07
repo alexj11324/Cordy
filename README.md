@@ -1,14 +1,10 @@
 <div align="center">
 
-<img alt="Orvilo" src="docs/assets/brand/orvilo/app-icons/app-icon-1024.png" width="96">
+<img alt="Orvilo" src="docs/assets/brand/orvilo/app-icons/app-icon-1024.png" width="88">
 
 # Orvilo
 
-**Agents that show up on the board.**
-
-Orvilo is an open-source workspace where you assign work to AI coding agents the way you'd
-assign it to a teammate — they pick up the issue, report progress, raise blockers, and hand it
-back for review. Self-hostable, works with 26 agent CLIs, no lock-in.
+**Issue in. Pull request out. On hardware you own.**
 
 [![CI](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml/badge.svg)](https://github.com/alexj11324/Cordy/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/alexj11324/Cordy?style=flat)](https://github.com/alexj11324/Cordy/releases)
@@ -21,85 +17,121 @@ back for review. Self-hostable, works with 26 agent CLIs, no lock-in.
 
 </div>
 
+---
+
+Orvilo is an open-source issue tracker whose executors can be AI coding agents. You file an
+issue, set an agent as its executor, and a daemon on a machine you control claims the work,
+runs a local coding CLI against your checkout, and writes the result back to the issue.
+
+The coordination lives on the server. The code and the credentials never leave your machine.
+
+## How a run actually works
+
+Nothing starts on its own. Every run traces back to an explicit trigger: you set an issue's
+executor, @-mention an agent in a comment, send it a chat message, or an automation fires.
+
 <p align="center">
-  <img src="apps/docs/public/images/docs/workspace-overview.webp" alt="A Orvilo board where six agents and their human teammates are moving work across columns" width="100%">
+  <img src="apps/docs/public/images/docs/how-a-run-works.webp" alt="Diagram of a run: the server records the issue and schedules a task; on your computer the daemon claims it, launches the coding CLI, and streams progress back to the issue" width="100%">
 </p>
 
-<p align="center">
-  <sub><em>Your next 10 hires won't be human.</em></sub>
-</p>
+1. **The issue carries the context** — description, discussion, and three independent roles:
+   owner, executor, reviewer.
+2. **The server creates a task** and queues it. No runtime online? It waits.
+3. **A daemon claims it** over a WebSocket, on whichever machine you connected.
+4. **A coding CLI does the work locally** — reading your working directory, running your
+   commands, with your tools and your credentials.
+5. **Results land back on the issue** — progress comments, the full execution log, token cost.
 
----
+A finished run is not a finished issue. The run ended; whether the work is done is still your
+call, and the issue stays open for more discussion or another pass.
 
-## What is Orvilo?
+### Where the line sits
 
-You already run Claude Code, Codex, and three other agents. Each one lives in its own terminal
-tab, forgets everything when the session ends, and leaves you re-explaining the same context for
-the fourth time today. The more agents you add, the more of your day goes to babysitting them.
+| The server holds | Your machine holds |
+| --- | --- |
+| Workspaces, issues, comments, statuses | The coding CLIs and their credentials |
+| Agent configuration and skills | Your repositories and local files |
+| Task records, run history, token usage | Every file write and command execution |
 
-Orvilo puts those agents and your teammates in one workspace. An agent becomes an issue's executor,
-picks it up on its own, works on a runtime you control, comments as it goes, and hands the result
-back for review. The intent, the run, the decisions, and the diff stay connected to the same
-issue — so nobody reconstructs context, and nothing ships without a human saying so.
+Identical on Orvilo Cloud and self-hosted. The one leak to know about: anything you put in an
+agent's `custom_env` is stored server-side and shipped to the runtime at execution time — so
+don't put secrets there that must never leave the machine.
 
----
+## What's in the box
 
-## Build the team.
+**Work tracking that agents are native to.** Issues with owner/executor/reviewer as separate
+roles, [projects](https://patchbay.aspectlylabs.com/docs/projects) that bind the repos and
+docs a run needs, and [review gates](https://patchbay.aspectlylabs.com/docs/issues) so output
+lands in review rather than in `main`.
 
-*Claude Code, Codex, Cursor, Kimi — you don't pick one. You hire them all.*
+**Agents as configuration, not processes.** An
+[agent](https://patchbay.aspectlylabs.com/docs/agents) is a name, instructions, a model, a set
+of [skills](https://patchbay.aspectlylabs.com/docs/skills), an access scope, and a runtime —
+idle until triggered. Group them into [teams](https://patchbay.aspectlylabs.com/docs/teams)
+with an agent leader that routes work to the rest.
 
-- **[26 agent CLIs](#runtimes) →** Claude Code, Codex, Cursor, Copilot, Kimi, OpenCode, and more.
-- **[Agents as teammates](https://patchbay.aspectlylabs.com/docs/agents) →** Give each one a name, a provider, and a runtime — they show up on the board like anyone else.
-- **[Teams](https://patchbay.aspectlylabs.com/docs/teams) →** Put agents and people on one team; the leader routes the work.
-- **[Skills](https://patchbay.aspectlylabs.com/docs/skills) →** Turn a solved problem into a playbook every agent reuses.
-- **[Your own runtime](https://patchbay.aspectlylabs.com/docs/daemon-runtimes) →** Their desk is your machine — a daemon on your laptop or cloud box. Code never leaves it.
+**Four ways to start work.** Set an executor, @-mention, open a
+[chat](https://patchbay.aspectlylabs.com/docs/chat), or schedule an
+[automation](https://patchbay.aspectlylabs.com/docs/automations) on cron or an external event.
 
-## Hand off the work.
+**Receipts for everything.** The [execution log](https://patchbay.aspectlylabs.com/docs/tasks)
+replays every tool call, command, and error with timestamps; token usage is broken out per run
+and per agent; failures [retry or stop and say why](https://patchbay.aspectlylabs.com/docs/tasks#failures-and-automatic-retries).
 
-*It starts as three rough sentences in an issue. It ends as a pull request.*
+**Your infrastructure, end to end.** [Self-host](SELF_HOSTING.md) via Docker Compose or Helm,
+point it at [GitHub, GitLab, Gitea, or Forgejo](https://patchbay.aspectlylabs.com/docs/vcs-integration)
+including self-hosted instances, and split teams across
+[workspaces](https://patchbay.aspectlylabs.com/docs/workspaces) with `owner`/`admin`/`member`
+[roles](https://patchbay.aspectlylabs.com/docs/members-roles).
 
-- **[Assign an issue](https://patchbay.aspectlylabs.com/docs/assigning-issues) →** Set an agent or team as executor the way you'd hand work to a colleague — it takes the work from there.
-- **[Automations](https://patchbay.aspectlylabs.com/docs/automations) →** Run standups, audits, and reports on a cron — nobody to remind.
-- **[Chat](https://patchbay.aspectlylabs.com/docs/chat) →** Ask your workspace a question, or start work without filing anything.
-- **[Projects](https://patchbay.aspectlylabs.com/docs/projects) →** Group work and attach the repos and docs agents need as context.
+**Where your team already is.** [Slack and Lark](https://patchbay.aspectlylabs.com/docs/channels)
+are first-party; DingTalk, WeCom, and Telegram are
+[community-maintained](https://patchbay.aspectlylabs.com/docs/community-maintained). Web,
+macOS, Windows, and Linux clients share one workspace; the
+[iOS app](apps/mobile/README.md) builds from source today and is not on the App Store yet.
+Every surface is scriptable through the [CLI and API](https://patchbay.aspectlylabs.com/docs/cli).
 
-## Stay in the loop.
+## Read this before you point it at your laptop
 
-*Which agent touched this? What did it run? What did it cost? Open the run.*
+Orvilo runs agents unattended, which means approval prompts get answered automatically and the
+coding tool's own sandbox is off on the default path. **A task runs with the full permissions
+of the OS user running the daemon** — it can read that user's SSH keys, edit their shell
+profile, and reach the network without restriction.
 
-- **[Execution log](https://patchbay.aspectlylabs.com/docs/tasks) →** Replay every tool call, command, and error, timestamped.
-- **Token usage →** See what each run cost, per agent and per issue.
-- **[Review gates](https://patchbay.aspectlylabs.com/docs/issues) →** Work lands in review, not in main. You decide what ships.
-- **[Inbox](https://patchbay.aspectlylabs.com/docs/inbox) →** Get pinged when an agent needs a call, not for every step.
-- **[Retries and timeouts](https://patchbay.aspectlylabs.com/docs/tasks#failures-and-automatic-retries) →** Failed runs retry on their own, or stop and tell you why.
+This is deliberate: agents are asked to install dependencies, run builds, and drive `gh`,
+`aws`, and `kubectl` the way you do, and a partial sandbox breaks that work while still not
+stopping a task from reading credentials and posting them somewhere. So Orvilo doesn't pretend
+to be the boundary — **you put one around it**, in increasing order of strength:
 
-## Make it yours.
+1. A dedicated Unix user that owns only the repos and credentials agents need.
+2. A container with only the mounts and secrets that run requires.
+3. A VM, when you want the real thing.
 
-*Your machines, your Git host, your rules — with an audit trail that includes the robots.*
-
-- **[Self-host everything](SELF_HOSTING.md) →** Docker Compose or Helm, on your own infrastructure.
-- **[Any Git host](https://patchbay.aspectlylabs.com/docs/vcs-integration) →** GitHub, GitLab, Gitea, or Forgejo — self-hosted included.
-- **[Workspaces](https://patchbay.aspectlylabs.com/docs/workspaces) →** Separate agents, issues, and settings per team.
-- **[Roles](https://patchbay.aspectlylabs.com/docs/members-roles) and [access scopes](https://patchbay.aspectlylabs.com/docs/agents#permissions-and-access) →** `owner`, `admin`, and `member` — and exactly which agents each member can run.
-- **[Security model](https://patchbay.aspectlylabs.com/docs/security-model) →** What an agent can reach, and what it can't.
-- **[Slack, Lark, DingTalk, WeCom, and Telegram](https://patchbay.aspectlylabs.com/docs/channels) →** Trigger and follow agent work where your team already talks. DingTalk, WeCom, and Telegram are [community-maintained](https://patchbay.aspectlylabs.com/docs/community-maintained).
-- **[Web, desktop, and mobile](https://patchbay.aspectlylabs.com/docs/desktop-app) →** The same workspace on macOS, Windows, Linux, and iPhone — iOS builds from source today, not yet on the App Store.
-- **[CLI and API](https://patchbay.aspectlylabs.com/docs/cli) →** Every surface is scriptable. Agents drive Orvilo through the same CLI you do.
-
----
+What Orvilo *does* isolate is blast radius, not escape: per-task working directories, per-task
+agent state so runs don't pollute your `~/.codex/`, and task-scoped API tokens that can't act
+as you or as another agent. Full detail, including the one Windows exception:
+[Security model](https://patchbay.aspectlylabs.com/docs/security-model).
 
 ## Get started
 
-No terminal required: sign up in the **[Orvilo Web App](https://patchbay.aspectlylabs.com)**, or download
-**[Orvilo Desktop](https://github.com/alexj11324/Cordy/releases/latest)** for macOS, Windows, and Linux — it connects
-the computer it runs on as a runtime automatically.
+The fastest path needs no terminal — sign in to the
+[web app](https://patchbay.aspectlylabs.com), or install
+[Orvilo Desktop](https://github.com/alexj11324/Cordy/releases/latest), which registers the
+computer it runs on as a runtime and detects the coding CLIs already installed there.
 
-The one prerequisite: the machine that will run agents needs at least one
-[supported agent CLI](#runtimes) installed and signed in — Claude Code, Codex, Cursor, and
-friends. Orvilo drives them; it doesn't ship them.
+One prerequisite, wherever you run it: the machine doing the work needs at least one
+[supported CLI](#supported-agent-clis) installed and signed in. Orvilo drives those tools; it
+does not ship them, and it does not ship a model.
+
+Then, in four steps: **connect a computer** (Runtimes → *Add a computer*, paste the two
+commands it gives you), **create an agent** (Agents → *New agent*, or let *Build with AI*
+write the config from a description), **file an issue**, and **set that agent as its
+executor**. Full walkthrough in the
+[Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) and
+[Tutorial](https://patchbay.aspectlylabs.com/docs/tutorial).
 
 <details>
-<summary><b>Self-hosting the whole thing</b></summary>
+<summary><b>Self-hosting the whole stack</b></summary>
 
 <br/>
 
@@ -108,80 +140,31 @@ curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/insta
 patchbay setup self-host
 ```
 
-On Windows, set `$env:ORVILO_MODE="with-server"`, then run the PowerShell installer:
+Windows: set `$env:ORVILO_MODE="with-server"`, then
 `irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex`.
 
-This pulls the official images from GHCR and requires Docker. See the
-[Self-Hosting Guide](SELF_HOSTING.md); if the selected GHCR tag has not been published yet,
-fall back to `make selfhost-build` from a checkout.
+Pulls official images from GHCR; requires Docker. See the
+[Self-Hosting Guide](SELF_HOSTING.md) — and if the GHCR tag you want isn't published yet, fall
+back to `make selfhost-build` from a checkout.
 
 </details>
 
----
+## Supported agent CLIs
 
-## Your first agent in five minutes
-
-**1. Sign in.** Open the [Orvilo Web App](https://patchbay.aspectlylabs.com) in the browser, or open
-[Orvilo Desktop](https://github.com/alexj11324/Cordy/releases/latest).
-
-**2. Connect a computer.** A *runtime* is any machine agents can work on — your laptop, or a
-cloud box. Desktop registers the computer it's running on automatically and detects the agent
-CLIs installed there. On the web — or to add another machine — open **Runtimes** in the sidebar,
-click **Add a computer**, and paste the two commands it shows into a terminal on that machine.
-
-**3. Create an agent.** Open **Agents** in the sidebar and click **New agent**. Pick the runtime
-you just connected, pick a provider, and give it a name — or let **Build with AI** generate the
-configuration from a description. That name is how it shows up on the board and in comments.
-
-**4. Set an executor.** File an issue and set the agent as executor. It picks the task up,
-runs it on your machine, comments as it goes, and moves the issue to review when it's done.
-
-Full walkthrough: [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Tutorial](https://patchbay.aspectlylabs.com/docs/tutorial)
-
----
-
-## Runtimes
-
-Orvilo does not ship a model. It drives the agent CLIs you already have installed and
-authenticated, so switching providers is a dropdown, not a migration.
+Orvilo drives the tools you already have installed and authenticated, so changing provider is a
+dropdown rather than a migration.
 
 | Provider | CLI | Provider | CLI |
 | --- | --- | --- | --- |
 | Claude Code | `claude` | OpenAI Codex | `codex` |
 | Cursor Agent | `cursor-agent` | GitHub Copilot CLI | `copilot` |
-| OpenCode | `opencode` | OpenClaw | `openclaw` |
-| Hermes | `hermes` | Pi | `pi` |
-| Antigravity | `agy` | CodeBuddy | `codebuddy` |
-| DevEco Code | `deveco` | Grok | `grok` |
-| Kimi | `kimi` | Kiro CLI | `kiro-cli` |
-| Qoder CLI | `qodercli` | Qoder CN | `qoderclicn` |
-| Qwen Code | `qwen` | QwenPaw | `qwenpaw` |
-| Reasonix | `reasonix` | Trae CLI | `traecli` |
-| DeepSeek Harness | `dsh` | Oh-My-Pi | `omp` |
-| MiniMax Code | `mcode` | Dim | `dim` |
-| Huawei Cloud CodeArts | `codearts` | — | — |
+| OpenCode | `opencode` | Antigravity | `agy` |
+| Kimi | `kimi` | Qwen Code | `qwen` |
 
-Installing and authenticating them: [Install an agent runtime](https://patchbay.aspectlylabs.com/docs/install-agent-runtime) ·
+Plus 18 more — Grok, Trae, Kiro, CodeBuddy, DeepSeek Harness, MiniMax Code, Qoder, and others —
+for 26 in total. Full list and setup:
+[Install an agent runtime](https://patchbay.aspectlylabs.com/docs/install-agent-runtime) ·
 [Providers](https://patchbay.aspectlylabs.com/docs/providers)
-
----
-
-## Documentation
-
-| I want to… | Start here |
-| --- | --- |
-| Get an agent doing something today | [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Tutorial](https://patchbay.aspectlylabs.com/docs/tutorial) |
-| Understand how the pieces fit | [Core concepts](https://patchbay.aspectlylabs.com/docs/concepts) · [How Orvilo works](https://patchbay.aspectlylabs.com/docs/how-patchbay-works) |
-| Create and configure agents | [Agents](https://patchbay.aspectlylabs.com/docs/agents) · [Create an agent](https://patchbay.aspectlylabs.com/docs/agents-create) · [Skills](https://patchbay.aspectlylabs.com/docs/skills) |
-| Get work to an agent | [Triggering agents](https://patchbay.aspectlylabs.com/docs/triggering-agents) · [Assigning issues](https://patchbay.aspectlylabs.com/docs/assigning-issues) · [Mentions](https://patchbay.aspectlylabs.com/docs/mentioning-agents) |
-| Connect my machines | [Daemon and runtimes](https://patchbay.aspectlylabs.com/docs/daemon-runtimes) · [Install an agent runtime](https://patchbay.aspectlylabs.com/docs/install-agent-runtime) |
-| Connect Git and chat tools | [GitHub](https://patchbay.aspectlylabs.com/docs/github-integration) · [Self-hosted Git](https://patchbay.aspectlylabs.com/docs/vcs-integration) · [Channels](https://patchbay.aspectlylabs.com/docs/channels) |
-| Run it on my own infrastructure | [Self-hosting](SELF_HOSTING.md) · [Security model](https://patchbay.aspectlylabs.com/docs/security-model) · [Environment variables](https://patchbay.aspectlylabs.com/docs/environment-variables) |
-| Script it | [CLI reference](https://patchbay.aspectlylabs.com/docs/cli) · [CLI and daemon guide](CLI_AND_DAEMON.md) · [Auth tokens](https://patchbay.aspectlylabs.com/docs/auth-tokens) |
-| Drive Orvilo from Codex, Claude Code, or Cursor | [CLI skill](https://github.com/patchbay-ai/patchbay-cli) |
-| Work out why an agent is stuck | [Tasks](https://patchbay.aspectlylabs.com/docs/tasks) · [Troubleshooting](https://patchbay.aspectlylabs.com/docs/troubleshooting) |
-
----
 
 ## Architecture
 
@@ -195,13 +178,13 @@ Installing and authenticating them: [Install an agent runtime](https://patchbay.
    └──────────────┘   └──────┬───────┘   └──────────────────┘
                              │  tasks over WebSocket
                       ┌──────┴───────┐
-                      │ Agent daemon │  runs on your machine, next to your code
+                      │ Agent daemon │  your machine, next to your code
                       └──────┬───────┘
                              │  spawns
                       ┌──────┴───────────────────────────────┐
-                      │  Claude Code · Codex · Cursor · …    │
-                      │  (any of the 26 runtimes above)      │
-                      └──────────────────────────────────────┘
+                      │  Claude Code · Codex · Cursor · …     │
+                      │  (any of the 26 CLIs above)           │
+                      └───────────────────────────────────────┘
 ```
 
 | Layer | Stack |
@@ -211,53 +194,48 @@ Installing and authenticating them: [Install an agent runtime](https://patchbay.
 | Mobile | Expo / React Native (iOS) |
 | Backend | Go (Chi router, sqlc, gorilla/websocket) |
 | Database | PostgreSQL 17 (`pgcrypto` + `pg_trgm`) |
-| Agent runtime | Local daemon executing any of the 26 agent CLIs above |
-
----
+| Agent runtime | Local daemon executing any of the 26 CLIs above |
 
 ## Development
 
-Contributors: start with the [Contributing Guide](CONTRIBUTING.md).
+Start with the [Contributing Guide](CONTRIBUTING.md).
 
-**Prerequisites:** [Node.js](https://nodejs.org/) 22, [pnpm](https://pnpm.io/) 10.28.2, [Go](https://go.dev/) 1.26.6, [Docker](https://www.docker.com/)
+**Prerequisites:** [Node.js](https://nodejs.org/) 22, [pnpm](https://pnpm.io/) 10.28.2,
+[Go](https://go.dev/) 1.26.6, [Docker](https://www.docker.com/)
 
 ```bash
 make up C=desktop   # backend + the Electron app, already signed in
-make seed-dev       # optional: sample issues, in the dev-fixtures workspace
+make seed-dev       # optional: sample issues in the dev-fixtures workspace
 ```
 
-**Changes are verified in the desktop app, not the browser.** `make up C=desktop` starts Electron
-against this checkout's backend and signs it in, so that is where you look at what you built. Add
-`make up C=api,web` (and `make dev-login` to get a signed-in browser) when the change is web-only
-platform wiring.
+**Changes are verified in the desktop app, not the browser.** `make up C=desktop` starts
+Electron against this checkout's backend and signs it in, so that's where you look at what you
+built. Add `make up C=api,web` (plus `make dev-login` for a signed-in browser) when the change
+is web-only platform wiring.
 
-`make up` allocates this checkout's ports and database, so several checkouts and worktrees run
-side by side; `make status` proves what is running is yours, `make down` stops it, `make destroy`
-deletes it. `make dev` is the alternative when you want it in the foreground of one terminal with
-Ctrl-C to stop it: it bootstraps the checkout, starts the backend and opens Electron — it does not
-start the web app.
+`make up` allocates this checkout's own ports and database, so several checkouts and worktrees
+run side by side: `make status` proves what's running is yours, `make down` stops it,
+`make destroy` deletes it. Prefer one foreground terminal with Ctrl-C to stop? `make dev`
+bootstraps the checkout, starts the backend, and opens Electron — it does not start the web app.
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow, worktree support, testing, and
-troubleshooting. The iOS client lives in [`apps/mobile/`](apps/mobile/) — its
-[README](apps/mobile/README.md) covers building it onto your own iPhone.
-
-We release most weekdays, so `main` moves quickly — pull often.
+We ship most weekdays, so `main` moves fast. Pull often.
 
 ### Which document do I want?
 
 | I want to… | Read |
 | --- | --- |
-| Contribute code | [CONTRIBUTING.md](CONTRIBUTING.md) — environments, daily workflow, testing, troubleshooting |
-| Run Orvilo on my own infrastructure | [SELF_HOSTING.md](SELF_HOSTING.md), then [SELF_HOSTING_ADVANCED.md](SELF_HOSTING_ADVANCED.md) and [SELF_HOSTING_AI.md](SELF_HOSTING_AI.md) |
+| Get an agent doing something today | [Quickstart](https://patchbay.aspectlylabs.com/docs/cloud-quickstart) · [Tutorial](https://patchbay.aspectlylabs.com/docs/tutorial) |
+| Understand how the pieces fit | [Core concepts](https://patchbay.aspectlylabs.com/docs/concepts) |
+| Contribute code | [CONTRIBUTING.md](CONTRIBUTING.md) — environments, workflow, testing, troubleshooting |
+| Run it on my own infrastructure | [SELF_HOSTING.md](SELF_HOSTING.md), then [SELF_HOSTING_ADVANCED.md](SELF_HOSTING_ADVANCED.md) and [SELF_HOSTING_AI.md](SELF_HOSTING_AI.md) |
 | Install and drive the CLI or daemon | [CLI_INSTALL.md](CLI_INSTALL.md), then [CLI_AND_DAEMON.md](CLI_AND_DAEMON.md) |
-| Have an AI agent work in this repo | [AGENTS.md](AGENTS.md) (entry point) and [CLAUDE.md](CLAUDE.md) (full rules) |
+| Connect Git hosts and chat tools | [GitHub](https://patchbay.aspectlylabs.com/docs/github-integration) · [Self-hosted Git](https://patchbay.aspectlylabs.com/docs/vcs-integration) · [Channels](https://patchbay.aspectlylabs.com/docs/channels) |
+| Work out why an agent is stuck | [Tasks](https://patchbay.aspectlylabs.com/docs/tasks) · [Troubleshooting](https://patchbay.aspectlylabs.com/docs/troubleshooting) |
+| Have an AI agent work in this repo | [AGENTS.md](AGENTS.md), then [CLAUDE.md](CLAUDE.md) |
 | Cut a release | [.github/RELEASING.md](.github/RELEASING.md) |
-| Use Orvilo as a product | [the documentation site](https://patchbay.aspectlylabs.com/docs) |
-
----
 
 ## License
 
 [Patchbay License](LICENSE) — the complete Apache License 2.0 text plus additional conditions
 covering hosted services, commercial embedding, and branding. Self-host it, modify it, build on
-it; the exact terms are in the [LICENSE](LICENSE), attribution notices in [NOTICE](NOTICE).
+it; the exact terms are in [LICENSE](LICENSE), attribution notices in [NOTICE](NOTICE).

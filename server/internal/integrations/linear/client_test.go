@@ -83,6 +83,12 @@ func TestHTTPClientGraphQLIssueContracts(t *testing.T) {
 		}
 		switch {
 		case strings.Contains(request.Query, "PatchbayIssues"):
+			if !strings.Contains(request.Query, "PatchbayIssues($project:String!") {
+				_ = json.NewEncoder(w).Encode(map[string]any{"errors": []any{map[string]any{
+					"message": `Variable "$project" of type "ID!" used in position expecting type "String!".`,
+				}}})
+				return
+			}
 			seen["list"] = true
 			_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"issues": map[string]any{"nodes": []any{map[string]any{"id": "remote-1", "identifier": "ENG-1", "title": "Imported", "priority": 2, "updatedAt": "2026-01-01T00:00:00Z", "team": map[string]any{"id": "team-1"}}}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil}}}})
 		case strings.Contains(request.Query, "PatchbayCreateIssue"):
@@ -158,6 +164,63 @@ func TestHTTPClientFetchIssueUsesStringIdentifierVariable(t *testing.T) {
 	if err != nil || !found || issue.ID != "issue-1" || issue.Identifier != "DAY-1" {
 		t.Fatalf("issue=%+v found=%t err=%v", issue, found, err)
 	}
+}
+
+func TestHTTPClientCatalogReadsProjectTeamConnectionNodes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct { Query string `json:"query"` }
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil { t.Fatal(err) }
+		writeJSON := func(value any) { w.Header().Set("Content-Type", "application/json"); _ = json.NewEncoder(w).Encode(value) }
+		switch {
+		case strings.Contains(request.Query, "PatchbayCatalogTeams"):
+			writeJSON(map[string]any{"data": map[string]any{"teams": map[string]any{
+				"nodes": []any{map[string]any{"id": "team-1", "name": "Engineering", "key": "ENG", "organization": map[string]any{"id": "org-1"}}},
+				"pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil},
+			}}})
+		case strings.Contains(request.Query, "PatchbayCatalogProjects"):
+			if strings.Contains(request.Query, "teams{id}") {
+				writeJSON(map[string]any{"errors": []any{map[string]any{"message": `Cannot query field "id" on type "TeamConnection".`}}})
+				return
+			}
+			if !strings.Contains(request.Query, "teams{nodes{id}}") { t.Fatalf("project query does not read team connection nodes: %s", request.Query) }
+			writeJSON(map[string]any{"data": map[string]any{"projects": map[string]any{
+				"nodes": []any{map[string]any{"id": "project-1", "name": "Roadmap", "teams": map[string]any{"nodes": []any{map[string]any{"id": "team-1"}}}}},
+				"pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil},
+			}}})
+		case strings.Contains(request.Query, "PatchbayCatalogStates"):
+			writeJSON(map[string]any{"data": map[string]any{"workflowStates": map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil}}}})
+		case strings.Contains(request.Query, "PatchbayCatalogUsers"):
+			writeJSON(map[string]any{"data": map[string]any{"users": map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil}}}})
+		case strings.Contains(request.Query, "PatchbayCatalogLabels"):
+			writeJSON(map[string]any{"data": map[string]any{"issueLabels": map[string]any{"nodes": []any{}, "pageInfo": map[string]any{"hasNextPage": false, "endCursor": nil}}}})
+		default:
+			t.Fatalf("unexpected GraphQL operation %s", request.Query)
+		}
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.Client()); client.GraphQLURL = server.URL
+	catalog, err := client.Catalog(context.Background(), "access")
+	if err != nil { t.Fatalf("catalog error = %v", err) }
+	if len(catalog.Teams) != 1 || catalog.Teams[0].ID != "team-1" { t.Fatalf("teams = %+v", catalog.Teams) }
+	if len(catalog.ProjectCatalog) != 1 || catalog.ProjectCatalog[0].TeamID != "team-1" { t.Fatalf("projects = %+v", catalog.ProjectCatalog) }
+}
+
+func TestHTTPClientValidateBindingReadsProjectTeamConnectionNodes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct { Query string `json:"query"` }
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil { t.Fatal(err) }
+		if strings.Contains(request.Query, "teams{id}") {
+			_ = json.NewEncoder(w).Encode(map[string]any{"errors": []any{map[string]any{"message": `Cannot query field "id" on type "TeamConnection".`}}})
+			return
+		}
+		if !strings.Contains(request.Query, "teams{nodes{id}}") { t.Fatalf("binding query does not read team connection nodes: %s", request.Query) }
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"project": map[string]any{"teams": map[string]any{"nodes": []any{map[string]any{"id": "team-1"}}}}}})
+	}))
+	defer server.Close()
+
+	client := NewHTTPClient(server.Client()); client.GraphQLURL = server.URL
+	if err := client.ValidateBinding(context.Background(), "access", "project-1", "team-1"); err != nil { t.Fatalf("validate binding error = %v", err) }
 }
 
 func issueMutation(name, id string) map[string]any {
