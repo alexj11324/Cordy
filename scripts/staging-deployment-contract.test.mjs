@@ -123,6 +123,9 @@ test("staging origin routing uses isolated loopback ports", () => {
 });
 
 test("staging Accounts uses its own Cloudflare Worker route and origin", () => {
+  assert.match(environmentsDoc, /\*\.aspectlylabs\.com.*wildcard does \*\*not\*\* cover/u);
+  assert.match(environmentsDoc, /\*\.staging\.aspectlylabs\.com/u);
+  assert.match(environmentsDoc, /Full \(strict\)/u);
   assert.match(accountsWorker, /\[env\.staging\]/u);
   assert.match(accountsWorker, /name = "aspectlylabs-proxy-staging"/u);
   assert.match(accountsWorker, /pattern = "accounts\.staging\.aspectlylabs\.com"/u);

@@ -100,6 +100,17 @@ its Compose project, Secret Manager entry, or smoke user here.
 1. Create DNS for `staging.aspectlylabs.com`, `api.staging.aspectlylabs.com`,
    `accounts.staging.aspectlylabs.com`, and
    `accounts-origin.staging.aspectlylabs.com`.
+   Before enabling those routes, provision an origin TLS certificate whose SANs
+   cover `api.staging.aspectlylabs.com` and
+   `accounts-origin.staging.aspectlylabs.com`. The existing
+   `*.aspectlylabs.com` wildcard does **not** cover these nested names.
+   Because the nginx map shares `/etc/nginx/ssl/aspectlylabs.com/origin.pem`,
+   replace it only with a certificate that also retains every existing
+   production hostname (for example, the existing SANs plus
+   `*.staging.aspectlylabs.com`). Install the matching private key root-owned
+   with mode 0600. Validate nginx configuration and TLS hostname verification
+   for each new origin before enabling traffic; keep Cloudflare Full (strict)
+   validation enabled. Do not work around a missing SAN by disabling TLS checks.
 2. Create a separate Clerk application. Provision
    `staging-smoke@aspectlylabs.com` in that application only.
 3. Create the GitHub Environment `staging` (selected-branch policy: `main`)
