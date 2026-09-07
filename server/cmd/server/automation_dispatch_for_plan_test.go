@@ -186,6 +186,16 @@ func TestDispatchAutomationSuppressesRecentDuplicateIssue(t *testing.T) {
 		_, _ = testPool.Exec(bg, `DELETE FROM automation WHERE id = $1`, ap.ID)
 		_, _ = testPool.Exec(bg, `DELETE FROM issue WHERE workspace_id = $1 AND title = $2`, testWorkspaceID, title)
 	})
+	if _, err := queries.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
+		AutomationID:   ap.ID,
+		Kind:           "schedule",
+		Enabled:        true,
+		CronExpression: pgtype.Text{String: "*/5 * * * *", Valid: true},
+		Timezone:       pgtype.Text{String: "UTC", Valid: true},
+		NextRunAt:      pgtype.Timestamptz{Time: time.Now().UTC().Add(time.Hour), Valid: true},
+	}); err != nil {
+		t.Fatalf("CreateAutomationTrigger: %v", err)
+	}
 
 	first, err := automationSvc.DispatchAutomation(ctx, ap, pgtype.UUID{}, "manual", nil)
 	if err != nil {
