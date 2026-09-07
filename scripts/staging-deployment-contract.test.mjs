@@ -175,13 +175,16 @@ test("staging compose overlays never reattach production projects", () => {
   assert.match(environmentsDoc, /patchbay_staging_csrf/u);
   assert.doesNotMatch(stagingOverride, /orvilo_staging_/u);
   assert.doesNotMatch(environmentsDoc, /orvilo_staging_/u);
-  for (const key of ["ORVILO_API_ORIGIN", "ORVILO_AUTH_BROKER_ORIGIN", "ORVILO_DESKTOP_BROKER_AUTH_TOKEN", "ORVILO_ORIGIN_AUTH_TOKEN"]) {
+  for (const key of ["ORVILO_PRODUCT_ORIGIN", "ORVILO_API_ORIGIN", "ORVILO_AUTH_BROKER_ORIGIN", "ORVILO_DESKTOP_BROKER_AUTH_TOKEN", "ORVILO_ORIGIN_AUTH_TOKEN"]) {
     assert.match(stagingBroker, new RegExp(`\\n      ${key}:`));
   }
+  assert.match(stagingBroker, /ORVILO_PRODUCT_ORIGIN: https:\/\/staging\.aspectlylabs\.com/u);
+  assert.match(environmentsDoc, /ORVILO_PRODUCT_ORIGIN=https:\/\/staging\.aspectlylabs\.com/u);
+  assert.match(environmentsDoc, /renderer port/u);
   assert.match(stagingOverride, /\n      ORVILO_DESKTOP_BROKER_AUTH_TOKEN:/u);
   assert.match(stagingOverride, /\n      ORVILO_CLERK_PUBLISHABLE_KEY:/u);
   assert.doesNotMatch(`${stagingOverride}\n${stagingBroker}`, /PATCHBAY_/u);
-  assert.doesNotMatch(stagingOverride, /patchbay\.aspectlylabs\.com/u);
+  assert.doesNotMatch(`${stagingOverride}\n${stagingBroker}`, /patchbay\.aspectlylabs\.com/u);
 });
 
 function originServerBlock(source, serverName) {

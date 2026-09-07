@@ -14,4 +14,30 @@ describe("auth broker runtime config", () => {
   it("rejects a malformed broker secret", () => { expect(readAuthBrokerRuntimeConfig({ ...valid, ORVILO_DESKTOP_BROKER_AUTH_TOKEN: "short" }).ok).toBe(false); });
   it("rejects origins containing paths", () => { expect(readAuthBrokerRuntimeConfig({ ...valid, ORVILO_API_ORIGIN: "https://api.aspectlylabs.com/v1" }).ok).toBe(false); });
   it("never permits localhost as a broker or API origin", () => { expect(readAuthBrokerRuntimeConfig({ ...valid, ORVILO_AUTH_BROKER_ORIGIN: "http://localhost:3100" }).ok).toBe(false); });
+  it("requires a non-production product origin when the broker origin is not production", () => {
+    const staging = {
+      ...valid,
+      ORVILO_API_ORIGIN: "https://api.staging.aspectlylabs.com",
+      ORVILO_AUTH_BROKER_ORIGIN: "https://accounts.staging.aspectlylabs.com",
+    };
+    expect(readAuthBrokerRuntimeConfig(staging).ok).toBe(false);
+    expect(readAuthBrokerRuntimeConfig({
+      ...staging,
+      ORVILO_PRODUCT_ORIGIN: AUTH_CONTRACT.origins.product,
+    }).ok).toBe(false);
+    expect(readAuthBrokerRuntimeConfig({
+      ...staging,
+      ORVILO_PRODUCT_ORIGIN: "https://staging.aspectlylabs.com",
+    })).toEqual({
+      ok: true,
+      config: {
+        apiOrigin: "https://api.staging.aspectlylabs.com",
+        brokerOrigin: "https://accounts.staging.aspectlylabs.com",
+        productOrigin: "https://staging.aspectlylabs.com",
+        clerkPublishableKey: "pk_live_example",
+        goBrokerAuthToken: "a".repeat(64),
+        originAuthToken: "b".repeat(64),
+      },
+    });
+  });
 });
