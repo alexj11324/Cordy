@@ -89,7 +89,7 @@ describe("AutomationSlackToolRow", () => {
       },
     });
 
-    expect(screen.getByRole("switch", { name: "Send to Slack" })).toBeChecked();
+    expect(screen.queryByRole("switch", { name: "Send to Slack" })).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Slack workspace" })).toHaveTextContent("T1");
     const channelPicker = screen.getByRole("button", { name: "Slack channels" });
     expect(channelPicker).toHaveTextContent("2 channels");
@@ -99,27 +99,15 @@ describe("AutomationSlackToolRow", () => {
     expect(screen.queryByRole("checkbox", { name: "#launch" })).not.toBeInTheDocument();
   });
 
-  it("only enables after a real catalog channel has been selected", async () => {
+  it("persists a target after a real catalog channel has been selected", async () => {
     const user = userEvent.setup();
     const { onPersist } = renderRow({ rows: [installations[0]!], tools: {} });
-    const enabled = screen.getByRole("switch", { name: "Send to Slack" });
-    expect(enabled).toHaveAttribute("aria-disabled", "true");
     expect(screen.queryByRole("textbox", { name: /channel/i })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Slack channels" }));
     await user.click(screen.getByRole("checkbox", { name: "#general" }));
     expect(onPersist).toHaveBeenLastCalledWith({
       slack_send: {
-        enabled: false,
-        installation_id: "install-1",
-        channel_ids: ["C1"],
-      },
-    });
-    expect(enabled).not.toHaveAttribute("aria-disabled", "true");
-    await user.click(enabled);
-    expect(onPersist).toHaveBeenLastCalledWith({
-      slack_send: {
-        enabled: true,
         installation_id: "install-1",
         channel_ids: ["C1"],
       },
@@ -138,33 +126,27 @@ describe("AutomationSlackToolRow", () => {
     expect(screen.queryByRole("checkbox", { name: "#general" })).not.toBeInTheDocument();
   });
 
-  it("reads a uniquely matching legacy channel and normalizes it when enabled", async () => {
+  it("reads a uniquely matching legacy channel without fabricating a target", async () => {
     const user = userEvent.setup();
     const { onPersist } = renderRow({
       rows: [installations[0]!],
       tools: { slack_send: { enabled: false, channel: "#general" } },
     });
 
-    const enabled = screen.getByRole("switch", { name: "Send to Slack" });
-    expect(enabled).toBeEnabled();
-    await user.click(enabled);
-    expect(onPersist).toHaveBeenCalledWith({
-      slack_send: {
-        enabled: true,
-        installation_id: "install-1",
-        channel_ids: ["C1"],
-      },
-    });
+    const channelPicker = screen.getByRole("button", { name: "Slack channels" });
+    expect(channelPicker).toHaveTextContent("#general");
+    await user.click(channelPicker);
+    expect(screen.getByRole("checkbox", { name: "#general" })).toBeChecked();
+    expect(onPersist).not.toHaveBeenCalled();
   });
 
   it("does not fabricate a target when the catalog has no channels", () => {
     renderRow({ rows: [installations[0]!], catalog: [] });
-    expect(screen.getByRole("switch", { name: "Send to Slack" })).toHaveAttribute("aria-disabled", "true");
     expect(screen.getByRole("button", { name: "Slack channels" })).toHaveTextContent("Select channels");
     expect(screen.queryByRole("textbox", { name: /channel/i })).not.toBeInTheDocument();
   });
 
-  it("keeps an invalid existing installation visible without fabricating its missing channel", () => {
+  it("keeps an invalid existing installation visible without fabricating its missing channel", async () => {
     renderRow({
       tools: {
         slack_send: {
@@ -175,10 +157,10 @@ describe("AutomationSlackToolRow", () => {
       },
     });
 
-    expect(screen.getByRole("switch", { name: "Send to Slack" })).toBeChecked();
     expect(screen.getByRole("combobox", { name: "Slack workspace" })).toHaveTextContent("T2");
-    expect(screen.getByRole("alert")).toHaveTextContent("Select at least one available channel");
     expect(screen.getByRole("button", { name: "Slack channels" })).toHaveTextContent("Select channels");
+    await userEvent.setup().click(screen.getByRole("button", { name: "Slack channels" }));
+    expect(screen.getByRole("checkbox", { name: "#launch" })).not.toBeChecked();
   });
 
   it("trusts the canonical revoked lifecycle state over the legacy installed alias", () => {

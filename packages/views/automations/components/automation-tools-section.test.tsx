@@ -121,13 +121,13 @@ describe("AutomationToolsSection built-in tools", () => {
     await user.click(screen.getByRole("button", { name: "Memories" }));
     expect(mocks.update).toHaveBeenLastCalledWith({
       id: "automation-1",
-      tools: { memories: { enabled: true }, mcp_server_ids: ["mcp-1"] },
+      tools: { memories: {}, mcp_server_ids: ["mcp-1"] },
     }, expect.any(Object));
 
     await user.click(screen.getByRole("button", { name: "Send to Slack" }));
     expect(mocks.update).toHaveBeenLastCalledWith({
       id: "automation-1",
-      tools: { slack_send: { enabled: false }, mcp_server_ids: ["mcp-1"] },
+      tools: { slack_send: {}, mcp_server_ids: ["mcp-1"] },
     }, expect.any(Object));
   });
 

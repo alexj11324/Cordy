@@ -53,11 +53,12 @@ func setupAutomationScheduleJob(t *testing.T, cron string) (db.AutomationTrigger
 	}
 
 	trigger, err := queries.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
-		AutomationID:    ap.ID,
+		AutomationID:   ap.ID,
 		Kind:           "schedule",
 		Enabled:        true,
 		CronExpression: pgtype.Text{String: cron, Valid: true},
 		Timezone:       pgtype.Text{String: "UTC", Valid: true},
+		NextRunAt:      pgtype.Timestamptz{Time: time.Now().UTC().Add(time.Hour), Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("CreateAutomationTrigger: %v", err)
@@ -635,7 +636,7 @@ func seedColdStartTrigger(t *testing.T, cron string) (db.AutomationTrigger, *db.
 	})
 
 	trigger, err := queries.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
-		AutomationID:    ap.ID,
+		AutomationID:   ap.ID,
 		Kind:           "schedule",
 		Enabled:        true,
 		CronExpression: pgtype.Text{String: cron, Valid: true},

@@ -64,11 +64,12 @@ func TestDispatchAutomationForPlanIsIdempotent(t *testing.T) {
 	})
 
 	trigger, err := queries.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
-		AutomationID:    ap.ID,
+		AutomationID:   ap.ID,
 		Kind:           "schedule",
 		Enabled:        true,
 		CronExpression: pgtype.Text{String: "*/5 * * * *", Valid: true},
 		Timezone:       pgtype.Text{String: "UTC", Valid: true},
+		NextRunAt:      pgtype.Timestamptz{Time: time.Now().UTC().Add(time.Hour), Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("CreateAutomationTrigger: %v", err)
@@ -311,11 +312,12 @@ func TestDispatchAutomationForPlanRecoversPartialRun(t *testing.T) {
 			})
 
 			trigger, err := queries.CreateAutomationTrigger(ctx, db.CreateAutomationTriggerParams{
-				AutomationID:    ap.ID,
+				AutomationID:   ap.ID,
 				Kind:           "schedule",
 				Enabled:        true,
 				CronExpression: pgtype.Text{String: "*/5 * * * *", Valid: true},
 				Timezone:       pgtype.Text{String: "UTC", Valid: true},
+				NextRunAt:      pgtype.Timestamptz{Time: time.Now().UTC().Add(time.Hour), Valid: true},
 			})
 			if err != nil {
 				t.Fatalf("CreateAutomationTrigger: %v", err)
@@ -334,7 +336,7 @@ func TestDispatchAutomationForPlanRecoversPartialRun(t *testing.T) {
 				initialStatus = "issue_created"
 			}
 			partial, err := queries.CreateAutomationRun(ctx, db.CreateAutomationRunParams{
-				AutomationID:    ap.ID,
+				AutomationID:   ap.ID,
 				TriggerID:      trigger.ID,
 				Source:         "schedule",
 				Status:         initialStatus,
