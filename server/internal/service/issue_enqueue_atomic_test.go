@@ -173,7 +173,14 @@ func TestCreateIssueTaskClaimableAfterPostCommitInterruption(t *testing.T) {
 	// The real runtime poll must recover the task from the database alone.
 	restartedBus := events.New()
 	var recoveredEventOrder []string
-	restartedBus.SubscribeAll(func(event events.Event) { recoveredEventOrder = append(recoveredEventOrder, event.Type) })
+	// Agent status broadcasts are a separate side effect of claiming and do
+	// not change the issue/task lifecycle being asserted here.
+	restartedBus.SubscribeAll(func(event events.Event) {
+		switch event.Type {
+		case protocol.EventIssueCreated, protocol.EventTaskQueued, protocol.EventTaskDispatch:
+			recoveredEventOrder = append(recoveredEventOrder, event.Type)
+		}
+	})
 	restarted := &TaskService{Queries: db.New(f.Pool), TxStarter: f.Pool, Bus: restartedBus}
 	task, err := restarted.ClaimTaskForRuntime(context.Background(), util.MustParseUUID(runtimeID))
 	if err != nil || task == nil {
