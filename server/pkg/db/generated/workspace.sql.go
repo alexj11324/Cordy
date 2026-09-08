@@ -424,6 +424,19 @@ func (q *Queries) LockWorkspaceForDelete(ctx context.Context, id pgtype.UUID) (p
 	return id_2, err
 }
 
+const lockWorkspaceForIssueCreate = `-- name: LockWorkspaceForIssueCreate :one
+SELECT id FROM workspace WHERE id = $1 FOR KEY SHARE
+`
+
+// Fence teardown before taking attachment/source-issue locks. KEY SHARE stays
+// compatible with the ordinary non-key issue-counter update below.
+func (q *Queries) LockWorkspaceForIssueCreate(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, lockWorkspaceForIssueCreate, id)
+	var id_2 pgtype.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const updateWorkspace = `-- name: UpdateWorkspace :one
 UPDATE workspace SET
     name = COALESCE($2, name),

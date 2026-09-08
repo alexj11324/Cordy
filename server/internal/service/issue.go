@@ -204,22 +204,11 @@ type IssueCreateResult struct {
 	DuplicateIssue *db.Issue
 }
 
-// Create runs the full issue-creation pipeline atomically end-to-end:
-//
-//  1. Begin transaction.
-//  2. Resolve & validate parent / project belong to the same workspace.
-//  3. Lock & check the duplicate guard.
-//  4. Increment the workspace issue counter.
-//  5. Insert the issue row (with optional origin stamping).
-//  6. Commit.
-//  7. Link any pre-uploaded attachments (post-commit, idempotent).
-//  8. For a media-gated channel issue, persist its deferred executor-agent
-//     task in the issue transaction so both rows become visible atomically.
-//     Ordinary creates keep their existing event-before-enqueue ordering.
-//  9. Publish EventIssueCreated to the bus (payload via opts.BroadcastPayload).
-//  10. Capture the IssueCreated analytics event.
-//  11. Enqueue the ordinary agent task or trigger the team leader when the
-//     issue has an executor and is not in `backlog`.
+// Create prepares optional external task inputs, then commits the issue, labels,
+// source context, attachment links and automatic executor task together. A
+// required task write failure rolls the issue creation back. Events and daemon
+// wakeups are published only after commit, in issue-created then task-queued
+// order. Media-gated tasks remain deferred until their existing promotion path.
 //
 // Validation that lives in the service (parent existence, project
 // workspace membership, parent → project back-fill) is enforced here so
@@ -229,12 +218,16 @@ type IssueCreateResult struct {
 // required, RFC3339 date format, and role-pair sanity.
 func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts IssueCreateOpts) (IssueCreateResult, error) {
 	issueCountPolicy := ResolveIssueCountPolicy(ctx, s.Entitlements, p.WorkspaceID)
+	issueID := dbid.NewV7()
 	tx, err := s.TxStarter.Begin(ctx)
 	if err != nil {
 		return IssueCreateResult{}, fmt.Errorf("begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
 	qtx := s.Queries.WithTx(tx)
+	if _, err := qtx.LockWorkspaceForIssueCreate(ctx, p.WorkspaceID); err != nil {
+		return IssueCreateResult{}, fmt.Errorf("lock workspace for issue create: %w", err)
+	}
 
 	if opts.ConsumeTaskLeaseID.Valid {
 		if !opts.ConsumeTaskLeaseTaskID.Valid {
@@ -251,6 +244,36 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		}
 		if rows != 1 {
 			return IssueCreateResult{}, ErrCapabilityConsumed
+		}
+	}
+
+	// A create landing on a CUSTOM status takes the shared catalog lock AND
+	// re-resolves the status inside this transaction. The caller validated the
+	// status before the transaction opened, which is early enough to return a
+	// clean 400 but too early to be safe: an archive can commit in between.
+	// Re-checking under the lock is what makes the status provably active at
+	// the moment the row is written. Built-in statuses skip both — they can
+	// never be archived, so the common path is unchanged. (MUL-6243)
+	if !issuestatus.IsBuiltIn(p.Status) {
+		if err := qtx.LockIssueStatusCatalogShared(ctx, p.WorkspaceID); err != nil {
+			return IssueCreateResult{}, err
+		}
+		if _, err := issuestatus.Resolve(ctx, qtx, p.WorkspaceID, p.Status); err != nil {
+			if errors.Is(err, issuestatus.ErrUnknownStatus) {
+				return IssueCreateResult{}, ErrIssueStatusUnavailable
+			}
+			return IssueCreateResult{}, err
+		}
+	}
+
+	// Match issue edits and attachment deletion: catalog, attachments, then
+	// issue rows. Capturing source context already locks the source issue;
+	// waiting for attachment rows after that would invert the edit order.
+	if len(p.AttachmentIDs) > 0 {
+		if _, err := qtx.LockAttachmentsForIssueLink(ctx, db.LockAttachmentsForIssueLinkParams{
+			WorkspaceID: p.WorkspaceID, AttachmentIds: p.AttachmentIDs,
+		}); err != nil {
+			return IssueCreateResult{}, fmt.Errorf("lock issue attachments: %w", err)
 		}
 	}
 
@@ -279,25 +302,6 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		}
 		if current.Digest != p.SourceContext.Digest {
 			return IssueCreateResult{}, ErrSourceContextChanged
-		}
-	}
-
-	// A create landing on a CUSTOM status takes the shared catalog lock AND
-	// re-resolves the status inside this transaction. The caller validated the
-	// status before the transaction opened, which is early enough to return a
-	// clean 400 but too early to be safe: an archive can commit in between.
-	// Re-checking under the lock is what makes the status provably active at
-	// the moment the row is written. Built-in statuses skip both — they can
-	// never be archived, so the common path is unchanged. (MUL-6243)
-	if !issuestatus.IsBuiltIn(p.Status) {
-		if err := qtx.LockIssueStatusCatalogShared(ctx, p.WorkspaceID); err != nil {
-			return IssueCreateResult{}, err
-		}
-		if _, err := issuestatus.Resolve(ctx, qtx, p.WorkspaceID, p.Status); err != nil {
-			if errors.Is(err, issuestatus.ErrUnknownStatus) {
-				return IssueCreateResult{}, ErrIssueStatusUnavailable
-			}
-			return IssueCreateResult{}, err
 		}
 	}
 
@@ -369,10 +373,9 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	}
 
 	var issue db.Issue
-	var executorTask db.AgentTaskQueue
 	if p.OriginType.Valid {
 		issue, err = qtx.CreateIssueWithOrigin(ctx, db.CreateIssueWithOriginParams{
-			ID:            dbid.NewV7(),
+			ID:            issueID,
 			WorkspaceID:   p.WorkspaceID,
 			Title:         p.Title,
 			Description:   p.Description,
@@ -398,7 +401,7 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		})
 	} else {
 		issue, err = qtx.CreateIssue(ctx, db.CreateIssueParams{
-			ID:            dbid.NewV7(),
+			ID:            issueID,
 			WorkspaceID:   p.WorkspaceID,
 			Title:         p.Title,
 			Description:   p.Description,
@@ -498,15 +501,16 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		}
 	}
 
-	if !opts.ExecutorRunFireAt.IsZero() && s.shouldEnqueueExecutorTaskWithQueries(ctx, qtx, issue) {
-		// The issue must never become visible without its media-gated executor
-		// task. Inserting both rows through qtx makes the unique-index winner
-		// deterministic: any observer that can discover the committed issue also
-		// sees the inert deferred task and must merge into it.
-		executorTask, err = s.TaskService.createDeferredChannelIssueTaskWithQueries(ctx, qtx, issue, opts.ExecutorRunFireAt)
-		if err != nil {
-			return IssueCreateResult{}, fmt.Errorf("create deferred channel issue task: %w", err)
-		}
+	// A queued row is claimable as soon as this transaction commits, including
+	// by polling daemons that never receive our wakeup. Bind uploaded inputs
+	// before the task becomes visible so its first run cannot miss attachments.
+	attachments, err := linkIssueAttachments(ctx, qtx, issue, p.AttachmentIDs)
+	if err != nil {
+		return IssueCreateResult{}, err
+	}
+	executorTask, verdict, err := s.createIssueExecutorTask(ctx, qtx, issue, opts.ExecutorRunFireAt)
+	if err != nil {
+		return IssueCreateResult{}, fmt.Errorf("create executor task: %w", err)
 	}
 	reviewEntry := issuestatus.Effective(ctx, qtx, issue.WorkspaceID, issue.Status) == issuestatus.InReview
 	if reviewEntry && issue.ReviewerType.Valid && issue.ReviewerType.String != "member" {
@@ -529,38 +533,57 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 		s.TaskService.Coordination.Wake()
 	}
 
-	attachments := s.linkAttachments(ctx, issue, p.AttachmentIDs)
-
 	actorID := opts.ActorID
 	if actorID == "" {
 		actorID = util.UUIDToString(issue.CreatorID)
 	}
 
 	var executorTaskID pgtype.UUID
-	if !opts.ExecutorRunFireAt.IsZero() {
+	if issue.ExecutorType.String == "agent" {
 		executorTaskID = executorTask.ID
-		if executorTaskID.Valid {
-			if err := s.TaskService.hydrateDeferredChannelIssueTaskOverlay(ctx, executorTask); err != nil {
-				// Runtime overlays are best-effort on every enqueue path. The task is
-				// already durable and safely deferred, so an optional integration
-				// failure must not turn a committed issue into a retry duplicate.
-				slog.Warn("hydrate deferred channel issue task overlay failed",
-					"issue_id", util.UUIDToString(issue.ID),
-					"task_id", util.UUIDToString(executorTask.ID),
-					"error", err)
-			}
-		} else if s.shouldEnqueueTeamLeaderOnExecutor(ctx, issue) {
-			// ExecutorRunFireAt currently belongs to channel /issue, which
-			// always resolves an agent executor. Preserve the ordinary team path
-			// for any future caller that supplies the option with a team.
-			s.enqueueTeamLeaderTask(ctx, issue, pgtype.UUID{}, p.CreatorType, actorID)
+	}
+	issueCreatedPending := isIssueCreatedPendingTask(executorTask)
+	if executorTask.ID.Valid && executorTask.Status == "deferred" {
+		if err := s.TaskService.hydrateDeferredChannelIssueTaskOverlay(ctx, executorTask); err != nil {
+			// The deferred task is already durable. An optional integration failure
+			// must not turn a committed issue into a retry duplicate.
+			slog.Warn("hydrate deferred channel issue task overlay failed",
+				"issue_id", util.UUIDToString(issue.ID), "task_id", util.UUIDToString(executorTask.ID), "error", err)
 		}
 	}
-
+	if issueCreatedPending {
+		if err := s.TaskService.hydrateIssueCreatedTaskOverlay(ctx, executorTask); err != nil {
+			// The overlay is optional, while the issue and task are already durable.
+			// Keep the publication fence until the task is activated so a slow or
+			// unavailable integration cannot race the first claim.
+			slog.Warn("hydrate issue-created task overlay failed",
+				"issue_id", util.UUIDToString(issue.ID), "task_id", util.UUIDToString(executorTask.ID), "error", err)
+		}
+	}
 	s.publishIssueCreated(issue, attachments, labels, p.CreatorType, actorID, opts)
 	s.captureCreatedAnalytics(issue, p.CreatorType, actorID, opts)
-	if opts.ExecutorRunFireAt.IsZero() {
-		executorTaskID = s.maybeEnqueueOnExecutor(ctx, issue, p.CreatorType, actorID, opts.ExecutorRunFireAt)
+	if issueCreatedPending {
+		// Publish task:queued while the durable marker still excludes claims. The
+		// activation CAS below is the only step that opens the claim gate, so a
+		// polling daemon cannot emit task:dispatch between these two lifecycle
+		// events.
+		s.TaskService.broadcastTaskEvent(ctx, protocol.EventTaskQueued, executorTask)
+		activated, activateErr := s.TaskService.activateIssueCreatedTask(ctx, executorTask.ID)
+		if activateErr == nil {
+			executorTask = activated
+			s.TaskService.NotifyTaskEnqueued(ctx, executorTask)
+		} else if !errors.Is(activateErr, pgx.ErrNoRows) {
+			// A committed create must remain successful. A later claim poll will
+			// retry the durable publication fence if activation failed here.
+			slog.Warn("activate issue-created task failed",
+				"issue_id", util.UUIDToString(issue.ID), "task_id", util.UUIDToString(executorTask.ID), "error", activateErr)
+		}
+	} else if executorTask.ID.Valid && executorTask.Status == "queued" {
+		s.TaskService.broadcastTaskEvent(ctx, protocol.EventTaskQueued, executorTask)
+		s.TaskService.NotifyTaskEnqueued(ctx, executorTask)
+	}
+	if opts.ExecutorRunFireAt.IsZero() && issue.ExecutorType.String == "agent" && verdict.Reason == dispatch.ReasonRuntimeUnusable {
+		s.noteRuntimeUnusable(ctx, issue, verdict)
 	}
 
 	return IssueCreateResult{Issue: issue, Attachments: attachments, Labels: labels, ExecutorTaskID: executorTaskID}, nil
@@ -609,37 +632,25 @@ func validateIssueLabels(ctx context.Context, qtx *db.Queries, workspaceID pgtyp
 	return deduped, nil
 }
 
-// linkAttachments links the given attachment IDs to the newly created
-// issue and returns the re-fetched attachment rows so callers can build
-// their response without a second query. Errors are logged and swallowed
-// — attachment linking is a best-effort post-commit step, and a stale
-// attachment row doesn't justify failing the whole create.
-func (s *IssueService) linkAttachments(ctx context.Context, issue db.Issue, ids []pgtype.UUID) []db.Attachment {
+// linkIssueAttachments binds available uploaded rows in the create transaction.
+// The query skips stale, foreign and already-linked ids; database errors roll
+// back the create rather than committing a claimable task with missing inputs.
+func linkIssueAttachments(ctx context.Context, q *db.Queries, issue db.Issue, ids []pgtype.UUID) ([]db.Attachment, error) {
 	if len(ids) == 0 {
-		return nil
+		return nil, nil
 	}
-	if _, err := s.Queries.LinkAttachmentsToIssue(ctx, db.LinkAttachmentsToIssueParams{
-		IssueID:       issue.ID,
-		WorkspaceID:   issue.WorkspaceID,
-		AttachmentIds: ids,
-		BumpRevision:  false,
+	if _, err := q.LinkAttachmentsToIssue(ctx, db.LinkAttachmentsToIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID, AttachmentIds: ids, BumpRevision: false,
 	}); err != nil {
-		slog.Error("failed to link attachments to issue",
-			"issue_id", util.UUIDToString(issue.ID),
-			"error", err)
-		return nil
+		return nil, fmt.Errorf("link issue attachments: %w", err)
 	}
-	list, err := s.Queries.ListAttachmentsByIssue(ctx, db.ListAttachmentsByIssueParams{
-		IssueID:     issue.ID,
-		WorkspaceID: issue.WorkspaceID,
+	list, err := q.ListAttachmentsByIssue(ctx, db.ListAttachmentsByIssueParams{
+		IssueID: issue.ID, WorkspaceID: issue.WorkspaceID,
 	})
 	if err != nil {
-		slog.Warn("failed to list attachments for new issue",
-			"issue_id", util.UUIDToString(issue.ID),
-			"error", err)
-		return nil
+		return nil, fmt.Errorf("list issue attachments: %w", err)
 	}
-	return list
+	return list, nil
 }
 
 func (s *IssueService) publishIssueCreated(issue db.Issue, attachments []db.Attachment, labels []db.IssueLabel, creatorType, actorID string, opts IssueCreateOpts) {
@@ -780,142 +791,91 @@ func classifyOrigin(issue db.Issue, opts IssueCreateOpts) (source, taskID, autom
 	}
 }
 
-func (s *IssueService) maybeEnqueueOnExecutor(ctx context.Context, issue db.Issue, creatorType, actorID string, executorRunFireAt time.Time) pgtype.UUID {
-	if !issue.ExecutorType.Valid || !issue.ExecutorID.Valid {
-		return pgtype.UUID{}
+type issueExecutorTarget struct {
+	agent    db.Agent
+	teamID   pgtype.UUID
+	verdict  AgentVerdict
+	admitted bool
+}
+
+// resolveCreatedIssueExecutor preserves the two admission policies: a direct
+// agent may wait for an offline runtime, while a team leader must be ready now.
+// Missing or blocked targets do not prevent issue creation; failed database
+// reads do, because they cannot establish whether a task is required.
+func (s *IssueService) resolveCreatedIssueExecutor(ctx context.Context, q *db.Queries, issue db.Issue) (issueExecutorTarget, error) {
+	var target issueExecutorTarget
+	category := issuestatus.Effective(ctx, q, issue.WorkspaceID, issue.Status)
+	if !issue.ExecutorType.Valid || !issue.ExecutorID.Valid ||
+		category == "backlog" || category == issuestatus.InReview {
+		return target, nil
 	}
-	// Backlog is the parking lot: nothing runs from it, so nothing here needs
-	// explaining either. A custom status in the backlog category parks the
-	// same way. (MUL-6243)
-	if category := issuestatus.Effective(ctx, s.Queries, issue.WorkspaceID, issue.Status); category == "backlog" || category == issuestatus.InReview {
-		return pgtype.UUID{}
-	}
-	verdict, admitted := agentExecutorVerdict(ctx, s.runtimeLookup(s.Queries), issue)
-	if !admitted && verdict.Reason == dispatch.ReasonRuntimeUnusable {
-		// Executor routing has no response the caller reads for this outcome, so the
-		// refusal explains itself on the issue instead of vanishing (MUL-6164).
-		// Only here, not in the create-with-executor path above: that one runs
-		// inside the issue's transaction, and a notice about a machine has no
-		// business deciding whether the issue itself commits.
-		s.noteRuntimeUnusable(ctx, issue, verdict)
-	}
-	if admitted {
-		var task db.AgentTaskQueue
-		var err error
-		if executorRunFireAt.IsZero() {
-			task, err = s.TaskService.EnqueueTaskForIssue(ctx, issue)
-		} else {
-			task, err = s.TaskService.EnqueueDeferredChannelIssueTask(ctx, issue, executorRunFireAt)
+	agentID := issue.ExecutorID
+	switch issue.ExecutorType.String {
+	case "agent":
+	case "team":
+		team, err := q.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{ID: issue.ExecutorID, WorkspaceID: issue.WorkspaceID})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return target, nil
 		}
 		if err != nil {
-			slog.Warn("enqueue agent task on create failed",
-				"issue_id", util.UUIDToString(issue.ID),
-				"error", err)
-		} else {
-			return task.ID
+			return target, err
 		}
+		agentID, target.teamID = team.LeaderID, team.ID
+	default:
+		return target, nil
 	}
-	if s.shouldEnqueueTeamLeaderOnExecutor(ctx, issue) {
-		s.enqueueTeamLeaderTask(ctx, issue, pgtype.UUID{}, creatorType, actorID)
+	agent, err := q.GetAgent(ctx, agentID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return target, nil
 	}
-	return pgtype.UUID{}
+	if err != nil {
+		return target, err
+	}
+	target.agent = agent
+	target.verdict, err = AgentReadiness(ctx, s.runtimeLookup(q), agent)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return target, nil
+	}
+	if err != nil {
+		return target, err
+	}
+	target.admitted = !target.verdict.Blocked()
+	if target.teamID.Valid {
+		target.admitted = target.verdict.Ready()
+	}
+	return target, nil
 }
 
-// shouldEnqueueExecutorTaskWithQueries returns true when an issue create should
-// trigger the selected executor agent. Backlog issues are skipped — backlog
-// acts as a parking lot for preconfiguring without immediate execution. The
-// executor path does the same test through agentExecutorVerdict, which also tells it
-// WHY a refusal happened; this one runs inside the create transaction, where
-// there is nothing to tell anyone yet.
-//
-// Mirrors handler.shouldEnqueueExecutorTask; kept here to make the service
-// self-contained, since both code paths must move together.
-func (s *IssueService) shouldEnqueueExecutorTaskWithQueries(ctx context.Context, q *db.Queries, issue db.Issue) bool {
-	// Resolved through q, not s.Queries: this runs inside the create
-	// transaction and must see the same snapshot as the rest of it. (MUL-6243)
-	if category := issuestatus.Effective(ctx, q, issue.WorkspaceID, issue.Status); category == "backlog" || category == issuestatus.InReview {
-		return false
+func (s *IssueService) createIssueExecutorTask(ctx context.Context, q *db.Queries, issue db.Issue, fireAt time.Time) (db.AgentTaskQueue, AgentVerdict, error) {
+	target, err := s.resolveCreatedIssueExecutor(ctx, q, issue)
+	if err != nil || !target.admitted {
+		return db.AgentTaskQueue{}, target.verdict, err
 	}
-	return isAgentExecutorReadyWithQueries(ctx, s.runtimeLookup(q), issue)
-}
-
-func isAgentExecutorReadyWithQueries(ctx context.Context, lookup RuntimeLookup, issue db.Issue) bool {
-	_, ok := agentExecutorVerdict(ctx, lookup, issue)
-	return ok
-}
-
-// agentExecutorVerdict resolves the issue's agent executor through the shared
-// readiness check and reports whether work may be enqueued for it, plus the
-// verdict when it may not.
-//
-// Only a BLOCKED verdict stops the enqueue. A merely offline machine still
-// queues: that work runs when the laptop comes back, and people rely on it.
-func agentExecutorVerdict(ctx context.Context, lookup RuntimeLookup, issue db.Issue) (AgentVerdict, bool) {
-	if !issue.ExecutorType.Valid || issue.ExecutorType.String != "agent" || !issue.ExecutorID.Valid {
-		return AgentVerdict{}, false
+	if s.TaskService == nil {
+		return db.AgentTaskQueue{}, target.verdict, errors.New("task service is not configured")
 	}
-	agent, err := lookup.Queries.GetAgent(ctx, issue.ExecutorID)
+	// No Composio, bus or wakeup on this service: only database reads and writes
+	// are allowed before the caller commits. For a team, route to its leader
+	// without changing the persisted issue's executor or provenance.
+	txTasks := &TaskService{Queries: q}
+	issue.ExecutorID = target.agent.ID
+	params, err := txTasks.prepareIssueTaskWithCommentPlan(ctx, issue, pgtype.UUID{}, nil, false, "", pgtype.UUID{}, pgtype.UUID{})
 	if err != nil {
-		return AgentVerdict{}, false
+		return db.AgentTaskQueue{}, target.verdict, err
 	}
-	verdict, err := AgentReadiness(ctx, lookup, agent)
-	if err != nil {
-		return AgentVerdict{}, false
+	if target.teamID.Valid {
+		params.IsLeaderTask = pgtype.Bool{Bool: true, Valid: true}
+		params.TeamID = target.teamID
 	}
-	return verdict, !verdict.Blocked()
-}
-
-func (s *IssueService) shouldEnqueueTeamLeaderOnExecutor(ctx context.Context, issue db.Issue) bool {
-	if issuestatus.Effective(ctx, s.Queries, issue.WorkspaceID, issue.Status) == "backlog" {
-		return false
+	var deferredAt pgtype.Timestamptz
+	if !fireAt.IsZero() && !target.teamID.Valid {
+		deferredAt = pgtype.Timestamptz{Time: fireAt, Valid: true}
+	} else {
+		// Keep ordinary tasks behind the durable issue-created publication fence.
+		// The optional Composio overlay is hydrated after the transaction commits,
+		// while the claim query still excludes this marker.
+		params.IssueCreatedPending = pgtype.Bool{Bool: true, Valid: true}
 	}
-	return s.isTeamLeaderReady(ctx, issue)
-}
-
-func (s *IssueService) isTeamLeaderReady(ctx context.Context, issue db.Issue) bool {
-	if !issue.ExecutorType.Valid || issue.ExecutorType.String != "team" || !issue.ExecutorID.Valid {
-		return false
-	}
-	team, err := s.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
-		ID:          issue.ExecutorID,
-		WorkspaceID: issue.WorkspaceID,
-	})
-	if err != nil {
-		return false
-	}
-	agent, err := s.Queries.GetAgent(ctx, team.LeaderID)
-	if err != nil {
-		return false
-	}
-	verdict, err := AgentReadiness(ctx, s.runtimeLookup(s.Queries), agent)
-	if err != nil {
-		return false
-	}
-	return verdict.Ready()
-}
-
-func (s *IssueService) enqueueTeamLeaderTask(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, authorType, authorID string) {
-	team, err := s.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
-		ID:          issue.ExecutorID,
-		WorkspaceID: issue.WorkspaceID,
-	})
-	if err != nil {
-		return
-	}
-	hasPending, err := s.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
-		IssueID: issue.ID,
-		AgentID: team.LeaderID,
-		// Key dedup on the reviewed head (TEN-356).
-		HeadSha: headShaText(s.TaskService.ResolveIssueReviewSHA(ctx, issue.ID)),
-	})
-	if err != nil || hasPending {
-		return
-	}
-	if _, err := s.TaskService.EnqueueTaskForTeamLeader(ctx, issue, team.LeaderID, team.ID, triggerCommentID); err != nil {
-		slog.Warn("enqueue team leader task on create failed",
-			"issue_id", util.UUIDToString(issue.ID),
-			"team_id", util.UUIDToString(team.ID),
-			"leader_id", util.UUIDToString(team.LeaderID),
-			"error", err)
-	}
+	task, err := persistIssueTask(ctx, q, params, deferredAt)
+	return task, target.verdict, err
 }
