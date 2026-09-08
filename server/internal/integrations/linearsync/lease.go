@@ -144,7 +144,7 @@ func (w *Worker) beginLeaseTx(ctx context.Context) (pgx.Tx, error) {
 // opposite orders. Callers must perform the non-locking lease check before
 // their first local write; Commit/releaseLease performs the authoritative
 // queue-row fence after the link mutation.
-func (w *LinearWorker) beginLeaseTxAfterLink(ctx context.Context) (pgx.Tx, error) {
+func (w *Worker) beginLeaseTxAfterLink(ctx context.Context) (pgx.Tx, error) {
 	tx, err := w.txStarter.Begin(ctx)
 	if err != nil {
 		return nil, err
