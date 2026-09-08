@@ -163,3 +163,48 @@ func TestRecoverOrphansDoesNotDiscardResultsWhenOutboxCannotBeRead(t *testing.T)
 		t.Fatalf("unreadable outbox sent %d destructive recovery requests", calls.Load())
 	}
 }
+
+func TestOrphanRecoveryFailurePausesClaimsUntilAFullRetrySucceeds(t *testing.T) {
+	var recoveryCalls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/daemon/runtimes/runtime/recover-orphans" {
+			recoveryCalls.Add(1)
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	d := testReportingDaemon(t, srv.URL)
+	d.workspaces = map[string]*workspaceState{
+		"workspace": {runtimeIDs: []string{"runtime"}},
+	}
+	root := filepath.Join(t.TempDir(), "outbox")
+	store, err := terminalreport.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d.terminalStore = store
+	if err := os.Rename(root, root+".unavailable"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.recoverOrphans(context.Background(), "runtime"); err == nil {
+		t.Fatal("unreadable terminal outbox allowed orphan recovery")
+	}
+	if !d.terminalRecoveryFailed.Load() || d.tryEnterClaim() {
+		t.Fatal("orphan recovery failure did not pause claims")
+	}
+	if err := os.Rename(root+".unavailable", root); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.recoverTrackedOrphans(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if d.terminalRecoveryFailed.Load() || !d.tryEnterClaim() {
+		t.Fatal("successful full recovery did not release the claim barrier")
+	}
+	d.exitClaim()
+	if recoveryCalls.Load() != 1 {
+		t.Fatalf("recovery calls = %d, want one successful retry", recoveryCalls.Load())
+	}
+}

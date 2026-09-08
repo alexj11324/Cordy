@@ -569,6 +569,8 @@ type Daemon struct {
 	terminalStore             *terminalreport.Store
 	terminalSender            *terminalreport.Sender
 	terminalPersistenceFailed atomic.Bool
+	terminalRecoveryFailed    atomic.Bool
+	terminalDeliveryBlocked   atomic.Bool
 	runner                    taskRunner    // executes agent tasks; set to d.runTask by New(), overridable in tests
 	cancelPollInterval        time.Duration // how often handleTask polls for server-side cancellation; overridable in tests
 	// envRootBusyWait is how long a task that is entitled to a prior env root
@@ -1821,8 +1823,7 @@ func (d *Daemon) reregisterWorkspaceAfterRuntimeGone(ctx context.Context, worksp
 	// tasks for the user (MUL-3332).
 	for _, rid := range newIDs {
 		if err := d.recoverOrphans(ctx, rid); err != nil {
-			d.logger.Warn("recover-orphans after re-register failed",
-				"runtime_id", rid, "error", err)
+			return fmt.Errorf("recover-orphans after re-register failed for runtime %s: %w", rid, err)
 		}
 	}
 	return nil
@@ -3885,6 +3886,16 @@ func (d *Daemon) syncWorkspacesFromAPI(ctx context.Context, reconcileProfiles bo
 	}
 	d.mu.Unlock()
 
+	// A previous registration may have reached the server but failed before
+	// orphan recovery completed. Retry that recovery before reconciling more
+	// workspace state; the failure barrier keeps the poller from claiming while
+	// this pass is outstanding.
+	if d.terminalRecoveryFailed.Load() {
+		if err := d.recoverTrackedOrphans(ctx); err != nil {
+			return err
+		}
+	}
+
 	// Built-in agent CLIs are installed per machine, so one probe round serves
 	// every workspace this sync has to register (MUL-5225). Probing is lazy —
 	// a sync that finds nothing new to register never shells out at all, which
@@ -4009,7 +4020,7 @@ func (d *Daemon) syncWorkspacesFromAPI(ctx context.Context, reconcileProfiles bo
 		// task timeout (2.5h) kicks in.
 		for _, rid := range runtimeIDs {
 			if err := d.recoverOrphans(ctx, rid); err != nil {
-				d.logger.Warn("recover-orphans failed", "runtime_id", rid, "error", err)
+				return fmt.Errorf("recover-orphans failed for runtime %s: %w", rid, err)
 			}
 		}
 
@@ -4694,7 +4705,7 @@ func (d *Daemon) tryBeginServerUpdate(ctx context.Context) serverUpdateAcquireRe
 	}
 
 	d.claimMu.Lock()
-	if d.pauseClaims || d.terminalPersistenceFailed.Load() || d.activeTasks.Load() > 0 {
+	if d.pauseClaims || d.terminalPersistenceFailed.Load() || d.terminalRecoveryFailed.Load() || d.terminalDeliveryBlocked.Load() || d.activeTasks.Load() > 0 {
 		d.claimMu.Unlock()
 		d.updating.Store(false)
 		return serverUpdateRuntimeBusy
@@ -4815,7 +4826,7 @@ func (d *Daemon) reportUpdateResultWithRetry(ctx context.Context, runtimeID, upd
 func (d *Daemon) tryEnterClaim() bool {
 	d.claimMu.Lock()
 	defer d.claimMu.Unlock()
-	if d.pauseClaims || d.terminalPersistenceFailed.Load() {
+	if d.pauseClaims || d.terminalPersistenceFailed.Load() || d.terminalRecoveryFailed.Load() || d.terminalDeliveryBlocked.Load() {
 		return false
 	}
 	d.claimsInFlight++
@@ -4843,7 +4854,7 @@ func (d *Daemon) trySetClaimBarrier() bool {
 	// double-acquires: two holders both believe they own it, and whichever
 	// finishes first releases it out from under the other. tryBeginServerUpdate
 	// makes the same check for the same reason.
-	if d.pauseClaims || d.terminalPersistenceFailed.Load() || d.claimsInFlight > 0 || d.activeTasks.Load() > 0 {
+	if d.pauseClaims || d.terminalPersistenceFailed.Load() || d.terminalRecoveryFailed.Load() || d.terminalDeliveryBlocked.Load() || d.claimsInFlight > 0 || d.activeTasks.Load() > 0 {
 		return false
 	}
 	d.pauseClaims = true

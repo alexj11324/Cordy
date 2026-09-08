@@ -346,7 +346,7 @@ func (d *Daemon) healthHandler(startedAt time.Time) http.HandlerFunc {
 			ReloadPendingReason: d.reloadPending(),
 			Workspaces:          wsList,
 		}
-		resp.TerminalReportPersistenceFailed = d.terminalPersistenceFailed.Load()
+		resp.TerminalReportPersistenceFailed = d.terminalPersistenceFailed.Load() || d.terminalRecoveryFailed.Load() || d.terminalDeliveryBlocked.Load()
 		if d.terminalSender != nil {
 			pending, age := d.terminalSender.Stats()
 			resp.PendingTerminalReports = pending

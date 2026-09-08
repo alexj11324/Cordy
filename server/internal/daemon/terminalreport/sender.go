@@ -17,6 +17,12 @@ type Transport interface {
 	SendTerminalReport(context.Context, Report) (protocol.TerminalReportAck, error)
 }
 
+// PermanentRejectionHandler gives the daemon a chance to settle the task when
+// the server permanently rejects a terminal report. Retaining the file alone
+// is insufficient: the task may still be running while a healthy daemon keeps
+// its heartbeat fresh, so it would never reach the stale-task sweeper.
+type PermanentRejectionHandler func(context.Context, Report, error) error
+
 // PermanentError is a validated protocol rejection. Authentication, timeouts,
 // throttling, unavailable endpoints and malformed replies remain pending.
 type PermanentError struct{ Err error }
@@ -37,9 +43,19 @@ type Sender struct {
 	mu        sync.Mutex
 	retries   map[string]retryState
 	now       func() time.Time
+	rejected  PermanentRejectionHandler
 	statsMu   sync.RWMutex
 	pending   int
 	oldest    time.Time
+}
+
+// SetPermanentRejectionHandler installs the task-settlement callback before
+// Run starts. It is kept on Sender rather than Transport so tests and other
+// transports can exercise the durable queue without importing daemon policy.
+func (s *Sender) SetPermanentRejectionHandler(handler PermanentRejectionHandler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.rejected = handler
 }
 
 func NewSender(store *Store, transport Transport, logger *slog.Logger) *Sender {
@@ -109,6 +125,15 @@ func (s *Sender) Flush(ctx context.Context) error {
 		}
 		var rejection *PermanentError
 		if errors.As(err, &rejection) {
+			if s.rejected != nil {
+				if handleErr := s.rejected(ctx, report, rejection); handleErr != nil {
+					failures = append(failures, fmt.Errorf("settle permanently rejected report %s: %w", id, handleErr))
+					state.attempts++
+					state.after = s.now().Add(retryDelay(state.attempts))
+					s.retries[id] = state
+					continue
+				}
+			}
 			if err := s.store.Reject(report); err != nil {
 				failures = append(failures, err)
 				continue

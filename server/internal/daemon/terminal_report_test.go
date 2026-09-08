@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"sync/atomic"
 	"testing"
@@ -119,5 +120,82 @@ func TestTerminalTransportRetainsRecoverableServerFailures(t *testing.T) {
 				t.Fatalf("error permanence %v: %v", tc.permanent, err)
 			}
 		})
+	}
+}
+
+func TestPermanentCompleteReportFallsBackToFailureBeforeRetiringResult(t *testing.T) {
+	var completeCalls, failCalls atomic.Int32
+	taskID := uuid.NewString()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/daemon/tasks/" + taskID + "/complete":
+			completeCalls.Add(1)
+			http.Error(w, "stale terminal receipt", http.StatusBadRequest)
+		case "/api/daemon/tasks/" + taskID + "/fail":
+			failCalls.Add(1)
+			w.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	root := filepath.Join(t.TempDir(), "reports")
+	store, err := terminalreport.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{client: NewClient(srv.URL), logger: slog.New(slog.NewTextHandler(io.Discard, nil)), terminalStore: store}
+	d.terminalSender = terminalreport.NewSender(store, d.client, d.logger)
+	d.terminalSender.SetPermanentRejectionHandler(d.handlePermanentTerminalReport)
+	report, err := terminalreport.NewReport(taskID, "57123713200000001", "complete", []byte(`{"output":"finished"}`), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.terminalStore.Save(report); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.terminalSender.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if completeCalls.Load() != 1 || failCalls.Load() != 1 {
+		t.Fatalf("complete/fail fallback calls = %d/%d, want 1/1", completeCalls.Load(), failCalls.Load())
+	}
+	if pending, _ := d.terminalSender.Stats(); pending != 0 {
+		t.Fatal("resolved report remained pending")
+	}
+	if _, err := os.Stat(filepath.Join(root, taskID+"-57123713200000001.json.rejected")); err != nil {
+		t.Fatalf("original report was not retained for diagnosis: %v", err)
+	}
+}
+
+func TestPermanentFailureReportStaysActionableAndBlocksClaims(t *testing.T) {
+	taskID := uuid.NewString()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "stale terminal receipt", http.StatusBadRequest)
+	}))
+	t.Cleanup(srv.Close)
+	root := filepath.Join(t.TempDir(), "reports")
+	store, err := terminalreport.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := &Daemon{client: NewClient(srv.URL), logger: slog.New(slog.NewTextHandler(io.Discard, nil)), terminalStore: store}
+	d.terminalSender = terminalreport.NewSender(store, d.client, d.logger)
+	d.terminalSender.SetPermanentRejectionHandler(d.handlePermanentTerminalReport)
+	report, err := terminalreport.NewReport(taskID, "57123713200000001", "fail", []byte(`{"error":"provider stopped"}`), time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.terminalStore.Save(report); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.terminalSender.Flush(context.Background()); err == nil {
+		t.Fatal("permanently rejected failure report was silently retired")
+	}
+	if pending, _ := d.terminalSender.Stats(); pending != 1 {
+		t.Fatalf("pending reports = %d, want 1", pending)
+	}
+	if !d.terminalDeliveryBlocked.Load() || d.tryEnterClaim() {
+		t.Fatal("blocked terminal report did not stop new claims")
 	}
 }

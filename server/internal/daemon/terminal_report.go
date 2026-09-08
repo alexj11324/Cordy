@@ -26,6 +26,60 @@ func (d *Daemon) openTerminalReports() error {
 	}
 	d.terminalStore = store
 	d.terminalSender = terminalreport.NewSender(store, d.client, d.logger)
+	d.terminalSender.SetPermanentRejectionHandler(d.handlePermanentTerminalReport)
+	return nil
+}
+
+type terminalReportBody struct {
+	Output                string `json:"output"`
+	Error                 string `json:"error"`
+	BranchName            string `json:"branch_name"`
+	SessionID             string `json:"session_id"`
+	WorkDir               string `json:"work_dir"`
+	DurableWorkDir        string `json:"durable_work_dir"`
+	FailureReason         string `json:"failure_reason"`
+	SessionRolloutMissing bool   `json:"session_rollout_missing"`
+	RetiredSessionID      string `json:"retired_session_id"`
+	ExecutionRepoIdentity string `json:"execution_repo_identity"`
+	ExecutionWorkspace    string `json:"execution_workspace"`
+	ExecutionHeadBranch   string `json:"execution_head_branch"`
+	ExecutionHeadSHA      string `json:"execution_head_sha"`
+	ExecutionHeadState    string `json:"execution_head_state"`
+}
+
+// handlePermanentTerminalReport settles an accepted execution whose complete
+// report was rejected by the server. A permanently rejected failure report has
+// no safer alternate transition, so it stays pending and blocks new claims for
+// operator recovery; silently renaming it would strand the running task.
+func (d *Daemon) handlePermanentTerminalReport(ctx context.Context, report terminalreport.Report, rejection error) error {
+	var body terminalReportBody
+	if err := json.Unmarshal(report.Body, &body); err != nil {
+		d.terminalDeliveryBlocked.Store(true)
+		return fmt.Errorf("decode terminal report: %w", err)
+	}
+	if report.Kind != "complete" {
+		d.terminalDeliveryBlocked.Store(true)
+		return fmt.Errorf("permanently rejected %s report requires manual recovery: %w", report.Kind, rejection)
+	}
+
+	message := fmt.Sprintf("complete task report rejected by server: %s", rejection)
+	provenance := ExecutionProvenanceReport{
+		RepoIdentity:       body.ExecutionRepoIdentity,
+		ExecutionWorkspace: body.ExecutionWorkspace,
+		HeadBranch:         body.ExecutionHeadBranch,
+		HeadSHA:            body.ExecutionHeadSHA,
+		HeadState:          body.ExecutionHeadState,
+	}
+	settleCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), terminalTaskReportTimeout)
+	defer cancel()
+	if err := d.client.FailTaskWithProvenance(
+		settleCtx, report.TaskID, message, body.SessionID, body.WorkDir,
+		body.BranchName, taskfailure.Classify(message).String(), body.SessionRolloutMissing,
+		body.RetiredSessionID, body.DurableWorkDir, provenance,
+	); err != nil {
+		d.terminalDeliveryBlocked.Store(true)
+		return fmt.Errorf("fallback failure callback: %w", err)
+	}
 	return nil
 }
 

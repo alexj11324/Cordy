@@ -15,6 +15,7 @@ func (d *Daemon) recoverOrphans(ctx context.Context, runtimeID string) error {
 	if d.terminalStore != nil {
 		reports, err := d.terminalStore.Pending()
 		if err != nil {
+			d.terminalRecoveryFailed.Store(true)
 			return fmt.Errorf("read terminal reports before orphan recovery: %w", err)
 		}
 		pending = make([]protocol.PendingTerminalReport, 0, len(reports))
@@ -22,5 +23,38 @@ func (d *Daemon) recoverOrphans(ctx context.Context, runtimeID string) error {
 			pending = append(pending, protocol.PendingTerminalReport{TaskID: report.TaskID, ClaimFence: report.Identity.ClaimFence})
 		}
 	}
-	return d.client.RecoverOrphans(ctx, runtimeID, pending...)
+	if err := d.client.RecoverOrphans(ctx, runtimeID, pending...); err != nil {
+		d.terminalRecoveryFailed.Store(true)
+		return err
+	}
+	return nil
+}
+
+// recoverTrackedOrphans retries every tracked runtime after a recovery failure.
+// A failed read or recovery request pauses claims globally because a fresh
+// heartbeat would otherwise keep old tasks alive while the server still thinks
+// they belong to the previous daemon. Only a complete pass clears the barrier.
+func (d *Daemon) recoverTrackedOrphans(ctx context.Context) error {
+	d.mu.Lock()
+	workspaces := make([]struct {
+		id         string
+		runtimeIDs []string
+	}, 0, len(d.workspaces))
+	for id, ws := range d.workspaces {
+		workspaces = append(workspaces, struct {
+			id         string
+			runtimeIDs []string
+		}{id: id, runtimeIDs: append([]string(nil), ws.runtimeIDs...)})
+	}
+	d.mu.Unlock()
+
+	for _, workspace := range workspaces {
+		for _, runtimeID := range workspace.runtimeIDs {
+			if err := d.recoverOrphans(ctx, runtimeID); err != nil {
+				return fmt.Errorf("recover orphans for workspace %s runtime %s: %w", workspace.id, runtimeID, err)
+			}
+		}
+	}
+	d.terminalRecoveryFailed.Store(false)
+	return nil
 }
