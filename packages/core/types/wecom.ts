@@ -2,7 +2,7 @@ import type { MessagingInstallationRuntime, MessagingInstallationSetup } from ".
 
 /**
  * A WeCom smart-bot ("智能机器人" / aibot) installation bound to a single
- * Patchbay agent. Wire shape mirrors `WecomInstallationResponse` in
+ * Orvilo agent. Wire shape mirrors `WecomInstallationResponse` in
  * `server/internal/handler/wecom_web.go`. Any new field the backend adds MUST
  * default to optional so older desktop builds keep parsing the response — see
  * CLAUDE.md → API Compatibility.
@@ -44,14 +44,14 @@ export interface RegisterWecomBYORequest {
   /** The bot's name as it appears in a chat. Optional, and used for one
    * thing: recognising the bot's own @-mention in a group. WeCom delivers a
    * mention as literal text with no structured mention list, so a name
-   * containing a space ("Patchbay Bot") otherwise swallows the slash command
+   * containing a space ("Orvilo Bot") otherwise swallows the slash command
    * typed after it. Omitting it on a re-install of the same bot keeps the
    * name already stored. */
   bot_name?: string;
 }
 
 /** Post-redemption echo: the WeCom aibot userid the token carried is now
- * bound to the logged-in Patchbay user in this workspace/installation. */
+ * bound to the logged-in Orvilo user in this workspace/installation. */
 export interface RedeemWecomBindingTokenResponse {
   workspace_id: string;
   installation_id: string;

@@ -1,6 +1,6 @@
 # Contributing Guide
 
-This guide documents the local development workflow for contributors working on the Patchbay codebase.
+This guide documents the local development workflow for contributors working on the Orvilo codebase.
 
 It covers:
 
@@ -50,7 +50,7 @@ See the [LICENSE](LICENSE) file for the full terms.
 
 Local development uses one shared PostgreSQL container and one database per checkout.
 
-- the main checkout usually uses `.env` and `POSTGRES_DB=patchbay`
+- the main checkout usually uses `.env` and `POSTGRES_DB=orvilo`
 - each Git worktree uses its own `.env.worktree`
 - every checkout connects to the same PostgreSQL host: `localhost:5432`
 - isolation happens at the database level, not by starting a separate Docker Compose project
@@ -89,9 +89,9 @@ cp .env.example .env
 By default, `.env` points to:
 
 ```bash
-POSTGRES_DB=patchbay
+POSTGRES_DB=orvilo
 POSTGRES_PORT=5432
-DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
+DATABASE_URL=postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable
 PORT=8080
 FRONTEND_PORT=3000
 ```
@@ -107,11 +107,11 @@ make worktree-env
 That generates values like:
 
 ```bash
-POSTGRES_DB=patchbay_my_feature_702
+POSTGRES_DB=orvilo_my_feature_702
 POSTGRES_PORT=5432
 PORT=18782
 FRONTEND_PORT=13702
-DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay_my_feature_702?sslmode=disable
+DATABASE_URL=postgres://orvilo:orvilo@localhost:5432/orvilo_my_feature_702?sslmode=disable
 ```
 
 Notes:
@@ -153,7 +153,7 @@ Three properties are worth knowing because the old flow lacked them:
 - **API, Web and Desktop renderer ports, database names and profiles are allocated, not recomputed.** The
   allocator starts from this directory's path hash, so a checkout keeps the
   numbers it has always had, and moves only when the registry or a live
-  listener says the slot is taken. The registry lives in `~/.patchbay/dev/`;
+  listener says the slot is taken. The registry lives in `~/.orvilo/dev/`;
   deleting it and re-running `make up` is a supported recovery.
 - **Nothing reports success for something it has not reached.** The database is
   created and verified through `DATABASE_URL` — the same string the backend
@@ -220,7 +220,7 @@ This single command:
 - checks that prerequisites (Node.js, pnpm, Go, Docker) are installed
 - installs JavaScript dependencies
 - allocates this checkout's ports and database name under a lock, and records them in
-  `~/.patchbay/dev/` so the environment can be listed, inspected and deleted later
+  `~/.orvilo/dev/` so the environment can be listed, inspected and deleted later
 - creates the application database if it does not exist and runs all migrations
 - starts the selected components (`api,web` by default) in the background
 
@@ -286,8 +286,8 @@ make check-main
 Use a worktree when you want isolated data and separate app ports.
 
 ```bash
-git worktree add ../patchbay-feature -b feat/my-change main
-cd ../patchbay-feature
+git worktree add ../orvilo-feature -b feat/my-change main
+cd ../orvilo-feature
 make up
 ```
 
@@ -311,7 +311,7 @@ from another checkout so database cleanup happens before Git removes the
 worktree directory:
 
 ```bash
-make remove-worktree WORKTREE=../patchbay-feature
+make remove-worktree WORKTREE=../orvilo-feature
 ```
 
 The command refuses to remove the primary checkout, the current checkout, a
@@ -330,11 +330,11 @@ This is a first-class workflow.
 Example:
 
 - main checkout
-  - database: `patchbay`
+  - database: `orvilo`
   - backend: `8080`
   - frontend: `3000`
 - worktree checkout
-  - database: `patchbay_my_feature_702`
+  - database: `orvilo_my_feature_702`
   - backend: generated worktree port such as `18782`
   - frontend: generated worktree port such as `13702`
 
@@ -460,7 +460,7 @@ Run the local daemon:
 make daemon
 ```
 
-The daemon authenticates using the CLI's stored token (`patchbay login`).
+The daemon authenticates using the CLI's stored token (`orvilo login`).
 It registers runtimes for all watched workspaces from the CLI config.
 
 ## Full-Stack Isolated Testing
@@ -474,7 +474,7 @@ make up C=api,web,daemon
 
 It creates the environment if needed, sets the fixed local verification code
 before the first launch, logs in as `dev@localhost`, mints a personal access
-token, creates a workspace, writes the CLI profile, builds `server/bin/patchbay`
+token, creates a workspace, writes the CLI profile, builds `server/bin/orvilo`
 and starts the daemon from that binary. It then prints the URL, the login, the
 commit, and the stop command.
 
@@ -484,9 +484,9 @@ Two constraints are enforced rather than documented:
   its own executable path at startup and re-execs it as the
   execution-environment helper for every task; `go run` deletes that binary when
   the launcher exits, so the daemon would register, heartbeat, and then fail
-  every task with `fork/exec …/go-build…/exe/patchbay: no such file or directory`.
+  every task with `fork/exec …/go-build…/exe/orvilo: no such file or directory`.
 - **`daemon start` is refused under a daemon-managed task.** A checkout below a
-  `.patchbay/daemon_task_context.json` marker cannot start a second daemon
+  `.orvilo/daemon_task_context.json` marker cannot start a second daemon
   competing for its own work, so `make up C=daemon` stops with that explanation
   before spending a login on it. Use `C=api,web` there.
 
@@ -524,22 +524,22 @@ the URL `make dev-login` prints.
 
 ### Isolation Guarantee
 
-Nothing in this flow touches the system-installed `patchbay`, the default
-`~/.patchbay/config.json`, or the public production app. Staging is a third
+Nothing in this flow touches the system-installed `orvilo`, the default
+`~/.orvilo/config.json`, or the public production app. Staging is a third
 channel with its own hosted backend — see
 [docs/operations/environments.md](docs/operations/environments.md).
 
 | Resource | Public / Production | Testing / Staging | Local Dev (per environment) |
 |---|---|---|---|
-| Config | `~/.patchbay/config.json` | `~/.patchbay/profiles/staging/config.json` | `~/.patchbay/profiles/dev-<slug>-<offset>/config.json` |
-| Daemon PID | `~/.patchbay/daemon.pid` | `~/.patchbay/profiles/staging/daemon.pid` | `~/.patchbay/profiles/dev-<slug>-<offset>/daemon.pid` |
-| Workspaces dir | `~/patchbay_workspaces/` | `~/patchbay_workspaces_staging/` | `~/patchbay_workspaces_dev-<slug>-<offset>/` |
-| Database | production | staging (`patchbay-staging` Compose project) | local: `patchbay_<slug>_<offset>` |
+| Config | `~/.orvilo/config.json` | `~/.orvilo/profiles/staging/config.json` | `~/.orvilo/profiles/dev-<slug>-<offset>/config.json` |
+| Daemon PID | `~/.orvilo/daemon.pid` | `~/.orvilo/profiles/staging/daemon.pid` | `~/.orvilo/profiles/dev-<slug>-<offset>/daemon.pid` |
+| Workspaces dir | `~/orvilo_workspaces/` | `~/orvilo_workspaces_staging/` | `~/orvilo_workspaces_dev-<slug>-<offset>/` |
+| Database | production | staging (`orvilo-staging` Compose project) | local: `orvilo_<slug>_<offset>` |
 | Desktop app | `Orvilo` | `Orvilo Staging` | `Orvilo Canary` |
-| Desktop callback | `patchbay://` | `patchbay-staging-<hash>://` | `patchbay-canary-<hash>://` |
+| Desktop callback | `orvilo://` | `orvilo-staging-<hash>://` | `orvilo-canary-<hash>://` |
 | Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-api.staging.aspectlylabs.com` | `desktop-localhost-<port>` |
 | API | `https://api.aspectlylabs.com` | `https://api.staging.aspectlylabs.com` | local backend port |
-| Registry | — | `/var/lib/patchbay-staging/` on the origin | `~/.patchbay/dev/envs/<name>/` |
+| Registry | — | `/var/lib/orvilo-staging/` on the origin | `~/.orvilo/dev/envs/<name>/` |
 
 Multiple environments run simultaneously without conflict; `make list` shows
 all of them.
@@ -593,7 +593,7 @@ Look for:
 ### List All Local Databases in Shared PostgreSQL
 
 ```bash
-docker compose exec -T postgres psql -U patchbay -d postgres -At -c "select datname from pg_database order by datname;"
+docker compose exec -T postgres psql -U orvilo -d postgres -At -c "select datname from pg_database order by datname;"
 ```
 
 ### Worktree Is Accidentally Using the Main Database
@@ -656,7 +656,7 @@ make db-drop ENV_FILE=.env.worktree
 The command prints the selected database and environment file, then requires a
 `y/N` confirmation. It only operates on the local Docker PostgreSQL service,
 protects PostgreSQL system databases, and refuses to drop the default main
-database `patchbay` unless `ALLOW_MAIN_DB_DROP=1` is explicitly supplied.
+database `orvilo` unless `ALLOW_MAIN_DB_DROP=1` is explicitly supplied.
 Declining the confirmation is a successful no-op; when called by
 `make remove-worktree`, it also leaves the worktree in place.
 
@@ -684,8 +684,8 @@ make dev-login
 ### Feature Worktree
 
 ```bash
-git worktree add ../patchbay-feature -b feat/my-change main
-cd ../patchbay-feature
+git worktree add ../orvilo-feature -b feat/my-change main
+cd ../orvilo-feature
 make up
 make dev-login
 ```
@@ -693,7 +693,7 @@ make dev-login
 ### Return to a Previously Configured Worktree
 
 ```bash
-cd ../patchbay-feature
+cd ../orvilo-feature
 make start-worktree
 ```
 

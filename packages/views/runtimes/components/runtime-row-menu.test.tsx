@@ -3,8 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { AgentRuntime, RuntimeProfile } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { AgentRuntime, RuntimeProfile } from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
@@ -28,7 +28,7 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-vi.mock("@patchbay/core/runtimes/mutations", () => ({
+vi.mock("@orvilo/core/runtimes/mutations", () => ({
   useDeleteRuntime: () => ({ mutate: vi.fn(), isPending: false, mutateAsync: vi.fn() }),
   useUnbindAgentsAndDeleteRuntime: () => ({
     mutate: vi.fn(),
@@ -37,7 +37,7 @@ vi.mock("@patchbay/core/runtimes/mutations", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/runtimes", () => ({
+vi.mock("@orvilo/core/runtimes", () => ({
   deriveRuntimeHealth: () => "online",
   runtimeUsageOptions: () => ({ kind: "usage" }),
   runtimeProfileListOptions: () => ({ kind: "runtime-profiles" }),
@@ -57,7 +57,7 @@ vi.mock("@patchbay/core/runtimes", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/agents", () => ({
+vi.mock("@orvilo/core/agents", () => ({
   deriveWorkload: () => "idle",
   useWorkspacePresenceMap: () => ({ byAgent: new Map(), loading: false }),
 }));
@@ -65,12 +65,12 @@ vi.mock("@patchbay/core/agents", () => ({
 // The unified DeleteRuntimeDialog the kebab now opens reaches into auth +
 // the api singleton. The dialog never renders in these tests (`open=false`
 // throughout) but its hooks still mount; stub them so module init is clean.
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (sel: (s: { user: { id: string } }) => unknown) =>
     sel({ user: { id: "user-me" } }),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     deleteRuntime: vi.fn(),
     unbindAgentsAndDeleteRuntime: vi.fn(),
@@ -301,7 +301,7 @@ describe("runtime list CLI column", () => {
   beforeEach(() => vi.clearAllMocks());
 
   // #3838: every agent showed the same number because the column rendered the
-  // shared patchbay daemon `cli_version`. It must instead show the agent's own
+  // shared orvilo daemon `cli_version`. It must instead show the agent's own
   // tool version from `metadata.version`.
   it("shows the agent's own CLI tool version, not the shared daemon version", () => {
     renderCliCell(

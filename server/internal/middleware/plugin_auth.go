@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	publicapiv1 "github.com/orvilo-ai/orvilo/server/pkg/publicapi/v1"
 )
 
 // PluginBearerOnly keeps a route on a machine-credential trust boundary.

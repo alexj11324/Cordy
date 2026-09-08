@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Patchbay installer — installs the CLI and optionally provisions a self-host server.
+# Orvilo installer — installs the CLI and optionally provisions a self-host server.
 #
 # Install / upgrade CLI only:
 #   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
@@ -7,7 +7,7 @@
 # Install CLI + provision self-host server:
 #   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
 #
-# After installation, run `patchbay setup` to configure your environment.
+# After installation, run `orvilo setup` to configure your environment.
 #
 set -euo pipefail
 
@@ -16,8 +16,8 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 REPO_URL="https://github.com/alexj11324/Cordy.git"
 REPO_WEB_URL="https://github.com/alexj11324/Cordy"  # without .git, for GitHub web APIs
-INSTALL_DIR="${ORVILO_INSTALL_DIR:-$HOME/.patchbay/server}"
-BREW_PACKAGE="alexj11324/tap/patchbay"
+INSTALL_DIR="${ORVILO_INSTALL_DIR:-$HOME/.orvilo/server}"
+BREW_PACKAGE="alexj11324/tap/orvilo"
 
 # Host ports Compose reported after `up -d`; set by setup_server and reused by
 # the summary so the health check and the printed URLs cannot diverge.
@@ -57,11 +57,11 @@ print_remote_server_token_hint() {
 
   printf "  ${BOLD}Looks like a remote/SSH session.${RESET} Browser login may not be able to call back to this machine's localhost.\n"
   printf "  Token login is usually simpler here:\n"
-  printf "     1. On your local computer, open ${CYAN}https://patchbay.aspectlylabs.com/settings?tab=tokens${RESET}\n"
+  printf "     1. On your local computer, open ${CYAN}https://orvilo.aspectlylabs.com/settings?tab=tokens${RESET}\n"
   printf "        and create a token under ${BOLD}Settings > API Tokens${RESET}.\n"
   printf "     2. On this server, run:\n"
-  printf "        ${CYAN}patchbay login --token <YOUR_TOKEN>${RESET}\n"
-  printf "        ${CYAN}patchbay daemon start${RESET}\n"
+  printf "        ${CYAN}orvilo login --token <YOUR_TOKEN>${RESET}\n"
+  printf "        ${CYAN}orvilo daemon start${RESET}\n"
   printf "\n"
 }
 
@@ -94,7 +94,7 @@ detect_os() {
     MINGW*|MSYS*|CYGWIN*)
             fail "This script does not support Windows. Use the PowerShell installer instead:
   irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex" ;;
-    *)      fail "Unsupported operating system: $(uname -s). Patchbay supports macOS, Linux, and Windows." ;;
+    *)      fail "Unsupported operating system: $(uname -s). Orvilo supports macOS, Linux, and Windows." ;;
   esac
 
   ARCH="$(uname -m)"
@@ -118,7 +118,7 @@ _dump_brew_log() {
 }
 
 install_cli_brew() {
-  info "Installing Patchbay CLI via Homebrew..."
+  info "Installing Orvilo CLI via Homebrew..."
   local brew_log
   brew_log=$(mktemp)
   if ! brew tap alexj11324/tap >"$brew_log" 2>&1; then
@@ -131,21 +131,21 @@ install_cli_brew() {
   if ! brew install "$BREW_PACKAGE" >"$brew_log" 2>&1; then
     if brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
       rm -f "$brew_log"
-      ok "Patchbay CLI already installed via Homebrew"
+      ok "Orvilo CLI already installed via Homebrew"
     else
-      warn "Failed to install patchbay via Homebrew. Falling back to GitHub Releases binary install."
+      warn "Failed to install orvilo via Homebrew. Falling back to GitHub Releases binary install."
       _dump_brew_log "$brew_log"
       rm -f "$brew_log"
       return 1
     fi
   else
     rm -f "$brew_log"
-    ok "Patchbay CLI installed via Homebrew"
+    ok "Orvilo CLI installed via Homebrew"
   fi
 }
 
 install_cli_binary() {
-  info "Installing Patchbay CLI from GitHub Releases..."
+  info "Installing Orvilo CLI from GitHub Releases..."
 
   # Get latest release tag
   local latest
@@ -155,30 +155,30 @@ install_cli_binary() {
   fi
 
   local version="${latest#v}"
-  local url="https://github.com/alexj11324/Cordy/releases/download/${latest}/patchbay-cli-${version}-${OS}-${ARCH}.tar.gz"
+  local url="https://github.com/alexj11324/Cordy/releases/download/${latest}/orvilo-cli-${version}-${OS}-${ARCH}.tar.gz"
   local tmp_dir
   tmp_dir=$(mktemp -d)
 
   info "Downloading $url ..."
-  if ! curl -fsSL "$url" -o "$tmp_dir/patchbay.tar.gz"; then
+  if ! curl -fsSL "$url" -o "$tmp_dir/orvilo.tar.gz"; then
     rm -rf "$tmp_dir"
     fail "Failed to download CLI binary."
   fi
 
-  tar -xzf "$tmp_dir/patchbay.tar.gz" -C "$tmp_dir" patchbay
+  tar -xzf "$tmp_dir/orvilo.tar.gz" -C "$tmp_dir" orvilo
 
   # Try /usr/local/bin first, fall back to ~/.local/bin. Tests and scripted
   # installs can override the first choice with ORVILO_BIN_DIR.
   local bin_dir="${ORVILO_BIN_DIR:-/usr/local/bin}"
   if [ -w "$bin_dir" ]; then
-    mv "$tmp_dir/patchbay" "$bin_dir/patchbay"
+    mv "$tmp_dir/orvilo" "$bin_dir/orvilo"
   elif command_exists sudo; then
-    sudo mv "$tmp_dir/patchbay" "$bin_dir/patchbay"
+    sudo mv "$tmp_dir/orvilo" "$bin_dir/orvilo"
   else
     bin_dir="$HOME/.local/bin"
     mkdir -p "$bin_dir"
-    mv "$tmp_dir/patchbay" "$bin_dir/patchbay"
-    chmod +x "$bin_dir/patchbay"
+    mv "$tmp_dir/orvilo" "$bin_dir/orvilo"
+    chmod +x "$bin_dir/orvilo"
     # Add to PATH if not already there
     if ! echo "$PATH" | tr ':' '\n' | grep -q "^$bin_dir$"; then
       export PATH="$bin_dir:$PATH"
@@ -187,7 +187,7 @@ install_cli_binary() {
   fi
 
   rm -rf "$tmp_dir"
-  ok "Patchbay CLI installed to $bin_dir/patchbay"
+  ok "Orvilo CLI installed to $bin_dir/orvilo"
 }
 
 add_to_path() {
@@ -195,7 +195,7 @@ add_to_path() {
   local line="export PATH=\"$dir:\$PATH\""
   for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
     if [ -f "$rc" ] && ! grep -qF "$dir" "$rc"; then
-      printf '\n# Added by Patchbay installer\n%s\n' "$line" >> "$rc"
+      printf '\n# Added by Orvilo installer\n%s\n' "$line" >> "$rc"
     fi
   done
 }
@@ -255,21 +255,21 @@ pull_official_selfhost_images() {
 }
 
 upgrade_cli_brew() {
-  info "Upgrading Patchbay CLI via Homebrew..."
+  info "Upgrading Orvilo CLI via Homebrew..."
   brew update 2>/dev/null || true
   if brew upgrade "$BREW_PACKAGE" 2>/dev/null; then
-    ok "Patchbay CLI upgraded via Homebrew"
+    ok "Orvilo CLI upgraded via Homebrew"
   else
     # brew upgrade exits non-zero if already up to date
-    ok "Patchbay CLI is already the latest version"
+    ok "Orvilo CLI is already the latest version"
   fi
 }
 
 install_cli() {
-  if command_exists patchbay; then
+  if command_exists orvilo; then
     local current_ver
-    # `patchbay version` outputs "patchbay 0.3.23 (commit: f46b929eb, built: 2026-06-16T10:11:56Z)" — extract just the version
-    current_ver=$(patchbay version 2>/dev/null | awk 'NR==1{print $2}' || echo "unknown")
+    # `orvilo version` outputs "orvilo 0.3.23 (commit: f46b929eb, built: 2026-06-16T10:11:56Z)" — extract just the version
+    current_ver=$(orvilo version 2>/dev/null | awk 'NR==1{print $2}' || echo "unknown")
 
     local latest_ver
     latest_ver=$(get_latest_version)
@@ -279,11 +279,11 @@ install_cli() {
     local latest_cmp="${latest_ver#v}"
 
     if [ -z "$latest_ver" ] || [ "$current_cmp" = "$latest_cmp" ]; then
-      ok "Patchbay CLI is up to date ($current_ver)"
+      ok "Orvilo CLI is up to date ($current_ver)"
       return 0
     fi
 
-    info "Patchbay CLI $current_ver installed, latest is $latest_ver — upgrading..."
+    info "Orvilo CLI $current_ver installed, latest is $latest_ver — upgrading..."
     if command_exists brew && brew list "$BREW_PACKAGE" >/dev/null 2>&1; then
       upgrade_cli_brew
     else
@@ -291,8 +291,8 @@ install_cli() {
     fi
 
     local new_ver
-    new_ver=$(patchbay version 2>/dev/null | awk 'NR==1{print $2}' || echo "unknown")
-    ok "Patchbay CLI upgraded ($current_ver → $new_ver)"
+    new_ver=$(orvilo version 2>/dev/null | awk 'NR==1{print $2}' || echo "unknown")
+    ok "Orvilo CLI upgraded ($current_ver → $new_ver)"
     return 0
   fi
 
@@ -303,8 +303,8 @@ install_cli() {
   fi
 
   # Verify
-  if ! command_exists patchbay; then
-    fail "CLI installed but 'patchbay' not found on PATH. You may need to restart your shell."
+  if ! command_exists orvilo; then
+    fail "CLI installed but 'orvilo' not found on PATH. You may need to restart your shell."
   fi
 }
 
@@ -314,7 +314,7 @@ install_cli() {
 check_docker() {
   if ! command_exists docker; then
     printf "\n"
-    fail "Docker is not installed. Patchbay self-hosting requires Docker and Docker Compose.
+    fail "Docker is not installed. Orvilo self-hosting requires Docker and Docker Compose.
 
 Install Docker:
   macOS:  https://docs.docker.com/desktop/install/mac-install/
@@ -334,7 +334,7 @@ After installing Docker, re-run this script with --with-server."
 # Server setup (self-host / --with-server)
 # ---------------------------------------------------------------------------
 setup_server() {
-  info "Setting up Patchbay server..."
+  info "Setting up Orvilo server..."
   local server_ref
   server_ref=$(get_selfhost_ref)
   info "Using self-host assets from ${server_ref}..."
@@ -343,7 +343,7 @@ setup_server() {
     info "Updating existing installation at $INSTALL_DIR..."
     cd "$INSTALL_DIR"
   else
-    info "Cloning Patchbay repository..."
+    info "Cloning Orvilo repository..."
     if ! command_exists git; then
       fail "Git is not installed. Please install git and re-run."
     fi
@@ -383,9 +383,9 @@ setup_server() {
   fi
 
   # Start Docker Compose
-  info "Pulling official Patchbay images..."
+  info "Pulling official Orvilo images..."
   pull_official_selfhost_images
-  info "Starting Patchbay services (this may take a few minutes on first run)..."
+  info "Starting Orvilo services (this may take a few minutes on first run)..."
   docker compose -f docker-compose.selfhost.yml up -d
 
   # Read the ports Compose actually published, once, and reuse them for both the
@@ -411,7 +411,7 @@ setup_server() {
   done
 
   if [ "$ready" = true ]; then
-    ok "Patchbay server is running"
+    ok "Orvilo server is running"
   else
     warn "Server is still starting. You can check logs with:"
     echo "  cd $INSTALL_DIR && docker compose -f docker-compose.selfhost.yml logs"
@@ -425,7 +425,7 @@ setup_server() {
 # ---------------------------------------------------------------------------
 run_default() {
   printf "\n"
-  printf "${BOLD}  Patchbay — Installer${RESET}\n"
+  printf "${BOLD}  Orvilo — Installer${RESET}\n"
   printf "\n"
 
   detect_os
@@ -433,13 +433,13 @@ run_default() {
 
   printf "\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-  printf "${BOLD}${GREEN}  ✓ Patchbay CLI is ready!${RESET}\n"
+  printf "${BOLD}${GREEN}  ✓ Orvilo CLI is ready!${RESET}\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
   printf "\n"
   printf "  ${BOLD}Next: configure your environment${RESET}\n"
   printf "\n"
-  printf "     ${CYAN}patchbay setup${RESET}                # Connect to Patchbay Cloud\n"
-  printf "     ${CYAN}patchbay setup self-host${RESET}       # Connect to a self-hosted server\n"
+  printf "     ${CYAN}orvilo setup${RESET}                # Connect to Orvilo Cloud\n"
+  printf "     ${CYAN}orvilo setup self-host${RESET}       # Connect to a self-hosted server\n"
   printf "\n"
   print_remote_server_token_hint
   printf "  ${BOLD}Self-hosting?${RESET} Install the server first:\n"
@@ -452,7 +452,7 @@ run_default() {
 # ---------------------------------------------------------------------------
 run_with_server() {
   printf "\n"
-  printf "${BOLD}  Patchbay — Self-Host Installer${RESET}\n"
+  printf "${BOLD}  Orvilo — Self-Host Installer${RESET}\n"
   printf "  Provisioning server infrastructure + installing CLI\n"
   printf "\n"
 
@@ -463,7 +463,7 @@ run_with_server() {
 
   printf "\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
-  printf "${BOLD}${GREEN}  ✓ Patchbay server is running and CLI is ready!${RESET}\n"
+  printf "${BOLD}${GREEN}  ✓ Orvilo server is running and CLI is ready!${RESET}\n"
   printf "${BOLD}${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}\n"
   printf "\n"
   printf "  ${BOLD}Frontend:${RESET}  http://localhost:%s\n" "$SELFHOST_FRONTEND_PORT"
@@ -472,7 +472,7 @@ run_with_server() {
   printf "\n"
   printf "  ${BOLD}Next: configure your CLI to connect${RESET}\n"
   printf "\n"
-  printf "     ${CYAN}patchbay setup self-host${RESET}   # Configure + authenticate + start daemon\n"
+  printf "     ${CYAN}orvilo setup self-host${RESET}   # Configure + authenticate + start daemon\n"
   printf "\n"
   printf "  ${BOLD}Login:${RESET} configure ${CYAN}RESEND_API_KEY${RESET} in .env for email codes,\n"
   printf "  or read the generated code from backend logs when Resend is unset.\n"
@@ -487,7 +487,7 @@ run_with_server() {
 # ---------------------------------------------------------------------------
 run_stop() {
   printf "\n"
-  info "Stopping Patchbay services..."
+  info "Stopping Orvilo services..."
 
   if [ -d "$INSTALL_DIR" ]; then
     cd "$INSTALL_DIR"
@@ -498,11 +498,11 @@ run_stop() {
       warn "No docker-compose.selfhost.yml found at $INSTALL_DIR"
     fi
   else
-    warn "No Patchbay installation found at $INSTALL_DIR"
+    warn "No Orvilo installation found at $INSTALL_DIR"
   fi
 
-  if command_exists patchbay; then
-    patchbay daemon stop 2>/dev/null && ok "Daemon stopped" || true
+  if command_exists orvilo; then
+    orvilo daemon stop 2>/dev/null && ok "Daemon stopped" || true
   fi
 
   printf "\n"
@@ -522,20 +522,20 @@ main() {
       --help|-h)
         echo "Usage: install.sh [--with-server | --stop]"
         echo ""
-        echo "  (default)       Install / upgrade the Patchbay CLI"
+        echo "  (default)       Install / upgrade the Orvilo CLI"
         echo "  --with-server   Install CLI + provision a self-host server (Docker)"
         echo "  --stop          Stop a self-hosted installation"
         echo ""
         echo "Environment variables:"
         echo "  ORVILO_INSTALL_DIR   Self-host server install directory"
-        echo "                        (default: \$HOME/.patchbay/server)"
+        echo "                        (default: \$HOME/.orvilo/server)"
         echo "  ORVILO_BIN_DIR       Target directory for the CLI binary when"
         echo "                        installing from GitHub Releases"
         echo "                        (default: /usr/local/bin, then \$HOME/.local/bin)"
         echo "  ORVILO_SELFHOST_REF  Git ref to check out for self-host assets"
         echo "                        (default: latest release tag, falling back to main)"
         echo ""
-        echo "After installation, run 'patchbay setup' to configure your environment."
+        echo "After installation, run 'orvilo setup' to configure your environment."
         exit 0
         ;;
       *) warn "Unknown option: $1" ;;

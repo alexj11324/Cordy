@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
 )
 
 func ptrInt32(value int32) *int32 { return &value }

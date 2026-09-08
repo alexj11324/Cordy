@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 )
 
 func TestRunTaskRejectsMismatchedAgentIdentityBeforePreparation(t *testing.T) {

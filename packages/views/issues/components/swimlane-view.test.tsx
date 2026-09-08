@@ -7,16 +7,16 @@ import { ScrollRestorationProvider } from "../../platform";
 import type {
   Issue,
   IssueTableGroupDescriptor,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import type { IssueGroupBranches } from "../surface/use-issue-group-branches";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
 // Mock hooks
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -28,7 +28,7 @@ const mockListChildrenByParents = vi.hoisted(() =>
 const mockGetAgentTaskSnapshot = vi.hoisted(() =>
   vi.fn().mockResolvedValue([]),
 );
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     listChildrenByParents: mockListChildrenByParents,
     getAgentTaskSnapshot: mockGetAgentTaskSnapshot,
@@ -41,9 +41,9 @@ vi.mock("@patchbay/core/api", () => ({
 }));
 
 // Mock paths
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@orvilo/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/paths")>(
+    "@orvilo/core/paths",
   );
   return {
     ...actual,
@@ -69,13 +69,13 @@ const { mockActorNameResult } = vi.hoisted(() => ({
     getTeamName: () => "Mock Team",
   },
 }));
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => mockActorNameResult,
 }));
 
-// Mock @patchbay/core/auth
+// Mock @orvilo/core/auth
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -101,7 +101,7 @@ vi.mock("../../navigation", () => ({
 }));
 
 // Mock issue config
-vi.mock("@patchbay/core/issues/config", () => ({
+vi.mock("@orvilo/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_CONFIG: {
@@ -180,7 +180,7 @@ const mockViewState: {
 const mockSetSwimlaneOrder = mockViewState.setSwimlaneOrder as ReturnType<typeof vi.fn>;
 const mockToggleSwimlaneCollapsed = mockViewState.toggleSwimlaneCollapsed as ReturnType<typeof vi.fn>;
 
-vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
+vi.mock("@orvilo/core/issues/stores/view-store-context", () => ({
   ViewStoreProvider: ({ children }: { children: React.ReactNode }) => children,
   useViewStore: (selector?: any) => (selector ? selector(mockViewState) : mockViewState),
   useViewStoreApi: () => ({ getState: () => mockViewState, setState: vi.fn(), subscribe: vi.fn() }),
@@ -188,7 +188,7 @@ vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
 
 // Mock modal store
 const mockOpenModal = vi.fn();
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@orvilo/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: mockOpenModal }),
     { getState: () => ({ open: mockOpenModal }) },

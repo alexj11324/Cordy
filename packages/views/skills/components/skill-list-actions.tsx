@@ -15,19 +15,19 @@ import {
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Agent, SkillSummary } from "@patchbay/core/types";
-import { api } from "@patchbay/core/api";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
+import type { Agent, SkillSummary } from "@orvilo/core/types";
+import { api } from "@orvilo/core/api";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@patchbay/ui/components/ui/collapsible";
+} from "@orvilo/ui/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -35,21 +35,21 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/tooltip";
+import { ActorAvatar } from "@orvilo/ui/components/common/actor-avatar";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 import { useIntentNavigate } from "../../navigation";
 import { isRefreshableOrigin, readOrigin } from "../lib/origin";

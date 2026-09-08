@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { DependencyGraphResponse } from "@patchbay/core/types";
+import type { DependencyGraphResponse } from "@orvilo/core/types";
 import {
   CANVAS_PADDING,
   COLUMN_GAP,

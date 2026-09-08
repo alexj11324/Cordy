@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { RouterProvider } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import { createSafeId } from "@patchbay/core/utils";
-import { ScrollRestorationProvider } from "@patchbay/views/platform";
+import { createSafeId } from "@orvilo/core/utils";
+import { ScrollRestorationProvider } from "@orvilo/views/platform";
 import { useActiveGroup, useTabStore } from "@/stores/tab-store";
 import {
   createScrollRestorationAdapter,

@@ -3,32 +3,32 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, Loader2 } from "lucide-react";
-import { ApiError, api } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
-import { workspaceSubscriptionSummaryOptions } from "@patchbay/core/billing";
-import { composioToolkitsOptions } from "@patchbay/core/composio";
-import { useConfigStore, useFeatureEnabled } from "@patchbay/core/config";
-import { dingtalkInstallationsOptions } from "@patchbay/core/dingtalk";
+import { ApiError, api } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
+import { workspaceSubscriptionSummaryOptions } from "@orvilo/core/billing";
+import { composioToolkitsOptions } from "@orvilo/core/composio";
+import { useConfigStore, useFeatureEnabled } from "@orvilo/core/config";
+import { dingtalkInstallationsOptions } from "@orvilo/core/dingtalk";
 import {
   BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
   COMPOSIO_MCP_APPS_FLAG,
   LINEAR_INSTALLATION_FOUNDATION_FLAG,
-} from "@patchbay/core/feature-flags";
-import { larkInstallationsOptions } from "@patchbay/core/lark";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { slackInstallationsOptions } from "@patchbay/core/slack";
-import { telegramInstallationsOptions } from "@patchbay/core/telegram";
-import type { MessagingConnectionSource } from "@patchbay/core/types";
-import { wecomInstallationsOptions } from "@patchbay/core/wecom";
-import { weixinInstallationsOptions } from "@patchbay/core/weixin";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { Badge } from "@patchbay/ui/components/ui/badge";
+} from "@orvilo/core/feature-flags";
+import { larkInstallationsOptions } from "@orvilo/core/lark";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
+import { slackInstallationsOptions } from "@orvilo/core/slack";
+import { telegramInstallationsOptions } from "@orvilo/core/telegram";
+import type { MessagingConnectionSource } from "@orvilo/core/types";
+import { wecomInstallationsOptions } from "@orvilo/core/wecom";
+import { weixinInstallationsOptions } from "@orvilo/core/weixin";
+import { memberListOptions } from "@orvilo/core/workspace/queries";
+import { Badge } from "@orvilo/ui/components/ui/badge";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import { useT } from "../../i18n";
 import { ComposioTab } from "./composio-tab";
 import { DingTalkAgentBindButton, DingTalkTab } from "./dingtalk-tab";

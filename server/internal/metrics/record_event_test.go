@@ -3,8 +3,8 @@ package metrics_test
 import (
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/metrics"
 )
 
 // captureSpy records the names of every event handed to Capture so tests can

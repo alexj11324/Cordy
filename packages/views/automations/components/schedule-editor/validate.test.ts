@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { ApiError } from "@patchbay/core/api";
+import { ApiError } from "@orvilo/core/api";
 import { findScheduleRejection } from "./validate";
 import { parseCron } from "./cron-mapping";
 
@@ -14,7 +14,7 @@ const behavior: { mode: "ok" | "invalid_cron" | "invalid_timezone" | "transport"
   mode: "ok",
 };
 
-vi.mock("@patchbay/core/automations/queries", () => ({
+vi.mock("@orvilo/core/automations/queries", () => ({
   cronPreviewOptions: (wsId: string, expr: string, tz: string) => ({
     queryKey: ["automations", wsId, "cron-preview", expr, tz, behavior.mode],
     queryFn: async () => {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -10,16 +10,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/ui/components/ui/dialog";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@patchbay/ui/components/ui/tabs";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
+} from "@orvilo/ui/components/ui/tabs";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
 import { useT } from "../../../i18n";
 import type { ManagedMcpServer } from "./mcp-config-model";
 import { isRecord, mcpTransport } from "./mcp-config-model";

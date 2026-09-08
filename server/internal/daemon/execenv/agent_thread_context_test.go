@@ -17,7 +17,7 @@ func TestAgentThreadWithoutIssueUsesConversationWorkflow(t *testing.T) {
 			if !strings.Contains(content, "Agent conversation") {
 				t.Errorf("%s missing conversation workflow", name)
 			}
-			for _, unwanted := range []string{"Final results MUST be delivered", "Run exactly one `patchbay issue create`", "# Issue Execution", "ORIGINAL_AUTOMATION_INSTRUCTIONS", "ORIGINAL_QUICK_CREATE_INPUT"} {
+			for _, unwanted := range []string{"Final results MUST be delivered", "Run exactly one `orvilo issue create`", "# Issue Execution", "ORIGINAL_AUTOMATION_INSTRUCTIONS", "ORIGINAL_QUICK_CREATE_INPUT"} {
 				if strings.Contains(content, unwanted) {
 					t.Errorf("%s contains old source instruction %q", name, unwanted)
 				}

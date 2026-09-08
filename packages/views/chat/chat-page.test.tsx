@@ -4,8 +4,8 @@ import { StrictMode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { Agent } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent } from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enChat from "../locales/en/chat.json";
 import {
@@ -62,7 +62,7 @@ vi.mock("./components/archived-agent-banner", () => ({
 vi.mock("react-resizable-panels", () => ({
   useDefaultLayout: () => ({ defaultLayout: undefined, onLayoutChanged: vi.fn() }),
 }));
-vi.mock("@patchbay/ui/components/ui/resizable", () => ({
+vi.mock("@orvilo/ui/components/ui/resizable", () => ({
   ResizablePanelGroup: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -78,11 +78,11 @@ const FOLD_INNER = 851;
 const TABLET = 1024;
 const DESKTOP = 1440;
 const layout = vi.hoisted(() => ({ width: 1440 }));
-vi.mock("@patchbay/ui/hooks/use-mobile", () => ({
+vi.mock("@orvilo/ui/hooks/use-mobile", () => ({
   useIsMobile: () => layout.width < 768,
   useIsCompact: () => layout.width < 1024,
 }));
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({ chat: () => "/acme/chat" }),
 }));
 
@@ -115,7 +115,7 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: mockToastError },
 }));
 
-vi.mock("@patchbay/core/chat", () => ({
+vi.mock("@orvilo/core/chat", () => ({
   useChatStore: Object.assign(
     (selector?: (s: { activeSessionId: string | null }) => unknown) =>
       selector ? selector(storeRef.current) : storeRef.current,

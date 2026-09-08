@@ -1,11 +1,11 @@
-import { api } from "@patchbay/core/api";
+import { api } from "@orvilo/core/api";
 
 /**
  * The host half of the bridge.
  *
  * A surface asks; the host performs the call on the signed-in user's own
  * session and returns the result. The plugin holds no credential, so this is
- * the only path from a surface into Patchbay.
+ * the only path from a surface into Orvilo.
  *
  * Identity is bound by three things together: the expected outer frame window,
  * a single-use launch challenge, and the guest-created MessagePort. Origin is
@@ -13,7 +13,7 @@ import { api } from "@patchbay/core/api";
  */
 
 const BRIDGE_PROTOCOL_VERSION = 2;
-const BRIDGE_CONNECT_MESSAGE = "patchbay:plugin-bridge-init";
+const BRIDGE_CONNECT_MESSAGE = "orvilo:plugin-bridge-init";
 
 type BridgeMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 

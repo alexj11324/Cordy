@@ -7,22 +7,22 @@ import { Hash, Loader2, Plus, RefreshCw, Send } from "lucide-react";
 import type {
   WorkspaceChannel,
   WorkspaceChannelMessage,
-} from "@patchbay/core/types";
-import { useWorkspaceId } from "@patchbay/core";
-import { useAuthStore } from "@patchbay/core/auth";
-import { errorCode } from "@patchbay/core/api";
+} from "@orvilo/core/types";
+import { useWorkspaceId } from "@orvilo/core";
+import { useAuthStore } from "@orvilo/core/auth";
+import { errorCode } from "@orvilo/core/api";
 import {
   channelListOptions,
   channelMessagesOptions,
-} from "@patchbay/core/channels/queries";
+} from "@orvilo/core/channels/queries";
 import {
   useCreateWorkspaceChannel,
   useCreateWorkspaceChannelMessage,
-} from "@patchbay/core/channels/mutations";
-import { useChannelRealtime } from "@patchbay/core/channels";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/channels/mutations";
+import { useChannelRealtime } from "@orvilo/core/channels";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -30,11 +30,11 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
+} from "@orvilo/ui/components/ui/dialog";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { ActorAvatar } from "@orvilo/ui/components/common/actor-avatar";
 import {
   CollectionPageHeader,
   CollectionPageHeaderAction,

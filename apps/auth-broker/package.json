@@ -1,5 +1,5 @@
 {
-  "name": "@patchbay/auth-broker",
+  "name": "@orvilo/auth-broker",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,10 +16,10 @@
     "next": "^16.2.5",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "@patchbay/auth-ui": "workspace:*"
+    "@orvilo/auth-ui": "workspace:*"
   },
   "devDependencies": {
-    "@patchbay/eslint-config": "workspace:*",
+    "@orvilo/eslint-config": "workspace:*",
     "@testing-library/jest-dom": "catalog:",
     "@testing-library/react": "catalog:",
     "@types/react": "catalog:",

@@ -2,9 +2,9 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { agentTaskSnapshotOptions } from "@patchbay/core/agents";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import type { AgentTask } from "@patchbay/core/types";
+import { agentTaskSnapshotOptions } from "@orvilo/core/agents";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import type { AgentTask } from "@orvilo/core/types";
 
 export interface IssueActivityState {
   isWorking: boolean;

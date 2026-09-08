@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 type stubProvider struct {
@@ -26,11 +26,11 @@ func limitPtr(v int) *int { return &v }
 func TestResolveMapsEntitlementOntoCapacityPolicy(t *testing.T) {
 	ws := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
 	tests := []struct {
-		name       string
-		resolver   *Resolver
-		decision   entitlement.Decision
-		wantKind   policyKind
-		wantLimit  *int64
+		name      string
+		resolver  *Resolver
+		decision  entitlement.Decision
+		wantKind  policyKind
+		wantLimit *int64
 	}{
 		{
 			name:     "disabled resolver stays disabled",
@@ -139,9 +139,9 @@ func TestAdmitInstall(t *testing.T) {
 			q:     &fakeAdmitQueries{},
 		},
 		{
-			name:    "under the limit admits",
-			limit:   ptrOf(int64(3)),
-			q:       &fakeAdmitQueries{snapshot: db.ChannelInstallationCapacitySnapshotRow{InstalledCount: 2, SameSlot: false}},
+			name:  "under the limit admits",
+			limit: ptrOf(int64(3)),
+			q:     &fakeAdmitQueries{snapshot: db.ChannelInstallationCapacitySnapshotRow{InstalledCount: 2, SameSlot: false}},
 		},
 		{
 			name:  "at the limit with the same slot admits a reconnect",

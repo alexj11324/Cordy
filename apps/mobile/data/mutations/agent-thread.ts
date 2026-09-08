@@ -7,7 +7,7 @@ import {
 import type {
   ContinueAgentThreadRequest,
   ContinueAgentThreadResponse,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { api } from "@/data/api";
 import { chatKeys } from "@/data/queries/chat";
 import { agentThreadKeys } from "@/data/queries/agent-thread";

@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { api } from "@patchbay/core/api";
-import { issueKeys } from "@patchbay/core/issues/queries";
-import { parseMentions } from "@patchbay/core/issues/comment-trigger-outcomes";
-import type { CommentTriggerPreviewAgent, CommentTriggerOutcome } from "@patchbay/core/types";
+import { api } from "@orvilo/core/api";
+import { issueKeys } from "@orvilo/core/issues/queries";
+import { parseMentions } from "@orvilo/core/issues/comment-trigger-outcomes";
+import type { CommentTriggerPreviewAgent, CommentTriggerOutcome } from "@orvilo/core/types";
 
 const COMMENT_TRIGGER_PREVIEW_DEBOUNCE_MS = 300;
 const NOTE_COMMAND_RE = /^\/note(?:$|\s)/i;

@@ -1,6 +1,6 @@
-import { cn } from "@patchbay/ui/lib/utils";
-import type { AgentRuntime } from "@patchbay/core/types";
-import { runtimeDisplayName } from "@patchbay/core/runtimes";
+import { cn } from "@orvilo/ui/lib/utils";
+import type { AgentRuntime } from "@orvilo/core/types";
+import { runtimeDisplayName } from "@orvilo/core/runtimes";
 import { ProviderLogo } from "./provider-logo";
 import { useT } from "../../i18n";
 

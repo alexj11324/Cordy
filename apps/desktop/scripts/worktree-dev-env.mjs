@@ -2,7 +2,7 @@
 //
 // Two `pnpm dev:desktop` instances from two different git worktrees collide on
 // the renderer Vite port (5173) and the single-instance lock / userData dir
-// (keyed by the app name "Patchbay Canary"). The env hooks to override both
+// (keyed by the app name "Orvilo Canary"). The env hooks to override both
 // already exist — electron.vite.config.ts reads DESKTOP_RENDERER_PORT and
 // src/main/index.ts reads DESKTOP_APP_SUFFIX — but nothing derives unique
 // values per worktree. This module does, mirroring the offset scheme that
@@ -20,7 +20,7 @@ import { basename, join, resolve } from "node:path";
 
 // Worktree renderer ports start at 5174 so they never reuse 5173 — the primary
 // checkout's default — even when a worktree's offset is 0 (e.g. POSIX cksum of
-// "/tmp/patchbay-3494" is 1189739000, and 1189739000 % 1000 === 0). Range 5174–6173.
+// "/tmp/orvilo-3494" is 1189739000, and 1189739000 % 1000 === 0). Range 5174–6173.
 const RENDERER_PORT_BASE = 5174;
 const OFFSET_MODULO = 1000;
 
@@ -106,13 +106,13 @@ export function appSuffixForPath(path) {
 // makes collisions between arbitrary worktree locations negligible. Keep the
 // hash in sync with apps/desktop/src/shared/desktop-app-identity.ts.
 export function callbackProtocolForPath(appPath, channel = "development") {
-  const prefix = channel === "staging" ? "patchbay-staging" : "patchbay-canary";
+  const prefix = channel === "staging" ? "orvilo-staging" : "orvilo-canary";
   return `${prefix}-${identityHashForPath(appPath)}`;
 }
 
 // A linked git worktree has a `.git` FILE (a "gitdir:" pointer); the primary
 // checkout has a `.git` DIRECTORY. We only auto-isolate linked worktrees, so
-// the primary checkout keeps the unchanged 5173 / "Patchbay Canary" defaults.
+// the primary checkout keeps the unchanged 5173 / "Orvilo Canary" defaults.
 export function isLinkedWorktree(root) {
   try {
     return statSync(join(root, ".git")).isFile();
@@ -133,7 +133,7 @@ export function applyWorktreeDevEnv(env, { root, log = false } = {}) {
   const hasPort = Boolean(env.DESKTOP_RENDERER_PORT);
   const hasSuffix = Boolean(env.DESKTOP_APP_SUFFIX);
   const linked = isLinkedWorktree(root);
-  const channel = env.PATCHBAY_DESKTOP_CHANNEL === "staging" ? "staging" : "development";
+  const channel = env.ORVILO_DESKTOP_CHANNEL === "staging" ? "staging" : "development";
 
   if (!hasPort && (linked || channel === "staging")) {
     env.DESKTOP_RENDERER_PORT = String(

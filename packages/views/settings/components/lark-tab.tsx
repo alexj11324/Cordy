@@ -14,9 +14,9 @@ import { ChevronRight, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 // was fine. The named export maps straight to `exports.QRCode` and
 // resolves correctly under both bundlers.
 import { QRCode } from "react-qr-code";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { cn } from "@orvilo/ui/lib/utils";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,7 +26,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -34,14 +34,14 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@patchbay/ui/components/ui/dialog";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { larkInstallationsOptions, larkKeys } from "@patchbay/core/lark";
-import { api, ApiError } from "@patchbay/core/api";
-import type { LarkInstallation, LarkInstallStatusResponse } from "@patchbay/core/types";
+} from "@orvilo/ui/components/ui/dialog";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { memberListOptions } from "@orvilo/core/workspace/queries";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { larkInstallationsOptions, larkKeys } from "@orvilo/core/lark";
+import { api, ApiError } from "@orvilo/core/api";
+import type { LarkInstallation, LarkInstallStatusResponse } from "@orvilo/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useLocale, useT } from "../../i18n";
 
@@ -59,7 +59,7 @@ const LARK_INTL_CONNECT_ENABLED: boolean = false;
 // backend enforces it; the UI hides the button for non-admins to match).
 //
 // Adding a new installation flows through the Agent detail page: the
-// install path is per-agent (each Patchbay Agent gets exactly one Bot —
+// install path is per-agent (each Orvilo Agent gets exactly one Bot —
 // see the (workspace_id, agent_id) UNIQUE in lark_installation), so
 // asking the user to pick an agent here would re-create that page's
 // picker. The "Bind your first agent" copy in the empty state hints
@@ -232,8 +232,8 @@ function InstallationRow({
 }) {
   const { t } = useT("settings");
   const locale = useLocale();
-  // The bot is bound 1:1 to a Patchbay Agent (per the (workspace_id,
-  // agent_id) UNIQUE in lark_installation). Render the Patchbay agent's
+  // The bot is bound 1:1 to an Orvilo Agent (per the (workspace_id,
+  // agent_id) UNIQUE in lark_installation). Render the Orvilo agent's
   // identity here rather than the raw Lark app_id / bot_open_id — those
   // mean nothing to product users. getAgentName falls back to
   // "Unknown Agent" when the agent has been deleted; the Disconnect

@@ -11,13 +11,13 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Automation } from "@patchbay/core/types";
+import type { Automation } from "@orvilo/core/types";
 import {
   useDeleteAutomation,
   useUpdateAutomation,
-} from "@patchbay/core/automations";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/automations";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -25,14 +25,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import { useT } from "../../i18n";
 import { useIntentNavigate } from "../../navigation";
 

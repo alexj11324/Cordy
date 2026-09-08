@@ -3,7 +3,7 @@ import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
-import type { Automation } from "@patchbay/core/types";
+import type { Automation } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 const mocks = vi.hoisted(() => ({
@@ -12,20 +12,20 @@ const mocks = vi.hoisted(() => ({
   slackCatalog: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({ settings: () => "/acme/settings" }),
 }));
-vi.mock("@patchbay/core/automations/mutations", () => ({
+vi.mock("@orvilo/core/automations/mutations", () => ({
   useUpdateAutomation: () => ({ mutate: mocks.update, isPending: false }),
 }));
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   workspaceMcpServersOptions: () => ({
     queryKey: ["mcp"],
     queryFn: async () => [{ id: "mcp-1", name: "Issue tracker" }],
   }),
 }));
-vi.mock("@patchbay/core/slack/queries", () => ({
+vi.mock("@orvilo/core/slack/queries", () => ({
   slackInstallationsOptions: () => ({
     queryKey: ["slack-installations"],
     queryFn: () => mocks.slackList(),

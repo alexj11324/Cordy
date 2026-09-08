@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // completeTaskViaHandler drives the daemon CompleteTask endpoint for taskID.
@@ -399,7 +399,7 @@ func TestCompleteTask_DoesNotReconcilePlainWorkerReplyOnTeamIssue(t *testing.T) 
 		"issue_id":       issueID,
 		"status":         "running",
 		"is_leader_task": true,
-		"team_id":       fx.TeamID,
+		"team_id":        fx.TeamID,
 		"created_at":     testutil.Raw("now() - interval '10 minutes'"),
 		"started_at":     testutil.Raw("now() - interval '5 minutes'"),
 	})

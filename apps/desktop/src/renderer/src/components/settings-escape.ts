@@ -1,4 +1,4 @@
-import { isImeComposing } from "@patchbay/core/utils";
+import { isImeComposing } from "@orvilo/core/utils";
 
 /** Open Base UI layers that own Escape before Settings does. */
 const OPEN_LAYER_SELECTOR = [

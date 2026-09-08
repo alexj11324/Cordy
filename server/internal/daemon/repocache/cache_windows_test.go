@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
 )
 
 // The isolated checkout exists so a Codex task can commit inside its own
@@ -183,7 +183,7 @@ func tempDirOnOtherVolume(t *testing.T, other string) string {
 		if strings.ToUpper(volume) == skipVolume {
 			continue
 		}
-		dir, err := os.MkdirTemp(volume+`\`, "patchbay-repocache-")
+		dir, err := os.MkdirTemp(volume+`\`, "orvilo-repocache-")
 		if err != nil {
 			continue
 		}

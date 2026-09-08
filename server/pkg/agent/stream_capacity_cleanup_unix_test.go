@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testexec"
+	"github.com/orvilo-ai/orvilo/server/internal/testexec"
 )
 
 func TestClaudeCapacityStopsLingeringWorker(t *testing.T) {

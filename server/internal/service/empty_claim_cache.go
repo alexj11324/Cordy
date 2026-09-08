@@ -17,23 +17,23 @@ import (
 // which closes the race where a slow claim writes an empty verdict
 // AFTER an enqueue has already invalidated it:
 //
-//   T1 claim:   v0 := GET version
-//               SELECT ... -> empty
-//               (slow, e.g. GC pause)
-//   T2 enqueue: INSERT row
-//               INCR version  (-> v1)
-//               wakeup
-//   T1 claim:   SET empty = v0
-//   T3 claim:   v1' := GET version (== v1)
-//               GET empty (== v0) -> v0 != v1, treat as miss -> SELECT
+//	T1 claim:   v0 := GET version
+//	            SELECT ... -> empty
+//	            (slow, e.g. GC pause)
+//	T2 enqueue: INSERT row
+//	            INCR version  (-> v1)
+//	            wakeup
+//	T1 claim:   SET empty = v0
+//	T3 claim:   v1' := GET version (== v1)
+//	            GET empty (== v0) -> v0 != v1, treat as miss -> SELECT
 //
 // Without the version tag T3 would have hit the stale empty key and
 // the just-queued task would sit idle until the empty key's TTL
 // expired. With it, the only window left is one extra DB SELECT per
 // runtime per concurrent enqueue, never a stalled task.
 const (
-	emptyClaimCachePrefix   = "pby:claim:runtime:empty:"
-	emptyClaimVersionPrefix = "pby:claim:runtime:version:"
+	emptyClaimCachePrefix   = "ovy:claim:runtime:empty:"
+	emptyClaimVersionPrefix = "ovy:claim:runtime:version:"
 )
 
 // EmptyClaimCacheTTL bounds how long a cached "no queued task" verdict
@@ -82,7 +82,7 @@ func NewEmptyClaimCache(rdb *redis.Client) *EmptyClaimCache {
 	return &EmptyClaimCache{rdb: rdb}
 }
 
-func emptyClaimKey(runtimeID string) string   { return emptyClaimCachePrefix + runtimeID }
+func emptyClaimKey(runtimeID string) string     { return emptyClaimCachePrefix + runtimeID }
 func emptyClaimVersion(runtimeID string) string { return emptyClaimVersionPrefix + runtimeID }
 
 func (c *EmptyClaimCache) bounded(ctx context.Context) (context.Context, context.CancelFunc) {

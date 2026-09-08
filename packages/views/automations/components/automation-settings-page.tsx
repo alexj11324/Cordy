@@ -3,20 +3,20 @@
 import type { ReactNode } from "react";
 import { ChevronDown, FolderKanban } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { projectDetailOptions } from "@patchbay/core/projects/queries";
-import type { AutomationStatus } from "@patchbay/core/types";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { projectDetailOptions } from "@orvilo/core/projects/queries";
+import type { AutomationStatus } from "@orvilo/core/types";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@patchbay/ui/components/ui/tabs";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/tabs";
+import { cn } from "@orvilo/ui/lib/utils";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { ProjectIcon } from "../../projects/components/project-icon";

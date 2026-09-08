@@ -1,6 +1,6 @@
 # Self-Hosting Guide
 
-Deploy Patchbay on your own infrastructure in minutes.
+Deploy Orvilo on your own infrastructure in minutes.
 
 ## Architecture
 
@@ -10,7 +10,7 @@ Deploy Patchbay on your own infrastructure in minutes.
 | **Frontend** | Web application | Next.js 16 |
 | **Database** | Primary data store | PostgreSQL 17 (`pgcrypto` + `pg_trgm`) |
 
-Each user who runs AI agents locally also installs the **`patchbay` CLI** and runs the **agent daemon** on their own machine.
+Each user who runs AI agents locally also installs the **`orvilo` CLI** and runs the **agent daemon** on their own machine.
 
 ## Quick Install (Recommended)
 
@@ -26,7 +26,7 @@ Two commands to set up everything — server, CLI, and configuration.
 curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
 
 # 2. Configure CLI, authenticate, and start the daemon
-patchbay setup self-host
+orvilo setup self-host
 ```
 </details>
 <details>
@@ -39,11 +39,11 @@ patchbay setup self-host
 $env:ORVILO_MODE="with-server"; irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 
 # 2. Configure CLI, authenticate, and start the daemon
-patchbay setup self-host
+orvilo setup self-host
 ```
 </details>
 
-This installs the `patchbay` CLI, checks out the latest self-host assets, pulls the official Patchbay images from GHCR, and configures everything for localhost.
+This installs the `orvilo` CLI, checks out the latest self-host assets, pulls the official Orvilo images from GHCR, and configures everything for localhost.
 
 Open http://localhost:3000. To log in, configure `RESEND_API_KEY` in `.env` for email-based codes (recommended), or leave Resend unset and copy the generated code from the backend logs. See [Step 2 — Log In](#step-2--log-in) for details.
 
@@ -52,7 +52,7 @@ Open http://localhost:3000. To log in, configure `RESEND_API_KEY` in `.env` for 
 > **CLI only?** If the self-host server is already running and you only need the CLI on a macOS/Linux machine, install it with Homebrew:
 >
 > ```bash
-> brew install alexj11324/tap/patchbay
+> brew install alexj11324/tap/orvilo
 > ```
 
 ---
@@ -75,7 +75,7 @@ make selfhost
 
 By default it pulls the latest stable release images from GHCR. To build the backend/web from your current checkout instead, run `make selfhost-build`.
 If the selected GHCR tag has not been published yet, `make selfhost` now tells you to fall back to `make selfhost-build`.
-`make selfhost-build` uses local `patchbay-backend:dev` / `patchbay-web:dev` tags, so it does not overwrite the pulled `:latest` images.
+`make selfhost-build` uses local `orvilo-backend:dev` / `orvilo-web:dev` tags, so it does not overwrite the pulled `:latest` images.
 
 Once ready:
 
@@ -105,7 +105,7 @@ Each team member who wants to run AI agents locally needs to:
 ### a) Install the CLI and an AI agent
 
 ```bash
-brew install alexj11324/tap/patchbay
+brew install alexj11324/tap/orvilo
 ```
 
 You also need at least one AI agent CLI installed:
@@ -132,12 +132,12 @@ You also need at least one AI agent CLI installed:
 - Qwen Code (`qwen` on PATH)
 - [QwenPaw](https://github.com/agentscope-ai/QwenPaw) (`qwenpaw` on PATH; pick its model in QwenPaw's own configuration)
 - [MiniMax Code CLI](https://www.npmjs.com/package/@minimax-ai/code) (`mcode` 0.1.2+ on PATH). Install a supported Node.js release (`>=22.19 <23` or `>=24 <27`), run `npm install --global @minimax-ai/code@latest`, then `mcode login`.
-- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh` on PATH with the Patchbay runtime profile installed; set `DEEPSEEK_API_KEY`)
+- [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh` on PATH with the Orvilo runtime profile installed; set `DEEPSEEK_API_KEY`)
 
 ### b) One-command setup
 
 ```bash
-patchbay setup self-host
+orvilo setup self-host
 ```
 
 This automatically:
@@ -149,13 +149,13 @@ This automatically:
 For on-premise deployments with custom domains:
 
 ```bash
-patchbay setup self-host --server-url https://api.example.com --app-url https://app.example.com
+orvilo setup self-host --server-url https://api.example.com --app-url https://app.example.com
 ```
 
 To verify the daemon is running:
 
 ```bash
-patchbay daemon status
+orvilo daemon status
 ```
 
 > **Alternative:** If you prefer manual steps, see [Manual CLI Configuration](#manual-cli-configuration) below.
@@ -171,30 +171,30 @@ patchbay daemon status
 
 ## Kubernetes Deployment (Alternative)
 
-If you already run a Kubernetes cluster, you can deploy Patchbay there instead of Docker Compose using the released OCI Helm chart at `oci://ghcr.io/alexj11324/charts/patchbay` or the source chart at [`deploy/helm/patchbay/`](deploy/helm/patchbay/). It targets a typical k3s / k8s setup with an Ingress controller and a default `ReadWriteOnce` StorageClass — authored against k3s + Traefik + `local-path`, and should work on any cluster with minor tweaks.
+If you already run a Kubernetes cluster, you can deploy Orvilo there instead of Docker Compose using the released OCI Helm chart at `oci://ghcr.io/alexj11324/charts/orvilo` or the source chart at [`deploy/helm/orvilo/`](deploy/helm/orvilo/). It targets a typical k3s / k8s setup with an Ingress controller and a default `ReadWriteOnce` StorageClass — authored against k3s + Traefik + `local-path`, and should work on any cluster with minor tweaks.
 
 The chart creates the following resources in the target namespace:
 
-- `patchbay-postgres` — `pgvector/pgvector:pg17` backed by a 10Gi PVC
-- `patchbay-backend` — Go API/WS server. Backed by a 5Gi `ReadWriteOnce` uploads PVC by default; set `backend.uploads.persistence.enabled=false` when you have configured S3 (`backend.config.s3Bucket`) and don't want the chart to declare the PVC at all.
-- `patchbay-frontend` — Next.js standalone server
+- `orvilo-postgres` — `pgvector/pgvector:pg17` backed by a 10Gi PVC
+- `orvilo-backend` — Go API/WS server. Backed by a 5Gi `ReadWriteOnce` uploads PVC by default; set `backend.uploads.persistence.enabled=false` when you have configured S3 (`backend.config.s3Bucket`) and don't want the chart to declare the PVC at all.
+- `orvilo-frontend` — Next.js standalone server
 - Two `Ingress` resources: one for the web host, one for the backend host
-- `patchbay-config` ConfigMap (rendered from `values.yaml`)
+- `orvilo-config` ConfigMap (rendered from `values.yaml`)
 
-The `patchbay-secrets` Secret is **not** managed by the chart — you create it once with `kubectl` so real values never need to land in git.
+The `orvilo-secrets` Secret is **not** managed by the chart — you create it once with `kubectl` so real values never need to land in git.
 
-> **Runtime frontend upstreams:** current `patchbay-web` images read `REMOTE_API_URL` and `DOCS_URL` when the Next.js server runs, so API/docs upstream changes do not require a web rebuild. The chart defaults `REMOTE_API_URL` to this release's backend Service. `frontend.compatibility.backendAlias` exists only for legacy images that still baked `REMOTE_API_URL=http://backend:8080` at build time.
+> **Runtime frontend upstreams:** current `orvilo-web` images read `REMOTE_API_URL` and `DOCS_URL` when the Next.js server runs, so API/docs upstream changes do not require a web rebuild. The chart defaults `REMOTE_API_URL` to this release's backend Service. `frontend.compatibility.backendAlias` exists only for legacy images that still baked `REMOTE_API_URL=http://backend:8080` at build time.
 
 > **Prerequisites:** `kubectl` and `helm` (v3.13+ for `--take-ownership`, or v4+) configured for the target cluster, an Ingress controller (Traefik / NGINX), and a default StorageClass.
 
 ### Step 1 — Point hostnames at the cluster
 
-The chart defaults to `patchbay.dev.lan` (web) and `api.patchbay.dev.lan` (backend). Pick one of:
+The chart defaults to `orvilo.dev.lan` (web) and `api.orvilo.dev.lan` (backend). Pick one of:
 
 - **`/etc/hosts`** on every machine that needs access (developer laptops + the machine running the daemon):
 
   ```text
-  192.168.1.206  patchbay.dev.lan api.patchbay.dev.lan
+  192.168.1.206  orvilo.dev.lan api.orvilo.dev.lan
   ```
 
   Replace `192.168.1.206` with any node IP where your Ingress controller's Service is reachable.
@@ -206,15 +206,15 @@ To use different hostnames, override the matching values at install time (see [S
 ### Step 2 — Create the namespace
 
 ```bash
-kubectl create namespace patchbay
+kubectl create namespace orvilo
 ```
 
-### Step 3 — Create the `patchbay-secrets` Secret
+### Step 3 — Create the `orvilo-secrets` Secret
 
 The chart references this Secret by name. Create it once with random values:
 
 ```bash
-kubectl -n patchbay create secret generic patchbay-secrets \
+kubectl -n orvilo create secret generic orvilo-secrets \
   --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
   --from-literal=POSTGRES_PASSWORD="$(openssl rand -hex 16)" \
   --from-literal=RESEND_API_KEY="" \
@@ -228,9 +228,9 @@ Leave optional values empty for now — you can fill them in later (see [Step 5 
 ### Step 4 — Install the chart
 
 ```bash
-helm install patchbay oci://ghcr.io/alexj11324/charts/patchbay \
+helm install orvilo oci://ghcr.io/alexj11324/charts/orvilo \
   --version <chart-version> \
-  -n patchbay
+  -n orvilo
 ```
 
 Released chart versions strip the leading `v` from the Git tag. For example, release tag `v0.3.5` publishes chart version `0.3.5`; the chart defaults the backend and frontend image tags to `v0.3.5`.
@@ -238,35 +238,35 @@ Released chart versions strip the leading `v` from the Git tag. For example, rel
 To override defaults, export the chart values, edit them, and pass them with `-f`:
 
 ```bash
-helm show values oci://ghcr.io/alexj11324/charts/patchbay \
+helm show values oci://ghcr.io/alexj11324/charts/orvilo \
   --version <chart-version> > my-values.yaml
 # edit my-values.yaml — e.g. change ingress hosts, image tags, resource limits
-helm install patchbay oci://ghcr.io/alexj11324/charts/patchbay \
+helm install orvilo oci://ghcr.io/alexj11324/charts/orvilo \
   --version <chart-version> \
-  -n patchbay \
+  -n orvilo \
   -f my-values.yaml
 ```
 
 When developing from a checkout, use the local chart path instead:
 
 ```bash
-helm install patchbay deploy/helm/patchbay -n patchbay
+helm install orvilo deploy/helm/orvilo -n orvilo
 ```
 
 Watch the pods come up:
 
 ```bash
-kubectl -n patchbay get pods -w
+kubectl -n orvilo get pods -w
 ```
 
 On a cold cluster the backend can sit `Running` but not `Ready` for a few minutes while it waits on PostgreSQL and runs migrations — a startupProbe absorbs this, so the pod should not restart. Once the backend reports `Ready`, migrations have completed and `/healthz` returns OK:
 
 ```bash
-curl -H "Host: api.patchbay.dev.lan" http://<ingress-ip>/healthz
+curl -H "Host: api.orvilo.dev.lan" http://<ingress-ip>/healthz
 # {"status":"ok","checks":{"db":"ok","migrations":"ok"}}
 ```
 
-Then open http://patchbay.dev.lan in your browser.
+Then open http://orvilo.dev.lan in your browser.
 
 ### Step 5 — Log In
 
@@ -275,9 +275,9 @@ The chart defaults to `APP_ENV=production` (set in `values.yaml` under `backend.
 - **Recommended (production):** patch the Secret with a real Resend key, then restart the backend:
 
   ```bash
-  kubectl -n patchbay patch secret patchbay-secrets --type=merge \
+  kubectl -n orvilo patch secret orvilo-secrets --type=merge \
     -p '{"stringData":{"RESEND_API_KEY":"re_xxx"}}'
-  kubectl -n patchbay rollout restart deploy/patchbay-backend
+  kubectl -n orvilo rollout restart deploy/orvilo-backend
   ```
 
   Real verification codes will be sent to the email address you enter. See [Advanced Configuration → Email](SELF_HOSTING_ADVANCED.md#email-required-for-authentication).
@@ -285,19 +285,19 @@ The chart defaults to `APP_ENV=production` (set in `values.yaml` under `backend.
 - **Without email configured:** the verification code is generated server-side and printed to the backend pod logs (look for `[DEV] Verification code for ...:`). Useful for one-off testing.
 
   ```bash
-  kubectl -n patchbay logs -f deploy/patchbay-backend | grep "Verification code"
+  kubectl -n orvilo logs -f deploy/orvilo-backend | grep "Verification code"
   ```
 
 - **Deterministic local/private testing:** set `backend.config.appEnv: development` in your values file and `ORVILO_DEV_VERIFICATION_CODE=888888` in the Secret, then `helm upgrade` and restart. This fixed code is ignored when `APP_ENV=production`.
 
   ```bash
-  helm upgrade patchbay oci://ghcr.io/alexj11324/charts/patchbay \
+  helm upgrade orvilo oci://ghcr.io/alexj11324/charts/orvilo \
     --version <chart-version> \
-    -n patchbay \
+    -n orvilo \
     -f my-values.yaml --set backend.config.appEnv=development
-  kubectl -n patchbay patch secret patchbay-secrets --type=merge \
+  kubectl -n orvilo patch secret orvilo-secrets --type=merge \
     -p '{"stringData":{"ORVILO_DEV_VERIFICATION_CODE":"888888"}}'
-  kubectl -n patchbay rollout restart deploy/patchbay-backend
+  kubectl -n orvilo rollout restart deploy/orvilo-backend
   ```
 
 `ALLOW_SIGNUP`, `DISABLE_WORKSPACE_CREATION`, and `GOOGLE_CLIENT_ID` likewise live under `backend.config.*` in `values.yaml` (as `allowSignup`, `disableWorkspaceCreation`, and `googleClientId`). After `helm upgrade`, the backend pod will roll automatically because the ConfigMap hash changes; the web UI reads all three from `/api/config` at runtime, so no web rebuild is needed.
@@ -309,27 +309,32 @@ The chart defaults to `APP_ENV=production` (set in `values.yaml` under `backend.
 The daemon runs on your local machine, not in the cluster. Install the CLI and an AI agent as in [Step 3](#step-3--install-cli--start-daemon) above, then point the CLI at your Ingress hostnames:
 
 ```bash
-patchbay setup self-host \
-  --server-url http://api.patchbay.dev.lan \
-  --app-url http://patchbay.dev.lan
+orvilo setup self-host \
+  --server-url http://api.orvilo.dev.lan \
+  --app-url http://orvilo.dev.lan
 ```
 
 Make sure the machine running the daemon has the same `/etc/hosts` (or DNS) entries from [Step 1](#step-1--point-hostnames-at-the-cluster).
 
 ### Updating
 
+The commands below apply to installations already using the Orvilo deployment
+identity. Pre-cutover installations require a separate migration; changing the
+chart name does not migrate an existing Helm release's immutable Deployment
+selectors. See [the identity cutover procedure](docs/operations/orvilo-selfhost-cutover.md).
+
 To pull the latest images without changing the chart version when your values still use the mutable `latest` image tag:
 
 ```bash
-kubectl -n patchbay rollout restart deploy/patchbay-backend deploy/patchbay-frontend
+kubectl -n orvilo rollout restart deploy/orvilo-backend deploy/orvilo-frontend
 ```
 
-To upgrade to a specific Patchbay release, upgrade to the matching chart version. The released chart defaults its app images to the matching Git tag:
+To upgrade to a specific Orvilo release, upgrade to the matching chart version. The released chart defaults its app images to the matching Git tag:
 
 ```bash
-helm upgrade patchbay oci://ghcr.io/alexj11324/charts/patchbay \
+helm upgrade orvilo oci://ghcr.io/alexj11324/charts/orvilo \
   --version <chart-version> \
-  -n patchbay \
+  -n orvilo \
   -f my-values.yaml
 ```
 
@@ -346,28 +351,28 @@ images:
 Then run the same upgrade command with `-f my-values.yaml`:
 
 ```bash
-helm upgrade patchbay oci://ghcr.io/alexj11324/charts/patchbay \
+helm upgrade orvilo oci://ghcr.io/alexj11324/charts/orvilo \
   --version <chart-version> \
-  -n patchbay \
+  -n orvilo \
   -f my-values.yaml
 ```
 
 To roll back if an upgrade goes sideways:
 
 ```bash
-helm -n patchbay rollback patchbay
+helm -n orvilo rollback orvilo
 ```
 
-> **Upgrading from `v0.3.4` to `v0.3.5+` fails with `refusing to drop legacy daily rollups: ...`?** As of MUL-2957 the `migrate up` command runs an idempotent monthly-slice backfill automatically before applying migration `103`, so a clean upgrade is a single `helm upgrade` + backend rollout. If you are still on a pre-MUL-2957 binary or the auto-hook fails, run the standalone backfill against the same database the chart is using (`kubectl -n patchbay exec deploy/patchbay-backend -- ./backfill_task_usage_hourly --sleep-between-slices=2s`), then restart the backend deployment to re-apply migrations. See [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup) for the full recovery flow.
+> **Upgrading from `v0.3.4` to `v0.3.5+` fails with `refusing to drop legacy daily rollups: ...`?** As of MUL-2957 the `migrate up` command runs an idempotent monthly-slice backfill automatically before applying migration `103`, so a clean upgrade is a single `helm upgrade` + backend rollout. If you are still on a pre-MUL-2957 binary or the auto-hook fails, run the standalone backfill against the same database the chart is using (`kubectl -n orvilo exec deploy/orvilo-backend -- ./backfill_task_usage_hourly --sleep-between-slices=2s`), then restart the backend deployment to re-apply migrations. See [Advanced Configuration → Usage Dashboard Rollup](SELF_HOSTING_ADVANCED.md#usage-dashboard-rollup) for the full recovery flow.
 
 ### Tearing down
 
 ```bash
 # Remove the workloads but keep the PVCs and the Secret
-helm -n patchbay uninstall patchbay
+helm -n orvilo uninstall orvilo
 
 # Wipe everything, including PostgreSQL data and uploads
-kubectl delete namespace patchbay
+kubectl delete namespace orvilo
 ```
 
 ---
@@ -383,7 +388,7 @@ Multiple backend replicas are safe: each replica ticks every 30 seconds and trie
 > - **Sharded or dual relay mode (`REDIS_URL` set, the default with Redis):** the reply or inbox push is forwarded to the lease holder over the relay and delivered. Multi-replica WeCom is supported in this mode.
 > - **Legacy relay mode, or no Redis:** the reply is dropped and the WeCom user sees nothing. Run the WeCom-enabled backend as a single replica in this configuration.
 >
-> In **every** mode there is one residual window: a reply produced while *no* replica holds a live connection to that bot — all of them mid-reconnect — is not delivered. It is **counted**: the replica that routed it checks afterwards whether any replica ever claimed the delivery, and increments `patchbay_wecom_outbound_dropped_total{reason="no_live_connection"}` when none did, so the window can be measured on a deployment rather than guessed at. If a rare lost reply during reconnects is unacceptable, a single replica remains the most conservative deployment. Everything else (including the rollup scheduler above) is multi-replica safe.
+> In **every** mode there is one residual window: a reply produced while *no* replica holds a live connection to that bot — all of them mid-reconnect — is not delivered. It is **counted**: the replica that routed it checks afterwards whether any replica ever claimed the delivery, and increments `orvilo_wecom_outbound_dropped_total{reason="no_live_connection"}` when none did, so the window can be measured on a deployment rather than guessed at. If a rare lost reply during reconnects is unacceptable, a single replica remains the most conservative deployment. Everything else (including the rollup scheduler above) is multi-replica safe.
 
 ```sql
 SELECT plan_time, status, attempt, runner_id,
@@ -422,7 +427,7 @@ If you already have a `pg_cron` job in production, the safe sequence to retire i
      FROM cron.job WHERE jobname = 'rollup_task_usage_hourly';
    ```
 
-3. Leave the `pg_cron` extension itself installed unless you are sure no other workload depends on it. The bundled `pgvector/pgvector:pg17` image does **not** ship `pg_cron`, so nothing in Patchbay's default install needs it; uninstalling `pg_cron` from a custom image that other workloads still use is a separate decision.
+3. Leave the `pg_cron` extension itself installed unless you are sure no other workload depends on it. The bundled `pgvector/pgvector:pg17` image does **not** ship `pg_cron`, so nothing in Orvilo's default install needs it; uninstalling `pg_cron` from a custom image that other workloads still use is a separate decision.
 
 External cron / systemd timer / Kubernetes `CronJob` setups that call `SELECT rollup_task_usage_hourly()` directly can be retired the same way — once `sys_cron_executions` shows steady SUCCESS rows from the in-process scheduler, the external job is redundant and can be removed.
 
@@ -441,22 +446,27 @@ If you cloned the repo manually:
 make selfhost-stop
 
 # Stop the local daemon
-patchbay daemon stop
+orvilo daemon stop
 ```
 
-## Switching to Patchbay Cloud
+## Switching to Orvilo Cloud
 
-If you've been self-hosting and want to switch your CLI to [Patchbay Cloud](https://patchbay.aspectlylabs.com):
+If you've been self-hosting and want to switch your CLI to [Orvilo Cloud](https://orvilo.aspectlylabs.com):
 
 ```bash
-patchbay setup
+orvilo setup
 ```
 
-This reconfigures the CLI for Patchbay Cloud, re-authenticates, and restarts the daemon. You will be prompted before overwriting the existing configuration.
+This reconfigures the CLI for Orvilo Cloud, re-authenticates, and restarts the daemon. You will be prompted before overwriting the existing configuration.
 
 > Your local Docker services are unaffected. Stop them separately if you no longer need them.
 
 ## Upgrading
+
+For pre-cutover installations, complete the
+[separate identity migration](docs/operations/orvilo-selfhost-cutover.md) first.
+The renamed Compose project creates new volumes and does not adopt the old
+project's containers or data. The commands below are for existing Orvilo projects.
 
 ```bash
 docker compose -f docker-compose.selfhost.yml pull
@@ -497,27 +507,27 @@ docker compose -f docker-compose.selfhost.yml up -d
 
 ## Manual CLI Configuration
 
-If you prefer configuring the CLI step by step instead of `patchbay setup`:
+If you prefer configuring the CLI step by step instead of `orvilo setup`:
 
 ```bash
 # Point CLI to your local server
-patchbay config set server_url http://localhost:8080
-patchbay config set app_url http://localhost:3000
+orvilo config set server_url http://localhost:8080
+orvilo config set app_url http://localhost:3000
 
 # Login (opens browser)
-patchbay login
+orvilo login
 
 # Start the daemon
-patchbay daemon start
+orvilo daemon start
 ```
 
 For production deployments with TLS:
 
 ```bash
-patchbay config set app_url https://app.example.com
-patchbay config set server_url https://api.example.com
-patchbay login
-patchbay daemon start
+orvilo config set app_url https://app.example.com
+orvilo config set server_url https://api.example.com
+orvilo login
+orvilo daemon start
 ```
 
 ## Advanced Configuration

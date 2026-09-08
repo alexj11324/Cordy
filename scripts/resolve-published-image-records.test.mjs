@@ -16,7 +16,7 @@ test("parseInspectDigest reads the image digest line", () => {
 });
 
 test("writePublishedImageRecords emits the production assembler input shape", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "patchbay-image-records-"));
+  const directory = await mkdtemp(path.join(tmpdir(), "orvilo-image-records-"));
   const sourceSha = "b".repeat(40);
   const digest = "sha256:" + "c".repeat(64);
   await writePublishedImageRecords({
@@ -24,7 +24,7 @@ test("writePublishedImageRecords emits the production assembler input shape", as
     sourceSha,
     repositoryOwner: "alexj11324",
     inspect: (reference) => {
-      assert.match(reference, /^ghcr\.io\/alexj11324\/patchbay-(backend|web|docs|auth-broker):sha-b{40}$/u);
+      assert.match(reference, /^ghcr\.io\/alexj11324\/orvilo-(backend|web|docs|auth-broker):sha-b{40}$/u);
       return `Digest: ${digest}\n`;
     },
   });
@@ -32,9 +32,9 @@ test("writePublishedImageRecords emits the production assembler input shape", as
   assert.deepEqual(backend, {
     schema_version: 1,
     name: "backend",
-    repository: "ghcr.io/alexj11324/patchbay-backend",
+    repository: "ghcr.io/alexj11324/orvilo-backend",
     digest,
     source_sha: sourceSha,
-    ref: `ghcr.io/alexj11324/patchbay-backend@${digest}`,
+    ref: `ghcr.io/alexj11324/orvilo-backend@${digest}`,
   });
 });

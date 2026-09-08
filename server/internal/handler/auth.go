@@ -19,11 +19,11 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // SignupError represents signup restriction errors
@@ -226,7 +226,7 @@ func (h *Handler) findOrCreateUserWithQueries(ctx context.Context, queries *db.Q
 const signupSourceMaxLen = 512
 
 func signupSourceFromRequest(r *http.Request) string {
-	c, err := r.Cookie("patchbay_signup_source")
+	c, err := r.Cookie("orvilo_signup_source")
 	if err != nil || c == nil {
 		return ""
 	}
@@ -459,7 +459,7 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 }
 
 // ClerkLogin exchanges a verified Clerk browser session for the native
-// Patchbay JWT/cookie used by the Go API. The Clerk token is never persisted.
+// Orvilo JWT/cookie used by the Go API. The Clerk token is never persisted.
 func (h *Handler) ClerkLogin(w http.ResponseWriter, r *http.Request) {
 	authorization := strings.TrimSpace(r.Header.Get("Authorization"))
 	scheme, token, ok := strings.Cut(authorization, " ")

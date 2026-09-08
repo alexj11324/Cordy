@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/composio"
+	"github.com/orvilo-ai/orvilo/server/pkg/composio"
 )
 
 // helper: produce a valid signature for the given inputs.

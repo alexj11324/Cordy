@@ -21,14 +21,14 @@ vi.mock("@/stores/window-overlay-store", () => ({
 
 const auth = vi.hoisted(() => ({ logout: vi.fn() }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(() => null, {
     getState: () => auth,
   }),
 }));
 
 import { DesktopNavigationProvider, routeContentLinkPath } from "./navigation";
-import { currentPath, useNavigation } from "@patchbay/views/navigation";
+import { currentPath, useNavigation } from "@orvilo/views/navigation";
 import { useTabStore, getActiveTab } from "@/stores/tab-store";
 
 beforeEach(() => {

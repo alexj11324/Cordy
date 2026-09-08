@@ -3,7 +3,7 @@
 import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen } from "@testing-library/react";
-import type { SkillSummary } from "@patchbay/core/types";
+import type { SkillSummary } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 
@@ -63,40 +63,40 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (selector: (state: unknown) => unknown) =>
     selector({ user: { id: "user-1" } }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 // Partial mock: SkillIcon resolves its icon from the real WORKSPACE_PAGES.
-vi.mock("@patchbay/core/paths", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
+vi.mock("@orvilo/core/paths", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@orvilo/core/paths")>()),
   useWorkspacePaths: () => ({
     skillDetail: (id: string) => `/acme/skills/${id}`,
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   skillListOptions: () => ({ queryKey: ["skills"] }),
   agentListOptions: () => ({ queryKey: ["agents"] }),
   memberListOptions: () => ({ queryKey: ["members"] }),
   selectSkillAssignments: () => new Map(),
 }));
 
-vi.mock("@patchbay/core/runtimes", () => ({
+vi.mock("@orvilo/core/runtimes", () => ({
   runtimeListOptions: () => ({ queryKey: ["runtimes"] }),
   runtimeDisplayLabel: () => "runtime",
 }));
 
-vi.mock("@patchbay/core/workspace/avatar-url", () => ({
+vi.mock("@orvilo/core/workspace/avatar-url", () => ({
   resolvePublicFileUrl: (u: string | null) => u,
 }));
 
-vi.mock("@patchbay/core/skills/stores", () => ({
+vi.mock("@orvilo/core/skills/stores", () => ({
   useSkillsViewStore: (selector: (state: unknown) => unknown) =>
     selector(mocks.viewState),
   DEFAULT_HIDDEN_COLUMNS: [],
@@ -104,10 +104,10 @@ vi.mock("@patchbay/core/skills/stores", () => ({
 
 // View-layer children with heavy / portal deps — stubbed to keep the test on
 // the row/anchor event wiring.
-vi.mock("@patchbay/ui/components/common/actor-avatar", () => ({
+vi.mock("@orvilo/ui/components/common/actor-avatar", () => ({
   ActorAvatar: () => null,
 }));
-vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
+vi.mock("@orvilo/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   TooltipContent: () => null,

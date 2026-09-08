@@ -3,8 +3,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   chatKeys,
   chatQuickActionsFailureOptions,
-} from "@patchbay/core/chat/queries";
-import type { ChatQuickActionsFailureState } from "@patchbay/core/types";
+} from "@orvilo/core/chat/queries";
+import type { ChatQuickActionsFailureState } from "@orvilo/core/types";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 

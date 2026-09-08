@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 func TestTaskWakeupURL(t *testing.T) {
@@ -38,9 +38,9 @@ func TestTaskWakeupURL(t *testing.T) {
 		},
 		{
 			name:       "base path",
-			baseURL:    "https://api.example.com/patchbay",
+			baseURL:    "https://api.example.com/orvilo",
 			runtimeIDs: []string{"runtime-1"},
-			want:       "wss://api.example.com/patchbay/api/daemon/ws?runtime_ids=runtime-1",
+			want:       "wss://api.example.com/orvilo/api/daemon/ws?runtime_ids=runtime-1",
 		},
 		{
 			name:       "account-only connection",

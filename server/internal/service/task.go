@@ -17,25 +17,25 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/attribution"
-	"github.com/patchbay-ai/patchbay/server/internal/channelquota"
-	"github.com/patchbay-ai/patchbay/server/internal/chattitle"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
-	"github.com/patchbay-ai/patchbay/server/internal/runtimeapps"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
-	"github.com/patchbay-ai/patchbay/server/pkg/featureflag"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
-	"github.com/patchbay-ai/patchbay/server/pkg/redact"
-	"github.com/patchbay-ai/patchbay/server/pkg/skillbundle"
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/attribution"
+	"github.com/orvilo-ai/orvilo/server/internal/channelquota"
+	"github.com/orvilo-ai/orvilo/server/internal/chattitle"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/featureflags"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/internal/runtimeapps"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/pkg/featureflag"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/pkg/redact"
+	"github.com/orvilo-ai/orvilo/server/pkg/skillbundle"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 )
 
 type TaskService struct {
@@ -77,7 +77,7 @@ type TaskService struct {
 	// epic, MUL-3721) — the integration's "current user's connected apps
 	// → MCP session URL" hook called from each Enqueue* path. Optional: a
 	// nil ComposioOverlayBuilder turns the overlay step into a no-op so
-	// every Patchbay deployment that hasn't enabled Composio behaves
+	// every Orvilo deployment that hasn't enabled Composio behaves
 	// exactly as before. Wired in router.go after composiointeg.NewService
 	// succeeds; the concrete type is *composio.Service.
 	Composio ComposioOverlayBuilder
@@ -1053,7 +1053,7 @@ func taskErrorType(reason string) string {
 
 // EnqueueTaskForIssue creates a queued task for an issue with an agent executor.
 // No context snapshot is stored — the agent fetches all data it needs at
-// runtime via the patchbay CLI.
+// runtime via the orvilo CLI.
 func (s *TaskService) EnqueueTaskForIssue(ctx context.Context, issue db.Issue, triggerCommentID ...pgtype.UUID) (db.AgentTaskQueue, error) {
 	var commentID pgtype.UUID
 	if len(triggerCommentID) > 0 {
@@ -1519,7 +1519,7 @@ const QuickCreateContextType = "quick_create"
 // EnqueueQuickCreateTask creates a queued task that has no issue / chat /
 // automation link — the user's natural-language prompt is stored in the
 // task's context JSONB and the agent is expected to translate it into a
-// `patchbay issue create` call. Pre-validates that the agent is reachable
+// `orvilo issue create` call. Pre-validates that the agent is reachable
 // (not archived, has a runtime) so the API can reject up-front rather than
 // queue a task no one will ever claim.
 //
@@ -2695,7 +2695,7 @@ func (s *TaskService) OpenPatrickOnboardingChat(ctx context.Context, session db.
 //
 // Before #1587 this path was "cancel rows and return", which left each affected
 // agent stuck at status="working" indefinitely, requiring a manual
-// `patchbay agent update <id> --status idle` to unwedge. It now reconciles agent
+// `orvilo agent update <id> --status idle` to unwedge. It now reconciles agent
 // status and broadcasts task:cancelled, matching CancelTask and RerunIssue.
 func (s *TaskService) CancelTasksForIssue(ctx context.Context, issueID pgtype.UUID) error {
 	var cancelled []db.AgentTaskQueue
@@ -3321,7 +3321,7 @@ func (s *TaskService) finalizeCancelledChatMessage(ctx context.Context, task db.
 		restorable := len(messages) == 0
 		if restorable {
 			// Channel-ingested user messages are the durable record of what
-			// the platform sender wrote — the sender has no Patchbay composer
+			// the platform sender wrote — the sender has no Orvilo composer
 			// to restore a draft into. The gate is the immutable per-message
 			// channel_ingested stamp, NOT the channel_chat_session_binding
 			// row: archiving a session or rebinding an installation deletes
@@ -5804,7 +5804,7 @@ func (s *TaskService) RerunIssue(ctx context.Context, issueID pgtype.UUID, sourc
 	// active run reaches a terminal state. Rerun used to cancel these too, so
 	// asking an agent for another pass silently killed the pass it was still
 	// working on; interrupting an in-flight run is what CancelTask /
-	// `patchbay issue cancel-task` is for.
+	// `orvilo issue cancel-task` is for.
 	clearPendingSlot := func() int {
 		var cancelled []db.AgentTaskQueue
 		// Atomic with the cancel: a pending coordinator task can already hold a
@@ -7689,7 +7689,7 @@ const quickCreateOversizedFailureDetail = "Quick create failed, but the agent's 
 
 // quickCreateFailureDetail extracts a user-facing failure reason from a
 // quick-create task's final output. The quick-create prompt instructs the agent
-// to exit with the CLI error as its only output when `patchbay issue create`
+// to exit with the CLI error as its only output when `orvilo issue create`
 // fails, so this normally carries the real reason (e.g. an active-duplicate
 // message naming the existing issue). Returns "" when there is no usable output
 // so the caller falls back to a generic message; redaction is applied by

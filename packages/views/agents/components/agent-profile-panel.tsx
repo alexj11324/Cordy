@@ -25,17 +25,17 @@ import {
   effectiveAccessScope,
   isAgentRuntimeBound,
   providerSupportsMcpConfig,
-} from "@patchbay/core/agents";
-import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/agents";
+import { runtimeDisplayLabel } from "@orvilo/core/runtimes";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Tabs,
   TabsList,
   TabsTrigger,
   TabsContent,
-} from "@patchbay/ui/components/ui/tabs";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/tabs";
+import { cn } from "@orvilo/ui/lib/utils";
 import { AppLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AgentPresenceIndicator } from "./agent-presence-indicator";

@@ -20,10 +20,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // fakeOutboundQueries is an in-memory stand-in for the queries Outbound
@@ -56,7 +56,7 @@ type fakeOutboundQueries struct {
 	taskGets int
 	// channelIngested is the channel_ingested stamp on the input batch the
 	// task owns: askedOverWecom for a question typed in the room,
-	// askedInTheWebUI for one typed in Patchbay.
+	// askedInTheWebUI for one typed in Orvilo.
 	//
 	// It is a pointer, and it has no default on purpose. Two gates read this
 	// one stamp in opposite directions — the answer path delivers only when it
@@ -146,7 +146,7 @@ func (f *fakeOutboundQueries) failStampNotSet(taskID string) {
 	msg := "fakeOutboundQueries: the origin gate read the channel_ingested stamp for task " +
 		taskID + ", but this rig never set channelIngested. Say where the question was asked: " +
 		"channelIngested: askedOverWecom() for one typed in the room, askedInTheWebUI() for one " +
-		"typed in Patchbay. There is no default — the answer path delivers only when the stamp is " +
+		"typed in Orvilo. There is no default — the answer path delivers only when the stamp is " +
 		"set and the failure path delivers unless it is, so either zero value would let one of " +
 		"those two pass a test that never stated what it meant."
 	if f.t == nil {
@@ -359,8 +359,8 @@ func TestChatDoneContent(t *testing.T) {
 }
 
 // TestProcessEvent_DoesNotPushAWebUIAnswerIntoTheRoom is the privacy case. A
-// session that originated in WeCom can be continued from the Patchbay web UI,
-// and that answer belongs only in Patchbay. Without the origin gate it is
+// session that originated in WeCom can be continued from the Orvilo web UI,
+// and that answer belongs only in Orvilo. Without the origin gate it is
 // pushed to the bound chat — which in a group means in front of everyone in
 // the room, an answer to a question none of them saw asked.
 func TestProcessEvent_DoesNotPushAWebUIAnswerIntoTheRoom(t *testing.T) {

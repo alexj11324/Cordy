@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { AlertCircle, Info, LogIn } from "lucide-react";
-import { Switch } from "@patchbay/ui/components/ui/switch";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Switch } from "@orvilo/ui/components/ui/switch";
+import { cn } from "@orvilo/ui/lib/utils";
 import { toast } from "sonner";
 import {
   SettingsCard,
@@ -9,8 +9,8 @@ import {
   SettingsRow,
   SettingsSection,
   SettingsTab,
-} from "@patchbay/views/settings";
-import { useT } from "@patchbay/views/i18n";
+} from "@orvilo/views/settings";
+import { useT } from "@orvilo/views/i18n";
 import { reauthenticateDaemon } from "../platform/daemon-reauth";
 import type { DaemonPrefs, DaemonStatus } from "../../../shared/daemon-types";
 import {
@@ -129,8 +129,8 @@ export function DaemonSettingsTab() {
           <Info className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <p className="min-w-0 text-body text-muted-foreground">
             {t(($) => $.desktop.daemon.external_description_before)}{" "}
-            <code className="font-mono text-caption">patchbay daemon start</code> /{" "}
-            <code className="font-mono text-caption">patchbay daemon stop</code>
+            <code className="font-mono text-caption">orvilo daemon start</code> /{" "}
+            <code className="font-mono text-caption">orvilo daemon stop</code>
             {t(($) => $.desktop.daemon.external_description_after)}
           </p>
         </div>

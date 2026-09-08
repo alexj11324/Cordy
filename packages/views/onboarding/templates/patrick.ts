@@ -1,4 +1,4 @@
-import type { PatrickOnboardingLanguage } from "@patchbay/core/onboarding";
+import type { PatrickOnboardingLanguage } from "@orvilo/core/onboarding";
 
 export type PatrickContentLang = PatrickOnboardingLanguage;
 
@@ -15,7 +15,7 @@ export interface PatrickOnboardingDefinition {
 /**
  * Patrick's name, description, avatar, permissions, and system instructions are
  * NOT here — they are server constants delivered by `POST /api/agents/patrick`.
- * Keeping them out of the client is what lets Patchbay update Patrick's prompt by
+ * Keeping them out of the client is what lets Orvilo update Patrick's prompt by
  * deploying, and stops a client from minting an agent that claims Patrick's
  * identity.
  *

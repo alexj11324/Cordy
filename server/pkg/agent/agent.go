@@ -26,7 +26,7 @@ type Backend interface {
 type ExecOptions struct {
 	Cwd   string
 	Model string
-	// SystemPrompt carries the Patchbay runtime brief for the few providers
+	// SystemPrompt carries the Orvilo runtime brief for the few providers
 	// that cannot pick it up from disk. The daemon leaves it empty for every
 	// other provider (see daemon.providerNeedsInlineSystemPrompt), because the
 	// brief is already delivered as a per-task context file in the workdir —
@@ -315,7 +315,7 @@ type Config struct {
 // migration 254 to add reasonix, migration 313 to add dsh, migration 342 to
 // add mcode, migration 370 to add dim, migration 403 to add zeroclaw, and
 // migration 441 to add codearts): a custom runtime profile may
-// only be based on a backend Patchbay officially supports.
+// only be based on a backend Orvilo officially supports.
 // qoder and qoderclicn share the same ACP backend; keeping both provider keys
 // lets the daemon auto-detect and register the international and China-region
 // binaries independently. traecli (Trae) has a New backend, launch
@@ -487,7 +487,7 @@ var launchHeaders = map[string]string{
 	"hermes":      "hermes acp",
 	"kimi":        "kimi acp",
 	"reasonix":    "reasonix acp",
-	"dsh":         "dsh --profile patchbay (stdio)",
+	"dsh":         "dsh --profile orvilo (stdio)",
 	"kiro":        "kiro-cli acp",
 	"openclaw":    "openclaw agent (json)",
 	"opencode":    "opencode run (json)",

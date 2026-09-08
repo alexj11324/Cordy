@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Builds the `patchbay` CLI from server/cmd/patchbay and copies the binary
+// Builds the `orvilo` CLI from server/cmd/orvilo and copies the binary
 // into apps/desktop/resources/bin/ so electron-builder can package the exact
 // source revision. Development uses prepare-dev-runtime.mjs instead; ordinary
 // frontend/Electron builds do not prepare a CLI.
 //
-// ldflags mirror `make build` so `patchbay --version` reports a meaningful
+// ldflags mirror `make build` so `orvilo --version` reports a meaningful
 // version / commit / date.
 //
 // A missing Go toolchain or a genuine compile error is fatal. Packaging an app
@@ -59,7 +59,7 @@ function normalizeRuntimeArch(arch) {
 }
 
 function binaryNameForPlatform(platform) {
-  return platform === "win32" ? "patchbay.exe" : "patchbay";
+  return platform === "win32" ? "orvilo.exe" : "orvilo";
 }
 
 const targetPlatform = normalizeRuntimePlatform(
@@ -114,7 +114,7 @@ execFileSync(
     ldflags,
     "-o",
     srcBinary,
-    "./cmd/patchbay",
+    "./cmd/orvilo",
   ],
   {
     cwd: serverDir,

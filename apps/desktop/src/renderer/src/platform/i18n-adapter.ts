@@ -1,6 +1,6 @@
-import type { LocaleAdapter, SupportedLocale } from "@patchbay/core/i18n";
+import type { LocaleAdapter, SupportedLocale } from "@orvilo/core/i18n";
 
-const STORAGE_KEY = "patchbay-locale";
+const STORAGE_KEY = "orvilo-locale";
 
 // Desktop adapter:
 //   - User choice: localStorage (set by Settings switcher).

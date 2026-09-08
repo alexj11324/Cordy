@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { chatDraftRestoresOptions } from "@patchbay/core/chat/queries";
-import { useConsumeChatDraftRestore } from "@patchbay/core/chat/mutations";
-import { useChatStore } from "@patchbay/core/chat";
-import { removeChatMessageFromCaches } from "@patchbay/core/realtime";
-import type { Attachment } from "@patchbay/core/types";
+import { chatDraftRestoresOptions } from "@orvilo/core/chat/queries";
+import { useConsumeChatDraftRestore } from "@orvilo/core/chat/mutations";
+import { useChatStore } from "@orvilo/core/chat";
+import { removeChatMessageFromCaches } from "@orvilo/core/realtime";
+import type { Attachment } from "@orvilo/core/types";
 
 /**
  * A draft the composer is asked to adopt. Two sources feed it:

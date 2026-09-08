@@ -4,11 +4,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Loader2, Zap } from "lucide-react";
 import { toast } from "sonner";
-import { dispatchReasonCode } from "@patchbay/core/api";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { quickActionListOptions, useRunQuickAction } from "@patchbay/core/quick-actions";
-import type { Comment, CommentTriggerOutcome, QuickAction } from "@patchbay/core/types";
-import { QUICK_ACTION_SIDEBAR_LIMIT } from "@patchbay/core/types";
+import { dispatchReasonCode } from "@orvilo/core/api";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
+import { quickActionListOptions, useRunQuickAction } from "@orvilo/core/quick-actions";
+import type { Comment, CommentTriggerOutcome, QuickAction } from "@orvilo/core/types";
+import { QUICK_ACTION_SIDEBAR_LIMIT } from "@orvilo/core/types";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,9 +17,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@patchbay/ui/components/ui/tooltip";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@orvilo/ui/components/ui/tooltip";
+import { cn } from "@orvilo/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 

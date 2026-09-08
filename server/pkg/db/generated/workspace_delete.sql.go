@@ -1242,7 +1242,7 @@ func (q *Queries) PrepareWorkspaceDeletionLinks(ctx context.Context, workspaceID
 
 const setWorkspaceTeardownMode = `-- name: SetWorkspaceTeardownMode :exec
 
-SELECT set_config('patchbay.workspace_teardown', 'on', true)
+SELECT set_config('orvilo.workspace_teardown', 'on', true)
 `
 
 // Workspace deletion is application-owned. These statements form a fixed,

@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import { ArrowUpRight, Check, Clock, LoaderCircle } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@patchbay/ui/components/ui/tooltip";
-import type { ChatQuickAction } from "@patchbay/core/types";
+} from "@orvilo/ui/components/ui/tooltip";
+import type { ChatQuickAction } from "@orvilo/core/types";
 import { useT } from "../../i18n";
 
 /**

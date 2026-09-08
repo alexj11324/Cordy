@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AgentTask, Issue } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { AgentTask, Issue } from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enIssues from "../../../locales/en/issues.json";
 
@@ -12,12 +12,12 @@ const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 // Mocks — same pattern as the issue-detail test suite.
 // ---------------------------------------------------------------------------
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 const mockOpenModal = vi.fn();
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@orvilo/core/modals", () => ({
   useModalStore: Object.assign(
     (selector?: any) => {
       const state = { open: mockOpenModal };
@@ -28,7 +28,7 @@ vi.mock("@patchbay/core/modals", () => ({
 }));
 
 const mockAuthState = { user: { id: "user-1" }, isAuthenticated: true };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => (selector ? selector(mockAuthState) : mockAuthState),
     { getState: () => mockAuthState },
@@ -36,7 +36,7 @@ vi.mock("@patchbay/core/auth", () => ({
   registerAuthStore: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   memberListOptions: () => ({
     queryKey: ["workspaces", "ws-1", "members"],
     queryFn: () =>
@@ -58,11 +58,11 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: (_t: string, _id: string) => "" }),
 }));
 
-vi.mock("@patchbay/core/pins", () => ({
+vi.mock("@orvilo/core/pins", () => ({
   pinListOptions: () => ({
     queryKey: ["pins", "ws-1", "user-1"],
     queryFn: () => Promise.resolve([]),
@@ -71,13 +71,13 @@ vi.mock("@patchbay/core/pins", () => ({
   useDeletePin: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@orvilo/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@orvilo/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/paths")>(
+    "@orvilo/core/paths",
   );
   return {
     ...actual,
@@ -122,11 +122,11 @@ const { apiMocks, copyTextMock } = vi.hoisted(() => ({
   copyTextMock: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: apiMocks,
 }));
 
-vi.mock("@patchbay/ui/lib/clipboard", () => ({
+vi.mock("@orvilo/ui/lib/clipboard", () => ({
   copyText: copyTextMock,
 }));
 

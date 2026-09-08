@@ -1,17 +1,17 @@
 {
-  "name": "@patchbay/desktop",
+  "name": "@orvilo/desktop",
   "productName": "Orvilo",
   "version": "0.1.0",
   "private": true,
   "description": "Orvilo Desktop — native desktop client for the Orvilo platform.",
-  "homepage": "https://patchbay.aspectlylabs.com",
+  "homepage": "https://orvilo.aspectlylabs.com",
   "repository": {
     "type": "git",
     "url": "https://github.com/alexj11324/Cordy.git",
     "directory": "apps/desktop"
   },
   "author": {
-    "name": "Patchbay",
+    "name": "Orvilo",
     "email": "support@aspectlylabs.com"
   },
   "license": "SEE LICENSE IN ../../LICENSE",
@@ -44,9 +44,9 @@
     "@fontsource-variable/geist-mono": "^5.3.0",
     "@fontsource-variable/inter": "^5.2.5",
     "@fontsource-variable/source-serif-4": "^5.2.9",
-    "@patchbay/core": "workspace:*",
-    "@patchbay/ui": "workspace:*",
-    "@patchbay/views": "workspace:*",
+    "@orvilo/core": "workspace:*",
+    "@orvilo/ui": "workspace:*",
+    "@orvilo/views": "workspace:*",
     "@tanstack/react-query": "catalog:",
     "electron-updater": "^6.8.3",
     "lucide-react": "catalog:",
@@ -61,8 +61,8 @@
   },
   "devDependencies": {
     "@electron-toolkit/tsconfig": "^2.0.0",
-    "@patchbay/eslint-config": "workspace:*",
-    "@patchbay/tsconfig": "workspace:*",
+    "@orvilo/eslint-config": "workspace:*",
+    "@orvilo/tsconfig": "workspace:*",
     "@playwright/test": "catalog:",
     "@tailwindcss/vite": "^4",
     "@testing-library/jest-dom": "catalog:",

@@ -1,8 +1,8 @@
 "use client";
 
 import { Check } from "lucide-react";
-import type { RuntimeModelServiceTier } from "@patchbay/core/types";
-import { cn } from "@patchbay/ui/lib/utils";
+import type { RuntimeModelServiceTier } from "@orvilo/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 
 /** Speed choices use the same catalog as the model and effort columns. */

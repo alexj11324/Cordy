@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle, Check, Loader2, Plug, RefreshCw, Trash2 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,14 +16,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { api } from "@patchbay/core/api";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { api } from "@orvilo/core/api";
 import {
   composioConnectionsOptions,
   composioKeys,
   composioToolkitsOptions,
-} from "@patchbay/core/composio";
-import type { ComposioToolkit } from "@patchbay/core/types";
+} from "@orvilo/core/composio";
+import type { ComposioToolkit } from "@orvilo/core/types";
 import { ComposioToolkitLogo } from "../../common/composio-toolkit-logo";
 import { useT, useTimeAgo } from "../../i18n";
 import { useNavigation } from "../../navigation";

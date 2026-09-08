@@ -20,7 +20,7 @@ const (
 )
 
 // SurfacePersistsTranscript reports whether a chat surface stores its
-// conversation in Patchbay's chat_message table, readable back via `patchbay chat
+// conversation in Orvilo's chat_message table, readable back via `orvilo chat
 // history` (handler/chat_history.go's non-Slack fallback). Web chat (empty
 // discriminator), Feishu, WeCom and DingTalk all persist via the shared
 // AppendUserMessage path; Slack reads the live channel instead. It is the single

@@ -27,26 +27,24 @@ from urllib.request import Request, urlopen
 SCHEMA_VERSION = 1
 REPOSITORY = "alexj11324/Cordy"  # legacy-brand-compat: current GitHub repository identity
 REPOSITORY_URL = "https://github.com/alexj11324/Cordy.git"  # legacy-brand-compat
-DEFAULT_ROOT = Path("/var/lib/patchbay-staging")
-DEFAULT_STATIC_DIRECTORY = Path("/usr/local/share/patchbay-staging")
-PRODUCTION_ROOT = Path("/var/lib/patchbay-production")
-PRODUCTION_STATIC_DIRECTORY = Path("/usr/local/share/patchbay-production")
-PRODUCTION_GATEWAY = Path("/usr/local/bin/patchbay-production-deploy")
+DEFAULT_ROOT = Path("/var/lib/orvilo-staging")
+DEFAULT_STATIC_DIRECTORY = Path("/usr/local/share/orvilo-staging")
+PRODUCTION_ROOT = Path("/var/lib/orvilo-production")
+PRODUCTION_STATIC_DIRECTORY = Path("/usr/local/share/orvilo-production")
+PRODUCTION_GATEWAY = Path("/usr/local/bin/orvilo-production-deploy")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 WORKFLOW_RUN_ID_RE = re.compile(r"^[1-9][0-9]{0,19}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 COMPOSE_VARIABLE_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)")
 REQUIRED_COMPOSE_VARIABLE_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*):\?")
 EXPECTED_IMAGE_REPOSITORIES = {
-    "backend": "ghcr.io/alexj11324/patchbay-backend",
-    "web": "ghcr.io/alexj11324/patchbay-web",
-    "docs": "ghcr.io/alexj11324/patchbay-docs",
-    "auth-broker": "ghcr.io/alexj11324/patchbay-auth-broker",
+    name: f"ghcr.io/alexj11324/orvilo-{name}"
+    for name in ("backend", "web", "docs", "auth-broker")
 }
-PRODUCT_COMPOSE_PROJECT = "patchbay-staging"
-DOCS_COMPOSE_PROJECT = "patchbay-staging-docs"
-AUTH_BROKER_COMPOSE_PROJECT = "patchbay-staging-auth-broker"
-FORBIDDEN_COMPOSE_PROJECTS = {"cordy632", "cordy", "patchbay-auth-broker"}
+PRODUCT_COMPOSE_PROJECT = "orvilo-staging"
+DOCS_COMPOSE_PROJECT = "orvilo-staging-docs"
+AUTH_BROKER_COMPOSE_PROJECT = "orvilo-staging-auth-broker"
+FORBIDDEN_COMPOSE_PROJECTS = {"cordy632", "cordy", "orvilo-auth-broker"}
 STAGING_PORTS = {
     "BACKEND_PORT": "8211",
     "FRONTEND_PORT": "3111",
@@ -62,13 +60,13 @@ STAGING_BROKER_URLS = {
 }
 PRODUCTION_MARKERS = (
     "://api.aspectlylabs.com",
-    "://patchbay.aspectlylabs.com",
+    "://orvilo.aspectlylabs.com",
     "://accounts.aspectlylabs.com",
     "://accounts-origin.aspectlylabs.com",
     "cordy632",
-    "/var/lib/patchbay-production",
-    "/usr/local/share/patchbay-production",
-    "/usr/local/bin/patchbay-production-deploy",
+    "/var/lib/orvilo-production",
+    "/usr/local/share/orvilo-production",
+    "/usr/local/bin/orvilo-production-deploy",
 )
 STAGING_SMOKE_USER_EMAIL = "staging-smoke@aspectlylabs.com"
 PROBE_PORTS = {
@@ -237,7 +235,7 @@ def clerk_api_request(
     headers = {
         "Authorization": f"Bearer {secret_key}",
         "Accept": "application/json",
-        "User-Agent": "PatchbayStagingDeploy/1",
+        "User-Agent": "OrviloStagingDeploy/1",
     }
     if data is not None:
         headers["Content-Type"] = "application/json"
@@ -573,13 +571,13 @@ class StagingDeployment:
                     if response.status >= 400:
                         raise DeploymentError(f"{url} returned HTTP {response.status}")
                     if expected_build is not None:
-                        actual = response.headers.get("X-Patchbay-Build")
+                        actual = response.headers.get("X-Orvilo-Build")
                         if actual != expected_build:
                             raise DeploymentError(
                                 f"{url} reported build {actual!r}, expected {expected_build!r}"
                             )
                     if expected_commit is not None:
-                        actual = response.headers.get("X-Patchbay-Commit")
+                        actual = response.headers.get("X-Orvilo-Commit")
                         if actual != expected_commit:
                             raise DeploymentError(
                                 f"{url} reported commit {actual!r}, expected {expected_commit!r}"

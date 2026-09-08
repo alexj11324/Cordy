@@ -18,33 +18,33 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/cloudruntime"
-	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	composio "github.com/patchbay-ai/patchbay/server/internal/integrations/composio"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/dingtalk"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/ghsnapshot"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/lark"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/telegram"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/wecom"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
-	"github.com/patchbay-ai/patchbay/server/internal/seatcapacity"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/storage"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/featureflag"
-	"github.com/patchbay-ai/patchbay/server/pkg/llm"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/cloudruntime"
+	"github.com/orvilo-ai/orvilo/server/internal/daemonws"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/hostedcapacity"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	composio "github.com/orvilo-ai/orvilo/server/internal/integrations/composio"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/dingtalk"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/ghsnapshot"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/lark"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/slack"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/telegram"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/wecom"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/internal/seatcapacity"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/storage"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/featureflag"
+	"github.com/orvilo-ai/orvilo/server/pkg/llm"
 )
 
 // randomID returns a random 16-byte hex string used as a request ID for
@@ -85,7 +85,7 @@ type Config struct {
 	// VCSIntegrationEnabled gates the self-hosted Git provider integration
 	// (Forgejo / Gitea / GitLab) at the deployment level, independent of whether
 	// ORVILO_VCS_SECRET_KEY is set. It is the product boundary: the feature is
-	// intended for self-hosted Patchbay only (where Patchbay and the Git instance
+	// intended for self-hosted Orvilo only (where Orvilo and the Git instance
 	// can share a network), and is left off on the managed cloud — connect,
 	// rotate, and webhook handlers reject when it is false, and /api/config
 	// omits it so the UI hides the whole section rather than showing a
@@ -93,7 +93,7 @@ type Config struct {
 	// ORVILO_VCS_INTEGRATION_ENABLED; the self-host compose defaults it on.
 	VCSIntegrationEnabled bool
 	// PublicURL is the absolute base URL the API is reachable at from the
-	// public internet, with no trailing slash (e.g. "https://patchbay.aspectlylabs.com").
+	// public internet, with no trailing slash (e.g. "https://orvilo.aspectlylabs.com").
 	// Used to build webhook_url responses and the fixed Remote MCP OAuth
 	// callback URI — never to decide request identity, routing, or workspace
 	// scope. Empty when unset; webhook clients can fall back to their own origin,
@@ -115,7 +115,7 @@ type Config struct {
 	// webhook limiter from being bypassed by a spoofed XFF on deployments
 	// without a header-stripping reverse proxy in front.
 	TrustedProxies []netip.Prefix
-	// CloudURL enables the SaaS-only patchbay-cloud connection when set. Empty
+	// CloudURL enables the SaaS-only orvilo-cloud connection when set. Empty
 	// keeps self-hosted deployments explicit: Cloud endpoints return 503 instead
 	// of attempting to dial a hard-coded private service.
 	CloudURL                 string
@@ -340,7 +340,7 @@ type Handler struct {
 	DingTalkInstall *dingtalk.InstallService
 	// DingTalkBindingTokens mints and redeems the single-use account-link tokens.
 	DingTalkBindingTokens *dingtalk.BindingTokenService
-	// SlackHistory backs the agent-facing `patchbay chat history` command: it
+	// SlackHistory backs the agent-facing `orvilo chat history` command: it
 	// reads a chat session's bound Slack conversation on demand (MUL-3871). Nil
 	// unless Slack is configured; GetChatChannelHistory then reports "no channel
 	// integration". A future platform satisfies the same reader interface.
@@ -353,7 +353,7 @@ type Handler struct {
 	// WebSocket subscribe frame. Nil disables the wecom integration.
 	WecomCredentials wecom.CredentialsResolver
 	// WecomBindingTokens mints/redeems the user-binding tokens behind the
-	// "link your Patchbay account" prompt sent to first-time WeCom users
+	// "link your Orvilo account" prompt sent to first-time WeCom users
 	// (their aibot userid is a "T"-prefixed anonymized id with no relation
 	// to their real userid or email, so an explicit binding is required —
 	// see wecom/binding.go). Nil disables the redeem endpoint (returns 503)
@@ -381,7 +381,7 @@ type Handler struct {
 	// DEPLOYMENT, carry a file the agent produced the last hop into the
 	// conversation. It answers the claim response's
 	// chat_channel_delivers_files, which the agent's PER-TURN prompt turns into
-	// either "run `patchbay attachment upload`" or "describe the file in words"
+	// either "run `orvilo attachment upload`" or "describe the file in words"
 	// (daemon/prompt.go). Not the brief: the brief is the prompt cache prefix and
 	// this is a per-turn verdict, so stating it there made one session render two
 	// briefs (MUL-5377).

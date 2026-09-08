@@ -1,9 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { MemberRole, SkillSummary } from "@patchbay/core/types";
-import { useAuthStore } from "@patchbay/core/auth";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
+import type { MemberRole, SkillSummary } from "@orvilo/core/types";
+import { useAuthStore } from "@orvilo/core/auth";
+import { memberListOptions } from "@orvilo/core/workspace/queries";
 
 /**
  * Whether the current user may edit/delete the given skill.

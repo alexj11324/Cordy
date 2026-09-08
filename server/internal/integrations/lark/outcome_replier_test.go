@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // stubAPIClientWithRecorder is a fake APIClient that captures the
@@ -151,7 +151,7 @@ func TestLarkOutcomeReplierFallsBackToNoopWhenStubAPI(t *testing.T) {
 		BindingSvc:  &BindingTokenService{}, // not nil so we exercise the IsConfigured guard
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		AppURL:      "https://patchbay.test",
+		AppURL:      "https://orvilo.test",
 		Logger:      log,
 	})
 	if _, isNoop := rep.(*noopReplier); !isNoop {
@@ -192,7 +192,7 @@ func TestLarkOutcomeReplierAgentOfflineSendsCard(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{agent: db.Agent{Name: "Trump"}},
-		AppURL:      "https://patchbay.test",
+		AppURL:      "https://orvilo.test",
 		Logger:      log,
 	})
 	inst := Installation{AppID: "cli_x"}
@@ -227,7 +227,7 @@ func TestLarkOutcomeReplierAgentArchivedSendsCard(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		AppURL:      "https://patchbay.test",
+		AppURL:      "https://orvilo.test",
 		Logger:      log,
 	})
 	msg := InboundMessage{ChatID: "oc_chat_arch"}
@@ -258,7 +258,7 @@ func TestLarkOutcomeReplierCommandOutcomesSendGuidance(t *testing.T) {
 			stub := &stubAPIClientWithRecorder{configured: true}
 			rep := NewLarkOutcomeReplier(OutcomeReplierConfig{
 				APIClient: stub, BindingSvc: &BindingTokenService{}, Credentials: stubCredentialsResolver{secret: "s"},
-				Queries: stubReplierQueries{}, AppURL: "https://patchbay.test", Logger: log,
+				Queries: stubReplierQueries{}, AppURL: "https://orvilo.test", Logger: log,
 			})
 			rep.Reply(context.Background(), Installation{}, InboundMessage{ChatID: "oc_chat"}, DispatchResult{Outcome: tc.outcome, IssueUsageHadMedia: tc.hadMedia, ReplyText: tc.reply})
 			if len(stub.interactiveOut) != 1 {
@@ -283,7 +283,7 @@ func TestLarkOutcomeReplierIngestedAndDroppedAreSilent(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		AppURL:      "https://patchbay.test",
+		AppURL:      "https://orvilo.test",
 		Logger:      log,
 	})
 	msg := InboundMessage{ChatID: "oc_x"}
@@ -308,7 +308,7 @@ func TestLarkOutcomeReplierOfflineSwallowsAPIError(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		AppURL:      "https://patchbay.test",
+		AppURL:      "https://orvilo.test",
 		Logger:      log,
 	})
 	// Should NOT panic.
@@ -329,7 +329,7 @@ func TestLarkOutcomeReplierUsesAppURLForWebLinks(t *testing.T) {
 		BindingSvc:  fakeBindingMinter{raw: "token with space"},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		AppURL:      "https://app.patchbay.test/",
+		AppURL:      "https://app.orvilo.test/",
 		Logger:      log,
 	})
 
@@ -351,13 +351,13 @@ func TestLarkOutcomeReplierUsesAppURLForWebLinks(t *testing.T) {
 	if len(stub.bindingCalls) != 1 {
 		t.Fatalf("expected one binding prompt, got %d", len(stub.bindingCalls))
 	}
-	if got := stub.bindingCalls[0].BindURL; got != "https://app.patchbay.test/lark/bind?token=token+with+space" {
+	if got := stub.bindingCalls[0].BindURL; got != "https://app.orvilo.test/lark/bind?token=token+with+space" {
 		t.Fatalf("binding URL should use AppURL; got %q", got)
 	}
 	if len(stub.textOut) != 1 {
 		t.Fatalf("expected one issue-created text, got %d", len(stub.textOut))
 	}
-	if !strings.Contains(stub.textOut[0].Text, "https://app.patchbay.test/issues/MUL-42") {
+	if !strings.Contains(stub.textOut[0].Text, "https://app.orvilo.test/issues/MUL-42") {
 		t.Fatalf("issue-created text should use AppURL; got %q", stub.textOut[0].Text)
 	}
 }
@@ -370,7 +370,7 @@ func TestLarkOutcomeReplierUsesAppURLForWebLinks(t *testing.T) {
 // blocker on PR #3277 review. Fix: OutcomeIngested with IssueID.Valid
 // triggers a plain text confirmation send via SendTextMessage,
 // composing the workspace-qualified identifier with the title and a
-// deep link back to Patchbay.
+// deep link back to Orvilo.
 func TestLarkOutcomeReplierIssueCreatedSendsConfirmation(t *testing.T) {
 	t.Parallel()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -380,7 +380,7 @@ func TestLarkOutcomeReplierIssueCreatedSendsConfirmation(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		AppURL:      "https://patchbay.test",
+		AppURL:      "https://orvilo.test",
 		Logger:      log,
 	})
 
@@ -410,8 +410,8 @@ func TestLarkOutcomeReplierIssueCreatedSendsConfirmation(t *testing.T) {
 	if !strings.Contains(got.Text, "fix login bug") {
 		t.Errorf("text should embed the issue title; got %q", got.Text)
 	}
-	if !strings.Contains(got.Text, "https://patchbay.test/issues/MUL-42") {
-		t.Errorf("text should embed the deep link back to Patchbay; got %q", got.Text)
+	if !strings.Contains(got.Text, "https://orvilo.test/issues/MUL-42") {
+		t.Errorf("text should embed the deep link back to Orvilo; got %q", got.Text)
 	}
 	// No interactive card on this path — the confirmation must be
 	// plain text, matching how chat replies render.
@@ -429,7 +429,7 @@ func TestLarkOutcomeReplierIssueDuplicateSendsConflict(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		AppURL:      "https://patchbay.test",
+		AppURL:      "https://orvilo.test",
 		Logger:      log,
 	})
 
@@ -472,7 +472,7 @@ func TestLarkOutcomeReplierOutcomeIngestedSilentWithoutIssue(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		AppURL:      "https://patchbay.test",
+		AppURL:      "https://orvilo.test",
 		Logger:      log,
 	})
 
@@ -506,7 +506,7 @@ func TestLarkOutcomeReplierIssueCreatedThreadFallback(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		AppURL:      "https://patchbay.test",
+		AppURL:      "https://orvilo.test",
 		Logger:      log,
 	})
 
@@ -543,7 +543,7 @@ func TestLarkOutcomeReplierIssueCreatedNoFallbackOnAmbiguous(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		AppURL:      "https://patchbay.test",
+		AppURL:      "https://orvilo.test",
 		Logger:      log,
 	})
 
@@ -575,7 +575,7 @@ func TestLarkOutcomeReplierNoticeThreadFallback(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{agent: db.Agent{Name: "Trump"}},
-		AppURL:      "https://patchbay.test",
+		AppURL:      "https://orvilo.test",
 		Logger:      log,
 	})
 
@@ -605,7 +605,7 @@ func TestLarkOutcomeReplierNoticeNoFallbackOnAmbiguous(t *testing.T) {
 		BindingSvc:  &BindingTokenService{},
 		Credentials: stubCredentialsResolver{secret: "s"},
 		Queries:     stubReplierQueries{},
-		AppURL:      "https://patchbay.test",
+		AppURL:      "https://orvilo.test",
 		Logger:      log,
 	})
 

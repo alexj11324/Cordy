@@ -18,12 +18,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
-	"github.com/patchbay-ai/patchbay/server/pkg/remotemcp"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/pkg/remotemcp"
 )
 
-// The hook engine: the one place Patchbay calls OUT to a plugin's own server.
+// The hook engine: the one place Orvilo calls OUT to a plugin's own server.
 //
 // Everything before this ran the other way — a sandboxed surface asked the host
 // and the host acted on the signed-in user's session, so no request ever left
@@ -321,10 +321,10 @@ func (s *PluginService) callHookEndpoint(ctx context.Context, invocation HookInv
 		return nil, err
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("X-Patchbay-Timestamp", timestamp)
-	request.Header.Set("X-Patchbay-Signature", hookSignatureVersion+"="+signature)
-	request.Header.Set("X-Patchbay-Plugin-Installation", uuidString(installation.ID))
-	request.Header.Set("User-Agent", "Patchbay-Hooks/1")
+	request.Header.Set("X-Orvilo-Timestamp", timestamp)
+	request.Header.Set("X-Orvilo-Signature", hookSignatureVersion+"="+signature)
+	request.Header.Set("X-Orvilo-Plugin-Installation", uuidString(installation.ID))
+	request.Header.Set("User-Agent", "Orvilo-Hooks/1")
 
 	response, err := client.Do(request)
 	if err != nil {
@@ -458,7 +458,7 @@ func (s *PluginService) hookSigningKey(installationID pgtype.UUID) ([]byte, erro
 		return nil, pluginErrf(PluginErrorUnavailable, "hooks are disabled: ORVILO_PLUGIN_SECRET_KEY must decode to 32 bytes")
 	}
 	mac := hmac.New(sha256.New, s.DeploymentKey)
-	mac.Write([]byte("patchbay-plugin-hook-signature:v1:"))
+	mac.Write([]byte("orvilo-plugin-hook-signature:v1:"))
 	mac.Write([]byte(uuidString(installationID)))
 	return mac.Sum(nil), nil
 }

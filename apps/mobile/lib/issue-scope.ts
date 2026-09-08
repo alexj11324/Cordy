@@ -1,4 +1,4 @@
-import type { Issue, IssueActorType } from "@patchbay/core/types";
+import type { Issue, IssueActorType } from "@orvilo/core/types";
 import type { IssuesScope } from "@/data/stores/issues-view-store";
 
 type IssueRoleFields = Pick<

@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const tapContentsUrl =
-  "https://api.github.com/repos/alexj11324/homebrew-tap/contents/Casks/patchbay.rb";
+  "https://api.github.com/repos/alexj11324/homebrew-tap/contents/Casks/orvilo.rb";
 
 function stableVersionParts(value) {
   const match = /^(?:v)?([0-9]+)\.([0-9]+)\.([0-9]+)$/u.exec(value);
@@ -80,7 +80,7 @@ export async function publishHomebrewCask({
   const headers = {
     accept: "application/vnd.github+json",
     authorization: `Bearer ${token}`,
-    "user-agent": "patchbay-release",
+    "user-agent": "orvilo-release",
     "x-github-api-version": "2022-11-28",
   };
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -104,7 +104,7 @@ export async function publishHomebrewCask({
     }
 
     const body = {
-      message: `Update Patchbay to ${tag}`,
+      message: `Update Orvilo to ${tag}`,
       content: Buffer.from(caskContent, "utf8").toString("base64"),
       branch: "main",
       ...(current?.sha ? { sha: current.sha } : {}),

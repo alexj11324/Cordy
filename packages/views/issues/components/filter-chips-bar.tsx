@@ -1,6 +1,6 @@
 "use client";
 
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
 import { useStatusLabel } from "../utils/status-label";
 import { NO_PROPERTY_VALUE } from "../utils/filter";
 import { useMemo, type ReactNode } from "react";
@@ -15,24 +15,24 @@ import {
   X,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions, agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import { labelListOptions } from "@patchbay/core/labels/queries";
-import { propertyListOptions } from "@patchbay/core/properties";
-import { isActorPropertyType, isScalarPropertyType, parseActorRef, propertyFilterValueKey, PROPERTY_FILTER_OP_SYMBOLS, type PropertyFilterValue } from "@patchbay/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { memberListOptions, agentListOptions, teamListOptions } from "@orvilo/core/workspace/queries";
+import { projectListOptions } from "@orvilo/core/projects/queries";
+import { labelListOptions } from "@orvilo/core/labels/queries";
+import { propertyListOptions } from "@orvilo/core/properties";
+import { isActorPropertyType, isScalarPropertyType, parseActorRef, propertyFilterValueKey, PROPERTY_FILTER_OP_SYMBOLS, type PropertyFilterValue } from "@orvilo/core/types";
 import {
   type ActorFilterValue,
   type FilterDimension,
   type FilterSnapshot,
   type IssueDateFilter,
-} from "@patchbay/core/issues/stores/view-store";
+} from "@orvilo/core/issues/stores/view-store";
 import {
   actorFilterKey,
   type IssueViewBaseline,
-} from "@patchbay/core/issue-views/baseline";
-import { useViewStore, useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
+} from "@orvilo/core/issue-views/baseline";
+import { useViewStore, useViewStoreApi } from "@orvilo/core/issues/stores/view-store-context";
 import { StatusIcon } from "./status-icon";
 import { PriorityIcon } from "./priority-icon";
 import { ActorAvatar } from "../../common/actor-avatar";

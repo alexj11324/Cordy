@@ -1,8 +1,8 @@
 "use client";
 
 import { ChevronRight, FileText, MessageSquare } from "lucide-react";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { cn } from "@patchbay/ui/lib/utils";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { cn } from "@orvilo/ui/lib/utils";
 import { AppLink, useBackOrReplace, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { AgentCreateShell } from "./create-shell";

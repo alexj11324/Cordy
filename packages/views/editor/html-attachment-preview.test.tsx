@@ -7,7 +7,7 @@ const { getAttachmentTextContentMock } = vi.hoisted(() => ({
   getAttachmentTextContentMock: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: { getAttachmentTextContent: getAttachmentTextContentMock },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
@@ -51,10 +51,10 @@ vi.mock("../navigation", () => ({
 }));
 
 // Slug is required for the new-tab path to be built. The component reads
-// it from useWorkspaceSlug() on @patchbay/core/paths — stub to return a
+// it from useWorkspaceSlug() on @orvilo/core/paths — stub to return a
 // fixed slug so the tests do not need a WorkspaceSlugProvider tree.
-vi.mock("@patchbay/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/paths")>();
+vi.mock("@orvilo/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@orvilo/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",

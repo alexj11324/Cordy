@@ -1,4 +1,4 @@
-import reactConfig from "@patchbay/eslint-config/react";
+import reactConfig from "@orvilo/eslint-config/react";
 import i18next from "eslint-plugin-i18next";
 import {
   NO_UNTRANSLATED_ATTRIBUTES,

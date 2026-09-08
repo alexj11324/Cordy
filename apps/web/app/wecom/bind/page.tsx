@@ -2,9 +2,9 @@
 
 import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { WecomBindPage } from "@patchbay/views/wecom";
+import { WecomBindPage } from "@orvilo/views/wecom";
 
-// /wecom/bind?token=<raw> is the smart-bot's "link your Patchbay account"
+// /wecom/bind?token=<raw> is the smart-bot's "link your Orvilo account"
 // destination. Suspense wraps useSearchParams per Next.js 15's CSR-bailout
 // rule; the loading text never paints in practice because the redemption
 // page itself renders the "redeeming…" state immediately.

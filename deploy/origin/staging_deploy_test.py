@@ -56,20 +56,20 @@ class StagingDeployIsolationTests(unittest.TestCase):
         self.assertEqual(set(normalized["images"]), {"backend", "web", "docs", "auth-broker"})
 
     def test_rejects_production_compose_projects(self):
-        for name in ("cordy632", "cordy", "patchbay-auth-broker"):
+        for name in ("cordy632", "cordy", "orvilo-auth-broker"):
             with self.subTest(name=name):
                 with self.assertRaisesRegex(staging_deploy.DeploymentError, "production Compose"):
                     staging_deploy.assert_isolated_project(name)
 
     def test_accepts_staging_compose_projects(self):
         self.assertEqual(
-            staging_deploy.assert_isolated_project("patchbay-staging"),
-            "patchbay-staging",
+            staging_deploy.assert_isolated_project("orvilo-staging"),
+            "orvilo-staging",
         )
 
     def test_rejects_production_root(self):
         with tempfile.TemporaryDirectory() as directory:
-            production = Path(directory) / "patchbay-production"
+            production = Path(directory) / "orvilo-production"
             production.mkdir()
             with self.assertRaisesRegex(staging_deploy.DeploymentError, "production path"):
                 staging_deploy.assert_isolated_path(
@@ -86,7 +86,7 @@ class StagingDeployIsolationTests(unittest.TestCase):
 
     def test_rejects_mismatched_staging_urls(self):
         values = valid_product_env()
-        values["ORVILO_APP_URL"] = "https://patchbay-app.copilothub.ai"
+        values["ORVILO_APP_URL"] = "https://orvilo-app.copilothub.ai"
         with self.assertRaisesRegex(staging_deploy.DeploymentError, "must be"):
             staging_deploy.require_exact(
                 values, staging_deploy.STAGING_URLS, label="staging product"
@@ -102,7 +102,7 @@ class StagingDeployIsolationTests(unittest.TestCase):
                 "staging-docs.compose.yml",
                 "staging-auth-broker.compose.yml",
             ):
-                (static_directory / name).write_text("name: patchbay-staging\n", encoding="utf-8")
+                (static_directory / name).write_text("name: orvilo-staging\n", encoding="utf-8")
             deployment = staging_deploy.StagingDeployment(root, static_directory)
             deployment.initialize_directories()
             product = valid_product_env()

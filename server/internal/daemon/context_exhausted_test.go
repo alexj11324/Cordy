@@ -3,8 +3,8 @@ package daemon
 import (
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 )
 
 // TestContextExhaustionNeverReplaysTheTask pins the boundary between the two

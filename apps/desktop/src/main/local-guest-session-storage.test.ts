@@ -25,7 +25,7 @@ async function createSessionPath(): Promise<{
   directory: string;
   filePath: string;
 }> {
-  const directory = await mkdtemp(join(tmpdir(), "patchbay-guest-"));
+  const directory = await mkdtemp(join(tmpdir(), "orvilo-guest-"));
   temporaryDirectories.push(directory);
   return { directory, filePath: localGuestSessionPath(directory) };
 }

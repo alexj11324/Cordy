@@ -3,8 +3,8 @@ package handler
 import (
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
-	"github.com/patchbay-ai/patchbay/server/pkg/featureflag"
+	"github.com/orvilo-ai/orvilo/server/internal/featureflags"
+	"github.com/orvilo-ai/orvilo/server/pkg/featureflag"
 )
 
 func withComposioMCPAppsFlag(t *testing.T, h *Handler, enabled bool) {

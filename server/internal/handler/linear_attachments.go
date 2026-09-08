@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func (w *LinearWorker) publishLinearWorkProducts(ctx context.Context, b workerBinding, issueID pgtype.UUID, remoteID, token string) error {
@@ -64,7 +64,7 @@ func (w *LinearWorker) deleteLinearWorkProductAttachment(ctx context.Context, b 
 		return nil
 	}
 	var remoteID string
-	err := w.db.QueryRow(ctx, `SELECT linear_issue_id FROM linear_issue_link WHERE workspace_id=$1 AND binding_id=$2 AND patchbay_issue_id=$3 AND sync_status<>'deleted'`, b.WorkspaceID, b.ID, issueID).Scan(&remoteID)
+	err := w.db.QueryRow(ctx, `SELECT linear_issue_id FROM linear_issue_link WHERE workspace_id=$1 AND binding_id=$2 AND orvilo_issue_id=$3 AND sync_status<>'deleted'`, b.WorkspaceID, b.ID, issueID).Scan(&remoteID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}

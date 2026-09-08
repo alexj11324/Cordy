@@ -15,7 +15,7 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => mockSearchParams,
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     googleLogin: mockGoogleLogin,
     completeDesktopAuthHandoff: mockCompleteDesktopAuthHandoff,
@@ -32,7 +32,7 @@ describe("CallbackPage", () => {
     // doesn't inherit a cap-reached state from a previous run).
     for (let i = window.localStorage.length - 1; i >= 0; i--) {
       const k = window.localStorage.key(i);
-      if (k && k.startsWith("patchbay.source_backfill.dismiss.")) {
+      if (k && k.startsWith("orvilo.source_backfill.dismiss.")) {
         window.localStorage.removeItem(k);
       }
     }
@@ -44,7 +44,7 @@ describe("CallbackPage", () => {
     mockSearchParams.set("code", "test-code");
     mockGoogleLogin.mockResolvedValue({ token: "unused-web-token" });
     mockCompleteDesktopAuthHandoff.mockResolvedValue({
-      callback_protocol: "patchbay",
+      callback_protocol: "orvilo",
       code: "desktop-code",
       state: "desktop-state",
     });
@@ -189,7 +189,7 @@ describe("CallbackPage", () => {
       );
       mockGoogleLogin.mockResolvedValue({ token: "must-not-be-in-uri" });
       mockCompleteDesktopAuthHandoff.mockResolvedValue({
-        callback_protocol: "patchbay",
+        callback_protocol: "orvilo",
         code: "one-time-code",
         state: "desktop-state",
       });
@@ -204,7 +204,7 @@ describe("CallbackPage", () => {
       });
       await waitFor(() => {
         expect(hrefSetter).toHaveBeenCalledWith(
-          "patchbay://auth/callback?code=one-time-code&state=desktop-state",
+          "orvilo://auth/callback?code=one-time-code&state=desktop-state",
         );
       });
       expect(hrefSetter.mock.calls[0]?.[0]).not.toContain("must-not-be-in-uri");
@@ -216,10 +216,10 @@ describe("CallbackPage", () => {
     }
   });
 
-  it("opens a staging desktop callback instead of the production patchbay:// handler", async () => {
+  it("opens a staging desktop callback instead of the production orvilo:// handler", async () => {
     // Scheme selection is canonical in
     // packages/views/auth/desktop-callback-redirect.test.ts. This case is the
-    // Google callback wiring that previously hardcoded patchbay://.
+    // Google callback wiring that previously hardcoded orvilo://.
     const hrefSetter = vi.fn();
     const originalLocation = window.location;
     Object.defineProperty(window, "location", {
@@ -239,7 +239,7 @@ describe("CallbackPage", () => {
         "platform:desktop,desktop_state:desktop-state,desktop_code_challenge:desktop-challenge",
       );
       mockCompleteDesktopAuthHandoff.mockResolvedValue({
-        callback_protocol: "patchbay-staging-5718c47b86bf9ece",
+        callback_protocol: "orvilo-staging-5718c47b86bf9ece",
         code: "staging-code",
         state: "desktop-state",
       });
@@ -248,10 +248,10 @@ describe("CallbackPage", () => {
 
       await waitFor(() => {
         expect(hrefSetter).toHaveBeenCalledWith(
-          "patchbay-staging-5718c47b86bf9ece://auth/callback?code=staging-code&state=desktop-state",
+          "orvilo-staging-5718c47b86bf9ece://auth/callback?code=staging-code&state=desktop-state",
         );
       });
-      expect(hrefSetter.mock.calls[0]?.[0]).not.toContain("patchbay://");
+      expect(hrefSetter.mock.calls[0]?.[0]).not.toContain("orvilo://");
     } finally {
       Object.defineProperty(window, "location", {
         configurable: true,

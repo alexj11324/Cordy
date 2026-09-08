@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func TestProjectResourceLifecycle(t *testing.T) {
@@ -38,7 +38,7 @@ func TestProjectResourceLifecycle(t *testing.T) {
 	req = newRequest("POST", "/api/projects/"+project.ID+"/resources", map[string]any{
 		"resource_type": "github_repo",
 		"resource_ref": map[string]any{
-			"url": "https://github.com/patchbay-ai/patchbay",
+			"url": "https://github.com/alexj11324/Cordy",
 			"ref": "release/v2",
 		},
 	})
@@ -61,7 +61,7 @@ func TestProjectResourceLifecycle(t *testing.T) {
 	if err := json.Unmarshal(created.ResourceRef, &ref); err != nil {
 		t.Fatalf("decode resource_ref: %v", err)
 	}
-	if ref.URL != "https://github.com/patchbay-ai/patchbay" {
+	if ref.URL != "https://github.com/alexj11324/Cordy" {
 		t.Errorf("created.ResourceRef.url = %q", ref.URL)
 	}
 	if ref.Ref != "release/v2" {
@@ -95,7 +95,7 @@ func TestProjectResourceLifecycle(t *testing.T) {
 	req = newRequest("POST", "/api/projects/"+project.ID+"/resources", map[string]any{
 		"resource_type": "github_repo",
 		"resource_ref": map[string]any{
-			"url": "https://github.com/patchbay-ai/patchbay",
+			"url": "https://github.com/alexj11324/Cordy",
 			"ref": "release/v2",
 		},
 	})
@@ -179,7 +179,7 @@ func TestProjectResourceAcceptsSSHRepoURLs(t *testing.T) {
 		url  string
 	}{
 		{"scp-like", "git@github.com:patchbay-ai/patchbay.git"},
-		{"ssh-scheme", "ssh://git@github.com/patchbay-ai/patchbay.git"},
+		{"ssh-scheme", "ssh://git@github.com/orvilo-ai/orvilo.git"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -212,10 +212,10 @@ func TestProjectResourceAcceptsSSHRepoURLs(t *testing.T) {
 
 func TestIsValidGitRepoURL(t *testing.T) {
 	good := []string{
-		"https://github.com/patchbay-ai/patchbay",
-		"https://github.com/patchbay-ai/patchbay.git",
+		"https://github.com/alexj11324/Cordy",
+		"https://github.com/alexj11324/Cordy.git",
 		"http://github.example.com/x/y",
-		"ssh://git@github.com/patchbay-ai/patchbay.git",
+		"ssh://git@github.com/orvilo-ai/orvilo.git",
 		"ssh://git@github.com:22/patchbay-ai/patchbay.git",
 		"git@github.com:patchbay-ai/patchbay.git",
 		"git@gitlab.example.com:group/sub/repo.git",
@@ -223,13 +223,13 @@ func TestIsValidGitRepoURL(t *testing.T) {
 	bad := []string{
 		"",
 		"not-a-url",
-		"github.com/patchbay-ai/patchbay", // no scheme, no scp-style colon
-		"https://",                      // empty host
-		"git@github.com",                // missing :path
-		"git@:foo/bar",                  // missing host
-		"git@github.com:",               // missing path
-		"ftp://example.com/repo",        // unsupported scheme
-		"file:///tmp/repo",              // unsupported scheme
+		"github.com/orvilo-ai/orvilo", // no scheme, no scp-style colon
+		"https://",                    // empty host
+		"git@github.com",              // missing :path
+		"git@:foo/bar",                // missing host
+		"git@github.com:",             // missing path
+		"ftp://example.com/repo",      // unsupported scheme
+		"file:///tmp/repo",            // unsupported scheme
 		"some random text with spaces",
 		"github.com:org/repo@branch", // '@' after ':' belongs to the path, not user
 		"foo:bar@baz",                // '@' after ':' with no scheme
@@ -475,7 +475,7 @@ func TestCreateProjectAttachesResources(t *testing.T) {
 		"resources": []map[string]any{
 			{
 				"resource_type": "github_repo",
-				"resource_ref":  map[string]any{"url": "https://github.com/patchbay-ai/patchbay"},
+				"resource_ref":  map[string]any{"url": "https://github.com/alexj11324/Cordy"},
 			},
 		},
 	})

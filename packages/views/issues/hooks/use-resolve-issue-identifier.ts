@@ -1,10 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { issueIdentifierOptions } from "@patchbay/core/issues/queries";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { isIssueIdentifier } from "@patchbay/ui/markdown";
-import type { Issue } from "@patchbay/core/types";
+import { issueIdentifierOptions } from "@orvilo/core/issues/queries";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
+import { isIssueIdentifier } from "@orvilo/ui/markdown";
+import type { Issue } from "@orvilo/core/types";
 
 /**
  * Resolve a bare issue identifier ("MUL-123") to a real issue in the current

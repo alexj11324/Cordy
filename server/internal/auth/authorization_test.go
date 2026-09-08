@@ -44,7 +44,7 @@ func TestValidateDelegationChainChecksFenceIdentityAndScope(t *testing.T) {
 		ID: "leaf-lease", TaskID: "leaf-task", AgentID: "agent", WorkspaceID: "workspace",
 		OnBehalfOfUserID: "user", DeviceID: "runtime", ParentID: root.ID, ParentFence: root.DelegationFence,
 		DelegationFence: 12, DelegationDepth: 1,
-		Scope: []Capability{{Action: ActionCredentialUse, ResourceType: ResourceProviderIdentity, ResourceID: "runtime"}},
+		Scope:     []Capability{{Action: ActionCredentialUse, ResourceType: ResourceProviderIdentity, ResourceID: "runtime"}},
 		ExpiresAt: now.Add(time.Hour), ClaimDispatchedAt: leafClaim, CurrentClaimDispatchedAt: leafClaim,
 		CurrentTaskID: "leaf-task", CurrentAgentID: "agent", CurrentWorkspaceID: "workspace",
 		CurrentOnBehalfOfUserID: "user", CurrentDeviceID: "runtime",

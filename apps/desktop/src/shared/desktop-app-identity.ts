@@ -3,14 +3,14 @@ import { resolve } from "node:path";
 
 export type DesktopChannel = "development" | "staging" | "production";
 
-export const PRODUCTION_DESKTOP_CALLBACK_PROTOCOL_PREFIX = "patchbay";
-export const STAGING_DESKTOP_CALLBACK_PROTOCOL_PREFIX = "patchbay-staging";
-export const DEVELOPMENT_DESKTOP_CALLBACK_PROTOCOL_PREFIX = "patchbay-canary";
+export const PRODUCTION_DESKTOP_CALLBACK_PROTOCOL_PREFIX = "orvilo";
+export const STAGING_DESKTOP_CALLBACK_PROTOCOL_PREFIX = "orvilo-staging";
+export const DEVELOPMENT_DESKTOP_CALLBACK_PROTOCOL_PREFIX = "orvilo-canary";
 
 const CHANNEL_CALLBACK_PROTOCOL_PATTERN: Record<DesktopChannel, RegExp> = {
-  production: /^patchbay$/,
-  staging: /^patchbay-staging-[a-f0-9]{16}$/,
-  development: /^patchbay-canary-[a-f0-9]{16}$/,
+  production: /^orvilo$/,
+  staging: /^orvilo-staging-[a-f0-9]{16}$/,
+  development: /^orvilo-canary-[a-f0-9]{16}$/,
 };
 
 export interface DesktopAppIdentity {
@@ -95,10 +95,10 @@ export function resolveDesktopAppIdentity(
     return {
       channel,
       name: "Orvilo",
-      // Keep existing sessions in the pre-rebrand directory.
-      userDataDirName: "Patchbay",
-      appUserModelId: "ai.patchbay.desktop",
-      bundleIdPrefix: "ai.patchbay.desktop",
+      // The identity cutover starts with an Orvilo-owned profile directory.
+      userDataDirName: "Orvilo",
+      appUserModelId: "ai.orvilo.desktop",
+      bundleIdPrefix: "ai.orvilo.desktop",
       callbackProtocolPrefix: callbackProtocolPrefixForChannel(channel),
       isolateUserData: false,
     };
@@ -107,9 +107,9 @@ export function resolveDesktopAppIdentity(
     return {
       channel,
       name: withOptionalSuffix("Orvilo Staging", options.suffix),
-      userDataDirName: withOptionalSuffix("Patchbay Staging", options.suffix),
-      appUserModelId: "ai.patchbay.desktop.staging",
-      bundleIdPrefix: "ai.patchbay.desktop.staging",
+      userDataDirName: withOptionalSuffix("Orvilo Staging", options.suffix),
+      appUserModelId: "ai.orvilo.desktop.staging",
+      bundleIdPrefix: "ai.orvilo.desktop.staging",
       callbackProtocolPrefix: callbackProtocolPrefixForChannel(channel),
       isolateUserData: true,
     };
@@ -117,9 +117,9 @@ export function resolveDesktopAppIdentity(
   return {
     channel,
     name: withOptionalSuffix("Orvilo Canary", options.suffix),
-    userDataDirName: withOptionalSuffix("Patchbay Canary", options.suffix),
-    appUserModelId: "ai.patchbay.desktop.dev",
-    bundleIdPrefix: "ai.patchbay.desktop.canary",
+    userDataDirName: withOptionalSuffix("Orvilo Canary", options.suffix),
+    appUserModelId: "ai.orvilo.desktop.dev",
+    bundleIdPrefix: "ai.orvilo.desktop.canary",
     callbackProtocolPrefix: callbackProtocolPrefixForChannel(channel),
     isolateUserData: true,
   };

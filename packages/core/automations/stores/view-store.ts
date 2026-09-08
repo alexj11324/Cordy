@@ -141,7 +141,7 @@ export const useAutomationsViewStore = create<AutomationsViewState>()(
       clearFilters: () => set({ filters: EMPTY_AUTOMATION_FILTERS }),
     }),
     {
-      name: "patchbay_automations_view",
+      name: "orvilo_automations_view",
       storage: createJSONStorage(() =>
         createWorkspaceAwareStorage(defaultStorage),
       ),

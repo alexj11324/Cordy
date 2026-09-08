@@ -9,9 +9,9 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ApiError } from "@patchbay/core/api";
-import type { Agent } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { ApiError } from "@orvilo/core/api";
+import type { Agent } from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
@@ -57,10 +57,10 @@ const mockGetAgent = vi.hoisted(() => vi.fn());
 const mockUpdateAgent = vi.hoisted(() => vi.fn());
 const mockSetAgentDetailDmAvailable = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
-vi.mock("@patchbay/core/chat", () => ({
+vi.mock("@orvilo/core/chat", () => ({
   useChatStore: (
     selector: (state: {
       setAgentDetailDmAvailable: typeof mockSetAgentDetailDmAvailable;
@@ -68,14 +68,14 @@ vi.mock("@patchbay/core/chat", () => ({
   ) =>
     selector({ setAgentDetailDmAvailable: mockSetAgentDetailDmAvailable }),
 }));
-vi.mock("@patchbay/core/agents", () => ({
+vi.mock("@orvilo/core/agents", () => ({
   isAgentRuntimeBound: (agent: {
     runtime_id: string;
     runtime_bound?: boolean;
   }) => agent.runtime_bound !== false && agent.runtime_id.length > 0,
   useWorkspacePresenceMap: () => ({ byAgent: new Map() }),
 }));
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({
     queryKey: ["agents", wsId],
     queryFn: () => Promise.resolve(agentsRef.current),
@@ -120,7 +120,7 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
     ],
   },
 }));
-vi.mock("@patchbay/core/runtimes", () => ({
+vi.mock("@orvilo/core/runtimes", () => ({
   runtimeModelsOptions: () => ({
     queryKey: ["runtime-models", null],
     queryFn: () => Promise.resolve({ models: [], supported: true }),
@@ -131,7 +131,7 @@ vi.mock("@patchbay/core/runtimes", () => ({
     queryFn: () => Promise.resolve([]),
   }),
 }));
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@orvilo/core/auth", () => {
   type AuthState = { user: { id: string } | null };
   const state = (): AuthState => ({ user: currentUserRef.current });
   const useAuthStore = Object.assign(
@@ -141,13 +141,13 @@ vi.mock("@patchbay/core/auth", () => {
   );
   return { useAuthStore };
 });
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({
     agents: () => "/acme/agents",
     chat: () => "/acme/chat",
   }),
 }));
-vi.mock("@patchbay/core/api", () => {
+vi.mock("@orvilo/core/api", () => {
   class ApiError extends Error {
     status: number;
     constructor(message: string, status: number) {

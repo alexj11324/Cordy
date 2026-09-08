@@ -14,9 +14,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	slackapi "github.com/slack-go/slack"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 type fakeAutomationCompletionQueries struct {

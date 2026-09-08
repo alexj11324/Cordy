@@ -14,13 +14,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
 )
 
 const (
-	guestTokenPrefix    = "pbg_"
+	guestTokenPrefix    = "ovg_"
 	guestTokenHexLength = 40
 	guestTokenLength    = len(guestTokenPrefix) + guestTokenHexLength
 	guestJSONBodyLimit  = 4 << 10
@@ -207,7 +207,7 @@ func (h *Handler) loadGuestSessionByToken(r *http.Request, rawToken string) (db.
 // /auth/guest contract. It intentionally does not accept a caller or a user
 // id: the server creates both the guest user and its opaque bearer in one
 // transaction. The router exposes this method at /auth/guest and the auth
-// middleware recognizes the resulting pbg_ bearer on subsequent requests.
+// middleware recognizes the resulting ovg_ bearer on subsequent requests.
 func (h *Handler) CreateGuestAuth(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.TxStarter == nil {
 		writeError(w, http.StatusServiceUnavailable, "guest session unavailable")
@@ -221,7 +221,7 @@ func (h *Handler) CreateGuestAuth(w http.ResponseWriter, r *http.Request) {
 	}
 	userID := dbid.NewV7()
 	sessionID := dbid.NewV7()
-	email := fmt.Sprintf("guest+%s@guest.patchbay.invalid", util.UUIDToString(userID))
+	email := fmt.Sprintf("guest+%s@guest.orvilo.invalid", util.UUIDToString(userID))
 
 	tx, err := h.TxStarter.Begin(r.Context())
 	if err != nil {
@@ -316,7 +316,7 @@ func (h *Handler) CreateGuestSession(w http.ResponseWriter, r *http.Request) {
 
 	rawToken := strings.TrimSpace(body.Token)
 	if !validGuestToken(rawToken) {
-		writeError(w, http.StatusBadRequest, "token must be a pbg_ token")
+		writeError(w, http.StatusBadRequest, "token must be a ovg_ token")
 		return
 	}
 	sess, err := h.Queries.CreateGuestSession(r.Context(), db.CreateGuestSessionParams{
@@ -394,7 +394,7 @@ func (h *Handler) ClaimGuestSession(w http.ResponseWriter, r *http.Request) {
 	}
 	rawToken := strings.TrimSpace(body.Token)
 	if !validGuestToken(rawToken) {
-		writeError(w, http.StatusBadRequest, "token must be a pbg_ token")
+		writeError(w, http.StatusBadRequest, "token must be a ovg_ token")
 		return
 	}
 
@@ -461,7 +461,7 @@ func (h *Handler) RevokeGuestSession(w http.ResponseWriter, r *http.Request) {
 	}
 	rawToken := strings.TrimSpace(body.Token)
 	if !validGuestToken(rawToken) {
-		writeError(w, http.StatusBadRequest, "token must be a pbg_ token")
+		writeError(w, http.StatusBadRequest, "token must be a ovg_ token")
 		return
 	}
 

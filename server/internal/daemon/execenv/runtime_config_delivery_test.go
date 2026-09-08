@@ -38,7 +38,7 @@ func deliveryInvariantFixtures() map[string]TaskContextForEnv {
 	return map[string]TaskContextForEnv{
 		"comment":     {IssueID: "i-1", TriggerCommentID: "tc-1", AgentName: "Eve", AgentID: "eve-1"},
 		"assignment":  {IssueID: "i-1", AgentName: "Eve", AgentID: "eve-1"},
-		"automation":   {AutomationRunID: "r-1", AgentName: "Eve", AgentID: "eve-1"},
+		"automation":  {AutomationRunID: "r-1", AgentName: "Eve", AgentID: "eve-1"},
 		"quickcreate": {QuickCreatePrompt: "p", AgentName: "Eve", AgentID: "eve-1"},
 		"chat_direct": {ChatSessionID: "c-1", AgentName: "Eve", AgentID: "eve-1"},
 		"chat_slack":  {ChatSessionID: "c-1", ChatChannelType: ChannelTypeSlack, AgentName: "Eve", AgentID: "eve-1"},
@@ -86,17 +86,17 @@ func TestBriefSurfaceDeliveryPolicy(t *testing.T) {
 	}{
 		// Issue surfaces: files ride the comment.
 		"comment": {
-			mustHave: []string{"`--attachment <path>` to `patchbay issue comment add`"},
-			mustNot:  []string{"patchbay attachment upload"},
+			mustHave: []string{"`--attachment <path>` to `orvilo issue comment add`"},
+			mustNot:  []string{"orvilo attachment upload"},
 		},
 		"assignment": {
-			mustHave: []string{"`--attachment <path>` to `patchbay issue comment add`"},
-			mustNot:  []string{"patchbay attachment upload"},
+			mustHave: []string{"`--attachment <path>` to `orvilo issue comment add`"},
+			mustNot:  []string{"orvilo attachment upload"},
 		},
 		// Direct chat: the upload binds to the reply and the browser renders a
 		// card, so the file can sit inline where the agent puts it.
 		"chat_direct": {
-			mustHave: []string{"`patchbay attachment upload <local-path>`"},
+			mustHave: []string{"`orvilo attachment upload <local-path>`"},
 			mustNot:  []string{"text-only", "separate message"},
 		},
 		// A channel-backed chat names its platform, defers the verdict to the
@@ -112,7 +112,7 @@ func TestBriefSurfaceDeliveryPolicy(t *testing.T) {
 				"never report a file as delivered",
 			},
 			mustNot: []string{
-				"run `patchbay attachment upload",
+				"run `orvilo attachment upload",
 				"separate message",
 				"conversation is text-only",
 				"does NOT apply",
@@ -124,7 +124,7 @@ func TestBriefSurfaceDeliveryPolicy(t *testing.T) {
 				"the per-turn user message tells you",
 			},
 			mustNot: []string{
-				"run `patchbay attachment upload",
+				"run `orvilo attachment upload",
 				"separate message",
 				"conversation is text-only",
 				"does NOT apply",
@@ -136,7 +136,7 @@ func TestBriefSurfaceDeliveryPolicy(t *testing.T) {
 				"the per-turn user message tells you",
 			},
 			mustNot: []string{
-				"run `patchbay attachment upload",
+				"run `orvilo attachment upload",
 				"separate message",
 				"conversation is text-only",
 				"does NOT apply",
@@ -167,7 +167,7 @@ func TestBriefSurfaceDeliveryPolicy(t *testing.T) {
 				"never report a file as delivered",
 			},
 			mustNot: []string{
-				"run `patchbay attachment upload",
+				"run `orvilo attachment upload",
 				"separate message",
 				"conversation is text-only",
 				"does NOT apply",
@@ -180,7 +180,7 @@ func TestBriefSurfaceDeliveryPolicy(t *testing.T) {
 				"never report a file as delivered",
 			},
 			mustNot: []string{
-				"run `patchbay attachment upload",
+				"run `orvilo attachment upload",
 				"separate message",
 				"conversation is text-only",
 				"does NOT apply",
@@ -188,11 +188,11 @@ func TestBriefSurfaceDeliveryPolicy(t *testing.T) {
 		},
 		"automation": {
 			mustHave: []string{"this surface is text-only"},
-			mustNot:  []string{"patchbay attachment upload"},
+			mustNot:  []string{"orvilo attachment upload"},
 		},
 		"quickcreate": {
-			mustHave: []string{"your stdout is text-only", "`patchbay issue create` call itself via `--attachment <path>`"},
-			mustNot:  []string{"patchbay attachment upload"},
+			mustHave: []string{"your stdout is text-only", "`orvilo issue create` call itself via `--attachment <path>`"},
+			mustNot:  []string{"orvilo attachment upload"},
 		},
 	}
 

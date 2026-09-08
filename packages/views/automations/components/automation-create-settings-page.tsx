@@ -7,16 +7,16 @@ import {
   automationTriggerPreset,
   type AutomationToolsConfig,
   type AutomationTriggerPreset,
-} from "@patchbay/core/automations";
+} from "@orvilo/core/automations";
 import {
   useCreateAutomation,
   useCreateAutomationTrigger,
-} from "@patchbay/core/automations/mutations";
-import { useAuthStore } from "@patchbay/core/auth";
+} from "@orvilo/core/automations/mutations";
+import { useAuthStore } from "@orvilo/core/auth";
 import { AutomationSettingsPage } from "./automation-settings-page";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { Button } from "@orvilo/ui/components/ui/button";
 import { useNavigation } from "../../navigation";
 import type { ContentEditorRef } from "../../editor";
 import { browserTimezone } from "../../common/timezone-select";

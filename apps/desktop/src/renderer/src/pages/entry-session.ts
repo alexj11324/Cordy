@@ -25,5 +25,5 @@ export async function startWorkspaceGuest({ create, storage, bridge }: {
   await enableWorkspaceMode(bridge);
   const { token, user } = await create();
   if (!token || user.is_guest !== true) throw new Error("Invalid Guest session");
-  storage.setItem("patchbay_token", token);
+  storage.setItem("orvilo_token", token);
 }

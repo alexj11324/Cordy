@@ -32,7 +32,7 @@ import type {
   IssueStatusCategory,
   SearchIssueResult,
   SearchProjectResult,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";

@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // pendingWorkHintDaemon builds a Daemon that knows exactly one runtime and

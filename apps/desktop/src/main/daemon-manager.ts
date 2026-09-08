@@ -56,7 +56,7 @@ import {
 } from "./daemon-auth-probe";
 
 const POLL_INTERVAL_MS = 5_000;
-const PREFS_PATH = join(homedir(), ".patchbay", "desktop_prefs.json");
+const PREFS_PATH = join(homedir(), ".orvilo", "desktop_prefs.json");
 const LOG_TAIL_RETRY_MS = 2_000;
 const LOG_TAIL_MAX_RETRIES = 5;
 // How long a start may sit in "starting" (with no /health) before we probe the
@@ -64,8 +64,8 @@ const LOG_TAIL_MAX_RETRIES = 5;
 // take a while (it renews the PAT and lists workspaces before serving /health), so we
 // wait past the common case to avoid probing healthy-but-slow starts.
 const AUTH_PROBE_GRACE_MS = 10_000;
-// `patchbay daemon start` blocks until the daemon reports ready, polling /health
-// for up to its own startup timeout (45s in server/cmd/patchbay/cmd_daemon.go) to
+// `orvilo daemon start` blocks until the daemon reports ready, polling /health
+// for up to its own startup timeout (45s in server/cmd/orvilo/cmd_daemon.go) to
 // cover cold-start agent-version detection. This execFile timeout MUST stay
 // above that — otherwise Electron kills the CLI supervisor mid-startup and a
 // healthy-but-slow start is misreported as a failure (the detached daemon child
@@ -134,7 +134,7 @@ function serializeProfileMutation<T>(operation: () => Promise<T>): Promise<T> {
 
 function ensureDesktopProfilePermissions(): Promise<void> {
   if (!profileHardeningPromise) {
-    const profilesRoot = join(homedir(), ".patchbay", "profiles");
+    const profilesRoot = join(homedir(), ".orvilo", "profiles");
     profileHardeningPromise = hardenExistingDesktopProfiles(profilesRoot).then(
       (count) => {
         if (count > 0) {
@@ -207,7 +207,7 @@ async function fetchHealthAtPort(
 
 /**
  * Validates the daemon profile's token against the backend to find out whether
- * a stuck start is an auth problem. Hits the same endpoint `patchbay auth status`
+ * a stuck start is an auth problem. Hits the same endpoint `orvilo auth status`
  * uses (GET /api/me) with the exact token the daemon loads from config.json, so
  * the verdict matches what the daemon itself would get from the server.
  *
@@ -253,7 +253,7 @@ async function readProfileConfig(
  *
  * Returns `null` until the renderer reports its `apiUrl`. There is no profile
  * to act on in that window, and callers must do nothing rather than reach for
- * the user's default CLI profile at `~/.patchbay/` — neither its files nor its
+ * the user's default CLI profile at `~/.orvilo/` — neither its files nor its
  * health port.
  */
 async function resolveActiveProfile(): Promise<ActiveProfile | null> {
@@ -396,7 +396,7 @@ async function fetchHealth(): Promise<DaemonStatus> {
 }
 
 function findCliOnPath(): string | null {
-  const candidates = process.platform === "win32" ? ["patchbay.exe"] : ["patchbay"];
+  const candidates = process.platform === "win32" ? ["orvilo.exe"] : ["orvilo"];
   const paths = (process.env["PATH"] ?? "").split(
     process.platform === "win32" ? ";" : ":",
   );
@@ -420,15 +420,15 @@ function requiresSourceCli(): boolean {
  * Returns the path to the CLI binary bundled inside the Desktop app.
  *
  * - Dev (`electron-vite dev`): `app.getAppPath()` → `apps/desktop`, resolving
- *   to `apps/desktop/resources/bin/patchbay`. `prepare-dev-runtime.mjs`
+ *   to `apps/desktop/resources/bin/orvilo`. `prepare-dev-runtime.mjs`
  *   populates this before dev starts, so iterating on Go changes is
  *   source-fingerprint cache hit or one explicit build → restart.
- * - Packaged: `app.getAppPath()` → `<Patchbay.app>/Contents/Resources/app.asar`.
+ * - Packaged: `app.getAppPath()` → `<Orvilo.app>/Contents/Resources/app.asar`.
  *   electron-builder's `asarUnpack: resources/**` extracts the binary to
  *   `app.asar.unpacked/`, so we swap the path segment to execute it.
  */
 function bundledCliPath(): string {
-  const binName = process.platform === "win32" ? "patchbay.exe" : "patchbay";
+  const binName = process.platform === "win32" ? "orvilo.exe" : "orvilo";
   return join(app.getAppPath(), "resources", "bin", binName).replace(
     "app.asar",
     "app.asar.unpacked",
@@ -466,14 +466,14 @@ async function probeCliBinary(
 }
 
 /**
- * Returns a usable `patchbay` binary path. Priority:
+ * Returns a usable `orvilo` binary path. Priority:
  *   1. Cached result from a previous successful resolve.
  *   2. Bundled binary shipped with the Desktop app (`prepare-dev-runtime.mjs`
  *      in development, `bundle-cli.mjs` during packaging).
  *   3. Managed binary already installed in userData (`managedCliPath`) when
  *      this is a packaged app or an explicitly non-source development run.
  *   4. Download + install latest release into userData in that same mode.
- *   5. `patchbay` on PATH in that same mode.
+ *   5. `orvilo` on PATH in that same mode.
  * Returns `null` only when all of the above fail.
  *
  * Bundled is preferred so Desktop iterates in lockstep with Go changes in
@@ -636,7 +636,7 @@ async function ensureRunningDaemonVersionMatches(): Promise<
 
 /**
  * Exchange the user's JWT for a long-lived PAT via POST /api/tokens. The
- * daemon needs a PAT (or `pby_` / `mdt_` token) because JWTs expire in 30
+ * daemon needs a PAT (or `ovy_` / `mdt_` token) because JWTs expire in 30
  * days and signatures are tied to a specific backend instance.
  */
 async function mintPat(jwt: string): Promise<string> {
@@ -664,7 +664,7 @@ async function mintPat(jwt: string): Promise<string> {
     );
   }
   const data = (await res.json()) as { token?: unknown };
-  if (typeof data.token !== "string" || !data.token.startsWith("pby_")) {
+  if (typeof data.token !== "string" || !data.token.startsWith("ovy_")) {
     throw new Error("mint PAT: response missing token");
   }
   return data.token;
@@ -675,7 +675,7 @@ async function mintPat(jwt: string): Promise<string> {
  *
  * - Input from the renderer is the user's JWT (from localStorage) plus the
  *   current user's id, so we can detect session changes.
- * - If the profile already has a cached PAT (`pby_...`) AND the sidecar user
+ * - If the profile already has a cached PAT (`ovy_...`) AND the sidecar user
  *   id matches the caller, reuse it — minting fresh on every launch would
  *   accumulate garbage in the user's tokens page.
  * - On user mismatch (or first run) call POST /api/tokens with the JWT to
@@ -708,10 +708,10 @@ async function syncToken(
     previousUserId === userId &&
     config.server_url === active.serverUrl &&
     typeof config.token === "string" &&
-    config.token.startsWith("pby_");
+    config.token.startsWith("ovy_");
 
   let finalToken: string;
-  if (tokenFromRenderer.startsWith("pby_")) {
+  if (tokenFromRenderer.startsWith("ovy_")) {
     finalToken = tokenFromRenderer;
   } else if (sameUserWithCachedPat) {
     finalToken = config.token as string;
@@ -775,7 +775,7 @@ async function loadPrefs(): Promise<DaemonPrefs> {
 }
 
 async function savePrefs(prefs: DaemonPrefs): Promise<void> {
-  const dir = join(homedir(), ".patchbay");
+  const dir = join(homedir(), ".orvilo");
   await mkdir(dir, { recursive: true });
   await writeFile(PREFS_PATH, JSON.stringify(prefs, null, 2), "utf-8");
 }
@@ -947,7 +947,7 @@ async function applyDesktopProfileRequest(
 ): Promise<void> {
   await ensureDesktopProfilePermissions();
   const binary = resolvedBinary ?? (await resolveCliBinary());
-  if (!binary) throw new Error("patchbay CLI is not installed");
+  if (!binary) throw new Error("orvilo CLI is not installed");
   await runDesktopProfileHelper(binary, request, desktopSpawnEnv());
 }
 
@@ -973,7 +973,7 @@ async function startDaemon(
   recoveryProfile?: ActiveProfile,
 ): Promise<{ success: boolean; error?: string }> {
   const bin = await resolveCliBinary();
-  if (!bin) return { success: false, error: "patchbay CLI is not installed" };
+  if (!bin) return { success: false, error: "orvilo CLI is not installed" };
 
   const active = await ensureActiveProfile();
   if (!active) {
@@ -1079,7 +1079,7 @@ async function stopDaemon(): Promise<{ success: boolean; error?: string }> {
   if (await lifecycleBlockedByForeignDaemon()) return { success: true };
 
   const bin = await resolveCliBinary();
-  if (!bin) return { success: false, error: "patchbay CLI is not installed" };
+  if (!bin) return { success: false, error: "orvilo CLI is not installed" };
 
   const active = await ensureActiveProfile();
   if (!active) return { success: true };

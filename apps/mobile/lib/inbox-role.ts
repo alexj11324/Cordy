@@ -1,4 +1,4 @@
-import type { IssueActorType } from "@patchbay/core/types";
+import type { IssueActorType } from "@orvilo/core/types";
 
 export type InboxIssueRole = "owner" | "executor";
 

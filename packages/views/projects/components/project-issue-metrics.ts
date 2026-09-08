@@ -1,4 +1,4 @@
-import type { Project } from "@patchbay/core/types";
+import type { Project } from "@orvilo/core/types";
 
 export function getProjectIssueMetrics(
   project: Pick<Project, "issue_count" | "done_count">,

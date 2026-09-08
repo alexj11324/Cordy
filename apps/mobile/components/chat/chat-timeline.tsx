@@ -22,7 +22,7 @@
  */
 import { View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import type { TaskMessagePayload } from "@patchbay/core/types";
+import type { TaskMessagePayload } from "@orvilo/core/types";
 import { Text } from "@/components/ui/text";
 import {
   Collapsible,

@@ -6,7 +6,7 @@
   "hub": {
     "available": "Available Agents:",
     "empty": "No available Agents were found.",
-    "no_available": "No available Agents are connected to your Patchbay account in this workspace.",
+    "no_available": "No available Agents are connected to your Orvilo account in this workspace.",
     "not_found": "I couldn't find an Agent matching `%s`.",
     "switched": "Switched to Agent **%s**. Send your next message to continue here.",
     "current": "(current)",

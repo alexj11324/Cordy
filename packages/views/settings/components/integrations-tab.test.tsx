@@ -3,14 +3,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { ApiError } from "@patchbay/core/api";
-import { configStore } from "@patchbay/core/config";
+import { ApiError } from "@orvilo/core/api";
+import { configStore } from "@orvilo/core/config";
 import {
   BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
   COMPOSIO_MCP_APPS_FLAG,
   LINEAR_INSTALLATION_FOUNDATION_FLAG,
-} from "@patchbay/core/feature-flags";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+} from "@orvilo/core/feature-flags";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -89,21 +89,21 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/composio", () => ({
+vi.mock("@orvilo/core/composio", () => ({
   composioToolkitsOptions: () => ({ queryKey: ["composio", "toolkits"] }),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "workspace-1", name: "Acme", slug: "acme" }),
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (selector: (state: { user: typeof authUserRef.current }) => unknown) =>
     selector({ user: authUserRef.current }),
 }));
 
 for (const channel of ["lark", "slack", "dingtalk", "wecom", "telegram", "weixin"]) {
-  vi.doMock(`@patchbay/core/${channel}`, () => ({
+  vi.doMock(`@orvilo/core/${channel}`, () => ({
     [`${channel}InstallationsOptions`]: (workspaceId: string) => ({
       queryKey: [channel, workspaceId, "installations"],
     }),

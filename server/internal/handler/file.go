@@ -16,10 +16,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/storage"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/storage"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // extContentTypes overrides http.DetectContentType for extensions it gets wrong.
@@ -508,7 +508,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			// chat_history.go:chatHistorySession). X-Task-ID is only trustworthy
 			// when the auth middleware set it from a task-scoped `mat_` token —
 			// that path is also the ONLY one that stamps X-Actor-Source=task_token
-			// and strips a client-forged X-Task-ID. A normal JWT / `pby_` PAT
+			// and strips a client-forged X-Task-ID. A normal JWT / `ovy_` PAT
 			// leaves X-Actor-Source empty and does NOT strip a forged X-Task-ID,
 			// and resolveActor's fallback will accept a real X-Agent-ID +
 			// X-Task-ID pair. So without this gate a member who learns a task ID

@@ -32,8 +32,8 @@ permissions, events and Agent execution before release.
 
 Checks:
 
-- `pnpm --filter @patchbay/desktop typecheck:cards`
+- `pnpm --filter @orvilo/desktop typecheck:cards`
 - `pnpm test:cards` (install Playwright Chromium first, or use
   `PLAYWRIGHT_CHANNEL=chrome pnpm test:cards` with local Chrome)
-- `pnpm --filter @patchbay/desktop exec vite build --config card-preview/vite.config.ts`
+- `pnpm --filter @orvilo/desktop exec vite build --config card-preview/vite.config.ts`
   must fail with the development-only error.

@@ -4,16 +4,16 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Loader2, Lock, Plug } from "lucide-react";
 import { toast } from "sonner";
-import type { Agent, ComposioToolkit } from "@patchbay/core/types";
-import { useUpdateAgentAllowlist } from "@patchbay/core/agents";
-import { useFeatureEnabled } from "@patchbay/core/config";
+import type { Agent, ComposioToolkit } from "@orvilo/core/types";
+import { useUpdateAgentAllowlist } from "@orvilo/core/agents";
+import { useFeatureEnabled } from "@orvilo/core/config";
 import {
   composioConnectionsOptions,
   composioToolkitsOptions,
-} from "@patchbay/core/composio";
-import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+} from "@orvilo/core/composio";
+import { COMPOSIO_MCP_APPS_FLAG } from "@orvilo/core/feature-flags";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
 import { ComposioToolkitLogo } from "../../../common/composio-toolkit-logo";
 import { AppLink } from "../../../navigation";
 import { useT } from "../../../i18n";

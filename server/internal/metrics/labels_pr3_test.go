@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/metrics"
 )
 
 func TestNormalizePR3LabelsCollapseUnknownValues(t *testing.T) {
@@ -88,7 +88,7 @@ func TestOnboardingStartedUnknownPlatformCollapses(t *testing.T) {
 	// present: web and unknown. Anything else means the raw header
 	// leaked into the label.
 	families := metrics.GatherForTest(t, m)
-	famName := "patchbay_onboarding_started_total"
+	famName := "orvilo_onboarding_started_total"
 	fam, ok := families[famName]
 	if !ok {
 		t.Fatalf("metric family %s not present in registry output", famName)

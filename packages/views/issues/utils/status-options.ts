@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { ALL_STATUSES } from "@patchbay/core/issues/config";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { issueStatusColor } from "@patchbay/core/issue-statuses/queries";
-import type { IssueStatus, IssueStatusCategory } from "@patchbay/core/types";
+import { ALL_STATUSES } from "@orvilo/core/issues/config";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
+import { issueStatusColor } from "@orvilo/core/issue-statuses/queries";
+import type { IssueStatus, IssueStatusCategory } from "@orvilo/core/types";
 import { useStatusLabel } from "./status-label";
 
 export interface StatusOption {

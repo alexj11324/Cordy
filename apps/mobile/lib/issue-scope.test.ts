@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@orvilo/core/types";
 import {
   filterIssuesByScope,
   issueActorForRole,

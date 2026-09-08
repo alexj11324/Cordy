@@ -81,7 +81,7 @@ func TestRegistrationClient_Begin_HappyPath(t *testing.T) {
 	})
 
 	c := NewRegistrationClient(RegistrationConfig{Domain: fake.URL()})
-	res, err := c.Begin(context.Background(), "Ada - Patchbay", "")
+	res, err := c.Begin(context.Background(), "Ada - Orvilo", "")
 	if err != nil {
 		t.Fatalf("Begin: %v", err)
 	}
@@ -110,14 +110,14 @@ func TestRegistrationClient_Begin_HappyPath(t *testing.T) {
 	if q.Get("tp") != "sdk" {
 		t.Errorf("qr tp=%q want sdk", q.Get("tp"))
 	}
-	if !strings.HasPrefix(q.Get("source"), "go-sdk/patchbay") {
-		t.Errorf("qr source=%q want go-sdk/patchbay", q.Get("source"))
+	if !strings.HasPrefix(q.Get("source"), "go-sdk/orvilo") {
+		t.Errorf("qr source=%q want go-sdk/orvilo", q.Get("source"))
 	}
 	// The name preset pre-fills the Lark PersonalAgent creation form so
-	// the bot defaults to "<agent> - Patchbay" rather than the
+	// the bot defaults to "<agent> - Orvilo" rather than the
 	// auto-generated "{用户姓名}的智能助手".
-	if q.Get("name") != "Ada - Patchbay" {
-		t.Errorf("qr name=%q want %q", q.Get("name"), "Ada - Patchbay")
+	if q.Get("name") != "Ada - Orvilo" {
+		t.Errorf("qr name=%q want %q", q.Get("name"), "Ada - Orvilo")
 	}
 }
 
@@ -485,11 +485,11 @@ func TestRegistrationClient_Poll_DomainSwitchOnFeishuTenant(t *testing.T) {
 // gate flips on only one side.
 func TestRegistrationClient_Poll_NoSwitchWhenAlreadyOnMatchingHost(t *testing.T) {
 	cases := []struct {
-		name        string
-		brand       string
-		begunOn     string
-		feishuHost  string
-		larkHost    string
+		name       string
+		brand      string
+		begunOn    string
+		feishuHost string
+		larkHost   string
 	}{
 		{
 			name:       "lark brand on lark host is a no-op",

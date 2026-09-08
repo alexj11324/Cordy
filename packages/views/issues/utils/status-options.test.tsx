@@ -1,7 +1,7 @@
 import { renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { buildIssueStatusCatalog } from "@patchbay/core/issue-statuses";
-import type { IssueStatusEntry } from "@patchbay/core/types";
+import { buildIssueStatusCatalog } from "@orvilo/core/issue-statuses";
+import type { IssueStatusEntry } from "@orvilo/core/types";
 import en from "../../locales/en/issues.json";
 import { useStatusOptions } from "./status-options";
 import { useStatusLabel } from "./status-label";
@@ -10,11 +10,11 @@ import { useStatusLabel } from "./status-label";
 // the filter are allowed to offer, so the catalog is fed in directly.
 let catalogEntries: IssueStatusEntry[] | undefined;
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
+vi.mock("@orvilo/core/issue-statuses/hooks", () => ({
   useIssueStatuses: () => buildIssueStatusCatalog(catalogEntries),
 }));
 

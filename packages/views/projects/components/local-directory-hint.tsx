@@ -2,9 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { FolderOpen, GitBranch } from "lucide-react";
-import { projectResourcesOptions } from "@patchbay/core/projects";
-import type { LocalDirectoryResourceRef, ProjectResource } from "@patchbay/core/types";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import { projectResourcesOptions } from "@orvilo/core/projects";
+import type { LocalDirectoryResourceRef, ProjectResource } from "@orvilo/core/types";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import { useLocalDaemonStatus } from "../../platform";
 import { useT } from "../../i18n";
 import { localDirectoryLabel } from "./local-directory-label";

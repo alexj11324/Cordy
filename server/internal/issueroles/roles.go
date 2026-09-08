@@ -1,6 +1,6 @@
 package issueroles
 
-import "github.com/patchbay-ai/patchbay/server/internal/issuestatus"
+import "github.com/orvilo-ai/orvilo/server/internal/issuestatus"
 
 const (
 	OwnerMember   = "member"

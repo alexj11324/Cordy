@@ -1,1 +1,1 @@
-export { InboxPage as default } from "@patchbay/views/inbox";
+export { InboxPage as default } from "@orvilo/views/inbox";

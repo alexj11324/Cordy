@@ -112,7 +112,7 @@ Editing configuration does not change tasks already running. Later tasks use the
 Environment variables suit limited-privilege credentials the agent needs at run time, such as a read-only API key or a single-scope token.
 
 <Callout type="warning">
-**`custom_env` values are stored in plaintext in the Patchbay server database** — they are not "stays on this machine" data. Agent list and detail endpoints no longer return any env values, only an opaque count; only workspace `owner`s and `admin`s can unlock and modify values, and every read or change leaves an audit record. A running agent cannot call the admin endpoints to read another agent's variables.
+**`custom_env` values are stored in plaintext in the Orvilo server database** — they are not "stays on this machine" data. Agent list and detail endpoints no longer return any env values, only an opaque count; only workspace `owner`s and `admin`s can unlock and modify values, and every read or change leaves an audit record. A running agent cannot call the admin endpoints to read another agent's variables.
 </Callout>
 
 Do not use production database admin passwords or other high-value long-lived credentials.
@@ -138,7 +138,7 @@ Environment variable values and MCP configuration are never copied and must be s
 ## Creating with the CLI
 
 ```bash
-patchbay agent create \
+orvilo agent create \
   --name "Frontend Reviewer" \
   --runtime-id <runtime-id> \
   --description "Reviews frontend pull requests" \
@@ -150,7 +150,7 @@ Plaintext in command-line arguments ends up in shell history; stdin and permissi
 When a similarly configured agent already exists, copy it directly:
 
 ```bash
-patchbay agent copy <agent-id>
+orvilo agent copy <agent-id>
 ```
 
 By default the copy stays on the same runtime; add `--runtime-id` to move it to another runtime, which also requires `--model`. Environment variables, MCP configuration, and `runtime_config` are never copied; the runtime binding itself is kept. Full flags in [Using the CLI](/cli).

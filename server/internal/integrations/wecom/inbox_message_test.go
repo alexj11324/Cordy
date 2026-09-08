@@ -157,7 +157,7 @@ func TestInboxCardDoesNotRenderMemberAuthoredLinks(t *testing.T) {
 // not fit is a message silently lost, not a message truncated.
 func TestInboxCardFitsTheCapEvenWithAHugeTitle(t *testing.T) {
 	huge := strings.Repeat("标题", 4000) // far past inboxMarkdownMaxLen on its own
-	t.Setenv("ORVILO_APP_URL", "https://patchbay.example")
+	t.Setenv("ORVILO_APP_URL", "https://orvilo.example")
 	item := map[string]any{"type": "mentioned", "title": huge, "body": "body"}
 	out := buildInboxMarkdown(item, "ws-uuid", "acme")
 	if n := utf8.RuneCountInString(out); n > inboxMarkdownMaxLen {
@@ -275,7 +275,7 @@ func TestInboxCardSeamSurvivesEveryCutOffset(t *testing.T) {
 // text. Measured after truncation, the card would ship over the cap and WeCom
 // would refuse the whole frame while the send path reports success.
 func TestInboxCardBudgetsTheSpacesItInserts(t *testing.T) {
-	t.Setenv("ORVILO_APP_URL", "https://patchbay.example")
+	t.Setenv("ORVILO_APP_URL", "https://orvilo.example")
 	item := map[string]any{
 		"type":  "mentioned",
 		"title": "t",
@@ -399,7 +399,7 @@ func TestInboxCardSeamKeepsDefinitionsBrokenAtEveryCutOffset(t *testing.T) {
 // the card ships over the cap and WeCom drops the whole frame while the send
 // path reports success.
 func TestInboxCardBudgetsTheSpacesTheDefinitionBreakInserts(t *testing.T) {
-	t.Setenv("ORVILO_APP_URL", "https://patchbay.example")
+	t.Setenv("ORVILO_APP_URL", "https://orvilo.example")
 	item := map[string]any{
 		"type":  "mentioned",
 		"title": "t",

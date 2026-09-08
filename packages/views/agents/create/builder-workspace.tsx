@@ -13,12 +13,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from "@patchbay/ui/components/ui/resizable";
+} from "@orvilo/ui/components/ui/resizable";
 import {
   applyDraftModelChange,
   applyDraftRuntimeChange,
@@ -27,12 +27,12 @@ import {
   mergeBuilderDraft,
   parseBuilderDraft,
   stripBuilderDraft,
-} from "@patchbay/core/agents";
+} from "@orvilo/core/agents";
 import {
   runtimeDisplayLabel,
   runtimeModelsOptions,
-} from "@patchbay/core/runtimes";
-import type { AgentBuilderSessionSummary } from "@patchbay/core/types";
+} from "@orvilo/core/runtimes";
+import type { AgentBuilderSessionSummary } from "@orvilo/core/types";
 import { AgentConfigurationPanel } from "./agent-configuration-panel";
 import { BuilderConversation } from "./builder-conversation";
 import { CreateAgentFooter } from "./create-agent-footer";
@@ -78,7 +78,7 @@ export function BuilderWorkspace({
 }) {
   const { t } = useT("agents");
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "patchbay_agent_builder_layout",
+    id: "orvilo_agent_builder_layout",
   });
 
   // Resuming: the conversation already runs somewhere, and only the server

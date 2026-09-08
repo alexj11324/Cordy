@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
 )
 
 // Attachment download capabilities — MUL-5292.

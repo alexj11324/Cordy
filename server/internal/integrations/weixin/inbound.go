@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
 )
 
 // RawEvent is the platform-specific portion retained for resolver/replier

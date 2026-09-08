@@ -2,13 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, AgentRuntime, MemberWithUser } from "@patchbay/core/types";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { larkInstallationsOptions } from "@patchbay/core/lark";
-import { slackInstallationsOptions } from "@patchbay/core/slack";
-import { dingtalkInstallationsOptions } from "@patchbay/core/dingtalk";
-import { wecomInstallationsOptions } from "@patchbay/core/wecom";
-import { telegramInstallationsOptions } from "@patchbay/core/telegram";
+import type { Agent, AgentRuntime, MemberWithUser } from "@orvilo/core/types";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { larkInstallationsOptions } from "@orvilo/core/lark";
+import { slackInstallationsOptions } from "@orvilo/core/slack";
+import { dingtalkInstallationsOptions } from "@orvilo/core/dingtalk";
+import { wecomInstallationsOptions } from "@orvilo/core/wecom";
+import { telegramInstallationsOptions } from "@orvilo/core/telegram";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -18,13 +18,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@patchbay/ui/components/ui/tabs";
+} from "@orvilo/ui/components/ui/tabs";
 import { EnvTab } from "./tabs/env-tab";
 import { CustomArgsTab } from "./tabs/custom-args-tab";
 import { IntegrationsTab } from "./tabs/integrations-tab";

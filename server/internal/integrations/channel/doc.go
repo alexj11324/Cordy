@@ -1,4 +1,4 @@
-// Package channel is the platform-agnostic foundation for Patchbay's
+// Package channel is the platform-agnostic foundation for Orvilo's
 // inbound IM integrations (Feishu/Lark, Slack, WeCom, …). It owns the
 // contract every integration implements so the core never learns what a
 // given platform's event JSON looks like — design tracked in MUL-3506,

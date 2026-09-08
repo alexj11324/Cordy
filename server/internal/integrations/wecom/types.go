@@ -19,7 +19,7 @@
 //
 // Maintenance: this package is COMMUNITY-MAINTAINED. Its maintainers, the
 // support boundary and the retirement rule are published at
-// https://patchbay.aspectlylabs.com/docs/community-maintained
+// https://orvilo.aspectlylabs.com/docs/community-maintained
 // (apps/docs/content/docs/community-maintained.mdx, four locales). That page
 // is the single source of truth — record ownership changes there, not here.
 // Changing the shared channel engine? Keep this adapter building, and loop in
@@ -31,7 +31,7 @@
 // receipt.
 //
 // Outbound file delivery cannot report back to the agent that produced the
-// file. `patchbay attachment upload` returns once the object is in storage and
+// file. `orvilo attachment upload` returns once the object is in storage and
 // bound to the reply, while the send into the room runs on EventChatDone —
 // after the run has ended. A delivery that is shed, refused by WeCom, or lost
 // with the socket is therefore told to the person in the chat
@@ -51,8 +51,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // TypeWecom is the channel discriminator for the WeCom smart-bot adapter.
@@ -68,8 +68,8 @@ const channelTypeWecom = string(TypeWecom)
 type InstallationStatus string
 
 const (
-	InstallationInstalled  InstallationStatus = "installed"
-	InstallationRevoked InstallationStatus = "revoked"
+	InstallationInstalled InstallationStatus = "installed"
+	InstallationRevoked   InstallationStatus = "revoked"
 )
 
 // Installation is the decoded, in-memory view of a WeCom smart-bot
@@ -96,7 +96,7 @@ type Installation struct {
 	SecretEncrypted []byte
 
 	// BotDisplayName is what the bot is called in a chat. A WeCom group
-	// mention arrives as literal text — "@Patchbay Bot /new 重新分析" — with no
+	// mention arrives as literal text — "@Orvilo Bot /new 重新分析" — with no
 	// structured mention list anywhere in the payload, so recognising where
 	// the mention ends is the only way a name containing a space does not
 	// swallow the command after it.

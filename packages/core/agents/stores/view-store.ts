@@ -170,7 +170,7 @@ export const useAgentsViewStore = create<AgentsViewState>()(
       clearFilters: () => set({ filters: EMPTY_AGENT_FILTERS }),
     }),
     {
-      name: "patchbay_agents_view",
+      name: "orvilo_agents_view",
       storage: createJSONStorage(() =>
         createWorkspaceAwareStorage(defaultStorage),
       ),

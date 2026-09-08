@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TriangleAlert } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   ContentEditor,
   type ContentEditorRef,
@@ -17,15 +17,15 @@ import {
   useCoordinatedUploads,
   type UploadDraftBinding,
 } from "../../editor/use-coordinated-uploads";
-import { SubmitButton } from "@patchbay/ui/components/common/submit-button";
+import { SubmitButton } from "@orvilo/ui/components/common/submit-button";
 import { ChatAddMenu } from "./chat-add-menu";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
-import { useChatStore, DRAFT_NEW_SESSION } from "@patchbay/core/chat";
-import { attachmentToDraftUpload, type DraftUpload } from "@patchbay/core/drafts";
-import { createLogger } from "@patchbay/core/logger";
-import { formatShortcut, useShortcut } from "@patchbay/core/shortcuts";
+import { useChatStore, DRAFT_NEW_SESSION } from "@orvilo/core/chat";
+import { attachmentToDraftUpload, type DraftUpload } from "@orvilo/core/drafts";
+import { createLogger } from "@orvilo/core/logger";
+import { formatShortcut, useShortcut } from "@orvilo/core/shortcuts";
 import type { MentionItem } from "../../editor/extensions/mention-suggestion";
-import type { Attachment, Project } from "@patchbay/core/types";
+import type { Attachment, Project } from "@orvilo/core/types";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { ClearablePillButton } from "../../common/pill-button";
 import { useT } from "../../i18n";

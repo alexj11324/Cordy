@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 func TestPrioritizeAgentThreadTaskSelectsQueuedContinuationAndCurrentExecution(t *testing.T) {

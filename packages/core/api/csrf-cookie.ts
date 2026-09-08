@@ -1,5 +1,5 @@
 /** Production CSRF cookie. Staging hosts also receive this from `.aspectlylabs.com`. */
-export const PRODUCTION_CSRF_COOKIE_NAME = "patchbay_csrf";
+export const PRODUCTION_CSRF_COOKIE_NAME = "orvilo_csrf";
 
 /**
  * Staging CSRF cookie. The shared production Web image cannot bake a
@@ -9,7 +9,7 @@ export const PRODUCTION_CSRF_COOKIE_NAME = "patchbay_csrf";
  * or PRODUCTION_CSRF_COOKIE_NAME; unknown CSRF_COOKIE_NAME values fall
  * back to the production default.
  */
-export const STAGING_CSRF_COOKIE_NAME = "patchbay_staging_csrf";
+export const STAGING_CSRF_COOKIE_NAME = "orvilo_staging_csrf";
 
 const CSRF_COOKIE_NAMES = [STAGING_CSRF_COOKIE_NAME, PRODUCTION_CSRF_COOKIE_NAME] as const;
 

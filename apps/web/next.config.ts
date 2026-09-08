@@ -39,7 +39,7 @@ const allowedDevOrigins = process.env.CORS_ALLOWED_ORIGINS
 
 const nextConfig: NextConfig = {
   ...(process.env.STANDALONE === "true" ? { output: "standalone" as const } : {}),
-  transpilePackages: ["@patchbay/auth-ui", "@patchbay/core", "@patchbay/ui", "@patchbay/views"],
+  transpilePackages: ["@orvilo/auth-ui", "@orvilo/core", "@orvilo/ui", "@orvilo/views"],
   ...(allowedDevOrigins && allowedDevOrigins.length > 0
     ? { allowedDevOrigins }
     : {}),
@@ -53,11 +53,11 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: [
           {
-            key: "X-Patchbay-Build",
+            key: "X-Orvilo-Build",
             value: process.env.NEXT_PUBLIC_APP_VERSION || "dev",
           },
           {
-            key: "X-Patchbay-Commit",
+            key: "X-Orvilo-Commit",
             value: process.env.NEXT_PUBLIC_COMMIT_SHA || "unknown",
           },
         ],

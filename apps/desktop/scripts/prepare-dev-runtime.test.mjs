@@ -21,13 +21,13 @@ describe("complete Go development runtime artifacts", () => {
       "migrations",
     ]);
     expect(components[0].destinationBinary).toBe(
-      join("/repo", "apps", "desktop", "resources", "bin", "patchbay"),
+      join("/repo", "apps", "desktop", "resources", "bin", "orvilo"),
     );
     expect(components[1].destinationBinary).toBe(
-      join("/repo", ".patchbay-dev", "bin", "server"),
+      join("/repo", ".orvilo-dev", "bin", "server"),
     );
     expect(components[2].destinationBinary).toBe(
-      join("/repo", ".patchbay-dev", "bin", "migrate"),
+      join("/repo", ".orvilo-dev", "bin", "migrate"),
     );
   });
 
@@ -47,8 +47,8 @@ describe("complete Go development runtime artifacts", () => {
       "-ldflags",
       "-X main.version=dev -X main.commit=abc123 -X main.date=2026-09-04T00:00:00Z",
       "-o",
-      join("/repo", "server", "bin", "windows-amd64", "patchbay.exe"),
-      "./cmd/patchbay",
+      join("/repo", "server", "bin", "windows-amd64", "orvilo.exe"),
+      "./cmd/orvilo",
     ]);
   });
 

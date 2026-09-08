@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   WorkspaceSeatPurchasePreview,
   WorkspaceSubscriptionSummary,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   isSingleSeatInvitePreview,
   purchasedSeatIsReadyForInvitation,

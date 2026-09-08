@@ -19,7 +19,7 @@ func TestListGroupedIssuesExecutorPaginatesPerGroup(t *testing.T) {
 		INSERT INTO "user" (name, email)
 		VALUES ($1, $2)
 		RETURNING id
-	`, "Grouped Issues Test User", fmt.Sprintf("grouped-%d@patchbay.ai", suffix)).Scan(&ownerID); err != nil {
+	`, "Grouped Issues Test User", fmt.Sprintf("grouped-%d@orvilo.ai", suffix)).Scan(&ownerID); err != nil {
 		t.Fatalf("create owner user: %v", err)
 	}
 	t.Cleanup(func() {

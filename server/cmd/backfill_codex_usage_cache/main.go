@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
 )
 
 const rollupAdvisoryLockID = 4246
@@ -80,7 +80,7 @@ func run() error {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dbURL = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

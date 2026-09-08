@@ -5,7 +5,7 @@ import type {
   ChatMessage,
   ChatPendingTask,
   ChatQuickActionsPayload,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 
 import {
   applyChatDoneToCache,

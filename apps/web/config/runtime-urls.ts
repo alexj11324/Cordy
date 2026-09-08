@@ -28,7 +28,7 @@ function cleanHttpUrl(raw: string | undefined): string | undefined {
 // upload — the most common self-hosting mistake (#6619, MUL-5922). Strip that
 // one suffix instead of honouring it. Any other path is preserved: a reverse
 // proxy may legitimately mount the whole backend under a prefix such as
-// `https://host/patchbay`.
+// `https://host/orvilo`.
 function stripApiPathSuffix(value: string): string {
   let url: URL;
   try {
@@ -165,7 +165,7 @@ export function runtimeRewriteDestination(
   if (pathname === "/ws") {
     return appendPath(remoteApiUrl, "/ws");
   }
-  // `patchbay setup self-host` probes `{server-url}/health` and treats any
+  // `orvilo setup self-host` probes `{server-url}/health` and treats any
   // non-200 as "Server not reachable". The backend serves it, but a
   // same-origin reverse proxy that forwards everything to the web image left
   // the probe 404ing at the Next.js router, so setup failed against a healthy

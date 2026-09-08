@@ -5,7 +5,7 @@ interface FeedbackDraft {
 }
 
 export const useFeedbackDraftStore = createDraftStore<FeedbackDraft>({
-  storageKey: "patchbay_feedback_draft",
+  storageKey: "orvilo_feedback_draft",
   emptyData: { message: "" },
   hasMeaningful: (d) => !!d.message,
 });

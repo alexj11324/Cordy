@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { cn } from "@patchbay/ui/lib/utils";
-import { UnicodeSpinner } from "@patchbay/ui/components/common/unicode-spinner";
-import type { AgentAvailability } from "@patchbay/core/agents";
-import type { ChatPendingTask, TaskMessagePayload } from "@patchbay/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
+import { UnicodeSpinner } from "@orvilo/ui/components/common/unicode-spinner";
+import type { AgentAvailability } from "@orvilo/core/agents";
+import type { ChatPendingTask, TaskMessagePayload } from "@orvilo/core/types";
 import { formatElapsedSecs } from "../lib/format";
 import { useT } from "../../i18n";
 

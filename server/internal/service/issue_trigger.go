@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // RunEnqueueSource identifies which kind of issue write would start an agent
@@ -41,8 +41,8 @@ const (
 // only the duplicate enqueue is suppressed. Cross-issue handoffs to a fresh
 // target remain runnable. A nil func means "do not suppress".
 type IssueTriggerProbe struct {
-	CanAccessAgent               func(agent db.Agent) bool
-	IsSelfLoop                   func() bool
+	CanAccessAgent             func(agent db.Agent) bool
+	IsSelfLoop                 func() bool
 	SuppressActiveSelfExecutor func(agentID pgtype.UUID) bool
 }
 

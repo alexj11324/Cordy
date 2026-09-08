@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentTask } from "@patchbay/core/types";
+import type { AgentTask } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 const mockState = vi.hoisted(() => ({
@@ -13,7 +13,7 @@ const mockState = vi.hoisted(() => ({
   triggerProps: undefined as Record<string, unknown> | undefined,
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (_type: string, id: string) =>
       ({
@@ -29,7 +29,7 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
   }),
 }));
 
-vi.mock("@patchbay/ui/components/ui/popover", async () => {
+vi.mock("@orvilo/ui/components/ui/popover", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
   return {
     Popover: ({ children }: { children: React.ReactNode }) => (

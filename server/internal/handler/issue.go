@@ -20,20 +20,20 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/channelmedia"
-	"github.com/patchbay-ai/patchbay/server/internal/dispatch"
-	"github.com/patchbay-ai/patchbay/server/internal/issueguard"
-	"github.com/patchbay-ai/patchbay/server/internal/issueroles"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	agentpkg "github.com/patchbay-ai/patchbay/server/pkg/agent"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/channelmedia"
+	"github.com/orvilo-ai/orvilo/server/internal/dispatch"
+	"github.com/orvilo-ai/orvilo/server/internal/issueguard"
+	"github.com/orvilo-ai/orvilo/server/internal/issueroles"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	agentpkg "github.com/orvilo-ai/orvilo/server/pkg/agent"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // IssueResponse is the JSON response for an issue.
@@ -2752,7 +2752,7 @@ func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
 // user picks an actor (agent or team) in the modal and types one line of
 // natural language; the server validates the actor's reachability up front,
 // queues a quick-create task, and returns 202 immediately. The agent
-// translates the prompt into a `patchbay issue create` invocation in the
+// translates the prompt into a `orvilo issue create` invocation in the
 // background; success and failure both surface as inbox notifications to
 // the requester.
 //
@@ -2762,7 +2762,7 @@ func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
 // is the team, so it can choose to delegate to a team member as usual.
 //
 // ProjectID is optional and lets the modal target a specific project so
-// the agent's `patchbay issue create` invocation passes `--project <uuid>`
+// the agent's `orvilo issue create` invocation passes `--project <uuid>`
 // instead of letting it default. The frontend remembers the user's last
 // pick per workspace, so frequent users skip retyping "in project X".
 //
@@ -3073,7 +3073,7 @@ func (h *Handler) checkQuickCreateDaemonVersionAtLeast(ctx context.Context, sour
 }
 
 // readRuntimeCLIVersion pulls metadata.cli_version off a runtime row. The
-// metadata column is JSONB on the wire; the daemon stores the patchbay CLI
+// metadata column is JSONB on the wire; the daemon stores the orvilo CLI
 // version under that key during registration (see DaemonRegister).
 func readRuntimeCLIVersion(metadata []byte) string {
 	if len(metadata) == 0 {
@@ -3472,11 +3472,11 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		LabelIDs:       labelIDs,
 		AllowDuplicate: req.AllowDuplicate,
 	}, service.IssueCreateOpts{
-		ActorID:          actualCreatorID,
+		ActorID:                actualCreatorID,
 		ConsumeTaskLeaseID:     consumeTaskLeaseID,
 		ConsumeTaskLeaseTaskID: consumeTaskLeaseTaskID,
-		AnalyticsAgentID: analyticsAgentID,
-		Platform:         func() string { p, _, _ := middleware.ClientMetadataFromContext(r.Context()); return p }(),
+		AnalyticsAgentID:       analyticsAgentID,
+		Platform:               func() string { p, _, _ := middleware.ClientMetadataFromContext(r.Context()); return p }(),
 		BroadcastPayload: func(issue db.Issue, atts []db.Attachment, labels []db.IssueLabel) map[string]any {
 			payload := issueToResponse(issue, prefix)
 			// The event other tabs receive must carry the category too — filling
@@ -4756,7 +4756,7 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 	// real-world cases that hit this path are caller mistakes (status placed
 	// at the top level, "update" misspelled as singular). Telling the truth
 	// here — `{"updated": 0}` — keeps the wire shape stable while making the
-	// count match reality. See patchbay-ai/patchbay#1660.
+	// count match reality. See orvilo-ai/orvilo#1660.
 	hasMutation := req.Updates.Title != nil ||
 		req.Updates.Description != nil ||
 		req.Updates.Status != nil ||

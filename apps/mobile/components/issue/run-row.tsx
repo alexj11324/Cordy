@@ -11,8 +11,8 @@
  * server-provided unavailable reason disables continuation explicitly.
  */
 import { Alert, Pressable, View } from "react-native";
-import { isAgentTaskActive } from "@patchbay/core/agent-thread";
-import type { AgentTask } from "@patchbay/core/types";
+import { isAgentTaskActive } from "@orvilo/core/agent-thread";
+import type { AgentTask } from "@orvilo/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { useCancelTask } from "@/data/mutations/issues";

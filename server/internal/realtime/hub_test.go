@@ -18,7 +18,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
 )
 
 const testWorkspaceID = "test-workspace"
@@ -74,8 +74,8 @@ func TestAuthenticateTokenRejectsTemporarilyDisabledJWTUser(t *testing.T) {
 }
 
 func TestAuthenticateTokenRejectsTemporarilyDisabledPATUser(t *testing.T) {
-	uid, errMsg := authenticateToken("pby_disabled", staticPATResolver{
-		"pby_disabled": "1d542296-17c6-484a-9914-dcee589be116",
+	uid, errMsg := authenticateToken("ovy_disabled", staticPATResolver{
+		"ovy_disabled": "1d542296-17c6-484a-9914-dcee589be116",
 	}, context.Background())
 	if uid != "" {
 		t.Fatalf("expected no user ID, got %q", uid)
@@ -86,7 +86,7 @@ func TestAuthenticateTokenRejectsTemporarilyDisabledPATUser(t *testing.T) {
 }
 
 func TestAuthenticateTokenRejectsGuestBearerWithoutResolver(t *testing.T) {
-	uid, errMsg := authenticateToken("pbg_"+strings.Repeat("a", 40), nil, context.Background())
+	uid, errMsg := authenticateToken("ovg_"+strings.Repeat("a", 40), nil, context.Background())
 	if uid != "" {
 		t.Fatalf("guest bearer returned user ID %q", uid)
 	}
@@ -460,7 +460,7 @@ func TestCheckOrigin(t *testing.T) {
 	prev := allowedWSOrigins.Load().([]string)
 	SetAllowedOrigins([]string{
 		"http://localhost:3000",
-		"https://patchbay.aspectlylabs.com",
+		"https://orvilo.aspectlylabs.com",
 	})
 	t.Cleanup(func() { SetAllowedOrigins(prev) })
 
@@ -485,19 +485,19 @@ func TestCheckOrigin(t *testing.T) {
 		{"same-origin allowed (https)", "api.aspectlylabs.com", "https://api.aspectlylabs.com", "", "1.2.3.4:5678", true},
 		{"same-origin allowed (case-insensitive host, RFC 7230)", "API.ASPECTLYLABS.COM", "https://api.aspectlylabs.com", "", "1.2.3.4:5678", true},
 		{"whitelisted origin allowed (web cross-origin)", "localhost:8080", "http://localhost:3000", "", "1.2.3.4:5678", true},
-		{"whitelisted origin allowed (prod web)", "api.aspectlylabs.com", "https://patchbay.aspectlylabs.com", "", "1.2.3.4:5678", true},
+		{"whitelisted origin allowed (prod web)", "api.aspectlylabs.com", "https://orvilo.aspectlylabs.com", "", "1.2.3.4:5678", true},
 		{"unknown origin rejected (CSWSH defense)", "api.aspectlylabs.com", "https://evil.com", "", "1.2.3.4:5678", false},
 		{"different port rejected", "localhost:8080", "http://localhost:9999", "", "1.2.3.4:5678", false},
-		{"X-Forwarded-Host from trusted proxy matches origin", "internal.proxy", "https://patchbay.aspectlylabs.com", "patchbay.aspectlylabs.com", "127.0.0.1:5678", true},
-		{"X-Forwarded-Host from trusted proxy case-insensitive", "internal.proxy", "https://PATCHBAY.ASPECTLYLABS.COM", "patchbay.aspectlylabs.com", "10.0.0.1:5678", true},
+		{"X-Forwarded-Host from trusted proxy matches origin", "internal.proxy", "https://orvilo.aspectlylabs.com", "orvilo.aspectlylabs.com", "127.0.0.1:5678", true},
+		{"X-Forwarded-Host from trusted proxy case-insensitive", "internal.proxy", "https://ORVILO.ASPECTLYLABS.COM", "orvilo.aspectlylabs.com", "10.0.0.1:5678", true},
 		{"X-Forwarded-Host from untrusted source rejected", "internal.proxy", "https://example.com", "example.com", "1.2.3.4:5678", false},
-		{"X-Forwarded-Host from trusted proxy but evil origin rejected", "internal.proxy", "https://evil.com", "patchbay.aspectlylabs.com", "127.0.0.1:5678", false},
-		{"X-Forwarded-Host present but origin matches direct Host", "patchbay.aspectlylabs.com", "https://patchbay.aspectlylabs.com", "other.host", "1.2.3.4:5678", true},
+		{"X-Forwarded-Host from trusted proxy but evil origin rejected", "internal.proxy", "https://evil.com", "orvilo.aspectlylabs.com", "127.0.0.1:5678", false},
+		{"X-Forwarded-Host present but origin matches direct Host", "orvilo.aspectlylabs.com", "https://orvilo.aspectlylabs.com", "other.host", "1.2.3.4:5678", true},
 		{"X-Forwarded-Host spoofed by attacker rejected", "internal.proxy", "https://evil.com", "evil.com", "1.2.3.4:5678", false},
-		{"X-Forwarded-Host from trusted CIDR range matches origin", "internal.proxy", "https://patchbay.aspectlylabs.com", "patchbay.aspectlylabs.com", "10.5.6.7:5678", true},
-		{"X-Forwarded-Host from trusted IPv6 proxy matches origin", "internal.proxy", "https://patchbay.aspectlylabs.com", "patchbay.aspectlylabs.com", "[::1]:5678", true},
-		{"X-Forwarded-Host comma list uses first (client-facing) value", "internal.proxy", "https://patchbay.aspectlylabs.com", "patchbay.aspectlylabs.com, proxy.internal", "127.0.0.1:5678", true},
-		{"X-Forwarded-Host comma list ignores trailing values", "internal.proxy", "https://staging.patchbay.ai", "proxy.internal, staging.patchbay.ai", "127.0.0.1:5678", false},
+		{"X-Forwarded-Host from trusted CIDR range matches origin", "internal.proxy", "https://orvilo.aspectlylabs.com", "orvilo.aspectlylabs.com", "10.5.6.7:5678", true},
+		{"X-Forwarded-Host from trusted IPv6 proxy matches origin", "internal.proxy", "https://orvilo.aspectlylabs.com", "orvilo.aspectlylabs.com", "[::1]:5678", true},
+		{"X-Forwarded-Host comma list uses first (client-facing) value", "internal.proxy", "https://orvilo.aspectlylabs.com", "orvilo.aspectlylabs.com, proxy.internal", "127.0.0.1:5678", true},
+		{"X-Forwarded-Host comma list ignores trailing values", "internal.proxy", "https://staging.orvilo.ai", "proxy.internal, staging.orvilo.ai", "127.0.0.1:5678", false},
 	}
 
 	for _, tc := range cases {
@@ -629,7 +629,7 @@ func TestReadPump_AcceptsFrameUnderReadLimit(t *testing.T) {
 }
 
 func TestGuestBearerWebSocketHandshake(t *testing.T) {
-	token := "pbg_" + strings.Repeat("a", 40)
+	token := "ovg_" + strings.Repeat("a", 40)
 	hub := NewHub()
 	go hub.Run()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -658,7 +658,7 @@ type deniedGuestMembership struct{}
 
 func (*deniedGuestMembership) IsMember(context.Context, string, string) bool { return false }
 func TestGuestBearerStillRequiresWorkspaceMembership(t *testing.T) {
-	token := "pbg_" + strings.Repeat("a", 40)
+	token := "ovg_" + strings.Repeat("a", 40)
 	hub := NewHub()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		HandleWebSocket(hub, &deniedGuestMembership{}, staticPATResolver{token: testUserID}, nil, w, r)
@@ -704,7 +704,7 @@ func TestGuestRevocationClosesExistingConnection(t *testing.T) {
 			}
 			defer conn.Close()
 			conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-			if err := conn.WriteJSON(map[string]any{"type": "auth", "payload": map[string]string{"token": "pbg_" + strings.Repeat("a", 40)}}); err != nil {
+			if err := conn.WriteJSON(map[string]any{"type": "auth", "payload": map[string]string{"token": "ovg_" + strings.Repeat("a", 40)}}); err != nil {
 				t.Fatal(err)
 			}
 			var frame map[string]any

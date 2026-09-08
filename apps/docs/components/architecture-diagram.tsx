@@ -1,10 +1,10 @@
 /**
- * Patchbay architecture diagram for §1.2 "How Patchbay Works".
+ * Orvilo architecture diagram for §1.2 "How Orvilo Works".
  *
  * Boundary-style layout: one large panel for "Your side" (where all the
  * interesting stuff happens — code, keys, compute), one smaller panel for
- * "Patchbay" (metadata store and coordinator).  The asymmetric sizes and the
- * brand-tinted left panel visually argue Patchbay's core thesis: AI runs on
+ * "Orvilo" (metadata store and coordinator).  The asymmetric sizes and the
+ * brand-tinted left panel visually argue Orvilo's core thesis: AI runs on
  * your machine, not ours.
  *
  * No SVG arrows.  Relationships are carried by the layout itself — client
@@ -18,14 +18,14 @@ export function ArchitectureDiagram() {
       <div className="hidden md:grid md:grid-cols-[1.7fr_auto_1fr] md:gap-4 md:items-stretch">
         <YourSide />
         <Connector horizontal />
-        <PatchbaySide />
+        <OrviloSide />
       </div>
 
       {/* Mobile: stacked */}
       <div className="md:hidden space-y-4">
         <YourSide />
         <Connector horizontal={false} />
-        <PatchbaySide />
+        <OrviloSide />
       </div>
     </div>
   );
@@ -55,7 +55,7 @@ function YourSide() {
         <div>
           <SectionLabel>Daemon</SectionLabel>
           <div className="text-xs text-muted-foreground mb-2.5">
-            Polls work from Patchbay. Invokes local AI coding tools:
+            Polls work from Orvilo. Invokes local AI coding tools:
           </div>
           <div className="flex flex-wrap gap-1.5">
             <Pill>Claude Code</Pill>
@@ -79,11 +79,11 @@ function YourSide() {
   );
 }
 
-function PatchbaySide() {
+function OrviloSide() {
   return (
     <div className="rounded-lg border border-border/70 bg-muted/25 p-6 flex flex-col">
       <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground mb-5">
-        Patchbay
+        Orvilo
       </div>
 
       <div className="flex-1 flex flex-col">

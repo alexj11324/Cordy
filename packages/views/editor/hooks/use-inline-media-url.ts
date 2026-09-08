@@ -11,8 +11,8 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@patchbay/core/api";
-import { attachmentIdFromDownloadURL } from "@patchbay/core/types/attachment-url";
+import { api } from "@orvilo/core/api";
+import { attachmentIdFromDownloadURL } from "@orvilo/core/types/attachment-url";
 
 // Keep refetches well inside the server's signed-URL TTL (30 min default,
 // server/internal/handler/file.go) so a re-render never serves an expired

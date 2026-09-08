@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // FanoutNativeAutomationEvent persists a queued webhook_delivery for every
@@ -128,7 +128,7 @@ func (h *Handler) HandleSlackNativeAutomation(ctx context.Context, inst db.Chann
 		switch {
 		case err == nil:
 			_, memberErr := h.Queries.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-				UserID:      binding.PatchbayUserID,
+				UserID:      binding.OrviloUserID,
 				WorkspaceID: inst.WorkspaceID,
 			})
 			switch {

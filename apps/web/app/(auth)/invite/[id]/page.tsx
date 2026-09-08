@@ -3,10 +3,10 @@
 import { useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { useAuthStore } from "@patchbay/core/auth";
-import { paths } from "@patchbay/core/paths";
-import { workspaceListOptions } from "@patchbay/core/workspace/queries";
-import { InvitePage } from "@patchbay/views/invite";
+import { useAuthStore } from "@orvilo/core/auth";
+import { paths } from "@orvilo/core/paths";
+import { workspaceListOptions } from "@orvilo/core/workspace/queries";
+import { InvitePage } from "@orvilo/views/invite";
 
 export default function InviteAcceptPage() {
   const router = useRouter();

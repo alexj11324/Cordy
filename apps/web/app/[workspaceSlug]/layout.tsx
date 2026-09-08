@@ -3,14 +3,14 @@
 import { use, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, usePathname } from "next/navigation";
-import { WorkspaceSlugProvider, paths } from "@patchbay/core/paths";
-import { workspaceBySlugOptions } from "@patchbay/core/workspace";
-import { setCurrentWorkspace } from "@patchbay/core/platform";
-import { useAuthStore } from "@patchbay/core/auth";
-import { NoAccessPage } from "@patchbay/views/workspace/no-access-page";
-import { WelcomeAfterOnboarding } from "@patchbay/views/workspace/welcome-after-onboarding";
-import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { useWorkspaceSeen } from "@patchbay/views/workspace/use-workspace-seen";
+import { WorkspaceSlugProvider, paths } from "@orvilo/core/paths";
+import { workspaceBySlugOptions } from "@orvilo/core/workspace";
+import { setCurrentWorkspace } from "@orvilo/core/platform";
+import { useAuthStore } from "@orvilo/core/auth";
+import { NoAccessPage } from "@orvilo/views/workspace/no-access-page";
+import { WelcomeAfterOnboarding } from "@orvilo/views/workspace/welcome-after-onboarding";
+import { OrviloIcon } from "@orvilo/ui/components/common/orvilo-icon";
+import { useWorkspaceSeen } from "@orvilo/views/workspace/use-workspace-seen";
 import { workspaceSlugFromPathname } from "@/lib/workspace-slug-from-pathname";
 
 export default function WorkspaceLayout({
@@ -97,7 +97,7 @@ export default function WorkspaceLayout({
 
   const loadingIndicator = (
     <div className="flex h-svh items-center justify-center">
-      <PatchbayIcon className="size-6 animate-pulse" />
+      <OrviloIcon className="size-6 animate-pulse" />
     </div>
   );
 

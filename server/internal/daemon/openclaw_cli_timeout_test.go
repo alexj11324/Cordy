@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 )
 
 // TestTaskRunFailureReasonLabelsOpenclawCLITimeout is the daemon half of the

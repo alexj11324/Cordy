@@ -27,12 +27,12 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-DEV_HOME="${ORVILO_DEV_HOME:-$HOME/.patchbay/dev}"
+DEV_HOME="${ORVILO_DEV_HOME:-$HOME/.orvilo/dev}"
 ENVS_DIR="$DEV_HOME/envs"
 LOCK_DIR="$DEV_HOME/lock.d"
 DEV_WORKSPACES_PARENT="${ORVILO_DEV_WORKSPACES_PARENT:-$HOME}"
 DEV_DESKTOP_APP_DATA="${ORVILO_DEV_DESKTOP_APP_DATA:-}"
-DEV_PROFILES_HOME="${ORVILO_DEV_PROFILES_HOME:-$HOME/.patchbay/profiles}"
+DEV_PROFILES_HOME="${ORVILO_DEV_PROFILES_HOME:-$HOME/.orvilo/profiles}"
 
 DEV_EMAIL="${ORVILO_DEV_EMAIL:-dev@localhost}"
 DEV_CODE_DEFAULT=888888
@@ -42,10 +42,10 @@ WORKSPACE_SLUG="${ORVILO_DEV_WORKSPACE_SLUG:-dev}"
 ALL_COMPONENTS="api web daemon desktop"
 DEFAULT_COMPONENTS="api web"
 
-# An agent runs with TMPDIR=/tmp/patchbay-task-<id>, deleted when the run ends.
+# An agent runs with TMPDIR=/tmp/orvilo-task-<id>, deleted when the run ends.
 # Anything the Go toolchain builds there goes with it, so a binary started from
 # such a build stops being re-executable the moment its creator finishes.
-DEV_TMPDIR="${ORVILO_DEV_TMPDIR:-$HOME/.patchbay/dev-tmp}"
+DEV_TMPDIR="${ORVILO_DEV_TMPDIR:-$HOME/.orvilo/dev-tmp}"
 
 # The agent runtime exports these pointing at PRODUCTION, and ORVILO_SERVER_URL
 # silently outranks server_url in a saved profile config. Every long-lived child
@@ -251,7 +251,7 @@ desktop_app_data_root() {
 }
 
 desktop_user_data_dir() {
-  printf '%s/Patchbay Canary %s' "$(desktop_app_data_root)" "$1"
+  printf '%s/Orvilo Canary %s' "$(desktop_app_data_root)" "$1"
 }
 
 offset_registered() {
@@ -721,8 +721,8 @@ Do not retry immediately — repeated attempts lock the code. Wait ~40s and re-r
 daemon_task_marker() {
   local dir="$REPO_ROOT" marker
   while :; do
-    marker="$dir/.patchbay/daemon_task_context.json"
-    if [ -f "$marker" ] && grep -q 'patchbay-daemon-task' "$marker" 2>/dev/null; then
+    marker="$dir/.orvilo/daemon_task_context.json"
+    if [ -f "$marker" ] && grep -q 'orvilo-daemon-task' "$marker" 2>/dev/null; then
       printf '%s' "$marker"
       return 0
     fi
@@ -740,9 +740,9 @@ start_daemon() {
   # and re-execs it as the execution-environment helper for every task. Under
   # `go run` the toolchain deletes that binary when the launcher exits, so the
   # daemon registers, heartbeats, and then fails every task with
-  # "fork/exec .../go-build.../exe/patchbay: no such file or directory".
+  # "fork/exec .../go-build.../exe/orvilo: no such file or directory".
   info "Building $ORVILO_BIN (a go run daemon would fail every task later)."
-  (cd "$REPO_ROOT/server" && go build -o bin/patchbay ./cmd/patchbay) || die "Failed to build the patchbay CLI."
+  (cd "$REPO_ROOT/server" && go build -o bin/orvilo ./cmd/orvilo) || die "Failed to build the orvilo CLI."
 
   "${CLEAN_ENV[@]}" ORVILO_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
     "$ORVILO_BIN" daemon start --profile "$PROFILE" 2>&1 | sed 's/^/    /' || true
@@ -885,7 +885,7 @@ stop_component() {
       else
         pid="$(cat "$PROFILE_DIR/daemon.pid" 2>/dev/null || true)"
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-          warn "cannot stop daemon pid $pid because no usable patchbay binary was found"
+          warn "cannot stop daemon pid $pid because no usable orvilo binary was found"
           return 1
         fi
         info "daemon skipped (no usable binary and no live profile pid)"
@@ -1101,15 +1101,15 @@ bind_paths() {
   STATE_DIR="$(env_dir "$NAME")"
   LOG_DIR="$STATE_DIR/logs"
   PROFILE_DIR="$DEV_PROFILES_HOME/$PROFILE"
-  WORKSPACES_ROOT="${WORKSPACES_ROOT:-$DEV_WORKSPACES_PARENT/patchbay_workspaces_$PROFILE}"
+  WORKSPACES_ROOT="${WORKSPACES_ROOT:-$DEV_WORKSPACES_PARENT/orvilo_workspaces_$PROFILE}"
   DESKTOP_RENDERER_PORT="${DESKTOP_RENDERER_PORT:-$(renderer_port_for_offset "$OFFSET")}"
   DESKTOP_APP_SUFFIX="${DESKTOP_APP_SUFFIX:-$NAME}"
   DESKTOP_USER_DATA_DIR="${DESKTOP_USER_DATA_DIR:-$(desktop_user_data_dir "$DESKTOP_APP_SUFFIX")}"
   DESKTOP_ENV_FILE="${DESKTOP_ENV_FILE:-$DIR/apps/desktop/.env.development.local}"
   EXPIRES_AT="${EXPIRES_AT:-}"
-  ORVILO_BIN="$DIR/server/bin/patchbay"
-  if [ ! -x "$ORVILO_BIN" ] && [ -x "$REPO_ROOT/server/bin/patchbay" ]; then
-    ORVILO_BIN="$REPO_ROOT/server/bin/patchbay"
+  ORVILO_BIN="$DIR/server/bin/orvilo"
+  if [ ! -x "$ORVILO_BIN" ] && [ -x "$REPO_ROOT/server/bin/orvilo" ]; then
+    ORVILO_BIN="$REPO_ROOT/server/bin/orvilo"
   fi
   mkdir -p "$LOG_DIR"
 }
@@ -1197,7 +1197,7 @@ Start the rest with 'make up C=api,web', or run 'make up C=daemon' from your own
     if [ "$ENV_FILE" = .env.worktree ]; then
       bash "$REPO_ROOT/scripts/init-worktree-env.sh" "$ENV_FILE" >/dev/null
     else
-      cp "$REPO_ROOT/.env.example" "$REPO_ROOT/$ENV_FILE"
+      bash "$REPO_ROOT/scripts/init-main-env.sh" "$REPO_ROOT/$ENV_FILE"
     fi
     info "Created $ENV_FILE"
   fi
@@ -1239,7 +1239,7 @@ Start the rest with 'make up C=api,web', or run 'make up C=daemon' from your own
       fi
       offset="$(allocate_offset "$REPO_ROOT")" || die "No free slot left; run 'make gc' or 'make list'."
       local new_backend=$((18080 + offset)) new_frontend=$((13000 + offset))
-      local new_db="patchbay_$(slugify "$(basename "$REPO_ROOT")")_${offset}"
+      local new_db="orvilo_$(slugify "$(basename "$REPO_ROOT")")_${offset}"
       rewrite_env_ports "$ENV_FILE" "$offset" "$new_backend" "$new_frontend" "$new_db"
       load_env_file "$ENV_FILE"
       info "Allocated slot $offset — backend $new_backend, frontend $new_frontend, database $new_db"
@@ -1248,7 +1248,7 @@ Start the rest with 'make up C=api,web', or run 'make up C=daemon' from your own
     NAME="${name:-$(slugify "$(basename "$REPO_ROOT")")-${offset}}"
     require_env_name "$NAME"
     PROFILE="dev-$(slugify "$(basename "$REPO_ROOT")")-${offset}"
-    WORKSPACES_ROOT="$DEV_WORKSPACES_PARENT/patchbay_workspaces_$PROFILE"
+    WORKSPACES_ROOT="$DEV_WORKSPACES_PARENT/orvilo_workspaces_$PROFILE"
     DESKTOP_RENDERER_PORT="$(renderer_port_for_offset "$offset")"
     DESKTOP_APP_SUFFIX="$NAME"
     DESKTOP_USER_DATA_DIR="$(desktop_user_data_dir "$DESKTOP_APP_SUFFIX")"
@@ -1366,7 +1366,7 @@ cmd_destroy() {
     failures=$((failures + 1))
   fi
 
-  expected_workspaces="$DEV_WORKSPACES_PARENT/patchbay_workspaces_$PROFILE"
+  expected_workspaces="$DEV_WORKSPACES_PARENT/orvilo_workspaces_$PROFILE"
   if [ "$WORKSPACES_ROOT" != "$expected_workspaces" ]; then
     warn "refusing to remove unexpected workspaces root $WORKSPACES_ROOT (expected $expected_workspaces)"
     failures=$((failures + 1))

@@ -2,8 +2,8 @@
 /**
  * A reference hook handler — the plugin author's side of the contract.
  *
- * This is the half that does NOT run in Patchbay. It is an ordinary HTTP server
- * the author operates; Patchbay only ever sends it a signed POST. Everything
+ * This is the half that does NOT run in Orvilo. It is an ordinary HTTP server
+ * the author operates; Orvilo only ever sends it a signed POST. Everything
  * security-relevant here is on this side of the wire, which is the point: the
  * host cannot make a handler safe, it can only give it what it needs to be.
  *
@@ -24,7 +24,7 @@ const SIGNING_SECRET = process.env.ORVILO_SIGNING_SECRET ?? "";
 const TOLERANCE_SECONDS = 5 * 60;
 
 if (!SIGNING_SECRET) {
-  console.error("ORVILO_SIGNING_SECRET is required. Rotate the plugin token in Patchbay to obtain it.");
+  console.error("ORVILO_SIGNING_SECRET is required. Rotate the plugin token in Orvilo to obtain it.");
   process.exit(1);
 }
 
@@ -48,8 +48,8 @@ function rememberSignature(signature, now) {
 }
 
 function verify(rawBody, headers) {
-  const timestamp = headers["x-patchbay-timestamp"];
-  const presented = String(headers["x-patchbay-signature"] ?? "").replace(/^v1=/, "");
+  const timestamp = headers["x-orvilo-timestamp"];
+  const presented = String(headers["x-orvilo-signature"] ?? "").replace(/^v1=/, "");
   if (!timestamp || !presented) return "missing signature headers";
 
   const drift = Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp));
@@ -74,7 +74,7 @@ function verify(rawBody, headers) {
 }
 
 /**
- * Calls Patchbay back using the one-shot token that arrived with the request.
+ * Calls Orvilo back using the one-shot token that arrived with the request.
  *
  * The token is scoped to this invocation and expires in minutes, so it is worth
  * spending on the work at hand rather than storing. It is good for as many calls
@@ -93,7 +93,7 @@ async function callback(body, method, path, payload) {
     body: payload === undefined ? undefined : JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(`Patchbay answered ${response.status}: ${await response.text()}`);
+    throw new Error(`Orvilo answered ${response.status}: ${await response.text()}`);
   }
   return response.json();
 }

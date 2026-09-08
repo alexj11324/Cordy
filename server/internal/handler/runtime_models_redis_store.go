@@ -18,8 +18,8 @@ import (
 //
 // Key layout:
 //
-//   pby:{runtime_pending}:model_list:req:<request_id>           → JSON-encoded ModelListRequest, TTL = retention
-//   pby:{runtime_pending}:model_list:pending:<runtime_id>       → ZSET { member = request_id, score = created_at UnixNano }
+//   ovy:{runtime_pending}:model_list:req:<request_id>           → JSON-encoded ModelListRequest, TTL = retention
+//   ovy:{runtime_pending}:model_list:pending:<runtime_id>       → ZSET { member = request_id, score = created_at UnixNano }
 //                                                                  TTL = retention*2 (kept alive long enough for
 //                                                                  lazy sweep on PopPending)
 //
@@ -29,10 +29,10 @@ import (
 // requests on a transient Redis hiccup between them.
 
 const (
-	// Namespaced under pby:*:model_list:* so the key set doesn't collide with
+	// Namespaced under ovy:*:model_list:* so the key set doesn't collide with
 	// the realtime relay (ws:*) or the local-skill stores.
-	modelListKeyPrefix          = "pby:" + runtimePendingRedisHashTag + ":model_list:req:"
-	modelListPendingPrefix      = "pby:" + runtimePendingRedisHashTag + ":model_list:pending:"
+	modelListKeyPrefix          = "ovy:" + runtimePendingRedisHashTag + ":model_list:req:"
+	modelListPendingPrefix      = "ovy:" + runtimePendingRedisHashTag + ":model_list:pending:"
 	modelListRedisPopMaxRetries = 5
 )
 

@@ -1,1 +1,1 @@
-export { ChannelsPage as default } from "@patchbay/views/channels";
+export { ChannelsPage as default } from "@orvilo/views/channels";

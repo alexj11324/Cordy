@@ -1,7 +1,7 @@
 import { useLayoutEffect } from "react";
 import { ArrowLeft, Download, Server } from "lucide-react";
-import { SettingsPage } from "@patchbay/views/settings";
-import { useT } from "@patchbay/views/i18n";
+import { SettingsPage } from "@orvilo/views/settings";
+import { useT } from "@orvilo/views/i18n";
 import { getActiveTab, useTabStore } from "@/stores/tab-store";
 import { DaemonSettingsTab } from "./daemon-settings-tab";
 import { UpdatesSettingsTab } from "./updates-settings-tab";

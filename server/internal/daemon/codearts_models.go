@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // loadCodeArtsConfiguredModels reads OpenCode-compatible custom providers

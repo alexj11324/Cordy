@@ -10,17 +10,17 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func TestInstalledIsTheCanonicalInstallationStatus(t *testing.T) {
 	now := time.Now()
 	row := db.ListChannelConnectionStatesRow{
 		Status: "installed", State: pgtype.Text{String: "healthy", Valid: true},
-		ObserverToken: pgtype.Text{String: "current", Valid: true},
-		WsLeaseToken: pgtype.Text{String: "current", Valid: true},
+		ObserverToken:    pgtype.Text{String: "current", Valid: true},
+		WsLeaseToken:     pgtype.Text{String: "current", Valid: true},
 		WsLeaseExpiresAt: pgtype.Timestamptz{Time: now.Add(time.Minute), Valid: true},
-		ObservedAt: pgtype.Timestamptz{Time: now.Add(-time.Second), Valid: true},
+		ObservedAt:       pgtype.Timestamptz{Time: now.Add(-time.Second), Valid: true},
 	}
 	if got := projectConnectionStatus(row, now); got.State != "healthy" {
 		t.Fatalf("installed connection was not recognized: %+v", got)

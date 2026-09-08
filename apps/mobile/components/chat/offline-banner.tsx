@@ -14,7 +14,7 @@
  */
 import { Ionicons } from "@expo/vector-icons";
 import { View } from "react-native";
-import type { AgentAvailability } from "@patchbay/core/agents";
+import type { AgentAvailability } from "@orvilo/core/agents";
 import { Text } from "@/components/ui/text";
 import { useChatCopy } from "@/lib/use-chat-copy";
 

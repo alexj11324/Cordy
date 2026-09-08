@@ -1,12 +1,12 @@
 // Keep in sync with packages/core/auth/desktop-callback-protocol.ts.
-// Main must not import `@patchbay/core` (electron-vite externalizes it).
+// Main must not import `@orvilo/core` (electron-vite externalizes it).
 
 import {
   type DesktopChannel,
   isDesktopCallbackProtocolForChannel,
 } from "./desktop-app-identity";
 
-export const PRODUCTION_DESKTOP_CALLBACK_PROTOCOL = "patchbay";
+export const PRODUCTION_DESKTOP_CALLBACK_PROTOCOL = "orvilo";
 
 export interface DesktopPreviewIdentity {
   bundleId: string;
@@ -19,10 +19,10 @@ export function parseDesktopPreviewIdentity(value: unknown): DesktopPreviewIdent
   if (value === undefined) return null;
   if (!value || typeof value !== "object") throw new Error("Invalid desktop preview identity");
   const v = value as Record<string, unknown>;
-  if (typeof v.bundleId !== "string" || !/^ai\.patchbay\.desktop\.canary\.[a-f0-9]{16}$/.test(v.bundleId)
-    || v.callbackProtocol !== `patchbay-canary-${v.bundleId.split(".").at(-1)}`
+  if (typeof v.bundleId !== "string" || !/^ai\.orvilo\.desktop\.canary\.[a-f0-9]{16}$/.test(v.bundleId)
+    || v.callbackProtocol !== `orvilo-canary-${v.bundleId.split(".").at(-1)}`
     || typeof v.name !== "string" || !/^Orvilo Canary(?: [a-z0-9-]+)?$/.test(v.name)
-    || v.dataName !== v.name.replace("Orvilo", "Patchbay")) {
+    || v.dataName !== v.name) {
     throw new Error("Invalid desktop preview identity");
   }
   return v as unknown as DesktopPreviewIdentity;

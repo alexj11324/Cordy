@@ -1,4 +1,4 @@
-import type { RuntimeModel } from "@patchbay/core/types";
+import type { RuntimeModel } from "@orvilo/core/types";
 
 export type ModelSelectorOption = RuntimeModel & { variants?: RuntimeModel[] };
 

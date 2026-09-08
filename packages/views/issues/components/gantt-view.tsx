@@ -2,21 +2,21 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useViewStore, useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
-import type { GanttZoom } from "@patchbay/core/issues/stores/view-store";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import type { Issue, IssueStatusCategory } from "@patchbay/core/types";
-import { issueStatusCategory } from "@patchbay/core/issues";
-import { dateOnlyToUTCDate } from "@patchbay/core/issues/date";
-import { cn } from "@patchbay/ui/lib/utils";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useViewStore, useViewStoreApi } from "@orvilo/core/issues/stores/view-store-context";
+import type { GanttZoom } from "@orvilo/core/issues/stores/view-store";
+import { projectListOptions } from "@orvilo/core/projects/queries";
+import type { Issue, IssueStatusCategory } from "@orvilo/core/types";
+import { issueStatusCategory } from "@orvilo/core/issues";
+import { dateOnlyToUTCDate } from "@orvilo/core/issues/date";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@patchbay/ui/components/ui/tooltip";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/ui/components/ui/tooltip";
+import { Button } from "@orvilo/ui/components/ui/button";
 import { AppLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ProjectIcon } from "../../projects/components/project-icon";
@@ -48,7 +48,7 @@ function daysBetween(a: Date, b: Date): number {
 
 // Issue dates arrive as date-only "YYYY-MM-DD" strings (calendar days). Anchor
 // each to UTC midnight so the bar lands on exactly that day, independent of the
-// viewer's timezone. See @patchbay/core/issues/date.
+// viewer's timezone. See @orvilo/core/issues/date.
 function parseDay(iso: string | null): Date | null {
   return dateOnlyToUTCDate(iso);
 }

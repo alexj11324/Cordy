@@ -13,23 +13,23 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/ghsnapshot"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/ghsnapshot"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 var githubPullRequestURL = regexp.MustCompile(`(?i)^https?://github\.com/([A-Za-z0-9][A-Za-z0-9._-]*)/([A-Za-z0-9][A-Za-z0-9._-]*)/pull/([0-9]+)(?:[/?#].*)?$`)
 
 type issuePullRequestAttachRequest struct {
-	URL            string  `json:"url"`
-	Title          *string `json:"title"`
-	State          *string `json:"state"`
-	Branch         *string `json:"branch"`
-	HeadRefName    *string `json:"head_ref_name"`
-	HeadSHA        *string `json:"head_sha"`
-	AuthorLogin    *string `json:"author_login"`
-	CloseIntent    bool    `json:"close_intent"`
+	URL         string  `json:"url"`
+	Title       *string `json:"title"`
+	State       *string `json:"state"`
+	Branch      *string `json:"branch"`
+	HeadRefName *string `json:"head_ref_name"`
+	HeadSHA     *string `json:"head_sha"`
+	AuthorLogin *string `json:"author_login"`
+	CloseIntent bool    `json:"close_intent"`
 }
 
 // parseGitHubPRURL is intentionally narrower than a generic URL parser. The

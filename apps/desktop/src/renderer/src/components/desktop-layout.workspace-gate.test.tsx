@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { RESOURCES } from "@patchbay/views/locales";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import { RESOURCES } from "@orvilo/views/locales";
 
 /**
  * Regression guard for MUL-6231 / #7021: deleting the last workspace blanked
@@ -44,7 +44,7 @@ vi.mock("@/platform/navigation", () => ({
   routeContentLinkPath: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   WorkspaceSlugProvider: ({ children }: { children: ReactNode }) => (
     <>{children}</>
   ),
@@ -52,42 +52,42 @@ vi.mock("@patchbay/core/paths", () => ({
   useCurrentWorkspace: () => null,
 }));
 
-vi.mock("@patchbay/core/platform", () => ({
+vi.mock("@orvilo/core/platform", () => ({
   getCurrentSlug: () => state.currentSlug,
   subscribeToCurrentSlug: () => () => {},
 }));
 
-vi.mock("@patchbay/core/workspace", () => ({
+vi.mock("@orvilo/core/workspace", () => ({
   workspaceListOptions: () => ({
     queryKey: ["workspace-list"],
     queryFn: async () => state.wsList,
   }),
 }));
 
-vi.mock("@patchbay/views/navigation", () => ({
+vi.mock("@orvilo/views/navigation", () => ({
   useNavigation: () => ({ push: vi.fn() }),
 }));
 
-vi.mock("@patchbay/views/platform", () => ({
+vi.mock("@orvilo/views/platform", () => ({
   useDesktopUnreadBadge: () => {},
 }));
 
 // Each workspace-scoped component gets a marker so the assertions can tell
 // which of them the shell decided to mount.
-vi.mock("@patchbay/views/layout", () => ({
+vi.mock("@orvilo/views/layout", () => ({
   AppSidebar: () => <div data-testid="app-sidebar" />,
   GlobalShortcuts: () => <div data-testid="global-shortcuts" />,
   NavigationProgress: () => <div data-testid="navigation-progress" />,
 }));
 
-vi.mock("@patchbay/views/modals/registry", () => ({
+vi.mock("@orvilo/views/modals/registry", () => ({
   ModalRegistry: () => <div data-testid="modal-registry" />,
 }));
 
 // Stands in for the real SearchCommand, which calls useWorkspaceId() at the
 // top of its body. Mounting it without a resolvable workspace is precisely
 // the crash this gate prevents, so the stub throws the same way.
-vi.mock("@patchbay/views/search", () => ({
+vi.mock("@orvilo/views/search", () => ({
   SearchCommand: () => {
     const resolved = state.wsList.some((w) => w.slug === state.currentSlug);
     if (!resolved) {
@@ -100,10 +100,10 @@ vi.mock("@patchbay/views/search", () => ({
   SearchTrigger: () => null,
 }));
 
-vi.mock("@patchbay/views/chat", () => ({
+vi.mock("@orvilo/views/chat", () => ({
   FloatingChat: () => <div data-testid="floating-chat" />,
 }));
-vi.mock("@patchbay/views/agent-thread", () => ({
+vi.mock("@orvilo/views/agent-thread", () => ({
   AgentThreadPanelLayout: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 

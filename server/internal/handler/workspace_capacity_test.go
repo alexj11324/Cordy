@@ -11,9 +11,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement/entitlementtest"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement/entitlementtest"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 func TestAdmitHostedWorkspaceOwnership(t *testing.T) {
@@ -96,7 +96,7 @@ func TestCreateWorkspaceHostedLimitSerializesConcurrentOwnership(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
-	t.Setenv("ORVILO_APP_URL", "https://patchbay.aspectlylabs.com")
+	t.Setenv("ORVILO_APP_URL", "https://orvilo.aspectlylabs.com")
 	ctx := context.Background()
 	userID := uuid.New()
 	sourceWorkspaceID := uuid.New()
@@ -162,7 +162,7 @@ func TestUpdateMemberHostedLimitBlocksOwnerPromotion(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
-	t.Setenv("ORVILO_APP_URL", "https://patchbay.aspectlylabs.com")
+	t.Setenv("ORVILO_APP_URL", "https://orvilo.aspectlylabs.com")
 	ctx := context.Background()
 	targetUserID := uuid.New()
 	sourceOne := uuid.New()

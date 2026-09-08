@@ -12,8 +12,8 @@ import {
 import type {
   RuntimeModel,
   RuntimeModelListRequest,
-} from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+} from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 import enIssues from "../../../locales/en/issues.json";
@@ -25,7 +25,7 @@ const TEST_RESOURCES = {
 const mockInitiateListModels = vi.hoisted(() => vi.fn());
 const mockGetListModelsResult = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     initiateListModels: (...args: unknown[]) =>
       mockInitiateListModels(...args),

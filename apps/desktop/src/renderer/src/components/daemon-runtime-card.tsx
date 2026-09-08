@@ -10,10 +10,10 @@ import {
   Info,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { runtimeListOptions } from "@patchbay/core/runtimes";
-import { agentTaskSnapshotOptions } from "@patchbay/core/agents";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { runtimeListOptions } from "@orvilo/core/runtimes";
+import { agentTaskSnapshotOptions } from "@orvilo/core/agents";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -21,9 +21,9 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import { toast } from "sonner";
-import { useT } from "@patchbay/views/i18n";
+import { useT } from "@orvilo/views/i18n";
 import { DaemonPanel } from "./daemon-panel";
 import { reauthenticateDaemon } from "../platform/daemon-reauth";
 import type { DaemonStatus } from "../../../shared/daemon-types";

@@ -3,7 +3,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithI18n } from "../../test/i18n";
-import { ApiError } from "@patchbay/core/api/client";
+import { ApiError } from "@orvilo/core/api/client";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/automations", async () => {
+vi.mock("@orvilo/core/automations", async () => {
   const actual = await vi.importActual<typeof import("@tanstack/react-query")>("@tanstack/react-query");
   return {
   automationMemoryKeys: {
@@ -35,7 +35,7 @@ vi.mock("@patchbay/core/automations", async () => {
   };
 });
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 

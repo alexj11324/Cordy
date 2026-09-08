@@ -14,11 +14,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement/entitlementtest"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement/entitlementtest"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 type automationQuotaFixture struct {
@@ -28,7 +28,7 @@ type automationQuotaFixture struct {
 	stub          *entitlementtest.Stub
 	workspace     uuid.UUID
 	workspaceID   pgtype.UUID
-	automationID   pgtype.UUID
+	automationID  pgtype.UUID
 	agentID       pgtype.UUID
 	publisherID   pgtype.UUID
 	issueID       pgtype.UUID
@@ -546,7 +546,7 @@ func TestAutomationQuotaReconcilerReleasesOnlyAbandonedManualOrAPIRuns(t *testin
 	if _, err := fixture.queries.CreateAutomationTask(ctx, db.CreateAutomationTaskParams{
 		AgentID:              fixture.agentID,
 		RuntimeID:            agent.RuntimeID,
-		AutomationRunID:       taskBackedAPI.ID,
+		AutomationRunID:      taskBackedAPI.ID,
 		OriginatorUserID:     fixture.publisherID,
 		AccountableUserID:    fixture.publisherID,
 		OriginatorSource:     pgtype.Text{String: "direct_human", Valid: true},

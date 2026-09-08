@@ -2,24 +2,24 @@
 
 import { useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
+import { api } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
 import {
   workspaceKeys,
   workspaceListOptions,
-} from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/workspace/queries";
 import {
   paths,
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@patchbay/core/paths";
+} from "@orvilo/core/paths";
 import { AppLink, useNavigation } from "../navigation";
 import { useLogout } from "../auth";
 import { DragStrip } from "../platform";
 import { useT } from "../i18n";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { ArrowLeft, LogOut, Users, Check, X } from "lucide-react";
 
 export interface InvitePageProps {

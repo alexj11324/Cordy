@@ -22,7 +22,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => state.pathname,
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (
     selector: (auth: {
       user: typeof state.user;
@@ -31,7 +31,7 @@ vi.mock("@patchbay/core/auth", () => ({
   ) => selector({ user: state.user, isLoading: state.isAuthLoading }),
 }));
 
-vi.mock("@patchbay/core/workspace", () => ({
+vi.mock("@orvilo/core/workspace", () => ({
   workspaceBySlugOptions: (slug: string) => ({
     queryKey: ["workspace-by-slug", slug],
     queryFn: async () => {
@@ -42,7 +42,7 @@ vi.mock("@patchbay/core/workspace", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   WorkspaceSlugProvider: ({ children }: { children: ReactNode }) => (
     <>{children}</>
   ),
@@ -52,27 +52,27 @@ vi.mock("@patchbay/core/paths", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/platform", () => ({
+vi.mock("@orvilo/core/platform", () => ({
   setCurrentWorkspace: vi.fn(),
 }));
 
-vi.mock("@patchbay/views/workspace/no-access-page", () => ({
+vi.mock("@orvilo/views/workspace/no-access-page", () => ({
   NoAccessPage: () => <div data-testid="no-access" />,
 }));
 
-vi.mock("@patchbay/views/workspace/welcome-after-onboarding", () => ({
+vi.mock("@orvilo/views/workspace/welcome-after-onboarding", () => ({
   WelcomeAfterOnboarding: () => null,
 }));
 
-vi.mock("@patchbay/views/workspace/use-workspace-seen", () => ({
+vi.mock("@orvilo/views/workspace/use-workspace-seen", () => ({
   useWorkspaceSeen: () => state.hasBeenSeen,
 }));
 
-vi.mock("@patchbay/ui/components/common/patchbay-icon", () => ({
-  PatchbayIcon: () => <div data-testid="workspace-loading" />,
+vi.mock("@orvilo/ui/components/common/orvilo-icon", () => ({
+  OrviloIcon: () => <div data-testid="workspace-loading" />,
 }));
 
-import { setCurrentWorkspace } from "@patchbay/core/platform";
+import { setCurrentWorkspace } from "@orvilo/core/platform";
 import WorkspaceLayout from "./layout";
 
 /** `use()` unwraps a params promise synchronously only when it is already

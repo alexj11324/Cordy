@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Issue } from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -15,9 +15,9 @@ vi.mock("@patchbay/core/hooks", () => ({
 // Mocks
 // ---------------------------------------------------------------------------
 
-// Mock @patchbay/core/auth
+// Mock @orvilo/core/auth
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -29,12 +29,12 @@ vi.mock("@patchbay/core/auth", () => ({
   createAuthStore: vi.fn(),
 }));
 
-// Mock @patchbay/core/paths — after the URL-driven workspace refactor,
+// Mock @orvilo/core/paths — after the URL-driven workspace refactor,
 // useCurrentWorkspace derives from the workspace slug in URL Context. Tests
 // don't mount a real route, so we short-circuit to a fixed fixture.
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@orvilo/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/paths")>(
+    "@orvilo/core/paths",
   );
   return {
     ...actual,
@@ -43,7 +43,7 @@ vi.mock("@patchbay/core/paths", async () => {
   };
 });
 
-// Mock @patchbay/views/navigation (AppLink + useNavigation)
+// Mock @orvilo/views/navigation (AppLink + useNavigation)
 vi.mock("../../navigation", () => ({
   AppLink: ({ children, href, ...props }: any) => (
     <a href={href} {...props}>
@@ -251,7 +251,7 @@ const mockListTeams = vi.hoisted(() =>
     },
   ]),
 );
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
     listIssues: (...args: any[]) => mockListIssues(...args),
@@ -279,7 +279,7 @@ vi.mock("@patchbay/core/api", () => ({
 }));
 
 // Mock issue config
-vi.mock("@patchbay/core/issues/config", () => ({
+vi.mock("@orvilo/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_CONFIG: {
@@ -350,7 +350,7 @@ const mockViewState = {
   toggleListCollapsed: vi.fn(),
 };
 
-vi.mock("@patchbay/core/issues/stores/view-store", () => ({
+vi.mock("@orvilo/core/issues/stores/view-store", () => ({
   useClearFiltersOnWorkspaceChange: () => {},
   PROPERTY_VIEW_PREFIX: "property:",
   propertyIdFromViewKey: (key: string) =>
@@ -389,7 +389,7 @@ vi.mock("@patchbay/core/issues/stores/view-store", () => ({
   ],
 }));
 
-vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
+vi.mock("@orvilo/core/issues/stores/view-store-context", () => ({
   ViewStoreProvider: ({ children }: { children: React.ReactNode }) => children,
   useViewStore: (selector?: any) => (selector ? selector(mockViewState) : mockViewState),
   useViewStoreApi: () => ({ getState: () => mockViewState, setState: vi.fn(), subscribe: vi.fn() }),
@@ -397,7 +397,7 @@ vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
 
 let mockScope = "all";
 
-vi.mock("@patchbay/core/issues/stores/issues-scope-store", () => ({
+vi.mock("@orvilo/core/issues/stores/issues-scope-store", () => ({
   useIssuesScopeStore: Object.assign(
     (selector?: any) => {
       const state = { scopes: { issues: mockScope }, setScope: vi.fn() };
@@ -408,7 +408,7 @@ vi.mock("@patchbay/core/issues/stores/issues-scope-store", () => ({
   useIssuesScope: () => mockScope,
 }));
 
-vi.mock("@patchbay/core/issues/stores/selection-store", () => ({
+vi.mock("@orvilo/core/issues/stores/selection-store", () => ({
   useIssueSelectionStore: Object.assign(
     (selector?: any) => {
       const state = { selectedIds: new Set(), toggle: vi.fn(), clear: vi.fn(), setAll: vi.fn() };
@@ -418,7 +418,7 @@ vi.mock("@patchbay/core/issues/stores/selection-store", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/issues/stores/recent-issues-store", () => ({
+vi.mock("@orvilo/core/issues/stores/recent-issues-store", () => ({
   useRecentIssuesStore: Object.assign(
     (selector?: any) => {
       const state = { byWorkspace: {}, recordVisit: vi.fn(), pruneWorkspaces: vi.fn() };
@@ -435,7 +435,7 @@ vi.mock("@patchbay/core/issues/stores/recent-issues-store", () => ({
   selectRecentIssues: () => () => [],
 }));
 
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@orvilo/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: vi.fn() }),
     { getState: () => ({ open: vi.fn() }) },

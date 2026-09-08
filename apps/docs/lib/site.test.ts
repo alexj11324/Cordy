@@ -41,11 +41,11 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://patchbay.aspectlylabs.com/docs/agents",
+      canonical: "https://orvilo.aspectlylabs.com/docs/agents",
       languages: {
-        en: "https://patchbay.aspectlylabs.com/docs/agents",
-        zh: "https://patchbay.aspectlylabs.com/docs/zh/agents",
-        "x-default": "https://patchbay.aspectlylabs.com/docs/agents",
+        en: "https://orvilo.aspectlylabs.com/docs/agents",
+        zh: "https://orvilo.aspectlylabs.com/docs/zh/agents",
+        "x-default": "https://orvilo.aspectlylabs.com/docs/agents",
       },
     });
   });
@@ -64,11 +64,11 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates([])).toEqual({
-      canonical: "https://patchbay.aspectlylabs.com/docs",
+      canonical: "https://orvilo.aspectlylabs.com/docs",
       languages: {
-        en: "https://patchbay.aspectlylabs.com/docs",
-        zh: "https://patchbay.aspectlylabs.com/docs/zh",
-        "x-default": "https://patchbay.aspectlylabs.com/docs",
+        en: "https://orvilo.aspectlylabs.com/docs",
+        zh: "https://orvilo.aspectlylabs.com/docs/zh",
+        "x-default": "https://orvilo.aspectlylabs.com/docs",
       },
     });
   });

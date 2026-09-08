@@ -13,7 +13,7 @@ Read it before editing translations in `packages/views/locales/`, naming routes/
 
 ## Project Shape
 
-Patchbay is an AI-native task management platform for small teams, with agents as first-class assignees that can own issues, comment, and change status.
+Orvilo is an AI-native task management platform for small teams, with agents as first-class assignees that can own issues, comment, and change status.
 
 - `server/`: Go backend, Chi router, sqlc, gorilla/websocket.
 - `apps/web/`: Next.js App Router.
@@ -51,7 +51,7 @@ Keep server state and client state separate.
 These are hard constraints:
 
 - `packages/core/`: no `react-dom`, `localStorage` (use `StorageAdapter`), `process.env`, or UI libraries.
-- `packages/ui/`: no `@patchbay/core` imports and no business logic.
+- `packages/ui/`: no `@orvilo/core` imports and no business logic.
 - `packages/views/`: no `next/*`, no `react-router-dom`, no stores. Use `NavigationAdapter`, `useNavigation()`, and `<AppLink>`.
 - `apps/web/platform/`: only place for Next.js navigation/platform APIs.
 - `apps/desktop/src/renderer/src/platform/`: only place for `react-router-dom` navigation wiring.
@@ -69,7 +69,7 @@ If the same logic exists in both web and desktop, extract it unless it depends o
 3. Shared UI or business views belong in `packages/views/`.
 4. Shared primitives belong in `packages/ui/`.
 
-Mobile is independent. It may import types and pure functions from `@patchbay/core`, with `import type` for types, but owns its UI, state, hooks, providers, i18n, React version, build pipeline, and release cadence.
+Mobile is independent. It may import types and pure functions from `@orvilo/core`, with `import type` for types, but owns its UI, state, hooks, providers, i18n, React version, build pipeline, and release cadence.
 
 ## Commands
 
@@ -104,7 +104,7 @@ pnpm exec playwright test
 pnpm ui:add badge     # shadcn/Base UI component into packages/ui
 ```
 
-`make up` records each environment in `~/.patchbay/dev/`, allocates its API, Web and Desktop renderer ports plus database name under a lock instead of recomputing them from the path, and verifies the database through `DATABASE_URL` rather than `docker exec` — a `docker exec` create lands in the wrong server whenever a native PostgreSQL owns 5432. It reuses an API only when `/health` proves its listener pid, process group and commit belong to this checkout. `make down` keeps the data; `make destroy` consumes the database, profile, daemon workspaces, Desktop userData and registry entry. Agent-owned TTL environments are collected best-effort on the next `make up`, or explicitly with `make gc`.
+`make up` records each environment in `~/.orvilo/dev/`, allocates its API, Web and Desktop renderer ports plus database name under a lock instead of recomputing them from the path, and verifies the database through `DATABASE_URL` rather than `docker exec` — a `docker exec` create lands in the wrong server whenever a native PostgreSQL owns 5432. It reuses an API only when `/health` proves its listener pid, process group and commit belong to this checkout. `make down` keeps the data; `make destroy` consumes the database, profile, daemon workspaces, Desktop userData and registry entry. Agent-owned TTL environments are collected best-effort on the next `make up`, or explicitly with `make gc`.
 
 Worktrees share one PostgreSQL container and get isolated DB names/ports via `.env.worktree`. `make dev` auto-detects this. For manual setup use `make worktree-env`, `make setup-worktree`, and `make start-worktree`. Direct `pnpm dev:desktop` self-isolates from the path; `make up C=desktop` overrides that fallback with the registry-allocated renderer port and app name so Desktop shares the environment ledger.
 
@@ -177,11 +177,11 @@ Desktop routing has three categories:
 More desktop constraints:
 
 - New pre-workspace desktop flows register a `WindowOverlay` type in `stores/window-overlay-store.ts`; do not add them to `routes.tsx`.
-- `setCurrentWorkspace(slug, uuid)` from `@patchbay/core/platform` mirrors the active route for headers, storage namespaces, and reconnects; workspace route layouts own setting it.
+- `setCurrentWorkspace(slug, uuid)` from `@orvilo/core/platform` mirrors the active route for headers, storage namespaces, and reconnects; workspace route layouts own setting it.
 - Code that leaves workspace context must call `setCurrentWorkspace(null, null)` explicitly.
 - Workspace delete must await the server before navigation/cleanup. Workspace leave currently clears/navigates before mutation only to avoid the `member:removed` realtime race; treat that as known debt, not a reusable pattern.
 - Cross-workspace navigation must go through the navigation adapter so it can call `switchWorkspace(slug, targetPath)`.
-- Full-window desktop views outside the dashboard shell must mount `<DragStrip />` from `@patchbay/views/platform` as the first flex child. Interactive controls in the top 48px need `WebkitAppRegion: "no-drag"`.
+- Full-window desktop views outside the dashboard shell must mount `<DragStrip />` from `@orvilo/views/platform` as the first flex child. Interactive controls in the top 48px need `WebkitAppRegion: "no-drag"`.
 
 ## Mobile Rules
 
@@ -189,14 +189,14 @@ Read `apps/mobile/CLAUDE.md` before touching `apps/mobile/`. It contains the man
 
 Root-level reminders:
 
-- Mobile shares only `@patchbay/core` types and pure functions.
+- Mobile shares only `@orvilo/core` types and pure functions.
 - Mobile must match web/desktop product semantics: counts, permissions, enums/transitions, and data identity.
 - Mobile may differ in UI/interaction when the phone context requires it.
 
 ## UI Rules
 
 - Prefer shadcn/Base UI components over custom implementations. Add them with `pnpm ui:add <component>` from the repo root.
-- The Pro `@reui` registry is configured in `packages/ui/components.json`; add items with `pnpm ui:add @reui/<name>` and answer `n` to every overwrite prompt so local component customizations survive. It reads `REUI_LICENSE_KEY` from the environment — agents get it from their Patchbay agent environment, humans export it in their own shell. Never write the key into a repo file.
+- The Pro `@reui` registry is configured in `packages/ui/components.json`; add items with `pnpm ui:add @reui/<name>` and answer `n` to every overwrite prompt so local component customizations survive. It reads `REUI_LICENSE_KEY` from the environment — agents get it from their Orvilo agent environment, humans export it in their own shell. Never write the key into a repo file.
 - ReUI ships source, not a dependency: route the vendored output to our layout (new primitives to `packages/ui/components/ui/`, compositions to `packages/views/<domain>/`) and rewrite it to our conventions before committing.
 - Use design tokens and semantic classes; avoid hardcoded colors. Font sizes come from the role-named `--text-*` scale in `packages/ui/styles/tokens.css` (`text-caption`, `text-body`, `text-title`, …), which is the authoritative list — not Tailwind's default `text-sm` / `text-base` ramp.
 - An active/selected state must stay identifiable while hovered. Express it on a dimension hover does not touch (weight, text color), or define the `data-active:hover:` compound explicitly — otherwise hovering a selected row visually downgrades it to plain hover.
@@ -222,8 +222,8 @@ Rules:
 - Give each product behavior ONE canonical layer. Pure parsing, state transitions and boundary matrices belong in a `.test.ts` beside the helper; the component suite keeps the happy path, the wiring, accessibility and named regressions, and points at the canonical file in a comment. Do not re-run a helper's matrix through a DOM mount.
 - A `.test.ts` that needs no DOM must start with `// @vitest-environment node`. jsdom costs ~0.8s of setup per file and buys such a suite nothing. Do not add it to a test whose code under test branches on `typeof window`/`document` — under node it would silently take the SSR path and still pass.
 - `packages/views/` tests must not mock `next/*` or `react-router-dom`.
-- Mock `@patchbay/core` stores with the Zustand callable-store shape (`selectorFn` plus `getState`).
-- Mock `@patchbay/core/api` for API calls.
+- Mock `@orvilo/core` stores with the Zustand callable-store shape (`selectorFn` plus `getState`).
+- Mock `@orvilo/core/api` for API calls.
 - E2E tests should use `TestApiClient` for setup/teardown.
 - Prefer writing the failing test in the correct package before implementation when the change is behavioral.
 - DB-backed Go tests build their rows through `server/internal/testutil` (`dbfx.Issue`, `dbfx.Task`, `dbfx.Insert`) and drive handlers through `testutil.Call(h, req).Want(status).JSON(&out)`. Do not open-code an `INSERT ... RETURNING id` with its matching `t.Cleanup(DELETE ...)`, or a `httptest.NewRecorder()` / status-check / decode quartet, in a new test. `internal/handler` held ~1000 of the first and ~1200 of the second before the shared fixtures landed, and every change to a shared contract had to be made once per copy.

@@ -36,21 +36,21 @@ import {
   useCreateCloudBillingCheckoutSession,
   useCreateCloudBillingPortalSession,
   useInvalidateBillingDataAfterCredit,
-} from "@patchbay/core/billing";
+} from "@orvilo/core/billing";
 import type {
   BillingBatch,
   BillingPriceTier,
   BillingTopup,
   BillingTransaction,
-} from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@patchbay/ui/components/ui/card";
+} from "@orvilo/ui/components/ui/card";
 import { useLocale, useT } from "../i18n";
 import { useNavigation } from "../navigation";
 

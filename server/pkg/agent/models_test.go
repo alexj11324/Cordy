@@ -1093,8 +1093,8 @@ func writeFakePiRPCModelsBinary(t *testing.T) string {
 if [ "$1" = "--mode" ] && [ "$2" = "rpc" ]; then
   IFS= read -r _state_request
   IFS= read -r _models_request
-  printf '%s\n' '{"id":"patchbay-state","type":"response","command":"get_state","success":true,"data":{"model":{"id":"gpt-5.6-luna","name":"Luna","provider":"openai-multi","reasoning":true,"thinkingLevelMap":{"off":"none","minimal":"none","low":"low","medium":null,"high":"high","xhigh":"xhigh","max":"max"}},"thinkingLevel":"max"}}'
-  printf '%s\n' '{"id":"patchbay-models","type":"response","command":"get_available_models","success":true,"data":{"models":[{"id":"gpt-5.6-sol","name":"Sol","provider":"openai-multi","reasoning":true},{"id":"gpt-5.6-luna","name":"Luna","provider":"openai-multi","reasoning":true,"thinkingLevelMap":{"off":"none","minimal":"none","low":"low","medium":null,"high":"high","xhigh":"xhigh","max":"max"}},{"id":"plain-chat","name":"Plain chat","provider":"openai-multi","reasoning":false}]}}'
+  printf '%s\n' '{"id":"orvilo-state","type":"response","command":"get_state","success":true,"data":{"model":{"id":"gpt-5.6-luna","name":"Luna","provider":"openai-multi","reasoning":true,"thinkingLevelMap":{"off":"none","minimal":"none","low":"low","medium":null,"high":"high","xhigh":"xhigh","max":"max"}},"thinkingLevel":"max"}}'
+  printf '%s\n' '{"id":"orvilo-models","type":"response","command":"get_available_models","success":true,"data":{"models":[{"id":"gpt-5.6-sol","name":"Sol","provider":"openai-multi","reasoning":true},{"id":"gpt-5.6-luna","name":"Luna","provider":"openai-multi","reasoning":true,"thinkingLevelMap":{"off":"none","minimal":"none","low":"low","medium":null,"high":"high","xhigh":"xhigh","max":"max"}},{"id":"plain-chat","name":"Plain chat","provider":"openai-multi","reasoning":false}]}}'
   exit 0
 fi
 printf '%s\n' 'provider model context max-out thinking images'
@@ -1159,7 +1159,7 @@ func TestDiscoverPiModelsIDLessRPCErrorFallsBack(t *testing.T) {
 if [ "$1" = "--mode" ] && [ "$2" = "rpc" ]; then
   IFS= read -r _state_request
   IFS= read -r _models_request
-  printf '%s\n' '{"id":"patchbay-state","type":"response","command":"get_state","success":true,"data":{"thinkingLevel":"high"}}'
+  printf '%s\n' '{"id":"orvilo-state","type":"response","command":"get_state","success":true,"data":{"thinkingLevel":"high"}}'
   printf '%s\n' '{"type":"response","command":"get_available_models","success":false,"error":"Unknown command: get_available_models"}'
   cat >/dev/null
   exit 0
@@ -1933,9 +1933,9 @@ func TestQualifyModelID(t *testing.T) {
 	t.Parallel()
 
 	gateway := []Model{
-		{ID: "patchbay-anthropic/claude/claude-opus-5", Provider: "patchbay-anthropic"},
-		{ID: "patchbay-anthropic/claude/claude-sonnet-5", Provider: "patchbay-anthropic"},
-		{ID: "patchbay-codex/codex/gpt-5.6-sol", Provider: "patchbay-codex"},
+		{ID: "orvilo-anthropic/claude/claude-opus-5", Provider: "orvilo-anthropic"},
+		{ID: "orvilo-anthropic/claude/claude-sonnet-5", Provider: "orvilo-anthropic"},
+		{ID: "orvilo-codex/codex/gpt-5.6-sol", Provider: "orvilo-codex"},
 	}
 
 	tests := []struct {
@@ -1949,14 +1949,14 @@ func TestQualifyModelID(t *testing.T) {
 			name:          "slash-shaped id gains its provider",
 			catalog:       Catalog{Models: gateway},
 			model:         "claude/claude-opus-5",
-			want:          "patchbay-anthropic/claude/claude-opus-5",
+			want:          "orvilo-anthropic/claude/claude-opus-5",
 			wantRewritten: true,
 		},
 		{
 			name:    "already canonical is left alone",
 			catalog: Catalog{Models: gateway},
-			model:   "patchbay-anthropic/claude/claude-opus-5",
-			want:    "patchbay-anthropic/claude/claude-opus-5",
+			model:   "orvilo-anthropic/claude/claude-opus-5",
+			want:    "orvilo-anthropic/claude/claude-opus-5",
 		},
 		{
 			name: "an exact catalog id wins over a qualifiable one",
@@ -2036,15 +2036,15 @@ func TestSlashShapedPiModelKeepsItsThinkingCatalog(t *testing.T) {
 	// Verbatim shape of a real `get_available_models` RPC response for the
 	// reporter's models.json.
 	raw := []piRPCModel{
-		{ID: "claude/claude-opus-5", Name: "Claude Opus 5", Provider: "patchbay-anthropic", Reasoning: true},
-		{ID: "claude/claude-sonnet-5", Name: "Claude Sonnet 5", Provider: "patchbay-anthropic", Reasoning: true},
+		{ID: "claude/claude-opus-5", Name: "Claude Opus 5", Provider: "orvilo-anthropic", Reasoning: true},
+		{ID: "claude/claude-sonnet-5", Name: "Claude Sonnet 5", Provider: "orvilo-anthropic", Reasoning: true},
 	}
 	models := piModelsFromRPC(raw, piRPCState{})
 
 	qualified, rewritten := QualifyModelID(Catalog{Models: models}, "claude/claude-opus-5")
-	if !rewritten || qualified != "patchbay-anthropic/claude/claude-opus-5" {
+	if !rewritten || qualified != "orvilo-anthropic/claude/claude-opus-5" {
 		t.Fatalf("qualified = (%q, %v), want (%q, true)",
-			qualified, rewritten, "patchbay-anthropic/claude/claude-opus-5")
+			qualified, rewritten, "orvilo-anthropic/claude/claude-opus-5")
 	}
 
 	var thinking *ModelThinking

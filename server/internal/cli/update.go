@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/selfexec"
+	"github.com/orvilo-ai/orvilo/server/internal/selfexec"
 )
 
 const (
@@ -36,7 +36,7 @@ const (
 	// guidance. HomebrewPackage is the stable cask published by release.yml.
 	GitHubReleaseRepository = "alexj11324/Cordy"
 	GitHubReleaseWebURL     = "https://github.com/" + GitHubReleaseRepository + "/releases"
-	HomebrewPackage         = "alexj11324/tap/patchbay"
+	HomebrewPackage         = "alexj11324/tap/orvilo"
 
 	githubReleaseAPIURL = "https://api.github.com/repos/" + GitHubReleaseRepository + "/releases"
 )
@@ -158,10 +158,10 @@ func releaseAssetCandidates(targetVersion, goos, goarch string) []string {
 	version := strings.TrimPrefix(tag, "v")
 	ext := releaseArchiveExtension(goos)
 	// Prefer the versioned name (current scheme); fall back to the legacy
-	// `patchbay_{os}_{arch}` name for releases that still ship it.
+	// `orvilo_{os}_{arch}` name for releases that still ship it.
 	return []string{
-		fmt.Sprintf("patchbay-cli-%s-%s-%s.%s", version, goos, goarch, ext),
-		fmt.Sprintf("patchbay_%s_%s.%s", goos, goarch, ext),
+		fmt.Sprintf("orvilo-cli-%s-%s-%s.%s", version, goos, goarch, ext),
+		fmt.Sprintf("orvilo_%s_%s.%s", goos, goarch, ext),
 	}
 }
 
@@ -260,7 +260,7 @@ func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 	return &release, nil
 }
 
-// FetchLatestRelease fetches the latest release tag from the patchbay GitHub repo.
+// FetchLatestRelease fetches the latest release tag from the orvilo GitHub repo.
 func FetchLatestRelease() (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, githubReleaseAPIURL+"/latest", nil)
@@ -303,7 +303,7 @@ func MatchKnownBrewPrefix(path string) string {
 	return ""
 }
 
-// IsBrewInstall checks whether the running patchbay binary was installed via Homebrew.
+// IsBrewInstall checks whether the running orvilo binary was installed via Homebrew.
 func IsBrewInstall() bool {
 	exePath, err := selfexec.Resolve()
 	if err != nil {
@@ -337,7 +337,7 @@ func GetBrewPrefix() string {
 	return strings.TrimSpace(string(out))
 }
 
-// UpdateViaBrew upgrades the canonical Patchbay Homebrew cask.
+// UpdateViaBrew upgrades the canonical Orvilo Homebrew cask.
 func UpdateViaBrew() (string, error) {
 	cmd := exec.Command("brew", "upgrade", HomebrewPackage)
 	output, err := cmd.CombinedOutput()
@@ -438,9 +438,9 @@ func UpdateViaDownloadWithTimeout(targetVersion string, downloadTimeout time.Dur
 	}
 
 	// Extract the binary from the archive.
-	binaryName := "patchbay"
+	binaryName := "orvilo"
 	if runtime.GOOS == "windows" {
-		binaryName = "patchbay.exe"
+		binaryName = "orvilo.exe"
 	}
 	var binaryData []byte
 	if runtime.GOOS == "windows" {
@@ -454,7 +454,7 @@ func UpdateViaDownloadWithTimeout(targetVersion string, downloadTimeout time.Dur
 
 	// Atomic replace: write to temp file, then rename over the original.
 	dir := filepath.Dir(exePath)
-	tmpFile, err := os.CreateTemp(dir, "patchbay-update-*")
+	tmpFile, err := os.CreateTemp(dir, "orvilo-update-*")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}

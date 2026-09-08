@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import type { Issue, UpdateIssueRequest } from "@patchbay/core/types";
+import type { Issue, UpdateIssueRequest } from "@orvilo/core/types";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 
 // MUL-4155: batch status changes must apply directly (no run-confirm modal),
@@ -14,19 +14,19 @@ const selection = vi.hoisted(() => ({
   select: vi.fn(),
   deselect: vi.fn(),
 }));
-vi.mock("@patchbay/core/issues/stores/selection-store", () => ({
+vi.mock("@orvilo/core/issues/stores/selection-store", () => ({
   useIssueSelectionStore: (selector: (s: typeof selection) => unknown) => selector(selection),
 }));
 
 const batchUpdate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const batchDelete = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@orvilo/core/issues/mutations", () => ({
   useBatchUpdateIssues: () => ({ mutateAsync: batchUpdate, isPending: false }),
   useBatchDeleteIssues: () => ({ mutateAsync: batchDelete, isPending: false }),
 }));
 
 const openModal = vi.hoisted(() => vi.fn());
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@orvilo/core/modals", () => ({
   useModalStore: (selector: (s: { open: typeof openModal }) => unknown) => selector({ open: openModal }),
 }));
 

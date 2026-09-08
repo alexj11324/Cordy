@@ -14,6 +14,7 @@ func TestValidateJWTSecret(t *testing.T) {
 	}{
 		{"empty_is_rejected", "", true},
 		{"code_default_is_rejected", defaultJWTSecret, true},
+		{"legacy_patchbay_code_default_is_rejected", "patchbay-dev-secret-change-in-production", true},
 		{"compose_template_default_is_rejected", "change-me-in-production", true},
 		{"whitespace_wrapped_weak_value_is_rejected", "  change-me-in-production \n", true},
 		{"strong_random_value_is_accepted", strong, false},

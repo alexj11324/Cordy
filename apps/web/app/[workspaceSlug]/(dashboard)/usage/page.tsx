@@ -1,1 +1,1 @@
-export { DashboardPage as default } from "@patchbay/views/dashboard";
+export { DashboardPage as default } from "@orvilo/views/dashboard";

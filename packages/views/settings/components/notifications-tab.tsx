@@ -1,11 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { notificationPreferenceOptions } from "@patchbay/core/notification-preferences/queries";
-import { useUpdateNotificationPreferences } from "@patchbay/core/notification-preferences/mutations";
-import type { NotificationGroupKey, NotificationPreferences } from "@patchbay/core/types";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { notificationPreferenceOptions } from "@orvilo/core/notification-preferences/queries";
+import { useUpdateNotificationPreferences } from "@orvilo/core/notification-preferences/mutations";
+import type { NotificationGroupKey, NotificationPreferences } from "@orvilo/core/types";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import { BrowserNotificationSetting } from "./browser-notification-setting";

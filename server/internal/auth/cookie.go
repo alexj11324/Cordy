@@ -21,10 +21,10 @@ const (
 	// AuthCookieName is the production HttpOnly session cookie. Staging and
 	// other sibling environments under the same parent domain must override
 	// AUTH_COOKIE_NAME; AuthCookie() is the runtime name.
-	AuthCookieName = "patchbay_auth"
+	AuthCookieName = "orvilo_auth"
 	// CSRFCookieName is the production JS-readable CSRF cookie. Runtime name
 	// is CSRFCookie(), overridden by CSRF_COOKIE_NAME.
-	CSRFCookieName      = "patchbay_csrf"
+	CSRFCookieName      = "orvilo_csrf"
 	defaultAuthTokenTTL = 30 * 24 * time.Hour // 30 days
 	authCookieNameEnv   = "AUTH_COOKIE_NAME"
 	csrfCookieNameEnv   = "CSRF_COOKIE_NAME"
@@ -35,13 +35,13 @@ const (
 // shadowed by an older same-named production cookie. Invalid values fall
 // back to AuthCookieName. Not cached: tests use t.Setenv.
 func AuthCookie() string {
-	return cookieNameFromEnv(authCookieNameEnv, AuthCookieName, "patchbay_staging_auth")
+	return cookieNameFromEnv(authCookieNameEnv, AuthCookieName, "orvilo_staging_auth")
 }
 
 // CSRFCookie returns the CSRF cookie name. CSRF_COOKIE_NAME overrides the
 // production default. Invalid values fall back to CSRFCookieName.
 func CSRFCookie() string {
-	return cookieNameFromEnv(csrfCookieNameEnv, CSRFCookieName, "patchbay_staging_csrf")
+	return cookieNameFromEnv(csrfCookieNameEnv, CSRFCookieName, "orvilo_staging_csrf")
 }
 
 // Only names understood by the shared browser client are supported.

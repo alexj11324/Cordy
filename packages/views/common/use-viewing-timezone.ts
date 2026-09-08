@@ -1,4 +1,4 @@
-import { useAuthStore } from "@patchbay/core/auth";
+import { useAuthStore } from "@orvilo/core/auth";
 import { browserTimezone } from "./timezone-select";
 
 // Viewer's IANA tz: stored user preference, else browser-detected, else UTC.

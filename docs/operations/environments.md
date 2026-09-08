@@ -1,6 +1,6 @@
 # Hosted environment isolation
 
-Patchbay follows the same three-environment split Multica uses for clients
+Orvilo follows the same three-environment split Multica uses for clients
 and hosted backends: local development, an internal test stack, and the
 public product. Those three never share a database, Clerk application,
 cookie domain, session cookie names, desktop `userData` directory, mobile bundle id, or CLI
@@ -12,13 +12,13 @@ profile.
 | --- | --- | --- | --- |
 | Audience | Contributors on a checkout | Internal QA / pre-production | Paying and public users |
 | API | `http://localhost:<port>` from `make up` | `https://api.staging.aspectlylabs.com` | `https://api.aspectlylabs.com` |
-| Web | `http://localhost:<port>` | `https://staging.aspectlylabs.com` | `https://patchbay.aspectlylabs.com` |
+| Web | `http://localhost:<port>` | `https://staging.aspectlylabs.com` | `https://orvilo.aspectlylabs.com` |
 | Accounts | Local session or the production broker only when a loopback API is in use | `https://accounts.staging.aspectlylabs.com` | `https://accounts.aspectlylabs.com` |
-| Desktop | **Orvilo Canary** (`userData`: Patchbay Canary, callback `patchbay-canary-<hash>://`) | **Orvilo Staging** (`userData`: Patchbay Staging, callback `patchbay-staging-<hash>://`) | **Orvilo** (`userData`: Patchbay, callback `patchbay://`) |
-| Mobile | `ai.patchbay.mobile.dev` | `ai.patchbay.mobile.staging` | `ai.patchbay.mobile` |
-| CLI | worktree profile under `~/.patchbay/profiles/dev-*` | `patchbay --profile staging` | default `~/.patchbay/config.json` |
+| Desktop | **Orvilo Canary** (`userData`: Orvilo Canary, callback `orvilo-canary-<hash>://`) | **Orvilo Staging** (`userData`: Orvilo Staging, callback `orvilo-staging-<hash>://`) | **Orvilo** (`userData`: Orvilo, callback `orvilo://`) |
+| Mobile | `ai.orvilo.mobile.dev` | `ai.orvilo.mobile.staging` | `ai.orvilo.mobile` |
+| CLI | worktree profile under `~/.orvilo/profiles/dev-*` | `orvilo --profile staging` | default `~/.orvilo/config.json` |
 | GitHub Environment | none | `staging` | `production` |
-| Official-cloud policy | no | no | yes (`patchbay.aspectlylabs.com` only) |
+| Official-cloud policy | no | no | yes (`orvilo.aspectlylabs.com` only) |
 
 The machine-readable copy of these URLs and ports is
 `deploy/origin/hosted-environments.json`. Client env files, origin nginx, and
@@ -26,7 +26,7 @@ the staging gateway must match it. Contract tests fail the build when they
 drift.
 
 Staging is not a public support environment. Do not send customers there, do
-not point the packaged desktop app at it, and do not treat it as Patchbay
+not point the packaged desktop app at it, and do not treat it as Orvilo
 Cloud: daemon auto-update defaults, managed-cloud setup URLs, and
 capacity/billing gates stay on the production frontend host alone.
 
@@ -37,32 +37,32 @@ capacity/billing gates stay on the production frontend host alone.
 ```bash
 make up            # isolated DB, ports, CLI profile, optional Desktop
 pnpm dev:desktop   # Orvilo Canary → local backend
-pnpm dev:mobile    # Patchbay (Dev) → .env.development.local
+pnpm dev:mobile    # Orvilo (Dev) → .env.development.local
 ```
 
 Worktree isolation is documented in [CONTRIBUTING.md](../../CONTRIBUTING.md).
-Nothing in that flow writes `~/.patchbay/config.json` or the production
+Nothing in that flow writes `~/.orvilo/config.json` or the production
 Electron `userData` directory.
 
 ### Testing (staging)
 
 ```bash
 pnpm dev:desktop:staging   # Orvilo Staging → api.staging.aspectlylabs.com
-pnpm dev:mobile:staging    # Patchbay (Staging) → apps/mobile/.env.staging
-patchbay setup self-host --profile staging \
+pnpm dev:mobile:staging    # Orvilo (Staging) → apps/mobile/.env.staging
+orvilo setup self-host --profile staging \
   --server-url https://api.staging.aspectlylabs.com \
   --app-url https://staging.aspectlylabs.com
 ```
 
 Desktop staging uses its own app name, `userData` path, OS callback
-scheme (`patchbay-staging-<hash>://`), and renderer port, so a Canary session
+scheme (`orvilo-staging-<hash>://`), and renderer port, so a Canary session
 against localhost cannot leak cookies or tokens into staging, both channels
 can run from the same checkout without `EADDRINUSE`, staging callbacks cannot
 open Canary or the packaged production app, and staging cannot leak into
 production.
 
 On macOS, each checkout/channel launches its own cached Electron app bundle
-under `.patchbay-dev/electron/<version>-<arch>/`, leaving the dependency bundle
+under `.orvilo-dev/electron/<version>-<arch>/`, leaving the dependency bundle
 and the other channel's native callback registration untouched. Starting either
 channel also restores leftover Canary/Staging branding on the shared
 `node_modules` `Electron.app` so Launch Services cannot keep dispatching the
@@ -73,7 +73,7 @@ ordinary starts reuse the existing copy.
 
 Packaged Desktop, `pnpm ios:mobile:device:prod:release`, and the default CLI
 profile talk only to `api.aspectlylabs.com` /
-`patchbay.aspectlylabs.com` / `accounts.aspectlylabs.com`. Merges to `main`
+`orvilo.aspectlylabs.com` / `accounts.aspectlylabs.com`. Merges to `main`
 deploy this stack through the `production` GitHub Environment. See
 [production-deployment.md](production-deployment.md).
 
@@ -81,26 +81,26 @@ deploy this stack through the `production` GitHub Environment. See
 
 Staging may share the production host, but it must not share runtime state:
 
-- Compose projects `patchbay-staging`, `patchbay-staging-docs`, and
-  `patchbay-staging-auth-broker` — never `cordy632`, `cordy`, or
-  `patchbay-auth-broker`.
+- Compose projects `orvilo-staging`, `orvilo-staging-docs`, and
+  `orvilo-staging-auth-broker` — never `cordy632`, `cordy`, or
+  `orvilo-auth-broker`.
 - Loopback ports 8211 / 3111 / 4001 / 43101 — never 8210 / 3110 / 4000 /
   43100.
-- State directory `/var/lib/patchbay-staging` — never
-  `/var/lib/patchbay-production`.
+- State directory `/var/lib/orvilo-staging` — never
+  `/var/lib/orvilo-production`.
 - A dedicated Clerk application and `staging-smoke@aspectlylabs.com` user.
 - Cookie domain `.staging.aspectlylabs.com` and cookie names
-  `patchbay_staging_auth` / `patchbay_staging_csrf` (production keeps
-  `patchbay_auth` / `patchbay_csrf`).
+  `orvilo_staging_auth` / `orvilo_staging_csrf` (production keeps
+  `orvilo_auth` / `orvilo_csrf`).
 
-The restricted staging gateway is `/usr/local/bin/patchbay-staging-deploy`.
+The restricted staging gateway is `/usr/local/bin/orvilo-staging-deploy`.
 It refuses production paths, production Compose project names, production
 ports, and production product URLs before it mutates anything. Production
-deployments continue to use `/usr/local/bin/patchbay-production-deploy` and
+deployments continue to use `/usr/local/bin/orvilo-production-deploy` and
 the `production` Environment; a staging failure cannot change production
 workflow conclusion.
 
-A separate operator-run trial exists at `patchbay-staging.nebula-spaces.com`
+A separate operator-run trial exists at `orvilo-staging.nebula-spaces.com`
 (`deploy/origin/nebula-staging.md`). It is a fixed image snapshot on its own
 domain and Clerk app, not this Aspectly Labs staging pipeline. Do not reuse
 its Compose project, Secret Manager entry, or smoke user here.
@@ -138,13 +138,13 @@ its Compose project, Secret Manager entry, or smoke user here.
    verification). The Clerk secret key stays in the origin secret files, not
    in GitHub.
 4. Place mode-0600 `product-env.json` and `auth-broker-env.json` under
-   `/var/lib/patchbay-staging/secrets`. They must name the staging URLs and
+   `/var/lib/orvilo-staging/secrets`. They must name the staging URLs and
    ports above and must not mention production product hosts. Use cookie
    domain `.staging.aspectlylabs.com` so staging sessions are not scoped to
    the public product host. Production cookies on `.aspectlylabs.com` may
    still be *presented* to the staging hostname by the browser; the overlay
-   therefore pins `AUTH_COOKIE_NAME=patchbay_staging_auth` and
-   `CSRF_COOKIE_NAME=patchbay_staging_csrf` so Go does not read the older
+   therefore pins `AUTH_COOKIE_NAME=orvilo_staging_auth` and
+   `CSRF_COOKIE_NAME=orvilo_staging_csrf` so Go does not read the older
    production JWT first. Cookie-name overrides support only the documented
    production and staging names; arbitrary names fall back to production
    because the shared browser client must recognize the CSRF cookie.
@@ -166,10 +166,10 @@ its Compose project, Secret Manager entry, or smoke user here.
    `-t` fails closed if those files are missing. Before reloading
    nginx, install a root-owned mode-0600 snippet at
    `/etc/nginx/snippets/orvilo-staging-accounts-origin-auth.conf`. It must reject
-   requests unless `$http_x_patchbay_origin_auth` equals the staging-only
+   requests unless `$http_x_orvilo_origin_auth` equals the staging-only
    `ORVILO_ORIGIN_AUTH_TOKEN` from the broker snapshot — the same value as
    `wrangler secret put ORIGIN_AUTH_TOKEN --env staging`. Do not copy
-   `/etc/nginx/snippets/patchbay-accounts-origin-auth.conf`; that file holds
+   `/etc/nginx/snippets/orvilo-accounts-origin-auth.conf`; that file holds
    the production Worker token and would 403 staging `/readyz` before traffic
    reaches port 43101. Use an nginx `if` with `return 403` for a mismatch;
    never log or commit the token. Validate the configuration and verify that
@@ -187,7 +187,7 @@ its Compose project, Secret Manager entry, or smoke user here.
    npx wrangler deploy --env staging
    ```
 
-   The token must match both `/var/lib/patchbay-staging/secrets` and the
+   The token must match both `/var/lib/orvilo-staging/secrets` and the
    staging nginx origin-auth snippet. Deploying without `--env staging`
    would publish over the production Worker.
 7. From a reviewed checkout:

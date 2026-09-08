@@ -5,8 +5,8 @@ import userEvent from "@testing-library/user-event";
 import {
   type IssueViewState,
   viewStoreSlice,
-} from "@patchbay/core/issues/stores/view-store";
-import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
+} from "@orvilo/core/issues/stores/view-store";
+import { ViewStoreProvider } from "@orvilo/core/issues/stores/view-store-context";
 import { renderWithI18n } from "../../test/i18n";
 import {
   DraftDefinitionFields,
@@ -18,7 +18,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   useQuery: () => ({ data: [] }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 

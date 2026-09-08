@@ -21,11 +21,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       : isStaging
         ? "Orvilo (Staging)"
         : "Orvilo (Dev)",
-    slug: "patchbay-mobile",
+    slug: "orvilo-mobile",
     version: "0.1.0",
     orientation: "portrait",
     userInterfaceStyle: "automatic",
-    scheme: "patchbay",
+    scheme: "orvilo",
     // 1024x1024 source shared with the desktop client
     // (apps/desktop/build/icon.png). Expo prebuild generates every required
     // iOS icon size from this single PNG.
@@ -55,10 +55,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       // auto-loads `.env.<mode>.local` regardless of APP_ENV) and collapse
       // dev / staging / prod onto a single id.
       bundleIdentifier: isProd
-        ? (process.env.EXPO_BUNDLE_IDENTIFIER_PROD ?? "ai.patchbay.mobile")
+        ? (process.env.EXPO_BUNDLE_IDENTIFIER_PROD ?? "ai.orvilo.mobile")
         : isStaging
-          ? "ai.patchbay.mobile.staging"
-          : (process.env.EXPO_BUNDLE_IDENTIFIER_DEV ?? "ai.patchbay.mobile.dev"),
+          ? "ai.orvilo.mobile.staging"
+          : (process.env.EXPO_BUNDLE_IDENTIFIER_DEV ?? "ai.orvilo.mobile.dev"),
     },
     plugins: [
       "expo-router",

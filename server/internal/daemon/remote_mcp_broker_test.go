@@ -13,8 +13,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/remotemcp"
-	"github.com/patchbay-ai/patchbay/server/pkg/remotemcp/remotemcptest"
+	"github.com/orvilo-ai/orvilo/server/pkg/remotemcp"
+	"github.com/orvilo-ai/orvilo/server/pkg/remotemcp/remotemcptest"
 )
 
 func TestRemoteMCPProxyFiltersToolsAndInjectsCredential(t *testing.T) {

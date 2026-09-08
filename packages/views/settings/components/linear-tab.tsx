@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CheckCircle2, CircleAlert, GitMerge, Loader2, Settings2, Trash2 } from "lucide-react";
-import { ApiError, api } from "@patchbay/core/api";
+import { ApiError, api } from "@orvilo/core/api";
 import {
   linearBindingsOptions,
   linearCatalogOptions,
@@ -12,9 +12,9 @@ import {
   linearConnectionOptions,
   linearMemberBindingsOptions,
   linearKeys,
-} from "@patchbay/core/linear";
-import { projectListOptions } from "@patchbay/core/projects";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/linear";
+import { projectListOptions } from "@orvilo/core/projects";
+import { memberListOptions } from "@orvilo/core/workspace/queries";
 import type {
   LinearCatalogResponse,
   LinearDryRunResponse,
@@ -24,9 +24,9 @@ import type {
   LinearSyncMode,
   MemberWithUser,
   SaveLinearProjectBindingRequest,
-} from "@patchbay/core/types";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/types";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,7 +36,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -44,7 +44,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import { useT } from "../../i18n";
 import { IntegrationCard } from "./integration-card";
 
@@ -57,17 +57,17 @@ type LinearIntegrationCardProps = {
 type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 type BindingDraft = {
-  patchbayProjectId: string;
+  orviloProjectId: string;
   linearProjectId: string;
   linearTeamId: string;
   syncMode: LinearSyncMode;
-  initialSourceOfTruth: "linear" | "patchbay" | null;
+  initialSourceOfTruth: "linear" | "orvilo" | null;
   statusMapping: Record<string, unknown>;
   agentLabelMapping: Record<string, unknown>;
 };
 
 const emptyDraft: BindingDraft = {
-  patchbayProjectId: "",
+  orviloProjectId: "",
   linearProjectId: "",
   linearTeamId: "",
   syncMode: "import",
@@ -359,7 +359,7 @@ function BindingWizard({
   const [dryRunError, setDryRunError] = useState(false);
   const [memberMappings, setMemberMappings] = useState<Record<string, string>>(() =>
     Object.fromEntries(
-      memberBindings.map((binding) => [binding.patchbay_user_id, binding.linear_user_id]),
+      memberBindings.map((binding) => [binding.orvilo_user_id, binding.linear_user_id]),
     ),
   );
   const [importRetryBindingId, setImportRetryBindingId] = useState<string | null>(null);
@@ -367,29 +367,29 @@ function BindingWizard({
   const qc = useQueryClient();
 
   const selectedBinding = bindings.find(
-    (binding) => binding.patchbay_project_id === draft.patchbayProjectId,
+    (binding) => binding.orvilo_project_id === draft.orviloProjectId,
   );
-  const selectedPatchbayProject = projects.find((project) => project.id === draft.patchbayProjectId);
+  const selectedOrviloProject = projects.find((project) => project.id === draft.orviloProjectId);
   const selectedLinearProject = catalog.projects.find(
     (project) => project.id === draft.linearProjectId,
   );
 
   const suggestedLinearProject = useMemo(() => {
-    const title = selectedPatchbayProject?.title.trim().toLocaleLowerCase();
+    const title = selectedOrviloProject?.title.trim().toLocaleLowerCase();
     if (!title) return undefined;
     return catalog.projects.find((project) => project.name.trim().toLocaleLowerCase() === title);
-  }, [catalog.projects, selectedPatchbayProject?.title]);
+  }, [catalog.projects, selectedOrviloProject?.title]);
 
   useEffect(() => {
-    if (!draft.patchbayProjectId && projects[0]) {
-      setDraft((current) => ({ ...current, patchbayProjectId: projects[0]?.id ?? "" }));
+    if (!draft.orviloProjectId && projects[0]) {
+      setDraft((current) => ({ ...current, orviloProjectId: projects[0]?.id ?? "" }));
     }
-  }, [draft.patchbayProjectId, projects]);
+  }, [draft.orviloProjectId, projects]);
 
   useEffect(() => {
-    if (!draft.patchbayProjectId) return;
+    if (!draft.orviloProjectId) return;
     const existing = bindings.find(
-      (binding) => binding.patchbay_project_id === draft.patchbayProjectId,
+      (binding) => binding.orvilo_project_id === draft.orviloProjectId,
     );
     if (existing) {
       setDraft((current) => ({
@@ -397,7 +397,7 @@ function BindingWizard({
         linearProjectId: existing.linear_project_id,
         linearTeamId: existing.linear_team_id ?? "",
         syncMode: existing.sync_mode,
-        initialSourceOfTruth: existing.initial_source_of_truth === "patchbay" ? "patchbay" : "linear",
+        initialSourceOfTruth: existing.initial_source_of_truth === "orvilo" ? "orvilo" : "linear",
         statusMapping: existing.status_mapping,
         agentLabelMapping: existing.agent_label_mapping,
       }));
@@ -409,13 +409,13 @@ function BindingWizard({
         linearProjectId: suggestedLinearProject.id,
       }));
     }
-  }, [bindings, draft.patchbayProjectId, draft.linearProjectId, suggestedLinearProject]);
+  }, [bindings, draft.orviloProjectId, draft.linearProjectId, suggestedLinearProject]);
 
   useEffect(() => {
     if (
       step !== 5 ||
       !connectionId ||
-      !draft.patchbayProjectId ||
+      !draft.orviloProjectId ||
       !draft.linearProjectId
     ) {
       setDryRun(null);
@@ -429,7 +429,7 @@ function BindingWizard({
     setDryRunLoading(true);
     const body: SaveLinearProjectBindingRequest = {
       connection_id: connectionId,
-      patchbay_project_id: draft.patchbayProjectId,
+      orvilo_project_id: draft.orviloProjectId,
       linear_project_id: draft.linearProjectId,
       linear_team_id: draft.linearTeamId || null,
       status: draft.syncMode === "not_synced" ? "draft" : "active",
@@ -458,7 +458,7 @@ function BindingWizard({
     draft.initialSourceOfTruth,
     draft.linearProjectId,
     draft.linearTeamId,
-    draft.patchbayProjectId,
+    draft.orviloProjectId,
     draft.statusMapping,
     draft.agentLabelMapping,
     draft.syncMode,
@@ -471,7 +471,7 @@ function BindingWizard({
   }
 
   function goNext() {
-    if (step === 2 && (!draft.patchbayProjectId || !draft.linearProjectId)) {
+    if (step === 2 && (!draft.orviloProjectId || !draft.linearProjectId)) {
       toast.error(t(($) => $.page.linear.match_required));
       return;
     }
@@ -488,7 +488,7 @@ function BindingWizard({
   }
 
   async function saveBinding() {
-    if (!draft.patchbayProjectId || !draft.linearProjectId) {
+    if (!draft.orviloProjectId || !draft.linearProjectId) {
       toast.error(t(($) => $.page.linear.match_required));
       setStep(2);
       return;
@@ -496,7 +496,7 @@ function BindingWizard({
     setSaving(true);
     const body: SaveLinearProjectBindingRequest = {
       connection_id: "",
-      patchbay_project_id: draft.patchbayProjectId,
+      orvilo_project_id: draft.orviloProjectId,
       linear_project_id: draft.linearProjectId,
       linear_team_id: draft.linearTeamId || null,
       status: draft.syncMode === "not_synced" ? "draft" : "active",
@@ -536,12 +536,12 @@ function BindingWizard({
         members.map(async (member) => {
           const linearUserId = memberMappings[member.user_id]?.trim() ?? "";
           const existing = memberBindings.some(
-            (binding) => binding.patchbay_user_id === member.user_id,
+            (binding) => binding.orvilo_user_id === member.user_id,
           );
           if (linearUserId) {
             await api.saveLinearMemberBinding(workspaceId, {
               connection_id: body.connection_id,
-              patchbay_user_id: member.user_id,
+              orvilo_user_id: member.user_id,
               linear_user_id: linearUserId,
             });
           } else if (existing) {
@@ -605,14 +605,14 @@ function BindingWizard({
           <h4 className="font-medium">{t(($) => $.page.linear.match_title)}</h4>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1.5 text-body">
-              <span className="text-muted-foreground">{t(($) => $.page.linear.patchbay_project)}</span>
+              <span className="text-muted-foreground">{t(($) => $.page.linear.orvilo_project)}</span>
               <select
                 className={selectClassName()}
-                value={draft.patchbayProjectId}
+                value={draft.orviloProjectId}
                 onChange={(event) =>
                   setDraft((current) => ({
                     ...current,
-                    patchbayProjectId: event.target.value,
+                    orviloProjectId: event.target.value,
                     linearProjectId: "",
                     linearTeamId: "",
                     syncMode: "import",
@@ -682,7 +682,7 @@ function BindingWizard({
                     ...current,
                     syncMode: mode,
                     initialSourceOfTruth:
-                      mode === "import" ? "linear" : mode === "publish" ? "patchbay" : mode === "not_synced" ? null : current.initialSourceOfTruth ?? "linear",
+                      mode === "import" ? "linear" : mode === "publish" ? "orvilo" : mode === "not_synced" ? null : current.initialSourceOfTruth ?? "linear",
                   }))
                 }
                 type="radio"
@@ -708,11 +708,11 @@ function BindingWizard({
                 className={selectClassName()}
                 value={draft.initialSourceOfTruth ?? "linear"}
                 onChange={(event) =>
-                  setDraftValue("initialSourceOfTruth", event.target.value as "linear" | "patchbay")
+                  setDraftValue("initialSourceOfTruth", event.target.value as "linear" | "orvilo")
                 }
               >
                 <option value="linear">{t(($) => $.page.linear.source_linear)}</option>
-                <option value="patchbay">{t(($) => $.page.linear.source_patchbay)}</option>
+                <option value="orvilo">{t(($) => $.page.linear.source_orvilo)}</option>
               </select>
             </label>
           ) : null}
@@ -802,7 +802,7 @@ function BindingWizard({
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-md bg-muted/50 p-3">
               <div className="text-micro text-muted-foreground">{t(($) => $.page.linear.preview_project)}</div>
-              <div className="mt-1 text-body font-medium">{selectedPatchbayProject?.title ?? "—"}</div>
+              <div className="mt-1 text-body font-medium">{selectedOrviloProject?.title ?? "—"}</div>
             </div>
             <div className="rounded-md bg-muted/50 p-3">
               <div className="text-micro text-muted-foreground">{t(($) => $.page.linear.preview_linear_project)}</div>

@@ -29,7 +29,7 @@ function desktopChannelFromArgv(argv) {
   return "development";
 }
 
-process.env.PATCHBAY_DESKTOP_CHANNEL = desktopChannelFromArgv(process.argv.slice(2));
+process.env.ORVILO_DESKTOP_CHANNEL = desktopChannelFromArgv(process.argv.slice(2));
 
 applyWorktreeDevEnv(process.env, {
   root: repoRootFromScriptDir(here),

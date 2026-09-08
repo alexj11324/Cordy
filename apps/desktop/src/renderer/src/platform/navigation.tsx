@@ -3,10 +3,10 @@ import {
   NavigationProvider,
   type LinkClickIntent,
   type NavigationAdapter,
-} from "@patchbay/views/navigation";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useModalStore } from "@patchbay/core/modals";
-import { isReservedSlug } from "@patchbay/core/paths";
+} from "@orvilo/views/navigation";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useModalStore } from "@orvilo/core/modals";
+import { isReservedSlug } from "@orvilo/core/paths";
 import {
   useTabStore,
   getActiveTab,
@@ -116,7 +116,7 @@ function tryRouteToOtherWorkspace(path: string): boolean {
 }
 
 /**
- * Execute a content link (the `patchbay:navigate` event fired by the shared
+ * Execute a content link (the `orvilo:navigate` event fired by the shared
  * editor/markdown link handler) with the disposition the click resolved to:
  * a plain click navigates in place — the same thing a plain click means on
  * every other internal link — and modifier clicks open a background or

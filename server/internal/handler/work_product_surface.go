@@ -8,10 +8,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // Work Product is the single contract for "something an issue or a task
@@ -232,7 +232,7 @@ func workProductRelationResponse(relation db.WorkProductRelation) map[string]any
 		"run_id":           workProductUUIDPtr(relation.RunID),
 		"relation_key":     relation.RelationKey,
 		"relation_source":  relation.RelationSource,
-		"attached_by_type":  relation.AttachedByType,
+		"attached_by_type": relation.AttachedByType,
 		"attached_by_id":   workProductUUIDPtr(relation.AttachedByID),
 		"attached_at":      timestampToString(relation.AttachedAt),
 		"close_intent":     relation.CloseIntent,

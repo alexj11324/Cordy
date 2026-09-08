@@ -13,7 +13,7 @@ import {
   toStoredAgentDraft,
   useManualAgentDraftStore,
   type AgentDraft,
-} from "@patchbay/core/agents";
+} from "@orvilo/core/agents";
 
 /**
  * Keeps the manual creation form across navigation (#6287).

@@ -9,8 +9,8 @@ import {
   searchTriggerCatalog,
   type AutomationTriggerPreset,
   type AutomationTriggerSource,
-} from "@patchbay/core/automations";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/automations";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -22,9 +22,9 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { cn } from "@orvilo/ui/lib/utils";
 import { GitHubMark } from "../../settings/components/github-mark";
 import { LinearMark } from "../../settings/components/linear-mark";
 import { SlackMark } from "../../settings/components/slack-mark";

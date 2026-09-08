@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode, Ref } from "react";
-import type { AutomationTriggerPreset } from "@patchbay/core/automations";
+import type { AutomationTriggerPreset } from "@orvilo/core/automations";
 import {
   ContentEditor,
   ReadonlyContent,

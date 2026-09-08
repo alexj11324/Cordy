@@ -10,10 +10,10 @@ import (
 )
 
 const (
-	defaultCLIConfigPath = ".patchbay/config.json"
+	defaultCLIConfigPath = ".orvilo/config.json"
 
 	// TaskConfigRootEnv points daemon-managed CLI invocations at a private,
-	// per-task Patchbay config directory. It is deliberately Patchbay-specific:
+	// per-task Orvilo config directory. It is deliberately Orvilo-specific:
 	// phase-one hardening keeps the real HOME/XDG environment available to
 	// provider tooling while preventing implicit Owner-profile discovery.
 	TaskConfigRootEnv = "ORVILO_TASK_CONFIG_ROOT"
@@ -115,7 +115,7 @@ type CLIConfig struct {
 	// DisableAutoUpdate, when true, turns off the daemon's periodic CLI
 	// self-update poll. Only a single direction is persistable — the
 	// --no-auto-update flag is likewise one-way — because the env/default
-	// already resolves to enabled on Patchbay Cloud. Absent / false means
+	// already resolves to enabled on Orvilo Cloud. Absent / false means
 	// "let env/default decide". Resolution precedence:
 	// --no-auto-update flag, ORVILO_DAEMON_AUTO_UPDATE=false env, this
 	// field, cloud/self-host default.
@@ -129,7 +129,7 @@ type CLIConfig struct {
 	AutoUpdateCheckInterval string `json:"auto_update_check_interval,omitempty"`
 
 	// DisableAutoReload, when true, stops the daemon from restarting into a
-	// patchbay binary that was replaced on disk out of band. Single-direction
+	// orvilo binary that was replaced on disk out of band. Single-direction
 	// like DisableAutoUpdate, and separate from it on purpose: "don't pull
 	// new versions from GitHub" and "don't follow the binary I installed
 	// myself" are different decisions. Resolution precedence:
@@ -150,7 +150,7 @@ type CLIConfig struct {
 	// but the same logical profile may live at a different path on each
 	// machine (or not be on PATH at all). This map lets an operator pin the
 	// exact binary for a profile on this host via
-	// `patchbay runtime profile set-path`; the daemon prefers it over the
+	// `orvilo runtime profile set-path`; the daemon prefers it over the
 	// PATH lookup in appendProfileRuntimes. Empty / absent means "resolve the
 	// profile's command_name on PATH" — the default behavior. The mapping is
 	// intentionally local-only (it is never sent to the server) because the
@@ -224,12 +224,12 @@ func CLIConfigPath() (string, error) {
 }
 
 // CLIConfigPathForProfile returns the config file path for the given profile.
-// An empty profile returns the default path (~/.patchbay/config.json).
-// A named profile returns ~/.patchbay/profiles/<name>/config.json.
+// An empty profile returns the default path (~/.orvilo/config.json).
+// A named profile returns ~/.orvilo/profiles/<name>/config.json.
 // When TaskConfigRootEnv is set by the daemon, the same profile layout is
 // rooted directly below that private task directory instead of the user's home.
 func CLIConfigPathForProfile(profile string) (string, error) {
-	root, taskLocal, err := patchbayConfigRoot()
+	root, taskLocal, err := orviloConfigRoot()
 	if err != nil {
 		return "", fmt.Errorf("resolve CLI config path: %w", err)
 	}
@@ -247,14 +247,14 @@ func CLIConfigPathForProfile(profile string) (string, error) {
 	if taskLocal {
 		return filepath.Join(root, "profiles", profile, "config.json"), nil
 	}
-	return filepath.Join(root, ".patchbay", "profiles", profile, "config.json"), nil
+	return filepath.Join(root, ".orvilo", "profiles", profile, "config.json"), nil
 }
 
 // ProfileDir returns the base directory for a profile's state files (pid, log).
-// An empty profile returns ~/.patchbay/. A named profile returns ~/.patchbay/profiles/<name>/.
+// An empty profile returns ~/.orvilo/. A named profile returns ~/.orvilo/profiles/<name>/.
 // Task invocations resolve the equivalent paths below TaskConfigRootEnv.
 func ProfileDir(profile string) (string, error) {
-	root, taskLocal, err := patchbayConfigRoot()
+	root, taskLocal, err := orviloConfigRoot()
 	if err != nil {
 		return "", fmt.Errorf("resolve profile dir: %w", err)
 	}
@@ -267,15 +267,15 @@ func ProfileDir(profile string) (string, error) {
 		if taskLocal {
 			return root, nil
 		}
-		return filepath.Join(root, ".patchbay"), nil
+		return filepath.Join(root, ".orvilo"), nil
 	}
 	if taskLocal {
 		return filepath.Join(root, "profiles", profile), nil
 	}
-	return filepath.Join(root, ".patchbay", "profiles", profile), nil
+	return filepath.Join(root, ".orvilo", "profiles", profile), nil
 }
 
-func patchbayConfigRoot() (root string, taskLocal bool, err error) {
+func orviloConfigRoot() (root string, taskLocal bool, err error) {
 	if rawRoot := strings.TrimSpace(os.Getenv(TaskConfigRootEnv)); rawRoot != "" {
 		root := filepath.Clean(rawRoot)
 		if !filepath.IsAbs(root) {
@@ -295,7 +295,7 @@ func validateTaskLocalProfile(profile string) error {
 		return nil
 	}
 	if profile == "." || profile == ".." || filepath.IsAbs(profile) || strings.ContainsAny(profile, `/\\`) || filepath.Clean(profile) != profile {
-		return fmt.Errorf("invalid task-local Patchbay profile name %q", profile)
+		return fmt.Errorf("invalid task-local Orvilo profile name %q", profile)
 	}
 	return nil
 }

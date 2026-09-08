@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TFunction } from "i18next";
-import { createI18n } from "@patchbay/core/i18n/react";
+import { createI18n } from "@orvilo/core/i18n/react";
 import enAutomations from "../../locales/en/automations.json";
 import zhAutomations from "../../locales/zh-Hans/automations.json";
 import { formatSchedulePartialFailureToast } from "./automation-dialog-toast";

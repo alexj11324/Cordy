@@ -9,10 +9,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
-const GuestTokenPrefix = "pbg_"
+const GuestTokenPrefix = "ovg_"
 const GuestSessionActive = "active"
 
 var ErrInvalidGuestToken = errors.New("invalid guest token")

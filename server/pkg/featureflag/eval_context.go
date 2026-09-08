@@ -14,7 +14,7 @@ type EvalContext struct {
 	// the framework never parses it.
 	UserID string
 
-	// WorkspaceID identifies the patchbay workspace that issued the
+	// WorkspaceID identifies the orvilo workspace that issued the
 	// request. Useful for workspace-scoped rollouts.
 	WorkspaceID string
 

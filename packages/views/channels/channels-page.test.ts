@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { WorkspaceChannelMessage } from "@patchbay/core/types";
+import type { WorkspaceChannelMessage } from "@orvilo/core/types";
 import {
   channelSlugFromName,
   flattenChannelMessagePages,

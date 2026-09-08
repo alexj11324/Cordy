@@ -25,8 +25,8 @@ const (
 )
 
 const (
-	EffectAllow          = "allow"
-	EffectDeny           = "deny"
+	EffectAllow           = "allow"
+	EffectDeny            = "deny"
 	EffectRequireApproval = "require_approval"
 )
 
@@ -53,10 +53,10 @@ const (
 
 var (
 	ErrAuthorizationWorkspaceRequired = errors.New("authorization workspace is required")
-	ErrAuthorizationDelegationDepth  = errors.New("authorization delegation depth exceeded")
-	ErrAuthorizationDelegationCycle  = errors.New("authorization delegation cycle detected")
-	ErrAuthorizationLeaseInvalid     = errors.New("authorization lease is invalid")
-	ErrAuthorizationLeaseMismatch    = errors.New("authorization lease identity mismatch")
+	ErrAuthorizationDelegationDepth   = errors.New("authorization delegation depth exceeded")
+	ErrAuthorizationDelegationCycle   = errors.New("authorization delegation cycle detected")
+	ErrAuthorizationLeaseInvalid      = errors.New("authorization lease is invalid")
+	ErrAuthorizationLeaseMismatch     = errors.New("authorization lease identity mismatch")
 	ErrAuthorizationScopeWidened      = errors.New("authorization delegation widened capability scope")
 )
 

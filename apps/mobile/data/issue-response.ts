@@ -1,4 +1,4 @@
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@orvilo/core/types";
 
 /** Require the identity fields after ApiClient's schema-validation rail. */
 export function requireCreatedIssueResponse(issue: Issue | null): Issue {

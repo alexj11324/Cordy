@@ -3,18 +3,18 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import type { RuntimeProfile } from "@patchbay/core/types";
+import type { RuntimeProfile } from "@orvilo/core/types";
 import {
   parseRuntimeProfileBoundConflict,
   useDeleteRuntimeProfile,
-} from "@patchbay/core/runtimes";
+} from "@orvilo/core/runtimes";
 import {
   AlertDialog,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { Button } from "@orvilo/ui/components/ui/button";
 import { useT } from "../../i18n";
 
 // Confirmation dialog for deleting a custom runtime profile. The server

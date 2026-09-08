@@ -21,7 +21,7 @@ func TestCreateCommentPreservesRetryIdentityAndParent(t *testing.T) {
 		if err := json.Unmarshal(request.Variables["input"], &input); err != nil {
 			t.Error(err)
 		}
-		for key, want := range map[string]any{"id": "comment-1", "issueId": "issue-1", "parentId": "parent-1", "body": "Hello", "createAsUser": "Alex via Patchbay", "doNotSubscribeToIssue": true} {
+		for key, want := range map[string]any{"id": "comment-1", "issueId": "issue-1", "parentId": "parent-1", "body": "Hello", "createAsUser": "Alex vian Orvilo", "doNotSubscribeToIssue": true} {
 			if input[key] != want {
 				t.Errorf("%s = %v, want %v", key, input[key], want)
 			}
@@ -32,7 +32,7 @@ func TestCreateCommentPreservesRetryIdentityAndParent(t *testing.T) {
 	defer server.Close()
 	client := NewHTTPClient(server.Client())
 	client.GraphQLURL = server.URL
-	comment, err := client.CreateComment(context.Background(), "fixture-token", "comment-1", "issue-1", "parent-1", "Hello", "Alex via Patchbay")
+	comment, err := client.CreateComment(context.Background(), "fixture-token", "comment-1", "issue-1", "parent-1", "Hello", "Alex vian Orvilo")
 	if err != nil || comment.ID != "comment-1" {
 		t.Fatalf("comment=%+v err=%v", comment, err)
 	}

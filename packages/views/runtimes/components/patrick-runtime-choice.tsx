@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
-import type { AgentRuntime } from "@patchbay/core/types";
+import { isRuntimeUsableForUser } from "@orvilo/core/runtimes";
+import type { AgentRuntime } from "@orvilo/core/types";
 import { ModelDropdown } from "../../agents/components/model-dropdown";
 import { CompactRuntimeRow } from "./compact-runtime-row";
 
@@ -23,7 +23,7 @@ export interface PatrickRuntimeSelection {
  *
  * `layout` exists because the presentation genuinely differs, not because the
  * logic does. The CLI dialog lists machines because that is the moment they
- * appear one at a time after `patchbay setup`, and a collapsed dropdown hides
+ * appear one at a time after `orvilo setup`, and a collapsed dropdown hides
  * exactly the feedback that dialog is there to give.
  */
 export function PatrickRuntimeChoice({

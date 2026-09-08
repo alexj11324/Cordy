@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 const testResolverSlug = "middleware-resolver-test"
@@ -20,7 +20,7 @@ func openPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dbURL = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 	pool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {

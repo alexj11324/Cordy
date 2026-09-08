@@ -17,9 +17,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/linear"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/linear"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
 )
 
 // fakeLinearAPI stands in for Linear's GraphQL and OAuth endpoints. Every call
@@ -242,12 +242,12 @@ func setupLinearWorker(t *testing.T, mode string, api *fakeLinearAPI) linearFixt
 	bindingID := dbfx.Insert(t, "linear_project_binding", testutil.Cols{
 		"workspace_id":            testWorkspaceID,
 		"connection_id":           connectionID,
-		"patchbay_project_id":     projectID,
+		"orvilo_project_id":     projectID,
 		"linear_project_id":       "linear-project",
 		"linear_team_id":          "linear-team",
 		"status":                  "active",
 		"sync_mode":               mode,
-		"initial_source_of_truth": map[string]string{"import": "linear", "publish": "patchbay", "two_way": "linear", "not_synced": "patchbay"}[mode],
+		"initial_source_of_truth": map[string]string{"import": "linear", "publish": "orvilo", "two_way": "linear", "not_synced": "orvilo"}[mode],
 		"status_mapping":          testutil.Raw(`'{"remote-todo":"todo","remote-doing":"in_progress"}'::jsonb`),
 		"agent_label_mapping":     testutil.Raw("'{}'::jsonb"),
 		"created_by_id":           testUserID,
@@ -334,7 +334,7 @@ func issueRevision(t *testing.T, issueID string) int64 {
 func linkedRemoteID(t *testing.T, issueID string) string {
 	t.Helper()
 	var remoteID string
-	if err := testPool.QueryRow(context.Background(), `SELECT linear_issue_id FROM linear_issue_link WHERE patchbay_issue_id=$1`, issueID).Scan(&remoteID); err != nil {
+	if err := testPool.QueryRow(context.Background(), `SELECT linear_issue_id FROM linear_issue_link WHERE orvilo_issue_id=$1`, issueID).Scan(&remoteID); err != nil {
 		t.Fatalf("no remote mapping for issue %s: %v", issueID, err)
 	}
 	return remoteID
@@ -379,7 +379,7 @@ func TestLinearWorkerPublishesTriggerBackedOutbox(t *testing.T) {
 	}
 
 	var identifier string
-	if err := testPool.QueryRow(context.Background(), `SELECT linear_identifier FROM linear_issue_link WHERE binding_id=$1 AND patchbay_issue_id=$2`, f.bindingID, issueID).Scan(&identifier); err != nil {
+	if err := testPool.QueryRow(context.Background(), `SELECT linear_identifier FROM linear_issue_link WHERE binding_id=$1 AND orvilo_issue_id=$2`, f.bindingID, issueID).Scan(&identifier); err != nil {
 		t.Fatalf("publish did not record the remote mapping: %v", err)
 	}
 	if identifier != "ENG-1" {
@@ -542,7 +542,7 @@ func TestLinearWorkerPublishesLocalDeletion(t *testing.T) {
 		t.Fatalf("deleted = %v, want [%s]", api.deleted, remoteID)
 	}
 	var syncStatus string
-	if err := testPool.QueryRow(context.Background(), `SELECT sync_status FROM linear_issue_link WHERE patchbay_issue_id=$1`, issueID).Scan(&syncStatus); err != nil {
+	if err := testPool.QueryRow(context.Background(), `SELECT sync_status FROM linear_issue_link WHERE orvilo_issue_id=$1`, issueID).Scan(&syncStatus); err != nil {
 		t.Fatal(err)
 	}
 	if syncStatus != "deleted" {
@@ -696,7 +696,7 @@ func TestLinearWorkerSuppressesEchoOfItsOwnPush(t *testing.T) {
 		t.Fatalf("echo of our own push bumped revision %d -> %d", before, after)
 	}
 	var conflicts int
-	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_sync_conflict WHERE patchbay_issue_id=$1`, issueID).Scan(&conflicts); err != nil {
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_sync_conflict WHERE orvilo_issue_id=$1`, issueID).Scan(&conflicts); err != nil {
 		t.Fatal(err)
 	}
 	if conflicts != 0 {
@@ -739,7 +739,7 @@ func TestLinearWorkerAppliesRemoteOnlyEdit(t *testing.T) {
 		t.Fatalf("title=%q status=%q", title, status)
 	}
 	var syncStatus, snapshotTitle string
-	if err := testPool.QueryRow(context.Background(), `SELECT sync_status, last_common_snapshot->>'title' FROM linear_issue_link WHERE patchbay_issue_id=$1`, issueID).Scan(&syncStatus, &snapshotTitle); err != nil {
+	if err := testPool.QueryRow(context.Background(), `SELECT sync_status, last_common_snapshot->>'title' FROM linear_issue_link WHERE orvilo_issue_id=$1`, issueID).Scan(&syncStatus, &snapshotTitle); err != nil {
 		t.Fatal(err)
 	}
 	if syncStatus != "active" || snapshotTitle != "Renamed in Linear" {
@@ -784,14 +784,14 @@ func TestLinearWorkerRecordsConflictWhenBothSidesMoved(t *testing.T) {
 		t.Fatalf("conflict overwrote the local value: title=%q", title)
 	}
 	var field, local, remote, base, status string
-	if err := testPool.QueryRow(context.Background(), `SELECT field, local_value #>> '{}', remote_value #>> '{}', base_value #>> '{}', status FROM linear_sync_conflict WHERE patchbay_issue_id=$1`, issueID).Scan(&field, &local, &remote, &base, &status); err != nil {
+	if err := testPool.QueryRow(context.Background(), `SELECT field, local_value #>> '{}', remote_value #>> '{}', base_value #>> '{}', status FROM linear_sync_conflict WHERE orvilo_issue_id=$1`, issueID).Scan(&field, &local, &remote, &base, &status); err != nil {
 		t.Fatalf("no conflict recorded: %v", err)
 	}
 	if field != "title" || local != "Local title" || remote != "Remote title" || base != "Shared title" || status != "open" {
 		t.Fatalf("conflict field=%q local=%q remote=%q base=%q status=%q", field, local, remote, base, status)
 	}
 	var syncStatus string
-	if err := testPool.QueryRow(context.Background(), `SELECT sync_status FROM linear_issue_link WHERE patchbay_issue_id=$1`, issueID).Scan(&syncStatus); err != nil {
+	if err := testPool.QueryRow(context.Background(), `SELECT sync_status FROM linear_issue_link WHERE orvilo_issue_id=$1`, issueID).Scan(&syncStatus); err != nil {
 		t.Fatal(err)
 	}
 	if syncStatus != "conflict" {
@@ -806,7 +806,7 @@ func TestLinearWorkerRecordsConflictWhenBothSidesMoved(t *testing.T) {
 		t.Fatal("second conflicting event was not processed")
 	}
 	var conflicts int
-	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_sync_conflict WHERE patchbay_issue_id=$1 AND status='open'`, issueID).Scan(&conflicts); err != nil {
+	if err := testPool.QueryRow(context.Background(), `SELECT count(*) FROM linear_sync_conflict WHERE orvilo_issue_id=$1 AND status='open'`, issueID).Scan(&conflicts); err != nil {
 		t.Fatal(err)
 	}
 	if conflicts != 1 {
@@ -869,7 +869,7 @@ func TestLinearWorkerAppliesRemoteDeletion(t *testing.T) {
 		t.Fatal("remote delete was not processed")
 	}
 	var status, syncStatus string
-	if err := testPool.QueryRow(context.Background(), `SELECT i.status, l.sync_status FROM issue i JOIN linear_issue_link l ON l.patchbay_issue_id=i.id WHERE i.id=$1`, issueID).Scan(&status, &syncStatus); err != nil {
+	if err := testPool.QueryRow(context.Background(), `SELECT i.status, l.sync_status FROM issue i JOIN linear_issue_link l ON l.orvilo_issue_id=i.id WHERE i.id=$1`, issueID).Scan(&status, &syncStatus); err != nil {
 		t.Fatal(err)
 	}
 	if status != "cancelled" || syncStatus != "deleted" {
@@ -1175,7 +1175,7 @@ func TestDisconnectLinearRevokesAndMarksConnection(t *testing.T) {
 	if !f.worker.processOneOutbox(context.Background()) {
 		t.Fatal("issue was not published")
 	}
-	dbfx.Insert(t, "linear_member_binding", testutil.Cols{"workspace_id": testWorkspaceID, "connection_id": f.connectionID, "patchbay_user_id": testUserID, "linear_user_id": "linear-user"})
+	dbfx.Insert(t, "linear_member_binding", testutil.Cols{"workspace_id": testWorkspaceID, "connection_id": f.connectionID, "orvilo_user_id": testUserID, "linear_user_id": "linear-user"})
 
 	request := httptest.NewRequest(http.MethodDelete, "/api/workspaces/"+testWorkspaceID+"/linear/connection", nil)
 	routeCtx := chi.NewRouteContext()

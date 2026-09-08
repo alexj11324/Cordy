@@ -10,9 +10,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 type fakeHubQueries struct {
@@ -99,7 +99,7 @@ func TestHubSelectionCommandsAndStoredChoice(t *testing.T) {
 		{"hello", uid(1), false, false},
 		{"/agents", uid(1), true, false},
 		{"/agents 2", uid(2), true, true},
-		{"/agent@patchbay reviewer", uid(2), true, true},
+		{"/agent@orvilo reviewer", uid(2), true, true},
 		{"/agents " + util.UUIDToString(uid(2)), uid(2), true, true},
 		{"/agents 0", uid(1), true, false},
 		{"/agents missing", uid(1), true, false},

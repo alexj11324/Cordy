@@ -3,14 +3,14 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Cpu } from "lucide-react";
-import { runtimeModelsOptions } from "@patchbay/core/runtimes";
+import { runtimeModelsOptions } from "@orvilo/core/runtimes";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@patchbay/ui/components/ui/popover";
-import { Label } from "@patchbay/ui/components/ui/label";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/popover";
+import { Label } from "@orvilo/ui/components/ui/label";
+import { cn } from "@orvilo/ui/lib/utils";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
 import { useT } from "../../i18n";
 import {

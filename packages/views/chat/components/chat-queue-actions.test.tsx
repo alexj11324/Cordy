@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import enChat from "../../locales/en/chat.json";

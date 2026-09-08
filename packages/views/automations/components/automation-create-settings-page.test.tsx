@@ -14,12 +14,12 @@ const mocks = vi.hoisted(() => ({
   error: vi.fn(),
   template: "",
 }));
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (selector: (state: { user: { name: string } }) => unknown) =>
     selector({ user: { name: "Creator" } }),
 }));
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Acme" }),
   useWorkspacePaths: () => ({
     automations: () => "/acme/automations",
@@ -37,7 +37,7 @@ vi.mock("../../navigation", () => ({
     ),
   }),
 }));
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   agentListOptions: () => ({
     queryKey: ["agents"],
     queryFn: async () => [
@@ -51,13 +51,13 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
   }),
   teamListOptions: () => ({ queryKey: ["teams"], queryFn: async () => [] }),
 }));
-vi.mock("@patchbay/core/projects/queries", () => ({
+vi.mock("@orvilo/core/projects/queries", () => ({
   projectDetailOptions: () => ({
     queryKey: ["project"],
     queryFn: async () => null,
   }),
 }));
-vi.mock("@patchbay/core/automations/mutations", () => ({
+vi.mock("@orvilo/core/automations/mutations", () => ({
   useCreateAutomation: () => ({ mutateAsync: mocks.create }),
   useCreateAutomationTrigger: () => ({ mutateAsync: mocks.trigger }),
 }));

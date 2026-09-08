@@ -7,7 +7,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 Automations run work that happens over and over — a daily progress summary, a periodic dependency check, or an agent kicked off by an event from an external system.
 
-Each automation stores a Runbook, an executor, and one or more triggers. When triggered, Patchbay creates an issue or runs the agent directly, and keeps a record of every run.
+Each automation stores a Runbook, an executor, and one or more triggers. When triggered, Orvilo creates an issue or runs the agent directly, and keeps a record of every run.
 
 ## Create an automation
 
@@ -89,14 +89,14 @@ Constraints on webhook requests:
 
 - the body must be a valid JSON object or array, up to 256 KiB;
 - `Idempotency-Key` prevents duplicate runs when the sender retries; GitHub deliveries are also deduplicated by `X-GitHub-Delivery`;
-- without a stable idempotency key, Patchbay can't guarantee that repeated requests run only once;
+- without a stable idempotency key, Orvilo can't guarantee that repeated requests run only once;
 - when the trigger is disabled or the event doesn't match, the delivery is recorded as ignored and no run is created.
 
 ### Filter events
 
 When one source sends several event types, add event filters to the trigger. Each row holds one event name plus an optional list of actions; a run fires if any row matches, and leaving all rows empty accepts every event.
 
-For example, with `workflow_run` as the event name and `completed, failed` as the actions, only those two kinds of `workflow_run` results are accepted. Patchbay recognizes the event and action from common request headers and payload fields, including GitHub's `X-GitHub-Event` and the `action` field in the body.
+For example, with `workflow_run` as the event name and `completed, failed` as the actions, only those two kinds of `workflow_run` results are accepted. Orvilo recognizes the event and action from common request headers and payload fields, including GitHub's `X-GitHub-Event` and the `action` field in the body.
 
 ### Protect the webhook URL
 
@@ -108,7 +108,7 @@ Only the automation's creator, workspace owners/admins, and collaborators grante
 
 ### Webhook response reference
 
-When debugging a sender, use this table to interpret Patchbay's responses:
+When debugging a sender, use this table to interpret Orvilo's responses:
 
 | HTTP status | Response status | Meaning |
 |---|---|---|
@@ -121,7 +121,7 @@ When debugging a sender, use this table to interpret Patchbay's responses:
 | 404 | Error message | The token in the URL is invalid or has been rotated. |
 | 413 | Error message | The body exceeds 256 KiB. |
 | 429 | Error message | Too many requests; retry later per the `Retry-After` response header. |
-| 500 | Error message | Patchbay internal error; the sender can retry later. |
+| 500 | Error message | Orvilo internal error; the sender can retry later. |
 
 Business-level ignores — pausing, archiving, and event filtering — return 200 rather than 4xx, so senders don't retry endlessly.
 
@@ -144,7 +144,7 @@ A fully processed webhook delivery can be replayed from its detail view. A repla
 
 A failed task in run-only mode is not retried automatically; the next schedule still fires as planned. Create-issue mode produces regular issue tasks, and infrastructure failures follow the rules in [Tasks](/tasks#failures-and-automatic-retries).
 
-Patchbay periodically checks whether recent runs keep failing: when the past 7 days have at least 50 completed or failed runs with a failure rate of 90%, the system pauses the automation and notifies its creator; fix the cause, then resume it manually.
+Orvilo periodically checks whether recent runs keep failing: when the past 7 days have at least 50 completed or failed runs with a failure rate of 90%, the system pauses the automation and notifies its creator; fix the cause, then resume it manually.
 
 Pausing manually stops schedules, webhooks, and **Run now**. Deletion is actually archiving: future triggers stop, and run and delivery history is kept.
 
@@ -159,10 +159,10 @@ Pausing manually stops schedules, webhooks, and **Run now**. Deletion is actuall
 ## Use the CLI
 
 ```bash
-patchbay automation get <automation-id> --output json
-patchbay automation trigger <automation-id>
-patchbay automation runs <automation-id>
-patchbay automation trigger-rotate-url <automation-id> <trigger-id>
+orvilo automation get <automation-id> --output json
+orvilo automation trigger <automation-id>
+orvilo automation runs <automation-id>
+orvilo automation trigger-rotate-url <automation-id> <trigger-id>
 ```
 
 `automation get` sets `webhook_token`, `webhook_path`, and `webhook_url` to `null` by default, and returns `has_webhook_token` plus `webhook_token_hint` instead. Add `--show-secrets` only when you intentionally need the live credential; the CLI prints a warning to stderr so piped JSON stays valid.

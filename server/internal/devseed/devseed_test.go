@@ -14,39 +14,39 @@ func TestValidateTarget(t *testing.T) {
 		{
 			name:    "worktree database on localhost",
 			enabled: true,
-			dbURL:   "postgres://patchbay:patchbay@localhost:5432/patchbay_01zp_25?sslmode=disable",
+			dbURL:   "postgres://orvilo:orvilo@localhost:5432/orvilo_01zp_25?sslmode=disable",
 		},
 		{
 			name:    "main development database on IPv4 loopback",
 			enabled: true,
-			dbURL:   "postgresql://patchbay:patchbay@127.0.0.1:5432/patchbay",
+			dbURL:   "postgresql://orvilo:orvilo@127.0.0.1:5432/orvilo",
 		},
 		{
 			name:    "IPv6 loopback",
 			enabled: true,
-			dbURL:   "postgres://patchbay:patchbay@[::1]:5432/patchbay_feature",
+			dbURL:   "postgres://orvilo:orvilo@[::1]:5432/orvilo_feature",
 		},
 		{
 			name:    "explicit opt in is required",
-			dbURL:   "postgres://patchbay:patchbay@localhost:5432/patchbay_feature",
+			dbURL:   "postgres://orvilo:orvilo@localhost:5432/orvilo_feature",
 			wantErr: true,
 		},
 		{
 			name:    "remote database is rejected",
 			enabled: true,
-			dbURL:   "postgres://patchbay:patchbay@db.example.com:5432/patchbay",
+			dbURL:   "postgres://orvilo:orvilo@db.example.com:5432/orvilo",
 			wantErr: true,
 		},
 		{
 			name:    "unrelated local database is rejected",
 			enabled: true,
-			dbURL:   "postgres://patchbay:patchbay@localhost:5432/postgres",
+			dbURL:   "postgres://orvilo:orvilo@localhost:5432/postgres",
 			wantErr: true,
 		},
 		{
 			name:    "non postgres URL is rejected",
 			enabled: true,
-			dbURL:   "https://localhost/patchbay",
+			dbURL:   "https://localhost/orvilo",
 			wantErr: true,
 		},
 		{
@@ -114,10 +114,10 @@ func TestFixtureGraphReferencesSeedIssues(t *testing.T) {
 func TestFixtureIDsAreStable(t *testing.T) {
 	t.Parallel()
 
-	if got, want := fixtureID("workspace"), "f2e72563-8d5a-5b92-abcb-65395750092b"; got != want {
+	if got, want := fixtureID("workspace"), "cee623b2-f616-50c2-90dc-764b4a32e55e"; got != want {
 		t.Fatalf("fixtureID(workspace) = %q, want %q", got, want)
 	}
-	if got, want := fixtureID("issue/layout-cleanup"), "e6f37013-0d7c-59be-9731-4e6eeed4e2ba"; got != want {
+	if got, want := fixtureID("issue/layout-cleanup"), "37419265-1775-546a-997e-1148e31fcabf"; got != want {
 		t.Fatalf("fixtureID(issue/layout-cleanup) = %q, want %q", got, want)
 	}
 }

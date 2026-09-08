@@ -10,7 +10,7 @@
  * cookies, desktop uses localStorage via StorageAdapter.
  */
 import { create } from "zustand";
-import type { User } from "@patchbay/core/types";
+import type { User } from "@orvilo/core/types";
 import { api, ApiError } from "./api";
 import {
   clearLegacyGuestCredentials,
@@ -55,7 +55,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     // Guest mode is Desktop-local-only. Never restore a bearer created by the
     // removed mobile Guest experiment, even if an older build persisted one.
-    if (token.startsWith("pbg_")) {
+    if (token.startsWith("ovg_")) {
       api.setToken(null);
       await Promise.allSettled([
         clearToken(),

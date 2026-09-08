@@ -28,7 +28,7 @@ describe("readCsrfTokenFromCookieHeader", () => {
   });
 
   it("ignores a prefix collision with the production name", () => {
-    expect(readCsrfTokenFromCookieHeader("patchbay_csrf_extra=nope")).toBeNull();
+    expect(readCsrfTokenFromCookieHeader("orvilo_csrf_extra=nope")).toBeNull();
   });
 
   it("returns null for an empty header", () => {

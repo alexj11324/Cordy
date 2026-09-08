@@ -61,10 +61,10 @@ describe("desktop app identity", () => {
     expect(resolveDesktopAppIdentity({ isDev: false })).toEqual({
       channel: "production",
       name: "Orvilo",
-      userDataDirName: "Patchbay",
-      appUserModelId: "ai.patchbay.desktop",
-      bundleIdPrefix: "ai.patchbay.desktop",
-      callbackProtocolPrefix: "patchbay",
+      userDataDirName: "Orvilo",
+      appUserModelId: "ai.orvilo.desktop",
+      bundleIdPrefix: "ai.orvilo.desktop",
+      callbackProtocolPrefix: "orvilo",
       isolateUserData: false,
     });
   });
@@ -78,8 +78,8 @@ describe("desktop app identity", () => {
     const production = resolveDesktopAppIdentity({ isDev: false });
     expect(canary.name).toBe("Orvilo Canary");
     expect(staging.name).toBe("Orvilo Staging");
-    expect(canary.userDataDirName).toBe("Patchbay Canary");
-    expect(staging.userDataDirName).toBe("Patchbay Staging");
+    expect(canary.userDataDirName).toBe("Orvilo Canary");
+    expect(staging.userDataDirName).toBe("Orvilo Staging");
     expect(
       new Set([
         canary.userDataDirName,
@@ -91,9 +91,9 @@ describe("desktop app identity", () => {
     expect(staging.isolateUserData).toBe(true);
     expect(canary.appUserModelId).not.toBe(staging.appUserModelId);
     expect(staging.appUserModelId).not.toBe(production.appUserModelId);
-    expect(canary.callbackProtocolPrefix).toBe("patchbay-canary");
-    expect(staging.callbackProtocolPrefix).toBe("patchbay-staging");
-    expect(production.callbackProtocolPrefix).toBe("patchbay");
+    expect(canary.callbackProtocolPrefix).toBe("orvilo-canary");
+    expect(staging.callbackProtocolPrefix).toBe("orvilo-staging");
+    expect(production.callbackProtocolPrefix).toBe("orvilo");
     expect(
       new Set([
         canary.callbackProtocolPrefix,
@@ -110,45 +110,45 @@ describe("desktop app identity", () => {
       suffix: "feature-12",
     });
     expect(staging.name).toBe("Orvilo Staging feature-12");
-    expect(staging.userDataDirName).toBe("Patchbay Staging feature-12");
-    expect(staging.callbackProtocolPrefix).toBe("patchbay-staging");
+    expect(staging.userDataDirName).toBe("Orvilo Staging feature-12");
+    expect(staging.callbackProtocolPrefix).toBe("orvilo-staging");
     const canary = resolveDesktopAppIdentity({
       isDev: true,
       suffix: "feature-12",
     });
     expect(canary.name).toBe("Orvilo Canary feature-12");
-    expect(canary.userDataDirName).toBe("Patchbay Canary feature-12");
-    expect(canary.callbackProtocolPrefix).toBe("patchbay-canary");
+    expect(canary.userDataDirName).toBe("Orvilo Canary feature-12");
+    expect(canary.callbackProtocolPrefix).toBe("orvilo-canary");
   });
 
   it("rejects a callback scheme that belongs to another channel", () => {
-    expect(isDesktopCallbackProtocolForChannel("patchbay", "production")).toBe(
+    expect(isDesktopCallbackProtocolForChannel("orvilo", "production")).toBe(
       true,
     );
     expect(
       isDesktopCallbackProtocolForChannel(
-        "patchbay-staging-5718c47b86bf9ece",
+        "orvilo-staging-5718c47b86bf9ece",
         "staging",
       ),
     ).toBe(true);
     expect(
       isDesktopCallbackProtocolForChannel(
-        "patchbay-canary-5718c47b86bf9ece",
+        "orvilo-canary-5718c47b86bf9ece",
         "development",
       ),
     ).toBe(true);
-    expect(isDesktopCallbackProtocolForChannel("patchbay", "staging")).toBe(
+    expect(isDesktopCallbackProtocolForChannel("orvilo", "staging")).toBe(
       false,
     );
     expect(
       isDesktopCallbackProtocolForChannel(
-        "patchbay-canary-5718c47b86bf9ece",
+        "orvilo-canary-5718c47b86bf9ece",
         "staging",
       ),
     ).toBe(false);
     expect(
       isDesktopCallbackProtocolForChannel(
-        "patchbay-staging-5718c47b86bf9ece",
+        "orvilo-staging-5718c47b86bf9ece",
         "development",
       ),
     ).toBe(false);
@@ -163,7 +163,7 @@ describe("desktop app identity", () => {
     expect(checkoutCallbackProtocol("development", appPath)).toBe(
       callbackProtocolForPath(appPath),
     );
-    expect(checkoutCallbackProtocol("production", appPath)).toBe("patchbay");
+    expect(checkoutCallbackProtocol("production", appPath)).toBe("orvilo");
     expect(checkoutCallbackProtocol("staging", appPath)).not.toBe(
       checkoutCallbackProtocol("development", appPath),
     );

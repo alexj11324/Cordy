@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // TestWSRPCClient_CallRoundTrip: a request is framed and sent, and a matching

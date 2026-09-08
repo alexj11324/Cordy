@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // TestProbeAgentCLIs_DiscoversPiAndOmpSeparately covers discovery only: it

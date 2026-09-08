@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/composio"
+	"github.com/orvilo-ai/orvilo/server/pkg/composio"
 )
 
 // newTestServer wires up a httptest.Server with the provided handler and

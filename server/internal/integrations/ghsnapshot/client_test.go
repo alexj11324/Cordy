@@ -158,16 +158,16 @@ func TestPullRequestsByHeadUsesInstallationAuthAndPreservesMetadata(t *testing.T
 		}
 		gotAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`[{"number":17,"title":"Ship it","state":"closed","draft":false,"html_url":"https://github.com/acme/patchbay/pull/17","created_at":"2026-01-02T03:04:05Z","updated_at":"2026-01-03T04:05:06Z","merged_at":"2026-01-04T05:06:07Z","closed_at":"2026-01-04T05:06:07Z","additions":12,"deletions":3,"changed_files":2,"user":{"login":"alex","avatar_url":"https://avatars.example/alex"},"head":{"ref":"feat/ship","sha":"abc123","repo":{"full_name":"acme/patchbay"}}}]`))
+		_, _ = w.Write([]byte(`[{"number":17,"title":"Ship it","state":"closed","draft":false,"html_url":"https://github.com/acme/orvilo/pull/17","created_at":"2026-01-02T03:04:05Z","updated_at":"2026-01-03T04:05:06Z","merged_at":"2026-01-04T05:06:07Z","closed_at":"2026-01-04T05:06:07Z","additions":12,"deletions":3,"changed_files":2,"user":{"login":"alex","avatar_url":"https://avatars.example/alex"},"head":{"ref":"feat/ship","sha":"abc123","repo":{"full_name":"acme/orvilo"}}}]`))
 	}))
 	defer srv.Close()
 
 	c := newTestClient(t, srv.URL)
-	matches, err := c.PullRequestsByHead(context.Background(), 42, "acme", "patchbay", "feat/ship")
+	matches, err := c.PullRequestsByHead(context.Background(), 42, "acme", "orvilo", "feat/ship")
 	if err != nil {
 		t.Fatalf("PullRequestsByHead: %v", err)
 	}
-	if gotPath != "/repos/acme/patchbay/pulls" {
+	if gotPath != "/repos/acme/orvilo/pulls" {
 		t.Fatalf("path = %q", gotPath)
 	}
 	if gotQuery["state"] != "all" || gotQuery["head"] != "acme:feat/ship" || gotQuery["per_page"] != "100" || gotQuery["page"] != "1" {
@@ -180,7 +180,7 @@ func TestPullRequestsByHeadUsesInstallationAuthAndPreservesMetadata(t *testing.T
 		t.Fatalf("matches = %d, want 1", len(matches))
 	}
 	match := matches[0]
-	if match.Number != 17 || match.Metadata.State != "merged" || match.Metadata.HeadRepoIdentity != "acme/patchbay" || match.Metadata.HeadSHA != "abc123" {
+	if match.Number != 17 || match.Metadata.State != "merged" || match.Metadata.HeadRepoIdentity != "acme/orvilo" || match.Metadata.HeadSHA != "abc123" {
 		t.Fatalf("match = %#v", match)
 	}
 	if match.Metadata.MergedAt == nil || match.Metadata.ClosedAt == nil {
@@ -202,17 +202,17 @@ func TestPullRequestsByHeadFollowsPagination(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Query().Get("page") {
 		case "1":
-			w.Header().Set("Link", `<`+srv.URL+`/repos/acme/patchbay/pulls?page=2>; rel="next", <`+srv.URL+`/repos/acme/patchbay/pulls?page=2>; rel="last"`)
+			w.Header().Set("Link", `<`+srv.URL+`/repos/acme/orvilo/pulls?page=2>; rel="next", <`+srv.URL+`/repos/acme/orvilo/pulls?page=2>; rel="last"`)
 			_, _ = w.Write([]byte(`[{
-				"number":17,"title":"First","state":"open","html_url":"https://github.com/acme/patchbay/pull/17",
+				"number":17,"title":"First","state":"open","html_url":"https://github.com/acme/orvilo/pull/17",
 				"created_at":"2026-01-02T03:04:05Z","updated_at":"2026-01-03T04:05:06Z",
-				"head":{"ref":"feat/ship","sha":"sha-17","repo":{"full_name":"acme/patchbay"}}
+				"head":{"ref":"feat/ship","sha":"sha-17","repo":{"full_name":"acme/orvilo"}}
 			}]`))
 		case "2":
 			_, _ = w.Write([]byte(`[{
-				"number":18,"title":"Second","state":"closed","html_url":"https://github.com/acme/patchbay/pull/18",
+				"number":18,"title":"Second","state":"closed","html_url":"https://github.com/acme/orvilo/pull/18",
 				"created_at":"2026-02-02T03:04:05Z","updated_at":"2026-02-03T04:05:06Z",
-				"head":{"ref":"feat/ship","sha":"sha-18","repo":{"full_name":"acme/patchbay"}}
+				"head":{"ref":"feat/ship","sha":"sha-18","repo":{"full_name":"acme/orvilo"}}
 			}]`))
 		default:
 			t.Errorf("unexpected page %q", r.URL.Query().Get("page"))
@@ -222,7 +222,7 @@ func TestPullRequestsByHeadFollowsPagination(t *testing.T) {
 	defer srv.Close()
 
 	c := newTestClient(t, srv.URL)
-	matches, err := c.PullRequestsByHead(context.Background(), 42, "acme", "patchbay", "feat/ship")
+	matches, err := c.PullRequestsByHead(context.Background(), 42, "acme", "orvilo", "feat/ship")
 	if err != nil {
 		t.Fatalf("PullRequestsByHead: %v", err)
 	}

@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/cli"
+	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
 // newAutoUpdateTestDaemon returns a Daemon stripped to just the pieces

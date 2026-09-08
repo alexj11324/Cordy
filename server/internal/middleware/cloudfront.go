@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
 )
 
 // RefreshCloudFrontCookies is middleware that refreshes CloudFront signed cookies

@@ -254,7 +254,7 @@ func TestRequireResendSender(t *testing.T) {
 	if err := requireResendSender(" "); err == nil {
 		t.Fatal("expected an empty Resend sender to be rejected")
 	}
-	if err := requireResendSender("noreply@patchbay.aspectlylabs.com"); err != nil {
+	if err := requireResendSender("noreply@orvilo.aspectlylabs.com"); err != nil {
 		t.Fatalf("configured Resend sender rejected: %v", err)
 	}
 }
@@ -329,11 +329,11 @@ func TestBuildInvitationParams_EscapesHTMLInBody(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := buildInvitationParams(
-				"noreply@patchbay.ai",
+				"noreply@orvilo.aspectlylabs.com",
 				"invitee@example.com",
 				tt.inviter,
 				tt.workspace,
-				"https://patchbay.aspectlylabs.com/invite/abc-123",
+				"https://orvilo.aspectlylabs.com/invite/abc-123",
 			)
 			for _, needle := range tt.wantInBody {
 				if !strings.Contains(p.Html, needle) {
@@ -351,16 +351,16 @@ func TestBuildInvitationParams_EscapesHTMLInBody(t *testing.T) {
 
 func TestBuildInvitationParams_SubjectStripsControls(t *testing.T) {
 	p := buildInvitationParams(
-		"noreply@patchbay.ai",
+		"noreply@orvilo.aspectlylabs.com",
 		"invitee@example.com",
 		"Alice\r\n",
 		"Acme\t",
-		"https://patchbay.aspectlylabs.com/invite/abc",
+		"https://orvilo.aspectlylabs.com/invite/abc",
 	)
 	if strings.ContainsAny(p.Subject, "\r\n\t") {
 		t.Errorf("subject still contains control characters: %q", p.Subject)
 	}
-	if p.Subject != "Alice invited you to Acme on Patchbay" {
+	if p.Subject != "Alice invited you to Acme on Orvilo" {
 		t.Errorf("unexpected subject: %q", p.Subject)
 	}
 }
@@ -368,11 +368,11 @@ func TestBuildInvitationParams_SubjectStripsControls(t *testing.T) {
 func TestBuildInvitationParams_SubjectNotHTMLEscaped(t *testing.T) {
 	// Subject is not HTML-rendered; entities would render literally in inboxes.
 	p := buildInvitationParams(
-		"noreply@patchbay.ai",
+		"noreply@orvilo.aspectlylabs.com",
 		"invitee@example.com",
 		"Alice",
 		"Acme & Co.",
-		"https://patchbay.aspectlylabs.com/invite/abc",
+		"https://orvilo.aspectlylabs.com/invite/abc",
 	)
 	if strings.Contains(p.Subject, "&amp;") {
 		t.Errorf("subject should not be HTML-escaped, got %q", p.Subject)
@@ -385,15 +385,15 @@ func TestBuildInvitationParams_SubjectNotHTMLEscaped(t *testing.T) {
 func TestBuildInvitationParams_SubjectTruncated(t *testing.T) {
 	longWorkspace := strings.Repeat("A", 200)
 	p := buildInvitationParams(
-		"noreply@patchbay.ai",
+		"noreply@orvilo.aspectlylabs.com",
 		"invitee@example.com",
 		"Alice",
 		longWorkspace,
-		"https://patchbay.aspectlylabs.com/invite/abc",
+		"https://orvilo.aspectlylabs.com/invite/abc",
 	)
-	// Template: "Alice invited you to <ws> on Patchbay"
+	// Template: "Alice invited you to <ws> on Orvilo"
 	// ws is capped at maxSubjectFieldRunes; overall subject should also be bounded.
-	maxExpected := len("Alice invited you to  on Patchbay") + maxSubjectFieldRunes
+	maxExpected := len("Alice invited you to  on Orvilo") + maxSubjectFieldRunes
 	if runes := len([]rune(p.Subject)); runes > maxExpected {
 		t.Errorf("subject not bounded: %d runes, max %d: %q", runes, maxExpected, p.Subject)
 	}
@@ -404,19 +404,19 @@ func TestBuildInvitationParams_SubjectTruncated(t *testing.T) {
 
 func TestBuildInvitationParams_ToAndFromPassedThrough(t *testing.T) {
 	p := buildInvitationParams(
-		"noreply@patchbay.ai",
+		"noreply@orvilo.aspectlylabs.com",
 		"invitee@example.com",
 		"Alice",
 		"Acme",
-		"https://patchbay.aspectlylabs.com/invite/abc",
+		"https://orvilo.aspectlylabs.com/invite/abc",
 	)
-	if p.From != "noreply@patchbay.ai" {
+	if p.From != "noreply@orvilo.aspectlylabs.com" {
 		t.Errorf("From = %q", p.From)
 	}
 	if len(p.To) != 1 || p.To[0] != "invitee@example.com" {
 		t.Errorf("To = %v", p.To)
 	}
-	if !strings.Contains(p.Html, "https://patchbay.aspectlylabs.com/invite/abc") {
+	if !strings.Contains(p.Html, "https://orvilo.aspectlylabs.com/invite/abc") {
 		t.Errorf("body missing invite URL: %s", p.Html)
 	}
 }

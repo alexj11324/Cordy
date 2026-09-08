@@ -23,15 +23,15 @@ import {
   Sparkles,
 } from "lucide-react";
 import { GitHubMark } from "./github-mark";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@patchbay/ui/components/ui/tabs";
-import { cn } from "@patchbay/ui/lib/utils";
-import { useIsMobile } from "@patchbay/ui/hooks/use-mobile";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { useFeatureEnabled } from "@patchbay/core/config";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@orvilo/ui/components/ui/tabs";
+import { cn } from "@orvilo/ui/lib/utils";
+import { useIsMobile } from "@orvilo/ui/hooks/use-mobile";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
+import { useFeatureEnabled } from "@orvilo/core/config";
 import {
   BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
   PLUGINS_V1_FLAG,
-} from "@patchbay/core/feature-flags";
+} from "@orvilo/core/feature-flags";
 import { useNavigation } from "../../navigation";
 import { AccountTab } from "./account-tab";
 import { PreferencesTab } from "./preferences-tab";

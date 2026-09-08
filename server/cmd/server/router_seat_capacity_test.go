@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/seatcapacity"
+	"github.com/orvilo-ai/orvilo/server/internal/seatcapacity"
 )
 
 func TestSeatCapacityAssemblyUsesCloudURLAlone(t *testing.T) {

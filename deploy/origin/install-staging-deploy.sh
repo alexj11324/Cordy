@@ -11,11 +11,11 @@ if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
   exit 1
 fi
 
-deploy_user="${PATCHBAY_DEPLOY_USER:-ubuntu}"
+deploy_user="${ORVILO_DEPLOY_USER:-ubuntu}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-state_dir="/var/lib/patchbay-staging"
-static_dir="/usr/local/share/patchbay-staging"
-production_state_dir="/var/lib/patchbay-production"
+state_dir="/var/lib/orvilo-staging"
+static_dir="/usr/local/share/orvilo-staging"
+production_state_dir="/var/lib/orvilo-production"
 
 if [ "$state_dir" = "$production_state_dir" ]; then
   echo "refusing to install staging into the production state directory" >&2
@@ -50,7 +50,7 @@ docker compose version >/dev/null
 
 install -o root -g root -m 0755 \
   "$script_dir/staging_deploy.py" \
-  /usr/local/bin/patchbay-staging-deploy
+  /usr/local/bin/orvilo-staging-deploy
 install -d -o root -g root -m 0755 "$static_dir"
 install -o root -g root -m 0644 \
   "$script_dir/staging-product.override.yml" \
@@ -83,17 +83,17 @@ if [[ ! "$public_key" =~ ^(ssh-ed25519|sk-ssh-ed25519@openssh.com)[[:space:]][A-
   echo "deployment key must be an Ed25519 public key" >&2
   exit 1
 fi
-forced_entry="restrict,command=\"/usr/local/bin/patchbay-staging-deploy\" $public_key patchbay-staging-github-actions"
+forced_entry="restrict,command=\"/usr/local/bin/orvilo-staging-deploy\" $public_key orvilo-staging-github-actions"
 
 if [ -f "$state_dir/bootstrapped.json" ]; then
-  runuser -u "$deploy_user" -- /usr/local/bin/patchbay-staging-deploy --check
+  runuser -u "$deploy_user" -- /usr/local/bin/orvilo-staging-deploy --check
 else
-  runuser -u "$deploy_user" -- /usr/local/bin/patchbay-staging-deploy --bootstrap
+  runuser -u "$deploy_user" -- /usr/local/bin/orvilo-staging-deploy --bootstrap
 fi
 
 temporary_keys="$(mktemp "$deploy_home/.ssh/.authorized_keys.XXXXXX")"
 trap 'rm -f "$temporary_keys"' EXIT
-awk '$NF != "patchbay-staging-github-actions"' "$authorized_keys" > "$temporary_keys"
+awk '$NF != "orvilo-staging-github-actions"' "$authorized_keys" > "$temporary_keys"
 printf '%s\n' "$forced_entry" >> "$temporary_keys"
 chown "$deploy_user:$deploy_group" "$temporary_keys"
 chmod 0600 "$temporary_keys"

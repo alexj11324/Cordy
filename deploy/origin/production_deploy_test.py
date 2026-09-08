@@ -37,7 +37,7 @@ class ProductionDeployContractTests(unittest.TestCase):
 
     def test_rejects_mutable_tags_from_the_network_request(self):
         manifest = self.manifest()
-        manifest["images"]["web"] = "ghcr.io/alexj11324/patchbay-web:latest"
+        manifest["images"]["web"] = "ghcr.io/alexj11324/orvilo-web:latest"
         with self.assertRaisesRegex(production_deploy.DeploymentError, "sha256 digest"):
             production_deploy.validate_deploy_request(manifest)
 
@@ -99,6 +99,34 @@ class ProductionDeployContractTests(unittest.TestCase):
             configured,
         )
 
+    def test_bootstrap_accepts_the_current_legacy_image_only_for_migration(self):
+        repository = production_deploy.LEGACY_BOOTSTRAP_IMAGE_REPOSITORIES["backend"]
+        digest_ref = f"{repository}@sha256:{'d' * 64}"
+        self.assertEqual(
+            production_deploy.select_bootstrap_image(
+                "backend",
+                f"{repository}:old-tag",
+                [digest_ref],
+            ),
+            digest_ref,
+        )
+        manifest = self.manifest()
+        manifest["bootstrap"] = True
+        manifest["images"]["backend"] = digest_ref
+        self.assertEqual(
+            production_deploy.validate_stored_manifest(manifest)["images"]["backend"],
+            digest_ref,
+        )
+
+    def test_network_deploy_rejects_legacy_image_repositories(self):
+        manifest = self.manifest()
+        legacy = production_deploy.LEGACY_BOOTSTRAP_IMAGE_REPOSITORIES["web"]
+        manifest["images"]["web"] = f"{legacy}@sha256:{'d' * 64}"
+        with self.assertRaisesRegex(
+            production_deploy.DeploymentError, "allow-listed repository"
+        ):
+            production_deploy.validate_deploy_request(manifest)
+
     def test_check_validates_existing_state_without_rebootstrapping(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "state"
@@ -156,7 +184,7 @@ class ProductionDeployContractTests(unittest.TestCase):
 
         request = urlopen.call_args.args[0]
         self.assertEqual(
-            request.get_header("User-agent"), "PatchbayProductionDeploy/1"
+            request.get_header("User-agent"), "OrviloProductionDeploy/1"
         )
 
     def test_browser_credentials_are_short_lived_and_bound_to_the_smoke_user(self):

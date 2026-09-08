@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
+	publicapiv1 "github.com/orvilo-ai/orvilo/server/pkg/publicapi/v1"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -27,7 +27,7 @@ func PluginRateLimit(rdb *redis.Client, limit int, window time.Duration) func(ht
 				return
 			}
 			digest := sha256.Sum256([]byte(token))
-			key := fmt.Sprintf("pby:ratelimit:plugin:%x", digest)
+			key := fmt.Sprintf("ovy:ratelimit:plugin:%x", digest)
 			count, err := rateLimitScript.Run(r.Context(), rdb, []string{key}, int(window.Seconds())).Int64()
 			if err != nil {
 				slog.Warn("plugin ratelimit: redis error; allowing request", "error", err)

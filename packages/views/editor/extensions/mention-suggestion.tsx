@@ -11,40 +11,40 @@ import {
   type ReactNode,
 } from "react";
 import type { QueryClient } from "@tanstack/react-query";
-import { getCurrentWsId } from "@patchbay/core/platform";
-import { flattenIssueBuckets, issueKeys } from "@patchbay/core/issues/queries";
-import { issueStatusCategory } from "@patchbay/core/issues";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { useAuthStore } from "@patchbay/core/auth";
-import { canAssignAgentToIssue } from "@patchbay/core/permissions";
-import { isAgentRuntimeBound } from "@patchbay/core/agents";
-import { api } from "@patchbay/core/api";
+import { getCurrentWsId } from "@orvilo/core/platform";
+import { flattenIssueBuckets, issueKeys } from "@orvilo/core/issues/queries";
+import { issueStatusCategory } from "@orvilo/core/issues";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
+import { useAuthStore } from "@orvilo/core/auth";
+import { canAssignAgentToIssue } from "@orvilo/core/permissions";
+import { isAgentRuntimeBound } from "@orvilo/core/agents";
+import { api } from "@orvilo/core/api";
 import {
   isIssueDirectHit,
   isProjectDirectHit,
-} from "@patchbay/core/search/cancelled-rank";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@orvilo/core/search/cancelled-rank";
+import { isImeComposing } from "@orvilo/core/utils";
 import type {
   Issue,
   ListIssuesCache,
   MemberWithUser,
   Agent,
   Team,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { ListTodo } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useT } from "../../i18n";
-import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Badge } from "@orvilo/ui/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { cn } from "@patchbay/ui/lib/utils";
-import type { IssueStatus, IssueStatusCategory, ProjectStatus } from "@patchbay/core/types";
-import { PROJECT_STATUS_CONFIG } from "@patchbay/core/projects/config";
+} from "@orvilo/ui/components/ui/tooltip";
+import { cn } from "@orvilo/ui/lib/utils";
+import type { IssueStatus, IssueStatusCategory, ProjectStatus } from "@orvilo/core/types";
+import { PROJECT_STATUS_CONFIG } from "@orvilo/core/projects/config";
 import type { SuggestionOptions } from "@tiptap/suggestion";
 import { PluginKey } from "@tiptap/pm/state";
 import {

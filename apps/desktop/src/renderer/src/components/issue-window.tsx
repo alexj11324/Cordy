@@ -6,15 +6,15 @@ import {
   useRouteError,
 } from "react-router-dom";
 import { AlertTriangle, RotateCw, X } from "lucide-react";
-import { useAuthStore } from "@patchbay/core/auth";
-import { setCurrentWorkspace } from "@patchbay/core/platform";
-import { WorkspaceSlugProvider } from "@patchbay/core/paths";
-import { useWorkspaceList } from "@patchbay/core/workspace";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { ModalRegistry } from "@patchbay/views/modals/registry";
-import { WorkspacePresencePrefetch } from "@patchbay/views/layout";
-import { DragStrip } from "@patchbay/views/platform";
+import { useAuthStore } from "@orvilo/core/auth";
+import { setCurrentWorkspace } from "@orvilo/core/platform";
+import { WorkspaceSlugProvider } from "@orvilo/core/paths";
+import { useWorkspaceList } from "@orvilo/core/workspace";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { OrviloIcon } from "@orvilo/ui/components/common/orvilo-icon";
+import { ModalRegistry } from "@orvilo/views/modals/registry";
+import { WorkspacePresencePrefetch } from "@orvilo/views/layout";
+import { DragStrip } from "@orvilo/views/platform";
 import type { IssueWindowContext } from "../../../shared/issue-window";
 import { DesktopAuthRecoveryPage } from "../pages/auth-recovery";
 import { IssueDetailPage } from "../pages/issue-detail-page";
@@ -67,7 +67,7 @@ function IssueWindowRoute() {
     return (
       <IssueWindowFrame>
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <PatchbayIcon className="size-6 animate-pulse" />
+          <OrviloIcon className="size-6 animate-pulse" />
         </div>
       </IssueWindowFrame>
     );

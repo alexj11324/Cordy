@@ -7,24 +7,24 @@ import {
   useState,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { CoreProvider } from "@patchbay/core/platform";
-import type { ClientIdentity } from "@patchbay/core/platform";
+import { CoreProvider } from "@orvilo/core/platform";
+import type { ClientIdentity } from "@orvilo/core/platform";
 import {
   pickLocale,
   type LocaleAdapter,
   type LocaleResources,
   type SupportedLocale,
-} from "@patchbay/core/i18n";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { useAuthStore } from "@patchbay/core/auth";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { useWorkspaceList } from "@patchbay/core/workspace";
-import { api, ApiClient } from "@patchbay/core/api";
-import { useHasOnboarded } from "@patchbay/core/paths";
-import { setCurrentWorkspace } from "@patchbay/core/platform";
-import { ThemeProvider } from "@patchbay/ui/components/common/theme-provider";
-import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { Toaster } from "@patchbay/ui/components/ui/sonner";
+} from "@orvilo/core/i18n";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import { useAuthStore } from "@orvilo/core/auth";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
+import { useWorkspaceList } from "@orvilo/core/workspace";
+import { api, ApiClient } from "@orvilo/core/api";
+import { useHasOnboarded } from "@orvilo/core/paths";
+import { setCurrentWorkspace } from "@orvilo/core/platform";
+import { ThemeProvider } from "@orvilo/ui/components/common/theme-provider";
+import { OrviloIcon } from "@orvilo/ui/components/common/orvilo-icon";
+import { Toaster } from "@orvilo/ui/components/ui/sonner";
 import { DesktopLoginPage } from "./pages/login";
 import { DesktopAuthRecoveryPage } from "./pages/auth-recovery";
 import {
@@ -45,7 +45,7 @@ import { useDaemonIPCBridge } from "./platform/daemon-ipc-bridge";
 import { handleDaemonLogout } from "./platform/daemon-logout";
 import { syncDaemonOnLogin } from "./platform/daemon-login-sync";
 import { createDesktopLocaleAdapter } from "./platform/i18n-adapter";
-import { RESOURCES } from "@patchbay/views/locales";
+import { RESOURCES } from "@orvilo/views/locales";
 import { DesktopClientUsageReporter } from "./platform/client-usage-reporter";
 import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
 import { flushFreezeBreadcrumb } from "./freeze-flush";
@@ -112,7 +112,7 @@ function IssueWindowContent() {
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <PatchbayIcon className="size-6 animate-pulse" />
+        <OrviloIcon className="size-6 animate-pulse" />
       </div>
     );
   }
@@ -141,13 +141,13 @@ function AppContent() {
     : null;
 
   // Tell the main process which backend URL we talk to, so daemon-manager
-  // can pick the matching CLI profile (server_url from ~/.patchbay config).
+  // can pick the matching CLI profile (server_url from ~/.orvilo config).
   useEffect(() => {
     if (!runtimeConfig) return;
     window.daemonAPI.setTargetApiUrl(runtimeConfig.apiUrl);
   }, [runtimeConfig]);
 
-  // Listen for invite IDs delivered via deep link (patchbay://invite/<id>).
+  // Listen for invite IDs delivered via deep link (orvilo://invite/<id>).
   // We open the overlay regardless of login state — if the user isn't logged
   // in, InvitePage's queries will fail and render the "not found" state,
   // which is acceptable; the expected pre-flight happens in the web app
@@ -200,7 +200,7 @@ function AppContent() {
   // inside syncDaemonOnLogin is load-bearing — see that module.
   useEffect(() => {
     if (!user || !runtimeConfig) return;
-    const token = localStorage.getItem("patchbay_token");
+    const token = localStorage.getItem("orvilo_token");
     if (!token) return;
     const userId = user.id;
     (async () => {
@@ -354,7 +354,7 @@ function AppContent() {
   if (isLoading || bootstrapping) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <PatchbayIcon className="size-6 animate-pulse" />
+        <OrviloIcon className="size-6 animate-pulse" />
       </div>
     );
   }
@@ -381,7 +381,7 @@ function BlockingRuntimeConfigError({ message }: { message: string }) {
       <div className="max-w-xl rounded-lg border bg-card p-6 shadow-sm">
         <h1 className="text-title font-semibold">Desktop configuration error</h1>
         <p className="mt-3 text-body text-muted-foreground">
-          Orvilo Desktop could not load <code>~/.patchbay/desktop.json</code>. Fix or remove the file and restart the app.
+          Orvilo Desktop could not load <code>~/.orvilo/desktop.json</code>. Fix or remove the file and restart the app.
         </p>
         <pre className="mt-4 whitespace-pre-wrap rounded-md bg-muted p-3 text-caption text-muted-foreground">
           {message}
@@ -424,7 +424,7 @@ function CloudApp({
   useEffect(() => {
     let cancelled = false;
     let cleanup: (() => void) | undefined;
-    void import("@patchbay/core/analytics").then(({ captureEvent }) => {
+    void import("@orvilo/core/analytics").then(({ captureEvent }) => {
       if (cancelled) return;
       cleanup = flushFreezeBreadcrumb({
         getLastFreeze: () => window.desktopAPI.getLastFreeze(),
@@ -639,7 +639,7 @@ export default function App() {
         if (!active) return;
         const startupMode = resolveDesktopStartupMode(
           result,
-          Boolean(localStorage.getItem("patchbay_token")),
+          Boolean(localStorage.getItem("orvilo_token")),
           mainMode,
         );
         if (startupMode === "guest-error") {
@@ -686,7 +686,7 @@ export default function App() {
       case "loading":
         return (
           <div className="flex h-screen items-center justify-center">
-            <PatchbayIcon className="size-6 animate-pulse" />
+            <OrviloIcon className="size-6 animate-pulse" />
           </div>
         );
       case "entry":

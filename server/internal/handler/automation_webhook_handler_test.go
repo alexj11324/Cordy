@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // All tests in this file require a working DB. testHandler / testWorkspaceID /
@@ -87,7 +87,7 @@ func TestCreateTrigger_RepublishesRuleVersionAtomically(t *testing.T) {
 	apID := createWebhookTestAutomation(t, agentID, "active", "run_only")
 	ctx := context.Background()
 	verParams := db.GetActiveAutomationRuleVersionParams{
-		WorkspaceID: parseUUID(testWorkspaceID),
+		WorkspaceID:  parseUUID(testWorkspaceID),
 		AutomationID: parseUUID(apID),
 	}
 
@@ -183,8 +183,8 @@ func TestWebhookHandler_FiltersUndeclaredEvent(t *testing.T) {
 
 	runs, err := testHandler.Queries.ListAutomationRuns(context.Background(), db.ListAutomationRunsParams{
 		AutomationID: parseUUID(apID),
-		Limit:       10,
-		Offset:      0,
+		Limit:        10,
+		Offset:       0,
 	})
 	if err != nil {
 		t.Fatalf("list runs: %v", err)

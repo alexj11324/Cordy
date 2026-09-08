@@ -19,14 +19,14 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 const (
 	WorkspaceName         = "开发调试样例"
 	WorkspaceSlug         = "dev-fixtures"
-	WorkspaceDescription  = "Patchbay 内置开发 fixture。内容可从代码重建，不代表真实工作记录。"
+	WorkspaceDescription  = "Orvilo 内置开发 fixture。内容可从代码重建，不代表真实工作记录。"
 	FixtureSet            = "ui-guidance-v1"
 	DefaultDeveloperEmail = "dev@localhost"
 )
@@ -158,8 +158,8 @@ func ValidateTarget(rawDatabaseURL string, enabled bool) error {
 		return fmt.Errorf("development seed refuses non-loopback database host %q", host)
 	}
 	database := strings.TrimPrefix(u.Path, "/")
-	if database != "patchbay" && !strings.HasPrefix(database, "patchbay_") {
-		return fmt.Errorf("development seed refuses database %q; expected patchbay or patchbay_*", database)
+	if database != "orvilo" && !strings.HasPrefix(database, "orvilo_") {
+		return fmt.Errorf("development seed refuses database %q; expected orvilo or orvilo_*", database)
 	}
 	return nil
 }
@@ -375,7 +375,7 @@ func verifyFixtureRows(ctx context.Context, tx pgx.Tx, workspaceID pgtype.UUID, 
 }
 
 func fixtureID(name string) string {
-	return uuid.NewSHA1(fixtureNamespace, []byte("patchbay/dev-fixtures/v1/"+name)).String()
+	return uuid.NewSHA1(fixtureNamespace, []byte("orvilo/dev-fixtures/v1/"+name)).String()
 }
 
 func pgUUID(value string) pgtype.UUID {

@@ -1,4 +1,4 @@
-name: patchbay-staging-auth-broker
+name: orvilo-staging-auth-broker
 services:
   broker:
     image: ${ORVILO_AUTH_BROKER_IMAGE:?Set ORVILO_AUTH_BROKER_IMAGE to an immutable GHCR digest}

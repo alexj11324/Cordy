@@ -11,13 +11,13 @@ import {
 import type { QueryClient } from "@tanstack/react-query";
 import type { SuggestionOptions } from "@tiptap/suggestion";
 import { PluginKey } from "@tiptap/pm/state";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useChatStore } from "@patchbay/core/chat";
-import { getCurrentWsId } from "@patchbay/core/platform";
-import { canAssignAgentToIssue } from "@patchbay/core/permissions";
-import { isImeComposing } from "@patchbay/core/utils";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import type { Agent, MemberWithUser } from "@patchbay/core/types";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useChatStore } from "@orvilo/core/chat";
+import { getCurrentWsId } from "@orvilo/core/platform";
+import { canAssignAgentToIssue } from "@orvilo/core/permissions";
+import { isImeComposing } from "@orvilo/core/utils";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
+import type { Agent, MemberWithUser } from "@orvilo/core/types";
 import { useT } from "../../i18n";
 import {
   createSuggestionPopupRender,

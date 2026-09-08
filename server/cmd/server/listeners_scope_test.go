@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // fakeBroadcaster records every fanout call so tests can assert which scope a

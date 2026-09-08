@@ -3,34 +3,34 @@
 import { type ReactNode, useRef, useEffect, useState } from "react";
 import { Dices, FolderOpen, Plus, X } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupInput,
   InputGroupText,
-} from "@patchbay/ui/components/ui/input-group";
+} from "@orvilo/ui/components/ui/input-group";
 import {
   Field,
   FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
-} from "@patchbay/ui/components/ui/field";
-import { cn } from "@patchbay/ui/lib/utils";
-import { useCreateWorkspace } from "@patchbay/core/workspace/mutations";
-import { api } from "@patchbay/core/api";
+} from "@orvilo/ui/components/ui/field";
+import { cn } from "@orvilo/ui/lib/utils";
+import { useCreateWorkspace } from "@orvilo/core/workspace/mutations";
+import { api } from "@orvilo/core/api";
 import type {
   CreateProjectResourceRequest,
   LocalDirectoryResourceRef,
   Workspace,
-} from "@patchbay/core/types";
-import { isImeComposing } from "@patchbay/core/utils";
-import { matchLocale } from "@patchbay/core/i18n";
-import { useConfigStore } from "@patchbay/core/config";
-import { runtimeAdvertisesLocalWorktreeCommittedBase } from "@patchbay/core/runtimes";
-import { workspaceUrlHost } from "@patchbay/core/workspace/workspace-url";
+} from "@orvilo/core/types";
+import { isImeComposing } from "@orvilo/core/utils";
+import { matchLocale } from "@orvilo/core/i18n";
+import { useConfigStore } from "@orvilo/core/config";
+import { runtimeAdvertisesLocalWorktreeCommittedBase } from "@orvilo/core/runtimes";
+import { workspaceUrlHost } from "@orvilo/core/workspace/workspace-url";
 import {
   isDesktopShell,
   pickDirectories,
@@ -50,7 +50,7 @@ import {
   nameToWorkspaceSlug,
   randomCelestialWorkspaceIdentity,
 } from "../../workspace/slug";
-import { isReservedSlug } from "@patchbay/core/paths";
+import { isReservedSlug } from "@orvilo/core/paths";
 
 /**
  * Step 2 — create your first workspace, or continue with one set up in

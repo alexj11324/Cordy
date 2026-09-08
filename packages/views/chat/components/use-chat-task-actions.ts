@@ -3,20 +3,20 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, ApiError } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { chatKeys } from "@patchbay/core/chat/queries";
+import { api, ApiError } from "@orvilo/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { chatKeys } from "@orvilo/core/chat/queries";
 import {
   prioritizePendingChatTask,
   removePendingChatTask,
-} from "@patchbay/core/chat/pending";
-import { removeChatMessageFromCaches } from "@patchbay/core/realtime";
-import { createLogger } from "@patchbay/core/logger";
+} from "@orvilo/core/chat/pending";
+import { removeChatMessageFromCaches } from "@orvilo/core/realtime";
+import { createLogger } from "@orvilo/core/logger";
 import type {
   Attachment,
   CancelTaskResponse,
   ChatPendingTask,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { useT } from "../../i18n";
 
 const apiLogger = createLogger("chat.api");

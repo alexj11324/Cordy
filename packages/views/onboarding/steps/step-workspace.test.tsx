@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enOnboarding from "../../locales/en/onboarding.json";
 import enWorkspace from "../../locales/en/workspace.json";
-import type { Workspace } from "@patchbay/core/types";
+import type { Workspace } from "@orvilo/core/types";
 
 const TEST_RESOURCES = {
   en: {
@@ -33,7 +33,7 @@ vi.mock("../../auth", () => ({
   useLogout: () => mockLogout,
 }));
 
-vi.mock("@patchbay/core/config", () => ({
+vi.mock("@orvilo/core/config", () => ({
   useConfigStore: (selector: (state: MockConfigState) => unknown) =>
     mockUseConfigStore(selector),
 }));
@@ -61,7 +61,7 @@ vi.mock("../../platform/use-local-daemon-status", () => ({
   useLocalDaemonStatus: mockDaemon,
 }));
 
-vi.mock("@patchbay/core/workspace/mutations", () => ({
+vi.mock("@orvilo/core/workspace/mutations", () => ({
   useCreateWorkspace: () => ({
     mutate: mockCreateMutate,
     mutateAsync: mockCreateMutate,
@@ -69,7 +69,7 @@ vi.mock("@patchbay/core/workspace/mutations", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
     createProject: mockCreateProject,
@@ -334,22 +334,22 @@ describe("StepWorkspace — DISABLE_WORKSPACE_CREATION gate", () => {
 });
 
 // #4263: the workspace URL prefix must reflect the deployment's own host on
-// self-hosted instances instead of the hardcoded `patchbay.aspectlylabs.com`.
+// self-hosted instances instead of the hardcoded `orvilo.aspectlylabs.com`.
 describe("StepWorkspace — workspace URL prefix", () => {
   it("shows the brand host when no app URL is configured", () => {
     renderStep({ existing: null, disabled: false });
-    expect(screen.getByText("patchbay.aspectlylabs.com/")).toBeInTheDocument();
+    expect(screen.getByText("orvilo.aspectlylabs.com/")).toBeInTheDocument();
   });
 
   it("shows the deployment host for self-hosted instances", () => {
     renderStep({
       existing: null,
       disabled: false,
-      daemonAppUrl: "https://patchbay.example.com",
+      daemonAppUrl: "https://orvilo.example.com",
     });
-    expect(screen.getByText("patchbay.example.com/")).toBeInTheDocument();
+    expect(screen.getByText("orvilo.example.com/")).toBeInTheDocument();
     expect(
-      screen.queryByText("patchbay.aspectlylabs.com/"),
+      screen.queryByText("orvilo.aspectlylabs.com/"),
     ).not.toBeInTheDocument();
   });
 });

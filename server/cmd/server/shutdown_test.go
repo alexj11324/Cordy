@@ -19,7 +19,7 @@ func TestShutdownSequence_RunsInTheDocumentedOrder(t *testing.T) {
 		return func() { ran = append(ran, name) }
 	}
 	shutdownSequence{
-		StopAutomation:         record("automation"),
+		StopAutomation:        record("automation"),
 		DrainHTTP:             record("http"),
 		StopOutboundRelay:     record("relay"),
 		CancelWorkers:         record("cancel"),

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // openclawConfigFile is the per-task synthesized OpenClaw config the daemon
@@ -570,7 +570,7 @@ func buildPerTaskOpenclawConfig(activePath string, exists bool, snapshotPath str
 	// `gateway.*` shape so OpenClaw's deep-merge $include semantics produce
 	// the right composed config: anything we set here wins over the user's
 	// global, anything we omit inherits from the user's global. Only emit
-	// fields the patchbay admin explicitly populated — zero strings/ints
+	// fields the orvilo admin explicitly populated — zero strings/ints
 	// would override the user's value with junk.
 	if gw := buildGatewayOverride(gateway); gw != nil {
 		cfg["gateway"] = gw
@@ -1380,7 +1380,7 @@ func execOpenclawCLI(ctx context.Context, bin string, args ...string) (string, e
 // `{}` / `{"mcpServers":{}}` — and `false` when the field is null/absent so
 // the user's global config flows through unmodified.
 //
-// Input shape mirrors the rest of Patchbay: Claude-style
+// Input shape mirrors the rest of Orvilo: Claude-style
 // `{"mcpServers": {"<name>": {...}}}`. The server-entry fields pass through
 // verbatim. OpenClaw's stdio schema uses the same camelCase keys (`command`,
 // `args`, `env`) as Claude; HTTP/SSE entries should set OpenClaw's

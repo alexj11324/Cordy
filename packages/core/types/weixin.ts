@@ -1,7 +1,7 @@
 import type { MessagingInstallationRuntime, MessagingInstallationSetup } from "./messaging";
 
 /**
- * A Weixin iLink installation bound to one Patchbay agent.
+ * A Weixin iLink installation bound to one Orvilo agent.
  *
  * The fields mirror WeixinInstallationResponse in the Go HTTP handler. The
  * status is intentionally open-ended so a newer server can add a terminal

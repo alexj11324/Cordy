@@ -2,7 +2,7 @@
 /**
  * MUL-6222 — the web half of the tab-title contract.
  *
- * What a URL is *named* is resolved by `@patchbay/core/paths` +
+ * What a URL is *named* is resolved by `@orvilo/core/paths` +
  * `useTabPresentation` and tested there; mocked out here so these cover only
  * the platform wiring web owns: the site suffix, the unknown-route and
  * navigation behavior of `document.title`.
@@ -20,7 +20,7 @@ const presentation = vi.hoisted(() => ({
   title: "Issues",
   urls: [] as string[],
 }));
-vi.mock("@patchbay/views/layout", () => ({
+vi.mock("@orvilo/views/layout", () => ({
   useTabPresentation: (url: string) => {
     presentation.urls.push(url);
     return { title: presentation.title, visual: { kind: "icon", icon: "ListTodo" } };

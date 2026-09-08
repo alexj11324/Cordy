@@ -9,17 +9,17 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func dingtalkInstallTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dsn = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)
@@ -53,7 +53,7 @@ func TestRegisterBYO_DifferentAppKey_IsolatesIdentityStateDB(t *testing.T) {
 		workspaceID    = "d1470000-0000-4000-8000-000000000001"
 		agentID        = "d1470000-0000-4000-8000-000000000002"
 		installerID    = "d1470000-0000-4000-8000-000000000003"
-		patchbayUserID  = "d1470000-0000-4000-8000-000000000004"
+		orviloUserID = "d1470000-0000-4000-8000-000000000004"
 		oldInstallID   = "d1470000-0000-4000-8000-000000000010"
 		chatSessionID  = "d1470000-0000-4000-8000-000000000020"
 		bindingID      = "d1470000-0000-4000-8000-000000000021"
@@ -95,9 +95,9 @@ INSERT INTO channel_installation (id, workspace_id, agent_id, channel_type, conf
 VALUES ($1, $2, $3, 'dingtalk', jsonb_build_object('app_id', $4::text), $5)
 `, oldInstallID, workspaceID, agentID, oldAppKey, installerID)
 	exec(`
-INSERT INTO channel_user_binding (workspace_id, patchbay_user_id, installation_id, channel_type, channel_user_id)
+INSERT INTO channel_user_binding (workspace_id, orvilo_user_id, installation_id, channel_type, channel_user_id)
 VALUES ($1, $2, $3, 'dingtalk', $4)
-`, workspaceID, patchbayUserID, oldInstallID, staffID)
+`, workspaceID, orviloUserID, oldInstallID, staffID)
 	exec(`
 INSERT INTO channel_chat_session_binding (id, chat_session_id, installation_id, channel_type, channel_chat_id, chat_type)
 VALUES ($1, $2, $3, 'dingtalk', $4, 'p2p')

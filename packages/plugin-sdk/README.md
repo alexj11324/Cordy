@@ -1,15 +1,15 @@
-# @patchbay/plugin-sdk
+# @orvilo/plugin-sdk
 
-What a Patchbay plugin surface imports.
+What an Orvilo plugin surface imports.
 
 ```js
-import { patchbay } from "@patchbay/plugin-sdk";
+import { orvilo } from "@orvilo/plugin-sdk";
 
-const ctx   = await patchbay.context.get();
-const issue = await patchbay.issue.get();
-await patchbay.issue.comment({ body: "hello" });
-const note  = await patchbay.storage.user.get("note");
-patchbay.ui.resize(320);
+const ctx   = await orvilo.context.get();
+const issue = await orvilo.issue.get();
+await orvilo.issue.comment({ body: "hello" });
+const note  = await orvilo.storage.user.get("note");
+orvilo.ui.resize(320);
 ```
 
 ## What a surface is
@@ -17,7 +17,7 @@ patchbay.ui.resize(320);
 **One** script in a sandboxed iframe.
 
 Bundle this SDK and everything else your surface needs into a single file. There
-is no module graph: you publish an artifact, Patchbay stores it and serves your
+is no module graph: you publish an artifact, Orvilo stores it and serves your
 entry inside a generated document on its dedicated plugin-content origin. There
 is no path back to the author's server and no top-level module graph for a bare
 `import` to resolve against. Publishing refuses an entry that has one rather
@@ -28,15 +28,15 @@ The frame is mounted with `sandbox="allow-scripts"` and **not**
 before you write one:
 
 - **No browser storage.** `localStorage`, `sessionStorage` and cookies all throw
-  or are empty. Use `patchbay.storage` — it is server-side, scoped per workspace
+  or are empty. Use `orvilo.storage` — it is server-side, scoped per workspace
   or per member, and survives the frame.
 - **`Origin: null` on your own requests.** If your surface calls your backend
   directly, that backend must accept a null origin in CORS.
-- **A CSP you did not write.** Patchbay generates the response and derives
+- **A CSP you did not write.** Orvilo generates the response and derives
   `connect-src` from the `net:` scopes in your manifest. Declare every host you
   intend to reach; with no `net:` scope your surface cannot issue a network
   request at all, including back to your own origin, which is no longer in the
-  policy now that Patchbay serves your code. `net:` is an exact host, so declare
+  policy now that Orvilo serves your code. `net:` is an exact host, so declare
   `net:api.example.com` separately from `net:example.com`.
 
 ## Publishing
@@ -59,7 +59,7 @@ user's own session. Two limits apply at once:
 
 So a member without access to an issue gets a 404 through your surface too, and
 a scope the admin declined is a 403 that names it. Errors are
-`PatchbayPluginError` with a `status` mirroring HTTP.
+`OrviloPluginError` with a `status` mirroring HTTP.
 
 A comment you post is authored by **the user**, recorded as having been made
 through your plugin. It does not run `@mention` trigger dispatch — a surface
@@ -72,9 +72,9 @@ the SDK writes them as custom properties on `:root`. Use `var(--foreground)`,
 `var(--background)`, `var(--border)`, `var(--radius)` and friends and your
 surface will look native without shipping a stylesheet.
 
-`patchbay.ui.onThemeChange(fn)` if you need to react in JS.
+`orvilo.ui.onThemeChange(fn)` if you need to react in JS.
 
 ## Sizing
 
-The frame does not auto-size. Call `patchbay.ui.resize(px)` after your content
+The frame does not auto-size. Call `orvilo.ui.resize(px)` after your content
 settles; the host clamps the value.

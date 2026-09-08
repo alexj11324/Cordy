@@ -17,8 +17,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 const (
@@ -82,24 +82,24 @@ type issueTableDateFilterRequest struct {
 }
 
 type issueTableFiltersRequest struct {
-	Statuses          []string                     `json:"statuses,omitempty"`
-	Priorities        []string                     `json:"priorities,omitempty"`
-	Actors             []issueTableActorRef         `json:"actors,omitempty"`
-	Owners             []issueTableActorRef         `json:"owners,omitempty"`
-	IncludeNoOwner     bool                         `json:"include_no_owner,omitempty"`
-	Executors          []issueTableActorRef         `json:"executors,omitempty"`
-	IncludeNoExecutor  bool                         `json:"include_no_executor,omitempty"`
-	Creators          []issueTableActorRef         `json:"creators,omitempty"`
-	ProjectIDs        []string                     `json:"project_ids,omitempty"`
-	IncludeNoProject  bool                         `json:"include_no_project,omitempty"`
-	LabelIDs          []string                     `json:"label_ids,omitempty"`
+	Statuses          []string             `json:"statuses,omitempty"`
+	Priorities        []string             `json:"priorities,omitempty"`
+	Actors            []issueTableActorRef `json:"actors,omitempty"`
+	Owners            []issueTableActorRef `json:"owners,omitempty"`
+	IncludeNoOwner    bool                 `json:"include_no_owner,omitempty"`
+	Executors         []issueTableActorRef `json:"executors,omitempty"`
+	IncludeNoExecutor bool                 `json:"include_no_executor,omitempty"`
+	Creators          []issueTableActorRef `json:"creators,omitempty"`
+	ProjectIDs        []string             `json:"project_ids,omitempty"`
+	IncludeNoProject  bool                 `json:"include_no_project,omitempty"`
+	LabelIDs          []string             `json:"label_ids,omitempty"`
 	// Members are raw JSON so operator objects ({op, value}) and plain
 	// strings both survive the round-trip into parsePropertiesFilterParam.
-	Properties        map[string][]json.RawMessage `json:"properties,omitempty"`
-	Date              *issueTableDateFilterRequest `json:"date,omitempty"`
-	WorkingOnly       bool                         `json:"working_only,omitempty"`
-	WorkingIssueIDs   []string                     `json:"working_issue_ids,omitempty"`
-	IncludeSubIssues  *bool                        `json:"include_sub_issues,omitempty"`
+	Properties       map[string][]json.RawMessage `json:"properties,omitempty"`
+	Date             *issueTableDateFilterRequest `json:"date,omitempty"`
+	WorkingOnly      bool                         `json:"working_only,omitempty"`
+	WorkingIssueIDs  []string                     `json:"working_issue_ids,omitempty"`
+	IncludeSubIssues *bool                        `json:"include_sub_issues,omitempty"`
 }
 
 type issueTableSortRequest struct {

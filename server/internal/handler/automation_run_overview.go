@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // ListWorkspaceAutomationRuns returns one page and scope-wide time-window

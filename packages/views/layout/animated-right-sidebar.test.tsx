@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   configureShortcutPlatform,
   useShortcutStore,
-} from "@patchbay/core/shortcuts";
+} from "@orvilo/core/shortcuts";
 
 import {
   getAnimatedRightSidebarInitialOpen,

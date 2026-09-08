@@ -14,9 +14,9 @@ const (
 	EventIssueExecuted                 = "issue_executed"
 	EventIssueCreated                  = "issue_created"
 	EventChatMessageSent               = "chat_message_sent"
-	EventAutomationRunStarted           = "automation_run_started"
-	EventAutomationRunCompleted         = "automation_run_completed"
-	EventAutomationRunFailed            = "automation_run_failed"
+	EventAutomationRunStarted          = "automation_run_started"
+	EventAutomationRunCompleted        = "automation_run_completed"
+	EventAutomationRunFailed           = "automation_run_failed"
 	EventTeamInviteSent                = "team_invite_sent"
 	EventTeamInviteAccepted            = "team_invite_accepted"
 	EventOnboardingStarted             = "onboarding_started"
@@ -27,8 +27,8 @@ const (
 	EventCloudWaitlistJoined           = "cloud_waitlist_joined"
 	EventFeedbackSubmitted             = "feedback_submitted"
 	EventContactSalesSubmitted         = "contact_sales_submitted"
-	EventTeamCreated                  = "team_created"
-	EventAutomationCreated              = "automation_created"
+	EventTeamCreated                   = "team_created"
+	EventAutomationCreated             = "automation_created"
 )
 
 const EventSchemaVersion = 2
@@ -69,14 +69,14 @@ var metricsOnlyEvents = map[string]struct{}{
 	EventCloudWaitlistJoined:           {},
 	EventFeedbackSubmitted:             {},
 	EventContactSalesSubmitted:         {},
-	EventTeamCreated:                  {},
-	EventAutomationCreated:              {},
+	EventTeamCreated:                   {},
+	EventAutomationCreated:             {},
 	// High-volume runtime / automation execution-lifecycle telemetry — always
 	// Prometheus-only (Grafana already carries the equivalent counters).
-	EventRuntimeRegistered:     {},
-	EventRuntimeReady:          {},
-	EventRuntimeFailed:         {},
-	EventRuntimeOffline:        {},
+	EventRuntimeRegistered:      {},
+	EventRuntimeReady:           {},
+	EventRuntimeFailed:          {},
+	EventRuntimeOffline:         {},
 	EventAutomationRunStarted:   {},
 	EventAutomationRunCompleted: {},
 	EventAutomationRunFailed:    {},
@@ -94,7 +94,7 @@ const (
 	SourceOnboarding = "onboarding"
 	SourceManual     = "manual"
 	SourceChat       = "chat"
-	SourceAutomation  = "automation"
+	SourceAutomation = "automation"
 	SourceAPI        = "api"
 )
 
@@ -103,17 +103,17 @@ const (
 // always stamped so dashboards can filter demo data without sparse-property
 // edge cases.
 type CoreProperties struct {
-	UserID         string
-	WorkspaceID    string
-	AgentID        string
-	TaskID         string
-	IssueID        string
-	ChatSessionID  string
+	UserID          string
+	WorkspaceID     string
+	AgentID         string
+	TaskID          string
+	IssueID         string
+	ChatSessionID   string
 	AutomationRunID string
-	Source         string
-	RuntimeMode    string
-	Provider       string
-	IsDemo         bool
+	Source          string
+	RuntimeMode     string
+	Provider        string
+	IsDemo          bool
 }
 
 type TaskContext = CoreProperties
@@ -326,13 +326,13 @@ func IssueCreated(actorID, workspaceID, issueID, agentID, taskID, automationRunI
 		DistinctID:  actorID,
 		WorkspaceID: workspaceID,
 		Properties: withCoreProperties(props, CoreProperties{
-			UserID:         nonAgentUserID(actorID),
-			WorkspaceID:    workspaceID,
-			AgentID:        agentID,
-			TaskID:         taskID,
-			IssueID:        issueID,
+			UserID:          nonAgentUserID(actorID),
+			WorkspaceID:     workspaceID,
+			AgentID:         agentID,
+			TaskID:          taskID,
+			IssueID:         issueID,
 			AutomationRunID: automationRunID,
-			Source:         source,
+			Source:          source,
 		}),
 	}
 }
@@ -367,7 +367,7 @@ func ChatMessageSent(userID, workspaceID, chatSessionID, taskID, agentID, runtim
 type AutomationAssignee struct {
 	AgentID      string // executing agent — leader for team automations
 	ExecutorType string // "agent" or "team"
-	TeamID      string // empty when ExecutorType != "team"
+	TeamID       string // empty when ExecutorType != "team"
 }
 
 func AutomationRunStarted(actorID, workspaceID, automationID, runID, cadence string, assignee AutomationAssignee, triggerSource string) Event {
@@ -449,7 +449,7 @@ func TeamInviteAccepted(inviteeID, workspaceID string, daysSinceInvite int64) Ev
 //
 // platform is the X-Client-Platform header value at the time of the
 // first onboarding interaction, fed into the
-// `patchbay_onboarding_started_total{platform=...}` label via the fixed
+// `orvilo_onboarding_started_total{platform=...}` label via the fixed
 // allow-list in metrics.NormalizePlatform.
 func OnboardingStarted(userID, platform string) Event {
 	props := map[string]any{}
@@ -687,7 +687,7 @@ func TeamCreated(actorID, workspaceID, teamID string, memberCount int) Event {
 		DistinctID:  actorID,
 		WorkspaceID: workspaceID,
 		Properties: withCoreProperties(map[string]any{
-			"team_id":     teamID,
+			"team_id":      teamID,
 			"member_count": int64(memberCount),
 		}, CoreProperties{
 			UserID:      nonAgentUserID(actorID),
@@ -709,8 +709,8 @@ func AutomationCreated(actorID, workspaceID, automationID, cadence, triggerKind 
 		WorkspaceID: workspaceID,
 		Properties: withCoreProperties(map[string]any{
 			"automation_id": automationID,
-			"cadence":      cadence,
-			"trigger_kind": triggerKind,
+			"cadence":       cadence,
+			"trigger_kind":  triggerKind,
 		}, CoreProperties{
 			UserID:      nonAgentUserID(actorID),
 			WorkspaceID: workspaceID,
@@ -729,11 +729,11 @@ func automationRunEvent(name, actorID, workspaceID, automationID, runID, cadence
 		extra["cadence"] = cadence
 	}
 	props := withCoreProperties(extra, CoreProperties{
-		UserID:         nonAgentUserID(actorID),
-		WorkspaceID:    workspaceID,
-		AgentID:        assignee.AgentID,
+		UserID:          nonAgentUserID(actorID),
+		WorkspaceID:     workspaceID,
+		AgentID:         assignee.AgentID,
 		AutomationRunID: runID,
-		Source:         SourceAutomation,
+		Source:          SourceAutomation,
 	})
 	props["automation_id"] = automationID
 	if assignee.ExecutorType != "" {

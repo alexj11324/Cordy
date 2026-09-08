@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
 )
 
 func TestStubIsWorkspaceScopedAndDefaultsOff(t *testing.T) {

@@ -1966,8 +1966,8 @@ export class ApiClient {
   }
 
   // ---------------------------------------------------------------------
-  // Cloud Billing — proxies to patchbay-cloud /api/v1/billing/*. The
-  // patchbay-api server stamps X-User-ID and forwards bytes; everything
+  // Cloud Billing — proxies to orvilo-cloud /api/v1/billing/*. The
+  // orvilo-api server stamps X-User-ID and forwards bytes; everything
   // here is upstream-shaped. See packages/core/types/billing.ts for the
   // response field documentation.
   // ---------------------------------------------------------------------
@@ -3132,7 +3132,7 @@ export class ApiClient {
       : "";
     return this.fetch<unknown>(`/api/v1/plugin${request.path}${query}`, {
       method: request.method,
-      headers: { "X-Patchbay-Plugin-Installation": installationId },
+      headers: { "X-Orvilo-Plugin-Installation": installationId },
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
     });
   }
@@ -3153,7 +3153,7 @@ export class ApiClient {
   ): Promise<PluginHookResult> {
     const raw = await this.fetch<unknown>(`/api/v1/plugin/hooks/${encodeURIComponent(hookKey)}`, {
       method: "POST",
-      headers: { "X-Patchbay-Plugin-Installation": installationId },
+      headers: { "X-Orvilo-Plugin-Installation": installationId },
       body: JSON.stringify({ trigger: request.trigger, issue_id: request.issueId, input: request.input }),
     });
     return parseWithFallback(raw, PluginHookResultSchema, {
@@ -5081,10 +5081,10 @@ export class ApiClient {
 
   async deleteLinearMemberBinding(
     workspaceId: string,
-    patchbayUserId: string,
+    orviloUserId: string,
   ): Promise<void> {
     await this.fetch(
-      `/api/workspaces/${workspaceId}/linear/members/${patchbayUserId}`,
+      `/api/workspaces/${workspaceId}/linear/members/${orviloUserId}`,
       { method: "DELETE" },
     );
   }
@@ -5122,7 +5122,7 @@ export class ApiClient {
         workspace_id: "",
         binding_id: "",
         link_id: "",
-        patchbay_issue_id: "",
+        orvilo_issue_id: "",
         linear_issue_id: "",
         linear_identifier: null,
         field: "",
@@ -5598,8 +5598,8 @@ export class ApiClient {
   }
 
   // redeemWecomBindingToken binds the WeCom aibot userid carried by the
-  // token to the logged-in Patchbay user. Called by the /wecom/bind redeem
-  // page after the user clicks through the "link your Patchbay account"
+  // token to the logged-in Orvilo user. Called by the /wecom/bind redeem
+  // page after the user clicks through the "link your Orvilo account"
   // prompt the bot sent in WeCom. Status codes:
   //   410 Gone      → invalid / expired / already consumed
   //   409 Conflict  → the WeCom user is already bound to a different user

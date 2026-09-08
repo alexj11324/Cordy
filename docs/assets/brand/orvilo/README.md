@@ -12,10 +12,12 @@ copies live in apps/desktop/build and apps/desktop/resources. Web launcher
 sizes derive from the desktop render; maskable and touch icons derive from
 apps/web/public/icons/icon.svg. Mobile's icon.png is an opaque iOS export.
 
-The brand changes display names and the deployment environment namespace without
-changing machine identity. `ORVILO_*` is the sole environment-variable
-namespace; the old `PATCHBAY_*` names are not read. Existing package names, app
-IDs, callback schemes, storage keys, desktop data directories, API headers,
-artifact names, credentials and service origins retain their Patchbay identity.
-This keeps existing users and provider connections stable while making the
-configuration migration explicit.
+Display names, app chrome, and workspace packages (`@orvilo/*`,
+`github.com/orvilo-ai/orvilo/server`) use Orvilo. `ORVILO_*` is the sole
+environment-variable namespace; the old `ORVILO_*` names are not read.
+
+Existing installs still depend on historical machine identity: app IDs,
+`orvilo://` callback schemes, storage keys, desktop data directories,
+`X-Orvilo-*` API headers, the `orvilo` CLI binary and artifact names,
+credentials, and service origins. This keeps sessions and provider connections
+stable while the visible brand and internal packages use Orvilo.

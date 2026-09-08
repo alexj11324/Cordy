@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect } from "react";
-import { useNavigationStore } from "@patchbay/core/navigation";
-import { useAuthStore } from "@patchbay/core/auth";
+import { useNavigationStore } from "@orvilo/core/navigation";
+import { useAuthStore } from "@orvilo/core/auth";
 import {
   paths,
   resolvePostAuthDestination,
   useCurrentWorkspace,
   useHasOnboarded,
-} from "@patchbay/core/paths";
-import { useWorkspaceList } from "@patchbay/core/workspace";
-import { useRecentIssuesStore } from "@patchbay/core/issues/stores";
+} from "@orvilo/core/paths";
+import { useWorkspaceList } from "@orvilo/core/workspace";
+import { useRecentIssuesStore } from "@orvilo/core/issues/stores";
 import { useNavigation } from "../navigation";
 
 /**

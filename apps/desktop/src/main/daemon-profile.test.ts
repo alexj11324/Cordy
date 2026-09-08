@@ -15,7 +15,7 @@ import {
   profileUserIdPath,
 } from "./daemon-profile";
 
-const ORVILO_DIR = join(homedir(), ".patchbay");
+const ORVILO_DIR = join(homedir(), ".orvilo");
 const DEFAULT_CLI_CONFIG = join(ORVILO_DIR, "config.json");
 
 describe("deriveProfileName", () => {
@@ -60,7 +60,7 @@ describe("profile paths", () => {
     );
   });
 
-  // Regression: an unresolved profile used to resolve to ~/.patchbay, so Desktop
+  // Regression: an unresolved profile used to resolve to ~/.orvilo, so Desktop
   // could overwrite server_url and token in the user's own CLI config. #6399.
   it("refuses to build a path for an unresolved profile", () => {
     expect(() => profileDir("")).toThrow(/unresolved/);

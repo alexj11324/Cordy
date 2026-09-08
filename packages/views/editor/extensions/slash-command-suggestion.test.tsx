@@ -1,9 +1,9 @@
 import { act, render } from "@testing-library/react";
 import { createRef, type ReactNode } from "react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import type { Agent, MemberWithUser } from "@patchbay/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
+import type { Agent, MemberWithUser } from "@orvilo/core/types";
 import type { QueryClient } from "@tanstack/react-query";
 import enEditor from "../../locales/en/editor.json";
 
@@ -23,17 +23,17 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = vi.fn();
 });
 
-vi.mock("@patchbay/core/platform", () => ({
+vi.mock("@orvilo/core/platform", () => ({
   getCurrentWsId: () => "ws-1",
 }));
 
 const authState = { user: { id: "u1" } as { id: string } | null };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: { getState: () => authState },
 }));
 
 const chatState = { selectedAgentId: "agent-1" as string | null };
-vi.mock("@patchbay/core/chat", () => ({
+vi.mock("@orvilo/core/chat", () => ({
   useChatStore: { getState: () => chatState },
 }));
 

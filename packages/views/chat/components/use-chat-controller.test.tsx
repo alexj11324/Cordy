@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import type { Agent, ChatPendingTask, ChatSession, Project } from "@patchbay/core/types";
+import type { Agent, ChatPendingTask, ChatSession, Project } from "@orvilo/core/types";
 
 interface QueuedRestore {
   id: string;
@@ -83,27 +83,27 @@ const h = vi.hoisted(() => {
   };
 });
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (sel: (s: { user: { id: string } }) => unknown) =>
     sel({ user: { id: "user-1" } }),
 }));
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   agentListOptions: () => ({ queryKey: ["agents"] }),
   memberListOptions: () => ({ queryKey: ["members"] }),
 }));
-vi.mock("@patchbay/core/projects/queries", () => ({
+vi.mock("@orvilo/core/projects/queries", () => ({
   projectListOptions: () => ({ queryKey: ["projects"] }),
 }));
 // Steerable per test: the invoke rule is what decides whether an OPEN session's
 // agent is still runnable. Default true so every existing case is unaffected.
 const invokableAgentIds = vi.hoisted(() => ({ current: null as string[] | null }));
-vi.mock("@patchbay/views/issues/components", () => ({
+vi.mock("@orvilo/views/issues/components", () => ({
   canAssignAgent: (agent: { id: string }) =>
     invokableAgentIds.current === null ||
     invokableAgentIds.current.includes(agent.id),
 }));
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   ApiError: class ApiError extends Error {
     constructor(
       message: string,
@@ -122,17 +122,17 @@ vi.mock("@patchbay/core/api", () => ({
   // failures have no reason code.
   dispatchReasonCode: () => undefined,
 }));
-vi.mock("@patchbay/core/agents", () => ({
+vi.mock("@orvilo/core/agents", () => ({
   isAgentRuntimeBound: (agent: { runtime_id: string; runtime_bound?: boolean }) =>
     agent.runtime_bound !== false && agent.runtime_id.length > 0,
   useAgentPresenceDetail: () => ({ availability: "online" }),
   useCustomizeConversationStartersHref: () => null,
   useWorkspaceAgentAvailability: () => "available",
 }));
-vi.mock("@patchbay/core/hooks/use-file-upload", () => ({
+vi.mock("@orvilo/core/hooks/use-file-upload", () => ({
   useFileUpload: () => ({ uploadWithToast: vi.fn() }),
 }));
-vi.mock("@patchbay/core/chat/mutations", () => ({
+vi.mock("@orvilo/core/chat/mutations", () => ({
   useCreateChatSession: () => ({ mutateAsync: h.createSessionMutate }),
   useMarkChatSessionRead: () => ({ mutate: h.markReadMutate }),
   useSetChatSessionArchived: () => ({ mutate: h.archivedMutate }),
@@ -145,16 +145,16 @@ vi.mock("@patchbay/core/chat/mutations", () => ({
 vi.mock("../../common/use-app-foreground", () => ({
   useAppForeground: () => h.appForeground.value,
 }));
-vi.mock("@patchbay/core/chat", () => ({
+vi.mock("@orvilo/core/chat", () => ({
   useChatStore: Object.assign(
     (sel: (s: typeof h.store) => unknown) => sel(h.store),
     { getState: () => h.store },
   ),
 }));
-vi.mock("@patchbay/core/realtime", () => ({
+vi.mock("@orvilo/core/realtime", () => ({
   removeChatMessageFromCaches: h.removeFromCaches,
 }));
-vi.mock("@patchbay/core/logger", () => ({
+vi.mock("@orvilo/core/logger", () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
 vi.mock("../../i18n", () => ({ useT: () => ({ t: () => "x" }) }));
@@ -189,7 +189,7 @@ vi.mock("@tanstack/react-query", async (importOriginal) => {
 });
 
 import { useChatController } from "./use-chat-controller";
-import { api, ApiError } from "@patchbay/core/api";
+import { api, ApiError } from "@orvilo/core/api";
 
 // --- Fixtures ---------------------------------------------------------------
 function makeSession(

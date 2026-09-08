@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
 )
 
 func TestRealtimeCollectorExposesCounters(t *testing.T) {
@@ -31,21 +31,21 @@ func TestRealtimeCollectorExposesCounters(t *testing.T) {
 	body := rec.Body.String()
 
 	for _, want := range []string{
-		"patchbay_realtime_active_connections 3",
-		"patchbay_realtime_messages_sent_total 11",
-		"patchbay_realtime_inbound_too_large_total 7",
-		"patchbay_realtime_redis_connected 1",
-		`patchbay_realtime_redis_mirror_errors_total{target="primary"} 2`,
-		`patchbay_realtime_redis_mirror_errors_total{target="secondary"} 5`,
-		"patchbay_realtime_redis_stream_trimmed_entries_total 13",
-		"patchbay_realtime_redis_stream_missing_total 1",
-		"patchbay_realtime_redis_streams_without_ttl 2",
-		"patchbay_realtime_redis_used_memory_bytes 4096",
-		"patchbay_realtime_redis_maxmemory_bytes 8192",
-		"patchbay_realtime_redis_evicted_keys 3",
-		`patchbay_realtime_redis_stream_entries{stream="ws:relay:shard:0"} 23`,
-		`patchbay_realtime_redis_stream_memory_bytes{stream="ws:relay:shard:0"} 2048`,
-		`patchbay_realtime_redis_stream_pttl_milliseconds{stream="ws:relay:shard:0"} 60000`,
+		"orvilo_realtime_active_connections 3",
+		"orvilo_realtime_messages_sent_total 11",
+		"orvilo_realtime_inbound_too_large_total 7",
+		"orvilo_realtime_redis_connected 1",
+		`orvilo_realtime_redis_mirror_errors_total{target="primary"} 2`,
+		`orvilo_realtime_redis_mirror_errors_total{target="secondary"} 5`,
+		"orvilo_realtime_redis_stream_trimmed_entries_total 13",
+		"orvilo_realtime_redis_stream_missing_total 1",
+		"orvilo_realtime_redis_streams_without_ttl 2",
+		"orvilo_realtime_redis_used_memory_bytes 4096",
+		"orvilo_realtime_redis_maxmemory_bytes 8192",
+		"orvilo_realtime_redis_evicted_keys 3",
+		`orvilo_realtime_redis_stream_entries{stream="ws:relay:shard:0"} 23`,
+		`orvilo_realtime_redis_stream_memory_bytes{stream="ws:relay:shard:0"} 2048`,
+		`orvilo_realtime_redis_stream_pttl_milliseconds{stream="ws:relay:shard:0"} 60000`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("metrics body missing %q\n%s", want, body)

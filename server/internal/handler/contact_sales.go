@@ -10,10 +10,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Public, unauthenticated endpoint for the landing-page "Contact Sales"
@@ -48,7 +48,7 @@ var contactSalesAllowedCompanySize = []string{
 }
 
 // contactSalesAllowedUseCase mirrors the "How do you plan to use or
-// collaborate with Patchbay?" dropdown.
+// collaborate with Orvilo?" dropdown.
 var contactSalesAllowedUseCase = []string{
 	"evaluate",
 	"adopt_team",
@@ -103,7 +103,7 @@ type CreateContactSalesRequest struct {
 	Goals         string `json:"goals"`
 	// Source identifies where the form was opened from. Frontend
 	// enumerates {page, onboarding, agents_page}; the metric label
-	// `patchbay_contact_sales_submitted_total{source=...}` reads it
+	// `orvilo_contact_sales_submitted_total{source=...}` reads it
 	// via the metrics.NormalizeContactSalesSource allow-list, anything
 	// else collapses to "other". Empty falls back to "page" so legacy
 	// clients that don't send the field don't blackhole the metric.

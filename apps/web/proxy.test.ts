@@ -16,7 +16,7 @@ vi.mock("@clerk/nextjs/server", async (importOriginal) => {
       (handler: TestClerkMiddlewareHandler) => async (request: NextRequest) =>
         handler(
           async () => ({
-            userId: request.cookies.has("patchbay_logged_in") ? "user-1" : null,
+            userId: request.cookies.has("orvilo_logged_in") ? "user-1" : null,
           }),
           request,
           undefined as never,
@@ -29,7 +29,7 @@ import { proxy } from "./proxy";
 function makeRequest(
   path: string,
   cookies: Record<string, string> = {},
-  host = "app.patchbay.test",
+  host = "app.orvilo.test",
 ) {
   const cookieHeader = Object.entries(cookies)
     .map(([key, value]) => `${key}=${value}`)
@@ -83,7 +83,7 @@ async function withoutRuntimeUpstreams(run: () => Promise<void>) {
 
 describe("proxy legacy workspace route redirects", () => {
   const sessionCookies = {
-    patchbay_logged_in: "1",
+    orvilo_logged_in: "1",
     last_workspace_slug: "acme",
   };
 
@@ -104,35 +104,35 @@ describe("proxy legacy workspace route redirects", () => {
     async (segment, expectedPath) => {
       expect(
         await redirectLocation(`/${segment}?tab=all`, sessionCookies),
-      ).toBe(`https://app.patchbay.test${expectedPath}?tab=all`);
+      ).toBe(`https://app.orvilo.test${expectedPath}?tab=all`);
     },
   );
 
   it("preserves nested legacy paths and query strings", async () => {
     expect(
       await redirectLocation("/teams/team-123?view=members", sessionCookies),
-    ).toBe("https://app.patchbay.test/acme/teams/team-123?view=members");
+    ).toBe("https://app.orvilo.test/acme/teams/team-123?view=members");
   });
 
   it("sends logged-out legacy URLs to login", async () => {
     expect(await redirectLocation("/usage?tab=billing")).toBe(
-      "https://app.patchbay.test/login?redirect_url=%2Fusage%3Ftab%3Dbilling",
+      "https://app.orvilo.test/login?redirect_url=%2Fusage%3Ftab%3Dbilling",
     );
   });
 
   it("sends logged-in legacy URLs without a last workspace cookie to login", async () => {
     expect(
       await redirectLocation("/teams?view=members", {
-        patchbay_logged_in: "1",
+        orvilo_logged_in: "1",
       }),
-    ).toBe("https://app.patchbay.test/login");
+    ).toBe("https://app.orvilo.test/login");
   });
 
-  it.each(["patchbay.aspectlylabs.com"])(
+  it.each(["orvilo.aspectlylabs.com"])(
     "resolves a slugless session on the production app host %s instead of stranding it",
     async (host) => {
       expect(
-        await redirectLocation("/inbox", { patchbay_logged_in: "1" }, host),
+        await redirectLocation("/inbox", { orvilo_logged_in: "1" }, host),
       ).toBe(`https://${host}/login`);
     },
   );
@@ -141,7 +141,7 @@ describe("proxy legacy workspace route redirects", () => {
     expect(await redirectLocation("/acme/teams", sessionCookies)).toBeNull();
   });
 
-  it.each(["app.patchbay.test", "patchbay.aspectlylabs.com"])(
+  it.each(["app.orvilo.test", "orvilo.aspectlylabs.com"])(
     "redirects root URLs to the last workspace on %s",
     async (host) => {
       expect(await redirectLocation("/", sessionCookies, host)).toBe(
@@ -155,9 +155,9 @@ describe("proxy legacy workspace route redirects", () => {
       await redirectLocation(
         "/issues/ABC-123",
         sessionCookies,
-        "patchbay.aspectlylabs.com",
+        "orvilo.aspectlylabs.com",
       ),
-    ).toBe("https://patchbay.aspectlylabs.com/acme/issues/ABC-123");
+    ).toBe("https://orvilo.aspectlylabs.com/acme/issues/ABC-123");
   });
 });
 
@@ -220,7 +220,7 @@ describe("proxy runtime upstream rewrites", () => {
     process.env.REMOTE_API_URL = "http://backend:8080";
     try {
       const res = await runProxy(
-        makeRequest("/auth/callback", { patchbay_logged_in: "1" }),
+        makeRequest("/auth/callback", { orvilo_logged_in: "1" }),
       );
 
       expect(res.status).toBe(200);
@@ -238,20 +238,20 @@ describe("proxy root and locale handling", () => {
   it("redirects logged-in root visits to the last workspace", async () => {
     const res = await runProxy(
       makeRequest("/", {
-        patchbay_logged_in: "1",
+        orvilo_logged_in: "1",
         last_workspace_slug: "acme",
       }),
     );
 
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe(
-      "https://app.patchbay.test/acme/issues",
+      "https://app.orvilo.test/acme/issues",
     );
   });
 
   it("forwards locale on login requests", async () => {
     const res = await runProxy(
-      makeRequest("/login", { "patchbay-locale": "zh-Hans" }),
+      makeRequest("/login", { "orvilo-locale": "zh-Hans" }),
     );
 
     expect(res.status).toBe(200);

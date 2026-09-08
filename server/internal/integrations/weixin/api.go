@@ -21,7 +21,7 @@ import (
 
 const (
 	clientVersion = "0.1.0"
-	botAgent      = "Patchbay/0.1.0"
+	botAgent      = "Orvilo/0.1.0"
 	maxTextChunk  = 2000
 )
 

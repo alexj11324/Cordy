@@ -64,8 +64,8 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/agent-thread", async (importOriginal) => ({
-  ...await importOriginal<typeof import("@patchbay/core/agent-thread")>(),
+vi.mock("@orvilo/core/agent-thread", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@orvilo/core/agent-thread")>(),
   agentThreadOptions: () => ({}),
   useContinueAgentThread: () => ({ mutateAsync: vi.fn() }),
   useSteerAgentThread: () => ({ mutateAsync: mocks.steer }),

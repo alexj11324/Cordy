@@ -4,15 +4,15 @@ This independent OCI stack runs the four image digests from production run
 33940998112 (source 61a3adba7ba2d717160ce586a86b07bea9ff6251).
 It does not automatically deploy new main commits or gate production.
 
-- Web: https://patchbay-staging.nebula-spaces.com
-- API: https://patchbay-staging-api.nebula-spaces.com
-- Accounts: https://patchbay-staging-accounts.nebula-spaces.com
-- Clerk application: Patchbay Staging (app_3IthtCgfLn1WhM4DCfzpsKZaF3G), development instance.
-- Secret Manager: general-secrets-store / patchbay-nebula-staging.
-- Compose project: patchbay-nebula-staging; independent pgdata and uploads volumes.
-- Server installation: /home/ubuntu/patchbay-nebula-staging.
-- Runtime nginx credential: /run/patchbay-nebula-staging/origin.conf.
-- Service: patchbay-nebula-staging.service.
+- Web: https://orvilo-staging.nebula-spaces.com
+- API: https://orvilo-staging-api.nebula-spaces.com
+- Accounts: https://orvilo-staging-accounts.nebula-spaces.com
+- Clerk application: Orvilo Staging (app_3IthtCgfLn1WhM4DCfzpsKZaF3G), development instance.
+- Secret Manager: general-secrets-store / orvilo-nebula-staging.
+- Compose project: orvilo-nebula-staging; independent pgdata and uploads volumes.
+- Server installation: /home/ubuntu/orvilo-nebula-staging.
+- Runtime nginx credential: /run/orvilo-nebula-staging/origin.conf.
+- Service: orvilo-nebula-staging.service.
 
 The Web proxies API traffic on the same origin and uses host-only session
 cookies. All three public hosts are outside the production cookie domain.
@@ -38,11 +38,11 @@ Docker network gateway. Web `/api/` traffic goes directly to Go to preserve that
 single trusted proxy hop. Update the real-IP ranges from Cloudflare's published
 `https://www.cloudflare.com/ips-v4` and `https://www.cloudflare.com/ips-v6` lists.
 
-Restart with `sudo systemctl restart patchbay-nebula-staging`. Inspect with
-`docker compose -p patchbay-nebula-staging ps` and
-`journalctl -u patchbay-nebula-staging`. Stopping the oneshot service does not
+Restart with `sudo systemctl restart orvilo-nebula-staging`. Inspect with
+`docker compose -p orvilo-nebula-staging ps` and
+`journalctl -u orvilo-nebula-staging`. Stopping the oneshot service does not
 stop Docker containers. To stop the trial without deleting data, use
-`docker ps -q --filter label=com.docker.compose.project=patchbay-nebula-staging`
+`docker ps -q --filter label=com.docker.compose.project=orvilo-nebula-staging`
 to identify the five containers, then stop those exact IDs. Do not remove volumes.
 
 This is a Web/internal QA trial. Clerk development-instance sessions require
@@ -58,7 +58,7 @@ No production credentials, DNS records or database contents were copied.
 - Dedicated staging smoke-user tickets exercised Web `/auth/clerk`, broker
   completion, PKCE redemption, `/api/me`, `/api/workspaces`, and authenticated
   onboarding. Accounts and Web used separate tickets for the same test user.
-- Browser confirmed `patchbay_auth` is host-only on the staging Web hostname.
+- Browser confirmed `orvilo_auth` is host-only on the staging Web hostname.
 - Systemd restart and nginx configuration validation passed. Production image
   references remained identical and production Web/API probes still returned 200.
 - Idle aggregate container memory after browser verification was about 451 MiB;

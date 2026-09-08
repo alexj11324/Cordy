@@ -7,9 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // TestCanUseRuntimeForAgent_Pure exercises the pure predicate behind the
@@ -89,14 +89,14 @@ func runtimeVisibilityFixture(t *testing.T) (runtimeID, runtimeOwnerID, plainMem
 
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email)
-		VALUES ('Runtime Owner', 'runtime-owner@patchbay.test')
+		VALUES ('Runtime Owner', 'runtime-owner@orvilo.test')
 		RETURNING id
 	`).Scan(&runtimeOwnerID); err != nil {
 		t.Fatalf("create runtime owner user: %v", err)
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
-			`DELETE FROM "user" WHERE email = 'runtime-owner@patchbay.test'`)
+			`DELETE FROM "user" WHERE email = 'runtime-owner@orvilo.test'`)
 	})
 
 	if _, err := testPool.Exec(ctx, `
@@ -108,14 +108,14 @@ func runtimeVisibilityFixture(t *testing.T) (runtimeID, runtimeOwnerID, plainMem
 
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email)
-		VALUES ('Plain Runtime Member', 'plain-runtime-member@patchbay.test')
+		VALUES ('Plain Runtime Member', 'plain-runtime-member@orvilo.test')
 		RETURNING id
 	`).Scan(&plainMemberID); err != nil {
 		t.Fatalf("create plain member user: %v", err)
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
-			`DELETE FROM "user" WHERE email = 'plain-runtime-member@patchbay.test'`)
+			`DELETE FROM "user" WHERE email = 'plain-runtime-member@orvilo.test'`)
 	})
 
 	if _, err := testPool.Exec(ctx, `

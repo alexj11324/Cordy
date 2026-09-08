@@ -13,17 +13,17 @@ describe("ApiClient desktop handoff", () => {
   it("uses the staging CSRF cookie despite an older production cookie", async () => {
     vi.stubGlobal("document", {
       location: { href: "https://staging.aspectlylabs.com/" },
-      cookie: "patchbay_csrf=production; patchbay_staging_csrf=staging",
+      cookie: "orvilo_csrf=production; orvilo_staging_csrf=staging",
     });
     const state = "s".repeat(43);
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ state, code: `pbd_${"c".repeat(43)}`, callback_protocol: "patchbay" })));
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ state, code: `ovd_${"c".repeat(43)}`, callback_protocol: "orvilo" })));
     vi.stubGlobal("fetch", fetchMock);
     await new ApiClient("https://api.staging.aspectlylabs.com").completeDesktopAuthHandoff(state, "challenge");
     expect(fetchMock.mock.calls[0]?.[1]?.headers["X-CSRF-Token"]).toBe("staging");
   });
   it("completes self-hosted handoffs with the authenticated API", async () => {
     const state = "s".repeat(43);
-    const handoff = { state, code: `pbd_${"c".repeat(43)}`, callback_protocol: "patchbay" };
+    const handoff = { state, code: `ovd_${"c".repeat(43)}`, callback_protocol: "orvilo" };
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify(handoff)));
     vi.stubGlobal("fetch", fetchMock);
     expect(await new ApiClient("https://selfhost.example.test").completeDesktopAuthHandoff(state, "challenge")).toEqual(handoff);
@@ -37,8 +37,8 @@ describe("ApiClient desktop handoff", () => {
     const state = "s".repeat(43);
     const handoff = {
       state,
-      code: `pbd_${"c".repeat(43)}`,
-      callback_protocol: "patchbay-canary-5718c47b86bf9ece",
+      code: `ovd_${"c".repeat(43)}`,
+      callback_protocol: "orvilo-canary-5718c47b86bf9ece",
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(handoff))));
     expect(await new ApiClient("https://selfhost.example.test").completeDesktopAuthHandoff(state, "challenge")).toEqual(handoff);
@@ -47,8 +47,8 @@ describe("ApiClient desktop handoff", () => {
     const state = "s".repeat(43);
     const handoff = {
       state,
-      code: `pbd_${"c".repeat(43)}`,
-      callback_protocol: "patchbay-staging-5718c47b86bf9ece",
+      code: `ovd_${"c".repeat(43)}`,
+      callback_protocol: "orvilo-staging-5718c47b86bf9ece",
     };
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(handoff))));
     expect(await new ApiClient("https://selfhost.example.test").completeDesktopAuthHandoff(state, "challenge")).toEqual(handoff);
@@ -59,15 +59,15 @@ describe("ApiClient desktop handoff", () => {
     await new ApiClient("https://selfhost.example.test").initiateDesktopAuthHandoff(
       "s".repeat(43),
       "c".repeat(43),
-      "patchbay-canary-5718c47b86bf9ece",
+      "orvilo-canary-5718c47b86bf9ece",
     );
     expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body)).toEqual({
       state: "s".repeat(43),
       code_challenge: "c".repeat(43),
-      callback_protocol: "patchbay-canary-5718c47b86bf9ece",
+      callback_protocol: "orvilo-canary-5718c47b86bf9ece",
     });
   });
-  it.each([{}, { code: "invalid" }, { code: `pbl_${"c".repeat(43)}`, state: "s".repeat(43), callback_protocol: "patchbay" }])("rejects malformed completion: %j", async (payload) => {
+  it.each([{}, { code: "invalid" }, { code: `ovl_${"c".repeat(43)}`, state: "s".repeat(43), callback_protocol: "orvilo" }])("rejects malformed completion: %j", async (payload) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))));
     await expect(new ApiClient("https://selfhost.example.test").completeDesktopAuthHandoff("s".repeat(43), "challenge")).rejects.toThrow("Invalid desktop handoff response");
   });
@@ -75,8 +75,8 @@ describe("ApiClient desktop handoff", () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ token: "local-session" })));
     vi.stubGlobal("fetch", fetchMock);
     const client = new ApiClient("http://localhost:8080");
-    expect(await client.redeemDesktopHandoff("pbl_fixture", "verifier", "state")).toEqual({ token: "local-session" });
-    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body)).toEqual({ code: "pbl_fixture", code_verifier: "verifier", state: "state" });
+    expect(await client.redeemDesktopHandoff("ovl_fixture", "verifier", "state")).toEqual({ token: "local-session" });
+    expect(JSON.parse(fetchMock.mock.calls[0]?.[1]?.body)).toEqual({ code: "ovl_fixture", code_verifier: "verifier", state: "state" });
   });
   it.each([{}, { token: 123 }, { token: "" }, null])("rejects a malformed native session: %j", async (payload) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))));
@@ -88,7 +88,7 @@ describe("ApiClient Clerk exchange", () => {
   it("exchanges the Clerk session without putting it in the body", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(
-        JSON.stringify({ token: "patchbay-token", user: { id: "user-1" } }),
+        JSON.stringify({ token: "orvilo-token", user: { id: "user-1" } }),
         {
           status: 200,
           headers: { "Content-Type": "application/json" },
@@ -459,7 +459,7 @@ describe("ApiClient Plugin surface bridge routes", () => {
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       method: "GET",
       headers: expect.objectContaining({
-        "X-Patchbay-Plugin-Installation": "installation-1",
+        "X-Orvilo-Plugin-Installation": "installation-1",
       }),
     });
   });

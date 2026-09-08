@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useModalStore } from "@patchbay/core/modals";
+import { useModalStore } from "@orvilo/core/modals";
 import { CreateIssueDialog } from "./create-issue-dialog";
 import { CreateProjectModal } from "./create-project";
 import { CreateTeamModal } from "./create-team";

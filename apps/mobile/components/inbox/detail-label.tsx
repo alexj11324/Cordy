@@ -11,7 +11,7 @@
  * localization migration.
  */
 import { View } from "react-native";
-import type { InboxItem, IssuePriority } from "@patchbay/core/types";
+import type { InboxItem, IssuePriority } from "@orvilo/core/types";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";

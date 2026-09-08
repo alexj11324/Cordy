@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // modelListFixture stands up a Daemon whose model-list report is captured and

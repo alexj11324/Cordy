@@ -11,7 +11,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enIssues from "../../../locales/en/issues.json";
 import { OwnerPicker } from "./executor-picker";
 
@@ -27,16 +27,16 @@ vi.mock("@tanstack/react-query", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
-vi.mock("@patchbay/core/auth", () => ({ useAuthStore: () => ({ id: "user-1" }) }));
-vi.mock("@patchbay/core/agents", () => ({ isAgentRuntimeBound: () => true }));
-vi.mock("@patchbay/core/permissions", () => ({
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@orvilo/core/auth", () => ({ useAuthStore: () => ({ id: "user-1" }) }));
+vi.mock("@orvilo/core/agents", () => ({ isAgentRuntimeBound: () => true }));
+vi.mock("@orvilo/core/permissions", () => ({
   canAssignAgentToIssue: () => ({ allowed: true }),
 }));
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Ada Lovelace" }),
 }));
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"] }),
   agentListOptions: () => ({ queryKey: ["agents"] }),
   teamListOptions: () => ({ queryKey: ["teams"] }),

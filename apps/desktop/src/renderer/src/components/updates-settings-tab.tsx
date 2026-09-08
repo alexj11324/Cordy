@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, ArrowDownToLine, Check, Loader2 } from "lucide-react";
-import { Switch } from "@patchbay/ui/components/ui/switch";
-import { useT } from "@patchbay/views/i18n";
-import { SettingsCard, SettingsPillButton, SettingsRow, SettingsTab } from "@patchbay/views/settings";
+import { Switch } from "@orvilo/ui/components/ui/switch";
+import { useT } from "@orvilo/views/i18n";
+import { SettingsCard, SettingsPillButton, SettingsRow, SettingsTab } from "@orvilo/views/settings";
 import { toast } from "sonner";
 
 type CheckState =

@@ -26,9 +26,9 @@ describe("Go development runtime launcher contract", () => {
     expect(desktopDev).not.toContain('"bundle-cli.mjs"');
     expect(desktopDev).toContain("ORVILO_REQUIRE_SOURCE_CLI");
     expect(rootDev).toContain("prepare-dev-runtime.mjs");
-    expect(rootDev).toContain(".patchbay-dev/bin/server");
-    expect(rootDev).toContain(".patchbay-dev/bin/migrate");
-    expect(gitignore).toContain(".patchbay-dev/");
+    expect(rootDev).toContain(".orvilo-dev/bin/server");
+    expect(rootDev).toContain(".orvilo-dev/bin/migrate");
+    expect(gitignore).toContain(".orvilo-dev/");
     expect(rootDev).not.toContain("go run ./cmd/server");
     expect(rootDev).not.toContain("go run ./cmd/migrate");
   });

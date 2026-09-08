@@ -13,23 +13,23 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
-	"github.com/patchbay-ai/patchbay/server/internal/dbstartup"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/handler"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/wecom"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	"github.com/patchbay-ai/patchbay/server/internal/messagingbootstrap"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/profiling"
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
-	"github.com/patchbay-ai/patchbay/server/internal/scheduler"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/featureflag"
-	"github.com/patchbay-ai/patchbay/server/pkg/llm"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/daemonws"
+	"github.com/orvilo-ai/orvilo/server/internal/dbstartup"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/handler"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/wecom"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	"github.com/orvilo-ai/orvilo/server/internal/messagingbootstrap"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/profiling"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/internal/scheduler"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/featureflag"
+	"github.com/orvilo-ai/orvilo/server/pkg/llm"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -55,7 +55,7 @@ func redisClientName(existing, suffix string) string {
 	if existing != "" {
 		return existing + ":" + suffix
 	}
-	return "patchbay-api:" + suffix
+	return "orvilo-api:" + suffix
 }
 
 func channelLeaseRedisURLFromEnv() string {
@@ -345,7 +345,7 @@ func main() {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dbURL = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 
 	startupSettings := dbstartup.SettingsFromEnv()

@@ -9,7 +9,7 @@ const navigateActiveSession = vi.fn();
 
 let activeWorkspaceSlug: string | null = "acme";
 
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@orvilo/core/modals", () => ({
   useModalStore: {
     getState: () => ({ open: openModal }),
   },

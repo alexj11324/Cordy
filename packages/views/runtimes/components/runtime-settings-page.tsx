@@ -2,11 +2,11 @@
 
 import { Server } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { AgentRuntime } from "@patchbay/core/types";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import type { AgentRuntime } from "@orvilo/core/types";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { runtimeListOptions } from "@orvilo/core/runtimes/queries";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { RuntimeDetail } from "./runtime-detail";
 import { buildRuntimeMachines } from "./runtime-machines";
 import { useT } from "../../i18n";

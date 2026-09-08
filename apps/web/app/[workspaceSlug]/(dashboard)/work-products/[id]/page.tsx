@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { WorkProductDetailPage } from "@patchbay/views/work-products";
+import { WorkProductDetailPage } from "@orvilo/views/work-products";
 
 export default function Page({
   params,

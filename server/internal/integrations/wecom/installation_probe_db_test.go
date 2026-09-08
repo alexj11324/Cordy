@@ -28,8 +28,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 const (
@@ -73,9 +73,9 @@ func seedProbeOwners(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	exec(`INSERT INTO workspace (id, name, slug, description) VALUES ($1, 'wecom probe', 'wecom-probe', '') ON CONFLICT (id) DO NOTHING`, wcPrbWS)
 	exec(`INSERT INTO workspace (id, name, slug, description) VALUES ($1, 'wecom probe other', 'wecom-probe-other', '') ON CONFLICT (id) DO NOTHING`, wcPrbOtherWS)
 	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider)
-VALUES ($1, $2, 'wecom probe runtime', 'local', 'patchbay_daemon') ON CONFLICT (id) DO NOTHING`, wcPrbRuntime, wcPrbWS)
+VALUES ($1, $2, 'wecom probe runtime', 'local', 'orvilo_daemon') ON CONFLICT (id) DO NOTHING`, wcPrbRuntime, wcPrbWS)
 	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider)
-VALUES ($1, $2, 'wecom probe other runtime', 'local', 'patchbay_daemon') ON CONFLICT (id) DO NOTHING`, wcPrbOtherRT, wcPrbOtherWS)
+VALUES ($1, $2, 'wecom probe other runtime', 'local', 'orvilo_daemon') ON CONFLICT (id) DO NOTHING`, wcPrbOtherRT, wcPrbOtherWS)
 	for _, a := range []string{wcPrbAgentA, wcPrbAgentB} {
 		exec(`INSERT INTO agent (id, workspace_id, name, runtime_mode, runtime_id)
 VALUES ($1, $2, $3, 'local', $4) ON CONFLICT (id) DO NOTHING`, a, wcPrbWS, "wecom probe "+a, wcPrbRuntime)

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
 )
 
 func quietLogger() *slog.Logger {

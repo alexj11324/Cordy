@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { buildIssueStatusCatalog } from "@patchbay/core/issue-statuses";
+import { buildIssueStatusCatalog } from "@orvilo/core/issue-statuses";
 import {
   configureShortcutPlatform,
   createShortcutChord,
   useShortcutStore,
-} from "@patchbay/core/shortcuts";
+} from "@orvilo/core/shortcuts";
 import { RunConfirmModal } from "./run-confirm";
 
 // --- Warm agent / team / runtime caches (prefetched in the real app) --------
@@ -28,8 +28,8 @@ vi.mock("@tanstack/react-query", () => ({
     return { data: [] };
   },
 }));
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
-vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
+vi.mock("@orvilo/core/issue-statuses/hooks", () => ({
   useIssueStatuses: () =>
     buildIssueStatusCatalog([
       {
@@ -48,7 +48,7 @@ vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
       },
     ]),
 }));
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({ queryKey: ["workspaces", wsId, "agents"] }),
   teamListOptions: (wsId: string) => ({ queryKey: ["workspaces", wsId, "teams"] }),
 }));
@@ -58,7 +58,7 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
 // packages/core/runtimes/cli-version.test.ts; here we only need a faithful
 // stand-in for the >= 0.3.28 threshold so the cache → version → verdict wiring
 // is exercised end to end.
-vi.mock("@patchbay/core/runtimes", () => ({
+vi.mock("@orvilo/core/runtimes", () => ({
   runtimeListOptions: (wsId: string) => ({ queryKey: ["runtimes", wsId, "list"] }),
   readRuntimeCliVersion: (m?: { cli_version?: unknown }) =>
     typeof m?.cli_version === "string" ? m.cli_version : "",
@@ -71,12 +71,12 @@ vi.mock("@patchbay/core/runtimes", () => ({
 
 const mockUpdate = vi.fn().mockResolvedValue({ id: "issue-1" });
 const mockBatch = vi.fn().mockResolvedValue({ updated: 2 });
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@orvilo/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutateAsync: mockUpdate }),
   useBatchUpdateIssues: () => ({ mutateAsync: mockBatch }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Walt" }),
 }));
 
@@ -124,7 +124,7 @@ vi.mock("../i18n", () => ({
 }));
 
 // Keep the ui primitives as light DOM so the logic is what's under test.
-vi.mock("@patchbay/ui/components/ui/dialog", () => ({
+vi.mock("@orvilo/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   // Keeps the real Popup's prop passthrough, which the send chord binds to.
   DialogContent: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
@@ -135,15 +135,15 @@ vi.mock("@patchbay/ui/components/ui/dialog", () => ({
   DialogTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogDescription: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("@patchbay/ui/components/ui/button", () => ({
+vi.mock("@orvilo/ui/components/ui/button", () => ({
   Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
     <button {...props}>{children}</button>
   ),
 }));
-vi.mock("@patchbay/ui/components/ui/textarea", () => ({
+vi.mock("@orvilo/ui/components/ui/textarea", () => ({
   Textarea: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) => <textarea {...props} />,
 }));
-vi.mock("@patchbay/ui/components/ui/spinner", () => ({
+vi.mock("@orvilo/ui/components/ui/spinner", () => ({
   Spinner: () => <span data-testid="spinner" />,
 }));
 // vi.hoisted: vi.mock factories run before module-level consts initialize.

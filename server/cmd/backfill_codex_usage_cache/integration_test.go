@@ -14,13 +14,13 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/patchbay-ai/patchbay/server/internal/migrations"
+	"github.com/orvilo-ai/orvilo/server/internal/migrations"
 )
 
 func TestExecuteBackfillUpdatesOnlyEligibleCodexRowsAndRebuildsRollup(t *testing.T) {
 	adminURL := os.Getenv("DATABASE_URL")
 	if adminURL == "" {
-		adminURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		adminURL = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 
 	ctx := context.Background()
@@ -28,7 +28,7 @@ func TestExecuteBackfillUpdatesOnlyEligibleCodexRowsAndRebuildsRollup(t *testing
 		t.Skip("integration test requires Postgres at DATABASE_URL")
 	}
 
-	tmpDB := fmt.Sprintf("patchbay_codex_usage_backfill_%d", time.Now().UnixNano())
+	tmpDB := fmt.Sprintf("orvilo_codex_usage_backfill_%d", time.Now().UnixNano())
 	if err := testCreateDatabase(ctx, adminURL, tmpDB); err != nil {
 		t.Fatalf("create temp database %s: %v", tmpDB, err)
 	}

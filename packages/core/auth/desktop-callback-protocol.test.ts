@@ -8,23 +8,23 @@ import {
 describe("desktop callback protocols", () => {
   it.each([
     PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
-    "patchbay-canary-5718c47b86bf9ece",
-    "patchbay-staging-5718c47b86bf9ece",
-  ])("accepts a Patchbay-owned callback protocol: %s", (protocol) => {
+    "orvilo-canary-5718c47b86bf9ece",
+    "orvilo-staging-5718c47b86bf9ece",
+  ])("accepts a Orvilo-owned callback protocol: %s", (protocol) => {
     expect(isDesktopCallbackProtocol(protocol)).toBe(true);
   });
 
   it.each([
     "",
     "evil-app",
-    "patchbay-preview",
-    "patchbay-canary",
-    "patchbay-canary-",
-    "patchbay-canary-01zp-25",
-    "patchbay-canary-login-fix-123",
-    `patchbay-canary-${"a".repeat(49)}`,
-    "patchbay-staging",
-    "patchbay-staging-",
+    "orvilo-preview",
+    "orvilo-canary",
+    "orvilo-canary-",
+    "orvilo-canary-01zp-25",
+    "orvilo-canary-login-fix-123",
+    `orvilo-canary-${"a".repeat(49)}`,
+    "orvilo-staging",
+    "orvilo-staging-",
   ])("rejects an unowned callback protocol: %s", (protocol) => {
     expect(isDesktopCallbackProtocol(protocol)).toBe(false);
   });

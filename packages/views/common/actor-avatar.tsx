@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
-import { AVATAR_SIZE_PX, type AvatarSize } from "@patchbay/ui/lib/avatar-size";
+import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
+import { AVATAR_SIZE_PX, type AvatarSize } from "@orvilo/ui/lib/avatar-size";
 import {
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
-} from "@patchbay/ui/components/ui/hover-card";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useAgentPresenceDetail } from "@patchbay/core/agents";
-import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
+} from "@orvilo/ui/components/ui/hover-card";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { useAgentPresenceDetail } from "@orvilo/core/agents";
+import { useCurrentWorkspace, useWorkspacePaths } from "@orvilo/core/paths";
 import { AgentProfileCard } from "../agents/components/agent-profile-card";
 import { AgentLivePeekCard } from "../agents/components/agent-live-peek-card";
 import { MemberProfileCard } from "../members/member-profile-card";

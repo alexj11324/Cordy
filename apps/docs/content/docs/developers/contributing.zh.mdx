@@ -1,11 +1,11 @@
 ---
 title: 参与开发
-description: 配置 Patchbay 本地开发环境，运行测试，并按仓库约定提交改动。
+description: 配置 Orvilo 本地开发环境，运行测试，并按仓库约定提交改动。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `make up C=desktop`。
+Orvilo 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `make up C=desktop`。
 
 Web 和 Electron 的产品 UI 都来自 `packages/views`。PR 合入 `main` 且 CI 通过后，生产 Web 由 `aspectlylabs-production-images` 自动部署。已安装的桌面客户端会在下一次 `v*` 发版（`release.yml` + electron-updater）拿到同一套 UI。应用壳留在 `apps/web` 和 `apps/desktop`；共享页面放在 `packages/views`。
 
@@ -24,8 +24,8 @@ Web 和 Electron 的产品 UI 都来自 `packages/views`。PR 合入 `main` 且 
 ## 第一次启动
 
 ```bash
-git clone https://github.com/patchbay-ai/patchbay.git
-cd patchbay
+git clone https://github.com/orvilo-ai/orvilo.git
+cd orvilo
 make up C=desktop   # 装依赖、准备数据库、启动后端和 Electron 桌面端
 make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作区
 ```
@@ -40,15 +40,15 @@ make seed-dev       # 可选：注入示例 issue，落在 dev-fixtures 工作�
 
 `make dev-login` 能用，是因为 `make up` 会把 `ORVILO_DEV_LOGIN=1` 写进本地 env 文件——见[登录与注册](/auth-setup#开发环境跳过登录页)。绝不要在公网部署上启用它，也不要把本地 `.env` 用到公网部署。
 
-完整的贡献指南——环境、worktree、测试分层、排查和彻底重置——在仓库的 [CONTRIBUTING.md](https://github.com/patchbay-ai/patchbay/blob/main/CONTRIBUTING.md)。本页是简版。
+完整的贡献指南——环境、worktree、测试分层、排查和彻底重置——在仓库的 [CONTRIBUTING.md](https://github.com/orvilo-ai/orvilo/blob/main/CONTRIBUTING.md)。本页是简版。
 
 ## 在 worktree 中开发
 
 仓库支持主 checkout 和多个 worktree 同时运行。它们共用一个 PostgreSQL 容器，但使用不同数据库和端口。
 
 ```bash
-git worktree add ../patchbay-feature -b feat/my-change main
-cd ../patchbay-feature
+git worktree add ../orvilo-feature -b feat/my-change main
+cd ../orvilo-feature
 make setup-worktree
 make start-worktree
 ```
@@ -154,7 +154,7 @@ Migration 位于 `server/migrations/`，查询位于 `server/pkg/db/queries/`。
 先运行与改动最接近的检查，再扩大范围。例如只改 Docs：
 
 ```bash
-pnpm --filter @patchbay/docs typecheck
+pnpm --filter @orvilo/docs typecheck
 ```
 
 共享前端改动：

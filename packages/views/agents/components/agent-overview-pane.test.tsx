@@ -3,8 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent, AgentRuntime } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent, AgentRuntime } from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
@@ -53,34 +53,34 @@ const slackListingRef = vi.hoisted(() => ({
 const telegramListingRef = vi.hoisted(() => ({
   current: { installations: [] as unknown[], configured: false },
 }));
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
-vi.mock("@patchbay/core/lark", () => ({
+vi.mock("@orvilo/core/lark", () => ({
   larkInstallationsOptions: () => ({
     queryKey: ["lark", "installations"],
     queryFn: () => Promise.resolve(larkListingRef.current),
   }),
 }));
-vi.mock("@patchbay/core/slack", () => ({
+vi.mock("@orvilo/core/slack", () => ({
   slackInstallationsOptions: () => ({
     queryKey: ["slack", "installations"],
     queryFn: () => Promise.resolve(slackListingRef.current),
   }),
 }));
-vi.mock("@patchbay/core/telegram", () => ({
+vi.mock("@orvilo/core/telegram", () => ({
   telegramInstallationsOptions: () => ({
     queryKey: ["telegram", "installations"],
     queryFn: () => Promise.resolve(telegramListingRef.current),
   }),
 }));
-vi.mock("@patchbay/core/dingtalk", () => ({
+vi.mock("@orvilo/core/dingtalk", () => ({
   dingtalkInstallationsOptions: () => ({
     queryKey: ["dingtalk", "installations"],
     queryFn: () => Promise.resolve({ installations: [], configured: false }),
   }),
 }));
-vi.mock("@patchbay/core/wecom", () => ({
+vi.mock("@orvilo/core/wecom", () => ({
   wecomInstallationsOptions: () => ({
     queryKey: ["wecom", "installations"],
     queryFn: () => Promise.resolve({ installations: [], configured: false }),

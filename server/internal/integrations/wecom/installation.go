@@ -15,10 +15,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/hostedcapacity"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // InstallationParams is the plaintext-bearing input to InstallationService.
@@ -325,7 +325,7 @@ var (
 
 	// ErrBotOwnedByAnotherWorkspace — the holder is out of sight entirely and
 	// only someone with access there can release it.
-	ErrBotOwnedByAnotherWorkspace = errors.New("wecom: this bot is already connected to a different Patchbay workspace")
+	ErrBotOwnedByAnotherWorkspace = errors.New("wecom: this bot is already connected to a different Orvilo workspace")
 )
 
 // pgUniqueViolation is Postgres' unique_violation SQLSTATE.

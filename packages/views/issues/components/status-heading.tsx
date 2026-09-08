@@ -1,5 +1,5 @@
-import { statusCategoryOfKey } from "@patchbay/core/issues";
-import type { IssueStatus } from "@patchbay/core/types";
+import { statusCategoryOfKey } from "@orvilo/core/issues";
+import type { IssueStatus } from "@orvilo/core/types";
 import { StatusIcon } from "./status-icon";
 import { useT } from "../../i18n";
 

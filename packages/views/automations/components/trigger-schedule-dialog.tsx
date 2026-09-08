@@ -2,18 +2,18 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import {
   useCreateAutomationTrigger,
   useUpdateAutomationTrigger,
-} from "@patchbay/core/automations/mutations";
-import type { AutomationTrigger } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/automations/mutations";
+import type { AutomationTrigger } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import { browserTimezone } from "../../common/timezone-select";
 import { useT } from "../../i18n";
 import { ScheduleEditor } from "./schedule-editor/schedule-editor";

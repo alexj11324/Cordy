@@ -23,7 +23,7 @@ afterEach(async () => {
 });
 
 async function createHistoryPath(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "patchbay-guest-history-"));
+  const directory = await mkdtemp(join(tmpdir(), "orvilo-guest-history-"));
   temporaryDirectories.push(directory);
   return localGuestRunHistoryPath(directory);
 }

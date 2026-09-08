@@ -27,13 +27,13 @@ import {
 const temporaryDirectories: string[] = [];
 
 async function createTemporaryDirectory(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "patchbay-cli-"));
+  const directory = await mkdtemp(join(tmpdir(), "orvilo-cli-"));
   temporaryDirectories.push(directory);
   return directory;
 }
 
 /**
- * A stand-in for the bundled `patchbay` binary. `verifyBundledCli` executes
+ * A stand-in for the bundled `orvilo` binary. `verifyBundledCli` executes
  * the candidate and requires a JSON version banner, so the fake has to be a
  * real executable rather than an inert file.
  */
@@ -41,7 +41,7 @@ async function writeFakeCli(
   directory: string,
   body = 'echo \'{"version":"0.1.0"}\'',
 ): Promise<string> {
-  const binaryPath = join(directory, "patchbay");
+  const binaryPath = join(directory, "orvilo");
   await writeFile(binaryPath, `#!/bin/sh\n${body}\n`, { mode: 0o755 });
   await chmod(binaryPath, 0o755);
   return binaryPath;
@@ -49,7 +49,7 @@ async function writeFakeCli(
 
 async function writeDigestFor(binaryPath: string, contents: string) {
   const digest = createHash("sha256").update(contents).digest("hex");
-  await writeFile(`${binaryPath}.sha256`, `${digest}  patchbay\n`);
+  await writeFile(`${binaryPath}.sha256`, `${digest}  orvilo\n`);
 }
 
 beforeEach(async () => {
@@ -66,21 +66,21 @@ afterEach(async () => {
 
 describe("bundled CLI location", () => {
   it("reads the unpacked copy, which is the one that can be executed", () => {
-    expect(bundledCliPath("/Applications/Patchbay.app/app.asar", "darwin")).toBe(
-      "/Applications/Patchbay.app/app.asar.unpacked/resources/bin/patchbay",
+    expect(bundledCliPath("/Applications/Orvilo.app/app.asar", "darwin")).toBe(
+      "/Applications/Orvilo.app/app.asar.unpacked/resources/bin/orvilo",
     );
-    expect(bundledCliPath("C:/app.asar", "win32")).toContain("patchbay.exe");
+    expect(bundledCliPath("C:/app.asar", "win32")).toContain("orvilo.exe");
   });
 });
 
 describe("parseBundledCliDigest", () => {
   it("accepts a sha256sum-style line and nothing else", () => {
     expect(
-      parseBundledCliDigest(`${"a".repeat(64)}  patchbay\n`),
+      parseBundledCliDigest(`${"a".repeat(64)}  orvilo\n`),
     ).toBe("a".repeat(64));
     expect(parseBundledCliDigest(`${"A".repeat(64)}`)).toBe("a".repeat(64));
     expect(parseBundledCliDigest("")).toBeNull();
-    expect(parseBundledCliDigest("not-a-digest  patchbay")).toBeNull();
+    expect(parseBundledCliDigest("not-a-digest  orvilo")).toBeNull();
     // A truncated digest must not be accepted as a prefix match.
     expect(parseBundledCliDigest("a".repeat(63))).toBeNull();
   });
@@ -148,7 +148,7 @@ describe("verifyBundledCli", () => {
 });
 
 describe("localGuestChildEnvironment", () => {
-  it("hands the local runner no Patchbay configuration at all", async () => {
+  it("hands the local runner no Orvilo configuration at all", async () => {
     // ORVILO_* is how the CLI is pointed at a server, a profile or a token.
     // Inheriting even one of them would turn a local Guest run into a cloud
     // call, which is exactly what Guest mode exists to prevent.
@@ -159,7 +159,7 @@ describe("localGuestChildEnvironment", () => {
       const environment = await localGuestChildEnvironment();
 
       expect(
-        Object.keys(environment).filter((key) => key.startsWith("PATCHBAY")),
+        Object.keys(environment).filter((key) => key.startsWith("ORVILO")),
       ).toEqual([]);
     } finally {
       vi.unstubAllEnvs();

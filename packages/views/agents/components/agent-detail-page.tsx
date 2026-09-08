@@ -4,29 +4,29 @@ import { useEffect, useState } from "react";
 import { AlertCircle, ArrowLeft, Lock, Server } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { Agent, UpdateAgentRequest } from "@patchbay/core/types";
+import type { Agent, UpdateAgentRequest } from "@orvilo/core/types";
 import {
   type AgentPresenceDetail,
   isAgentRuntimeBound,
   useWorkspacePresenceMap,
-} from "@patchbay/core/agents";
-import { api, ApiError } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useChatStore } from "@patchbay/core/chat";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+} from "@orvilo/core/agents";
+import { api, ApiError } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useChatStore } from "@orvilo/core/chat";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
 import {
   agentDetailOptions,
   agentListOptions,
   cacheAgentResponse,
   memberListOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import { runtimeListOptions } from "@patchbay/core/runtimes";
-import { useAgentPermissions } from "@patchbay/core/permissions";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { CapabilityBanner } from "@patchbay/ui/components/common/capability-banner";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/core/workspace/queries";
+import { runtimeListOptions } from "@orvilo/core/runtimes";
+import { useAgentPermissions } from "@orvilo/core/permissions";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { CapabilityBanner } from "@orvilo/ui/components/common/capability-banner";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { AppLink } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { AgentOverviewPane, type DetailTab } from "./agent-overview-pane";

@@ -134,7 +134,7 @@ export const useIssueCreateSettingsStore = create<IssueCreateSettingsState>()(
         }),
     }),
     {
-      name: "patchbay_issue_create_settings",
+      name: "orvilo_issue_create_settings",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       version: 2,
       migrate: (persistedState, version) =>

@@ -94,18 +94,18 @@ describe("AccountsLoginForm", () => {
   it("resumes verified OAuth signup requirements instead of starting another email flow", () => {
     mocks.signUp.status = "missing_requirements";
     mocks.signUp.verifications.externalAccount.status = "verified";
-    render(<AccountsLoginForm returnUrl="https://patchbay.aspectlylabs.com/login" />);
+    render(<AccountsLoginForm returnUrl="https://orvilo.aspectlylabs.com/login" />);
     expect(screen.getByRole("heading", { name: "Complete your account" })).toBeInTheDocument();
     expect(screen.queryByPlaceholderText("name@example.com")).not.toBeInTheDocument();
   });
   it("keeps the standalone product return target on the Google broker route", () => {
     expect(
       buildGoogleLoginUrl(
-        "https://patchbay.aspectlylabs.com/login",
+        "https://orvilo.aspectlylabs.com/login",
         "https://accounts.aspectlylabs.com",
       ),
     ).toBe(
-      "https://accounts.aspectlylabs.com/oauth/google?return_url=https%3A%2F%2Fpatchbay.aspectlylabs.com%2Flogin",
+      "https://accounts.aspectlylabs.com/oauth/google?return_url=https%3A%2F%2Forvilo.aspectlylabs.com%2Flogin",
     );
   });
 

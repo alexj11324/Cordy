@@ -11,7 +11,7 @@ import type {
   Comment,
   TimelineEntry,
   Reaction,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import type {
   CommentCreatedPayload,
   CommentUpdatedPayload,
@@ -21,11 +21,11 @@ import type {
   ActivityCreatedPayload,
   ReactionAddedPayload,
   ReactionRemovedPayload,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   issueTimelineOptions,
   issueKeys,
-} from "@patchbay/core/issues/queries";
+} from "@orvilo/core/issues/queries";
 import {
   useCreateComment,
   useUpdateComment,
@@ -33,13 +33,13 @@ import {
   useResolveComment,
   useToggleCommentReaction,
   type ToggleCommentReactionVars,
-} from "@patchbay/core/issues/mutations";
-import { sortTimelineEntriesAsc } from "@patchbay/core/issues/timeline-sort";
+} from "@orvilo/core/issues/mutations";
+import { sortTimelineEntriesAsc } from "@orvilo/core/issues/timeline-sort";
 import {
   unhandledCommentTriggerOutcomes,
   mentionLabelsByTarget,
-} from "@patchbay/core/issues/comment-trigger-outcomes";
-import { useWSEvent, useWSReconnect } from "@patchbay/core/realtime";
+} from "@orvilo/core/issues/comment-trigger-outcomes";
+import { useWSEvent, useWSReconnect } from "@orvilo/core/realtime";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import { blockedShortReasonLabel } from "../blocked-trigger-copy";

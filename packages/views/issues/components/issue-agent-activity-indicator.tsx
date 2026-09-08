@@ -6,12 +6,12 @@ import {
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
-} from "@patchbay/ui/components/ui/hover-card";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { agentTaskSnapshotOptions } from "@patchbay/core/agents";
-import type { AgentTask } from "@patchbay/core/types";
-import { cn } from "@patchbay/ui/lib/utils";
-import type { AvatarSize } from "@patchbay/ui/lib/avatar-size";
+} from "@orvilo/ui/components/ui/hover-card";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { agentTaskSnapshotOptions } from "@orvilo/core/agents";
+import type { AgentTask } from "@orvilo/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
+import type { AvatarSize } from "@orvilo/ui/lib/avatar-size";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { AgentActivityHoverContent } from "../../agents/components/agent-activity-hover-content";
 import { selectIssueTasks, type IssueTaskGroups } from "../surface/activity";

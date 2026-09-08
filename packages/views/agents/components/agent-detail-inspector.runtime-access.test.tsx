@@ -13,13 +13,13 @@ import type {
   Agent,
   AgentRuntime,
   RuntimeModelListRequest,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 const mockInitiateListModels = vi.hoisted(() => vi.fn());
 const mockGetListModelsResult = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     initiateListModels: (...args: unknown[]) => mockInitiateListModels(...args),
     getListModelsResult: (...args: unknown[]) =>

@@ -15,30 +15,30 @@ import {
   CardDescription,
   CardContent,
   CardFooter,
-} from "@patchbay/ui/components/ui/card";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/ui/components/ui/card";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Label } from "@orvilo/ui/components/ui/label";
 import {
   InputOTP,
   InputOTPGroup,
   InputOTPSlot,
-} from "@patchbay/ui/components/ui/input-otp";
+} from "@orvilo/ui/components/ui/input-otp";
 import {
   Field,
   FieldError,
   FieldGroup,
   FieldLabel,
   FieldSeparator,
-} from "@patchbay/ui/components/ui/field";
-import { useAuthStore } from "@patchbay/core/auth";
+} from "@orvilo/ui/components/ui/field";
+import { useAuthStore } from "@orvilo/core/auth";
 import {
   PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
   isDesktopCallbackProtocol,
-} from "@patchbay/core/auth";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { api } from "@patchbay/core/api";
-import type { User } from "@patchbay/core/types";
+} from "@orvilo/core/auth";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
+import { api } from "@orvilo/core/api";
+import type { User } from "@orvilo/core/types";
 import { useT } from "../i18n";
 
 // ---------------------------------------------------------------------------
@@ -198,7 +198,7 @@ export function LoginPage({
       })
       .catch(() => {
         // Cookie auth failed — fall back to localStorage token
-        const token = localStorage.getItem("patchbay_token");
+        const token = localStorage.getItem("orvilo_token");
         if (!token) return;
 
         api.setToken(token);
@@ -211,7 +211,7 @@ export function LoginPage({
           })
           .catch(() => {
             api.setToken(null);
-            localStorage.removeItem("patchbay_token");
+            localStorage.removeItem("orvilo_token");
           });
       });
   }, [cliCallback]);
@@ -259,7 +259,7 @@ export function LoginPage({
         if (cliCallback) {
           // CLI path: get token directly for the redirect URL
           const { token } = await api.verifyCode(email, value);
-          localStorage.setItem("patchbay_token", token);
+          localStorage.setItem("orvilo_token", token);
           api.setToken(token);
           onTokenObtained?.();
           redirectToCliCallback(cliCallback.url, token, cliCallback.state);
@@ -308,7 +308,7 @@ export function LoginPage({
 
       if (authSourceRef.current === "localStorage") {
         // Session was detected via localStorage — reuse that token directly.
-        const stored = localStorage.getItem("patchbay_token");
+        const stored = localStorage.getItem("orvilo_token");
         if (!stored) throw new Error("token missing");
         token = stored;
       } else {

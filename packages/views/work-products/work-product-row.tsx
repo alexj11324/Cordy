@@ -21,15 +21,15 @@ import {
   shouldShowPullRequestStats,
   type PullRequestChecksStatus,
   type PullRequestMergeStatus,
-} from "@patchbay/core/github";
+} from "@orvilo/core/github";
 import type {
   GitHubPullRequest,
   GitHubPullRequestState,
   WorkProductView,
-} from "@patchbay/core/types";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/core/types";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { cn } from "@orvilo/ui/lib/utils";
 import { AppLink } from "../navigation";
 import { useT, useTimeAgo } from "../i18n";
 

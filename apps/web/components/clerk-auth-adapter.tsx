@@ -2,8 +2,8 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
-import { ApiError } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
+import { ApiError } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
 
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000] as const;
 
@@ -32,7 +32,7 @@ export function ClerkAuthAdapter({ children }: { children: React.ReactNode }) {
   const { user: clerkUser, isLoaded: clerkLoaded } = useUser();
   const { getToken, isSignedIn, sessionId, signOut } = useAuth();
   const clerkUserId = clerkUser?.id;
-  const patchbayStatus = useAuthStore((state) => state.status);
+  const orviloStatus = useAuthStore((state) => state.status);
   const retryGeneration = useAuthStore((state) => state.retryGeneration);
   const logoutBarrierRef = useRef<Promise<void>>(Promise.resolve());
   const [exchangedIdentity, setExchangedIdentity] =
@@ -84,7 +84,7 @@ export function ClerkAuthAdapter({ children }: { children: React.ReactNode }) {
           status !== 429;
         if (isPermanentRejection) {
           // A rejected identity cannot recover by retrying the same Clerk
-          // session. Clear the Patchbay session and Clerk identity so the
+          // session. Clear the Orvilo session and Clerk identity so the
           // user can take an actionable sign-in path instead of seeing a
           // blank recovering shell forever.
           logoutBarrierRef.current = useAuthStore
@@ -126,7 +126,7 @@ export function ClerkAuthAdapter({ children }: { children: React.ReactNode }) {
   const exchangeReady =
     clerkLoaded === true &&
     isSignedIn === true &&
-    patchbayStatus === "authenticated" &&
+    orviloStatus === "authenticated" &&
     typeof sessionId === "string" &&
     sessionId !== "" &&
     exchangedIdentity?.sessionId === sessionId &&

@@ -12,21 +12,21 @@ import {
   onlineManager,
 } from "@tanstack/react-query";
 import { createStore } from "zustand/vanilla";
-import { ApiClient, setApiInstance } from "@patchbay/core/api";
+import { ApiClient, setApiInstance } from "@orvilo/core/api";
 import {
   NavigationProvider,
   type NavigationAdapter,
-} from "@patchbay/views/navigation";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { WorkspaceSlugProvider } from "@patchbay/core/paths";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { agentTaskSnapshotKeys } from "@patchbay/core/agents/queries";
-import { propertyKeys } from "@patchbay/core/properties";
-import { issueStatusKeys } from "@patchbay/core/issue-statuses/queries";
-import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
-import { viewStoreSlice } from "@patchbay/core/issues/stores/view-store";
-import { BoardCardContent } from "@patchbay/views/issues/board-card";
-import { RESOURCES } from "@patchbay/views/locales";
+} from "@orvilo/views/navigation";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import { WorkspaceSlugProvider } from "@orvilo/core/paths";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
+import { agentTaskSnapshotKeys } from "@orvilo/core/agents/queries";
+import { propertyKeys } from "@orvilo/core/properties";
+import { issueStatusKeys } from "@orvilo/core/issue-statuses/queries";
+import { ViewStoreProvider } from "@orvilo/core/issues/stores/view-store-context";
+import { viewStoreSlice } from "@orvilo/core/issues/stores/view-store";
+import { BoardCardContent } from "@orvilo/views/issues/board-card";
+import { RESOURCES } from "@orvilo/views/locales";
 import {
   agent,
   issue,
@@ -89,7 +89,7 @@ function Preview() {
     <main className={dark ? "dark preview" : "preview"}>
       <div className="preview-shell">
         <p className="text-caption tracking-widest text-muted-foreground">
-          PATCHBAY / LOCAL PREVIEW
+          ORVILO / LOCAL PREVIEW
         </p>
         <h1 className="mt-3 text-title font-semibold">卡片状态预览</h1>
         <p className="mt-2 text-body text-muted-foreground">

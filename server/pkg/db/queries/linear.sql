@@ -117,7 +117,7 @@ SET last_success_at = now(), last_error = NULL, updated_at = now()
 WHERE id = $1 AND status = 'active';
 
 -- name: ListLinearProjectBindings :many
-SELECT id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+SELECT id, workspace_id, connection_id, orvilo_project_id, linear_project_id,
        linear_team_id, status, sync_mode, initial_source_of_truth,
        status_mapping, agent_label_mapping, activated_at, paused_at,
        created_by_id, created_at, updated_at
@@ -126,7 +126,7 @@ WHERE workspace_id = $1 AND status <> 'tombstone'
 ORDER BY created_at;
 
 -- name: GetLinearProjectBinding :one
-SELECT id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+SELECT id, workspace_id, connection_id, orvilo_project_id, linear_project_id,
        linear_team_id, status, sync_mode, initial_source_of_truth,
        status_mapping, agent_label_mapping, activated_at, paused_at,
        created_by_id, created_at, updated_at
@@ -134,7 +134,7 @@ FROM linear_project_binding
 WHERE id = $1 AND workspace_id = $2;
 
 -- name: GetLinearProjectBindingForUpdate :one
-SELECT id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+SELECT id, workspace_id, connection_id, orvilo_project_id, linear_project_id,
        linear_team_id, status, sync_mode, initial_source_of_truth,
        status_mapping, agent_label_mapping, activated_at, paused_at,
        created_by_id, created_at, updated_at
@@ -144,13 +144,13 @@ FOR UPDATE;
 
 -- name: CreateLinearProjectBinding :one
 INSERT INTO linear_project_binding
-    (id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+    (id, workspace_id, connection_id, orvilo_project_id, linear_project_id,
      linear_team_id, status, sync_mode, initial_source_of_truth, status_mapping,
      agent_label_mapping, activated_at, paused_at, created_by_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
         CASE WHEN $7 = 'active' THEN now() END,
         CASE WHEN $7 = 'paused' THEN now() END, $12)
-RETURNING id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+RETURNING id, workspace_id, connection_id, orvilo_project_id, linear_project_id,
           linear_team_id, status, sync_mode, initial_source_of_truth,
           status_mapping, agent_label_mapping, activated_at, paused_at,
           created_by_id, created_at, updated_at;
@@ -163,7 +163,7 @@ SET status = $3, sync_mode = $4, initial_source_of_truth = $5,
     paused_at = CASE WHEN $3 = 'paused' THEN now() ELSE paused_at END,
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+RETURNING id, workspace_id, connection_id, orvilo_project_id, linear_project_id,
           linear_team_id, status, sync_mode, initial_source_of_truth,
           status_mapping, agent_label_mapping, activated_at, paused_at,
           created_by_id, created_at, updated_at;
@@ -186,37 +186,37 @@ SET sync_status = 'deleted', updated_at = now()
 WHERE issue_link.binding_id IN (SELECT id FROM tombstoned) AND issue_link.workspace_id = $2;
 
 -- name: ListLinearMemberBindings :many
-SELECT id, workspace_id, connection_id, patchbay_user_id, linear_user_id,
+SELECT id, workspace_id, connection_id, orvilo_user_id, linear_user_id,
        created_at, updated_at
 FROM linear_member_binding
 WHERE workspace_id = $1
 ORDER BY created_at;
 
 -- name: GetLinearMemberBinding :one
-SELECT id, workspace_id, connection_id, patchbay_user_id, linear_user_id,
+SELECT id, workspace_id, connection_id, orvilo_user_id, linear_user_id,
        created_at, updated_at
 FROM linear_member_binding
-WHERE workspace_id = $1 AND patchbay_user_id = $2;
+WHERE workspace_id = $1 AND orvilo_user_id = $2;
 
 -- name: GetLinearMemberBindingByLinearUser :one
-SELECT id, workspace_id, connection_id, patchbay_user_id, linear_user_id,
+SELECT id, workspace_id, connection_id, orvilo_user_id, linear_user_id,
        created_at, updated_at
 FROM linear_member_binding
 WHERE workspace_id = $1 AND linear_user_id = $2;
 
 -- name: UpsertLinearMemberBinding :one
 INSERT INTO linear_member_binding
-    (id, workspace_id, connection_id, patchbay_user_id, linear_user_id)
+    (id, workspace_id, connection_id, orvilo_user_id, linear_user_id)
 VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (workspace_id, patchbay_user_id) DO UPDATE
+ON CONFLICT (workspace_id, orvilo_user_id) DO UPDATE
 SET connection_id = EXCLUDED.connection_id,
     linear_user_id = EXCLUDED.linear_user_id, updated_at = now()
-RETURNING id, workspace_id, connection_id, patchbay_user_id, linear_user_id,
+RETURNING id, workspace_id, connection_id, orvilo_user_id, linear_user_id,
           created_at, updated_at;
 
 -- name: DeleteLinearMemberBinding :exec
 DELETE FROM linear_member_binding
-WHERE workspace_id = $1 AND patchbay_user_id = $2;
+WHERE workspace_id = $1 AND orvilo_user_id = $2;
 
 -- name: InsertLinearSyncInbox :execrows
 INSERT INTO linear_sync_inbox (id, connection_id, delivery_id, event_type, payload)
@@ -305,7 +305,7 @@ SET dead_lettered_at = now(), locked_by = NULL, locked_until = NULL,
 WHERE id = $1 AND locked_by = $3;
 
 -- name: GetLinearIssueLinkByRemote :one
-SELECT id, workspace_id, binding_id, patchbay_issue_id, linear_issue_id,
+SELECT id, workspace_id, binding_id, orvilo_issue_id, linear_issue_id,
        linear_identifier, last_common_snapshot, remote_updated_at,
        last_remote_event_at_ms, last_remote_event_id, sync_status, created_at,
        updated_at
@@ -314,22 +314,22 @@ WHERE binding_id = $1 AND linear_issue_id = $2
 FOR UPDATE;
 
 -- name: GetLinearIssueLinkByLocal :one
-SELECT id, workspace_id, binding_id, patchbay_issue_id, linear_issue_id,
+SELECT id, workspace_id, binding_id, orvilo_issue_id, linear_issue_id,
        linear_identifier, last_common_snapshot, remote_updated_at,
        last_remote_event_at_ms, last_remote_event_id, sync_status, created_at,
        updated_at
 FROM linear_issue_link
-WHERE workspace_id = $1 AND binding_id = $2 AND patchbay_issue_id = $3
+WHERE workspace_id = $1 AND binding_id = $2 AND orvilo_issue_id = $3
   AND sync_status <> 'deleted'
 FOR UPDATE;
 
 -- name: CreateLinearIssueLink :one
 INSERT INTO linear_issue_link
-    (id, workspace_id, binding_id, patchbay_issue_id, linear_issue_id,
+    (id, workspace_id, binding_id, orvilo_issue_id, linear_issue_id,
      linear_identifier, last_common_snapshot, remote_updated_at,
      last_remote_event_at_ms, last_remote_event_id, sync_status)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active')
-ON CONFLICT (workspace_id, patchbay_issue_id) WHERE sync_status <> 'deleted'
+ON CONFLICT (workspace_id, orvilo_issue_id) WHERE sync_status <> 'deleted'
 DO UPDATE SET linear_issue_id = EXCLUDED.linear_issue_id,
               linear_identifier = EXCLUDED.linear_identifier,
               last_common_snapshot = EXCLUDED.last_common_snapshot,
@@ -337,7 +337,7 @@ DO UPDATE SET linear_issue_id = EXCLUDED.linear_issue_id,
               last_remote_event_at_ms = EXCLUDED.last_remote_event_at_ms,
               last_remote_event_id = EXCLUDED.last_remote_event_id,
               sync_status = 'active', updated_at = now()
-RETURNING id, workspace_id, binding_id, patchbay_issue_id, linear_issue_id,
+RETURNING id, workspace_id, binding_id, orvilo_issue_id, linear_issue_id,
           linear_identifier, last_common_snapshot, remote_updated_at,
           last_remote_event_at_ms, last_remote_event_id, sync_status, created_at,
           updated_at;
@@ -356,7 +356,7 @@ WHERE id = $1 AND workspace_id = $2;
 
 -- name: CreateLinearSyncConflict :exec
 INSERT INTO linear_sync_conflict
-    (id, workspace_id, binding_id, link_id, patchbay_issue_id, linear_issue_id,
+    (id, workspace_id, binding_id, link_id, orvilo_issue_id, linear_issue_id,
      field, base_value, local_value, remote_value, source_event_id,
      source_event_at_ms)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -366,7 +366,7 @@ SET local_value = EXCLUDED.local_value, remote_value = EXCLUDED.remote_value,
     source_event_at_ms = EXCLUDED.source_event_at_ms, updated_at = now();
 
 -- name: ListLinearSyncConflicts :many
-SELECT c.id, c.workspace_id, c.binding_id, c.link_id, c.patchbay_issue_id,
+SELECT c.id, c.workspace_id, c.binding_id, c.link_id, c.orvilo_issue_id,
        c.linear_issue_id, l.linear_identifier, c.field, c.base_value,
        c.local_value, c.remote_value, c.source_event_id, c.source_event_at_ms,
        c.status, c.resolution, c.resolved_value, c.resolved_by_id,
@@ -377,7 +377,7 @@ WHERE c.workspace_id = $1 AND c.status = $2
 ORDER BY c.created_at DESC;
 
 -- name: GetLinearSyncConflictForUpdate :one
-SELECT id, workspace_id, binding_id, link_id, patchbay_issue_id, linear_issue_id,
+SELECT id, workspace_id, binding_id, link_id, orvilo_issue_id, linear_issue_id,
        field, base_value, local_value, remote_value, source_event_id,
        source_event_at_ms, status, resolution, resolved_value, resolved_by_id,
        created_at, updated_at

@@ -15,7 +15,7 @@ vi.mock("@clerk/nextjs/server", async (importOriginal) => {
       (handler: TestClerkMiddlewareHandler) => async (request: NextRequest) =>
         handler(
           async () => ({
-            userId: request.cookies.has("patchbay_logged_in") ? "user-1" : null,
+            userId: request.cookies.has("orvilo_logged_in") ? "user-1" : null,
           }),
           request,
           undefined as never,
@@ -34,7 +34,7 @@ async function runProxy(request: NextRequest) {
 
 async function launch(
   cookies: Record<string, string>,
-  host = "patchbay.aspectlylabs.com",
+  host = "orvilo.aspectlylabs.com",
 ) {
   const cookieHeader = Object.entries(cookies)
     .map(([key, value]) => `${key}=${value}`)
@@ -78,7 +78,7 @@ describe("web app manifest", () => {
 
   it("launches into the last workspace for a signed-in session", async () => {
     expect(
-      await launch({ patchbay_logged_in: "1", last_workspace_slug: "acme" }),
+      await launch({ orvilo_logged_in: "1", last_workspace_slug: "acme" }),
     ).toContain("/acme/inbox");
   });
 
@@ -87,11 +87,11 @@ describe("web app manifest", () => {
   });
 
   it("launches to login for a session with no known workspace", async () => {
-    const target = await launch({ patchbay_logged_in: "1" });
+    const target = await launch({ orvilo_logged_in: "1" });
 
     expect(target).toContain("/login");
     expect(
-      new URL(target ?? "", "https://patchbay.aspectlylabs.com").pathname,
+      new URL(target ?? "", "https://orvilo.aspectlylabs.com").pathname,
     ).not.toBe("/");
   });
 
@@ -102,7 +102,7 @@ describe("web app manifest", () => {
     for (const shortcut of shortcuts) {
       const resolve = async (cookie: string) => {
         const response = await runProxy(
-          new NextRequest(`https://patchbay.aspectlylabs.com${shortcut.url}`, {
+          new NextRequest(`https://orvilo.aspectlylabs.com${shortcut.url}`, {
             headers: { cookie },
           }),
         );
@@ -110,9 +110,9 @@ describe("web app manifest", () => {
       };
 
       expect(
-        await resolve("patchbay_logged_in=1; last_workspace_slug=acme"),
+        await resolve("orvilo_logged_in=1; last_workspace_slug=acme"),
       ).toContain(`/acme${shortcut.url}`);
-      expect(await resolve("patchbay_logged_in=1")).toContain("/login");
+      expect(await resolve("orvilo_logged_in=1")).toContain("/login");
       expect(await resolve("")).toContain("/login");
     }
   });

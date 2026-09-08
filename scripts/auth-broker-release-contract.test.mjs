@@ -20,12 +20,12 @@ test("auth broker release remains an independently gated image", () => {
   assert.match(build, /^    needs: verify\n/u);
   assert.match(merge, /^    needs: \[verify, docker-auth-broker-build\]/u);
   assert.match(publish, /docker-auth-broker-merge/u);
-  assert.match(read("Dockerfile.auth-broker"), /pnpm --filter @patchbay\/auth-broker build/);
+  assert.match(read("Dockerfile.auth-broker"), /pnpm --filter @orvilo\/auth-broker build/);
   assert.match(
     read("Dockerfile.auth-broker"),
     /COPY --from=builder[^\n]*apps\/auth-broker\/public/u,
   );
-  const deployment = read("deploy/helm/patchbay-auth-broker/templates/deployment.yaml");
+  const deployment = read("deploy/helm/orvilo-auth-broker/templates/deployment.yaml");
   for (const name of ["CLERK_PUBLISHABLE_KEY", "ORVILO_DESKTOP_BROKER_AUTH_TOKEN", "ORVILO_ORIGIN_AUTH_TOKEN"]) assert.match(deployment, new RegExp(name));
   assert.match(deployment, /image\.digest must be an immutable sha256 digest/);
 });
@@ -33,9 +33,9 @@ test("auth broker release remains an independently gated image", () => {
 test("shipping contract names only the Go API authority", () => {
   const contract = JSON.parse(read("contracts/auth-broker/v1.json"));
   assert.equal(contract.origins.broker, "https://accounts.aspectlylabs.com");
-  assert.equal(contract.origins.product, "https://patchbay.aspectlylabs.com");
+  assert.equal(contract.origins.product, "https://orvilo.aspectlylabs.com");
   assert.equal(contract.origins.api, "https://api.aspectlylabs.com");
-  assert.equal(contract.authority.patchbaySession, "go-api");
+  assert.equal(contract.authority.orviloSession, "go-api");
   assert.equal(contract.goApi.desktopRedeemPath, "/api/desktop-handoff/redeem");
   assert.doesNotMatch(JSON.stringify(contract), /rust/i);
 });
@@ -48,7 +48,7 @@ test("shipping contract makes Guest and WebSocket isolation explicit", () => {
     logoutPath: "/auth/logout",
     mePath: "/api/me",
     websocketPath: "/ws",
-    guestTokenPrefix: "pbg_",
+    guestTokenPrefix: "ovg_",
     guestWorkspaceAccess: false,
     guestWebsocketAccess: false,
   });
@@ -68,8 +68,8 @@ test("Accounts login uses the custom shadcn form instead of Clerk's card", () =>
   const brokerForm = read("apps/auth-broker/components/accounts-login-form.tsx");
   const webForm = read("apps/web/components/accounts-login-form.tsx");
   const form = read("packages/auth-ui/login-form.tsx");
-  assert.match(brokerForm, /@patchbay\/auth-ui\/login-form/u);
-  assert.match(webForm, /@patchbay\/auth-ui\/login-form/u);
+  assert.match(brokerForm, /@orvilo\/auth-ui\/login-form/u);
+  assert.match(webForm, /@orvilo\/auth-ui\/login-form/u);
   assert.match(read("apps/auth-broker/app/page.tsx"), /redirect\("\/login"\)/u);
   assert.doesNotMatch(page, /<SignIn\b/u);
   assert.match(form, /signIn\.emailCode\.sendCode/u);

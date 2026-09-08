@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	skillpkg "github.com/patchbay-ai/patchbay/server/internal/skill"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	skillpkg "github.com/orvilo-ai/orvilo/server/internal/skill"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 type skillCreateInput struct {

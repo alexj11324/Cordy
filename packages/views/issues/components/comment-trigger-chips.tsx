@@ -2,19 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { TriangleAlert } from "lucide-react";
-import type { CommentTriggerPreviewAgent, CommentTriggerOutcome } from "@patchbay/core/types";
-import { useAgentPresenceDetail } from "@patchbay/core/agents";
-import { mentionLabelsByTarget } from "@patchbay/core/issues/comment-trigger-outcomes";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
-import { AVATAR_SIZE_PX } from "@patchbay/ui/lib/avatar-size";
+import type { CommentTriggerPreviewAgent, CommentTriggerOutcome } from "@orvilo/core/types";
+import { useAgentPresenceDetail } from "@orvilo/core/agents";
+import { mentionLabelsByTarget } from "@orvilo/core/issues/comment-trigger-outcomes";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
+import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
+import { AVATAR_SIZE_PX } from "@orvilo/ui/lib/avatar-size";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@patchbay/ui/components/ui/tooltip";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@orvilo/ui/components/ui/tooltip";
+import { cn } from "@orvilo/ui/lib/utils";
 import { AgentStatusDot } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 import { blockedReasonLabel, blockedShortReasonLabel } from "../blocked-trigger-copy";

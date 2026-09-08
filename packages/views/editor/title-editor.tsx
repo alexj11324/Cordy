@@ -11,8 +11,8 @@ import {
   getShortcut,
   isPlainShortcut,
   type ShortcutChord,
-} from "@patchbay/core/shortcuts";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/core/shortcuts";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../i18n";
 import { createSubmitShortcutExtension } from "./extensions/submit-shortcut";
 import "./title-editor.css";

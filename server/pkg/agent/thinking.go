@@ -873,7 +873,7 @@ func anyModelSupportsThinkingValue(models []Model, value string) bool {
 // providerThinkingEnums is the server-side accept-list for runtimes with a
 // fixed reasoning-effort vocabulary. Codex and OpenCode are deliberately
 // absent because their values come from daemon-local model catalogs, which can
-// gain new tokens without a Patchbay release.
+// gain new tokens without an Orvilo release.
 //
 // The server doesn't have local CLI binaries, so it cannot do per-model
 // discovery the way the daemon can. Fixed-catalog providers use this enum;
@@ -1001,7 +1001,7 @@ func UsesACPCatalogThinking(providerType string) bool {
 	return acpCatalogThinkingProviders[providerType]
 }
 
-// ThinkingControlSupported reports whether Patchbay can deliver a per-agent
+// ThinkingControlSupported reports whether Orvilo can deliver a per-agent
 // reasoning effort to this runtime at all. False means the answer to any
 // thinking_level is "no", regardless of the token: the runtime exposes no
 // effort dial on the surface the daemon speaks to it over, so there is nothing

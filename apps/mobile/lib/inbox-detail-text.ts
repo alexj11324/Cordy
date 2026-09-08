@@ -2,8 +2,8 @@ import type {
   InboxItem,
   InboxItemType,
   IssueStatusCategory,
-} from "@patchbay/core/types";
-import { formatDateOnly } from "@patchbay/core/issues/date";
+} from "@orvilo/core/types";
+import { formatDateOnly } from "@orvilo/core/issues/date";
 import { formatIssueRoleCopy, getIssueRoleCopy } from "@/lib/issue-role-copy";
 import { isIssueStatusCategory } from "@/lib/issue-status";
 

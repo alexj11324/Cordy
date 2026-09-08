@@ -33,12 +33,14 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   "onboarding",
 
   // Platform / marketing routes (current + likely-future)
-  // `patchbay` is reserved as the brand name to block impersonation workspaces.
+  // `orvilo` is reserved as the brand name to block impersonation workspaces.
+  // `patchbay` stays reserved so the retired product name cannot be claimed.
   // `www`, `new`, `home`, `homepage`, `dashboard` are confusables or
   // likely-future global landing/entry routes; `homepage` matches the existing
   // `/homepage` landing variant in apps/web.
   "api",
   "admin",
+  "orvilo",
   "patchbay",
   "www",
   "new",

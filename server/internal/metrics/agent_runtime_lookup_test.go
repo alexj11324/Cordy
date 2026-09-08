@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/metrics"
 	dto "github.com/prometheus/client_model/go"
 )
 
-const runtimeLookupMetric = "patchbay_agent_runtime_lookup_total"
+const runtimeLookupMetric = "orvilo_agent_runtime_lookup_total"
 
 // TestAgentRuntimeLookupPrewarmsEverySeries asserts the counter ships every
 // source x result combination at zero. An absent series and a zero series look

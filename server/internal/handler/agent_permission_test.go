@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
 )
 
 // createPermissionTestMember inserts a fresh workspace member and returns its
@@ -155,8 +155,8 @@ func TestCanInvokeAgent_PublicToMemberWhitelist(t *testing.T) {
 	}
 	runtimeID := handlerTestRuntimeID(t)
 
-	allowedMember := createPermissionTestMember(t, "perm-allowed-member@patchbay.test")
-	otherMember := createPermissionTestMember(t, "perm-other-member@patchbay.test")
+	allowedMember := createPermissionTestMember(t, "perm-allowed-member@orvilo.test")
+	otherMember := createPermissionTestMember(t, "perm-other-member@orvilo.test")
 
 	// Owner (testUserID) creates an agent public_to the allowed member only.
 	w := httptest.NewRecorder()
@@ -262,8 +262,8 @@ func TestCanInvokeAgent_MixedMemberAndTeamTargets(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
-	memberA := createPermissionTestMember(t, "perm-mix-a@patchbay.test")
-	memberB := createPermissionTestMember(t, "perm-mix-b@patchbay.test")
+	memberA := createPermissionTestMember(t, "perm-mix-a@orvilo.test")
+	memberB := createPermissionTestMember(t, "perm-mix-b@orvilo.test")
 	teamID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" // no team table FK in v1
 
 	agentID := createPublicToAgentWithTargets(t, "mixed-member-team-agent", []map[string]any{
@@ -289,9 +289,9 @@ func TestUpdateAgent_BatchReplaceOverlappingMembers(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
-	memberA := createPermissionTestMember(t, "perm-batch-a@patchbay.test")
-	memberB := createPermissionTestMember(t, "perm-batch-b@patchbay.test")
-	memberC := createPermissionTestMember(t, "perm-batch-c@patchbay.test")
+	memberA := createPermissionTestMember(t, "perm-batch-a@orvilo.test")
+	memberB := createPermissionTestMember(t, "perm-batch-b@orvilo.test")
+	memberC := createPermissionTestMember(t, "perm-batch-c@orvilo.test")
 
 	agentID := createPublicToAgentWithTargets(t, "batch-replace-agent", []map[string]any{
 		{"target_type": "member", "target_id": memberA},
@@ -340,8 +340,8 @@ func TestUpdateAgent_WorkspaceStacksWithMembersThenNarrowed(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
-	memberA := createPermissionTestMember(t, "perm-stack-a@patchbay.test")
-	memberB := createPermissionTestMember(t, "perm-stack-b@patchbay.test")
+	memberA := createPermissionTestMember(t, "perm-stack-a@orvilo.test")
+	memberB := createPermissionTestMember(t, "perm-stack-b@orvilo.test")
 
 	agentID := createPublicToAgentWithTargets(t, "workspace-plus-member-agent", []map[string]any{
 		{"target_type": "workspace"},
@@ -354,7 +354,7 @@ func TestUpdateAgent_WorkspaceStacksWithMembersThenNarrowed(t *testing.T) {
 	}
 
 	// Narrow to member C only — workspace grant is dropped by the replace.
-	memberC := createPermissionTestMember(t, "perm-stack-c@patchbay.test")
+	memberC := createPermissionTestMember(t, "perm-stack-c@orvilo.test")
 	w := httptest.NewRecorder()
 	r := newRequest("PUT", "/api/agents/"+agentID, map[string]any{
 		"permission_mode": "public_to",
@@ -416,7 +416,7 @@ func TestCreateAgent_EmptyPublicToNormalizesToWorkspace(t *testing.T) {
 		t.Errorf("empty public_to must normalise to a workspace target, got %+v", resp.InvocationTargets)
 	}
 	// And any workspace member can then invoke it.
-	someMember := createPermissionTestMember(t, "perm-emptypublic-m@patchbay.test")
+	someMember := createPermissionTestMember(t, "perm-emptypublic-m@orvilo.test")
 	if !canMemberInvoke(t, resp.ID, someMember) {
 		t.Errorf("a workspace member should be able to invoke the normalised public_to-workspace agent")
 	}
@@ -449,7 +449,7 @@ func TestCanInvokeAgent_SystemWorkspaceExceptionAndMemberFailClosed(t *testing.T
 
 	// public_to member-only agent → system / unattributed agent trigger must
 	// fail closed (member target requires a resolved human originator).
-	memberX := createPermissionTestMember(t, "perm-sys-failclosed@patchbay.test")
+	memberX := createPermissionTestMember(t, "perm-sys-failclosed@orvilo.test")
 	memAgentID := createPublicToAgentWithTargets(t, "sys-exception-member-agent", []map[string]any{
 		{"target_type": "member", "target_id": memberX},
 	})
@@ -478,7 +478,7 @@ func TestRevokeMember_ClearsInvocationTargets(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	memberX := createPermissionTestMember(t, "perm-revoke-x@patchbay.test")
+	memberX := createPermissionTestMember(t, "perm-revoke-x@orvilo.test")
 	agentID := createPublicToAgentWithTargets(t, "revoke-member-target-agent", []map[string]any{
 		{"target_type": "member", "target_id": memberX},
 	})
@@ -534,7 +534,7 @@ func TestRevokeMember_InvocationTargetCleanupIsWorkspaceScoped(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	userX := createPermissionTestMember(t, "perm-xws@patchbay.test")
+	userX := createPermissionTestMember(t, "perm-xws@orvilo.test")
 
 	// Workspace A (the shared test workspace): an agent allow-lists userX.
 	agentA := createPublicToAgentWithTargets(t, "xws-agent-a", []map[string]any{
@@ -644,7 +644,7 @@ func TestUpdateAgent_AccessChangeIsOwnerOnly(t *testing.T) {
 
 	// Agent owned by testUserID, public_to workspace (createHandlerTestAgent).
 	agentID := createHandlerTestAgent(t, "owner-only-access-agent", nil)
-	adminID := createPermissionTestAdmin(t, "perm-access-admin@patchbay.test")
+	adminID := createPermissionTestAdmin(t, "perm-access-admin@orvilo.test")
 
 	put := func(actorID string, body map[string]any) int {
 		rec := httptest.NewRecorder()
@@ -701,11 +701,11 @@ func TestUpdateAgent_LegacyVisibilityNoOpForMemberOnlyPublicTo(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	memberX := createPermissionTestMember(t, "perm-legacyvis-x@patchbay.test")
+	memberX := createPermissionTestMember(t, "perm-legacyvis-x@orvilo.test")
 	agentID := createPublicToAgentWithTargets(t, "legacy-vis-member-only-agent", []map[string]any{
 		{"target_type": "member", "target_id": memberX},
 	})
-	adminID := createPermissionTestAdmin(t, "perm-legacyvis-admin@patchbay.test")
+	adminID := createPermissionTestAdmin(t, "perm-legacyvis-admin@orvilo.test")
 
 	put := func(actorID string, body map[string]any) int {
 		rec := httptest.NewRecorder()

@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AutomationExecutionMode } from "@patchbay/core/types";
+import type { AutomationExecutionMode } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 // Regression cover for MUL-6681 (GH #7550): the dialog rendered the Project
@@ -17,12 +17,12 @@ import { renderWithI18n } from "../../test/i18n";
 const mockCreateAutomation = vi.hoisted(() => vi.fn());
 const mockUpdateAutomation = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Acme" }),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({
     queryKey: ["agents", wsId],
     queryFn: async () => [
@@ -41,14 +41,14 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/projects/queries", () => ({
+vi.mock("@orvilo/core/projects/queries", () => ({
   projectListOptions: (wsId: string) => ({
     queryKey: ["projects", wsId],
     queryFn: async () => [{ id: "proj-1", title: "Fleet", icon: null }],
   }),
 }));
 
-vi.mock("@patchbay/core/automations/queries", () => ({
+vi.mock("@orvilo/core/automations/queries", () => ({
   cronPreviewOptions: (wsId: string, expr: string, tz: string) => ({
     queryKey: ["cron-preview", wsId, expr, tz],
     queryFn: async () => ({ next_runs: ["2126-07-14T01:00:00Z"] }),
@@ -56,7 +56,7 @@ vi.mock("@patchbay/core/automations/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/automations/mutations", () => ({
+vi.mock("@orvilo/core/automations/mutations", () => ({
   useCreateAutomation: () => ({ mutateAsync: mockCreateAutomation }),
   useCreateAutomationTrigger: () => ({
     mutateAsync: vi.fn().mockResolvedValue({ id: "trg-new" }),

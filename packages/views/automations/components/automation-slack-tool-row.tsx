@@ -2,23 +2,23 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ExternalLink, Trash2 } from "lucide-react";
-import type { AutomationToolsConfig } from "@patchbay/core/automations";
-import type { SlackAutomationChannel, SlackInstallation } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+import type { AutomationToolsConfig } from "@orvilo/core/automations";
+import type { SlackAutomationChannel, SlackInstallation } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
+} from "@orvilo/ui/components/ui/popover";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/ui/components/ui/select";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { AppLink } from "../../navigation";
 import { SlackMark } from "../../settings/components/slack-mark";
 import { useT } from "../../i18n";

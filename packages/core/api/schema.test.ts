@@ -107,7 +107,7 @@ describe("ApiClient schema fallback", () => {
     it("adds the allowlisted repository return target to the connect request", async () => {
       stubFetchJson({
         configured: true,
-        url: "https://github.com/apps/patchbay/installations/new",
+        url: "https://github.com/apps/orvilo/installations/new",
       });
       const client = new ApiClient("https://api.example.test");
 

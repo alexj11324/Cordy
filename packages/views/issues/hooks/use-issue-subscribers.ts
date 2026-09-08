@@ -2,22 +2,22 @@
 
 import { useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { IssueSubscriber } from "@patchbay/core/types";
+import type { IssueSubscriber } from "@orvilo/core/types";
 import type {
   SubscriberAddedPayload,
   SubscriberRemovedPayload,
-} from "@patchbay/core/types";
-import { issueSubscribersOptions, issueKeys } from "@patchbay/core/issues/queries";
+} from "@orvilo/core/types";
+import { issueSubscribersOptions, issueKeys } from "@orvilo/core/issues/queries";
 import {
   useToggleIssueSubscriber,
   useUnsubscribeFromIssueSubtree,
-} from "@patchbay/core/issues/mutations";
-import { useWSEvent, useWSReconnect } from "@patchbay/core/realtime";
-// Imported from the defining module, not the "@patchbay/core/api" barrel: the
+} from "@orvilo/core/issues/mutations";
+import { useWSEvent, useWSReconnect } from "@orvilo/core/realtime";
+// Imported from the defining module, not the "@orvilo/core/api" barrel: the
 // barrel drags the client singleton and ws-client into the module graph of
 // every consumer of this hook, which measurably slowed test startup and tipped
 // an unrelated timing-sensitive suite over its waitFor budget.
-import { ApiError } from "@patchbay/core/api/client";
+import { ApiError } from "@orvilo/core/api/client";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 

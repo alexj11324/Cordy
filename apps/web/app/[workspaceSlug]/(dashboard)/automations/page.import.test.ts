@@ -11,8 +11,8 @@ describe("web automations pages share packages/views", () => {
     const list = readFileSync(resolve(dir, "page.tsx"), "utf8");
     const detail = readFileSync(resolve(dir, "[id]/page.tsx"), "utf8");
 
-    expect(list).toContain('from "@patchbay/views/automations/components"');
-    expect(detail).toContain('from "@patchbay/views/automations/components"');
+    expect(list).toContain('from "@orvilo/views/automations/components"');
+    expect(detail).toContain('from "@orvilo/views/automations/components"');
     expect(list).toContain("<AutomationsPage");
     expect(detail).toContain("<AutomationDetailPage");
     expect(list).not.toMatch(/function AutomationsPage/);

@@ -111,12 +111,12 @@ describe("deriveVersion (real git describe)", () => {
   const repos = [];
 
   function initRepo() {
-    const dir = mkdtempSync(join(tmpdir(), "patchbay-desktop-ver-"));
+    const dir = mkdtempSync(join(tmpdir(), "orvilo-desktop-ver-"));
     repos.push(dir);
     const run = (...args) =>
       execFileSync("git", args, { cwd: dir, encoding: "utf-8" });
     run("init", "-q");
-    run("config", "user.email", "test@patchbay.ai");
+    run("config", "user.email", "test@orvilo.ai");
     run("config", "user.name", "test");
     run("config", "commit.gpgsign", "false");
     run("commit", "-q", "--allow-empty", "-m", "root");
@@ -440,7 +440,7 @@ describe("ordinary Desktop build boundary", () => {
       resolve(process.cwd(), "apps/desktop/package.json"),
     ].find((candidate) => {
       if (!existsSync(candidate)) return false;
-      return JSON.parse(readFileSync(candidate, "utf-8")).name === "@patchbay/desktop";
+      return JSON.parse(readFileSync(candidate, "utf-8")).name === "@orvilo/desktop";
     });
     expect(manifestPath, "Desktop package.json not found").toBeTruthy();
     const { scripts } = JSON.parse(readFileSync(manifestPath, "utf-8"));

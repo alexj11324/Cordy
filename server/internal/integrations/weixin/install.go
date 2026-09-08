@@ -17,10 +17,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/hostedcapacity"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 var (
@@ -359,7 +359,7 @@ func (s *InstallationService) finalize(ctx context.Context, workspaceID, agentID
 		return db.ChannelInstallation{}, fmt.Errorf("weixin: upsert installation: %w", err)
 	}
 	if _, err := qtx.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
-		WorkspaceID: workspaceID, PatchbayUserID: installerID, InstallationID: row.ID,
+		WorkspaceID: workspaceID, OrviloUserID: installerID, InstallationID: row.ID,
 		ChannelType: string(TypeWeixin), ChannelUserID: strings.TrimSpace(userID), Config: []byte(`{}`),
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

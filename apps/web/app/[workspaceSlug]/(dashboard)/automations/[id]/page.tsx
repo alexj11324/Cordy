@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { AutomationDetailPage } from "@patchbay/views/automations/components";
+import { AutomationDetailPage } from "@orvilo/views/automations/components";
 
 export default function Page({
   params,

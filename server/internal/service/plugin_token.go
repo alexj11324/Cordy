@@ -13,13 +13,13 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Two credentials, moving in opposite directions.
 //
 // Neither one ever enters an iframe: a surface still holds nothing and still
-// reaches Patchbay only by asking the host page over postMessage. What changes
+// reaches Orvilo only by asking the host page over postMessage. What changes
 // with hooks is that a plugin now has a SERVER, and that server needs a way to
 // be recognised. So the honest statement about the system is no longer "there
 // are no plugin credentials" but "plugin credentials only move between

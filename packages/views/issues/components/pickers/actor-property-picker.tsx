@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { IssueProperty, IssuePropertyValue } from "@patchbay/core/types";
+import type { IssueProperty, IssuePropertyValue } from "@orvilo/core/types";
 import {
   actorRefsFromValue,
   actorRefValuesFromValue,
   formatActorRef,
   MAX_ISSUE_PROPERTY_ACTOR_VALUES,
-} from "@patchbay/core/types";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+} from "@orvilo/core/types";
+import { memberListOptions } from "@orvilo/core/workspace/queries";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import { useT } from "../../../i18n";
 import { matchesPinyin } from "../../../editor/extensions/pinyin-match";

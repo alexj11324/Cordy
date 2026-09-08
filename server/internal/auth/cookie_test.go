@@ -160,9 +160,9 @@ func TestCookieNamesFromEnv(t *testing.T) {
 		{"whitespace", "  ", "\t", AuthCookieName, CSRFCookieName},
 		{"unsupported custom names", "custom_auth", "custom_csrf", AuthCookieName, CSRFCookieName},
 		{"production explicit", AuthCookieName, CSRFCookieName, AuthCookieName, CSRFCookieName},
-		{"staging", "patchbay_staging_auth", "patchbay_staging_csrf", "patchbay_staging_auth", "patchbay_staging_csrf"},
-		{"hyphen rejected", "patchbay-staging-auth", "patchbay-staging-csrf", AuthCookieName, CSRFCookieName},
-		{"semicolon rejected", "patchbay_auth;evil", "", AuthCookieName, CSRFCookieName},
+		{"staging", "orvilo_staging_auth", "orvilo_staging_csrf", "orvilo_staging_auth", "orvilo_staging_csrf"},
+		{"hyphen rejected", "orvilo-staging-auth", "orvilo-staging-csrf", AuthCookieName, CSRFCookieName},
+		{"semicolon rejected", "orvilo_auth;evil", "", AuthCookieName, CSRFCookieName},
 		{"too long rejected", strings.Repeat("a", 65), strings.Repeat("b", 65), AuthCookieName, CSRFCookieName},
 	}
 	for _, tc := range cases {
@@ -182,8 +182,8 @@ func TestCookieNamesFromEnv(t *testing.T) {
 func TestSetAuthCookies_StagingNamesIgnoreProductionCookie(t *testing.T) {
 	t.Setenv("FRONTEND_ORIGIN", "https://staging.aspectlylabs.com")
 	t.Setenv("COOKIE_DOMAIN", ".staging.aspectlylabs.com")
-	t.Setenv("AUTH_COOKIE_NAME", "patchbay_staging_auth")
-	t.Setenv("CSRF_COOKIE_NAME", "patchbay_staging_csrf")
+	t.Setenv("AUTH_COOKIE_NAME", "orvilo_staging_auth")
+	t.Setenv("CSRF_COOKIE_NAME", "orvilo_staging_csrf")
 
 	rec := httptest.NewRecorder()
 	if err := SetAuthCookies(rec, "staging-token"); err != nil {
@@ -193,9 +193,9 @@ func TestSetAuthCookies_StagingNamesIgnoreProductionCookie(t *testing.T) {
 	var authCookie, csrfCookie *http.Cookie
 	for _, c := range rec.Result().Cookies() {
 		switch c.Name {
-		case "patchbay_staging_auth":
+		case "orvilo_staging_auth":
 			authCookie = c
-		case "patchbay_staging_csrf":
+		case "orvilo_staging_csrf":
 			csrfCookie = c
 		case AuthCookieName, CSRFCookieName:
 			t.Errorf("SetAuthCookies wrote production cookie %q", c.Name)

@@ -2,12 +2,12 @@
 
 import { GitBranch, Hash, Server } from "lucide-react";
 import type { ReactNode } from "react";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import { AppLink } from "../navigation";
 import { useLocale, useT } from "../i18n";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import type { ExecutionProvenance } from "@patchbay/core/types";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import type { ExecutionProvenance } from "@orvilo/core/types";
 
 function formatDate(value: string | null, locale: string): string {
   if (!value) return "—";

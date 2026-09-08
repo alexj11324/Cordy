@@ -2,15 +2,15 @@ import { createElement, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "@patchbay/core/api";
-import type { CommentTriggerPreviewAgent } from "@patchbay/core/types";
+import { api } from "@orvilo/core/api";
+import type { CommentTriggerPreviewAgent } from "@orvilo/core/types";
 import {
   commentTriggerPreviewSignature,
   isNoteCommentDraft,
   useCommentTriggerPreview,
 } from "./use-comment-trigger-preview";
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     previewCommentTriggers: vi.fn(),
   },

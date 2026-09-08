@@ -14,7 +14,7 @@
  * server-provided and are displayed verbatim.
  */
 import { View } from "react-native";
-import type { Agent } from "@patchbay/core/types";
+import type { Agent } from "@orvilo/core/types";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { useChatCopy } from "@/lib/use-chat-copy";

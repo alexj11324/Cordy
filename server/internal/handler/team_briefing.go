@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // teamOperatingProtocolHeader is the hard-coded system-level briefing
@@ -38,7 +38,7 @@ Your responsibilities, in order:
    Roster below — prefer the member whose skills cover the work.
 2. **Delegate by @mention.** Post a single comment on this issue that
    @mentions the chosen member(s) and tells them what to do.
-   - **Be terse.** Every Patchbay agent already has full context of the
+   - **Be terse.** Every Orvilo agent already has full context of the
      issue (title, description, all prior comments, attachments) and
      the surrounding workspace. Do NOT restate or summarise the
      issue body, prior discussion, or known facts in your delegation
@@ -51,7 +51,7 @@ Your responsibilities, in order:
      typing a plain "@name" will not trigger anyone.
 3. **Record your evaluation.** After every trigger — whether you delegated,
    decided no action is needed, or encountered an error — record it:
-   ` + "`" + `patchbay team activity <issue-id> <outcome> --reason "<short reason>"` + "`" + `
+   ` + "`" + `orvilo team activity <issue-id> <outcome> --reason "<short reason>"` + "`" + `
    Outcome values: ` + "`" + `action` + "`" + ` (you delegated or acted),
    ` + "`" + `no_action` + "`" + ` (you evaluated and decided nothing is needed),
    ` + "`" + `failed` + "`" + ` (you hit an error).
@@ -100,7 +100,7 @@ const teamParentStatusOwned = `6. **Own the parent issue status.** This issue's 
    ` + "`" + `in_progress` + "`" + ` and keep it there while members work — a successful
    dispatch is not completion. On later turns, do not flip status for
    routine progress updates. When you confirm the overall goal is met, run
-   ` + "`" + `patchbay issue status <issue-id> in_review` + "`" + ` — this responsibility is
+   ` + "`" + `orvilo issue status <issue-id> in_review` + "`" + ` — this responsibility is
    itself the standing instruction that authorizes that change, so do it even
    when no comment asked you to. Leave ` + "`" + `done` + "`" + ` to a human reviewer or
    existing integrations (for example a PR with close intent that merges).`
@@ -114,7 +114,7 @@ const teamParentStatusNotOwned = `6. **Do NOT change this issue's status.** This
    team — you were pulled in by an @mention (or this is a quick-create turn,
    where the issue does not exist yet). Its status belongs to its own
    executor. Answer, delegate, or escalate as usual, but never run
-   ` + "`" + `patchbay issue status` + "`" + ` on it, no matter how complete the work looks
+   ` + "`" + `orvilo issue status` + "`" + ` on it, no matter how complete the work looks
    to you.`
 
 const teamOperatingProtocolHardRules = `Hard rules:
@@ -136,7 +136,7 @@ const teamOperatingProtocolHardRules = `Hard rules:
 - If the team has no member capable of the task, post a comment
   explaining the gap (and @mention the issue's reporter if possible)
   rather than silently doing the work.
-- ALWAYS call ` + "`" + `patchbay team activity` + "`" + ` before ending your turn —
+- ALWAYS call ` + "`" + `orvilo team activity` + "`" + ` before ending your turn —
   even when the outcome is no_action. If it errors on a turn where you
   posted no comment, leave one short comment instead; never let an
   evaluation end with no record at all, and never post a second comment
@@ -298,7 +298,7 @@ func renderMemberRow(ctx context.Context, q *db.Queries, m db.TeamMember, skillN
 		}
 		// Mention syntax for humans uses the user_id (matches the rest of
 		// the product — see util.MentionRe and frontend mention payloads).
-		// Humans have no Patchbay skills, so no skills segment is rendered.
+		// Humans have no Orvilo skills, so no skills segment is rendered.
 		userID := util.UUIDToString(m.MemberID)
 		return formatRosterRow(user.Name, "member (human)", role, "", formatMention(user.Name, "member", userID))
 	default:

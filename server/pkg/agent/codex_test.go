@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/redact"
+	"github.com/orvilo-ai/orvilo/server/pkg/redact"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -1321,8 +1321,8 @@ func TestCodexRawItemMCPToolCall(t *testing.T) {
 		messages = append(messages, msg)
 	}
 
-	c.handleLine(`{"jsonrpc":"2.0","method":"item/started","params":{"item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Patchbay news","credentials":{"api_key":"sk-12345678901234567890"}},"status":"inProgress"}}}`)
-	c.handleLine(`{"jsonrpc":"2.0","method":"item/completed","params":{"item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Patchbay news"},"status":"completed","durationMs":1429,"result":{"content":[{"type":"text","text":"private provider payload"}]}}}}`)
+	c.handleLine(`{"jsonrpc":"2.0","method":"item/started","params":{"item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Orvilo news","credentials":{"api_key":"sk-12345678901234567890"}},"status":"inProgress"}}}`)
+	c.handleLine(`{"jsonrpc":"2.0","method":"item/completed","params":{"item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Orvilo news"},"status":"completed","durationMs":1429,"result":{"content":[{"type":"text","text":"private provider payload"}]}}}}`)
 
 	if len(messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(messages))
@@ -1336,7 +1336,7 @@ func TestCodexRawItemMCPToolCall(t *testing.T) {
 		t.Fatalf("expected MCP server provenance, got %#v", begin.Input)
 	}
 	arguments, ok := begin.Input["arguments"].(map[string]any)
-	if !ok || arguments["query"] != "latest Patchbay news" {
+	if !ok || arguments["query"] != "latest Orvilo news" {
 		t.Fatalf("expected MCP arguments, got %#v", begin.Input["arguments"])
 	}
 	credentials, ok := arguments["credentials"].(map[string]any)
@@ -1475,7 +1475,7 @@ func TestCodexDeliverableOutputExcludesNarration(t *testing.T) {
 				t.Fatalf("Result.Output = %q, want %q", got, tc.want)
 			}
 			// Narrowing delivery must not narrow the transcript: both messages
-			// still stream to the timeline the Patchbay UI renders.
+			// still stream to the timeline the Orvilo UI renders.
 			if len(streamed) != 2 || streamed[0] != "Let me check the logs." {
 				t.Fatalf("expected both agent messages streamed, got %q", streamed)
 			}
@@ -2006,9 +2006,9 @@ func TestCodexStartOrResumeThreadResumesPriorThread(t *testing.T) {
 	}
 }
 
-// codexRuntimeBriefCanary stands in for the Patchbay runtime brief the daemon
+// codexRuntimeBriefCanary stands in for the Orvilo runtime brief the daemon
 // would inline if developerInstructions were ever wired back up.
-const codexRuntimeBriefCanary = "PATCHBAY-RUNTIME-BRIEF-CANARY"
+const codexRuntimeBriefCanary = "ORVILO-RUNTIME-BRIEF-CANARY"
 
 // assertNoDeveloperInstructions pins the MUL-5392 contract: Codex loads the
 // per-task AGENTS.md from the thread's cwd, so the daemon never inlines the
@@ -4631,9 +4631,9 @@ func TestEnsureCodexMcpConfigEmptyClearsBlock(t *testing.T) {
 	// `[mcp_servers.user]`) is left untouched.
 	tmp := filepath.Join(t.TempDir(), "config.toml")
 	initial := "sandbox_mode = \"workspace-write\"\n\n" +
-		patchbayCodexMcpBeginMarker + "\n" +
+		orviloCodexMcpBeginMarker + "\n" +
 		"[mcp_servers.fetch]\ncommand = \"uvx\"\n" +
-		patchbayCodexMcpEndMarker + "\n\n" +
+		orviloCodexMcpEndMarker + "\n\n" +
 		"[mcp_servers.user_global]\ncommand = \"keep\"\n"
 	if err := os.WriteFile(tmp, []byte(initial), 0o600); err != nil {
 		t.Fatalf("seed config: %v", err)
@@ -4647,7 +4647,7 @@ func TestEnsureCodexMcpConfigEmptyClearsBlock(t *testing.T) {
 		t.Fatalf("read after: %v", err)
 	}
 	got := string(data)
-	if strings.Contains(got, patchbayCodexMcpBeginMarker) {
+	if strings.Contains(got, orviloCodexMcpBeginMarker) {
 		t.Fatalf("managed block should be cleared, got:\n%s", got)
 	}
 	if !strings.Contains(got, "[mcp_servers.user_global]") {
@@ -4679,7 +4679,7 @@ func TestEnsureCodexMcpConfigWritesManagedBlock(t *testing.T) {
 	}
 	got := string(data)
 
-	if !strings.Contains(got, patchbayCodexMcpBeginMarker) || !strings.Contains(got, patchbayCodexMcpEndMarker) {
+	if !strings.Contains(got, orviloCodexMcpBeginMarker) || !strings.Contains(got, orviloCodexMcpEndMarker) {
 		t.Fatalf("expected managed block markers, got:\n%s", got)
 	}
 	alphaIdx := strings.Index(got, "[mcp_servers.alpha]")
@@ -5043,7 +5043,7 @@ func TestEnsureCodexMcpConfigAbsentLeavesUserTablesAlone(t *testing.T) {
 		if !strings.Contains(got, "[mcp_servers.user_global]") {
 			t.Fatalf("absent mcp_config (%q) must leave user MCP tables alone, got:\n%s", string(raw), got)
 		}
-		if strings.Contains(got, patchbayCodexMcpBeginMarker) {
+		if strings.Contains(got, orviloCodexMcpBeginMarker) {
 			t.Fatalf("absent mcp_config (%q) must not write managed markers, got:\n%s", string(raw), got)
 		}
 	}
@@ -5076,7 +5076,7 @@ func TestEnsureCodexMcpConfigEmptyManagedSetStripsUserMcp(t *testing.T) {
 		if strings.Contains(got, "user_global") {
 			t.Fatalf("managed empty set (%q) must strip user MCP tables, got:\n%s", string(raw), got)
 		}
-		if !strings.Contains(got, patchbayCodexMcpBeginMarker) || !strings.Contains(got, patchbayCodexMcpEndMarker) {
+		if !strings.Contains(got, orviloCodexMcpBeginMarker) || !strings.Contains(got, orviloCodexMcpEndMarker) {
 			t.Fatalf("managed empty set (%q) must still write markers so future runs find them, got:\n%s", string(raw), got)
 		}
 		if !strings.Contains(got, `sandbox_mode = "workspace-write"`) {

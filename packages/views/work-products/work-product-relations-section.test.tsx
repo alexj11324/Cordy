@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import type { InputHTMLAttributes, ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import enWorkProducts from "../locales/en/work-products.json";
@@ -101,7 +101,7 @@ const { attachExisting, attachPullRequest } = vi.hoisted(() => ({
   attachPullRequest: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/work-products", () => ({
+vi.mock("@orvilo/core/work-products", () => ({
   useAttachExistingWorkProduct: () => ({ isPending: false, mutate: attachExisting }),
   useAttachIssuePullRequest: () => ({ isPending: false, mutate: attachPullRequest }),
   useDetachWorkProduct: () => ({ isPending: false, mutate: vi.fn() }),
@@ -122,11 +122,11 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
     queries.map(() => ({ data: product })),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({
     workProductDetail: (id: string) => `/acme/work-products/${id}`,
   }),
@@ -138,11 +138,11 @@ vi.mock("../navigation", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/badge", () => ({
+vi.mock("@orvilo/ui/components/ui/badge", () => ({
   Badge: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 
-vi.mock("@patchbay/ui/components/ui/button", () => ({
+vi.mock("@orvilo/ui/components/ui/button", () => ({
   Button: ({
     children,
     onClick,
@@ -158,17 +158,17 @@ vi.mock("@patchbay/ui/components/ui/button", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/checkbox", () => ({
+vi.mock("@orvilo/ui/components/ui/checkbox", () => ({
   Checkbox: ({ checked }: { checked?: boolean }) => (
     <input type="checkbox" checked={checked} readOnly />
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/input", () => ({
+vi.mock("@orvilo/ui/components/ui/input", () => ({
   Input: (props: InputHTMLAttributes<HTMLInputElement>) => <input {...props} />,
 }));
 
-vi.mock("@patchbay/ui/components/ui/dialog", () => ({
+vi.mock("@orvilo/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
@@ -177,11 +177,11 @@ vi.mock("@patchbay/ui/components/ui/dialog", () => ({
   DialogTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }));
 
-vi.mock("@patchbay/ui/components/ui/label", () => ({
+vi.mock("@orvilo/ui/components/ui/label", () => ({
   Label: ({ children }: { children: ReactNode }) => <label>{children}</label>,
 }));
 
-vi.mock("@patchbay/ui/components/ui/select", () => ({
+vi.mock("@orvilo/ui/components/ui/select", () => ({
   Select: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SelectContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SelectItem: ({ children }: { children: ReactNode }) => <div>{children}</div>,

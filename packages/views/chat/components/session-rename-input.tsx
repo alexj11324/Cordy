@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { isImeComposing } from "@patchbay/core/utils";
+import { isImeComposing } from "@orvilo/core/utils";
 import { useT } from "../../i18n";
 
 /**

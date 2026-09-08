@@ -2,7 +2,7 @@
 
 import type { MoveIssueCallbacks } from "../surface/use-issue-surface-actions";
 
-import { issueColumnCategory, issueStatusCategory, statusCategoryOfKey } from "@patchbay/core/issues";
+import { issueColumnCategory, issueStatusCategory, statusCategoryOfKey } from "@orvilo/core/issues";
 import { memo, useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
   DndContext,
@@ -31,28 +31,28 @@ import type {
   IssueTableGroupDescriptor,
   Project,
   UpdateIssueRequest,
-} from "@patchbay/core/types";
-import { useViewStore, useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
+} from "@orvilo/core/types";
+import { useViewStore, useViewStoreApi } from "@orvilo/core/issues/stores/view-store-context";
 import { useViewBaseline } from "../surface/view-baseline-context";
 import { filterIssues, type IssueFilters } from "../utils/filter";
 import { getMoveAnchors } from "../utils/drag-utils";
-import type { SwimlaneGrouping } from "@patchbay/core/issues/stores/view-store";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { childrenByParentsOptions, issueKeys } from "@patchbay/core/issues/queries";
+import type { SwimlaneGrouping } from "@orvilo/core/issues/stores/view-store";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { childrenByParentsOptions, issueKeys } from "@orvilo/core/issues/queries";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import { sortIssues } from "../utils/sort";
-import { ALL_STATUSES, STATUS_CONFIG } from "@patchbay/core/issues/config";
+import { ALL_STATUSES, STATUS_CONFIG } from "@orvilo/core/issues/config";
 import { DraggableBoardCard, BoardCardContent } from "./board-card";
 import { StatusIcon } from "./status-icon";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@orvilo/ui/components/ui/button";
 import { StatusHeading } from "./status-heading";
 import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";

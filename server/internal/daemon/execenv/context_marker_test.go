@@ -11,7 +11,7 @@ import (
 // TestEnsureWorkspacesRootMarker covers the root-level daemon marker that
 // protects the whole workspaces tree. Regression for the confirmed escape
 // where a sandboxed subprocess lost every ORVILO_* env var and ran
-// `patchbay` from the workdir's *parent* directory: the per-workdir marker
+// `orvilo` from the workdir's *parent* directory: the per-workdir marker
 // sits below cwd, so the CLI's upward walk found no daemon signal and fell
 // back to the user's config PAT, misattributing agent writes to a member.
 func TestEnsureWorkspacesRootMarker(t *testing.T) {

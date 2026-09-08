@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { InboxItem } from "@patchbay/core/types";
+import type { InboxItem } from "@orvilo/core/types";
 import { inboxDetailText } from "./inbox-detail-text";
 
 function item(

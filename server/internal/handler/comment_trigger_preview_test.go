@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
 )
 
 func createCommentTriggerPreviewIssue(t *testing.T, title string, executorType, executorID string) string {

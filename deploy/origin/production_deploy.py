@@ -27,13 +27,22 @@ from urllib.request import Request, urlopen
 SCHEMA_VERSION = 1
 REPOSITORY = "alexj11324/Cordy"  # legacy-brand-compat: current GitHub repository identity
 REPOSITORY_URL = "https://github.com/alexj11324/Cordy.git"  # legacy-brand-compat
-DEFAULT_ROOT = Path("/var/lib/patchbay-production")
-DEFAULT_STATIC_DIRECTORY = Path("/usr/local/share/patchbay-production")
+DEFAULT_ROOT = Path("/var/lib/orvilo-production")
+DEFAULT_STATIC_DIRECTORY = Path("/usr/local/share/orvilo-production")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 WORKFLOW_RUN_ID_RE = re.compile(r"^[1-9][0-9]{0,19}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 COMPOSE_VARIABLE_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)")
 EXPECTED_IMAGE_REPOSITORIES = {
+    "backend": "ghcr.io/alexj11324/orvilo-backend",
+    "web": "ghcr.io/alexj11324/orvilo-web",
+    "docs": "ghcr.io/alexj11324/orvilo-docs",
+    "auth-broker": "ghcr.io/alexj11324/orvilo-auth-broker",
+}
+# The running production containers predate the Orvilo image cutover. These
+# repositories are accepted only while recording that one-time bootstrap
+# baseline; network deployment requests remain Orvilo-only below.
+LEGACY_BOOTSTRAP_IMAGE_REPOSITORIES = {
     "backend": "ghcr.io/alexj11324/patchbay-backend",
     "web": "ghcr.io/alexj11324/patchbay-web",
     "docs": "ghcr.io/alexj11324/patchbay-docs",
@@ -43,6 +52,8 @@ BOOTSTRAP_CONTAINERS = {
     "backend": "cordy632-backend-1",  # legacy-brand-compat: existing production project
     "web": "cordy632-frontend-1",  # legacy-brand-compat: existing production project
     "docs": "cordy-docs-1",  # legacy-brand-compat: existing production project
+    # The one-time baseline is captured from the currently running legacy
+    # project; apply() replaces it with the Orvilo compose project below.
     "auth-broker": "patchbay-auth-broker-broker-1",
 }
 PRODUCTION_SMOKE_USER_EMAIL = "production-smoke@aspectlylabs.com"
@@ -115,6 +126,21 @@ def validate_image_ref(name: str, value: Any, *, immutable: bool = True) -> str:
     return value
 
 
+def validate_bootstrap_image_ref(name: str, value: Any) -> str:
+    """Accept the current image or its pre-cutover image for one local baseline."""
+    if not isinstance(value, str):
+        raise DeploymentError(f"bootstrap {name} image reference must be a string")
+    for repository in (
+        EXPECTED_IMAGE_REPOSITORIES[name],
+        LEGACY_BOOTSTRAP_IMAGE_REPOSITORIES[name],
+    ):
+        if value.startswith(f"{repository}@") and DIGEST_RE.fullmatch(value[len(repository) + 1 :]):
+            return value
+        if re.fullmatch(re.escape(repository) + r":[A-Za-z0-9_.-]+", value):
+            return value
+    raise DeploymentError(f"bootstrap {name} image is outside the migration allow-list")
+
+
 def validate_deploy_request(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise DeploymentError("deployment request must be a JSON object")
@@ -152,7 +178,11 @@ def validate_stored_manifest(value: Any) -> dict[str, Any]:
     normalized["source_sha"] = source_sha
     normalized["bootstrap"] = bootstrap
     normalized["images"] = {
-        name: validate_image_ref(name, images[name], immutable=not bootstrap)
+        name: (
+            validate_bootstrap_image_ref(name, images[name])
+            if bootstrap
+            else validate_image_ref(name, images[name])
+        )
         for name in EXPECTED_IMAGE_REPOSITORIES
     }
     return normalized
@@ -191,10 +221,10 @@ def select_bootstrap_image(name: str, configured: str, repo_digests: Any) -> str
     if isinstance(repo_digests, list):
         for candidate in repo_digests:
             try:
-                return validate_image_ref(name, candidate)
+                return validate_bootstrap_image_ref(name, candidate)
             except DeploymentError:
                 continue
-    return validate_image_ref(name, configured, immutable=False)
+    return validate_bootstrap_image_ref(name, configured)
 
 
 def clerk_api_request(
@@ -209,7 +239,7 @@ def clerk_api_request(
     headers = {
         "Authorization": f"Bearer {secret_key}",
         "Accept": "application/json",
-        "User-Agent": "PatchbayProductionDeploy/1",
+        "User-Agent": "OrviloProductionDeploy/1",
     }
     if data is not None:
         headers["Content-Type"] = "application/json"
@@ -585,13 +615,13 @@ class ProductionDeployment:
                     if response.status >= 400:
                         raise DeploymentError(f"{url} returned HTTP {response.status}")
                     if expected_build is not None:
-                        actual = response.headers.get("X-Patchbay-Build")
+                        actual = response.headers.get("X-Orvilo-Build")
                         if actual != expected_build:
                             raise DeploymentError(
                                 f"{url} reported build {actual!r}, expected {expected_build!r}"
                             )
                     if expected_commit is not None:
-                        actual = response.headers.get("X-Patchbay-Commit")
+                        actual = response.headers.get("X-Orvilo-Commit")
                         if actual != expected_commit:
                             raise DeploymentError(
                                 f"{url} reported commit {actual!r}, expected {expected_commit!r}"
@@ -662,6 +692,17 @@ class ProductionDeployment:
                 "patchbay-auth-broker",
                 "-f",
                 str(release / "deploy/origin/auth-broker.compose.yml"),
+                "down",
+                "--remove-orphans",
+            ],
+            env=broker_env,
+        )
+        self.compose(
+            [
+                "--project-name",
+                "orvilo-auth-broker",
+                "-f",
+                str(release / "deploy/origin/auth-broker.compose.yml"),
                 "up",
                 "-d",
                 "--no-deps",
@@ -675,7 +716,7 @@ class ProductionDeployment:
 
         is_bootstrap = manifest.get("bootstrap") is True
         expected = None if is_bootstrap else f"sha-{source_sha}"
-        public_host_headers = {"Host": "patchbay.aspectlylabs.com", "X-Forwarded-Proto": "https"}
+        public_host_headers = {"Host": "orvilo.aspectlylabs.com", "X-Forwarded-Proto": "https"}
         self.probe(
             "http://127.0.0.1:8210/readyz",
             expected_build=expected,

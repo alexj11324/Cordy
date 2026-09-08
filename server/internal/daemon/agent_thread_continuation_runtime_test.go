@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 func TestSourceNeutralCodexContinuationUsesPersistentStoreBeforeResumePresenceGate(t *testing.T) {

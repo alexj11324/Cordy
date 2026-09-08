@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // notifyParentOfChildDone posts a top-level system comment on the parent
@@ -324,12 +324,12 @@ func (h *Handler) postChildDoneComment(ctx context.Context, parent, completed db
 	} else {
 		if batch {
 			content = fmt.Sprintf(
-				"%sAll sub-issues are complete — they just finished together in a batch update, most recently [%s](mention://issue/%s) — \"%s\". Continue the parent: synthesize the children's results and move it forward, or — if nothing remains — run `patchbay issue status %s in_review` to mark the parent ready for review.",
+				"%sAll sub-issues are complete — they just finished together in a batch update, most recently [%s](mention://issue/%s) — \"%s\". Continue the parent: synthesize the children's results and move it forward, or — if nothing remains — run `orvilo issue status %s in_review` to mark the parent ready for review.",
 				mentionPrefix, identifier, childID, title, parentID,
 			)
 		} else {
 			content = fmt.Sprintf(
-				"%sAll sub-issues are complete — the last one, [%s](mention://issue/%s) — \"%s\", just finished. Continue the parent: synthesize the children's results and move it forward, or — if nothing remains — run `patchbay issue status %s in_review` to mark the parent ready for review.",
+				"%sAll sub-issues are complete — the last one, [%s](mention://issue/%s) — \"%s\", just finished. Continue the parent: synthesize the children's results and move it forward, or — if nothing remains — run `orvilo issue status %s in_review` to mark the parent ready for review.",
 				mentionPrefix, identifier, childID, title, parentID,
 			)
 		}
@@ -511,11 +511,11 @@ func stageProgressSummary(children []db.Issue, closedStage int32, isTerminal fun
 func stageAdvanceInstruction(nextStage int32, parentID string) string {
 	if nextStage > 0 {
 		return fmt.Sprintf(
-			" Stage %d is next. Review the full layout with `patchbay issue children %s`, and if Stage %d's dependencies are satisfied promote its `backlog` sub-issues to `todo` to continue. Read each sub-issue's description first and only promote items whose stated dependencies are already met — do not rely on this parent's higher-level breakdown alone. If a description conflicts with that breakdown, leave it `backlog` and post a comment to confirm first.",
+			" Stage %d is next. Review the full layout with `orvilo issue children %s`, and if Stage %d's dependencies are satisfied promote its `backlog` sub-issues to `todo` to continue. Read each sub-issue's description first and only promote items whose stated dependencies are already met — do not rely on this parent's higher-level breakdown alone. If a description conflicts with that breakdown, leave it `backlog` and post a comment to confirm first.",
 			nextStage, parentID, nextStage,
 		)
 	}
-	return fmt.Sprintf(" Completing this stage does not mean the whole issue is done. Decide whether the issue is actually complete — if so, synthesize the results and run `patchbay issue status %s in_review` to mark the parent ready for review — or whether the next stage still needs to be created, in which case create that stage and its sub-issues now.", parentID)
+	return fmt.Sprintf(" Completing this stage does not mean the whole issue is done. Decide whether the issue is actually complete — if so, synthesize the results and run `orvilo issue status %s in_review` to mark the parent ready for review — or whether the next stage still needs to be created, in which case create that stage and its sub-issues now.", parentID)
 }
 
 // sanitizeChildTitleForSystemComment removes mention-style markdown from a

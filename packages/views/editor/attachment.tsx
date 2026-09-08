@@ -30,11 +30,11 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@patchbay/ui/lib/utils";
-import { copyText } from "@patchbay/ui/lib/clipboard";
-import { api } from "@patchbay/core/api";
-import { useConfigStore } from "@patchbay/core/config";
-import type { Attachment as AttachmentRecord } from "@patchbay/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
+import { copyText } from "@orvilo/ui/lib/clipboard";
+import { api } from "@orvilo/core/api";
+import { useConfigStore } from "@orvilo/core/config";
+import type { Attachment as AttachmentRecord } from "@orvilo/core/types";
 import { useT } from "../i18n";
 import { useAttachmentDownloadResolver } from "./attachment-download-context";
 import { useAttachmentPreview } from "./attachment-preview-modal";

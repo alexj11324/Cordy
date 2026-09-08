@@ -8,8 +8,8 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { useModelFavoritesStore } from "@patchbay/core/agents/stores";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import { useModelFavoritesStore } from "@orvilo/core/agents/stores";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import enAgents from "../../locales/en/agents.json";
 import enCommon from "../../locales/en/common.json";
@@ -80,9 +80,9 @@ const catalogs = {
     },
   ],
 };
-vi.mock("@patchbay/core/runtimes", async (importOriginal) => {
+vi.mock("@orvilo/core/runtimes", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("@patchbay/core/runtimes")>();
+    await importOriginal<typeof import("@orvilo/core/runtimes")>();
   return {
     ...actual,
     runtimeModelsOptions: (id: keyof typeof catalogs | null) => ({

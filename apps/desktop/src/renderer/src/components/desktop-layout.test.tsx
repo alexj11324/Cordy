@@ -3,9 +3,9 @@ import { describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render } from "@testing-library/react";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { useSidebar } from "@patchbay/ui/components/ui/sidebar";
-import { RESOURCES } from "@patchbay/views/locales";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import { useSidebar } from "@orvilo/ui/components/ui/sidebar";
+import { RESOURCES } from "@orvilo/views/locales";
 
 // Layout ownership is the contract under test. Apply Motion targets
 // synchronously so the test asserts the intended endpoint rather than waiting
@@ -63,7 +63,7 @@ vi.mock("@/platform/navigation", () => ({
   routeContentLinkPath: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   WorkspaceSlugProvider: ({ children }: { children: ReactNode }) => (
     <>{children}</>
   ),
@@ -71,39 +71,39 @@ vi.mock("@patchbay/core/paths", () => ({
   useCurrentWorkspace: () => null,
 }));
 
-vi.mock("@patchbay/core/platform", () => ({
+vi.mock("@orvilo/core/platform", () => ({
   getCurrentSlug: () => "acme",
   subscribeToCurrentSlug: () => () => {},
 }));
 
-vi.mock("@patchbay/core/workspace", () => ({
+vi.mock("@orvilo/core/workspace", () => ({
   workspaceListOptions: () => ({
     queryKey: ["workspace-list"],
     queryFn: async () => WORKSPACES,
   }),
 }));
 
-vi.mock("@patchbay/views/navigation", () => ({
+vi.mock("@orvilo/views/navigation", () => ({
   useNavigation: () => ({ push: vi.fn() }),
 }));
 
-vi.mock("@patchbay/views/platform", () => ({
+vi.mock("@orvilo/views/platform", () => ({
   useDesktopUnreadBadge: () => {},
 }));
 
-vi.mock("@patchbay/views/layout", () => ({
+vi.mock("@orvilo/views/layout", () => ({
   AppSidebar: () => null,
   GlobalShortcuts: () => null,
   NavigationProgress: () => null,
 }));
 
-vi.mock("@patchbay/views/modals/registry", () => ({ ModalRegistry: () => null }));
-vi.mock("@patchbay/views/search", () => ({
+vi.mock("@orvilo/views/modals/registry", () => ({ ModalRegistry: () => null }));
+vi.mock("@orvilo/views/search", () => ({
   SearchCommand: () => null,
   SearchTrigger: () => null,
 }));
-vi.mock("@patchbay/views/chat", () => ({ FloatingChat: () => null }));
-vi.mock("@patchbay/views/agent-thread", () => ({
+vi.mock("@orvilo/views/chat", () => ({ FloatingChat: () => null }));
+vi.mock("@orvilo/views/agent-thread", () => ({
   AgentThreadPanelLayout: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 vi.mock("./tab-bar", () => ({ TabBar: () => <div data-testid="tab-bar" /> }));

@@ -1,18 +1,18 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { agentListOptions } from "@patchbay/core/workspace/queries";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { agentListOptions } from "@orvilo/core/workspace/queries";
+import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 import {
   agentTaskSnapshotOptions,
   useAgentPresenceDetail,
-} from "@patchbay/core/agents";
-import { issueDetailOptions } from "@patchbay/core/issues";
-import type { AgentTask } from "@patchbay/core/types";
+} from "@orvilo/core/agents";
+import { issueDetailOptions } from "@orvilo/core/issues";
+import type { AgentTask } from "@orvilo/core/types";
 import { AlertTriangle } from "lucide-react";
 import { AppLink } from "../../navigation";
 import { useT, useTimeAgo } from "../../i18n";

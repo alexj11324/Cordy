@@ -8,10 +8,10 @@ import type {
   AgentPermissionMode,
   AgentVisibility,
   MemberWithUser,
-} from "@patchbay/core/types";
-import { effectiveAccessScope } from "@patchbay/core/agents";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+} from "@orvilo/core/types";
+import { effectiveAccessScope } from "@orvilo/core/agents";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import { useT } from "../../../i18n";
 

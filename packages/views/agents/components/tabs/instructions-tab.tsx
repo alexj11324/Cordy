@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Loader2, Save } from "lucide-react";
-import { useConfigStore } from "@patchbay/core/config";
-import { AGENT_FOCUS_CONVERSATION_STARTERS } from "@patchbay/core/paths";
-import type { Agent, AgentConversationStarter } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { cn } from "@patchbay/ui/lib/utils";
+import { useConfigStore } from "@orvilo/core/config";
+import { AGENT_FOCUS_CONVERSATION_STARTERS } from "@orvilo/core/paths";
+import type { Agent, AgentConversationStarter } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../../i18n";
 import { useOptionalNavigation } from "../../../navigation";
 

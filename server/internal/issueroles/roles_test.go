@@ -3,7 +3,7 @@ package issueroles
 import (
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
 )
 
 func TestWorkflowGate_ActiveExecutorRequired(t *testing.T) {

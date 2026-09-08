@@ -2,21 +2,21 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { paths } from "@patchbay/core/paths";
-import { api } from "@patchbay/core/api";
+import { paths } from "@orvilo/core/paths";
+import { api } from "@orvilo/core/api";
 import {
   validateCliCallback,
   redirectToCliCallback,
   redirectToDesktopApp,
-} from "@patchbay/views/auth";
+} from "@orvilo/views/auth";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardDescription,
   CardContent,
-} from "@patchbay/ui/components/ui/card";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/ui/components/ui/card";
+import { Button } from "@orvilo/ui/components/ui/button";
 import { Loader2 } from "lucide-react";
 
 function decodeStateValue(value: string, prefix: string): string | null {
@@ -66,7 +66,7 @@ function CallbackContent() {
         )
       : null;
     // CLI callback params — carried across the Google OAuth round-trip so
-    // headless/WSL2 `patchbay login` can receive the JWT after browser-based
+    // headless/WSL2 `orvilo login` can receive the JWT after browser-based
     // Google auth completes.
     const cliCallbackPart = stateParts.find((p) => p.startsWith("cli_callback:"));
     const cliStatePart = stateParts.find((p) => p.startsWith("cli_state:"));

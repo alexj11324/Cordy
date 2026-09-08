@@ -2,9 +2,9 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen } from "@testing-library/react";
-import { EMPTY_AGENT_DRAFT } from "@patchbay/core/agents";
-import { configStore } from "@patchbay/core/config";
-import type { RuntimeDevice } from "@patchbay/core/types";
+import { EMPTY_AGENT_DRAFT } from "@orvilo/core/agents";
+import { configStore } from "@orvilo/core/config";
+import type { RuntimeDevice } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import enAgents from "../../locales/en/agents.json";
 import { AgentConfigurationPanel } from "./agent-configuration-panel";

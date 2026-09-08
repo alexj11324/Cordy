@@ -6,9 +6,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // revokeAndRemoveMember converges all server-side state that should follow a
@@ -137,8 +137,8 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 	// The inbound path also re-checks membership (see ChannelStore.IsWorkspaceMember),
 	// but pruning stops a stale binding from lingering across a remove/re-add.
 	if err := qtx.DeleteChannelUserBindingsByWorkspaceMember(ctx, db.DeleteChannelUserBindingsByWorkspaceMemberParams{
-		WorkspaceID:   workspaceID,
-		PatchbayUserID: userID,
+		WorkspaceID:    workspaceID,
+		OrviloUserID: userID,
 	}); err != nil {
 		return empty, err
 	}

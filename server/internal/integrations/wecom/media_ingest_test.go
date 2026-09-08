@@ -18,8 +18,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
 )
 
 // ---- fakes for the two durable seams ----
@@ -171,7 +171,7 @@ func mediaInstallation() engine.ResolvedInstallation {
 		ID:          uuidOf(1),
 		WorkspaceID: uuidOf(2),
 		AgentID:     uuidOf(3),
-		Installed:      true,
+		Installed:   true,
 		Platform:    Installation{ID: uuidOf(1), BotID: "wb-1"},
 	}
 }

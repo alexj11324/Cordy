@@ -153,8 +153,8 @@ test("staging Accounts uses its own Cloudflare Worker route and origin", () => {
 });
 
 test("staging compose overlays never reattach production projects", () => {
-  assert.match(stagingDocs, /name: patchbay-staging-docs/u);
-  assert.match(stagingBroker, /name: patchbay-staging-auth-broker/u);
+  assert.match(stagingDocs, /name: orvilo-staging-docs/u);
+  assert.match(stagingBroker, /name: orvilo-staging-auth-broker/u);
   assert.match(stagingDocs, /127\.0\.0\.1:4001:3000/u);
   assert.match(stagingBroker, /127\.0\.0\.1:43101:3000/u);
   assert.doesNotMatch(`${stagingDocs}\n${stagingBroker}\n${stagingOverride}`, /cordy632|cordy\b/u);
@@ -167,25 +167,26 @@ test("staging compose overlays never reattach production projects", () => {
   assert.match(stagingOverride, /ALLOW_SIGNUP: "false"/u);
   assert.match(stagingOverride, /ALLOWED_EMAILS: \$\{ALLOWED_EMAILS:\?/u);
   assert.match(stagingOverride, /ALLOWED_EMAIL_DOMAINS: ""/u);
-  assert.match(stagingOverride, /AUTH_COOKIE_NAME: patchbay_staging_auth/u);
-  assert.match(stagingOverride, /CSRF_COOKIE_NAME: patchbay_staging_csrf/u);
+  assert.match(stagingOverride, /AUTH_COOKIE_NAME: orvilo_staging_auth/u);
+  assert.match(stagingOverride, /CSRF_COOKIE_NAME: orvilo_staging_csrf/u);
   assert.doesNotMatch(productionOverride, /AUTH_COOKIE_NAME/u);
   assert.doesNotMatch(productionOverride, /CSRF_COOKIE_NAME/u);
-  assert.match(environmentsDoc, /patchbay_staging_auth/u);
-  assert.match(environmentsDoc, /patchbay_staging_csrf/u);
-  assert.doesNotMatch(stagingOverride, /orvilo_staging_/u);
-  assert.doesNotMatch(environmentsDoc, /orvilo_staging_/u);
+  assert.match(environmentsDoc, /orvilo_staging_auth/u);
+  assert.match(environmentsDoc, /orvilo_staging_csrf/u);
+  // Reject pre-cutover cookie names after the complete identity rename.
+  assert.doesNotMatch(stagingOverride, /patchbay_staging_/u);
+  assert.doesNotMatch(environmentsDoc, /patchbay_staging_/u);
   for (const key of ["ORVILO_PRODUCT_ORIGIN", "ORVILO_API_ORIGIN", "ORVILO_AUTH_BROKER_ORIGIN", "ORVILO_DESKTOP_BROKER_AUTH_TOKEN", "ORVILO_ORIGIN_AUTH_TOKEN"]) {
     assert.match(stagingBroker, new RegExp(`\\n      ${key}:`));
   }
   assert.match(stagingBroker, /ORVILO_PRODUCT_ORIGIN: https:\/\/staging\.aspectlylabs\.com/u);
   assert.match(environmentsDoc, /ORVILO_PRODUCT_ORIGIN=https:\/\/staging\.aspectlylabs\.com/u);
   assert.match(environmentsDoc, /renderer port/u);
-  assert.match(environmentsDoc, /\.patchbay-dev\/electron\/<version>-<arch>\//u);
+  assert.match(environmentsDoc, /\.orvilo-dev\/electron\/<version>-<arch>\//u);
   assert.match(stagingOverride, /\n      ORVILO_DESKTOP_BROKER_AUTH_TOKEN:/u);
   assert.match(stagingOverride, /\n      ORVILO_CLERK_PUBLISHABLE_KEY:/u);
   assert.doesNotMatch(`${stagingOverride}\n${stagingBroker}`, /PATCHBAY_/u);
-  assert.doesNotMatch(`${stagingOverride}\n${stagingBroker}`, /patchbay\.aspectlylabs\.com/u);
+  assert.doesNotMatch(`${stagingOverride}\n${stagingBroker}`, /orvilo\.aspectlylabs\.com/u);
 });
 
 function originServerBlock(source, serverName) {
@@ -209,15 +210,15 @@ test("staging accounts origin validates its own Worker token", () => {
     staging,
     /include \/etc\/nginx\/snippets\/orvilo-staging-accounts-origin-auth\.conf;/u,
   );
-  assert.doesNotMatch(staging, /snippets\/patchbay-accounts-origin-auth\.conf/u);
+  assert.doesNotMatch(staging, /snippets\/orvilo-accounts-origin-auth\.conf/u);
   assert.match(
     production,
-    /include \/etc\/nginx\/snippets\/patchbay-accounts-origin-auth\.conf;/u,
+    /include \/etc\/nginx\/snippets\/orvilo-accounts-origin-auth\.conf;/u,
   );
   assert.doesNotMatch(production, /orvilo-staging-accounts-origin-auth/u);
   assert.match(environmentsDoc, /orvilo-staging-accounts-origin-auth\.conf/u);
-  assert.match(environmentsDoc, /patchbay-accounts-origin-auth\.conf/u);
-  assert.match(environmentsDoc, /\$http_x_patchbay_origin_auth/u);
+  assert.match(environmentsDoc, /orvilo-accounts-origin-auth\.conf/u);
+  assert.match(environmentsDoc, /\$http_x_orvilo_origin_auth/u);
   assert.match(environmentsDoc, /wrangler secret put ORIGIN_AUTH_TOKEN --env staging/u);
 });
 
@@ -234,7 +235,7 @@ test("staging HTTPS uses a nested-host certificate path", () => {
     assert.doesNotMatch(block, new RegExp(productionCert.replaceAll(".", "\\."), "u"));
   }
   for (const serverName of [
-    "patchbay.aspectlylabs.com",
+    "orvilo.aspectlylabs.com",
     "api.aspectlylabs.com",
     "accounts-origin.aspectlylabs.com",
   ]) {
@@ -257,15 +258,15 @@ test("staging gateway refuses production state", () => {
     assert.ok(stagingGateway.includes(`str(release / "deploy/origin/${file}")`));
     assert.ok(!stagingGateway.includes(`str(self.static_directory / "${file}")`));
   }
-  assert.match(stagingGateway, /DEFAULT_ROOT = Path\("\/var\/lib\/patchbay-staging"\)/u);
-  assert.match(stagingGateway, /PRODUCTION_ROOT = Path\("\/var\/lib\/patchbay-production"\)/u);
-  assert.match(stagingGateway, /FORBIDDEN_COMPOSE_PROJECTS = \{"cordy632", "cordy", "patchbay-auth-broker"\}/u);
-  assert.match(stagingGateway, /PRODUCT_COMPOSE_PROJECT = "patchbay-staging"/u);
+  assert.match(stagingGateway, /DEFAULT_ROOT = Path\("\/var\/lib\/orvilo-staging"\)/u);
+  assert.match(stagingGateway, /PRODUCTION_ROOT = Path\("\/var\/lib\/orvilo-production"\)/u);
+  assert.match(stagingGateway, /FORBIDDEN_COMPOSE_PROJECTS = \{"cordy632", "cordy", "orvilo-auth-broker"\}/u);
+  assert.match(stagingGateway, /PRODUCT_COMPOSE_PROJECT = "orvilo-staging"/u);
   assert.match(stagingGateway, /STAGING_SMOKE_USER_EMAIL = "staging-smoke@aspectlylabs.com"/u);
-  assert.match(installer, /patchbay-staging-github-actions/u);
-  assert.match(installer, /\/usr\/local\/bin\/patchbay-staging-deploy/u);
+  assert.match(installer, /orvilo-staging-github-actions/u);
+  assert.match(installer, /\/usr\/local\/bin\/orvilo-staging-deploy/u);
   assert.doesNotMatch(installer, /cordy632-backend-1/u);
   assert.doesNotMatch(stagingGateway, /cordy632-backend-1/u);
-  assert.match(productionGateway, /DEFAULT_ROOT = Path\("\/var\/lib\/patchbay-production"\)/u);
-  assert.doesNotMatch(productionGateway, /patchbay-staging/u);
+  assert.match(productionGateway, /DEFAULT_ROOT = Path\("\/var\/lib\/orvilo-production"\)/u);
+  assert.doesNotMatch(productionGateway, /orvilo-staging/u);
 });

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef } from "react";
-import { api } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
-import { getOrCreateInstallId, utcDay } from "@patchbay/core/client-usage";
-import { defaultStorage } from "@patchbay/core/platform";
+import { api } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
+import { getOrCreateInstallId, utcDay } from "@orvilo/core/client-usage";
+import { defaultStorage } from "@orvilo/core/platform";
 import type { LocalRuntimeProbe } from "../../../shared/daemon-types";
 
-const LAST_RUNTIME_PREFIX = "patchbay_runtime_probe_last_reported";
+const LAST_RUNTIME_PREFIX = "orvilo_runtime_probe_last_reported";
 
 export function runtimeProbeSignature(probe: LocalRuntimeProbe): string {
   if (probe.probeResult === "error") return "error";

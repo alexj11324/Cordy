@@ -3,12 +3,12 @@
 import { fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { SidebarProvider, useSidebar } from "@patchbay/ui/components/ui/sidebar";
-import { configStore } from "@patchbay/core/config";
+import { SidebarProvider, useSidebar } from "@orvilo/ui/components/ui/sidebar";
+import { configStore } from "@orvilo/core/config";
 import {
   BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
   PLUGINS_V1_FLAG,
-} from "@patchbay/core/feature-flags";
+} from "@orvilo/core/feature-flags";
 import { renderWithI18n } from "../../test/i18n";
 
 // This file tests the settings SHELL — the chrome around the tabs — so every
@@ -38,7 +38,7 @@ vi.mock("./billing-tab", stub("BillingTab"));
 vi.mock("./skills-tab", stub("SkillsTab"));
 vi.mock("./mcp-tab", stub("McpTab"));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Acme" }),
 }));
 
@@ -56,7 +56,7 @@ vi.mock("../../navigation", () => ({
 // Compact by default: that is the width where the nav is a sheet and this
 // trigger is the only way to reach it.
 const layout = { compact: true };
-vi.mock("@patchbay/ui/hooks/use-mobile", () => ({
+vi.mock("@orvilo/ui/hooks/use-mobile", () => ({
   useIsMobile: () => layout.compact,
   useIsCompact: () => layout.compact,
 }));

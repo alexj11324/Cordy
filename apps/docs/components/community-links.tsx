@@ -6,7 +6,7 @@ export function CommunityLinks({ githubDescription }: CommunityLinksProps) {
   const links = [
     {
       label: "GitHub",
-      href: "https://github.com/patchbay-ai/patchbay",
+      href: "https://github.com/alexj11324/Cordy",
       description: githubDescription,
       Icon: GitHubMark,
     },

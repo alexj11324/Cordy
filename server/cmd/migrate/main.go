@@ -12,12 +12,12 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/patchbay-ai/patchbay/server/internal/attributionbackfill"
-	"github.com/patchbay-ai/patchbay/server/internal/chatoriginbackfill"
-	"github.com/patchbay-ai/patchbay/server/internal/dbstartup"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	"github.com/patchbay-ai/patchbay/server/internal/migrations"
-	"github.com/patchbay-ai/patchbay/server/internal/taskusagebackfill"
+	"github.com/orvilo-ai/orvilo/server/internal/attributionbackfill"
+	"github.com/orvilo-ai/orvilo/server/internal/chatoriginbackfill"
+	"github.com/orvilo-ai/orvilo/server/internal/dbstartup"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	"github.com/orvilo-ai/orvilo/server/internal/migrations"
+	"github.com/orvilo-ai/orvilo/server/internal/taskusagebackfill"
 )
 
 // preMigrationHook runs work that must happen before a specific migration is
@@ -76,7 +76,7 @@ var commentContentBigramIndex = usableIndexRequirement{
 // MUL-4897 / GH #5544: migration 198 VALIDATEs the strict attribution
 // constraint installed by 197, which drops migration 190's
 // originator_source IS NULL exemption. Self-hosted databases never ran the
-// out-of-band backfill that Patchbay's cloud did, so their legacy rows make
+// out-of-band backfill that Orvilo's cloud did, so their legacy rows make
 // 198 fail closed and the backend refuses to start. The hook reconciles
 // those rows (accountable_user_id := originator_user_id) idempotently BEFORE
 // VALIDATE, so a stuck-at-197 instance auto-heals on `migrate up` with no
@@ -878,7 +878,7 @@ func main() {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dbURL = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 
 	startupSettings := dbstartup.SettingsFromEnv()

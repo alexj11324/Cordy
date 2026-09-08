@@ -2,17 +2,17 @@
 
 import { useMemo } from "react";
 import { ArrowRight } from "lucide-react";
-import { AVATAR_SIZE_PX, type AvatarSize } from "@patchbay/ui/lib/avatar-size";
+import { AVATAR_SIZE_PX, type AvatarSize } from "@orvilo/ui/lib/avatar-size";
 import {
   Popover,
   PopoverContent,
   PopoverHeader,
   PopoverTitle,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
-import { cn } from "@patchbay/ui/lib/utils";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import type { Issue, TimelineEntry, UpdateIssueRequest } from "@patchbay/core/types";
+} from "@orvilo/ui/components/ui/popover";
+import { cn } from "@orvilo/ui/lib/utils";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import type { Issue, TimelineEntry, UpdateIssueRequest } from "@orvilo/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 import {

@@ -10,7 +10,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderWithI18n } from "../../test/i18n";
-import type { AutomationRun, AutomationTrigger } from "@patchbay/core/types";
+import type { AutomationRun, AutomationTrigger } from "@orvilo/core/types";
 
 const mocks = vi.hoisted(() => ({
   updateAutomation: vi.fn(),
@@ -40,10 +40,10 @@ const mocks = vi.hoisted(() => ({
   linearConnection: vi.fn(async () => ({ connected: false })),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
 
-vi.mock("@patchbay/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/paths")>();
+vi.mock("@orvilo/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@orvilo/core/paths")>();
   return {
     ...actual,
     useWorkspacePaths: () => ({
@@ -58,13 +58,13 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => {
   };
 });
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (_type: string, id: string) => `Person ${id.slice(0, 6)}`,
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({
     queryKey: ["agents", wsId],
     queryFn: async () => [],
@@ -75,7 +75,7 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/projects/queries", () => ({
+vi.mock("@orvilo/core/projects/queries", () => ({
   projectDetailOptions: (wsId: string, id: string) => ({
     queryKey: ["project", wsId, id],
     queryFn: async () => null,
@@ -87,7 +87,7 @@ vi.mock("@patchbay/core/projects/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/github/queries", () => ({
+vi.mock("@orvilo/core/github/queries", () => ({
   githubInstallationsOptions: (wsId: string) => ({
     queryKey: ["github", wsId],
     queryFn: () => mocks.githubInstallations(),
@@ -103,7 +103,7 @@ vi.mock("@patchbay/core/github/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/slack/queries", () => ({
+vi.mock("@orvilo/core/slack/queries", () => ({
   slackInstallationsOptions: (wsId: string) => ({
     queryKey: ["slack", wsId],
     queryFn: () => mocks.slackInstallations(),
@@ -115,7 +115,7 @@ vi.mock("@patchbay/core/slack/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/linear/queries", () => ({
+vi.mock("@orvilo/core/linear/queries", () => ({
   linearConnectionOptions: (wsId: string) => ({
     queryKey: ["linear", wsId],
     queryFn: () => mocks.linearConnection(),
@@ -133,7 +133,7 @@ vi.mock("@patchbay/core/linear/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/automations/queries", () => ({
+vi.mock("@orvilo/core/automations/queries", () => ({
   cronPreviewOptions: (_ws: string, cron: string, timezone: string) => ({
     queryKey: ["cron-preview", cron, timezone],
     queryFn: async () => ({ runs: ["2026-09-07T11:00:00Z"] }),
@@ -211,9 +211,9 @@ vi.mock("@patchbay/core/automations/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/automations", async (importOriginal) => {
+vi.mock("@orvilo/core/automations", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("@patchbay/core/automations")>();
+    await importOriginal<typeof import("@orvilo/core/automations")>();
   return {
     ...actual,
     automationMemoryKeys: {
@@ -253,7 +253,7 @@ vi.mock("@patchbay/core/automations", async (importOriginal) => {
   };
 });
 
-vi.mock("@patchbay/core/automations/mutations", () => ({
+vi.mock("@orvilo/core/automations/mutations", () => ({
   useUpdateAutomation: () => ({
     mutate: mocks.updateAutomation,
     mutateAsync: mocks.updateAutomation,

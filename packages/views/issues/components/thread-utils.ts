@@ -1,5 +1,5 @@
-import type { TimelineEntry } from "@patchbay/core/types";
-import { sortTimelineEntriesAsc } from "@patchbay/core/issues/timeline-sort";
+import type { TimelineEntry } from "@orvilo/core/types";
+import { sortTimelineEntriesAsc } from "@orvilo/core/issues/timeline-sort";
 
 /**
  * Walks the parent_id graph rooted at `rootId` and returns every descendant in

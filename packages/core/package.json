@@ -1,5 +1,5 @@
 {
-  "name": "@patchbay/core",
+  "name": "@orvilo/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -190,8 +190,8 @@
     "react": "catalog:"
   },
   "devDependencies": {
-    "@patchbay/eslint-config": "workspace:*",
-    "@patchbay/tsconfig": "workspace:*",
+    "@orvilo/eslint-config": "workspace:*",
+    "@orvilo/tsconfig": "workspace:*",
     "@testing-library/react": "catalog:",
     "@types/react": "catalog:",
     "jsdom": "catalog:",

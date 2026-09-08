@@ -11,9 +11,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 const (
@@ -232,9 +232,9 @@ func (w *WebhookDeliveryWorker) complete(
 	reasonCode ...string,
 ) error {
 	params := db.CompleteClaimedWebhookDeliveryParams{
-		ID:             delivery.ID,
-		LeaseToken:     delivery.LeaseToken,
-		Status:         status,
+		ID:              delivery.ID,
+		LeaseToken:      delivery.LeaseToken,
+		Status:          status,
 		AutomationRunID: runID,
 	}
 	if reason != "" {

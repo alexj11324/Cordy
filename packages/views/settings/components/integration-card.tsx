@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 import { IntegrationChannelIcon, type IntegrationChannel } from "./integration-channel-icon";
 
 export type IntegrationCardProps = {

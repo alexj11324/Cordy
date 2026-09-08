@@ -1,4 +1,4 @@
-import type { TimelineEntry } from "@patchbay/core/types";
+import type { TimelineEntry } from "@orvilo/core/types";
 import { describe, expect, it } from "vitest";
 
 import {

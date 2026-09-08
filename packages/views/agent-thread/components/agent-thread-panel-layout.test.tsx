@@ -3,14 +3,14 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useAgentThreadPanelStore } from "@patchbay/core/agent-thread";
+import { useAgentThreadPanelStore } from "@orvilo/core/agent-thread";
 
 const context = vi.hoisted(() => ({
   workspaceId: "workspace-1" as string | null,
   pathname: "/acme/issues/ACME-1",
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => context.workspaceId
     ? { id: context.workspaceId, slug: "acme" }
     : undefined,
@@ -24,7 +24,7 @@ vi.mock("../../i18n", () => ({
   useT: () => ({ t: () => "Resize Agent conversation" }),
 }));
 
-vi.mock("@patchbay/ui/components/ui/resizable", () => ({
+vi.mock("@orvilo/ui/components/ui/resizable", () => ({
   ResizablePanelGroup: ({ children }: { children: ReactNode }) => (
     <div data-testid="panel-group">{children}</div>
   ),

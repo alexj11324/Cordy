@@ -12,47 +12,47 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import { CurrencyNumberFlow } from "@patchbay/ui/components/ui/number-flow";
+import { CurrencyNumberFlow } from "@orvilo/ui/components/ui/number-flow";
 import type {
   Agent,
   AgentRuntime,
   AgentTask,
   MemberWithUser,
   RuntimeProfile,
-} from "@patchbay/core/types";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+} from "@orvilo/core/types";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import {
   agentListOptions,
   memberListOptions,
-} from "@patchbay/core/workspace/queries";
-import { agentTaskSnapshotOptions } from "@patchbay/core/agents";
+} from "@orvilo/core/workspace/queries";
+import { agentTaskSnapshotOptions } from "@orvilo/core/agents";
 import {
   deriveRuntimeHealth,
   isRuntimeUsableForUser,
   runtimeProfileListOptions,
   runtimeUsageOptions,
-} from "@patchbay/core/runtimes";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+} from "@orvilo/core/runtimes";
+import { useWorkspacePaths } from "@orvilo/core/paths";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import {
   ListGrid,
   ListGridCell,
   ListGridHeader,
   ListGridHeaderCell,
   ListGridRow,
-} from "@patchbay/ui/components/ui/list-grid";
+} from "@orvilo/ui/components/ui/list-grid";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/ui/components/ui/tooltip";
 import { useIntentNavigate, useRowLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useViewingTimezone } from "../../common/use-viewing-timezone";
@@ -491,7 +491,7 @@ export function CliCell({ runtime }: { runtime: AgentRuntime }) {
   const meta = runtime.metadata as Record<string, unknown> | null;
   // `version` is the agent's own underlying CLI tool version — distinct per
   // provider (e.g. "2.1.5 (Claude Code)", "codex-cli 0.118.0", "0.42.0").
-  // The separate `cli_version` is the shared patchbay daemon CLI, identical
+  // The separate `cli_version` is the shared orvilo daemon CLI, identical
   // for every runtime on one machine; surfacing it here made all agents
   // show the same number (#3838). The daemon CLI version and its update
   // prompt belong to the machine — they live in the machine header, not on a

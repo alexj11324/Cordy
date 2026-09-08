@@ -28,8 +28,8 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
 )
 
 // DefaultWSURL is the aibot long-connection endpoint. WeCom publishes a
@@ -559,7 +559,7 @@ func (c *wecomChannel) pingLoop(ctx context.Context, sender *wsSender, log *slog
 // back on the length heuristic used by internal-customer-service (chat ids
 // are ≥33 chars, userids are shorter), which is stable in practice.
 //
-// The Channel is not the primary outbound path in the patchbay engine — the
+// The Channel is not the primary outbound path in the orvilo engine — the
 // EventChatDone subscriber and the OutboundReplier handle most sends — but
 // Channel.Send is still the contract that lets the engine deliver ad-hoc
 // replies, so we implement it here for parity with feishuChannel /

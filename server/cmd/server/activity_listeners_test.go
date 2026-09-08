@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/handler"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/handler"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // listActivitiesForIssue is a test helper that fetches up to 100 activity_log
@@ -128,7 +128,7 @@ func TestActivityIssueUpdated_ExecutorChanged(t *testing.T) {
 	bus := events.New()
 	registerActivityListeners(bus, queries)
 
-	executorEmail := "activity-executor-test@patchbay.ai"
+	executorEmail := "activity-executor-test@orvilo.ai"
 	executorID := createTestUser(t, executorEmail)
 	t.Cleanup(func() { cleanupTestUser(t, executorEmail) })
 
@@ -207,13 +207,13 @@ func TestActivityIssueUpdated_ReviewHandoff(t *testing.T) {
 				"reviewer_type": &reviewerType, "reviewer_id": &reviewerID,
 			},
 			"coordination_event_id": "00000000-0000-0000-0000-000000000001",
-			"status_changed":     true,
-			"executor_changed":   false,
-			"reviewer_changed":   true,
-			"review_handoff":     true,
-			"prev_status":        "in_progress",
-			"prev_executor_type": &executorType,
-			"prev_executor_id":   &executorID,
+			"status_changed":        true,
+			"executor_changed":      false,
+			"reviewer_changed":      true,
+			"review_handoff":        true,
+			"prev_status":           "in_progress",
+			"prev_executor_type":    &executorType,
+			"prev_executor_id":      &executorID,
 		},
 	})
 

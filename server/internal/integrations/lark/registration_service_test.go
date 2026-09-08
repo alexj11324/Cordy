@@ -10,9 +10,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // These tests cover the pure-Go halves of RegistrationService —
@@ -71,15 +71,15 @@ func TestRegistrationServiceConstructorValidatesDeps(t *testing.T) {
 }
 
 // TestBotNamePreset pins the bot-name pre-fill format that rides on the
-// QR URL: "<agent> - Patchbay", with a blank agent name degrading to
-// plain "Patchbay" rather than a dangling " - Patchbay".
+// QR URL: "<agent> - Orvilo", with a blank agent name degrading to
+// plain "Orvilo" rather than a dangling " - Orvilo".
 func TestBotNamePreset(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"Ada", "Ada - Patchbay"},
-		{"  Ada  ", "Ada - Patchbay"},
-		{"产品助手", "产品助手 - Patchbay"},
-		{"", "Patchbay"},
-		{"   ", "Patchbay"},
+		{"Ada", "Ada - Orvilo"},
+		{"  Ada  ", "Ada - Orvilo"},
+		{"产品助手", "产品助手 - Orvilo"},
+		{"", "Orvilo"},
+		{"   ", "Orvilo"},
 	}
 	for _, tc := range cases {
 		if got := botNamePreset(tc.in); got != tc.want {

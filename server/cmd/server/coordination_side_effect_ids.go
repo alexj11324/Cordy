@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
 )
 
 // durableCoordinationID returns a stable UUID for a side effect of one
@@ -35,7 +35,7 @@ func durableCoordinationID(event events.Event, scope string, parts ...string) (p
 	if publication != "review_handoff" && publication != "reviewer_replacement" && publication != "assignment_activity" {
 		return pgtype.UUID{}, false
 	}
-	name := fmt.Sprintf("patchbay:coordination:%s:%s:%s:%s", scope, eventID, publication, strings.Join(parts, ":"))
+	name := fmt.Sprintf("orvilo:coordination:%s:%s:%s:%s", scope, eventID, publication, strings.Join(parts, ":"))
 	id := uuid.NewSHA1(uuid.NameSpaceOID, []byte(name))
 	return pgtype.UUID{Bytes: id, Valid: true}, true
 }

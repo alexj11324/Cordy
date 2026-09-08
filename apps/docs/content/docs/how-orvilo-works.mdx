@@ -1,0 +1,46 @@
+---
+title: How Orvilo works
+description: Orvilo records and coordinates the work; connected computers execute it.
+---
+
+import { Callout } from "fumadocs-ui/components/callout";
+
+When you set an issue's executor to an agent, Orvilo creates a task that a runtime on a connected computer claims. The runtime invokes a local AI coding tool and writes progress and results back to the original issue.
+
+## The full path of a run
+
+1. **The issue provides the context.** The issue holds the work description, the discussion, and its independent owner, executor, and reviewer roles. When its executor is an agent, the system uses that agent's instructions, model, skills, and runtime configuration.
+2. **Orvilo creates a task.** The task enters the queue; if no runtime is online, it waits there.
+3. **A runtime claims the task.** An online runtime on a connected computer claims the task and invokes the AI coding tool the agent is configured to use.
+4. **The AI coding tool executes locally.** The tool reads the working directory, runs commands, and produces results.
+5. **Results are written back to the issue.** Progress, comments, and results appear in the issue's timeline and execution log.
+
+For the full list of issues, agents, tasks, and runtimes and how they relate, see [Core concepts](/concepts).
+
+## The data and execution boundary
+
+| Orvilo | Connected computer |
+|---|---|
+| Workspaces, issues, comments, and statuses | AI coding tools and their credentials |
+| Agent configuration and skills | Code directories and local files |
+| Task status, run records, and results | Actual file changes and command execution |
+
+This boundary is the same on Orvilo Cloud and in self-hosted deployments.
+
+<Callout type="warning">
+One exception: anything saved to an agent's `custom_env` is stored on the Orvilo server and passed to the runtime at execution time. Do not put secrets in `custom_env` that must never leave your computer.
+</Callout>
+
+## How agents are triggered
+
+Agents never start work on their own — every run is triggered by an explicit action: setting an issue executor, @-mentioning the agent in a comment, chatting with it directly, or an Automation. For how to choose between the four and the rules they share, see [Put agents to work](/triggering-agents).
+
+## Run completion and issue completion
+
+When the execution log shows Completed, it only means that one run has ended. The issue can still take further discussion, added requirements, or another agent trigger. Whether the issue is done depends on the actual progress of the work and its status.
+
+## Next steps
+
+- [Daemon and runtimes](/daemon-runtimes) — how computers connect to Orvilo, and what happens when runtimes go online or offline.
+- [Tasks](/tasks) — task statuses, retries, and cancellation rules.
+- [Assign issues to agents](/assigning-issues) — the most common way to collaborate.

@@ -1,4 +1,4 @@
-import type { IssuePriority } from "@patchbay/core/types";
+import type { IssuePriority } from "@orvilo/core/types";
 import {
   normalizeProductLocale,
   type ProductLocale,

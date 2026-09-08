@@ -6,7 +6,7 @@ import { getActiveTab, useTabStore } from "@/stores/tab-store";
 
 const settingsPageProps = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/views/settings", () => ({
+vi.mock("@orvilo/views/settings", () => ({
   SettingsPage: (props: {
     navigationHeader?: ReactNode;
     variant?: "embedded" | "standalone";
@@ -36,7 +36,7 @@ type SettingsDictionary = {
   desktop: { tabs: { updates: string } };
 };
 
-vi.mock("@patchbay/views/i18n", () => ({
+vi.mock("@orvilo/views/i18n", () => ({
   useT: () => ({
     t: (selector: (dictionary: SettingsDictionary) => string) =>
       selector({

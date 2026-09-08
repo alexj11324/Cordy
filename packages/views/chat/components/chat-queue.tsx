@@ -9,16 +9,16 @@ import {
   Pencil,
   Trash2,
 } from "lucide-react";
-import type { ChatQueuedTask } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
+import type { ChatQueuedTask } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 

@@ -7,13 +7,13 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { cn } from "@patchbay/ui/lib/utils";
-import { runtimeKeys } from "@patchbay/core/runtimes/queries";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { cn } from "@orvilo/ui/lib/utils";
+import { runtimeKeys } from "@orvilo/core/runtimes/queries";
 import {
   runtimeDisplayLabel,
-} from "@patchbay/core/runtimes";
-import type { AgentRuntime } from "@patchbay/core/types";
+} from "@orvilo/core/runtimes";
+import type { AgentRuntime } from "@orvilo/core/types";
 import { PatrickIntro } from "../components/patrick-intro";
 import {
   StepFooter,

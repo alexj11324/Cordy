@@ -8,10 +8,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 const (
@@ -107,7 +107,7 @@ func (r *OutboundReplier) sendBindingPrompt(ctx context.Context, inst engine.Res
 	if err != nil {
 		return err
 	}
-	text := fmt.Sprintf("👋 Link your Patchbay account to continue:\n%s%s?token=%s\n(This link expires in 15 minutes.)",
+	text := fmt.Sprintf("👋 Link your Orvilo account to continue:\n%s%s?token=%s\n(This link expires in 15 minutes.)",
 		r.appURL, r.bindingPath, url.QueryEscape(token.Raw))
 	return r.post(ctx, inst, msg, text)
 }

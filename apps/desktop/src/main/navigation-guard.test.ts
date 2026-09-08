@@ -8,7 +8,7 @@ import {
 } from "./navigation-guard";
 
 const DEV_RENDERER = "http://localhost:5173/";
-const PROD_RENDERER = "file:///Applications/Patchbay.app/Contents/renderer/index.html";
+const PROD_RENDERER = "file:///Applications/Orvilo.app/Contents/renderer/index.html";
 
 describe("isTrustedRendererURL", () => {
   describe("dev server origin", () => {
@@ -41,7 +41,7 @@ describe("isTrustedRendererURL", () => {
       // this safe.
       expect(
         isTrustedRendererURL(
-          "file:///Applications/Patchbay.app/Contents/renderer/other.html",
+          "file:///Applications/Orvilo.app/Contents/renderer/other.html",
           PROD_RENDERER,
         ),
       ).toBe(false);

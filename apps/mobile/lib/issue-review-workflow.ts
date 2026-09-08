@@ -2,7 +2,7 @@ import type {
   IssueActorType,
   IssueStatus,
   IssueStatusCategory,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 
 export type IssueRoleRef = { type: IssueActorType; id: string };
 

@@ -15,15 +15,15 @@ import {
 import {
   runtimeDisplayLabel,
   runtimeModelsOptions,
-} from "@patchbay/core/runtimes";
+} from "@orvilo/core/runtimes";
 import {
   modelFavoriteKey,
   useModelFavoritesStore,
   type ModelFavorite,
-} from "@patchbay/core/agents/stores";
-import type { RuntimeDevice, RuntimeModel } from "@patchbay/core/types";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/core/agents/stores";
+import type { RuntimeDevice, RuntimeModel } from "@orvilo/core/types";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { cn } from "@orvilo/ui/lib/utils";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
 import { useT } from "../../i18n";
 import {

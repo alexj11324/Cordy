@@ -1,8 +1,8 @@
 "use client";
 
-import type { IssueProperty } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { cn } from "@patchbay/ui/lib/utils";
+import type { IssueProperty } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   Bookmark,
   BriefcaseBusiness,

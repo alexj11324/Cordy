@@ -1,3 +1,3 @@
-import { AutomationRunsPage } from "@patchbay/views/automations/components";
+import { AutomationRunsPage } from "@orvilo/views/automations/components";
 
 export default function Page() { return <AutomationRunsPage />; }

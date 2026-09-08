@@ -6,10 +6,10 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/popover";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../i18n";
 import {
   type Hsv,

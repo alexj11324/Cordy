@@ -7,9 +7,9 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
+} from "@orvilo/ui/components/ui/dialog";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { FileUploadButton } from "@orvilo/ui/components/common/file-upload-button";
 import {
   ContentEditor,
   type ContentEditorRef,
@@ -24,10 +24,10 @@ import {
   FEEDBACK_KINDS,
   isFeedbackContext,
   type FeedbackKind,
-} from "@patchbay/core/feedback";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
+} from "@orvilo/core/feedback";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
 import { useT } from "../i18n";
-import { useShortcut } from "@patchbay/core/shortcuts";
+import { useShortcut } from "@orvilo/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { currentPath, useOptionalNavigation } from "../navigation";
 
@@ -147,7 +147,7 @@ export function FeedbackModal({
           <p className="mt-1 text-caption text-muted-foreground">
             {t(($) => $.feedback.github_hint_prefix)}
             <a
-              href="https://github.com/patchbay-ai/patchbay/issues"
+              href="https://github.com/alexj11324/Cordy/issues"
               target="_blank"
               rel="noopener noreferrer"
               className="text-brand underline decoration-brand/40 underline-offset-2 hover:decoration-brand"

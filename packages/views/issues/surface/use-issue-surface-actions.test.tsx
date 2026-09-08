@@ -7,12 +7,12 @@ import {
   useMutation,
 } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { createIssueViewStore } from "@patchbay/core/issues/stores/view-store";
+import { createIssueViewStore } from "@orvilo/core/issues/stores/view-store";
 import { useIssueSurfaceActions } from "./use-issue-surface-actions";
 
 const request = vi.hoisted(() => vi.fn());
 const rollback = vi.hoisted(() => vi.fn());
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@orvilo/core/issues/mutations", () => ({
   useUpdateIssue: () => useMutation({ mutationFn: request, onError: rollback }),
   useBatchUpdateIssues: () => ({ mutateAsync: vi.fn() }),
   useBatchDeleteIssues: () => ({ mutateAsync: vi.fn() }),

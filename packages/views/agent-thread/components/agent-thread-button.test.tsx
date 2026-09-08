@@ -2,10 +2,10 @@
 
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentTask } from "@patchbay/core/types";
-import { useAgentThreadPanelStore } from "@patchbay/core/agent-thread";
+import type { AgentTask } from "@orvilo/core/types";
+import { useAgentThreadPanelStore } from "@orvilo/core/agent-thread";
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "route-workspace",
 }));
 

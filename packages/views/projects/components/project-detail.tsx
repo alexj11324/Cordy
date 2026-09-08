@@ -4,22 +4,22 @@ import { useMemo, useState, useCallback, useRef, useEffect } from "react";
 import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { Check, ChevronRight, Link2, MoreHorizontal, PanelRight, Pin, PinOff, Trash2, UserMinus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@patchbay/ui/lib/utils";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+import { cn } from "@orvilo/ui/lib/utils";
+import { copyText } from "@orvilo/ui/lib/clipboard";
 import { toast } from "sonner";
-import type { ProjectStatus, ProjectPriority } from "@patchbay/core/types";
-import { useAuthStore } from "@patchbay/core/auth";
-import { projectDetailOptions } from "@patchbay/core/projects/queries";
-import { useUpdateProject, useDeleteProject } from "@patchbay/core/projects/mutations";
-import { pinListOptions } from "@patchbay/core/pins";
-import { useCreatePin, useDeletePin } from "@patchbay/core/pins";
-import { memberListOptions, agentListOptions } from "@patchbay/core/workspace/queries";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useIssuesScope } from "@patchbay/core/issues/stores";
-import { useRecentContextStore } from "@patchbay/core/chat";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { PROJECT_STATUS_ORDER, PROJECT_STATUS_CONFIG, PROJECT_PRIORITY_ORDER } from "@patchbay/core/projects/config";
+import type { ProjectStatus, ProjectPriority } from "@orvilo/core/types";
+import { useAuthStore } from "@orvilo/core/auth";
+import { projectDetailOptions } from "@orvilo/core/projects/queries";
+import { useUpdateProject, useDeleteProject } from "@orvilo/core/projects/mutations";
+import { pinListOptions } from "@orvilo/core/pins";
+import { useCreatePin, useDeletePin } from "@orvilo/core/pins";
+import { memberListOptions, agentListOptions } from "@orvilo/core/workspace/queries";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useIssuesScope } from "@orvilo/core/issues/stores";
+import { useRecentContextStore } from "@orvilo/core/chat";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { PROJECT_STATUS_ORDER, PROJECT_STATUS_CONFIG, PROJECT_PRIORITY_ORDER } from "@orvilo/core/projects/config";
 import { getProjectIssueMetrics } from "./project-issue-metrics";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { currentPath, useNavigation } from "../../navigation";
@@ -29,29 +29,29 @@ import { ProjectResourcesSection } from "./project-resources-section";
 import { ProjectStartDatePicker } from "./project-start-date-picker";
 import { ProjectDueDatePicker } from "./project-due-date-picker";
 import { IssueSurface } from "../../issues/surface/issue-surface";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@patchbay/ui/components/ui/resizable";
-import { Sheet, SheetContent } from "@patchbay/ui/components/ui/sheet";
-import { useIsMobile } from "@patchbay/ui/hooks/use-mobile";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@orvilo/ui/components/ui/resizable";
+import { Sheet, SheetContent } from "@orvilo/ui/components/ui/sheet";
+import { useIsMobile } from "@orvilo/ui/hooks/use-mobile";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@patchbay/ui/components/ui/popover";
+} from "@orvilo/ui/components/ui/popover";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@patchbay/ui/components/ui/tooltip";
-import { EmojiPicker } from "@patchbay/ui/components/common/emoji-picker";
+} from "@orvilo/ui/components/ui/tooltip";
+import { EmojiPicker } from "@orvilo/ui/components/common/emoji-picker";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import {
   AnimatedRightSidebar,
@@ -69,7 +69,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import { useT } from "../../i18n";
 import { useProjectStatusLabels, useProjectPriorityLabels } from "./labels";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
@@ -153,7 +153,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
 
   // Sidebar panel
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "patchbay_project_detail_layout",
+    id: "orvilo_project_detail_layout",
   });
   const sidebarRef = usePanelRef();
   const rightSidebarShortcutTargetRef = useRef<HTMLDivElement | null>(null);

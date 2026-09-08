@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
-import { api } from "@patchbay/core/api";
-import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { useT } from "@patchbay/views/i18n";
-import { DragStrip } from "@patchbay/views/platform";
+import { api } from "@orvilo/core/api";
+import { Alert, AlertDescription } from "@orvilo/ui/components/ui/alert";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { OrviloIcon } from "@orvilo/ui/components/common/orvilo-icon";
+import { useT } from "@orvilo/views/i18n";
+import { DragStrip } from "@orvilo/views/platform";
 import { loopbackSessionApiUrl } from "../../../shared/runtime-config";
 import {
   createDesktopLoginUrl,
@@ -96,7 +96,7 @@ export function DesktopLoginPage({ handoffFailed = false, onRestart, onBack }: {
       <DragStrip />
       <main className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-8 py-12">
         <div className="flex w-full max-w-md -translate-y-[4vh] flex-col items-center text-center">
-          <PatchbayIcon className="size-16 text-white" noSpin />
+          <OrviloIcon className="size-16 text-white" noSpin />
           <h1 className="mt-8 text-display-sm font-semibold tracking-tight">
             {t(($) => $.desktop.entry.browser_title)}
           </h1>

@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Saved issue views (MUL-4796): server-backed filter definitions with
@@ -28,7 +28,7 @@ const issueViewBodyMaxBytes = 128 * 1024
 const issueViewsPerOwnerMax = 100
 
 var (
-	validIssueViewScopeTypes        = []string{"workspace", "my", "project"}
+	validIssueViewScopeTypes = []string{"workspace", "my", "project"}
 	// "assigned" is the existing saved-view/API spelling for the member-owner
 	// relation. Keep the wire value stable while keeping its role semantics
 	// explicit at the server boundary.

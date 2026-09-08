@@ -3,11 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Bot, Gauge, MessageSquare, Server } from "lucide-react";
-import type { Agent, AgentRuntime, MemberWithUser } from "@patchbay/core/types";
-import type { AgentPresenceDetail } from "@patchbay/core/agents";
-import { runtimeDisplayLabel, runtimeModelsOptions } from "@patchbay/core/runtimes";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
+import type { Agent, AgentRuntime, MemberWithUser } from "@orvilo/core/types";
+import type { AgentPresenceDetail } from "@orvilo/core/agents";
+import { runtimeDisplayLabel, runtimeModelsOptions } from "@orvilo/core/runtimes";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";

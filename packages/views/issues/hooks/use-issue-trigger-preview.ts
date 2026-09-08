@@ -2,9 +2,9 @@
 
 import { useMemo } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { api } from "@patchbay/core/api";
-import { issueKeys } from "@patchbay/core/issues/queries";
-import type { IssueExecutorType, IssueStatus, IssueTriggerPreviewItem } from "@patchbay/core/types";
+import { api } from "@orvilo/core/api";
+import { issueKeys } from "@orvilo/core/issues/queries";
+import type { IssueExecutorType, IssueStatus, IssueTriggerPreviewItem } from "@orvilo/core/types";
 
 export interface UseIssueTriggerPreviewParams {
   /** Existing issues to evaluate (single assign/status or batch). */

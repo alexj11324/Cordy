@@ -13,19 +13,19 @@ import {
   AGENT_CONVERSATION_STARTER_LABEL_MAX_LENGTH,
   AGENT_CONVERSATION_STARTER_MAX_LENGTH,
   type AgentDraft,
-} from "@patchbay/core/agents";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { isRuntimeUsableForUser, runtimeListOptions } from "@patchbay/core/runtimes";
+} from "@orvilo/core/agents";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { isRuntimeUsableForUser, runtimeListOptions } from "@orvilo/core/runtimes";
 import type {
   MemberWithUser,
   RuntimeDevice,
   SkillSummary,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   memberListOptions,
   skillListOptions,
-} from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/workspace/queries";
 
 interface CreateAgentForm {
   draft: AgentDraft;

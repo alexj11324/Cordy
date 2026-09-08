@@ -241,11 +241,11 @@ func (q *Queries) CountLinearSyncConflicts(ctx context.Context, arg CountLinearS
 
 const createLinearIssueLink = `-- name: CreateLinearIssueLink :one
 INSERT INTO linear_issue_link
-    (id, workspace_id, binding_id, patchbay_issue_id, linear_issue_id,
+    (id, workspace_id, binding_id, orvilo_issue_id, linear_issue_id,
      linear_identifier, last_common_snapshot, remote_updated_at,
      last_remote_event_at_ms, last_remote_event_id, sync_status)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active')
-ON CONFLICT (workspace_id, patchbay_issue_id) WHERE sync_status <> 'deleted'
+ON CONFLICT (workspace_id, orvilo_issue_id) WHERE sync_status <> 'deleted'
 DO UPDATE SET linear_issue_id = EXCLUDED.linear_issue_id,
               linear_identifier = EXCLUDED.linear_identifier,
               last_common_snapshot = EXCLUDED.last_common_snapshot,
@@ -253,7 +253,7 @@ DO UPDATE SET linear_issue_id = EXCLUDED.linear_issue_id,
               last_remote_event_at_ms = EXCLUDED.last_remote_event_at_ms,
               last_remote_event_id = EXCLUDED.last_remote_event_id,
               sync_status = 'active', updated_at = now()
-RETURNING id, workspace_id, binding_id, patchbay_issue_id, linear_issue_id,
+RETURNING id, workspace_id, binding_id, orvilo_issue_id, linear_issue_id,
           linear_identifier, last_common_snapshot, remote_updated_at,
           last_remote_event_at_ms, last_remote_event_id, sync_status, created_at,
           updated_at
@@ -263,7 +263,7 @@ type CreateLinearIssueLinkParams struct {
 	ID                  pgtype.UUID        `json:"id"`
 	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
 	BindingID           pgtype.UUID        `json:"binding_id"`
-	PatchbayIssueID     pgtype.UUID        `json:"patchbay_issue_id"`
+	OrviloIssueID       pgtype.UUID        `json:"orvilo_issue_id"`
 	LinearIssueID       string             `json:"linear_issue_id"`
 	LinearIdentifier    string             `json:"linear_identifier"`
 	LastCommonSnapshot  []byte             `json:"last_common_snapshot"`
@@ -277,7 +277,7 @@ func (q *Queries) CreateLinearIssueLink(ctx context.Context, arg CreateLinearIss
 		arg.ID,
 		arg.WorkspaceID,
 		arg.BindingID,
-		arg.PatchbayIssueID,
+		arg.OrviloIssueID,
 		arg.LinearIssueID,
 		arg.LinearIdentifier,
 		arg.LastCommonSnapshot,
@@ -290,7 +290,7 @@ func (q *Queries) CreateLinearIssueLink(ctx context.Context, arg CreateLinearIss
 		&i.ID,
 		&i.WorkspaceID,
 		&i.BindingID,
-		&i.PatchbayIssueID,
+		&i.OrviloIssueID,
 		&i.LinearIssueID,
 		&i.LinearIdentifier,
 		&i.LastCommonSnapshot,
@@ -306,13 +306,13 @@ func (q *Queries) CreateLinearIssueLink(ctx context.Context, arg CreateLinearIss
 
 const createLinearProjectBinding = `-- name: CreateLinearProjectBinding :one
 INSERT INTO linear_project_binding
-    (id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+    (id, workspace_id, connection_id, orvilo_project_id, linear_project_id,
      linear_team_id, status, sync_mode, initial_source_of_truth, status_mapping,
      agent_label_mapping, activated_at, paused_at, created_by_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
         CASE WHEN $7 = 'active' THEN now() END,
         CASE WHEN $7 = 'paused' THEN now() END, $12)
-RETURNING id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+RETURNING id, workspace_id, connection_id, orvilo_project_id, linear_project_id,
           linear_team_id, status, sync_mode, initial_source_of_truth,
           status_mapping, agent_label_mapping, activated_at, paused_at,
           created_by_id, created_at, updated_at
@@ -322,7 +322,7 @@ type CreateLinearProjectBindingParams struct {
 	ID                   pgtype.UUID `json:"id"`
 	WorkspaceID          pgtype.UUID `json:"workspace_id"`
 	ConnectionID         pgtype.UUID `json:"connection_id"`
-	PatchbayProjectID    pgtype.UUID `json:"patchbay_project_id"`
+	OrviloProjectID      pgtype.UUID `json:"orvilo_project_id"`
 	LinearProjectID      string      `json:"linear_project_id"`
 	LinearTeamID         pgtype.Text `json:"linear_team_id"`
 	Status               string      `json:"status"`
@@ -338,7 +338,7 @@ func (q *Queries) CreateLinearProjectBinding(ctx context.Context, arg CreateLine
 		arg.ID,
 		arg.WorkspaceID,
 		arg.ConnectionID,
-		arg.PatchbayProjectID,
+		arg.OrviloProjectID,
 		arg.LinearProjectID,
 		arg.LinearTeamID,
 		arg.Status,
@@ -353,7 +353,7 @@ func (q *Queries) CreateLinearProjectBinding(ctx context.Context, arg CreateLine
 		&i.ID,
 		&i.WorkspaceID,
 		&i.ConnectionID,
-		&i.PatchbayProjectID,
+		&i.OrviloProjectID,
 		&i.LinearProjectID,
 		&i.LinearTeamID,
 		&i.Status,
@@ -372,7 +372,7 @@ func (q *Queries) CreateLinearProjectBinding(ctx context.Context, arg CreateLine
 
 const createLinearSyncConflict = `-- name: CreateLinearSyncConflict :exec
 INSERT INTO linear_sync_conflict
-    (id, workspace_id, binding_id, link_id, patchbay_issue_id, linear_issue_id,
+    (id, workspace_id, binding_id, link_id, orvilo_issue_id, linear_issue_id,
      field, base_value, local_value, remote_value, source_event_id,
      source_event_at_ms)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
@@ -387,7 +387,7 @@ type CreateLinearSyncConflictParams struct {
 	WorkspaceID     pgtype.UUID `json:"workspace_id"`
 	BindingID       pgtype.UUID `json:"binding_id"`
 	LinkID          pgtype.UUID `json:"link_id"`
-	PatchbayIssueID pgtype.UUID `json:"patchbay_issue_id"`
+	OrviloIssueID   pgtype.UUID `json:"orvilo_issue_id"`
 	LinearIssueID   string      `json:"linear_issue_id"`
 	Field           string      `json:"field"`
 	BaseValue       []byte      `json:"base_value"`
@@ -403,7 +403,7 @@ func (q *Queries) CreateLinearSyncConflict(ctx context.Context, arg CreateLinear
 		arg.WorkspaceID,
 		arg.BindingID,
 		arg.LinkID,
-		arg.PatchbayIssueID,
+		arg.OrviloIssueID,
 		arg.LinearIssueID,
 		arg.Field,
 		arg.BaseValue,
@@ -458,16 +458,16 @@ func (q *Queries) DeadLetterLinearSyncOutbox(ctx context.Context, arg DeadLetter
 
 const deleteLinearMemberBinding = `-- name: DeleteLinearMemberBinding :exec
 DELETE FROM linear_member_binding
-WHERE workspace_id = $1 AND patchbay_user_id = $2
+WHERE workspace_id = $1 AND orvilo_user_id = $2
 `
 
 type DeleteLinearMemberBindingParams struct {
-	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	OrviloUserID pgtype.UUID `json:"orvilo_user_id"`
 }
 
 func (q *Queries) DeleteLinearMemberBinding(ctx context.Context, arg DeleteLinearMemberBindingParams) error {
-	_, err := q.db.Exec(ctx, deleteLinearMemberBinding, arg.WorkspaceID, arg.PatchbayUserID)
+	_, err := q.db.Exec(ctx, deleteLinearMemberBinding, arg.WorkspaceID, arg.OrviloUserID)
 	return err
 }
 
@@ -672,30 +672,30 @@ func (q *Queries) GetLinearConnectionForWorkspaceForUpdate(ctx context.Context, 
 }
 
 const getLinearIssueLinkByLocal = `-- name: GetLinearIssueLinkByLocal :one
-SELECT id, workspace_id, binding_id, patchbay_issue_id, linear_issue_id,
+SELECT id, workspace_id, binding_id, orvilo_issue_id, linear_issue_id,
        linear_identifier, last_common_snapshot, remote_updated_at,
        last_remote_event_at_ms, last_remote_event_id, sync_status, created_at,
        updated_at
 FROM linear_issue_link
-WHERE workspace_id = $1 AND binding_id = $2 AND patchbay_issue_id = $3
+WHERE workspace_id = $1 AND binding_id = $2 AND orvilo_issue_id = $3
   AND sync_status <> 'deleted'
 FOR UPDATE
 `
 
 type GetLinearIssueLinkByLocalParams struct {
-	WorkspaceID     pgtype.UUID `json:"workspace_id"`
-	BindingID       pgtype.UUID `json:"binding_id"`
-	PatchbayIssueID pgtype.UUID `json:"patchbay_issue_id"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	BindingID     pgtype.UUID `json:"binding_id"`
+	OrviloIssueID pgtype.UUID `json:"orvilo_issue_id"`
 }
 
 func (q *Queries) GetLinearIssueLinkByLocal(ctx context.Context, arg GetLinearIssueLinkByLocalParams) (LinearIssueLink, error) {
-	row := q.db.QueryRow(ctx, getLinearIssueLinkByLocal, arg.WorkspaceID, arg.BindingID, arg.PatchbayIssueID)
+	row := q.db.QueryRow(ctx, getLinearIssueLinkByLocal, arg.WorkspaceID, arg.BindingID, arg.OrviloIssueID)
 	var i LinearIssueLink
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
 		&i.BindingID,
-		&i.PatchbayIssueID,
+		&i.OrviloIssueID,
 		&i.LinearIssueID,
 		&i.LinearIdentifier,
 		&i.LastCommonSnapshot,
@@ -710,7 +710,7 @@ func (q *Queries) GetLinearIssueLinkByLocal(ctx context.Context, arg GetLinearIs
 }
 
 const getLinearIssueLinkByRemote = `-- name: GetLinearIssueLinkByRemote :one
-SELECT id, workspace_id, binding_id, patchbay_issue_id, linear_issue_id,
+SELECT id, workspace_id, binding_id, orvilo_issue_id, linear_issue_id,
        linear_identifier, last_common_snapshot, remote_updated_at,
        last_remote_event_at_ms, last_remote_event_id, sync_status, created_at,
        updated_at
@@ -731,7 +731,7 @@ func (q *Queries) GetLinearIssueLinkByRemote(ctx context.Context, arg GetLinearI
 		&i.ID,
 		&i.WorkspaceID,
 		&i.BindingID,
-		&i.PatchbayIssueID,
+		&i.OrviloIssueID,
 		&i.LinearIssueID,
 		&i.LinearIdentifier,
 		&i.LastCommonSnapshot,
@@ -746,25 +746,25 @@ func (q *Queries) GetLinearIssueLinkByRemote(ctx context.Context, arg GetLinearI
 }
 
 const getLinearMemberBinding = `-- name: GetLinearMemberBinding :one
-SELECT id, workspace_id, connection_id, patchbay_user_id, linear_user_id,
+SELECT id, workspace_id, connection_id, orvilo_user_id, linear_user_id,
        created_at, updated_at
 FROM linear_member_binding
-WHERE workspace_id = $1 AND patchbay_user_id = $2
+WHERE workspace_id = $1 AND orvilo_user_id = $2
 `
 
 type GetLinearMemberBindingParams struct {
-	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	OrviloUserID pgtype.UUID `json:"orvilo_user_id"`
 }
 
 func (q *Queries) GetLinearMemberBinding(ctx context.Context, arg GetLinearMemberBindingParams) (LinearMemberBinding, error) {
-	row := q.db.QueryRow(ctx, getLinearMemberBinding, arg.WorkspaceID, arg.PatchbayUserID)
+	row := q.db.QueryRow(ctx, getLinearMemberBinding, arg.WorkspaceID, arg.OrviloUserID)
 	var i LinearMemberBinding
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
 		&i.ConnectionID,
-		&i.PatchbayUserID,
+		&i.OrviloUserID,
 		&i.LinearUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -773,7 +773,7 @@ func (q *Queries) GetLinearMemberBinding(ctx context.Context, arg GetLinearMembe
 }
 
 const getLinearMemberBindingByLinearUser = `-- name: GetLinearMemberBindingByLinearUser :one
-SELECT id, workspace_id, connection_id, patchbay_user_id, linear_user_id,
+SELECT id, workspace_id, connection_id, orvilo_user_id, linear_user_id,
        created_at, updated_at
 FROM linear_member_binding
 WHERE workspace_id = $1 AND linear_user_id = $2
@@ -791,7 +791,7 @@ func (q *Queries) GetLinearMemberBindingByLinearUser(ctx context.Context, arg Ge
 		&i.ID,
 		&i.WorkspaceID,
 		&i.ConnectionID,
-		&i.PatchbayUserID,
+		&i.OrviloUserID,
 		&i.LinearUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -800,7 +800,7 @@ func (q *Queries) GetLinearMemberBindingByLinearUser(ctx context.Context, arg Ge
 }
 
 const getLinearProjectBinding = `-- name: GetLinearProjectBinding :one
-SELECT id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+SELECT id, workspace_id, connection_id, orvilo_project_id, linear_project_id,
        linear_team_id, status, sync_mode, initial_source_of_truth,
        status_mapping, agent_label_mapping, activated_at, paused_at,
        created_by_id, created_at, updated_at
@@ -820,7 +820,7 @@ func (q *Queries) GetLinearProjectBinding(ctx context.Context, arg GetLinearProj
 		&i.ID,
 		&i.WorkspaceID,
 		&i.ConnectionID,
-		&i.PatchbayProjectID,
+		&i.OrviloProjectID,
 		&i.LinearProjectID,
 		&i.LinearTeamID,
 		&i.Status,
@@ -838,7 +838,7 @@ func (q *Queries) GetLinearProjectBinding(ctx context.Context, arg GetLinearProj
 }
 
 const getLinearProjectBindingForUpdate = `-- name: GetLinearProjectBindingForUpdate :one
-SELECT id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+SELECT id, workspace_id, connection_id, orvilo_project_id, linear_project_id,
        linear_team_id, status, sync_mode, initial_source_of_truth,
        status_mapping, agent_label_mapping, activated_at, paused_at,
        created_by_id, created_at, updated_at
@@ -859,7 +859,7 @@ func (q *Queries) GetLinearProjectBindingForUpdate(ctx context.Context, arg GetL
 		&i.ID,
 		&i.WorkspaceID,
 		&i.ConnectionID,
-		&i.PatchbayProjectID,
+		&i.OrviloProjectID,
 		&i.LinearProjectID,
 		&i.LinearTeamID,
 		&i.Status,
@@ -877,7 +877,7 @@ func (q *Queries) GetLinearProjectBindingForUpdate(ctx context.Context, arg GetL
 }
 
 const getLinearSyncConflictForUpdate = `-- name: GetLinearSyncConflictForUpdate :one
-SELECT id, workspace_id, binding_id, link_id, patchbay_issue_id, linear_issue_id,
+SELECT id, workspace_id, binding_id, link_id, orvilo_issue_id, linear_issue_id,
        field, base_value, local_value, remote_value, source_event_id,
        source_event_at_ms, status, resolution, resolved_value, resolved_by_id,
        created_at, updated_at
@@ -899,7 +899,7 @@ func (q *Queries) GetLinearSyncConflictForUpdate(ctx context.Context, arg GetLin
 		&i.WorkspaceID,
 		&i.BindingID,
 		&i.LinkID,
-		&i.PatchbayIssueID,
+		&i.OrviloIssueID,
 		&i.LinearIssueID,
 		&i.Field,
 		&i.BaseValue,
@@ -995,7 +995,7 @@ func (q *Queries) LinearProjectBelongsToWorkspace(ctx context.Context, arg Linea
 }
 
 const listLinearMemberBindings = `-- name: ListLinearMemberBindings :many
-SELECT id, workspace_id, connection_id, patchbay_user_id, linear_user_id,
+SELECT id, workspace_id, connection_id, orvilo_user_id, linear_user_id,
        created_at, updated_at
 FROM linear_member_binding
 WHERE workspace_id = $1
@@ -1015,7 +1015,7 @@ func (q *Queries) ListLinearMemberBindings(ctx context.Context, workspaceID pgty
 			&i.ID,
 			&i.WorkspaceID,
 			&i.ConnectionID,
-			&i.PatchbayUserID,
+			&i.OrviloUserID,
 			&i.LinearUserID,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -1031,7 +1031,7 @@ func (q *Queries) ListLinearMemberBindings(ctx context.Context, workspaceID pgty
 }
 
 const listLinearProjectBindings = `-- name: ListLinearProjectBindings :many
-SELECT id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+SELECT id, workspace_id, connection_id, orvilo_project_id, linear_project_id,
        linear_team_id, status, sync_mode, initial_source_of_truth,
        status_mapping, agent_label_mapping, activated_at, paused_at,
        created_by_id, created_at, updated_at
@@ -1053,7 +1053,7 @@ func (q *Queries) ListLinearProjectBindings(ctx context.Context, workspaceID pgt
 			&i.ID,
 			&i.WorkspaceID,
 			&i.ConnectionID,
-			&i.PatchbayProjectID,
+			&i.OrviloProjectID,
 			&i.LinearProjectID,
 			&i.LinearTeamID,
 			&i.Status,
@@ -1078,7 +1078,7 @@ func (q *Queries) ListLinearProjectBindings(ctx context.Context, workspaceID pgt
 }
 
 const listLinearSyncConflicts = `-- name: ListLinearSyncConflicts :many
-SELECT c.id, c.workspace_id, c.binding_id, c.link_id, c.patchbay_issue_id,
+SELECT c.id, c.workspace_id, c.binding_id, c.link_id, c.orvilo_issue_id,
        c.linear_issue_id, l.linear_identifier, c.field, c.base_value,
        c.local_value, c.remote_value, c.source_event_id, c.source_event_at_ms,
        c.status, c.resolution, c.resolved_value, c.resolved_by_id,
@@ -1099,7 +1099,7 @@ type ListLinearSyncConflictsRow struct {
 	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
 	BindingID        pgtype.UUID        `json:"binding_id"`
 	LinkID           pgtype.UUID        `json:"link_id"`
-	PatchbayIssueID  pgtype.UUID        `json:"patchbay_issue_id"`
+	OrviloIssueID    pgtype.UUID        `json:"orvilo_issue_id"`
 	LinearIssueID    string             `json:"linear_issue_id"`
 	LinearIdentifier pgtype.Text        `json:"linear_identifier"`
 	Field            string             `json:"field"`
@@ -1130,7 +1130,7 @@ func (q *Queries) ListLinearSyncConflicts(ctx context.Context, arg ListLinearSyn
 			&i.WorkspaceID,
 			&i.BindingID,
 			&i.LinkID,
-			&i.PatchbayIssueID,
+			&i.OrviloIssueID,
 			&i.LinearIssueID,
 			&i.LinearIdentifier,
 			&i.Field,
@@ -1408,7 +1408,7 @@ SET status = $3, sync_mode = $4, initial_source_of_truth = $5,
     paused_at = CASE WHEN $3 = 'paused' THEN now() ELSE paused_at END,
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, connection_id, patchbay_project_id, linear_project_id,
+RETURNING id, workspace_id, connection_id, orvilo_project_id, linear_project_id,
           linear_team_id, status, sync_mode, initial_source_of_truth,
           status_mapping, agent_label_mapping, activated_at, paused_at,
           created_by_id, created_at, updated_at
@@ -1441,7 +1441,7 @@ func (q *Queries) UpdateLinearProjectBinding(ctx context.Context, arg UpdateLine
 		&i.ID,
 		&i.WorkspaceID,
 		&i.ConnectionID,
-		&i.PatchbayProjectID,
+		&i.OrviloProjectID,
 		&i.LinearProjectID,
 		&i.LinearTeamID,
 		&i.Status,
@@ -1559,21 +1559,21 @@ func (q *Queries) UpsertLinearConnection(ctx context.Context, arg UpsertLinearCo
 
 const upsertLinearMemberBinding = `-- name: UpsertLinearMemberBinding :one
 INSERT INTO linear_member_binding
-    (id, workspace_id, connection_id, patchbay_user_id, linear_user_id)
+    (id, workspace_id, connection_id, orvilo_user_id, linear_user_id)
 VALUES ($1, $2, $3, $4, $5)
-ON CONFLICT (workspace_id, patchbay_user_id) DO UPDATE
+ON CONFLICT (workspace_id, orvilo_user_id) DO UPDATE
 SET connection_id = EXCLUDED.connection_id,
     linear_user_id = EXCLUDED.linear_user_id, updated_at = now()
-RETURNING id, workspace_id, connection_id, patchbay_user_id, linear_user_id,
+RETURNING id, workspace_id, connection_id, orvilo_user_id, linear_user_id,
           created_at, updated_at
 `
 
 type UpsertLinearMemberBindingParams struct {
-	ID             pgtype.UUID `json:"id"`
-	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	ConnectionID   pgtype.UUID `json:"connection_id"`
-	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
-	LinearUserID   string      `json:"linear_user_id"`
+	ID           pgtype.UUID `json:"id"`
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	ConnectionID pgtype.UUID `json:"connection_id"`
+	OrviloUserID pgtype.UUID `json:"orvilo_user_id"`
+	LinearUserID string      `json:"linear_user_id"`
 }
 
 func (q *Queries) UpsertLinearMemberBinding(ctx context.Context, arg UpsertLinearMemberBindingParams) (LinearMemberBinding, error) {
@@ -1581,7 +1581,7 @@ func (q *Queries) UpsertLinearMemberBinding(ctx context.Context, arg UpsertLinea
 		arg.ID,
 		arg.WorkspaceID,
 		arg.ConnectionID,
-		arg.PatchbayUserID,
+		arg.OrviloUserID,
 		arg.LinearUserID,
 	)
 	var i LinearMemberBinding
@@ -1589,7 +1589,7 @@ func (q *Queries) UpsertLinearMemberBinding(ctx context.Context, arg UpsertLinea
 		&i.ID,
 		&i.WorkspaceID,
 		&i.ConnectionID,
-		&i.PatchbayUserID,
+		&i.OrviloUserID,
 		&i.LinearUserID,
 		&i.CreatedAt,
 		&i.UpdatedAt,

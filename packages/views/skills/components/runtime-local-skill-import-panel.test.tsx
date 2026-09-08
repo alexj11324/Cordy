@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSkills from "../../locales/en/skills.json";
 
@@ -17,17 +17,17 @@ const mockRuntimeListOptions = vi.hoisted(() => vi.fn());
 const mockRuntimeLocalSkillsOptions = vi.hoisted(() => vi.fn());
 const mockListMembers = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     listMembers: (...args: unknown[]) => mockListMembers(...args),
   },
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@orvilo/core/auth", () => {
   const stateUser = { id: "user-1", email: "u@example.com", name: "User" };
   const useAuthStore = (selector?: (s: { user: typeof stateUser }) => unknown) => {
     const state = { user: stateUser };
@@ -39,10 +39,10 @@ vi.mock("@patchbay/core/auth", () => {
 // Spread the real module so alias helpers (runtimeDisplayLabel) and the
 // machine-grouping helpers used transitively by buildRuntimeMachines
 // (deriveRuntimeHealth) stay real; only the data/import entrypoints are mocked.
-vi.mock("@patchbay/core/runtimes", async () => {
+vi.mock("@orvilo/core/runtimes", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/runtimes")>(
-      "@patchbay/core/runtimes",
+    await vi.importActual<typeof import("@orvilo/core/runtimes")>(
+      "@orvilo/core/runtimes",
     );
   return {
     ...actual,

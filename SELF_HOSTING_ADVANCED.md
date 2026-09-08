@@ -1,6 +1,6 @@
 # Self-Hosting — Advanced Configuration
 
-This document covers advanced configuration for self-hosted Patchbay deployments. For the quick start guide, see [SELF_HOSTING.md](SELF_HOSTING.md).
+This document covers advanced configuration for self-hosted Orvilo deployments. For the quick start guide, see [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## Configuration
 
@@ -10,7 +10,7 @@ All configuration is done via environment variables. Copy `.env.example` as a st
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable` |
 | `JWT_SECRET` | **Required — no safe default.** Secret key for signing JWT tokens. A production backend refuses to boot if this is empty or a known placeholder. Generate with `openssl rand -hex 32`. | `openssl rand -hex 32` |
 | `FRONTEND_ORIGIN` | URL where the frontend is served (used for CORS) | `https://app.example.com` |
 
@@ -25,7 +25,7 @@ These have sensible defaults and only need to be set when tuning a large or cons
 
 ### Email (Required for Authentication)
 
-Patchbay supports two email backends. `SMTP_HOST` takes priority when set; otherwise `RESEND_API_KEY` is used. With neither configured, verification codes are printed to the server log — copy them from there to log in.
+Orvilo supports two email backends. `SMTP_HOST` takes priority when set; otherwise `RESEND_API_KEY` is used. With neither configured, verification codes are printed to the server log — copy them from there to log in.
 
 #### Option A: Resend (recommended for cloud deployments)
 
@@ -147,7 +147,7 @@ existed are fixed without a backfill.
 
 The `Secure` flag on session cookies is derived automatically from the scheme of `FRONTEND_ORIGIN`: HTTPS origins get `Secure` cookies; plain-HTTP origins (LAN / private-network self-host) get non-secure cookies so the browser can actually store them.
 
-If the frontend and backend are served from different hostnames, `COOKIE_DOMAIN` is **required**, not optional: the browser must be able to read the `patchbay_csrf` cookie from the page's own origin to send the `X-CSRF-Token` header, and without it every write request fails with `403 {"error":"CSRF validation failed"}`. Scope it to the narrowest parent domain that covers both hosts — it also shares the `patchbay_auth` session cookie with every host under that domain. See [Reverse Proxy](#reverse-proxy) for the full split-domain configuration and its trust requirements.
+If the frontend and backend are served from different hostnames, `COOKIE_DOMAIN` is **required**, not optional: the browser must be able to read the `orvilo_csrf` cookie from the page's own origin to send the `X-CSRF-Token` header, and without it every write request fails with `403 {"error":"CSRF validation failed"}`. Scope it to the narrowest parent domain that covers both hosts — it also shares the `orvilo_auth` session cookie with every host under that domain. See [Reverse Proxy](#reverse-proxy) for the full split-domain configuration and its trust requirements.
 
 ### Server
 
@@ -240,7 +240,7 @@ Agent-specific overrides:
 
 ## Database Setup
 
-Patchbay requires PostgreSQL 17. It does **not** use pgvector — no migration
+Orvilo requires PostgreSQL 17. It does **not** use pgvector — no migration
 declares a `vector` column or runs `CREATE EXTENSION vector`. The bundled image
 is named `pgvector/pgvector:pg17` for historical reasons only; a stock
 PostgreSQL 17 is sufficient.
@@ -338,7 +338,7 @@ docker compose -f docker-compose.selfhost.yml exec backend \
   ./backfill_task_usage_hourly --sleep-between-slices=2s
 
 # Kubernetes
-kubectl -n patchbay exec deploy/patchbay-backend -- \
+kubectl -n orvilo exec deploy/orvilo-backend -- \
   ./backfill_task_usage_hourly --sleep-between-slices=2s
 ```
 
@@ -397,10 +397,10 @@ In production, put a reverse proxy in front of both the backend and frontend to 
 **Single-domain layout** — frontend and backend served on the same hostname (this is what `docker-compose.selfhost.yml` defaults to):
 
 ```
-patchbay.example.com {
+orvilo.example.com {
     # WebSocket route — must come before the catch-all
-    @patchbay_ws path /ws /ws/*
-    handle @patchbay_ws {
+    @orvilo_ws path /ws /ws/*
+    handle @orvilo_ws {
         reverse_proxy localhost:8080 {
             flush_interval -1
         }
@@ -411,7 +411,7 @@ patchbay.example.com {
 }
 ```
 
-> Even on a single domain, set `FRONTEND_ORIGIN` / `CORS_ALLOWED_ORIGINS` to that public origin (e.g. `https://patchbay.example.com`) on the backend. The backend's default origin allowlist is `localhost` only, so without this it rejects the WebSocket upgrade from the public URL with `403` and real-time updates silently stop working. See [LAN / Non-localhost Access](#lan--non-localhost-access).
+> Even on a single domain, set `FRONTEND_ORIGIN` / `CORS_ALLOWED_ORIGINS` to that public origin (e.g. `https://orvilo.example.com`) on the backend. The backend's default origin allowlist is `localhost` only, so without this it rejects the WebSocket upgrade from the public URL with `403` and real-time updates silently stop working. See [LAN / Non-localhost Access](#lan--non-localhost-access).
 
 **Separate-domain layout** — frontend and backend on different hostnames:
 
@@ -421,8 +421,8 @@ app.example.com {
 }
 
 api.example.com {
-    @patchbay_ws path /ws /ws/*
-    handle @patchbay_ws {
+    @orvilo_ws path /ws /ws/*
+    handle @orvilo_ws {
         reverse_proxy localhost:8080 {
             flush_interval -1
         }
@@ -503,11 +503,11 @@ NEXT_PUBLIC_WS_URL=wss://api.example.com/ws
 >
 > This bites on upgrade: before v0.4.10 `NEXT_PUBLIC_API_URL` was inert in the published images, so a wrong value sat in `.env` doing nothing. v0.4.10 wired it through, and the stale value took effect. If you upgraded and the UI loads but nothing else does, check this variable first, then recreate the frontend container (`docker compose ... up -d --force-recreate frontend`) so the new value is picked up.
 
-> **`COOKIE_DOMAIN` is required in this setup — omitting it breaks every write.** The web app authenticates with an HttpOnly `patchbay_auth` cookie plus a JS-readable `patchbay_csrf` cookie, and sends the CSRF value as an `X-CSRF-Token` header on every non-GET request. Both cookies are host-only unless `COOKIE_DOMAIN` is set, so a frontend on `app.example.com` cannot read a cookie issued by `api.example.com`. The header is then never sent and the backend rejects the request with `403 {"error":"CSRF validation failed"}` — while GET requests keep working, so the app renders but nothing can be created or edited.
+> **`COOKIE_DOMAIN` is required in this setup — omitting it breaks every write.** The web app authenticates with an HttpOnly `orvilo_auth` cookie plus a JS-readable `orvilo_csrf` cookie, and sends the CSRF value as an `X-CSRF-Token` header on every non-GET request. Both cookies are host-only unless `COOKIE_DOMAIN` is set, so a frontend on `app.example.com` cannot read a cookie issued by `api.example.com`. The header is then never sent and the backend rejects the request with `403 {"error":"CSRF validation failed"}` — while GET requests keep working, so the app renders but nothing can be created or edited.
 >
-> After changing `COOKIE_DOMAIN`, delete the existing `patchbay_auth` / `patchbay_csrf` cookies on **both** hosts and log in again. Stale host-only cookies otherwise sit alongside the new domain-scoped ones and the browser sends both.
+> After changing `COOKIE_DOMAIN`, delete the existing `orvilo_auth` / `orvilo_csrf` cookies on **both** hosts and log in again. Stale host-only cookies otherwise sit alongside the new domain-scoped ones and the browser sends both.
 
-> **Scope `COOKIE_DOMAIN` as narrowly as possible.** The same value also scopes `patchbay_auth`, the session JWT, and the browser then sends it to **every** host under that domain. `HttpOnly` only stops page scripts from reading the cookie — it does not stop the server behind a sibling subdomain from receiving it on every request. Use the narrowest parent that still covers both hosts: for `agent.example.com` + `api.agent.example.com` that is `.agent.example.com`, **not** `.example.com`, which would also hand your users' session cookie to unrelated hosts such as a separately deployed `docs.example.com`.
+> **Scope `COOKIE_DOMAIN` as narrowly as possible.** The same value also scopes `orvilo_auth`, the session JWT, and the browser then sends it to **every** host under that domain. `HttpOnly` only stops page scripts from reading the cookie — it does not stop the server behind a sibling subdomain from receiving it on every request. Use the narrowest parent that still covers both hosts: for `agent.example.com` + `api.agent.example.com` that is `.agent.example.com`, **not** `.example.com`, which would also hand your users' session cookie to unrelated hosts such as a separately deployed `docs.example.com`.
 
 Both of these must hold, or this layout is not safe to use:
 
@@ -548,11 +548,11 @@ location /ws {
 
 See [WebSocket for LAN / Non-localhost Access](#websocket-for-lan--non-localhost-access) for why the rewrites cannot carry the `Upgrade` handshake.
 
-This keeps cookies, CORS, and the WebSocket origin check on a single origin. It is both the configuration least likely to break and the safer one: the session cookie stays host-only, so no sibling subdomain can ever receive it. An `api.example.com` vhost can still be kept for CLI and daemon use: those clients authenticate with a `pby_` personal access token over `Authorization: Bearer`, which never goes through the cookie or CSRF path.
+This keeps cookies, CORS, and the WebSocket origin check on a single origin. It is both the configuration least likely to break and the safer one: the session cookie stays host-only, so no sibling subdomain can ever receive it. An `api.example.com` vhost can still be kept for CLI and daemon use: those clients authenticate with a `ovy_` personal access token over `Authorization: Bearer`, which never goes through the cookie or CSRF path.
 
 ## LAN / Non-localhost Access
 
-By default, Patchbay works on `localhost`. If you access it from another machine on the LAN (e.g. `http://192.168.1.100:3000`), you need to tell the backend to accept that origin:
+By default, Orvilo works on `localhost`. If you access it from another machine on the LAN (e.g. `http://192.168.1.100:3000`), you need to tell the backend to accept that origin:
 
 ```bash
 # .env — replace with your server's LAN IP
@@ -584,7 +584,7 @@ HTTP requests (Plugin API, issues, comments, uploads) work on LAN out of the box
 
    `NEXT_PUBLIC_WS_URL` is a build-time variable (see `Dockerfile.web`), so setting it only in `environment:` on the pre-built image has no effect — you must use the `selfhost.build.yml` override that rebuilds the image.
 
-**Also required: allowlist the browser origin.** The two options above fix the WebSocket *upgrade proxying*, but a second, independent setting gates the connection: the backend validates the WebSocket `Origin` header against an allowlist that defaults to `localhost` only. When you open Patchbay from any other origin — a LAN IP **or a public domain behind a reverse proxy** — set `CORS_ALLOWED_ORIGINS` (or `FRONTEND_ORIGIN`) on the backend to that exact origin and restart, exactly as shown under [LAN / Non-localhost Access](#lan--non-localhost-access) above. Otherwise the upgrade is refused with `403`: the backend logs `websocket: request origin not allowed by Upgrader.CheckOrigin` and the browser console loops `disconnected, reconnecting in 3s`, while HTTP requests (and manual page refreshes) keep working because they are same-origin to the page. The single value covers both HTTP CORS and the WebSocket origin check.
+**Also required: allowlist the browser origin.** The two options above fix the WebSocket *upgrade proxying*, but a second, independent setting gates the connection: the backend validates the WebSocket `Origin` header against an allowlist that defaults to `localhost` only. When you open Orvilo from any other origin — a LAN IP **or a public domain behind a reverse proxy** — set `CORS_ALLOWED_ORIGINS` (or `FRONTEND_ORIGIN`) on the backend to that exact origin and restart, exactly as shown under [LAN / Non-localhost Access](#lan--non-localhost-access) above. Otherwise the upgrade is refused with `403`: the backend logs `websocket: request origin not allowed by Upgrader.CheckOrigin` and the browser console loops `disconnected, reconnecting in 3s`, while HTTP requests (and manual page refreshes) keep working because they are same-origin to the page. The single value covers both HTTP CORS and the WebSocket origin check.
 
 > **Note:** If you need to hard-code a different public API / WebSocket endpoint into the web image for any other reason, use the same source-build override: `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
 

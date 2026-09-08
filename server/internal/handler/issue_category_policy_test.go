@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 func requireIssueCategoryPolicyDatabase(t *testing.T) {
@@ -134,10 +134,10 @@ func TestUpdateIssueCategoryPolicyMatchesRustValidationContract(t *testing.T) {
 			wantError:  "invalid default_execution_agent_id",
 		},
 		{
-			name:       "invalid reviewer id",
-			userID:     testUserID,
-			category:   issuestatus.InProgress,
-			body:       map[string]any{
+			name:     "invalid reviewer id",
+			userID:   testUserID,
+			category: issuestatus.InProgress,
+			body: map[string]any{
 				"default_execution_agent_id": executionID,
 				"default_reviewer_agent_id":  "not-a-uuid",
 			},
@@ -161,9 +161,9 @@ func TestUpdateIssueCategoryPolicyMatchesRustValidationContract(t *testing.T) {
 			wantError:  "default_reviewer_agent_id is required for in_review",
 		},
 		{
-			name:       "execution and reviewer must differ",
-			userID:     testUserID,
-			category:   issuestatus.InReview,
+			name:     "execution and reviewer must differ",
+			userID:   testUserID,
+			category: issuestatus.InReview,
 			body: map[string]any{
 				"default_execution_agent_id": executionID,
 				"default_reviewer_agent_id":  executionID,

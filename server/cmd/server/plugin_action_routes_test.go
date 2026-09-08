@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
+	publicapiv1 "github.com/orvilo-ai/orvilo/server/pkg/publicapi/v1"
 )
 
 func TestPluginActionRouteTrustBoundaries(t *testing.T) {

@@ -2,13 +2,13 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { dingtalkGroupRoutesOptions, useUpdateDingTalkGroupRoute } from "@patchbay/core/dingtalk";
-import { agentListOptions } from "@patchbay/core/workspace/queries";
-import type { DingTalkGroupRoute, DingTalkInstallation } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@patchbay/ui/components/ui/select";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { dingtalkGroupRoutesOptions, useUpdateDingTalkGroupRoute } from "@orvilo/core/dingtalk";
+import { agentListOptions } from "@orvilo/core/workspace/queries";
+import type { DingTalkGroupRoute, DingTalkInstallation } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@orvilo/ui/components/ui/select";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { useT } from "../../i18n";
 
 export function DingTalkGroupRoutes({

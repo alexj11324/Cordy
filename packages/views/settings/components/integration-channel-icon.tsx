@@ -5,7 +5,7 @@ import { SlackMark } from "./slack-mark";
 import { TelegramMark } from "./telegram-mark";
 import { WecomMark } from "./wecom-mark";
 import { WeixinMark } from "./weixin-mark";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 
 export type IntegrationChannel = "lark" | "slack" | "dingtalk" | "wecom" | "weixin" | "telegram" | "linear";
 

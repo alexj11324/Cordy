@@ -1,7 +1,7 @@
-import type { ChatSession } from "@patchbay/core/types";
+import type { ChatSession } from "@orvilo/core/types";
 
 export const CHAT_ACTIVE_SESSION_STORAGE_PREFIX =
-  "patchbay_chat_active_session_v1";
+  "orvilo_chat_active_session_v1";
 
 export function chatActiveSessionStorageKey(workspaceId: string): string {
   return `${CHAT_ACTIVE_SESSION_STORAGE_PREFIX}:${workspaceId}`;

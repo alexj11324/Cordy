@@ -36,7 +36,7 @@ else
   ENV_FILE=".env"
   if [ ! -f "$ENV_FILE" ]; then
     echo "==> Creating $ENV_FILE from .env.example..."
-    cp .env.example "$ENV_FILE"
+    bash scripts/init-main-env.sh "$ENV_FILE"
   fi
 fi
 
@@ -60,6 +60,10 @@ set +a
 # entrypoint. This also keeps older generated .env.worktree files usable.
 # shellcheck disable=SC1091
 . scripts/local-env.sh
+if [ -z "${DATABASE_URL:-}" ]; then
+  echo "Configure DATABASE_URL or a database password in $ENV_FILE before starting locally." >&2
+  exit 1
+fi
 
 # Prepare source-matched Go artifacts. A complete cache hit does not need Go;
 # a miss fails explicitly instead of selecting a stale release/PATH binary.
@@ -69,8 +73,8 @@ runtime_suffix=""
 if [ "$(node -p 'process.platform')" = "win32" ]; then
   runtime_suffix=".exe"
 fi
-dev_backend="$REPO_ROOT/.patchbay-dev/bin/server${runtime_suffix}"
-dev_migrate="$REPO_ROOT/.patchbay-dev/bin/migrate${runtime_suffix}"
+dev_backend="$REPO_ROOT/.orvilo-dev/bin/server${runtime_suffix}"
+dev_migrate="$REPO_ROOT/.orvilo-dev/bin/migrate${runtime_suffix}"
 
 bash scripts/ensure-postgres.sh "$ENV_FILE"
 

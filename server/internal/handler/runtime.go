@@ -13,12 +13,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 type AgentRuntimeResponse struct {
@@ -632,7 +632,7 @@ func canEditRuntime(member db.Member, rt db.AgentRuntime) bool {
 }
 
 // getAgentRuntime reads one agent_runtime row by id and attributes the read to
-// source, which labels patchbay_agent_runtime_lookup_total (MUL-6884). Pick the
+// source, which labels orvilo_agent_runtime_lookup_total (MUL-6884). Pick the
 // obsmetrics.RuntimeLookupSource* constant that names the product behaviour
 // driving the read, not the file the call happens to live in: a poll loop
 // counted as generic API traffic is exactly the confusion the metric exists to
@@ -654,7 +654,7 @@ func (h *Handler) runtimeLookup(source string) service.RuntimeLookup {
 // 404 for that case prevents a known runtime ID from becoming an oracle.
 //
 // source names the product behaviour behind the read for
-// patchbay_agent_runtime_lookup_total (MUL-6884). It matters here more than
+// orvilo_agent_runtime_lookup_total (MUL-6884). It matters here more than
 // anywhere else: this one gate serves both a rarely-opened usage tab and
 // several 500ms browser poll loops, and counting them together would hide the
 // polling the metric exists to measure.
@@ -1183,9 +1183,9 @@ func (h *Handler) UnbindAgentsAndDeleteRuntime(w http.ResponseWriter, r *http.Re
 	)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":            "ok",
-		"agents_unbound":    len(teardown.UnboundAgents),
-		"tasks_cancelled":   len(teardown.CancelledTasks),
+		"status":             "ok",
+		"agents_unbound":     len(teardown.UnboundAgents),
+		"tasks_cancelled":    len(teardown.CancelledTasks),
 		"automations_paused": len(teardown.PausedAutomations),
 		// Deprecated mirror of agents_unbound: installed clients built against
 		// the archive-and-delete contract read this key. The count is the same

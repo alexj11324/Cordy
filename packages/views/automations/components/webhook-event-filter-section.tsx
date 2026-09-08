@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { X, Plus, Filter, ExternalLink } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
-import type { WebhookEventFilter } from "@patchbay/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
+import type { WebhookEventFilter } from "@orvilo/core/types";
 import { useT } from "../../i18n";
 
 interface WebhookEventFilterSectionProps {
@@ -19,8 +19,8 @@ export function WebhookEventFilterSection({
   const [newEvent, setNewEvent] = useState("");
   const [newActions, setNewActions] = useState("");
   const docsHref = i18n.language?.startsWith("zh")
-    ? `https://patchbay.aspectlylabs.com/docs/zh/automations#${encodeURIComponent("事件过滤")}`
-    : "https://patchbay.aspectlylabs.com/docs/automations#event-filters";
+    ? `https://orvilo.aspectlylabs.com/docs/zh/automations#${encodeURIComponent("事件过滤")}`
+    : "https://orvilo.aspectlylabs.com/docs/automations#event-filters";
 
   const addFilter = () => {
     const event = newEvent.trim();

@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // automationDelegationFixture builds the MUL-4857 create_issue scenario: a
@@ -27,7 +27,7 @@ type automationDelegationFixture struct {
 	LeaderAgentID string // the automation-dispatched agent authoring the comment
 	LeaderTaskID  string // its running task on this issue (comment.source_task_id)
 	Comment       db.Comment
-	AutomationID   string
+	AutomationID  string
 	RuntimeID     string
 }
 
@@ -126,7 +126,7 @@ func newAutomationDelegationFixture(t *testing.T, targetAgentID, automationCreat
 		LeaderAgentID: leaderID,
 		LeaderTaskID:  leaderTaskID,
 		Comment:       comment,
-		AutomationID:   automationID,
+		AutomationID:  automationID,
 		RuntimeID:     runtimeID,
 	}
 }
@@ -186,7 +186,7 @@ func TestAutomationDelegationAuthority_LineageBinding(t *testing.T) {
 		triggers, _ := testHandler.computeCommentAgentTriggers(
 			ctx, fx.Issue, fx.Comment.Content, nil, "agent", fx.LeaderAgentID,
 			commentTriggerComputeOptions{
-				ExcludeTriggerCommentID:            fx.Comment.ID,
+				ExcludeTriggerCommentID:             fx.Comment.ID,
 				AutomationDelegationAuthorityUserID: authorityFor(fx),
 			},
 		)
@@ -644,7 +644,7 @@ func TestUpdateComment_AdminEditOfAgentCommentClearsStaleLineage(t *testing.T) {
 	commentID := seedLeaderPlainComment(t, issueID, fx.LeaderAgentID, fx.LeaderTaskID)
 
 	// A workspace admin who is NEITHER the worker owner nor the comment author.
-	adminID := createPermissionTestAdmin(t, "mul4857-edit-admin@patchbay.test")
+	adminID := createPermissionTestAdmin(t, "mul4857-edit-admin@orvilo.test")
 
 	countQueued := func() int {
 		var n int

@@ -6,9 +6,9 @@ import type {
   IssueTableFacetSpec,
   IssueTableFacetsResponse,
   WorkingAgentSummary,
-} from "@patchbay/core/types";
-import { useIssuesScope } from "@patchbay/core/issues/stores/issues-scope-store";
-import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
+} from "@orvilo/core/types";
+import { useIssuesScope } from "@orvilo/core/issues/stores/issues-scope-store";
+import { useViewStore } from "@orvilo/core/issues/stores/view-store-context";
 import { PageHeader } from "../../layout/page-header";
 import { useT } from "../../i18n";
 import { IssueSurface } from "../surface/issue-surface";

@@ -8,15 +8,15 @@ import {
   stripBuilderDraft,
   type AgentDraft,
   type BuilderRestore,
-} from "@patchbay/core/agents";
-import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
+} from "@orvilo/core/agents";
+import { isRuntimeUsableForUser } from "@orvilo/core/runtimes";
 import type {
   ChatMessage,
   MemberWithUser,
   RuntimeDevice,
-} from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { cn } from "@orvilo/ui/lib/utils";
 import { ChatInput } from "../../chat/components/chat-input";
 import {
   ChatMessageList,

@@ -5,9 +5,9 @@ import userEvent from "@testing-library/user-event";
 import { renderWithI18n } from "../test/i18n";
 
 const longRepoUrl =
-  "https://github.com/patchbay-ai/a-very-long-repository-name-that-needs-a-tooltip";
-const apiRepoUrl = "https://github.com/patchbay-ai/api";
-const webRepoUrl = "https://github.com/patchbay-ai/web";
+  "https://github.com/orvilo-ai/a-very-long-repository-name-that-needs-a-tooltip";
+const apiRepoUrl = "https://github.com/orvilo-ai/api";
+const webRepoUrl = "https://github.com/orvilo-ai/web";
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: [] }),
@@ -16,11 +16,11 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: (options: unknown) => options,
 }));
 
-vi.mock("@patchbay/core/projects/mutations", () => ({
+vi.mock("@orvilo/core/projects/mutations", () => ({
   useCreateProject: () => ({ mutateAsync: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/projects", () => ({
+vi.mock("@orvilo/core/projects", () => ({
   useProjectDraftStore: (selector: (state: unknown) => unknown) =>
     selector({
       draft: {
@@ -37,11 +37,11 @@ vi.mock("@patchbay/core/projects", () => ({
     }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({
     id: "workspace-1",
     name: "Test Workspace",
@@ -53,12 +53,12 @@ vi.mock("@patchbay/core/paths", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
   agentListOptions: () => ({ queryKey: ["agents"], queryFn: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: vi.fn() }),
 }));
 
@@ -103,13 +103,13 @@ vi.mock("../projects/components/project-due-date-picker", () => ({
   ProjectDueDatePicker: () => <button type="button">Due date</button>,
 }));
 
-vi.mock("@patchbay/ui/components/ui/dialog", () => ({
+vi.mock("@orvilo/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@orvilo/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -126,13 +126,13 @@ vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/popover", () => ({
+vi.mock("@orvilo/ui/components/ui/popover", () => ({
   Popover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   PopoverTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
+vi.mock("@orvilo/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => (
@@ -140,7 +140,7 @@ vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/button", () => ({
+vi.mock("@orvilo/ui/components/ui/button", () => ({
   Button: ({
     children,
     disabled,
@@ -158,11 +158,11 @@ vi.mock("@patchbay/ui/components/ui/button", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/common/emoji-picker", () => ({
+vi.mock("@orvilo/ui/components/common/emoji-picker", () => ({
   EmojiPicker: () => null,
 }));
 
-vi.mock("@patchbay/ui/lib/utils", () => ({
+vi.mock("@orvilo/ui/lib/utils", () => ({
   cn: (...values: Array<string | false | null | undefined>) =>
     values.filter(Boolean).join(" "),
 }));

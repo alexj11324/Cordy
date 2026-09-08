@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useWSEvent } from "@patchbay/core/realtime";
+import { useWSEvent } from "@orvilo/core/realtime";
 import {
   runtimeKeys,
   runtimeListOptions,
-} from "@patchbay/core/runtimes/queries";
-import type { AgentRuntime } from "@patchbay/core/types";
+} from "@orvilo/core/runtimes/queries";
+import type { AgentRuntime } from "@orvilo/core/types";
 
 /**
  * Step 3's runtime data layer, shared by Desktop (`StepRuntimeConnect`)

@@ -10,8 +10,8 @@ test("staging verifier probes only staging hosts", async () => {
     return {
       status: 200,
       headers: new Headers({
-        "x-patchbay-build": `sha-${"a".repeat(40)}`,
-        "x-patchbay-commit": "a".repeat(40),
+        "x-orvilo-build": `sha-${"a".repeat(40)}`,
+        "x-orvilo-commit": "a".repeat(40),
       }),
     };
   };
@@ -23,7 +23,7 @@ test("staging verifier probes only staging hosts", async () => {
     "https://accounts.staging.aspectlylabs.com/readyz",
   ]);
   assert.equal(
-    urls.some((url) => url.includes("patchbay.aspectlylabs.com")),
+    urls.some((url) => url.includes("orvilo.aspectlylabs.com")),
     false,
   );
   assert.equal(urls.some((url) => url.includes("api.aspectlylabs.com/")), false);

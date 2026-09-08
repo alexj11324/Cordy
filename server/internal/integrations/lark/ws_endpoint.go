@@ -47,7 +47,7 @@ import (
 // call returns a structured "app type not supported" error, this code
 // surfaces the code+msg directly so the Hub's backoff loop logs the
 // real reason instead of looping silently. The smoke test path is
-// `patchbay` -> register a PersonalAgent -> enable WS -> watch logs.
+// `orvilo` -> register a PersonalAgent -> enable WS -> watch logs.
 type HTTPConnectionTokenFetcher struct {
 	cfg HTTPConnectionTokenConfig
 }
@@ -139,7 +139,7 @@ func (f *HTTPConnectionTokenFetcher) Endpoint(ctx context.Context, creds Install
 	req.Header.Set("Content-Type", "application/json; charset=utf-8")
 	// Locale header is sent verbatim by the SDK — Lark uses it for the
 	// error `msg` field (Chinese vs English). We pick zh because that's
-	// the audience Patchbay server logs are read by today; if i18n
+	// the audience Orvilo server logs are read by today; if i18n
 	// matters later this becomes an env or a per-installation knob.
 	req.Header.Set("locale", "zh")
 	resp, err := f.cfg.HTTPClient.Do(req)

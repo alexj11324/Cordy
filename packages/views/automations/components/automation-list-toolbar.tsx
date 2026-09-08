@@ -7,7 +7,7 @@ import {
   Filter,
   X,
 } from "lucide-react";
-import type { Automation } from "@patchbay/core/types";
+import type { Automation } from "@orvilo/core/types";
 import {
   AUTOMATION_SCOPES,
   type AutomationColumnKey,
@@ -15,9 +15,9 @@ import {
   type AutomationScope,
   type AutomationSortDirection,
   type AutomationSortField,
-} from "@patchbay/core/automations/stores";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/automations/stores";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -28,18 +28,18 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+} from "@orvilo/ui/components/ui/popover";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import { useT } from "../../i18n";

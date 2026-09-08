@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AutomationDetailPage as AutomationDetail } from "@patchbay/views/automations/components";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { automationDetailOptions } from "@patchbay/core/automations/queries";
+import { AutomationDetailPage as AutomationDetail } from "@orvilo/views/automations/components";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { automationDetailOptions } from "@orvilo/core/automations/queries";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function AutomationDetailPage() {

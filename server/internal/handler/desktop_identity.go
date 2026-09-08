@@ -15,11 +15,11 @@ import (
 
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
-var desktopLocalIdentityCodePattern = regexp.MustCompile(`^pbl_[A-Za-z0-9_-]{43}$`)
+var desktopLocalIdentityCodePattern = regexp.MustCompile(`^ovl_[A-Za-z0-9_-]{43}$`)
 var errDesktopIdentityRejected = errors.New("desktop identity rejected")
 var errDesktopIdentityUnavailable = errors.New("desktop identity unavailable")
 
@@ -37,7 +37,7 @@ func decodeDesktopHandoffRedeem(w http.ResponseWriter, r *http.Request, dst *des
 }
 
 // RedeemDesktopLocalIdentity consumes a local-only grant. This endpoint never
-// issues a production bearer, and the normal session endpoint rejects pbl_.
+// issues a production bearer, and the normal session endpoint rejects ovl_.
 // Native callbacks carry authorization codes, not bearer tokens (RFC 8252 §8.1).
 func (h *Handler) RedeemDesktopLocalIdentity(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")

@@ -3,7 +3,7 @@ import type {
   Issue,
   SearchIssueResult,
   SearchProjectResult,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { buildSearchRows } from "./search-rows";
 
 function issue(

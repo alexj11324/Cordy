@@ -18,14 +18,14 @@ export interface TokenStorage {
   setItem(key: string, value: string): void;
 }
 
-export const DESKTOP_TOKEN_KEY = "patchbay_token";
+export const DESKTOP_TOKEN_KEY = "orvilo_token";
 
 /**
  * Records the value this helper last seeded. It is what tells a session the
  * developer created (by signing in through the app) apart from one this helper
  * put there: only the latter may be replaced.
  */
-export const DESKTOP_SEEDED_TOKEN_KEY = "patchbay_dev_seeded_token";
+export const DESKTOP_SEEDED_TOKEN_KEY = "orvilo_dev_seeded_token";
 
 /**
  * Seeds the development token into storage. Returns whether it wrote one.

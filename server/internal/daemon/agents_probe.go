@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // probeAgentCLIs discovers which built-in agent CLIs are installed on this
@@ -18,7 +18,7 @@ import (
 // This is pure discovery: no version detection and no minimum-version gate
 // (detectBuiltinRuntimes owns those, per registration round). The result is
 // therefore the machine's *availability* set, which is exactly what
-// /health.agents reports and what `patchbay daemon probe-runtimes` prints.
+// /health.agents reports and what `orvilo daemon probe-runtimes` prints.
 //
 // It is called once from LoadConfig at startup and again from the periodic
 // workspace sync (refreshAgentAvailability), so a CLI the user installs while
@@ -139,10 +139,10 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 	if e, ok := probe("ORVILO_REASONIX_PATH", "reasonix", "ORVILO_REASONIX_MODEL"); ok {
 		agents["reasonix"] = e
 	}
-	// DSH is registered only when its Patchbay runtime profile is installed.
+	// DSH is registered only when its Orvilo runtime profile is installed.
 	// A bare dsh binary is not enough: without the bundle it has no --stdio
 	// protocol and every task would fail after being advertised as healthy.
-	if e, ok := probe("ORVILO_DSH_PATH", "dsh", "ORVILO_DSH_MODEL"); ok && probeDshPatchbayProfile(e.Path) {
+	if e, ok := probe("ORVILO_DSH_PATH", "dsh", "ORVILO_DSH_MODEL"); ok && probeDshOrviloProfile(e.Path) {
 		agents["dsh"] = e
 	}
 	if e, ok := probe("ORVILO_KIRO_PATH", "kiro-cli", "ORVILO_KIRO_MODEL"); ok {
@@ -222,16 +222,16 @@ var probeAgentCLIs = func() map[string]AgentEntry {
 }
 
 // ProbeLocalAgents exposes the read-only discovery pass for local clients that
-// must not load a Patchbay CLI profile. The regular daemon path still goes
+// must not load an Orvilo CLI profile. The regular daemon path still goes
 // through LoadConfig so its profile-backed overrides remain intact.
 func ProbeLocalAgents() map[string]AgentEntry {
 	return probeAgentCLIs()
 }
 
-func probeDshPatchbayProfile(executablePath string) bool {
+func probeDshOrviloProfile(executablePath string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, executablePath, "--profile", "patchbay", "--probe")
+	cmd := exec.CommandContext(ctx, executablePath, "--profile", "orvilo", "--probe")
 	cmd.WaitDelay = time.Second
 	output, err := cmd.Output()
 	if err != nil {

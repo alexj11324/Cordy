@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // insertRuntimeProfileFixture creates a runtime_profile in testWorkspaceID and

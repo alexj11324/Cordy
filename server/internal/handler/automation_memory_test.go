@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 func memoryRequest(t *testing.T, automationID, userID, method, name string, body any) *httptest.ResponseRecorder {

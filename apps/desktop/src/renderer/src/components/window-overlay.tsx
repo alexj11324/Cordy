@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { shouldCloseSettingsOnEscape } from "./settings-escape";
 import { useQuery } from "@tanstack/react-query";
-import { InvitePage } from "@patchbay/views/invite";
-import { InvitationsPage } from "@patchbay/views/invitations";
-import { OnboardingFlow } from "@patchbay/views/onboarding";
-import { useNavigation } from "@patchbay/views/navigation";
-import { paths } from "@patchbay/core/paths";
-import { workspaceListOptions } from "@patchbay/core/workspace/queries";
+import { InvitePage } from "@orvilo/views/invite";
+import { InvitationsPage } from "@orvilo/views/invitations";
+import { OnboardingFlow } from "@orvilo/views/onboarding";
+import { useNavigation } from "@orvilo/views/navigation";
+import { paths } from "@orvilo/core/paths";
+import { workspaceListOptions } from "@orvilo/core/workspace/queries";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import { useLocalRuntimesPending } from "../platform/use-local-runtimes-pending";
 import { DesktopSettingsPage } from "./desktop-settings-page";

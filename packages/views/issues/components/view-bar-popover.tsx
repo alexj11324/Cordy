@@ -25,7 +25,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,16 +35,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { cn } from "@patchbay/ui/lib/utils";
-import type { IssueView } from "@patchbay/core/api/schemas";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { cn } from "@orvilo/ui/lib/utils";
+import type { IssueView } from "@orvilo/core/api/schemas";
 import { useT } from "../../i18n";
 
 /** One entry on the bar: a built-in tab or a saved view. */

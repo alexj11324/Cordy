@@ -3,7 +3,7 @@ import type { ComponentProps } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Automation } from "@patchbay/core/types";
+import type { Automation } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 const mocks = vi.hoisted(() => ({
@@ -11,12 +11,12 @@ const mocks = vi.hoisted(() => ({
   listError: null as Error | null,
   push: vi.fn(),
 }));
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
     selector({ user: { id: "user-1" } }),
 }));
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({
     newAutomation: (template?: string) =>
       `/acme/automations/new${template ? `?template=${template}` : ""}`,
@@ -33,10 +33,10 @@ vi.mock("../../navigation", () => ({
   useNavigation: () => ({ push: mocks.push }),
   useRowLink: () => () => ({}),
 }));
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Scout" }),
 }));
-vi.mock("@patchbay/core/automations/queries", () => ({
+vi.mock("@orvilo/core/automations/queries", () => ({
   automationListOptions: () => ({
     queryKey: ["automations", "ws-test"],
     queryFn: async () => {

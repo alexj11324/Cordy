@@ -11,8 +11,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { useDeleteIssue } from "@patchbay/core/issues/mutations";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { useDeleteIssue } from "@orvilo/core/issues/mutations";
 import { useBackOrReplace } from "../navigation";
 import { useT } from "../i18n";
 

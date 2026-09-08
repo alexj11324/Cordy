@@ -11,22 +11,22 @@ import {
   Trash2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, AgentRuntime, WorkspaceMcpServer } from "@patchbay/core/types";
-import { ApiError } from "@patchbay/core/api";
+import type { Agent, AgentRuntime, WorkspaceMcpServer } from "@orvilo/core/types";
+import { ApiError } from "@orvilo/core/api";
 import {
   isRuntimeUsableForUser,
   runtimeCapabilitiesOptions,
   runtimeDisplayLabel,
-} from "@patchbay/core/runtimes";
+} from "@orvilo/core/runtimes";
 import {
   agentMcpServersOptions,
   workspaceMcpServersOptions,
-} from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/workspace/queries";
 import {
   useAddAgentMcpServer,
   useRemoveAgentMcpServer,
   useSetAgentMcpServerEnabled,
-} from "@patchbay/core/workspace/mutations";
+} from "@orvilo/core/workspace/mutations";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,16 +36,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import { toast } from "sonner";
 import { useT } from "../../../i18n";
 import {

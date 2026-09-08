@@ -16,14 +16,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 type CommentResponse struct {
@@ -368,7 +368,7 @@ const (
 //
 // Both values must be set together so the cursor can tie-break entries
 // landing in the same microsecond. The cursor for the next page is
-// emitted via the X-Patchbay-Next-Before / X-Patchbay-Next-Before-Id
+// emitted via the X-Orvilo-Next-Before / X-Orvilo-Next-Before-Id
 // response headers.
 //
 // Combination rules (kept narrow on purpose — Elon flagged the matrix risk):
@@ -674,8 +674,8 @@ func (h *Handler) ListComments(w http.ResponseWriter, r *http.Request) {
 	// body so the default flat-array response shape — which the desktop UI
 	// and existing callers depend on — is unchanged.
 	if result.NextBefore != "" && result.NextBeforeID != "" {
-		w.Header().Set("X-Patchbay-Next-Before", result.NextBefore)
-		w.Header().Set("X-Patchbay-Next-Before-Id", result.NextBeforeID)
+		w.Header().Set("X-Orvilo-Next-Before", result.NextBefore)
+		w.Header().Set("X-Orvilo-Next-Before-Id", result.NextBeforeID)
 	}
 	if result.CommentsTruncated {
 		w.Header().Set(HeaderCommentsTruncated, "true")
@@ -1493,11 +1493,11 @@ type CommentTriggerAgentResponse struct {
 type commentAgentTriggerSource string
 
 const (
-	commentTriggerSourceIssueExecutor      commentAgentTriggerSource = "issue_executor"
-	commentTriggerSourceMentionAgent       commentAgentTriggerSource = "mention_agent"
+	commentTriggerSourceIssueExecutor     commentAgentTriggerSource = "issue_executor"
+	commentTriggerSourceMentionAgent      commentAgentTriggerSource = "mention_agent"
 	commentTriggerSourceMentionTeamLeader commentAgentTriggerSource = "mention_team_leader"
-	commentTriggerSourceThreadParent       commentAgentTriggerSource = "thread_parent"
-	commentTriggerSourceConversation       commentAgentTriggerSource = "conversation_continuation"
+	commentTriggerSourceThreadParent      commentAgentTriggerSource = "thread_parent"
+	commentTriggerSourceConversation      commentAgentTriggerSource = "conversation_continuation"
 )
 
 const defaultCommentRoutingEscalationDelay = 5 * time.Minute
@@ -1524,13 +1524,13 @@ func (h *Handler) commentRoutingEscalationDelay(ctx context.Context, workspaceID
 
 type commentEscalationFallback struct {
 	Agent db.Agent
-	Team *db.Team
+	Team  *db.Team
 }
 
 type commentAgentTrigger struct {
 	Agent              db.Agent
 	Source             commentAgentTriggerSource
-	Team              *db.Team
+	Team               *db.Team
 	EscalationFallback *commentEscalationFallback
 	AlreadyPending     bool
 }
@@ -1993,8 +1993,8 @@ func (h *Handler) triggerTasksForComment(ctx context.Context, issue db.Issue, co
 		return nil
 	}
 	triggers, targets := h.computeCommentAgentTriggers(ctx, issue, comment.Content, parentComment, actorType, actorID, commentTriggerComputeOptions{
-		ExcludeTriggerCommentID:            comment.ID,
-		OriginatorUserID:                   originatorUserID,
+		ExcludeTriggerCommentID:             comment.ID,
+		OriginatorUserID:                    originatorUserID,
 		AutomationDelegationAuthorityUserID: delegationAuthorityUserID,
 	})
 	triggers = filterSuppressedCommentAgentTriggers(triggers, suppressAgentIDs)
@@ -2058,8 +2058,8 @@ func filterSuppressedCommentAgentTriggers(triggers []commentAgentTrigger, suppre
 // leader can be reported honestly as coalesced rather than as if its own leader
 // context ran.
 type commentEnqueueResult struct {
-	status      DispatchStatus
-	reason      DispatchReasonCode
+	status     DispatchStatus
+	reason     DispatchReasonCode
 	execTeamID string
 }
 
@@ -2718,7 +2718,7 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 			uuidToString(fallback.Agent.ID) != uuidToString(trigger.Agent.ID) {
 			trigger.EscalationFallback = &commentEscalationFallback{
 				Agent: fallback.Agent,
-				Team: fallback.Team,
+				Team:  fallback.Team,
 			}
 		}
 		return []commentAgentTrigger{trigger}, nil
@@ -2735,7 +2735,7 @@ func (h *Handler) computeCommentAgentTriggers(ctx context.Context, issue db.Issu
 					uuidToString(fallback.Agent.ID) != uuidToString(triggers[0].Agent.ID) {
 					triggers[0].EscalationFallback = &commentEscalationFallback{
 						Agent: fallback.Agent,
-						Team: fallback.Team,
+						Team:  fallback.Team,
 					}
 				}
 			}
@@ -3676,8 +3676,8 @@ func (h *Handler) retriggerCancelledTaskSurvivors(ctx context.Context, issue db.
 			delegationAuthority = h.automationDelegationAuthorityFromComment(ctx, issue, comment)
 		}
 		triggers, _ := h.computeCommentAgentTriggers(ctx, issue, comment.Content, parentComment, actorType, actorID, commentTriggerComputeOptions{
-			ExcludeTriggerCommentID:            comment.ID,
-			OriginatorUserID:                   originatorUserID,
+			ExcludeTriggerCommentID:             comment.ID,
+			OriginatorUserID:                    originatorUserID,
 			AutomationDelegationAuthorityUserID: delegationAuthority,
 		})
 		targets := targetsByComment[uuidToString(comment.ID)]

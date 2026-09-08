@@ -2,12 +2,12 @@
 
 import { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@patchbay/core/paths";
-import { workspaceListOptions } from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/paths";
+import { workspaceListOptions } from "@orvilo/core/workspace/queries";
 import { useNavigation } from "../navigation";
 import { useLogout } from "../auth";
 import { DragStrip } from "../platform";

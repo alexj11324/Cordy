@@ -1,4 +1,4 @@
-// Package publicapiv1 owns the stable Patchbay Public API v1 contract.
+// Package publicapiv1 owns the stable Orvilo Public API v1 contract.
 //
 // The same resource contract is exposed through different trust surfaces. The
 // Plugin API is the first consumer: it accepts installation/callback tokens and
@@ -21,11 +21,11 @@ const (
 type ContractKind string
 
 const (
-	// ContractSharedResource is a Patchbay resource contract that can be exposed
+	// ContractSharedResource is an Orvilo resource contract that can be exposed
 	// to multiple credential types through surface-specific authorization.
 	ContractSharedResource ContractKind = "shared_resource"
 	// ContractPluginExtension belongs to Plugin installations rather than the
-	// general Patchbay resource API.
+	// general Orvilo resource API.
 	ContractPluginExtension ContractKind = "plugin_extension"
 )
 

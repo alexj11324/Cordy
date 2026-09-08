@@ -7,7 +7,7 @@
 import { Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useTheme } from "@react-navigation/native";
-import type { WorkProduct } from "@patchbay/core/types";
+import type { WorkProduct } from "@orvilo/core/types";
 import { Text } from "@/components/ui/text";
 import { timeAgo } from "@/lib/time-ago";
 

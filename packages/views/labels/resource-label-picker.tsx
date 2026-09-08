@@ -3,20 +3,20 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Check, Search, Tag } from "lucide-react";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import {
   labelListOptions,
   resourceLabelsOptions,
   useAttachResourceLabel,
   useDetachResourceLabel,
-} from "@patchbay/core/labels";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
+} from "@orvilo/core/labels";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
+} from "@orvilo/ui/components/ui/popover";
 import { useT } from "../i18n";
 import { LabelChip } from "./label-chip";
 

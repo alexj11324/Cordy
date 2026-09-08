@@ -2,11 +2,11 @@ import type {
   AgentTask,
   ChatMessage,
   ChatPendingTask,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   deriveAgentThreadTaskState,
   isAgentTaskActive,
-} from "@patchbay/core/agent-thread";
+} from "@orvilo/core/agent-thread";
 
 export { isAgentTaskActive };
 

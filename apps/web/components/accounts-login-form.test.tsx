@@ -8,8 +8,8 @@ const { sso, staleSso, client } = vi.hoisted(() => {
   return { sso, staleSso, client };
 });
 vi.mock("@clerk/nextjs", () => ({ useClerk: () => ({ client }) }));
-vi.mock("@patchbay/views/i18n", () => ({ useLocale: () => "en" }));
-vi.mock("@patchbay/auth-ui/login-form", () => ({
+vi.mock("@orvilo/views/i18n", () => ({ useLocale: () => "en" }));
+vi.mock("@orvilo/auth-ui/login-form", () => ({
   AccountsLoginForm: ({ onGoogleLogin }: { onGoogleLogin: () => Promise<void> }) =>
     <button onClick={() => void onGoogleLogin()}>Google</button>,
 }));

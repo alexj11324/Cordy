@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
 )
 
 // This file is the Feishu ResolverSet: the platform-specific implementations
@@ -86,7 +86,7 @@ func (r *feishuInstallationResolver) ResolveInstallation(ctx context.Context, ms
 		WorkspaceID:     inst.WorkspaceID,
 		AgentID:         inst.AgentID,
 		InstallerUserID: inst.InstallerUserID,
-		Installed:          InstallationStatus(inst.Status) == InstallationInstalled,
+		Installed:       InstallationStatus(inst.Status) == InstallationInstalled,
 		Platform:        inst,
 	}, nil
 }
@@ -106,14 +106,14 @@ func (r *feishuIdentityResolver) ResolveSender(ctx context.Context, inst engine.
 		}
 		return engine.ResolvedIdentity{}, err
 	}
-	isMember, err := r.store.IsWorkspaceMember(ctx, inst.WorkspaceID, binding.PatchbayUserID)
+	isMember, err := r.store.IsWorkspaceMember(ctx, inst.WorkspaceID, binding.OrviloUserID)
 	if err != nil {
 		return engine.ResolvedIdentity{}, err
 	}
 	if !isMember {
 		return engine.ResolvedIdentity{}, engine.ErrSenderNotMember
 	}
-	return engine.ResolvedIdentity{UserID: binding.PatchbayUserID}, nil
+	return engine.ResolvedIdentity{UserID: binding.OrviloUserID}, nil
 }
 
 // ---- dedup ----

@@ -1,7 +1,7 @@
 /**
  * MUL-5208 — a dedicated issue window must answer content-link navigation.
  *
- * `patchbay:navigate` is fired by the shared link handler for every in-app
+ * `orvilo:navigate` is fired by the shared link handler for every in-app
  * destination, including an absolute URL on this deployment's own origin. Only
  * the main shell listened for it, so a link clicked inside an issue window did
  * nothing at all. This window hosts exactly one issue route: another issue opens
@@ -14,11 +14,11 @@ import {
   currentPath,
   useNavigation,
   type NavigationAdapter,
-} from "@patchbay/views/navigation";
+} from "@orvilo/views/navigation";
 
 const APP_URL = "https://app.example";
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ slug: "acme", id: "ws-1" }),
 }));
 
@@ -68,7 +68,7 @@ function navigate(path: string) {
   // state update it triggers.
   act(() => {
     window.dispatchEvent(
-      new CustomEvent("patchbay:navigate", { detail: { path } }),
+      new CustomEvent("orvilo:navigate", { detail: { path } }),
     );
   });
 }

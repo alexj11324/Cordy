@@ -14,7 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 const BindingTokenTTL = 15 * time.Minute
@@ -82,8 +82,8 @@ func (s *BindingTokenService) Mint(ctx context.Context, workspaceID, installatio
 	return BindingToken{Raw: raw, ExpiresAt: expiresAt}, nil
 }
 
-func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, patchbayUserID pgtype.UUID) (RedeemedBindingToken, error) {
-	if s == nil || s.q == nil || s.tx == nil || !patchbayUserID.Valid || strings.TrimSpace(raw) == "" {
+func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, orviloUserID pgtype.UUID) (RedeemedBindingToken, error) {
+	if s == nil || s.q == nil || s.tx == nil || !orviloUserID.Valid || strings.TrimSpace(raw) == "" {
 		return RedeemedBindingToken{}, ErrBindingTokenInvalid
 	}
 	tx, err := s.tx.Begin(ctx)
@@ -112,7 +112,7 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, pat
 		return RedeemedBindingToken{}, ErrBindingTokenInvalid
 	}
 	if _, err := qtx.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-		UserID: patchbayUserID, WorkspaceID: row.WorkspaceID,
+		UserID: orviloUserID, WorkspaceID: row.WorkspaceID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RedeemedBindingToken{}, ErrBindingNotWorkspaceMember
@@ -120,7 +120,7 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, pat
 		return RedeemedBindingToken{}, fmt.Errorf("weixin: check binding membership: %w", err)
 	}
 	if _, err := qtx.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
-		WorkspaceID: row.WorkspaceID, PatchbayUserID: patchbayUserID, InstallationID: row.InstallationID,
+		WorkspaceID: row.WorkspaceID, OrviloUserID: orviloUserID, InstallationID: row.InstallationID,
 		ChannelType: string(TypeWeixin), ChannelUserID: row.ChannelUserID, Config: []byte(`{}`),
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

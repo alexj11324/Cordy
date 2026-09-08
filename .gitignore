@@ -45,7 +45,7 @@ server/bin/
 server/tmp/
 server/migrate
 server/daemon
-server/patchbay
+server/orvilo
 
 # Test artifacts
 test-results/
@@ -54,8 +54,8 @@ apps/web/test-results/
 # context (agent workspace)
 .context
 .agent_context/
-.patchbay/
-.patchbay-dev/
+.orvilo/
+.orvilo-dev/
 
 # local settings
 .claude/

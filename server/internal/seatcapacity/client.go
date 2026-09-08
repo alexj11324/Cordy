@@ -1,4 +1,4 @@
-// Package seatcapacity is the product-side executor for Patchbay Cloud's
+// Package seatcapacity is the product-side executor for Orvilo Cloud's
 // pre-purchased workspace-seat protocol.
 package seatcapacity
 
@@ -21,7 +21,7 @@ import (
 const (
 	defaultTimeout       = 3 * time.Second
 	maxResponseBodySize  = 64 << 10
-	rateLimitScopeHeader = "X-Patchbay-RateLimit-Scope"
+	rateLimitScopeHeader = "X-Orvilo-RateLimit-Scope"
 
 	RateLimitScopeGlobal    = "global"
 	RateLimitScopeWorkspace = "workspace"

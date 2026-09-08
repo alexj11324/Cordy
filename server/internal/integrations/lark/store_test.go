@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func uuidFrom(b byte) pgtype.UUID {
@@ -169,7 +169,7 @@ func TestUserBindingConfigRoundTrip(t *testing.T) {
 	in := UserBinding{
 		ID:             uuidFrom(0x55),
 		WorkspaceID:    uuidFrom(0x22),
-		PatchbayUserID:  uuidFrom(0x66),
+		OrviloUserID: uuidFrom(0x66),
 		InstallationID: uuidFrom(0x11),
 		ChannelUserID:  "ou_sender",
 		UnionID:        pgtype.Text{String: "on_union_777", Valid: true},
@@ -181,7 +181,7 @@ func TestUserBindingConfigRoundTrip(t *testing.T) {
 	got, err := userBindingFromRow(db.ChannelUserBinding{
 		ID:             in.ID,
 		WorkspaceID:    in.WorkspaceID,
-		PatchbayUserID:  in.PatchbayUserID,
+		OrviloUserID: in.OrviloUserID,
 		InstallationID: in.InstallationID,
 		ChannelUserID:  in.ChannelUserID,
 		Config:         cfg,
@@ -189,7 +189,7 @@ func TestUserBindingConfigRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("userBindingFromRow: %v", err)
 	}
-	if got.UnionID != in.UnionID || got.ChannelUserID != in.ChannelUserID || got.PatchbayUserID != in.PatchbayUserID {
+	if got.UnionID != in.UnionID || got.ChannelUserID != in.ChannelUserID || got.OrviloUserID != in.OrviloUserID {
 		t.Fatalf("user binding round-trip mismatch: %+v", got)
 	}
 }

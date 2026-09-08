@@ -11,13 +11,13 @@ fi
 worktree_name="${WORKTREE_NAME:-$(basename "$PWD")}"
 slug="$(printf '%s' "$worktree_name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/_/g; s/__*/_/g; s/^_//; s/_$//')"
 if [ -z "$slug" ]; then
-  slug="patchbay"
+  slug="orvilo"
 fi
 
 hash_value="$(printf '%s' "$PWD" | cksum | awk '{print $1}')"
 offset=$((hash_value % 1000))
 
-postgres_db="patchbay_${slug}_${offset}"
+postgres_db="orvilo_${slug}_${offset}"
 postgres_port=5432
 backend_port=$((18080 + offset))
 frontend_port=$((13000 + offset))
@@ -25,10 +25,10 @@ frontend_origin="http://localhost:${frontend_port}"
 
 cat > "$ENV_FILE" <<EOF
 POSTGRES_DB=${postgres_db}
-POSTGRES_USER=patchbay
-POSTGRES_PASSWORD=patchbay
+POSTGRES_USER=orvilo
+POSTGRES_PASSWORD=orvilo
 POSTGRES_PORT=${postgres_port}
-DATABASE_URL=postgres://patchbay:patchbay@localhost:${postgres_port}/${postgres_db}?sslmode=disable
+DATABASE_URL=postgres://orvilo:orvilo@localhost:${postgres_port}/${postgres_db}?sslmode=disable
 
 PORT=${backend_port}
 JWT_SECRET=change-me-in-production

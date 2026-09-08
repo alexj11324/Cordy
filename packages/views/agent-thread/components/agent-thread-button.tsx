@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { MessagesSquare } from "lucide-react";
-import { useAgentThreadPanelStore } from "@patchbay/core/agent-thread";
-import type { AgentTask } from "@patchbay/core/types";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@patchbay/ui/components/ui/tooltip";
+import { useAgentThreadPanelStore } from "@orvilo/core/agent-thread";
+import type { AgentTask } from "@orvilo/core/types";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { cn } from "@orvilo/ui/lib/utils";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@orvilo/ui/components/ui/tooltip";
 import { useNavigation } from "../../navigation";
 
 export function AgentThreadButton({

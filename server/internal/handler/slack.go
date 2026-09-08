@@ -10,9 +10,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/slack"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // SlackInstallationResponse is the wire shape for a Slack installation row. The
@@ -201,7 +201,7 @@ func (h *Handler) RegisterSlackBYO(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, slack.ErrTeamOwnedByArchivedAgent):
 			writeError(w, http.StatusConflict, "this Slack app is installed for an archived agent in this workspace — restore that agent, or remove its bot installation, before installing it here")
 		case errors.Is(err, slack.ErrTeamOwnedByAnotherWorkspace):
-			writeError(w, http.StatusConflict, "this Slack app is already installed in a different Patchbay workspace — remove that installation before installing it here")
+			writeError(w, http.StatusConflict, "this Slack app is already installed in a different Orvilo workspace — remove that installation before installing it here")
 		default:
 			// The dominant non-sentinel failure here is auth.test rejecting the
 			// pasted bot token (a user error), so guide the user to recheck the
@@ -285,7 +285,7 @@ type RedeemSlackBindingTokenResponse struct {
 }
 
 // RedeemSlackBindingToken (POST /api/slack/binding/redeem) binds the Slack user
-// id carried by the token to the logged-in Patchbay user. The redeemer's identity
+// id carried by the token to the logged-in Orvilo user. The redeemer's identity
 // comes from the session, not the token, so a stolen token cannot bind a Slack
 // id to an attacker's account. Failure modes map to distinct status codes:
 //   - 410 Gone:      token unknown / consumed / expired
@@ -320,7 +320,7 @@ func (h *Handler) RedeemSlackBindingToken(w http.ResponseWriter, r *http.Request
 		case errors.Is(err, slack.ErrBindingTokenInvalid):
 			writeError(w, http.StatusGone, "binding token invalid or expired")
 		case errors.Is(err, slack.ErrBindingAlreadyAssigned):
-			writeError(w, http.StatusConflict, "this Slack account is already bound to a different Patchbay user")
+			writeError(w, http.StatusConflict, "this Slack account is already bound to a different Orvilo user")
 		case errors.Is(err, slack.ErrBindingNotWorkspaceMember):
 			writeError(w, http.StatusForbidden, "binding refused (are you a workspace member?)")
 		default:

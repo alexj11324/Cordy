@@ -2,11 +2,11 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Inter, Geist_Mono, Source_Serif_4 } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
-import { Toaster } from "@patchbay/ui/components/ui/sonner";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Toaster } from "@orvilo/ui/components/ui/sonner";
+import { cn } from "@orvilo/ui/lib/utils";
 import { WebProviders } from "@/components/web-providers";
-import type { SupportedLocale } from "@patchbay/core/i18n";
-import { RESOURCES } from "@patchbay/views/locales";
+import type { SupportedLocale } from "@orvilo/core/i18n";
+import { RESOURCES } from "@orvilo/views/locales";
 import { getRequestLocale } from "@/lib/request-locale";
 import { SITE_TITLE, TITLE_TEMPLATE } from "@/platform/document-title";
 import {
@@ -80,7 +80,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://patchbay.aspectlylabs.com"),
+  metadataBase: new URL("https://orvilo.aspectlylabs.com"),
   title: {
     default: SITE_TITLE,
     template: TITLE_TEMPLATE,
@@ -114,8 +114,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    site: "@patchbay_hq",
-    creator: "@patchbay_hq",
+    site: "@OrviloAI",
+    creator: "@OrviloAI",
   },
   alternates: {
     canonical: "/",

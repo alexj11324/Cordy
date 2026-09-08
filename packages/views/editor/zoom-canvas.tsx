@@ -14,14 +14,14 @@
 
 import { useCallback, type ReactNode, type RefObject } from "react";
 import { Frame, Maximize, Minus, Plus } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { createShortcutChord, type ShortcutChord } from "@patchbay/core/shortcuts";
+} from "@orvilo/ui/components/ui/tooltip";
+import { createShortcutChord, type ShortcutChord } from "@orvilo/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { useT } from "../i18n";
 import type { ZoomCanvasApi } from "./hooks/use-zoom-canvas";

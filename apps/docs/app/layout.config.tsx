@@ -1,11 +1,11 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
 import { ArrowUpRight } from "lucide-react";
 
-// Docs-local stateless Orvilo mark — matches @patchbay/ui's PatchbayIcon
+// Docs-local stateless Orvilo mark — matches @orvilo/ui's OrviloIcon
 // without useState/useEffect so it is safe to render from Server Components.
 // Keep the geometry in sync with docs/assets/brand/orvilo/mark.svg and
-// packages/ui/components/common/patchbay-icon.tsx.
-function PatchbayMark() {
+// packages/ui/components/common/orvilo-icon.tsx.
+function OrviloMark() {
   return (
     <svg
       viewBox="0 0 128 128"
@@ -56,13 +56,13 @@ export const baseOptions: BaseLayoutProps = {
     {
       icon: <GitHubMark />,
       text: externalLinkText("GitHub"),
-      url: "https://github.com/patchbay-ai/patchbay",
+      url: "https://github.com/alexj11324/Cordy",
       external: true,
     },
     {
-      icon: <PatchbayMark />,
+      icon: <OrviloMark />,
       text: externalLinkText("Orvilo"),
-      url: "https://patchbay.aspectlylabs.com",
+      url: "https://orvilo.aspectlylabs.com",
       external: true,
     },
   ],

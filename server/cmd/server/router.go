@@ -18,39 +18,39 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/cloudruntime"
-	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
-	"github.com/patchbay-ai/patchbay/server/internal/handler"
-	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	composiointeg "github.com/patchbay-ai/patchbay/server/internal/integrations/composio"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/dingtalk"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/lark"
-	linearapi "github.com/patchbay-ai/patchbay/server/internal/integrations/linear"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/telegram"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/wecom"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/weixin"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	"github.com/patchbay-ai/patchbay/server/internal/realtime"
-	"github.com/patchbay-ai/patchbay/server/internal/seatcapacity"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/storage"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	composiosdk "github.com/patchbay-ai/patchbay/server/pkg/composio"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/featureflag"
-	"github.com/patchbay-ai/patchbay/server/pkg/llm"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
-	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/cloudruntime"
+	"github.com/orvilo-ai/orvilo/server/internal/daemonws"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/featureflags"
+	"github.com/orvilo-ai/orvilo/server/internal/handler"
+	"github.com/orvilo-ai/orvilo/server/internal/hostedcapacity"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	composiointeg "github.com/orvilo-ai/orvilo/server/internal/integrations/composio"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/dingtalk"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/lark"
+	linearapi "github.com/orvilo-ai/orvilo/server/internal/integrations/linear"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/slack"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/telegram"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/wecom"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/weixin"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/realtime"
+	"github.com/orvilo-ai/orvilo/server/internal/seatcapacity"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/storage"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	composiosdk "github.com/orvilo-ai/orvilo/server/pkg/composio"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/featureflag"
+	"github.com/orvilo-ai/orvilo/server/pkg/llm"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
+	publicapiv1 "github.com/orvilo-ai/orvilo/server/pkg/publicapi/v1"
 )
 
 var defaultOrigins = []string{
@@ -82,7 +82,7 @@ var corsAllowedHeaders = []string{
 	"X-Client-OS",
 	"X-Client-Capabilities",
 	// Sent by the host page when it relays a plugin surface's Action API call.
-	"X-Patchbay-Plugin-Installation",
+	"X-Orvilo-Plugin-Installation",
 }
 
 // corsExposedHeaders lists response headers browser clients are allowed to read.
@@ -138,7 +138,7 @@ func allowedOrigins() []string {
 // appURLFromEnv resolves the user-facing web app URL. It prefers
 // ORVILO_APP_URL and falls back to FRONTEND_ORIGIN, matching how the backend
 // resolves the app URL elsewhere (handler.daemonSetupURLsFromEnv) and the CLI
-// login flow (cmd/patchbay tryResolveAppURL). Empty when neither is set.
+// login flow (cmd/orvilo tryResolveAppURL). Empty when neither is set.
 func appURLFromEnv() string {
 	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("ORVILO_APP_URL")), "/"); v != "" {
 		return v
@@ -211,10 +211,10 @@ func buildFingerprintMiddleware(buildVersion, buildCommit string) func(http.Hand
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if buildVersion != "" {
-				w.Header().Set("X-Patchbay-Build", buildVersion)
+				w.Header().Set("X-Orvilo-Build", buildVersion)
 			}
 			if buildCommit != "" {
-				w.Header().Set("X-Patchbay-Commit", buildCommit)
+				w.Header().Set("X-Orvilo-Commit", buildCommit)
 			}
 			next.ServeHTTP(w, r)
 		})
@@ -486,7 +486,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		Observer: opts.BusinessMetrics,
 	})
 	if entitlementErr != nil {
-		slog.Error("entitlement policy client disabled by malformed Patchbay Cloud URL", "error", entitlementErr)
+		slog.Error("entitlement policy client disabled by malformed Orvilo Cloud URL", "error", entitlementErr)
 		opts.BusinessMetrics.RecordEntitlementConfigError()
 	} else if entitlementClient.Enabled() {
 		h.Entitlements = entitlementClient
@@ -521,7 +521,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	if opts.BusinessMetrics != nil {
 		// Wire the BusinessMetrics receiver into the cloud runtime client
 		// so every outbound Fleet/Gateway request feeds the
-		// patchbay_cloudruntime_request_* histograms.
+		// orvilo_cloudruntime_request_* histograms.
 		if client, ok := h.CloudRuntime.(*cloudruntime.Client); ok {
 			client.SetRecorder(opts.BusinessMetrics)
 		}
@@ -780,7 +780,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		slog.Info("lark integration disabled (ORVILO_LARK_SECRET_KEY not set)")
 	}
 
-	// Slack integration. Multi-tenant B2 model (MUL-3666): Patchbay hosts ONE
+	// Slack integration. Multi-tenant B2 model (MUL-3666): Orvilo hosts ONE
 	// Slack app, workspaces self-install via OAuth, and inbound runs on a single
 	// deployment-level Socket Mode connection routed by team_id — replacing the
 	// stage-3 per-installation connection model (MUL-3516).
@@ -811,7 +811,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// AgentOffline / AgentArchived / issue-created notices. The binding
 			// token service mints the single-use token embedded in the prompt's
 			// redeem link; the redeem endpoint (registered below, public) binds
-			// the Slack user to their Patchbay account.
+			// the Slack user to their Orvilo account.
 			slackBindingSvc := slack.NewBindingTokenService(queries, pool)
 			h.SlackBindingTokens = slackBindingSvc
 			slackReplier := slack.NewOutboundReplier(slack.OutboundReplierConfig{
@@ -849,7 +849,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			channelRouter.Register(slack.TypeSlack, slack.NewSlackResolverSet(queries, pool, slackReplier, slackTyping, slackMedia))
 			slack.NewOutbound(queries, box.Open, slog.Default()).Register(bus)
 
-			// On-demand history reader behind the unified `patchbay chat history`
+			// On-demand history reader behind the unified `orvilo chat history`
 			// command (MUL-3871): pull the session's Slack conversation when the
 			// agent asks, instead of force-assembling it on every inbound.
 			h.SlackHistory = slack.NewHistory(queries, box.Open, slog.Default())
@@ -897,7 +897,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			} else {
 				h.SlackInstall = installSvc
 			}
-			// Managed (hosted) OAuth for the official Patchbay Slack app: state
+			// Managed (hosted) OAuth for the official Orvilo Slack app: state
 			// issuance + code exchange. The service stores only state hashes, so
 			// it needs no secretbox; persistence still goes through InstallService
 			// above, and the callback 503s without it. Client credentials are
@@ -1012,7 +1012,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				h.WecomStore = wecomStore
 				h.WecomCredentials = credsResolver
 
-				// Binding tokens back the per-user "link your Patchbay account"
+				// Binding tokens back the per-user "link your Orvilo account"
 				// prompt sent to first-time WeCom senders. aibot userids are
 				// anonymized T-prefixed ids with no relation to real userids
 				// or emails, so an explicit binding table is the only correct
@@ -1077,7 +1077,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// EventChatDone subscriber: pushes the agent's chat reply
 				// back over the same aibot WebSocket the inbound loop owns.
 				// Mirrors slack.NewOutbound(...).Register(bus). Without it
-				// the agent's reply lands only in Patchbay's web UI — the
+				// the agent's reply lands only in Orvilo's web UI — the
 				// user in WeCom sees no response.
 				//
 				// WithAttachments adds the second hop: the files the agent
@@ -1401,7 +1401,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		h.HeartbeatScheduler = opts.HeartbeatScheduler
 	}
 	// Auth caches: PAT cache is shared between the regular Auth middleware,
-	// the DaemonAuth fallback (pby_) path, and the revoke handler
+	// the DaemonAuth fallback (ovy_) path, and the revoke handler
 	// (invalidate). DaemonTokenCache backs the DaemonAuth mdt_ path. Both
 	// constructors return nil when rdb is nil — every consumer handles that
 	// as "no cache, always hit DB".
@@ -1411,12 +1411,12 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	h.DaemonTokenCache = daemonTokenCache
 	h.MembershipCache = auth.NewMembershipCache(rdb)
 
-	// Cloud PAT verifier: validates mcn_ tokens against Patchbay Cloud
+	// Cloud PAT verifier: validates mcn_ tokens against Orvilo Cloud
 	// Fleet. Returns nil when no Cloud URL is configured — the Auth /
 	// DaemonAuth middlewares treat nil as "mcn_ not supported" and
-	// reject with 401, instead of falling through to pby_/JWT paths.
+	// reject with 401, instead of falling through to ovy_/JWT paths.
 	// Reuses ORVILO_CLOUD_URL (the same URL the cloud-runtime proxy uses) so a
-	// deployment has one authoritative patchbay-cloud connection.
+	// deployment has one authoritative orvilo-cloud connection.
 	cloudPATVerifier := auth.NewCloudPATVerifier(auth.CloudPATVerifierConfig{
 		FleetBaseURL: signupConfig.CloudURL,
 		Redis:        rdb,
@@ -1585,17 +1585,17 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// purpose: the bearer token in the URL path IS the credential. Workspace
 	// context is derived from the trigger row, never from request headers.
 	r.Post("/api/webhooks/automations/{token}", h.HandleAutomationWebhook)
-	// GitHub App webhook (no Patchbay auth — requests are authenticated via
+	// GitHub App webhook (no Orvilo auth — requests are authenticated via
 	// HMAC-SHA256 signature in the handler) and post-install setup callback.
 	r.Post("/api/webhooks/github", h.HandleGitHubWebhook)
 	r.Get("/api/github/setup", h.GitHubSetupCallback)
-	// Slack managed-OAuth callback (no Patchbay auth in the path — it is hit by
+	// Slack managed-OAuth callback (no Orvilo auth in the path — it is hit by
 	// Slack's browser redirect, which carries no session; the workspace and
 	// installer are recovered from the single-use state token). It consumes the
 	// state, exchanges the code, upserts the team-keyed install, then 302s the
 	// browser to the redirect_url bound to the state.
 	r.Get("/api/integrations/slack/oauth/callback", h.ManagedSlackOAuthCallback)
-	// Slack managed Events API webhook (no Patchbay auth — authenticity is the
+	// Slack managed Events API webhook (no Orvilo auth — authenticity is the
 	// HMAC-SHA256 request signature; tenant routing is the event's api_app_id
 	// + team_id). The handler nil-checks: without the Slack block above there
 	// is no webhook and this 503s instead of panicking.
@@ -1604,13 +1604,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// events webhook; replay protection is the trigger_id claim). Nil-checks
 	// like the events route above.
 	r.Post("/api/integrations/slack/commands", h.ManagedSlackCommands)
-	// VCS webhook for token-based providers (Forgejo / Gitea / GitLab). No Patchbay
+	// VCS webhook for token-based providers (Forgejo / Gitea / GitLab). No Orvilo
 	// auth — authenticated per-connection by the provider's signature scheme;
 	// the connection id in the path selects the workspace, provider, and
 	// decryption secret.
 	r.Post("/api/webhooks/vcs/{connectionId}", h.HandleVCSWebhook)
-	// Stripe webhook (no Patchbay auth — Stripe signs the raw body
-	// with a shared secret, the patchbay-cloud upstream verifies. We
+	// Stripe webhook (no Orvilo auth — Stripe signs the raw body
+	// with a shared secret, the orvilo-cloud upstream verifies. We
 	// only forward the bytes + the Stripe-Signature header; see
 	// HandleCloudBillingStripeWebhook for the rationale).
 	r.Post("/api/webhooks/stripe", h.HandleCloudBillingStripeWebhook)
@@ -1627,7 +1627,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// the browsers above; the other four composio endpoints stay session-gated.
 	r.Get("/api/integrations/composio/callback", h.ComposioCallback)
 	// Linear redirects and webhooks carry their own short-lived state or HMAC
-	// credential and therefore cannot depend on a Patchbay browser session.
+	// credential and therefore cannot depend on an Orvilo browser session.
 	r.Get("/api/linear/oauth/callback", h.LinearOAuthCallback)
 	r.Post("/api/webhooks/linear", h.HandleLinearWebhook)
 
@@ -1742,7 +1742,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.With(handler.RequireHumanActor).Post("/api/client-usage", h.UpsertClientUsage)
 
 		// Guest sessions are account-scoped, not workspace-scoped. Keep the
-		// human gate here as a second boundary after Auth: pbg_ guest bearers
+		// human gate here as a second boundary after Auth: ovg_ guest bearers
 		// may manage their own lifecycle, formal human users may claim, and
 		// machine credentials must not create/read/claim/revoke sessions.
 		r.Route("/api/guest-sessions", func(r chi.Router) {
@@ -2003,14 +2003,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/api/dingtalk/binding/redeem", h.RedeemDingTalkBindingToken)
 		// WeCom smart-bot binding-token redemption. Same rationale as
 		// Lark/Slack: the session is the source of truth for the redeemer's
-		// Patchbay identity; the token only carries the WeCom userid to bind.
+		// Orvilo identity; the token only carries the WeCom userid to bind.
 		r.Post("/api/wecom/binding/redeem", h.RedeemWecomBindingToken)
 		// Telegram binding-token redemption. Same rationale: not
 		// workspace-scoped, identity from the session, token proves only
 		// "this Telegram user id requested binding".
 		r.Post("/api/telegram/binding/redeem", h.RedeemTelegramBindingToken)
 		// Weixin binding redemption is user-scoped: the session identity is
-		// the Patchbay user, while the bearer token carries only the iLink id.
+		// the Orvilo user, while the bearer token carries only the iLink id.
 		r.Post("/api/weixin/binding/redeem", h.RedeemWeixinBindingToken)
 
 		// Composio integration (MUL-3720). User-scoped (no workspace context):
@@ -2040,7 +2040,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		})
 
 		// Cloud Billing proxy. Same upstream service / port as
-		// cloud-runtime — patchbay-cloud's Fleet and Billing share
+		// cloud-runtime — orvilo-cloud's Fleet and Billing share
 		// :8080 and the same chi router. All routes here forward
 		// to /api/v1/billing/* with X-User-ID stamped from the
 		// authenticated context.

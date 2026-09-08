@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { IssuePriority, UpdateIssueRequest } from "@patchbay/core/types";
-import { PRIORITY_DISPLAY_ORDER, PRIORITY_CONFIG } from "@patchbay/core/issues/config";
+import type { IssuePriority, UpdateIssueRequest } from "@orvilo/core/types";
+import { PRIORITY_DISPLAY_ORDER, PRIORITY_CONFIG } from "@orvilo/core/issues/config";
 import { PriorityIcon } from "../priority-icon";
 import { DeferredPopup } from "../../../common/deferred-popup";
 import { PropertyPicker, PickerItem, PICKER_TRIGGER_CLASS } from "./property-picker";

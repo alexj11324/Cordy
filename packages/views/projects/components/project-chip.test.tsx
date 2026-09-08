@@ -7,11 +7,11 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/projects/queries", () => ({
+vi.mock("@orvilo/core/projects/queries", () => ({
   projectListOptions: () => ({ queryKey: ["projects"] }),
   projectDetailOptions: (_workspaceId: string, projectId: string) => ({
     queryKey: ["project", projectId],

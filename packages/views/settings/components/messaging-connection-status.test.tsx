@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom/vitest";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enSettings from "../../locales/en/settings.json";
 import zhSettings from "../../locales/zh-Hans/settings.json";
 import { MessagingConnectionStatus } from "./messaging-connection-status";

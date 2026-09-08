@@ -5,11 +5,11 @@ import {
   WorkspaceSlugProvider,
   useWorkspaceSlug,
   useCurrentWorkspace,
-} from "@patchbay/core/paths";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import type { Workspace } from "@patchbay/core/types";
+} from "@orvilo/core/paths";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
+import type { Workspace } from "@orvilo/core/types";
 
-// Hook tests for @patchbay/core/paths live here because packages/core/ runs
+// Hook tests for @orvilo/core/paths live here because packages/core/ runs
 // Vitest in node environment (no jsdom). packages/views/ already has jsdom +
 // @testing-library/react configured, so it's the correct home per CLAUDE.md
 // testing rules ("shared UI components live in packages/views/*.test.tsx").

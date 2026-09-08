@@ -3,19 +3,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, Cloud, Monitor, Pencil, Plus, Server } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { agentTaskSnapshotOptions } from "@patchbay/core/agents";
-import { runtimeProfileListOptions } from "@patchbay/core/runtimes";
-import { runtimeKeys, runtimeListOptions } from "@patchbay/core/runtimes/queries";
-import { useWSEvent } from "@patchbay/core/realtime";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { agentTaskSnapshotOptions } from "@orvilo/core/agents";
+import { runtimeProfileListOptions } from "@orvilo/core/runtimes";
+import { runtimeKeys, runtimeListOptions } from "@orvilo/core/runtimes/queries";
+import { useWSEvent } from "@orvilo/core/realtime";
 import {
   agentListOptions,
   memberListOptions,
-} from "@patchbay/core/workspace/queries";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/core/workspace/queries";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { AppLink } from "../../navigation";
 import { buildWorkloadIndex, RuntimeList } from "./runtime-list";
 import {

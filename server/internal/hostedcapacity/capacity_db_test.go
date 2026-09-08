@@ -8,8 +8,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // capacityTestDB mirrors the repo's DB-test contract: skip (not fail) when
@@ -18,7 +18,7 @@ func capacityTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dsn = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)
@@ -80,9 +80,9 @@ func TestReconcileAgainstPostgres(t *testing.T) {
 	cleanup()
 	t.Cleanup(cleanup)
 
-	exec(`INSERT INTO "user" (id, name, email) VALUES ($1, 'Hosted capacity test', $2)`, userID, "capacity-"+suffix+"@patchbay.test")
+	exec(`INSERT INTO "user" (id, name, email) VALUES ($1, 'Hosted capacity test', $2)`, userID, "capacity-"+suffix+"@orvilo.test")
 	exec(`INSERT INTO workspace (id, name, slug, description) VALUES ($1, 'Hosted capacity test', $2, '')`, workspaceID, "hosted-capacity-"+suffix)
-	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider) VALUES ($1, $2, 'Capacity runtime', 'local', 'patchbay_daemon')`, runtimeID, workspaceID)
+	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider) VALUES ($1, $2, 'Capacity runtime', 'local', 'orvilo_daemon')`, runtimeID, workspaceID)
 	// One installation per agent — the real shape of a multi-bot workspace
 	// (channel_installation is unique on (workspace, agent, channel_type)).
 	for i, agent := range []string{agentA, agentB, agentC} {

@@ -17,28 +17,28 @@ import { useQuery } from "@tanstack/react-query";
 import {
   automationDetailOptions,
   automationRunsOptions,
-} from "@patchbay/core/automations/queries";
-import type { AutomationTriggerPreset } from "@patchbay/core/automations";
+} from "@orvilo/core/automations/queries";
+import type { AutomationTriggerPreset } from "@orvilo/core/automations";
 import {
   useUpdateAutomation,
   useDeleteAutomation,
   useTriggerAutomation,
   useCreateAutomationTrigger,
-} from "@patchbay/core/automations/mutations";
+} from "@orvilo/core/automations/mutations";
 import {
   clientErrorMessage,
   dispatchReasonCode,
   errorCode,
-} from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useActorName } from "@patchbay/core/workspace/hooks";
+} from "@orvilo/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useActorName } from "@orvilo/core/workspace/hooks";
 import { useNavigation, AppLink } from "../../navigation";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { cn } from "@orvilo/ui/lib/utils";
 import { toast } from "sonner";
 import {
   AlertDialog,
@@ -49,7 +49,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import { formatInTimeZone } from "../../common/format-in-time-zone";
 import {
   DropdownMenu,
@@ -60,7 +60,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -68,14 +68,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@patchbay/ui/components/ui/table";
+} from "@orvilo/ui/components/ui/table";
 import type {
   Automation,
   AutomationExecutionMode,
   AutomationRun,
   AutomationTrigger,
-} from "@patchbay/core/types";
-import type { AgentTask } from "@patchbay/core/types/agent";
+} from "@orvilo/core/types";
+import type { AgentTask } from "@orvilo/core/types/agent";
 import { AgentThreadButton } from "../../agent-thread";
 import { AutomationSettingsPage } from "./automation-settings-page";
 import { AutomationEditDialog } from "./automation-edit-dialog";

@@ -1,1 +1,1 @@
-export { TeamDetailPage as default } from "@patchbay/views/teams";
+export { TeamDetailPage as default } from "@orvilo/views/teams";

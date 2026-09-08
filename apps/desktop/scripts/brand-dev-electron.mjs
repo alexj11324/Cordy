@@ -2,7 +2,7 @@
 // Prepare this worktree/channel's Electron.app before launch. macOS discovers URL
 // schemes and application identity from Info.plist, not app.setName().
 // Every development checkout declares only its path-derived callback scheme.
-// A development build must never claim production patchbay:// or another
+// A development build must never claim production orvilo:// or another
 // checkout's callback.
 // https://www.electronjs.org/docs/latest/api/app#appsetasdefaultprotocolclientprotocol-path-args
 import { createRequire } from "node:module";
@@ -18,11 +18,11 @@ import {
 // Keep names, bundle-id prefixes, and callback-scheme prefixes aligned with
 // apps/desktop/src/shared/desktop-app-identity.ts. This script runs before
 // Electron boots, so it cannot import that TS module. Staging must declare
-// patchbay-staging-<hash>:// and never the production patchbay:// handler.
+// orvilo-staging-<hash>:// and never the production orvilo:// handler.
 export function devBundleIdentity(appRoot, suffix, channel = "development") {
   const hash = identityHashForPath(appRoot);
   const staging = channel === "staging";
-  const prefix = staging ? "ai.patchbay.desktop.staging" : "ai.patchbay.desktop.canary";
+  const prefix = staging ? "ai.orvilo.desktop.staging" : "ai.orvilo.desktop.canary";
   const baseName = staging ? "Orvilo Staging" : "Orvilo Canary";
   const bundleId = `${prefix}.${hash}`;
   const callbackProtocol = callbackProtocolForPath(appRoot, channel);
@@ -102,9 +102,9 @@ export function configureDevPlist(plistPath, identity) {
 const VENDOR_BUNDLE_ID = "com.github.Electron";
 const VENDOR_BUNDLE_NAME = "Electron";
 const DEV_BUNDLE_ID_PATTERN =
-  /^ai\.patchbay\.desktop\.(canary|staging)\.[a-f0-9]{16}$/;
+  /^ai\.orvilo\.desktop\.(canary|staging)\.[a-f0-9]{16}$/;
 const DEV_CALLBACK_SCHEME_PATTERN =
-  /^(patchbay-canary|patchbay-staging)-[a-f0-9]{16}$/;
+  /^(orvilo-canary|orvilo-staging)-[a-f0-9]{16}$/;
 const LSREGISTER =
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 
@@ -145,7 +145,7 @@ function unregisterBundle(path) {
 
 export function prepareDevBundle(electronBin, appRoot, version, suffix, channel = "development") {
   const identity = devBundleIdentity(appRoot, suffix, channel);
-  const cacheRoot = resolve(appRoot, "../../.patchbay-dev/electron", `${version}-${process.arch}`);
+  const cacheRoot = resolve(appRoot, "../../.orvilo-dev/electron", `${version}-${process.arch}`);
   const channelRoot = join(cacheRoot, channel === "staging" ? "staging" : "development");
   const bundle = join(channelRoot, "Electron.app");
   if (!existsSync(bundle)) {
@@ -172,12 +172,12 @@ export function brandDevElectron(env = process.env) {
   const version = require("electron/package.json").version;
   const executable = readFileSync(join(moduleRoot, "path.txt"), "utf8").trim();
   const appRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-  const identity = devBundleIdentity(appRoot, env.DESKTOP_APP_SUFFIX, env.PATCHBAY_DESKTOP_CHANNEL);
+  const identity = devBundleIdentity(appRoot, env.DESKTOP_APP_SUFFIX, env.ORVILO_DESKTOP_CHANNEL);
   const sourceBin = join(moduleRoot, "dist", executable);
   const sourceApp = resolve(sourceBin, "../../..");
   const electronBin = prepareDevBundle(
     sourceBin, appRoot, version,
-    env.DESKTOP_APP_SUFFIX, env.PATCHBAY_DESKTOP_CHANNEL,
+    env.DESKTOP_APP_SUFFIX, env.ORVILO_DESKTOP_CHANNEL,
   );
   // Earlier checkouts branded the shared dependency Electron.app. After the
   // channel copies exist, that leftover identity would still own the callback

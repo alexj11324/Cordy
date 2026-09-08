@@ -43,7 +43,7 @@ vi.mock("electron", () => ({
 vi.mock("node:child_process", () => ({ spawn: ctx.spawn }));
 
 vi.mock("./local-guest-runtime", () => ({
-  bundledCliPath: () => "/app/resources/bin/patchbay",
+  bundledCliPath: () => "/app/resources/bin/orvilo",
   verifyBundledCli: ctx.verifyBundledCli,
   localGuestChildEnvironment: async () => ({ ...ctx.childEnvironment }),
 }));
@@ -52,7 +52,7 @@ import { loadLocalGuestRunHistory, localGuestRunHistoryPath } from "./local-gues
 import { setupLocalGuestRunner } from "./local-guest-runner";
 import { LocalWorkspaceGrants } from "./local-guest-workspace";
 
-/** Stands in for the spawned `patchbay daemon run-local` process. */
+/** Stands in for the spawned `orvilo daemon run-local` process. */
 class FakeChild extends EventEmitter {
   readonly stdout = new PassThrough();
   readonly stderr = new PassThrough();
@@ -171,8 +171,8 @@ beforeEach(async () => {
   ctx.windowsBySender.set(mainSender, mainWindow);
   sentEvents.length = 0;
   mode = "guest";
-  ctx.userDataPath = await createTemporaryDirectory("patchbay-guest-runner-");
-  workspace = await createTemporaryDirectory("patchbay-guest-workspace-");
+  ctx.userDataPath = await createTemporaryDirectory("orvilo-guest-runner-");
+  workspace = await createTemporaryDirectory("orvilo-guest-workspace-");
   grants = new LocalWorkspaceGrants();
   await grants.grant(workspace);
   controller = setupLocalGuestRunner(
@@ -237,7 +237,7 @@ describe("local Guest runner isolation", () => {
   });
 
   it("refuses a working directory the user never chose", async () => {
-    const unchosen = await createTemporaryDirectory("patchbay-unchosen-");
+    const unchosen = await createTemporaryDirectory("orvilo-unchosen-");
 
     const { result } = await startRun(
       runRequest({ workingDirectory: unchosen }),
@@ -289,7 +289,7 @@ describe("local Guest runner isolation", () => {
     await startRun();
 
     expect(ctx.spawn).toHaveBeenCalledWith(
-      "/app/resources/bin/patchbay",
+      "/app/resources/bin/orvilo",
       ["daemon", "run-local"],
       expect.objectContaining({
         cwd: workspace,
@@ -302,7 +302,7 @@ describe("local Guest runner isolation", () => {
       { env: NodeJS.ProcessEnv },
     ];
     expect(
-      Object.keys(options.env).filter((key) => key.startsWith("PATCHBAY")),
+      Object.keys(options.env).filter((key) => key.startsWith("ORVILO")),
     ).toEqual([]);
   });
 });
@@ -525,7 +525,7 @@ describe("local Guest run history", () => {
     ctx.ipcHandlers.clear();
     setupLocalGuestRunner(() => mainWindow as never, () => mode, freshGrants);
 
-    const unchosen = await createTemporaryDirectory("patchbay-unchosen-");
+    const unchosen = await createTemporaryDirectory("orvilo-unchosen-");
     const rejected = await startRun(
       runRequest({ workingDirectory: unchosen }),
     );

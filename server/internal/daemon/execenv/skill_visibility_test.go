@@ -91,7 +91,7 @@ func TestRenderedSkillListsHideDisableModelInvocationSkills(t *testing.T) {
 	ctx := TaskContextForEnv{
 		IssueID:           "issue-1",
 		QuickCreatePrompt: "create something",
-		AutomationRunID:    "run-1",
+		AutomationRunID:   "run-1",
 		AgentName:         "Eve",
 		AgentID:           "eve-1",
 		AgentSkills: []SkillContextForEnv{
@@ -117,7 +117,7 @@ Hidden body.`,
 		},
 	}
 
-	// The brief is now the only Patchbay-rendered skill listing, for every kind.
+	// The brief is now the only Orvilo-rendered skill listing, for every kind.
 	for _, kind := range []TaskContextForEnv{
 		{IssueID: ctx.IssueID, AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
 		{QuickCreatePrompt: ctx.QuickCreatePrompt, AgentName: ctx.AgentName, AgentID: ctx.AgentID, AgentSkills: ctx.AgentSkills},
@@ -142,7 +142,7 @@ Hidden body.`,
 	for name, out := range map[string]string{
 		"issue context": renderIssueContext("codex", TaskContextForEnv{IssueID: ctx.IssueID, AgentSkills: ctx.AgentSkills}),
 		"quick create":  renderQuickCreateContext(TaskContextForEnv{QuickCreatePrompt: ctx.QuickCreatePrompt, AgentSkills: ctx.AgentSkills}),
-		"automation":     renderAutomationContext(TaskContextForEnv{AutomationRunID: ctx.AutomationRunID, AgentSkills: ctx.AgentSkills}),
+		"automation":    renderAutomationContext(TaskContextForEnv{AutomationRunID: ctx.AutomationRunID, AgentSkills: ctx.AgentSkills}),
 	} {
 		if strings.Contains(out, "## Agent Skills") || strings.Contains(out, "visible-skill") {
 			t.Errorf("%s still renders a skill list:\n%s", name, out)
@@ -152,7 +152,7 @@ Hidden body.`,
 
 // sanitizeSkillName is not injective — "A B" and "A-B" both reduce to "a-b" —
 // so a listing built from it alone names two skills identically while
-// writeSkillFiles puts the second in `a-b-patchbay`. The second skill then has
+// writeSkillFiles puts the second in `a-b-orvilo`. The second skill then has
 // no invocable name and the model is silently pointed at the first. This needs
 // no user-installed skill and no local_directory: an ordinary task with two
 // such skills bound reproduces it in a clean workdir.
@@ -229,11 +229,11 @@ func TestBatchSlugAllocationCountsHiddenSkills(t *testing.T) {
 		t.Fatalf("expected 1 visible skill, got %d", len(visible))
 	}
 	// The hidden skill took `a-b`, so the visible one must be listed — and
-	// written — as `a-b-patchbay`.
-	if visible[0].Name != "a-b-patchbay" {
-		t.Errorf("visible skill listed as %q, want %q", visible[0].Name, "a-b-patchbay")
+	// written — as `a-b-orvilo`.
+	if visible[0].Name != "a-b-orvilo" {
+		t.Errorf("visible skill listed as %q, want %q", visible[0].Name, "a-b-orvilo")
 	}
-	if _, err := os.Stat(filepath.Join(dir, "a-b-patchbay", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, "a-b-orvilo", "SKILL.md")); err != nil {
 		t.Errorf("listed name has no matching directory: %v", err)
 	}
 }

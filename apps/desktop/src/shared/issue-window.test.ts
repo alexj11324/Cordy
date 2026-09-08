@@ -64,7 +64,7 @@ describe("issue window request", () => {
 
   it("falls back to the main window for malformed launch arguments", () => {
     expect(
-      readDesktopWindowContext(["electron", "--patchbay-issue-window=%7Bbad"]),
+      readDesktopWindowContext(["electron", "--orvilo-issue-window=%7Bbad"]),
     ).toEqual({ kind: "main" });
   });
 });

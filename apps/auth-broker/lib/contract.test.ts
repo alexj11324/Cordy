@@ -9,7 +9,7 @@ describe("auth broker session contract", () => {
       logoutPath: "/auth/logout",
       mePath: "/api/me",
       websocketPath: "/ws",
-      guestTokenPrefix: "pbg_",
+      guestTokenPrefix: "ovg_",
       guestWorkspaceAccess: false,
       guestWebsocketAccess: false,
     });

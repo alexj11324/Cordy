@@ -17,7 +17,7 @@ afterEach(async () => {
 });
 
 async function fixture(contents: string): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), "patchbay-profile-helper-"));
+  const root = await mkdtemp(join(tmpdir(), "orvilo-profile-helper-"));
   fixtureRoots.push(root);
   const executable = join(root, "helper");
   await writeFile(executable, `#!/usr/bin/env node\n${contents}\n`, {

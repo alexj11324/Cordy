@@ -1,11 +1,11 @@
 ---
 title: Contributing
-description: Set up a local Patchbay development environment, run tests, and submit changes using the repository conventions.
+description: Set up a local Orvilo development environment, run tests, and submit changes using the repository conventions.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay is a Go backend and pnpm monorepo. The simplest local start is `make up C=desktop`.
+Orvilo is a Go backend and pnpm monorepo. The simplest local start is `make up C=desktop`.
 
 Web and Electron share product UI from `packages/views`. After a PR merges to `main` and CI succeeds, production Web deploys through `aspectlylabs-production-images`. Installed desktop clients pick up the same UI on the next `v*` release (`release.yml` + electron-updater). App shells stay in `apps/web` and `apps/desktop`; shared pages belong in `packages/views`.
 
@@ -24,8 +24,8 @@ Treat the root `package.json`, `server/go.mod`, and CI workflows as the source o
 ## First start
 
 ```bash
-git clone https://github.com/patchbay-ai/patchbay.git
-cd patchbay
+git clone https://github.com/orvilo-ai/orvilo.git
+cd orvilo
 make up C=desktop   # install deps, prepare the database, start the backend and Electron
 make seed-dev       # optional: sample issues, in the dev-fixtures workspace
 ```
@@ -40,15 +40,15 @@ The primary checkout uses `.env`. If the file does not exist, `make up` creates 
 
 `make dev-login` works because `make up` writes `ORVILO_DEV_LOGIN=1` into the local env file — see [Sign-in and signup](/auth-setup#skipping-the-login-page-in-development). Never enable it on an internet-facing deployment, and do not use a local `.env` for one either.
 
-The full contributor guide — environments, worktrees, testing layers, troubleshooting and destructive reset — is [CONTRIBUTING.md](https://github.com/patchbay-ai/patchbay/blob/main/CONTRIBUTING.md) in the repository. This page is the short version.
+The full contributor guide — environments, worktrees, testing layers, troubleshooting and destructive reset — is [CONTRIBUTING.md](https://github.com/orvilo-ai/orvilo/blob/main/CONTRIBUTING.md) in the repository. This page is the short version.
 
 ## Developing in a worktree
 
 The repository supports running the primary checkout and multiple worktrees at the same time. They share one PostgreSQL container but use separate databases and ports.
 
 ```bash
-git worktree add ../patchbay-feature -b feat/my-change main
-cd ../patchbay-feature
+git worktree add ../orvilo-feature -b feat/my-change main
+cd ../orvilo-feature
 make setup-worktree
 make start-worktree
 ```
@@ -88,7 +88,7 @@ make build            # Build the server, CLI, and migrate binaries
 ```
 
 `make up` treats an environment as a named object: it allocates the API, Web and Desktop renderer ports,
-database name and CLI profile under a lock and records them in `~/.patchbay/dev/`,
+database name and CLI profile under a lock and records them in `~/.orvilo/dev/`,
 so two checkouts cannot land on the same slot without one of them being told.
 It verifies the database through `DATABASE_URL` and the backend through
 `GET /health`, which reports `pid`, `commit` and `started_at` — a 200 alone
@@ -168,7 +168,7 @@ Use an application transaction in the service layer when multiple writes must su
 Run the check closest to the change first, then expand the scope. For a Docs-only change:
 
 ```bash
-pnpm --filter @patchbay/docs typecheck
+pnpm --filter @orvilo/docs typecheck
 ```
 
 For shared frontend changes:

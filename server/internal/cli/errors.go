@@ -136,7 +136,7 @@ func (e *NetworkError) Unwrap() error { return e.Err }
 // UserMessageError attaches a command-specific, user-facing message to an
 // underlying error. FormatError shows Msg verbatim (in preference to the
 // generic kind-based copy it would otherwise derive from a wrapped
-// *NetworkError / *HTTPError), so command-level guidance — e.g. a `patchbay
+// *NetworkError / *HTTPError), so command-level guidance — e.g. a `orvilo
 // login` failure that is more helpful than the generic 401/timeout line — is
 // visible in the default (non-debug) output.
 //
@@ -350,24 +350,24 @@ var kindMessages = map[ErrorKind][2]string{
 		"传输中断：响应尚未接收完毕，连接就停止发送数据。请检查网络连接或重试。可通过 ORVILO_HTTP_STALL_TIMEOUT 调高无进展等待时间。",
 	},
 	KindNetworkDNS: {
-		"Could not resolve the Patchbay server address. Check your network connection or the --server-url setting.",
-		"无法解析 Patchbay 服务器地址。请检查网络连接或 --server-url 配置。",
+		"Could not resolve the Orvilo server address. Check your network connection or the --server-url setting.",
+		"无法解析 Orvilo 服务器地址。请检查网络连接或 --server-url 配置。",
 	},
 	KindNetworkRefused: {
-		"Could not connect to the Patchbay server. Make sure the server address is correct and reachable.",
-		"无法连接到 Patchbay 服务器。请确认服务器地址正确且网络可达。",
+		"Could not connect to the Orvilo server. Make sure the server address is correct and reachable.",
+		"无法连接到 Orvilo 服务器。请确认服务器地址正确且网络可达。",
 	},
 	KindNetworkTLS: {
-		"Could not establish a secure connection to the Patchbay server (TLS/certificate error). Check your system clock and CA certificates.",
-		"无法与 Patchbay 服务器建立安全连接（TLS/证书错误）。请检查系统时间和 CA 证书。",
+		"Could not establish a secure connection to the Orvilo server (TLS/certificate error). Check your system clock and CA certificates.",
+		"无法与 Orvilo 服务器建立安全连接（TLS/证书错误）。请检查系统时间和 CA 证书。",
 	},
 	KindNetworkOffline: {
-		"Could not reach the Patchbay server. Check your network connection.",
-		"无法访问 Patchbay 服务器。请检查网络连接。",
+		"Could not reach the Orvilo server. Check your network connection.",
+		"无法访问 Orvilo 服务器。请检查网络连接。",
 	},
 	KindAuthRequired: {
-		"Your session has expired or you are not signed in. Run `patchbay login` to sign in again. On a self-hosted or non-OAuth setup, ask your administrator for valid credentials.",
-		"登录已过期或尚未登录。请运行 `patchbay login` 重新登录。自托管或非 OAuth 场景请联系管理员获取有效凭证。",
+		"Your session has expired or you are not signed in. Run `orvilo login` to sign in again. On a self-hosted or non-OAuth setup, ask your administrator for valid credentials.",
+		"登录已过期或尚未登录。请运行 `orvilo login` 重新登录。自托管或非 OAuth 场景请联系管理员获取有效凭证。",
 	},
 	KindTaskTokenRejected: {
 		"This task token was rejected and is no longer usable. Stop here: do not retry, and do not fall back to a profile or member credential, because anything done with one would run as that person rather than as this task. Only the runtime that started this task can supply a valid task token.",
@@ -394,8 +394,8 @@ var kindMessages = map[ErrorKind][2]string{
 		"请求过于频繁。请稍候重试；若持续出现，请降低 API 调用频率。",
 	},
 	KindServerError: {
-		"The Patchbay service is temporarily unavailable (server error). Please try again later; if it persists, contact support. Re-run with --debug to see the raw server response.",
-		"Patchbay 服务暂时不可用（服务器错误）。请稍后重试；若持续出现请联系支持。可加 --debug 查看服务器原始响应。",
+		"The Orvilo service is temporarily unavailable (server error). Please try again later; if it persists, contact support. Re-run with --debug to see the raw server response.",
+		"Orvilo 服务暂时不可用（服务器错误）。请稍后重试；若持续出现请联系支持。可加 --debug 查看服务器原始响应。",
 	},
 	KindUnknown: {
 		"An unexpected error occurred.",

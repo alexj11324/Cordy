@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // newVersionRefreshFixture brings up a daemon with one registered codex runtime

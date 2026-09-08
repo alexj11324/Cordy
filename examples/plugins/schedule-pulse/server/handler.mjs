@@ -17,7 +17,7 @@ const TOLERANCE_SECONDS = 5 * 60;
 const PULSE_KEY = "last_pulse";
 
 if (!SIGNING_SECRET) {
-  console.error("ORVILO_SIGNING_SECRET is required. Rotate the plugin token in Patchbay to obtain it.");
+  console.error("ORVILO_SIGNING_SECRET is required. Rotate the plugin token in Orvilo to obtain it.");
   process.exit(1);
 }
 
@@ -33,8 +33,8 @@ function rememberSignature(signature, now) {
 }
 
 function verify(rawBody, headers) {
-  const timestamp = headers["x-patchbay-timestamp"];
-  const presented = String(headers["x-patchbay-signature"] ?? "").replace(/^v1=/, "");
+  const timestamp = headers["x-orvilo-timestamp"];
+  const presented = String(headers["x-orvilo-signature"] ?? "").replace(/^v1=/, "");
   if (!timestamp || !presented) return "missing signature headers";
 
   const drift = Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp));
@@ -67,7 +67,7 @@ async function callback(body, method, path, payload) {
   const text = await response.text();
   if (response.status === 404) return null;
   if (!response.ok) {
-    throw new Error(`Patchbay answered ${response.status}: ${text}`);
+    throw new Error(`Orvilo answered ${response.status}: ${text}`);
   }
   return text ? JSON.parse(text) : null;
 }

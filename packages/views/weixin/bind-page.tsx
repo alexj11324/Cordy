@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { ApiError, api } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { ApiError, api } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
 import { AppLink } from "../navigation";
 import { useT } from "../i18n";
 

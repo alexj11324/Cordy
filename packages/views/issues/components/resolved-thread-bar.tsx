@@ -1,7 +1,7 @@
 import { CheckCircle2, ChevronRight } from "lucide-react";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { Card } from "@patchbay/ui/components/ui/card";
-import type { TimelineEntry } from "@patchbay/core/types";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { Card } from "@orvilo/ui/components/ui/card";
+import type { TimelineEntry } from "@orvilo/core/types";
 import { useT } from "../../i18n";
 
 interface ResolvedThreadBarProps {

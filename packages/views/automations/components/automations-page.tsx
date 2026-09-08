@@ -12,17 +12,17 @@ import {
   Search,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { automationListOptions } from "@patchbay/core/automations/queries";
-import { parseAutomationTools } from "@patchbay/core/automations";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import type { Automation } from "@patchbay/core/types";
-import { Button, buttonVariants } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Tabs, TabsList, TabsTrigger } from "@patchbay/ui/components/ui/tabs";
+import { automationListOptions } from "@orvilo/core/automations/queries";
+import { parseAutomationTools } from "@orvilo/core/automations";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import type { Automation } from "@orvilo/core/types";
+import { Button, buttonVariants } from "@orvilo/ui/components/ui/button";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Tabs, TabsList, TabsTrigger } from "@orvilo/ui/components/ui/tabs";
 import {
   Table,
   TableBody,
@@ -30,14 +30,14 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@patchbay/ui/components/ui/table";
+} from "@orvilo/ui/components/ui/table";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuCheckboxItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { AppLink, useNavigation, useRowLink } from "../../navigation";
 import { SlackMark } from "../../settings/components/slack-mark";
 import { ActorAvatar } from "../../common/actor-avatar";

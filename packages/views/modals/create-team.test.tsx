@@ -3,8 +3,8 @@
 import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import type { Agent, MemberWithUser, Team } from "@patchbay/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import type { Agent, MemberWithUser, Team } from "@orvilo/core/types";
 import enCommon from "../locales/en/common.json";
 import enModals from "../locales/en/modals.json";
 import enAgents from "../locales/en/agents.json";
@@ -44,35 +44,35 @@ vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: mocks.invalidate }),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   agentListOptions: () => ({ queryKey: ["agents"] }),
   memberListOptions: () => ({ queryKey: ["members"] }),
   workspaceKeys: { teams: (id: string) => ["teams", id] },
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     createTeam: (...args: unknown[]) => mocks.createTeam(...args),
     addTeamMember: (...args: unknown[]) => mocks.addTeamMember(...args),
   },
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (selector: (s: { user: { id: string } | null }) => unknown) =>
     selector({ user: { id: ME } }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({
     teamDetail: (id: string) => `/test-ws/teams/${id}`,
   }),
 }));
 
-vi.mock("@patchbay/core/utils", () => ({
+vi.mock("@orvilo/core/utils", () => ({
   isImeComposing: () => false,
 }));
 
@@ -116,7 +116,7 @@ vi.mock("../agents/components/char-counter", () => ({
 // Render Popover/PopoverContent inline so the picker rows are queryable
 // without simulating a Base UI portal — we still drive the open prop via
 // PopoverTrigger clicks but the content is always in the DOM.
-vi.mock("@patchbay/ui/components/ui/popover", () => ({
+vi.mock("@orvilo/ui/components/ui/popover", () => ({
   Popover: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   PopoverTrigger: ({
     children,
@@ -141,7 +141,7 @@ vi.mock("@patchbay/ui/components/ui/popover", () => ({
   PopoverContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock("@patchbay/ui/components/ui/dialog", () => ({
+vi.mock("@orvilo/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -149,7 +149,7 @@ vi.mock("@patchbay/ui/components/ui/dialog", () => ({
   DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
 }));
 
-vi.mock("@patchbay/ui/components/ui/button", () => ({
+vi.mock("@orvilo/ui/components/ui/button", () => ({
   Button: ({
     children,
     disabled,
@@ -167,13 +167,13 @@ vi.mock("@patchbay/ui/components/ui/button", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/input", () => ({
+vi.mock("@orvilo/ui/components/ui/input", () => ({
   Input: (props: React.InputHTMLAttributes<HTMLInputElement>) => (
     <input {...props} />
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/label", () => ({
+vi.mock("@orvilo/ui/components/ui/label", () => ({
   Label: ({ children, className }: { children: ReactNode; className?: string }) => (
     <label className={className}>{children}</label>
   ),

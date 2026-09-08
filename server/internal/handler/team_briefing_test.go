@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // TestTeamOperatingProtocolRecordsAgainstTheTurnsIssue locks the recording
@@ -49,7 +49,7 @@ func TestTeamOperatingProtocolOwnsParentStatus(t *testing.T) {
 		"Own the parent issue status",
 		"move the parent to `in_progress`",
 		"successful dispatch is not completion",
-		"patchbay issue status <issue-id> in_review",
+		"orvilo issue status <issue-id> in_review",
 		"Leave `done` to a human reviewer",
 	} {
 		if !strings.Contains(compact, want) {
@@ -70,7 +70,7 @@ func TestTeamOperatingProtocolScopesParentStatusOwnership(t *testing.T) {
 	for _, want := range []string{
 		"Do NOT change this issue's status",
 		"executor is not your team",
-		"never run `patchbay issue status` on it",
+		"never run `orvilo issue status` on it",
 	} {
 		if !strings.Contains(compactGuest, want) {
 			t.Errorf("expected guest-leader protocol to contain %q\n--- protocol ---\n%s", want, guest)
@@ -79,7 +79,7 @@ func TestTeamOperatingProtocolScopesParentStatusOwnership(t *testing.T) {
 	// The grant must be entirely absent — not merely qualified.
 	for _, forbidden := range []string{
 		"Own the parent issue status",
-		"patchbay issue status <issue-id> in_review",
+		"orvilo issue status <issue-id> in_review",
 	} {
 		if strings.Contains(compactGuest, forbidden) {
 			t.Errorf("guest-leader protocol must not contain status grant %q\n--- protocol ---\n%s", forbidden, guest)
@@ -161,7 +161,7 @@ func seedTeamForBriefing(t *testing.T, leaderID string, name, instructions strin
 func addAgentMember(t *testing.T, teamID pgtype.UUID, agentID, role string) {
 	t.Helper()
 	if _, err := testHandler.Queries.AddTeamMember(context.Background(), db.AddTeamMemberParams{
-		TeamID:    teamID,
+		TeamID:     teamID,
 		MemberType: "agent",
 		MemberID:   util.MustParseUUID(agentID),
 		Role:       role,
@@ -173,7 +173,7 @@ func addAgentMember(t *testing.T, teamID pgtype.UUID, agentID, role string) {
 func addHumanMember(t *testing.T, teamID pgtype.UUID, userID, role string) {
 	t.Helper()
 	if _, err := testHandler.Queries.AddTeamMember(context.Background(), db.AddTeamMemberParams{
-		TeamID:    teamID,
+		TeamID:     teamID,
 		MemberType: "member",
 		MemberID:   util.MustParseUUID(userID),
 		Role:       role,

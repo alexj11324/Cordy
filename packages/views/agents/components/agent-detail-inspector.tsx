@@ -2,17 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, AgentRuntime, MemberWithUser } from "@patchbay/core/types";
+import type { Agent, AgentRuntime, MemberWithUser } from "@orvilo/core/types";
 import {
   AGENT_MAX_CONCURRENT_TASKS_MAX,
   AGENT_MAX_CONCURRENT_TASKS_MIN,
-} from "@patchbay/core/agents";
+} from "@orvilo/core/agents";
 import {
   isRuntimeUsableForUser,
   runtimeModelsOptions,
-} from "@patchbay/core/runtimes";
-import { isImeComposing } from "@patchbay/core/utils";
-import { Input } from "@patchbay/ui/components/ui/input";
+} from "@orvilo/core/runtimes";
+import { isImeComposing } from "@orvilo/core/utils";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   SettingsCard,
   SettingsRow,

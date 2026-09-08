@@ -2,14 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@patchbay/core/auth";
+import { useAuthStore } from "@orvilo/core/auth";
 import {
   paths,
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@patchbay/core/paths";
-import { useWorkspaceList } from "@patchbay/core/workspace";
-import { CliInstallInstructions, OnboardingFlow } from "@patchbay/views/onboarding";
+} from "@orvilo/core/paths";
+import { useWorkspaceList } from "@orvilo/core/workspace";
+import { CliInstallInstructions, OnboardingFlow } from "@orvilo/views/onboarding";
 
 /**
  * Web shell for the onboarding flow. The route is the platform chrome on

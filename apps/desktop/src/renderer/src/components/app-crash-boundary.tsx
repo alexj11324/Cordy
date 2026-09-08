@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { ErrorBoundary } from "@patchbay/ui/components/common/error-boundary";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { DragStrip } from "@patchbay/views/platform";
+import { ErrorBoundary } from "@orvilo/ui/components/common/error-boundary";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { DragStrip } from "@orvilo/views/platform";
 
 /**
  * Last-resort boundary around the entire desktop renderer.
@@ -55,7 +55,7 @@ export function AppCrashBoundary({ children }: { children: ReactNode }) {
 async function reportCrash(error: Error): Promise<void> {
   try {
     if ((await window.desktopAPI.getGuestMode()) !== "cloud") return;
-    const { captureException } = await import("@patchbay/core/analytics");
+    const { captureException } = await import("@orvilo/core/analytics");
     captureException(error, { source: "desktop-renderer-boundary" });
   } catch {
     // Reporting a crash must never be the reason the fallback fails to render.

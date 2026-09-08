@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 // runOnlyFixtureSeq keeps leader agent names unique: the agent table has a
@@ -38,7 +38,7 @@ var runOnlyFixtureSeq atomic.Int64
 type runOnlyAutomationFixture struct {
 	LeaderAgentID string
 	LeaderTaskID  string
-	AutomationID   string
+	AutomationID  string
 	RunID         string
 	RuntimeID     string
 }
@@ -64,14 +64,14 @@ func newRunOnlyAutomationFixture(t *testing.T, targetAgentID, accountableUserID 
 	})
 	runID := dbfx.Insert(t, "automation_run", testutil.Cols{
 		"automation_id": automationID,
-		"status":       "running",
-		"source":       "schedule",
+		"status":        "running",
+		"source":        "schedule",
 	})
 
 	taskCols := testutil.Cols{
 		"runtime_id":          runtimeID,
 		"status":              "running",
-		"automation_run_id":    runID,
+		"automation_run_id":   runID,
 		"originator_user_id":  nil,
 		"accountable_user_id": accountableUserID,
 		"originator_source":   "trigger_owner",
@@ -86,7 +86,7 @@ func newRunOnlyAutomationFixture(t *testing.T, targetAgentID, accountableUserID 
 	return runOnlyAutomationFixture{
 		LeaderAgentID: leaderID,
 		LeaderTaskID:  taskID,
-		AutomationID:   automationID,
+		AutomationID:  automationID,
 		RunID:         runID,
 		RuntimeID:     runtimeID,
 	}
@@ -271,7 +271,7 @@ func TestCreateIssue_RunOnlyAutomationLeaderAssignsPrivateWorker(t *testing.T) {
 					// user, so it runs BEFORE the user delete) to keep the FK
 					// from stranding the row.
 					outsiderID := dbfx.User(t, "MUL-6691 Outsider",
-						fmt.Sprintf("mul6691-outsider-%s@patchbay.test", workerID))
+						fmt.Sprintf("mul6691-outsider-%s@orvilo.test", workerID))
 					dbfx.Exec(t, `UPDATE agent SET owner_id = $1 WHERE id = $2`, outsiderID, workerID)
 					t.Cleanup(func() {
 						dbfx.Exec(t, `UPDATE agent SET owner_id = $1 WHERE id = $2`, ownerID, workerID)

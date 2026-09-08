@@ -27,7 +27,7 @@ func TestDesktopProfileHelperPreservesUnknownFieldsAndKeepsCredentialsTogether(t
 		t.Fatal(err)
 	}
 
-	request := `{"action":"set_credentials","profile":"` + profile + `","server_url":"https://api.example.test","token":"pby_secret","user_id":"user-1"}`
+	request := `{"action":"set_credentials","profile":"` + profile + `","server_url":"https://api.example.test","token":"ovy_secret","user_id":"user-1"}`
 	if err := RunDesktopProfileHelper(strings.NewReader(request)); err != nil {
 		t.Fatalf("set credentials: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestDesktopProfileHelperPreservesUnknownFieldsAndKeepsCredentialsTogether(t
 	if got := document["server_url"]; got != "https://api.example.test" {
 		t.Errorf("server_url = %#v", got)
 	}
-	if got := document["token"]; got != "pby_secret" {
+	if got := document["token"]; got != "ovy_secret" {
 		t.Errorf("token = %#v", got)
 	}
 	if got := document["desktop_user_id"]; got != "user-1" {
@@ -140,7 +140,7 @@ func TestDesktopProfileHelperClearChecksExistenceUnderLock(t *testing.T) {
 	case <-time.After(75 * time.Millisecond):
 	}
 
-	if err := os.WriteFile(path, []byte(`{"token":"pby_new","desktop_user_id":"user-1","future":true}`), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`{"token":"ovy_new","desktop_user_id":"user-1","future":true}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := unlockConfigFile(lock); err != nil {

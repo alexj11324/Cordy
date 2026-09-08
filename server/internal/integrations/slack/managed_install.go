@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/hostedcapacity"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/hostedcapacity"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // ManagedTransportWebhook marks a managed (hosted-OAuth) installation: inbound
@@ -154,7 +154,7 @@ func (s *InstallService) RegisterManaged(ctx context.Context, p RegisterManagedP
 func (s *InstallService) classifyManagedUpsertErr(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		// The conflict update fenced on the same workspace touched no row:
-		// the team is live-owned by a DIFFERENT Patchbay workspace (the
+		// the team is live-owned by a DIFFERENT Orvilo workspace (the
 		// query's atomic cross-workspace guard).
 		return ErrTeamOwnedByAnotherWorkspace
 	}

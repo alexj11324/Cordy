@@ -534,7 +534,7 @@ export const LinearMemberBindingSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
   connection_id: z.string(),
-  patchbay_user_id: z.string(),
+  orvilo_user_id: z.string(),
   linear_user_id: z.string(),
   created_at: z.string(),
   updated_at: z.string(),
@@ -548,7 +548,7 @@ export const EMPTY_LINEAR_MEMBER_BINDING: LinearMemberBinding = {
   id: "",
   workspace_id: "",
   connection_id: "",
-  patchbay_user_id: "",
+  orvilo_user_id: "",
   linear_user_id: "",
   created_at: "",
   updated_at: "",
@@ -563,7 +563,7 @@ export const LinearSyncConflictSchema = z.object({
   workspace_id: z.string(),
   binding_id: z.string(),
   link_id: z.string(),
-  patchbay_issue_id: z.string(),
+  orvilo_issue_id: z.string(),
   linear_issue_id: z.string(),
   linear_identifier: z.string().nullable().default(null),
   field: z.string(),
@@ -589,7 +589,7 @@ export const EMPTY_LIST_LINEAR_SYNC_CONFLICTS_RESPONSE: ListLinearSyncConflictsR
 };
 
 export const LinearDryRunResponseSchema = z.object({
-  patchbay_project_id: z.string(),
+  orvilo_project_id: z.string(),
   linear_project_id: z.string(),
   sync_mode: z.string(),
   initial_source_of_truth: z.string().nullable(),
@@ -603,7 +603,7 @@ export const LinearDryRunResponseSchema = z.object({
 }).loose();
 
 export const EMPTY_LINEAR_DRY_RUN_RESPONSE: LinearDryRunResponse = {
-  patchbay_project_id: "",
+  orvilo_project_id: "",
   linear_project_id: "",
   sync_mode: "not_synced",
   initial_source_of_truth: null,
@@ -630,7 +630,7 @@ export const LinearProjectBindingSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
   connection_id: z.string(),
-  patchbay_project_id: z.string(),
+  orvilo_project_id: z.string(),
   linear_project_id: z.string(),
   linear_team_id: z.string().nullable(),
   // Keep provider state/mode forward-compatible at the response boundary.
@@ -650,7 +650,7 @@ export const EMPTY_LINEAR_PROJECT_BINDING: LinearProjectBinding = {
   id: "",
   workspace_id: "",
   connection_id: "",
-  patchbay_project_id: "",
+  orvilo_project_id: "",
   linear_project_id: "",
   linear_team_id: null,
   status: "draft",
@@ -3413,7 +3413,7 @@ export const EMPTY_INBOX_ITEMS: InboxItem[] = [];
 // ---------------------------------------------------------------------------
 // Billing schemas (cloud-billing proxy surface)
 //
-// All billing JSON we receive comes from patchbay-cloud verbatim — we proxy
+// All billing JSON we receive comes from orvilo-cloud verbatim — we proxy
 // the bytes without re-shaping. These schemas use `loose()` so a future
 // non-breaking field addition on the cloud side doesn't crash us; required
 // fields are still strictly enforced. EMPTY_* constants supply the
@@ -3583,7 +3583,7 @@ export const EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE: CreateBillingPortalSe
 // ---------------------------------------------------------------------------
 // Workspace subscriptions (`/api/cloud-subscriptions/*`)
 //
-// These schemas are the compatibility boundary with patchbay-cloud. Three rules
+// These schemas are the compatibility boundary with orvilo-cloud. Three rules
 // hold for all of them:
 //
 //  1. There is no fallback value. Callers get `null` on any parse failure and
@@ -4628,6 +4628,6 @@ export const DesktopSessionResponseSchema = z.object({ token: z.string().min(1) 
 
 export const DesktopHandoffResponseSchema = z.object({
   callback_protocol: z.string().refine(isDesktopCallbackProtocol),
-  code: z.string().regex(/^pbd_[A-Za-z0-9_-]{43}$/),
+  code: z.string().regex(/^ovd_[A-Za-z0-9_-]{43}$/),
   state: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/),
 });

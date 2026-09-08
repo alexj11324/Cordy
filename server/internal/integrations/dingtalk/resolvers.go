@@ -10,10 +10,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
 )
 
 // originDingTalkChat is the issue.origin_type label for issues created through
@@ -165,7 +165,7 @@ func (r *installationResolver) ResolveInstallation(ctx context.Context, msg chan
 		WorkspaceID:     inst.WorkspaceID,
 		AgentID:         inst.AgentID,
 		InstallerUserID: inst.InstallerUserID,
-		Installed:          inst.Status == "installed",
+		Installed:       inst.Status == "installed",
 		Platform:        inst,
 	}, nil
 }
@@ -241,7 +241,7 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 	}
 	// Binding existence no longer proves membership (no FK); re-check.
 	if _, err := r.q.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-		UserID:      binding.PatchbayUserID,
+		UserID:      binding.OrviloUserID,
 		WorkspaceID: inst.WorkspaceID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -249,7 +249,7 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 		}
 		return engine.ResolvedIdentity{}, err
 	}
-	return engine.ResolvedIdentity{UserID: binding.PatchbayUserID}, nil
+	return engine.ResolvedIdentity{UserID: binding.OrviloUserID}, nil
 }
 
 // ---- dedup ----

@@ -11,19 +11,19 @@ import {
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberNeedsPatrickSetup, useBootstrapPatrick } from "@patchbay/core/onboarding";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { memberNeedsPatrickSetup, useBootstrapPatrick } from "@orvilo/core/onboarding";
 import { PATRICK_PLACEHOLDER_EMOJI } from "../../onboarding/components/patrick-intro";
-import { useRequiredWorkspaceSlug, useWorkspacePaths } from "@patchbay/core/paths";
-import { agentTaskSnapshotOptions } from "@patchbay/core/agents";
-import { chatSessionsOptions } from "@patchbay/core/chat/queries";
-import { runtimeProfileListOptions } from "@patchbay/core/runtimes";
-import { runtimeListOptions, runtimeKeys } from "@patchbay/core/runtimes/queries";
-import { useWSEvent } from "@patchbay/core/realtime";
-import { agentListOptions } from "@patchbay/core/workspace/queries";
-import type { AgentRuntime } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { useRequiredWorkspaceSlug, useWorkspacePaths } from "@orvilo/core/paths";
+import { agentTaskSnapshotOptions } from "@orvilo/core/agents";
+import { chatSessionsOptions } from "@orvilo/core/chat/queries";
+import { runtimeProfileListOptions } from "@orvilo/core/runtimes";
+import { runtimeListOptions, runtimeKeys } from "@orvilo/core/runtimes/queries";
+import { useWSEvent } from "@orvilo/core/realtime";
+import { agentListOptions } from "@orvilo/core/workspace/queries";
+import type { AgentRuntime } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -31,12 +31,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   PatrickRuntimeChoice,
   type PatrickRuntimeSelection,
 } from "./patrick-runtime-choice";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import {
   CollectionPageHeader,
   CollectionPageHeaderAction,

@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
 )
 
 const (

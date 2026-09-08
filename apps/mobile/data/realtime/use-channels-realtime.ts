@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import type { WSEventType } from "@patchbay/core/types";
+import type { WSEventType } from "@orvilo/core/types";
 import { channelKeys } from "@/data/queries/channels";
 import {
   parseWorkspaceChannelCreatedEvent,

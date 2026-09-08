@@ -4,9 +4,9 @@ import type {
   IssueReviewerType,
   IssueStatusCategory,
   UpdateIssueRequest,
-} from "@patchbay/core/types";
-import { issueStatusCategory } from "@patchbay/core/issues";
-import { isIssueStatusCategory, type IssueStatusCatalog } from "@patchbay/core/issue-statuses";
+} from "@orvilo/core/types";
+import { issueStatusCategory } from "@orvilo/core/issues";
+import { isIssueStatusCategory, type IssueStatusCatalog } from "@orvilo/core/issue-statuses";
 
 /** The issue fields the gate reads. */
 export type GateIssue = Pick<

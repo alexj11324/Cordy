@@ -7,26 +7,26 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/lark"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/wecom"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/lark"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/wecom"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func TestConnectionProjectionRequiresCurrentLeaseAndFreshObservation(t *testing.T) {
 	now := time.Date(2026, time.September, 3, 12, 0, 0, 0, time.UTC)
 	base := db.ListChannelConnectionStatesRow{
 		Status: "installed", UpdatedAt: pgtype.Timestamptz{Time: now.Add(-time.Hour), Valid: true},
-		State: pgtype.Text{String: "healthy", Valid: true},
-		ObservedAt: pgtype.Timestamptz{Time: now.Add(-time.Second), Valid: true},
-		ObserverToken: pgtype.Text{String: "current", Valid: true},
-		WsLeaseToken: pgtype.Text{String: "current", Valid: true},
+		State:            pgtype.Text{String: "healthy", Valid: true},
+		ObservedAt:       pgtype.Timestamptz{Time: now.Add(-time.Second), Valid: true},
+		ObserverToken:    pgtype.Text{String: "current", Valid: true},
+		WsLeaseToken:     pgtype.Text{String: "current", Valid: true},
 		WsLeaseExpiresAt: pgtype.Timestamptz{Time: now.Add(time.Minute), Valid: true},
 	}
 	for _, tc := range []struct {
-		name string
+		name   string
 		change func(*db.ListChannelConnectionStatesRow)
-		state string
-		code string
+		state  string
+		code   string
 	}{
 		{"confirmed", func(*db.ListChannelConnectionStatesRow) {}, "healthy", ""},
 		{"expired", func(r *db.ListChannelConnectionStatesRow) { r.WsLeaseExpiresAt.Time = now }, "offline", "lease_expired"},
@@ -34,9 +34,18 @@ func TestConnectionProjectionRequiresCurrentLeaseAndFreshObservation(t *testing.
 		{"revoked", func(r *db.ListChannelConnectionStatesRow) { r.Status = "revoked" }, "offline", "installation_revoked"},
 		{"paused", func(r *db.ListChannelConnectionStatesRow) { r.HostedPausedAt = r.ObservedAt }, "offline", "hosted_quota_paused"},
 		{"unobserved lease", func(r *db.ListChannelConnectionStatesRow) { r.ObservedAt.Valid = false }, "starting", ""},
-		{"unobserved idle", func(r *db.ListChannelConnectionStatesRow) { r.ObservedAt.Valid = false; r.WsLeaseExpiresAt.Valid = false }, "offline", "runtime_unobserved"},
-		{"managed fresh", func(r *db.ListChannelConnectionStatesRow) { r.ObserverToken.String = "managed:slack:webhook:v1"; r.WsLeaseExpiresAt.Valid = false }, "healthy", ""},
-		{"managed stale", func(r *db.ListChannelConnectionStatesRow) { r.ObserverToken.String = "managed:slack:webhook:v1"; r.ObservedAt.Time = now.Add(-16*time.Minute) }, "offline", "health_observation_stale"},
+		{"unobserved idle", func(r *db.ListChannelConnectionStatesRow) {
+			r.ObservedAt.Valid = false
+			r.WsLeaseExpiresAt.Valid = false
+		}, "offline", "runtime_unobserved"},
+		{"managed fresh", func(r *db.ListChannelConnectionStatesRow) {
+			r.ObserverToken.String = "managed:slack:webhook:v1"
+			r.WsLeaseExpiresAt.Valid = false
+		}, "healthy", ""},
+		{"managed stale", func(r *db.ListChannelConnectionStatesRow) {
+			r.ObserverToken.String = "managed:slack:webhook:v1"
+			r.ObservedAt.Time = now.Add(-16 * time.Minute)
+		}, "offline", "health_observation_stale"},
 		{"future timestamp", func(r *db.ListChannelConnectionStatesRow) { r.ObservedAt.Time = now.Add(time.Minute) }, "offline", "health_observation_stale"},
 		{"unknown state", func(r *db.ListChannelConnectionStatesRow) { r.State.String = "future_state" }, "future_state", ""},
 	} {

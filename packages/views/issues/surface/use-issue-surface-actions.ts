@@ -2,14 +2,14 @@
 
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import type { UpdateIssueRequest } from "@patchbay/core/types";
+import type { UpdateIssueRequest } from "@orvilo/core/types";
 import {
   useBatchDeleteIssues,
   useBatchUpdateIssues,
   useUpdateIssue,
-} from "@patchbay/core/issues/mutations";
-import { errorCode } from "@patchbay/core/api";
-import { useModalStore } from "@patchbay/core/modals";
+} from "@orvilo/core/issues/mutations";
+import { errorCode } from "@orvilo/core/api";
+import { useModalStore } from "@orvilo/core/modals";
 import {
   type IssueSurfaceActions,
   type IssueSurfaceMutationOptions,

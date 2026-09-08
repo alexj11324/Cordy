@@ -1,11 +1,11 @@
 "use client";
 
 import { AlertCircle, Check, Plus } from "lucide-react";
-import type { AgentAvailability } from "@patchbay/core/agents";
-import { isAgentRuntimeBound } from "@patchbay/core/agents";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { cn } from "@patchbay/ui/lib/utils";
+import type { AgentAvailability } from "@orvilo/core/agents";
+import { isAgentRuntimeBound } from "@orvilo/core/agents";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { cn } from "@orvilo/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 import { AgentRowActions } from "./agent-row-actions";

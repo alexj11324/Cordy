@@ -30,16 +30,16 @@ export function devRuntimeComponents({
 } = {}) {
   const target = goTargetFor(platform, arch);
   const sourceDir = join(repoRoot, "server", "bin", target.target);
-  const stagedDir = join(repoRoot, ".patchbay-dev", "bin");
+  const stagedDir = join(repoRoot, ".orvilo-dev", "bin");
   return [
     {
       id: "cli",
-      packagePath: "./cmd/patchbay",
+      packagePath: "./cmd/orvilo",
       profile: "dev-cli",
-      binaryName: executableName("patchbay", target.suffix),
+      binaryName: executableName("orvilo", target.suffix),
       sourceBinary: join(
         sourceDir,
-        executableName("patchbay", target.suffix),
+        executableName("orvilo", target.suffix),
       ),
       destinationBinary: join(
         repoRoot,
@@ -47,7 +47,7 @@ export function devRuntimeComponents({
         "desktop",
         "resources",
         "bin",
-        executableName("patchbay", target.suffix),
+        executableName("orvilo", target.suffix),
       ),
     },
     {

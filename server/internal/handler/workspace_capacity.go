@@ -8,19 +8,19 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
 )
 
 const freeHostedWorkspaceAllowance int64 = 2
 
 const (
-	hostedWorkspaceLimitCode       = "hosted_workspace_limit_reached"
-	hostedWorkspaceLimitMessage    = "this account has reached its hosted workspace limit"
-	hostedWorkspaceQuotaCode       = "hosted_workspace_quota_unavailable"
-	hostedWorkspaceQuotaMessage    = "hosted workspace quota is temporarily unavailable"
-	guestWorkspaceLimitMessage     = "guest workspace limit reached; formal login required"
-	guestWorkspaceQuotaMessage     = "guest workspace quota unavailable"
-	formalLoginRequiredMessage     = "formal login required"
+	hostedWorkspaceLimitCode    = "hosted_workspace_limit_reached"
+	hostedWorkspaceLimitMessage = "this account has reached its hosted workspace limit"
+	hostedWorkspaceQuotaCode    = "hosted_workspace_quota_unavailable"
+	hostedWorkspaceQuotaMessage = "hosted workspace quota is temporarily unavailable"
+	guestWorkspaceLimitMessage  = "guest workspace limit reached; formal login required"
+	guestWorkspaceQuotaMessage  = "guest workspace quota unavailable"
+	formalLoginRequiredMessage  = "formal login required"
 )
 
 type hostedWorkspacePolicy struct {

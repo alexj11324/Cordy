@@ -1,4 +1,4 @@
-import { WorkspaceIntegrationsPage } from "@patchbay/views/integrations";
+import { WorkspaceIntegrationsPage } from "@orvilo/views/integrations";
 
 export default function Page() {
   return <WorkspaceIntegrationsPage />;

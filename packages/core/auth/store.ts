@@ -76,7 +76,7 @@ export function createAuthStore(options: AuthStoreOptions) {
       const { token, user } = await api.verifyCode(email, code);
       if (!cookieAuth) {
         // Token mode: persist for Electron / legacy.
-        storage.setItem("patchbay_token", token);
+        storage.setItem("orvilo_token", token);
         api.setToken(token);
       }
       onLogin?.();
@@ -95,7 +95,7 @@ export function createAuthStore(options: AuthStoreOptions) {
       if (cookieAuth) {
         api.setToken(null);
       } else {
-        storage.setItem("patchbay_token", token);
+        storage.setItem("orvilo_token", token);
         api.setToken(token);
       }
       onLogin?.();
@@ -107,7 +107,7 @@ export function createAuthStore(options: AuthStoreOptions) {
     loginWithGoogle: async (code: string, redirectUri: string) => {
       const { token, user } = await api.googleLogin(code, redirectUri);
       if (!cookieAuth) {
-        storage.setItem("patchbay_token", token);
+        storage.setItem("orvilo_token", token);
         api.setToken(token);
       }
       onLogin?.();
@@ -123,7 +123,7 @@ export function createAuthStore(options: AuthStoreOptions) {
       }
       // Guest auth is still token auth: the user is real and the bearer is
       // required for every subsequent workspace/onboarding API call.
-      storage.setItem("patchbay_token", token);
+      storage.setItem("orvilo_token", token);
       api.setToken(token);
       onLogin?.();
       identifyAnalytics(user.id, { email: user.email, name: user.name });
@@ -132,7 +132,7 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     loginWithToken: async (token: string) => {
-      storage.setItem("patchbay_token", token);
+      storage.setItem("orvilo_token", token);
       api.setToken(token);
       const user = await api.getMe();
       onLogin?.();
@@ -150,7 +150,7 @@ export function createAuthStore(options: AuthStoreOptions) {
       // Keep the promise so callers that are about to start a new exchange
       // or navigate away can serialize behind both server-side session
       // revocation and platform auth cleanup.
-      storage.removeItem("patchbay_token");
+      storage.removeItem("orvilo_token");
       api.setToken(null);
       setCurrentWorkspace(null, null);
       resetAnalytics();

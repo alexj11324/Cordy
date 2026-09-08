@@ -27,7 +27,7 @@ export interface MyIssuesViewState extends IssueViewState {
   setScope: (scope: MyIssuesScope) => void;
 }
 
-const basePersist = viewStorePersistOptions("patchbay_my_issues_view");
+const basePersist = viewStorePersistOptions("orvilo_my_issues_view");
 
 const _myIssuesViewStore = createStore<MyIssuesViewState>()(
   persist(

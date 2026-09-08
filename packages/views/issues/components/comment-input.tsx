@@ -1,13 +1,13 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 import { ContentEditor, type ContentEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useUploadGate, useComposerSubmit } from "../../editor";
-import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
-import { SubmitButton } from "@patchbay/ui/components/common/submit-button";
-import { contentReferencesAttachment } from "@patchbay/core/types";
-import { formatShortcut, useShortcut } from "@patchbay/core/shortcuts";
-import { useCommentDraftStore } from "@patchbay/core/issues/stores";
+import { FileUploadButton } from "@orvilo/ui/components/common/file-upload-button";
+import { SubmitButton } from "@orvilo/ui/components/common/submit-button";
+import { contentReferencesAttachment } from "@orvilo/core/types";
+import { formatShortcut, useShortcut } from "@orvilo/core/shortcuts";
+import { useCommentDraftStore } from "@orvilo/core/issues/stores";
 import { useT } from "../../i18n";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 import { useCommentTriggerPreview } from "../hooks/use-comment-trigger-preview";

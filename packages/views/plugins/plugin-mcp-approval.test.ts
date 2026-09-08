@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { PluginHook, PluginMCPTool } from "@patchbay/core/types";
+import type { PluginHook, PluginMCPTool } from "@orvilo/core/types";
 import { initialSelection, mcpHooks } from "./plugin-mcp-approval";
 
 function hook(overrides: Partial<PluginHook>): PluginHook {

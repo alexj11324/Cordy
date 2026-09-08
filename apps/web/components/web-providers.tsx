@@ -2,12 +2,12 @@
 
 import { useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { useAuthStore } from "@patchbay/core/auth";
-import type { AuthLogoutHandler, AuthLogoutOptions } from "@patchbay/core/auth";
-import { CoreProvider } from "@patchbay/core/platform";
-import { createBrowserCookieLocaleAdapter } from "@patchbay/core/i18n/browser";
-import type { LocaleResources, SupportedLocale } from "@patchbay/core/i18n";
-import { useWelcomeStore } from "@patchbay/core/onboarding";
+import { useAuthStore } from "@orvilo/core/auth";
+import type { AuthLogoutHandler, AuthLogoutOptions } from "@orvilo/core/auth";
+import { CoreProvider } from "@orvilo/core/platform";
+import { createBrowserCookieLocaleAdapter } from "@orvilo/core/i18n/browser";
+import type { LocaleResources, SupportedLocale } from "@orvilo/core/i18n";
+import { useWelcomeStore } from "@orvilo/core/onboarding";
 import packageJson from "../package.json";
 import { WebNavigationProvider } from "@/platform/navigation";
 import { WebScrollRestorationProvider } from "@/platform/scroll-restoration";

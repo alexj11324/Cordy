@@ -52,9 +52,9 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { DataTable } from "@patchbay/ui/components/ui/data-table";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { DataTable } from "@orvilo/ui/components/ui/data-table";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,39 +64,39 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import {
   TableCell,
   TableRow,
-} from "@patchbay/ui/components/ui/table";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { cn } from "@patchbay/ui/lib/utils";
-import { ApiError } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { useModalStore } from "@patchbay/core/modals";
+} from "@orvilo/ui/components/ui/table";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { cn } from "@orvilo/ui/lib/utils";
+import { ApiError } from "@orvilo/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
+import { useModalStore } from "@orvilo/core/modals";
 import {
   issueKeys,
   issueTableGroupsOptions,
   issueTableRowPageOptions,
-} from "@patchbay/core/issues/queries";
+} from "@orvilo/core/issues/queries";
 import {
   TABLE_SYSTEM_COLUMNS,
   propertyIdFromViewKey,
   type SortField,
   type TableColumnKey,
   type TableSystemColumnKey,
-} from "@patchbay/core/issues/stores/view-store";
-import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
-import { propertyListOptions } from "@patchbay/core/properties";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { buildActorNameResolver, useActorName } from "@patchbay/core/workspace/hooks";
+} from "@orvilo/core/issues/stores/view-store";
+import { useViewStore } from "@orvilo/core/issues/stores/view-store-context";
+import { propertyListOptions } from "@orvilo/core/properties";
+import { projectListOptions } from "@orvilo/core/projects/queries";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { buildActorNameResolver, useActorName } from "@orvilo/core/workspace/hooks";
 import {
   agentListOptions,
   memberListOptions,
   teamListOptions,
-} from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/workspace/queries";
 import type {
   Issue,
   IssueProperty,
@@ -107,12 +107,12 @@ import type {
   IssueTableRowsResponse,
   Project,
   UpdateIssueRequest,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   actorRefsFromValue,
   formatActorRef,
   isActorPropertyType,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import {
   useInfiniteQuery,
   useQueries,

@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 )
 
 // claudeTerminateGraceNanos optionally overrides, in nanoseconds, how long a
@@ -367,7 +367,7 @@ func (b *claudeBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 
 		completionGuardError := ""
 		if sawAsyncLaunch {
-			completionGuardError = "claude launched an async background task; Patchbay-managed runs require foreground execution"
+			completionGuardError = "claude launched an async background task; Orvilo-managed runs require foreground execution"
 		}
 		finalStatus, finalOutput, finalError := finalizeStreamResult(
 			"claude",
@@ -1060,7 +1060,7 @@ func claudeRootSudoPreflight(args, env []string) error {
 	if !argsRequestBypassPermissions(args) || os.Geteuid() != 0 || envHasSandbox(env) {
 		return nil
 	}
-	return fmt.Errorf("Claude Code refuses bypassPermissions under root/sudo privileges. Run the Patchbay daemon as a non-root user, or set IS_SANDBOX=1 if running in a genuine container/sandbox")
+	return fmt.Errorf("Claude Code refuses bypassPermissions under root/sudo privileges. Run the Orvilo daemon as a non-root user, or set IS_SANDBOX=1 if running in a genuine container/sandbox")
 }
 
 func argsRequestBypassPermissions(args []string) bool {
@@ -1240,7 +1240,7 @@ func stripSurroundingQuotes(s string) (string, bool) {
 // writeMcpConfigToTemp writes MCP config JSON to a temporary file and returns
 // its path. The caller is responsible for removing it via cleanupMcpConfigTemp.
 func writeMcpConfigToTemp(raw json.RawMessage) (string, error) {
-	dir, err := os.MkdirTemp("", "patchbay-mcp-*")
+	dir, err := os.MkdirTemp("", "orvilo-mcp-*")
 	if err != nil {
 		return "", fmt.Errorf("create mcp config temp dir: %w", err)
 	}
@@ -1262,7 +1262,7 @@ func cleanupMcpConfigTemp(path string) {
 		return
 	}
 	dir := filepath.Dir(path)
-	if strings.HasPrefix(filepath.Base(dir), "patchbay-mcp-") {
+	if strings.HasPrefix(filepath.Base(dir), "orvilo-mcp-") {
 		_ = os.RemoveAll(dir)
 		return
 	}

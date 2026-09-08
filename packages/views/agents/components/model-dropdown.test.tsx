@@ -2,8 +2,8 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import type { RuntimeModelsResult } from "@patchbay/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
+import type { RuntimeModelsResult } from "@orvilo/core/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import enAgents from "../../locales/en/agents.json";
 import enCommon from "../../locales/en/common.json";
@@ -36,9 +36,9 @@ const CODEX_MODELS: RuntimeModelsResult = {
 // daemon's reported error text, so a failure is modelled as a throwing queryFn.
 let discovery: () => Promise<RuntimeModelsResult> = async () => CODEX_MODELS;
 
-vi.mock("@patchbay/core/runtimes", async (importOriginal) => {
+vi.mock("@orvilo/core/runtimes", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("@patchbay/core/runtimes")>();
+    await importOriginal<typeof import("@orvilo/core/runtimes")>();
   return {
     ...actual,
     runtimeModelsOptions: (runtimeId: string | null) => ({

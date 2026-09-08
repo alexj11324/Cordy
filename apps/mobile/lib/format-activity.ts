@@ -14,8 +14,8 @@ import type {
   IssuePriority,
   IssueStatusCategory,
   TimelineEntry,
-} from "@patchbay/core/types";
-import { formatDateOnly } from "@patchbay/core/issues/date";
+} from "@orvilo/core/types";
+import { formatDateOnly } from "@orvilo/core/issues/date";
 import { STATUS_LABEL, isIssueStatusCategory } from "@/lib/issue-status";
 import { formatIssueRoleCopy, getIssueRoleCopy } from "@/lib/issue-role-copy";
 

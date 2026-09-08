@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // addWorkspaceMember joins a user to the test workspace and returns a function
@@ -54,7 +54,7 @@ func TestDelegatedSubscribe_SkipsOriginatorRemovedFromWorkspace(t *testing.T) {
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
 
-	const email = "delegated-revoked-originator@patchbay.test"
+	const email = "delegated-revoked-originator@orvilo.test"
 	cleanupTestUser(t, email)
 	userID := createTestUser(t, email)
 	t.Cleanup(func() { cleanupTestUser(t, email) })
@@ -85,7 +85,7 @@ func TestDelegatedSubscribe_SubscribesOriginatorStillInWorkspace(t *testing.T) {
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
 
-	const email = "delegated-active-originator@patchbay.test"
+	const email = "delegated-active-originator@orvilo.test"
 	cleanupTestUser(t, email)
 	userID := createTestUser(t, email)
 	t.Cleanup(func() { cleanupTestUser(t, email) })

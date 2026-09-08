@@ -60,10 +60,10 @@ ENV_FILE=.env.example
 OFFSET=$offset
 BACKEND_PORT=$((18080 + offset))
 FRONTEND_PORT=$((13000 + offset))
-DB_NAME=patchbay_dev_env_test_$offset
-DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay_dev_env_test_$offset?sslmode=disable
+DB_NAME=orvilo_dev_env_test_$offset
+DATABASE_URL=postgres://orvilo:orvilo@localhost:5432/orvilo_dev_env_test_$offset?sslmode=disable
 PROFILE=$profile
-WORKSPACES_ROOT=$(printf '%q' "$ORVILO_DEV_WORKSPACES_PARENT/patchbay_workspaces_$profile")
+WORKSPACES_ROOT=$(printf '%q' "$ORVILO_DEV_WORKSPACES_PARENT/orvilo_workspaces_$profile")
 DESKTOP_RENDERER_PORT=$((5174 + offset))
 DESKTOP_APP_SUFFIX=$name
 EOF
@@ -157,7 +157,11 @@ require_contains "$out" "stopped"
 
 # Commands launched through env-exec must not inherit the daemon-task identity
 # hints that make human/profile CLI commands reject --profile.
-write_manifest "clean-env-903" "$root_dir" 903
+exec_fixture="$tmp_dir/exec-fixture"
+mkdir -p "$exec_fixture/scripts"
+ln -s "$root_dir/scripts/local-env.sh" "$exec_fixture/scripts/local-env.sh"
+bash "$root_dir/scripts/init-main-env.sh" "$exec_fixture/.env.example"
+write_manifest "clean-env-903" "$exec_fixture" 903
 ORVILO_TASK_CONFIG_ROOT=/task/config \
 ORVILO_TASK_WORKSPACES_ROOT=/task/workspaces \
 ORVILO_WORKSPACES_ROOT=/owner/workspaces \
@@ -165,7 +169,7 @@ ORVILO_WORKSPACES_ROOT=/owner/workspaces \
     test -z "${ORVILO_TASK_CONFIG_ROOT:-}" &&
     test -z "${ORVILO_TASK_WORKSPACES_ROOT:-}" &&
     test "$ORVILO_WORKSPACES_ROOT" = "$1"
-  ' _ "$ORVILO_DEV_WORKSPACES_PARENT/patchbay_workspaces_dev-dev-env-test-903" \
+  ' _ "$ORVILO_DEV_WORKSPACES_PARENT/orvilo_workspaces_dev-dev-env-test-903" \
   > "$out" 2>&1 || fail "env-exec leaked daemon task identity or owner workspaces root"
 
 # A health response without process identity is never proof that the process is
@@ -228,5 +232,21 @@ fi
 printf 'n\n' | dev_env destroy orphan-902 > "$out" 2>&1 || fail "declining destroy must exit 0"
 require_contains "$out" "Cancelled."
 [ -d "$ORVILO_DEV_HOME/envs/orphan-902" ] || fail "declined destroy removed the environment anyway"
+
+# Fresh defaults and explicit database credentials must feed the same URL.
+(
+  POSTGRES_USER=fixture
+  POSTGRES_PASSWORD="$(openssl rand -hex 16)"
+  POSTGRES_DB=fixture_db
+  POSTGRES_PORT=15432
+  DATABASE_URL=
+  . "$root_dir/scripts/local-env.sh"
+  [ "$DATABASE_URL" = "postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable" ] \
+    || fail "local database URL must include the configured password"
+  DATABASE_URL="postgres://remote.example/explicit"
+  . "$root_dir/scripts/local-env.sh"
+  [ "$DATABASE_URL" = "postgres://remote.example/explicit" ] \
+    || fail "an explicit database URL must remain unchanged"
+)
 
 echo "✓ dev-env.sh registry behaviour verified"

@@ -1,7 +1,7 @@
 package metrics
 
 import (
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -42,8 +42,8 @@ type businessEventMetrics struct {
 	issueCreated                    *prometheus.CounterVec
 	chatMessageSent                 *prometheus.CounterVec
 	agentCreated                    *prometheus.CounterVec
-	teamCreated                    *prometheus.CounterVec
-	automationCreated                *prometheus.CounterVec
+	teamCreated                     *prometheus.CounterVec
+	automationCreated               *prometheus.CounterVec
 	issueExecuted                   *prometheus.CounterVec
 	runtimeRegistered               *prometheus.CounterVec
 	runtimeReady                    *prometheus.CounterVec
@@ -51,9 +51,9 @@ type businessEventMetrics struct {
 	runtimeFailed                   *prometheus.CounterVec
 	runtimeOffline                  *prometheus.CounterVec
 	daemonWSMessageReceived         *prometheus.CounterVec
-	automationRunStarted             *prometheus.CounterVec
-	automationRunTerminal            *prometheus.CounterVec
-	automationRunSkipped             *prometheus.CounterVec
+	automationRunStarted            *prometheus.CounterVec
+	automationRunTerminal           *prometheus.CounterVec
+	automationRunSkipped            *prometheus.CounterVec
 	webhookDelivery                 *prometheus.CounterVec
 	webhookRateLimited              *prometheus.CounterVec
 	emailRateLimited                *prometheus.CounterVec
@@ -70,148 +70,148 @@ type businessEventMetrics struct {
 func newBusinessEventMetrics() *businessEventMetrics {
 	return &businessEventMetrics{
 		signup: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_signup_total",
+			Name: "orvilo_signup_total",
 			Help: "Total user signups (account creations).",
-		}, metricLabels("patchbay_signup_total")),
+		}, metricLabels("orvilo_signup_total")),
 		workspaceCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_workspace_created_total",
+			Name: "orvilo_workspace_created_total",
 			Help: "Total workspaces created.",
-		}, metricLabels("patchbay_workspace_created_total")),
+		}, metricLabels("orvilo_workspace_created_total")),
 		teamInviteSent: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_team_invite_sent_total",
+			Name: "orvilo_team_invite_sent_total",
 			Help: "Total workspace invitations sent.",
-		}, metricLabels("patchbay_team_invite_sent_total")),
+		}, metricLabels("orvilo_team_invite_sent_total")),
 		teamInviteAccepted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_team_invite_accepted_total",
+			Name: "orvilo_team_invite_accepted_total",
 			Help: "Total workspace invitations accepted.",
-		}, metricLabels("patchbay_team_invite_accepted_total")),
+		}, metricLabels("orvilo_team_invite_accepted_total")),
 		onboardingStarted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_onboarding_started_total",
+			Name: "orvilo_onboarding_started_total",
 			Help: "Total onboarding flows started.",
-		}, metricLabels("patchbay_onboarding_started_total")),
+		}, metricLabels("orvilo_onboarding_started_total")),
 		onboardingQuestionnaireSubmit: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_onboarding_questionnaire_submitted_total",
+			Name: "orvilo_onboarding_questionnaire_submitted_total",
 			Help: "Total onboarding questionnaires submitted.",
-		}, metricLabels("patchbay_onboarding_questionnaire_submitted_total")),
+		}, metricLabels("orvilo_onboarding_questionnaire_submitted_total")),
 		onboardingSourceSubmit: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_onboarding_source_submitted_total",
+			Name: "orvilo_onboarding_source_submitted_total",
 			Help: "Total acquisition-source answers or declines recorded (workspace backfill prompt).",
-		}, metricLabels("patchbay_onboarding_source_submitted_total")),
+		}, metricLabels("orvilo_onboarding_source_submitted_total")),
 		onboardingCompleted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_onboarding_completed_total",
+			Name: "orvilo_onboarding_completed_total",
 			Help: "Total onboarding flows completed.",
-		}, metricLabels("patchbay_onboarding_completed_total")),
+		}, metricLabels("orvilo_onboarding_completed_total")),
 		cloudWaitlistJoined: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_cloud_waitlist_joined_total",
+			Name: "orvilo_cloud_waitlist_joined_total",
 			Help: "Total users that joined the cloud waitlist.",
-		}, metricLabels("patchbay_cloud_waitlist_joined_total")),
+		}, metricLabels("orvilo_cloud_waitlist_joined_total")),
 		issueCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_issue_created_total",
+			Name: "orvilo_issue_created_total",
 			Help: "Total issues created (any source).",
-		}, metricLabels("patchbay_issue_created_total")),
+		}, metricLabels("orvilo_issue_created_total")),
 		chatMessageSent: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_chat_message_sent_total",
+			Name: "orvilo_chat_message_sent_total",
 			Help: "Total user chat messages sent (excludes agent replies).",
-		}, metricLabels("patchbay_chat_message_sent_total")),
+		}, metricLabels("orvilo_chat_message_sent_total")),
 		agentCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_agent_created_total",
+			Name: "orvilo_agent_created_total",
 			Help: "Total agents created.",
-		}, metricLabels("patchbay_agent_created_total")),
+		}, metricLabels("orvilo_agent_created_total")),
 		teamCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_team_created_total",
+			Name: "orvilo_team_created_total",
 			Help: "Total teams created.",
-		}, metricLabels("patchbay_team_created_total")),
+		}, metricLabels("orvilo_team_created_total")),
 		automationCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_automation_created_total",
+			Name: "orvilo_automation_created_total",
 			Help: "Total automations created.",
-		}, metricLabels("patchbay_automation_created_total")),
+		}, metricLabels("orvilo_automation_created_total")),
 		issueExecuted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_issue_executed_total",
+			Name: "orvilo_issue_executed_total",
 			Help: "First task completion per issue (per-issue exactly-once activation keystone).",
-		}, metricLabels("patchbay_issue_executed_total")),
+		}, metricLabels("orvilo_issue_executed_total")),
 		runtimeRegistered: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_runtime_registered_total",
+			Name: "orvilo_runtime_registered_total",
 			Help: "Total first-time runtime registrations.",
-		}, metricLabels("patchbay_runtime_registered_total")),
+		}, metricLabels("orvilo_runtime_registered_total")),
 		runtimeReady: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_runtime_ready_total",
+			Name: "orvilo_runtime_ready_total",
 			Help: "Total runtimes that reached ready state.",
-		}, metricLabels("patchbay_runtime_ready_total")),
+		}, metricLabels("orvilo_runtime_ready_total")),
 		runtimeReadySeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "patchbay_runtime_ready_seconds",
+			Name:    "orvilo_runtime_ready_seconds",
 			Help:    "Time from runtime registration to ready (seconds).",
 			Buckets: runtimeReadyBuckets,
-		}, metricLabels("patchbay_runtime_ready_seconds")),
+		}, metricLabels("orvilo_runtime_ready_seconds")),
 		runtimeFailed: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_runtime_failed_total",
+			Name: "orvilo_runtime_failed_total",
 			Help: "Total runtime failures by canonical reason.",
-		}, metricLabels("patchbay_runtime_failed_total")),
+		}, metricLabels("orvilo_runtime_failed_total")),
 		runtimeOffline: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_runtime_offline_total",
+			Name: "orvilo_runtime_offline_total",
 			Help: "Total runtime offline transitions.",
-		}, metricLabels("patchbay_runtime_offline_total")),
+		}, metricLabels("orvilo_runtime_offline_total")),
 		daemonWSMessageReceived: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_daemon_ws_message_received_total",
+			Name: "orvilo_daemon_ws_message_received_total",
 			Help: "Total daemon WebSocket inbound messages by handler kind.",
-		}, metricLabels("patchbay_daemon_ws_message_received_total")),
+		}, metricLabels("orvilo_daemon_ws_message_received_total")),
 		automationRunStarted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_automation_run_started_total",
+			Name: "orvilo_automation_run_started_total",
 			Help: "Total automation runs started.",
-		}, metricLabels("patchbay_automation_run_started_total")),
+		}, metricLabels("orvilo_automation_run_started_total")),
 		automationRunTerminal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_automation_run_terminal_total",
+			Name: "orvilo_automation_run_terminal_total",
 			Help: "Total automation runs that reached a terminal status.",
-		}, metricLabels("patchbay_automation_run_terminal_total")),
+		}, metricLabels("orvilo_automation_run_terminal_total")),
 		automationRunSkipped: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_automation_run_skipped_total",
+			Name: "orvilo_automation_run_skipped_total",
 			Help: "Total automation runs that admission-skipped (concurrency / cooldown / other).",
-		}, metricLabels("patchbay_automation_run_skipped_total")),
+		}, metricLabels("orvilo_automation_run_skipped_total")),
 		webhookDelivery: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_webhook_delivery_total",
+			Name: "orvilo_webhook_delivery_total",
 			Help: "Total inbound webhook deliveries by provider and outcome.",
-		}, metricLabels("patchbay_webhook_delivery_total")),
+		}, metricLabels("orvilo_webhook_delivery_total")),
 		webhookRateLimited: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_webhook_rate_limited_total",
+			Name: "orvilo_webhook_rate_limited_total",
 			Help: "Total webhook admissions or worker dispatches delayed by a bounded safety gate.",
-		}, metricLabels("patchbay_webhook_rate_limited_total")),
+		}, metricLabels("orvilo_webhook_rate_limited_total")),
 		emailRateLimited: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_email_rate_limited_total",
+			Name: "orvilo_email_rate_limited_total",
 			Help: "Total email-producing actions rejected by a bounded safety gate.",
-		}, metricLabels("patchbay_email_rate_limited_total")),
+		}, metricLabels("orvilo_email_rate_limited_total")),
 		githubEventReceived: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_github_event_received_total",
+			Name: "orvilo_github_event_received_total",
 			Help: "Total GitHub webhook events received by event kind and action.",
-		}, metricLabels("patchbay_github_event_received_total")),
+		}, metricLabels("orvilo_github_event_received_total")),
 		githubPRReview: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_github_pr_review_total",
+			Name: "orvilo_github_pr_review_total",
 			Help: "Total GitHub pull request reviews observed by result.",
-		}, metricLabels("patchbay_github_pr_review_total")),
+		}, metricLabels("orvilo_github_pr_review_total")),
 		githubPRMergeSeconds: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "patchbay_github_pr_merge_seconds",
+			Name:    "orvilo_github_pr_merge_seconds",
 			Help:    "Time from PR opened to merged (seconds).",
 			Buckets: prMergeSecondsBuckets,
 		}),
 		cloudRuntimeRequest: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_cloudruntime_request_total",
+			Name: "orvilo_cloudruntime_request_total",
 			Help: "Total outbound cloud runtime requests by op and status bucket.",
-		}, metricLabels("patchbay_cloudruntime_request_total")),
+		}, metricLabels("orvilo_cloudruntime_request_total")),
 		cloudRuntimeRequestDurationSecs: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "patchbay_cloudruntime_request_duration_seconds",
+			Name:    "orvilo_cloudruntime_request_duration_seconds",
 			Help:    "Outbound cloud runtime request duration (seconds).",
 			Buckets: cloudRuntimeRequestBuckets,
-		}, metricLabels("patchbay_cloudruntime_request_duration_seconds")),
+		}, metricLabels("orvilo_cloudruntime_request_duration_seconds")),
 		feedbackSubmitted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_feedback_submitted_total",
+			Name: "orvilo_feedback_submitted_total",
 			Help: "Total in-app feedback submissions.",
-		}, metricLabels("patchbay_feedback_submitted_total")),
+		}, metricLabels("orvilo_feedback_submitted_total")),
 		contactSalesSubmitted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_contact_sales_submitted_total",
+			Name: "orvilo_contact_sales_submitted_total",
 			Help: "Total contact-sales inquiries submitted.",
-		}, metricLabels("patchbay_contact_sales_submitted_total")),
+		}, metricLabels("orvilo_contact_sales_submitted_total")),
 		chatOutputLocalPath: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_chat_output_local_path_total",
+			Name: "orvilo_chat_output_local_path_total",
 			Help: "Total agent chat replies that referenced a runtime-local path, by evidence kind. Observation only — the reply is still delivered.",
-		}, metricLabels("patchbay_chat_output_local_path_total")),
+		}, metricLabels("orvilo_chat_output_local_path_total")),
 	}
 }
 

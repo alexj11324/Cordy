@@ -8,7 +8,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	slackapi "github.com/slack-go/slack"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
 )
 
 type AutomationCatalogChannel struct {

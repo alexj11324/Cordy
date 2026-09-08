@@ -5,7 +5,7 @@ import {
   DEFAULT_MANUAL_CREATE_FIELDS,
   DEFAULT_QUICK_CREATE_FIELDS,
   useIssueCreateSettingsStore,
-} from "@patchbay/core/issues/stores/issue-create-settings-store";
+} from "@orvilo/core/issues/stores/issue-create-settings-store";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueTab } from "./issue-tab";
 

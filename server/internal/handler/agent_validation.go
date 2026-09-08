@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/patchbay-ai/patchbay/server/internal/agentconfig"
+	"github.com/orvilo-ai/orvilo/server/internal/agentconfig"
 )
 
 func validateAgentMaxConcurrentTasks(value int32) error {

@@ -1,6 +1,6 @@
 "use client";
 
-import type { InboxItem } from "@patchbay/core/types";
+import type { InboxItem } from "@orvilo/core/types";
 import { RowActionsMenu } from "../../common/row-actions-menu";
 import { useT } from "../../i18n";
 import { useInboxRowActions } from "./inbox-context-menu";

@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronRight, Plus } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -14,12 +14,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@patchbay/ui/components/ui/collapsible";
+} from "@orvilo/ui/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -27,19 +27,19 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
-import { Toggle } from "@patchbay/ui/components/ui/toggle";
+} from "@orvilo/ui/components/ui/select";
+import { Toggle } from "@orvilo/ui/components/ui/toggle";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useCreateIssueView, useUpdateIssueView } from "@patchbay/core/issue-views/mutations";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useCreateIssueView, useUpdateIssueView } from "@orvilo/core/issue-views/mutations";
 import {
   issueViewContainerKey,
   useActiveIssueViewStore,
-} from "@patchbay/core/issue-views/active-view-store";
-import { ApiError } from "@patchbay/core/api/client";
-import type { CreateIssueViewRequest, IssueView } from "@patchbay/core/api/schemas";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import { propertyListOptions } from "@patchbay/core/properties";
+} from "@orvilo/core/issue-views/active-view-store";
+import { ApiError } from "@orvilo/core/api/client";
+import type { CreateIssueViewRequest, IssueView } from "@orvilo/core/api/schemas";
+import { projectListOptions } from "@orvilo/core/projects/queries";
+import { propertyListOptions } from "@orvilo/core/properties";
 import {
   viewStoreSlice,
   viewStorePersistOptions,
@@ -53,12 +53,12 @@ import {
   type SortField,
   type SwimlaneGrouping,
   type ViewMode,
-} from "@patchbay/core/issues/stores/view-store";
+} from "@orvilo/core/issues/stores/view-store";
 import {
   ViewStoreProvider,
   useViewStore,
   useViewStoreApi,
-} from "@patchbay/core/issues/stores/view-store-context";
+} from "@orvilo/core/issues/stores/view-store-context";
 import { IssueFilterMenu } from "./issues-header";
 import { FilterChipList } from "./filter-chips-bar";
 import { useT } from "../../i18n";

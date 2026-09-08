@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FolderOpen, FolderGit, LoaderCircle, Plus } from "lucide-react";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -12,13 +12,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
+} from "@orvilo/ui/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,29 +28,29 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import { toast } from "sonner";
 import {
   useInfiniteQuery,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { memberListOptions, workspaceKeys } from "@patchbay/core/workspace/queries";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
+import { memberListOptions, workspaceKeys } from "@orvilo/core/workspace/queries";
 import {
   githubInstallationRepositoriesOptions,
   githubInstallationsOptions,
-} from "@patchbay/core/github";
-import { api } from "@patchbay/core/api";
+} from "@orvilo/core/github";
+import { api } from "@orvilo/core/api";
 import type {
   GitHubRepository,
   Workspace,
   WorkspaceRepo,
-} from "@patchbay/core/types";
-import { projectListOptions } from "@patchbay/core/projects";
-import { useModalStore } from "@patchbay/core/modals";
+} from "@orvilo/core/types";
+import { projectListOptions } from "@orvilo/core/projects";
+import { useModalStore } from "@orvilo/core/modals";
 import { ProjectResourcesSection } from "../../projects/components/project-resources-section";
 import { isDesktopShell } from "../../platform/local-directory";
 import { githubShortLabel, repositoryIdentity } from "../../common/github-url";

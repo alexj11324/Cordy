@@ -34,7 +34,7 @@ function makeApi(): ApiClient {
 
 describe("authStore", () => {
   it("publishes a retry request instead of silently ignoring it", () => {
-    const storage = makeStorage({ patchbay_token: "t" });
+    const storage = makeStorage({ orvilo_token: "t" });
     const api = makeApi();
     const store = createAuthStore({ api, storage });
 
@@ -46,7 +46,7 @@ describe("authStore", () => {
   });
 
   it("explicit logout still clears credentials and publishes unauthenticated state", async () => {
-    const storage = makeStorage({ patchbay_token: "t" });
+    const storage = makeStorage({ orvilo_token: "t" });
     const api = makeApi();
     api.logout = vi.fn().mockResolvedValue(undefined);
     const onLogout = vi.fn();
@@ -55,7 +55,7 @@ describe("authStore", () => {
     store.setState({ user: fakeUser, status: "authenticated", isLoading: false });
     await store.getState().logout();
 
-    expect(storage.snapshot().patchbay_token).toBeUndefined();
+    expect(storage.snapshot().orvilo_token).toBeUndefined();
     expect(api.setToken).toHaveBeenCalledWith(null);
     expect(api.logout).not.toHaveBeenCalled();
     expect(onLogout).toHaveBeenCalledOnce();
@@ -64,7 +64,7 @@ describe("authStore", () => {
   });
 
   it("guest logout revokes the server session before clearing local state", async () => {
-    const storage = makeStorage({ patchbay_token: "guest-t" });
+    const storage = makeStorage({ orvilo_token: "guest-t" });
     const api = makeApi();
     api.logout = vi.fn().mockResolvedValue(undefined);
     const store = createAuthStore({ api, storage });
@@ -93,7 +93,7 @@ describe("authStore", () => {
     const user = await store.getState().createGuestSession();
 
     expect(user).toEqual(guestUser);
-    expect(storage.snapshot().patchbay_token).toBe("guest-t");
+    expect(storage.snapshot().orvilo_token).toBe("guest-t");
     expect(api.setToken).toHaveBeenCalledWith("guest-t");
     expect(onLogin).toHaveBeenCalledOnce();
     expect(store.getState().status).toBe("authenticated");

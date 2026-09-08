@@ -4,7 +4,7 @@ function docsLocaleSegment(language?: string): string {
 }
 
 export function daemonRuntimesDocsHref(language?: string): string {
-  return `https://patchbay.aspectlylabs.com/docs${docsLocaleSegment(language)}/daemon-runtimes`;
+  return `https://orvilo.aspectlylabs.com/docs${docsLocaleSegment(language)}/daemon-runtimes`;
 }
 
 export function customRuntimeDocsHref(language?: string): string {

@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
-	"github.com/patchbay-ai/patchbay/server/pkg/remotemcp"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/pkg/remotemcp"
 )
 
 // requestError is returned by postJSON/getJSON when the server responds with an error status.
@@ -90,7 +90,7 @@ func isRuntimeNotFoundError(err error) bool {
 	return strings.Contains(strings.ToLower(reqErr.Body), "runtime not found")
 }
 
-// Client handles HTTP communication with the Patchbay server daemon API.
+// Client handles HTTP communication with the Orvilo server daemon API.
 type Client struct {
 	baseURL string
 	token   string
@@ -426,12 +426,12 @@ func (c *Client) AuthorizeProviderOperation(ctx context.Context, runtimeID, task
 	var response ProviderAuthorizationDecision
 	path := fmt.Sprintf("/api/daemon/runtimes/%s/tasks/%s/provider-authorization", runtimeID, taskID)
 	err := c.postJSON(ctx, path, map[string]any{
-		"lease_token":           leaseToken,
-		"provider":              provider,
-		"model":                 model,
-		"max_tokens":            requestedMaxTokens,
-		"requested_max_tokens":  requestedMaxTokens,
-		"preflight":             preflight,
+		"lease_token":          leaseToken,
+		"provider":             provider,
+		"model":                model,
+		"max_tokens":           requestedMaxTokens,
+		"requested_max_tokens": requestedMaxTokens,
+		"preflight":            preflight,
 	}, &response)
 	if err != nil {
 		return nil, err

@@ -14,7 +14,7 @@ import (
 // per-task temp directory the daemon creates under the task temp base. The
 // sweep below removes nothing without it, so the base itself — usually a
 // shared /tmp holding other programs' files — is never at risk.
-const TaskTempDirPrefix = "patchbay-task-"
+const TaskTempDirPrefix = "orvilo-task-"
 
 // taskTempLockClaimFile is the name the marker is locked under before being
 // renamed into place, so .task_lock never exists unlocked while its owner is
@@ -191,7 +191,9 @@ func PruneTaskTempDirs(base string, legacyTTL time.Duration, now time.Time, logg
 	}
 	legacyKept := 0
 	for _, e := range entries {
-		if !e.IsDir() || !strings.HasPrefix(e.Name(), TaskTempDirPrefix) {
+		// Cleanup-only cutover adapter. Owner: runtime maintainers. Remove by
+		// 2026-12-07 once pre-cutover task directories have been reclaimed.
+		if !e.IsDir() || (!strings.HasPrefix(e.Name(), TaskTempDirPrefix) && !strings.HasPrefix(e.Name(), "patchbay-task-")) {
 			continue
 		}
 		dir := filepath.Join(base, e.Name())

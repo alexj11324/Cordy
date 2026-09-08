@@ -49,8 +49,8 @@ func TestWriteMeasuredJSONByteIdenticalToWriteJSON(t *testing.T) {
 			ID:   "11111111-2222-3333-4444-555555555555",
 			Name: "agent <CC> & friends",
 			Skills: []skill{
-				{Name: "patchbay-working-on-issues", Description: "do work <safely> & well", Files: map[string]string{"SKILL.md": "# Title\n<b>x</b> & y"}},
-				{Name: "patchbay-mentioning", Description: "ping people", Files: map[string]string{"SKILL.md": "line1\nline2"}},
+				{Name: "orvilo-working-on-issues", Description: "do work <safely> & well", Files: map[string]string{"SKILL.md": "# Title\n<b>x</b> & y"}},
+				{Name: "orvilo-mentioning", Description: "ping people", Files: map[string]string{"SKILL.md": "line1\nline2"}},
 			},
 			Args: []string{"--flag", "a<b", "c&d"},
 		}}},

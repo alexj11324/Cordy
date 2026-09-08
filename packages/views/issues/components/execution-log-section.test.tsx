@@ -2,14 +2,14 @@
 
 import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentTask } from "@patchbay/core/types";
+import type { AgentTask } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 const mockState = vi.hoisted(() => ({
   taskMessagesOptions: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/chat/queries", () => ({
+vi.mock("@orvilo/core/chat/queries", () => ({
   taskMessagesOptions: mockState.taskMessagesOptions,
 }));
 
@@ -33,11 +33,11 @@ import {
   TaskCommentCoverage,
   IssueUsageTotal,
 } from "./execution-log-section";
-import type { TaskUsage } from "@patchbay/core/types";
+import type { TaskUsage } from "@orvilo/core/types";
 import { act, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { issueKeys } from "@patchbay/core/issues/queries";
-import { useCustomPricingStore } from "@patchbay/core/runtimes/custom-pricing-store";
+import { issueKeys } from "@orvilo/core/issues/queries";
+import { useCustomPricingStore } from "@orvilo/core/runtimes/custom-pricing-store";
 
 function makeTask(overrides: Partial<AgentTask> = {}): AgentTask {
   return {

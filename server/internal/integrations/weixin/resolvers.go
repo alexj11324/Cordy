@@ -12,10 +12,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
 )
 
 type ContextSealer func([]byte) ([]byte, error)
@@ -128,14 +128,14 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 		return engine.ResolvedIdentity{}, engine.ErrSenderUnbound
 	}
 	if _, err := r.q.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-		UserID: binding.PatchbayUserID, WorkspaceID: inst.WorkspaceID,
+		UserID: binding.OrviloUserID, WorkspaceID: inst.WorkspaceID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return engine.ResolvedIdentity{}, engine.ErrSenderNotMember
 		}
 		return engine.ResolvedIdentity{}, err
 	}
-	return engine.ResolvedIdentity{UserID: binding.PatchbayUserID}, nil
+	return engine.ResolvedIdentity{UserID: binding.OrviloUserID}, nil
 }
 
 type deduper struct{ q *db.Queries }

@@ -13,8 +13,11 @@ fi
 
 deploy_user="${ORVILO_DEPLOY_USER:-ubuntu}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-state_dir="/var/lib/patchbay-production"
-static_dir="/usr/local/share/patchbay-production"
+state_dir="/var/lib/orvilo-production"
+static_dir="/usr/local/share/orvilo-production"
+legacy_state_dir="/var/lib/patchbay-production"
+legacy_static_dir="/usr/local/share/patchbay-production"
+legacy_bin="/usr/local/bin/patchbay-production-deploy"
 
 if ! id "$deploy_user" >/dev/null 2>&1; then
   echo "deployment user does not exist: $deploy_user" >&2
@@ -27,6 +30,18 @@ authorized_keys="$ssh_dir/authorized_keys"
 if [ -z "$deploy_home" ] || [ ! -d "$deploy_home" ]; then
   echo "deployment user has no usable home directory: $deploy_user" >&2
   exit 1
+fi
+for legacy_path in "$legacy_state_dir" "$legacy_static_dir"; do
+  if [ -L "$legacy_path" ]; then
+    echo "refusing symlinked legacy production deployment path: $legacy_path" >&2
+    exit 1
+  fi
+done
+if [ -e "$legacy_state_dir" ] && [ ! -e "$state_dir" ]; then
+  mv "$legacy_state_dir" "$state_dir"
+fi
+if [ -e "$legacy_static_dir" ] && [ ! -e "$static_dir" ]; then
+  mv "$legacy_static_dir" "$static_dir"
 fi
 for protected_path in "$state_dir" "$static_dir" "$ssh_dir" "$authorized_keys"; do
   if [ -L "$protected_path" ]; then
@@ -42,9 +57,20 @@ for dependency in docker git runuser; do
 done
 docker compose version >/dev/null
 
+# Moving the cache does not rewrite Git's absolute worktree links. Repair
+# both directions before bootstrap checks or prunes cached releases.
+if [ -d "$state_dir/repository.git" ]; then
+  for release in "$state_dir"/releases/*; do
+    if [ -d "$release" ] && [ ! -L "$release" ]; then
+      runuser -u "$deploy_user" -- git --git-dir="$state_dir/repository.git" worktree repair "$release"
+    fi
+  done
+fi
+
 install -o root -g root -m 0755 \
   "$script_dir/production_deploy.py" \
-  /usr/local/bin/patchbay-production-deploy
+  /usr/local/bin/orvilo-production-deploy
+rm -f "$legacy_bin"
 install -d -o root -g root -m 0755 "$static_dir"
 install -o root -g root -m 0644 \
   "$script_dir/production-product.override.yml" \
@@ -64,20 +90,26 @@ if [[ ! "$public_key" =~ ^(ssh-ed25519|sk-ssh-ed25519@openssh.com)[[:space:]][A-
   echo "deployment key must be an Ed25519 public key" >&2
   exit 1
 fi
-forced_entry="restrict,command=\"/usr/local/bin/patchbay-production-deploy\" $public_key patchbay-production-github-actions"
+forced_entry="restrict,command=\"/usr/local/bin/orvilo-production-deploy\" $public_key orvilo-production-github-actions"
 
 # Do not authorize remote deployment until the local baseline has been
 # captured or the existing rollback state has passed validation. Reinstalling
-# the gateway must not overwrite deployment history.
+# the gateway must not overwrite deployment history. A pre-cutover manifest
+# needs one bootstrap refresh so the new gateway records the running baseline
+# before it starts accepting Orvilo-only deployment requests.
 if [ -f "$state_dir/current.json" ]; then
-  runuser -u "$deploy_user" -- /usr/local/bin/patchbay-production-deploy --check
+  if grep -q 'ghcr\.io/alexj11324/patchbay-' "$state_dir/current.json"; then
+    runuser -u "$deploy_user" -- /usr/local/bin/orvilo-production-deploy --bootstrap
+  else
+    runuser -u "$deploy_user" -- /usr/local/bin/orvilo-production-deploy --check
+  fi
 else
-  runuser -u "$deploy_user" -- /usr/local/bin/patchbay-production-deploy --bootstrap
+  runuser -u "$deploy_user" -- /usr/local/bin/orvilo-production-deploy --bootstrap
 fi
 
 temporary_keys="$(mktemp "$deploy_home/.ssh/.authorized_keys.XXXXXX")"
 trap 'rm -f "$temporary_keys"' EXIT
-awk '$NF != "patchbay-production-github-actions"' "$authorized_keys" > "$temporary_keys"
+awk '$NF != "orvilo-production-github-actions" && $NF != "patchbay-production-github-actions"' "$authorized_keys" > "$temporary_keys"
 printf '%s\n' "$forced_entry" >> "$temporary_keys"
 chown "$deploy_user:$deploy_group" "$temporary_keys"
 chmod 0600 "$temporary_keys"

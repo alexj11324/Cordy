@@ -10,25 +10,25 @@ import {
 } from "react";
 import { useDefaultLayout } from "react-resizable-panels";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { ApiError, errorCode } from "@patchbay/core/api";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useModalStore } from "@patchbay/core/modals";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { ApiError, errorCode } from "@orvilo/core/api";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { useModalStore } from "@orvilo/core/modals";
 import {
   getShortcut,
   isEditableShortcutTarget,
   isPortalLayerShortcutTarget,
   shortcutMatchesEvent,
-} from "@patchbay/core/shortcuts";
-import { isImeComposing } from "@patchbay/core/utils";
-import { useIssueDraftStore } from "@patchbay/core/issues/stores/draft-store";
+} from "@orvilo/core/shortcuts";
+import { isImeComposing } from "@orvilo/core/utils";
+import { useIssueDraftStore } from "@orvilo/core/issues/stores/draft-store";
 import {
   inboxListOptions,
   archivedInboxListOptions,
   deduplicateInboxItems,
   deduplicateArchivedInboxItems,
   useInboxUnreadCount,
-} from "@patchbay/core/inbox/queries";
+} from "@orvilo/core/inbox/queries";
 import {
   useMarkInboxRead,
   useMarkInboxUnread,
@@ -39,7 +39,7 @@ import {
   useArchiveAllReadInbox,
   useArchiveCompletedInbox,
   useRetrySourceContextQuickCreate,
-} from "@patchbay/core/inbox/mutations";
+} from "@orvilo/core/inbox/mutations";
 import {
   filterInboxItems,
   inboxFiltersForPrioritySupport,
@@ -47,11 +47,11 @@ import {
   inboxPriorityFilterSupport,
   useInboxFilters,
   useInboxFilterStore,
-} from "@patchbay/core/inbox/filter-store";
+} from "@orvilo/core/inbox/filter-store";
 
 import { IssueDetail, issueHighlightMementoKey } from "../../issues/components";
 import { useViewStateWriter } from "../../platform";
-import { ErrorBoundary } from "@patchbay/ui/components/common/error-boundary";
+import { ErrorBoundary } from "@orvilo/ui/components/common/error-boundary";
 import { useNavigation, useReportNavigating } from "../../navigation";
 import { toast } from "sonner";
 import {
@@ -65,24 +65,24 @@ import {
   ListChecks,
   ArrowLeft,
 } from "lucide-react";
-import type { InboxItem } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
+import type { InboxItem } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   ResizablePanelGroup,
   ResizablePanel,
   ResizableHandle,
-} from "@patchbay/ui/components/ui/resizable";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { NumberFlow } from "@patchbay/ui/components/ui/number-flow";
+} from "@orvilo/ui/components/ui/resizable";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { NumberFlow } from "@orvilo/ui/components/ui/number-flow";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { useIsCompact } from "@patchbay/ui/hooks/use-mobile";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { useIsCompact } from "@orvilo/ui/hooks/use-mobile";
+import { cn } from "@orvilo/ui/lib/utils";
 import { PAGE_GUTTER, PageHeader } from "../../layout/page-header";
 import { useTimeAgo } from "./inbox-list-item";
 import { InboxList } from "./inbox-list";
@@ -289,7 +289,7 @@ export function InboxPage() {
   ]);
 
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "patchbay_inbox_layout",
+    id: "orvilo_inbox_layout",
   });
 
   const isCompact = useIsCompact();
@@ -690,7 +690,7 @@ export function InboxPage() {
         key={detailItem.issue_id}
         issueId={detailItem.issue_id}
         defaultSidebarOpen={false}
-        layoutId="patchbay_inbox_issue_detail_layout"
+        layoutId="orvilo_inbox_issue_detail_layout"
         highlightCommentId={detailItem.details?.comment_id ?? undefined}
         highlightRequestToken={highlightRequestToken}
         leadingAction={compactBackAction}

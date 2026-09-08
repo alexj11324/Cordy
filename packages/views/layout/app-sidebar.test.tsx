@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ApiError } from "@patchbay/core/api";
+import { ApiError } from "@orvilo/core/api";
 import { renderWithI18n } from "../test/i18n";
 import { AppSidebar } from "./app-sidebar";
 
@@ -57,7 +57,7 @@ vi.mock("@dnd-kit/sortable", () => ({
   verticalListSortingStrategy: vi.fn(),
 }));
 vi.mock("@dnd-kit/utilities", () => ({ CSS: { Transform: { toString: () => undefined } } }));
-vi.mock("@patchbay/ui/components/ui/sidebar", () => ({
+vi.mock("@orvilo/ui/components/ui/sidebar", () => ({
   Sidebar: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarFooter: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -94,7 +94,7 @@ vi.mock("@patchbay/ui/components/ui/sidebar", () => ({
     setOpenMobile: sidebarState.setOpenMobile,
   }),
 }));
-vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@orvilo/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuGroup: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -103,12 +103,12 @@ vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
   DropdownMenuSeparator: () => null,
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
 }));
-vi.mock("@patchbay/ui/components/ui/collapsible", () => ({
+vi.mock("@orvilo/ui/components/ui/collapsible", () => ({
   Collapsible: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   CollapsibleContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   CollapsibleTrigger: () => <button type="button" />,
 }));
-vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
+vi.mock("@orvilo/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
@@ -127,9 +127,9 @@ vi.mock("../navigation", () => ({
 }));
 vi.mock("../projects/components/project-icon", () => ({ ProjectIcon: () => <span /> }));
 vi.mock("../workspace/workspace-avatar", () => ({ WorkspaceAvatar: () => <span /> }));
-vi.mock("@patchbay/ui/components/common/actor-avatar", () => ({ ActorAvatar: () => <span /> }));
+vi.mock("@orvilo/ui/components/common/actor-avatar", () => ({ ActorAvatar: () => <span /> }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: (
     selector: (state: {
       user: { id: string; name: string; email: string; is_guest: boolean };
@@ -137,18 +137,18 @@ vi.mock("@patchbay/core/auth", () => ({
   ) => selector({ user: authUser.current }),
 }));
 // Callable-store shape (selectorFn + getState) per the repo testing rules.
-vi.mock("@patchbay/core/chat", () => ({
+vi.mock("@orvilo/core/chat", () => ({
   useChatStore: Object.assign(
     (selector: (state: { activeSessionId: string | null; isOpen: boolean }) => unknown) =>
       selector(chatStore.current),
     { getState: () => chatStore.current },
   ),
 }));
-vi.mock("@patchbay/core/paths", async (importOriginal) => ({
+vi.mock("@orvilo/core/paths", async (importOriginal) => ({
   // Spread the real module so pure helpers (resolveRouteIconName, used by the
   // nav to derive each item's icon from its href) stay intact; only the
   // workspace/context hooks below are stubbed to control routes in tests.
-  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
+  ...(await importOriginal<typeof import("@orvilo/core/paths")>()),
   paths: { workspace: (slug: string) => ({ issues: () => `/${slug}/issues` }) },
   useCurrentWorkspace: () => ({ id: "ws-1", name: "Acme", slug: "acme" }),
   useWorkspacePaths: () => ({
@@ -171,8 +171,8 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
     projectDetail: (id: string) => `/acme/projects/${id}`,
   }),
 }));
-vi.mock("@patchbay/core/api", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/api")>();
+vi.mock("@orvilo/core/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@orvilo/core/api")>();
   return {
     ...actual,
     api: {
@@ -181,7 +181,7 @@ vi.mock("@patchbay/core/api", async (importOriginal) => {
     },
   };
 });
-vi.mock("@patchbay/core/inbox/queries", () => ({
+vi.mock("@orvilo/core/inbox/queries", () => ({
   deduplicateInboxItems: (items: unknown[]) => items,
   inboxKeys: { list: () => ["inbox"], unreadSummary: () => ["inbox", "unread-summary"] },
   inboxUnreadSummaryOptions: () => ({ queryKey: ["inbox", "unread-summary"] }),
@@ -192,17 +192,17 @@ vi.mock("@patchbay/core/inbox/queries", () => ({
   unreadWorkspaceIds: (entries: { workspace_id: string; count: number }[]) =>
     new Set(entries.filter((s) => s.count > 0).map((s) => s.workspace_id)),
 }));
-vi.mock("@patchbay/core/issues/queries", () => ({ issueDetailOptions: () => ({ queryKey: ["issue"] }) }));
-vi.mock("@patchbay/core/issues/stores/create-mode-store", () => ({
+vi.mock("@orvilo/core/issues/queries", () => ({ issueDetailOptions: () => ({ queryKey: ["issue"] }) }));
+vi.mock("@orvilo/core/issues/stores/create-mode-store", () => ({
   useCreateModeStore: { getState: () => ({ lastMode: "agent" }) },
   openCreateIssueWithPreference: vi.fn(),
 }));
-vi.mock("@patchbay/core/issues/stores/draft-store", () => ({ useIssueDraftStore: () => false }));
-vi.mock("@patchbay/core/modals", () => ({ useModalStore: { getState: () => ({ modal: null, open: vi.fn() }) } }));
-vi.mock("@patchbay/core/pins/mutations", () => ({ useDeletePin: () => ({ mutate: deletePin }), useReorderPins: () => ({ mutate: vi.fn() }) }));
-vi.mock("@patchbay/core/pins/queries", () => ({ pinListOptions: () => ({ queryKey: ["pins"] }) }));
-vi.mock("@patchbay/core/projects/queries", () => ({ projectDetailOptions: () => ({ queryKey: ["project"] }) }));
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/issues/stores/draft-store", () => ({ useIssueDraftStore: () => false }));
+vi.mock("@orvilo/core/modals", () => ({ useModalStore: { getState: () => ({ modal: null, open: vi.fn() }) } }));
+vi.mock("@orvilo/core/pins/mutations", () => ({ useDeletePin: () => ({ mutate: deletePin }), useReorderPins: () => ({ mutate: vi.fn() }) }));
+vi.mock("@orvilo/core/pins/queries", () => ({ pinListOptions: () => ({ queryKey: ["pins"] }) }));
+vi.mock("@orvilo/core/projects/queries", () => ({ projectDetailOptions: () => ({ queryKey: ["project"] }) }));
+vi.mock("@orvilo/core/workspace/queries", () => ({
   myInvitationListOptions: () => ({ queryKey: ["invitations"] }),
   workspaceKeys: { myInvitations: () => ["invitations"] },
   workspaceListOptions: () => ({ queryKey: ["workspaces"] }),

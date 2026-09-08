@@ -4,19 +4,19 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
 import { Virtuoso, type Components, type VirtuosoHandle } from "react-virtuoso";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { cn } from "@orvilo/ui/lib/utils";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@patchbay/ui/components/ui/collapsible";
+} from "@orvilo/ui/components/ui/collapsible";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/ui/components/ui/tooltip";
 import {
   ChevronRight,
   ChevronDown,
@@ -27,23 +27,23 @@ import {
   Copy,
   RotateCw,
 } from "lucide-react";
-import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
-import { isTaskMessageTaskId, taskMessagesOptions } from "@patchbay/core/chat/queries";
+import { useScrollFade } from "@orvilo/ui/hooks/use-scroll-fade";
+import { isTaskMessageTaskId, taskMessagesOptions } from "@orvilo/core/chat/queries";
 import { RichContent } from "../../rich-content";
 import { RichContentScrollRootProvider } from "../../rich-content/scroll-root";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+import { copyText } from "@orvilo/ui/lib/clipboard";
 import { AttachmentList } from "../../issues/components/comment-card";
 import { ImageSequenceProvider } from "../../editor";
-import { collectImageSequence } from "@patchbay/core/attachments/image-sequence";
-import type { AgentAvailability } from "@patchbay/core/agents";
-import { resolveFailureReasonKey } from "@patchbay/core/agents";
+import { collectImageSequence } from "@orvilo/core/attachments/image-sequence";
+import type { AgentAvailability } from "@orvilo/core/agents";
+import { resolveFailureReasonKey } from "@orvilo/core/agents";
 import type {
   ChatMessage,
   ChatPendingTask,
   ChatQuickAction,
   TaskMessagePayload,
-} from "@patchbay/core/types";
-import type { ChatTimelineItem } from "@patchbay/core/chat";
+} from "@orvilo/core/types";
+import type { ChatTimelineItem } from "@orvilo/core/chat";
 import { buildTimeline } from "../../common/task-transcript/build-timeline";
 import { OnboardingStarterCards } from "./onboarding-starter-cards";
 import { TaskStatusPill } from "./task-status-pill";
@@ -1062,7 +1062,7 @@ function TimelineView({
 }: {
   items: ChatTimelineItem[];
   isStreaming?: boolean;
-  attachments?: import("@patchbay/core/types").Attachment[];
+  attachments?: import("@orvilo/core/types").Attachment[];
   phase?: "streaming" | "settled";
 }) {
   const { preface, middle, final } = splitTimeline(items);
@@ -1107,7 +1107,7 @@ function OuterProcessFold({
 }: {
   items: ChatTimelineItem[];
   isStreaming?: boolean;
-  attachments?: import("@patchbay/core/types").Attachment[];
+  attachments?: import("@orvilo/core/types").Attachment[];
   phase?: "streaming" | "settled";
 }) {
   const { t } = useT("chat");
@@ -1160,7 +1160,7 @@ function MiddleTextRow({
   phase = "settled",
 }: {
   item: ChatTimelineItem;
-  attachments?: import("@patchbay/core/types").Attachment[];
+  attachments?: import("@orvilo/core/types").Attachment[];
   phase?: "streaming" | "settled";
 }) {
   return (

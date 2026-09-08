@@ -12,12 +12,12 @@ const EXPECTED_BUILD = `sha-${SOURCE_SHA}`;
 test("rejects a healthy route served by the wrong Web image", () => {
   const response = new Response("ok", {
     status: 200,
-    headers: { "x-patchbay-build": "sha-old" },
+    headers: { "x-orvilo-build": "sha-old" },
   });
   assert.throws(
     () =>
       requireHealthyResponse(response, {
-        url: "https://patchbay.aspectlylabs.com/login",
+        url: "https://orvilo.aspectlylabs.com/login",
         expectedBuild: EXPECTED_BUILD,
       }),
     /reported build sha-old/u,
@@ -27,12 +27,12 @@ test("rejects a healthy route served by the wrong Web image", () => {
 test("public pages must render instead of redirecting", () => {
   const response = new Response(null, {
     status: 307,
-    headers: { "x-patchbay-build": EXPECTED_BUILD },
+    headers: { "x-orvilo-build": EXPECTED_BUILD },
   });
   assert.throws(
     () =>
       requireHealthyResponse(response, {
-        url: "https://patchbay.aspectlylabs.com/login",
+        url: "https://orvilo.aspectlylabs.com/login",
         expectedBuild: EXPECTED_BUILD,
         exactStatus: 200,
       }),
@@ -49,8 +49,8 @@ test("verifies backend, Web, Docs, and Auth Broker from one source SHA", async (
         {},
         {
           headers: {
-            "x-patchbay-build": EXPECTED_BUILD,
-            "x-patchbay-commit": SOURCE_SHA,
+            "x-orvilo-build": EXPECTED_BUILD,
+            "x-orvilo-commit": SOURCE_SHA,
           },
         },
       );
@@ -58,8 +58,8 @@ test("verifies backend, Web, Docs, and Auth Broker from one source SHA", async (
     return new Response("ok", {
       status: 200,
       headers: {
-        "x-patchbay-build": EXPECTED_BUILD,
-        "x-patchbay-commit": SOURCE_SHA,
+        "x-orvilo-build": EXPECTED_BUILD,
+        "x-orvilo-commit": SOURCE_SHA,
       },
     });
   };
@@ -67,8 +67,8 @@ test("verifies backend, Web, Docs, and Auth Broker from one source SHA", async (
   await verifyProductionOnce(SOURCE_SHA, fakeFetch);
   assert.deepEqual(seen, [
     "https://api.aspectlylabs.com/api/config",
-    "https://patchbay.aspectlylabs.com/login",
-    "https://patchbay.aspectlylabs.com/docs",
+    "https://orvilo.aspectlylabs.com/login",
+    "https://orvilo.aspectlylabs.com/docs",
     "https://accounts.aspectlylabs.com/readyz",
   ]);
 });

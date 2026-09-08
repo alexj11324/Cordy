@@ -579,7 +579,7 @@ type ChannelTaskDelivery struct {
 type ChannelUserBinding struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	PatchbayUserID pgtype.UUID        `json:"patchbay_user_id"`
+	OrviloUserID   pgtype.UUID        `json:"orvilo_user_id"`
 	InstallationID pgtype.UUID        `json:"installation_id"`
 	ChannelType    string             `json:"channel_type"`
 	ChannelUserID  string             `json:"channel_user_id"`
@@ -1208,7 +1208,7 @@ type LarkOutboundCardMessage struct {
 type LarkUserBinding struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	PatchbayUserID pgtype.UUID        `json:"patchbay_user_id"`
+	OrviloUserID   pgtype.UUID        `json:"orvilo_user_id"`
 	InstallationID pgtype.UUID        `json:"installation_id"`
 	LarkOpenID     string             `json:"lark_open_id"`
 	UnionID        pgtype.Text        `json:"union_id"`
@@ -1249,7 +1249,7 @@ type LinearIssueLink struct {
 	ID                  pgtype.UUID        `json:"id"`
 	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
 	BindingID           pgtype.UUID        `json:"binding_id"`
-	PatchbayIssueID     pgtype.UUID        `json:"patchbay_issue_id"`
+	OrviloIssueID       pgtype.UUID        `json:"orvilo_issue_id"`
 	LinearIssueID       string             `json:"linear_issue_id"`
 	LinearIdentifier    string             `json:"linear_identifier"`
 	LastCommonSnapshot  []byte             `json:"last_common_snapshot"`
@@ -1262,13 +1262,13 @@ type LinearIssueLink struct {
 }
 
 type LinearMemberBinding struct {
-	ID             pgtype.UUID        `json:"id"`
-	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	ConnectionID   pgtype.UUID        `json:"connection_id"`
-	PatchbayUserID pgtype.UUID        `json:"patchbay_user_id"`
-	LinearUserID   string             `json:"linear_user_id"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	ID           pgtype.UUID        `json:"id"`
+	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
+	ConnectionID pgtype.UUID        `json:"connection_id"`
+	OrviloUserID pgtype.UUID        `json:"orvilo_user_id"`
+	LinearUserID string             `json:"linear_user_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
 }
 
 type LinearOauthState struct {
@@ -1287,7 +1287,7 @@ type LinearProjectBinding struct {
 	ID                   pgtype.UUID        `json:"id"`
 	WorkspaceID          pgtype.UUID        `json:"workspace_id"`
 	ConnectionID         pgtype.UUID        `json:"connection_id"`
-	PatchbayProjectID    pgtype.UUID        `json:"patchbay_project_id"`
+	OrviloProjectID      pgtype.UUID        `json:"orvilo_project_id"`
 	LinearProjectID      string             `json:"linear_project_id"`
 	LinearTeamID         pgtype.Text        `json:"linear_team_id"`
 	Status               string             `json:"status"`
@@ -1307,7 +1307,7 @@ type LinearSyncConflict struct {
 	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
 	BindingID       pgtype.UUID        `json:"binding_id"`
 	LinkID          pgtype.UUID        `json:"link_id"`
-	PatchbayIssueID pgtype.UUID        `json:"patchbay_issue_id"`
+	OrviloIssueID   pgtype.UUID        `json:"orvilo_issue_id"`
 	LinearIssueID   string             `json:"linear_issue_id"`
 	Field           string             `json:"field"`
 	BaseValue       []byte             `json:"base_value"`

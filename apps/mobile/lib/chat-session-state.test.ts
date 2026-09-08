@@ -22,7 +22,7 @@ describe("chat session state", () => {
 
   it("names storage by workspace so selections cannot cross workspaces", () => {
     expect(chatActiveSessionStorageKey("workspace-a")).toBe(
-      "patchbay_chat_active_session_v1:workspace-a",
+      "orvilo_chat_active_session_v1:workspace-a",
     );
     expect(chatActiveSessionStorageKey("workspace-a")).not.toBe(
       chatActiveSessionStorageKey("workspace-b"),

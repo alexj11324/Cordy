@@ -3,22 +3,22 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Brain, ExternalLink, Plus, Trash2 } from "lucide-react";
-import { parseAutomationTools, type AutomationToolsConfig } from "@patchbay/core/automations";
-import { useUpdateAutomation } from "@patchbay/core/automations/mutations";
-import { slackAutomationCatalogOptions, slackInstallationsOptions } from "@patchbay/core/slack/queries";
-import { workspaceMcpServersOptions } from "@patchbay/core/workspace/queries";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { settingsPathForTriggerProvider } from "@patchbay/core/automations";
-import type { Automation } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { parseAutomationTools, type AutomationToolsConfig } from "@orvilo/core/automations";
+import { useUpdateAutomation } from "@orvilo/core/automations/mutations";
+import { slackAutomationCatalogOptions, slackInstallationsOptions } from "@orvilo/core/slack/queries";
+import { workspaceMcpServersOptions } from "@orvilo/core/workspace/queries";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { settingsPathForTriggerProvider } from "@orvilo/core/automations";
+import type { Automation } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
+} from "@orvilo/ui/components/ui/popover";
 import { toast } from "sonner";
 import { AppLink } from "../../navigation";
 import { SlackMark } from "../../settings/components/slack-mark";

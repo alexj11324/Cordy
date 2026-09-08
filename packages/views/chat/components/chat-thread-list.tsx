@@ -14,19 +14,19 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { paths, useWorkspaceSlug } from "@patchbay/core/paths";
-import { useWorkspacePresenceMap } from "@patchbay/core/agents";
-import { api } from "@patchbay/core/api";
-import { pendingChatTasksOptions, chatKeys, sortChatSessions } from "@patchbay/core/chat/queries";
+import { cn } from "@orvilo/ui/lib/utils";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { paths, useWorkspaceSlug } from "@orvilo/core/paths";
+import { useWorkspacePresenceMap } from "@orvilo/core/agents";
+import { api } from "@orvilo/core/api";
+import { pendingChatTasksOptions, chatKeys, sortChatSessions } from "@orvilo/core/chat/queries";
 import {
   useDeleteChatSession,
   useSetChatSessionArchived,
   useSetChatSessionPinned,
-} from "@patchbay/core/chat/mutations";
-import { useChatStore } from "@patchbay/core/chat";
-import type { Agent, ChatSession, PendingChatTasksResponse } from "@patchbay/core/types";
+} from "@orvilo/core/chat/mutations";
+import { useChatStore } from "@orvilo/core/chat";
+import type { Agent, ChatSession, PendingChatTasksResponse } from "@orvilo/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import {
   RowActionsMenu,
@@ -34,8 +34,8 @@ import {
   type RowActionItem,
 } from "../../common/row-actions-menu";
 import { resolveClickIntent, useOptionalNavigation } from "../../navigation";
-import { createLogger } from "@patchbay/core/logger";
-import { removeChatMessageFromCaches } from "@patchbay/core/realtime";
+import { createLogger } from "@orvilo/core/logger";
+import { removeChatMessageFromCaches } from "@orvilo/core/realtime";
 import { useLocale, useT } from "../../i18n";
 
 const apiLogger = createLogger("chat.api");

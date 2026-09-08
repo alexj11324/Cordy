@@ -9,14 +9,14 @@ import {
   useState,
 } from "react";
 import { useAuth } from "@clerk/nextjs";
-import { useAuthStore } from "@patchbay/core/auth";
-import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
+import { api } from "@orvilo/core/api";
 import {
   redirectToCliCallback,
   redirectToDesktopApp,
   validateCliCallback,
-} from "@patchbay/views/auth";
-import { useT } from "@patchbay/views/i18n";
+} from "@orvilo/views/auth";
+import { useT } from "@orvilo/views/i18n";
 import { WebAccountsLoginForm } from "@/components/accounts-login-form";
 import { AuthShell } from "@/components/auth-shell";
 import { resolveSafeRedirectUrl } from "@/features/auth/safe-redirect";
@@ -43,7 +43,7 @@ function LoginContent() {
   const { isLoaded, isSignedIn } = useAuth();
   const { t } = useT("auth");
   const clerkSessionExchangeReady = useClerkSessionExchangeReady();
-  const patchbayAuthStatus = useAuthStore((state) => state.status);
+  const orviloAuthStatus = useAuthStore((state) => state.status);
   const [error, setError] = useState("");
   const cliCallback = searchParams.get("cli_callback") ?? "";
   const cliState = searchParams.get("cli_state") ?? "";
@@ -79,11 +79,11 @@ function LoginContent() {
   useEffect(() => {
     if (
       isLoaded && isSignedIn && clerkSessionExchangeReady &&
-      patchbayAuthStatus === "authenticated" && !cliCallback && !desktopHandoff
+      orviloAuthStatus === "authenticated" && !cliCallback && !desktopHandoff
     ) {
       window.location.replace(returnUrl);
     }
-  }, [isLoaded, isSignedIn, clerkSessionExchangeReady, patchbayAuthStatus, cliCallback, desktopHandoff, returnUrl]);
+  }, [isLoaded, isSignedIn, clerkSessionExchangeReady, orviloAuthStatus, cliCallback, desktopHandoff, returnUrl]);
 
   if (cliCallback && !validCliCallback) {
     return (
@@ -97,16 +97,16 @@ function LoginContent() {
     validCliCallback &&
     isLoaded &&
     isSignedIn &&
-    patchbayAuthStatus === "authenticated"
+    orviloAuthStatus === "authenticated"
   ) {
     const authorize = async () => {
       setError("");
       try {
         // The managed web identity boundary authenticates the Clerk session
         // supplied by the ApiClient. The backend then exchanges that identity
-        // for the native Patchbay bearer understood by the CLI and Go API.
+        // for the native Orvilo bearer understood by the CLI and Go API.
         const { token } = await api.issueCliToken();
-        if (!token) throw new Error("Patchbay CLI token unavailable");
+        if (!token) throw new Error("Orvilo CLI token unavailable");
         redirectToCliCallback(cliCallback, token, cliState);
       } catch {
         setError(t(($) => $.web.cli_authorization.failed));
@@ -177,14 +177,14 @@ function DesktopHandoff({
     setError("");
     try {
       if (!codeChallenge || !state) {
-        throw new Error("Patchbay desktop handoff is missing its binding");
+        throw new Error("Orvilo desktop handoff is missing its binding");
       }
       const { callback_protocol: callbackProtocol, code } =
         await api.completeDesktopAuthHandoff(
           state,
           codeChallenge,
         );
-      if (!code) throw new Error("Patchbay desktop handoff code unavailable");
+      if (!code) throw new Error("Orvilo desktop handoff code unavailable");
       redirectToDesktopApp(code, state, callbackProtocol);
       setLoading(false);
     } catch {

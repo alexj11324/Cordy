@@ -23,8 +23,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/patchbay-ai/patchbay/server/internal/issueactivitybackfill"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
+	"github.com/orvilo-ai/orvilo/server/internal/issueactivitybackfill"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
 )
 
 const (
@@ -84,7 +84,7 @@ func run() error {
 	defer stop()
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+		dbURL = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	}
 	pool, err := pgxpool.New(ctx, dbURL)
 	if err != nil {

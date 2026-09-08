@@ -2,7 +2,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { motion } from "motion/react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 import {
   useNavigationInputBindings,
   useTabHistory,
@@ -11,24 +11,24 @@ import {
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
-} from "@patchbay/ui/components/ui/sidebar";
-import { ModalRegistry } from "@patchbay/views/modals/registry";
+} from "@orvilo/ui/components/ui/sidebar";
+import { ModalRegistry } from "@orvilo/views/modals/registry";
 import {
   AppSidebar,
   GlobalShortcuts,
   NavigationProgress,
-} from "@patchbay/views/layout";
-import { SearchCommand, SearchTrigger } from "@patchbay/views/search";
-import { FloatingChat } from "@patchbay/views/chat";
-import { AgentThreadPanelLayout } from "@patchbay/views/agent-thread";
-import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@patchbay/core/paths";
-import { workspaceListOptions } from "@patchbay/core/workspace";
+} from "@orvilo/views/layout";
+import { SearchCommand, SearchTrigger } from "@orvilo/views/search";
+import { FloatingChat } from "@orvilo/views/chat";
+import { AgentThreadPanelLayout } from "@orvilo/views/agent-thread";
+import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@orvilo/core/paths";
+import { workspaceListOptions } from "@orvilo/core/workspace";
 import {
   useNavigation,
   type LinkClickIntent,
-} from "@patchbay/views/navigation";
-import { getCurrentSlug, subscribeToCurrentSlug } from "@patchbay/core/platform";
-import { useDesktopUnreadBadge } from "@patchbay/views/platform";
+} from "@orvilo/views/navigation";
+import { getCurrentSlug, subscribeToCurrentSlug } from "@orvilo/core/platform";
+import { useDesktopUnreadBadge } from "@orvilo/views/platform";
 import {
   DesktopNavigationProvider,
   routeContentLinkPath,
@@ -174,8 +174,8 @@ function useInternalLinkHandler() {
       if (!detail?.path) return;
       routeContentLinkPath(detail.path, detail.disposition);
     };
-    window.addEventListener("patchbay:navigate", handler);
-    return () => window.removeEventListener("patchbay:navigate", handler);
+    window.addEventListener("orvilo:navigate", handler);
+    return () => window.removeEventListener("orvilo:navigate", handler);
   }, []);
 }
 
@@ -195,7 +195,7 @@ function useInternalLinkHandler() {
  *      covers both click-to-select and URL-param-select paths.
  *
  * The click routes through `useNavigation().push` — NOT the
- * `patchbay:navigate` event, whose handler `openTab`s into the ACTIVE
+ * `orvilo:navigate` event, whose handler `openTab`s into the ACTIVE
  * workspace's tab group. The navigation adapter detects a cross-workspace
  * path and translates it into `switchWorkspace(slug, path)`, so clicking a
  * workspace-A notification while B is active performs a real workspace

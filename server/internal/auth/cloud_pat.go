@@ -16,18 +16,18 @@ import (
 )
 
 // CloudPATPrefix is the literal token prefix that identifies an mcn_
-// (Patchbay Cloud Node) PAT. Tokens with this prefix are validated by
-// calling the Patchbay Cloud Fleet service rather than by hitting our
+// (Orvilo Cloud Node) PAT. Tokens with this prefix are validated by
+// calling the Orvilo Cloud Fleet service rather than by hitting our
 // local personal_access_tokens table — the cloud is the authoritative
 // owner of the token's lifecycle, status, and (owner_id, instance_id)
 // binding.
 const CloudPATPrefix = "mcn_"
 
 // cloudPATCachePrefix namespaces cloud-PAT cache keys away from
-// pby_/mdt_ caches so the three token kinds can't accidentally share
+// ovy_/mdt_ caches so the three token kinds can't accidentally share
 // keys. The trailing slash mirrors the existing patCachePrefix /
 // daemonTokenCachePrefix conventions.
-const cloudPATCachePrefix = "pby:auth:mcn:"
+const cloudPATCachePrefix = "ovy:auth:mcn:"
 
 // cloudPATCacheTTL bounds how long a verified mcn_ token stays cached
 // before we re-ask Fleet. The Cloud doc explicitly recommends 30–60s
@@ -177,7 +177,7 @@ type CloudPATVerifier struct {
 // without churning every call site.
 type CloudPATVerifierConfig struct {
 	// FleetBaseURL is the Cloud Fleet base URL (e.g.
-	// https://fleet.patchbay.cloud). Trailing slashes are trimmed.
+	// https://fleet.orvilo.cloud). Trailing slashes are trimmed.
 	// Empty disables the verifier — NewCloudPATVerifier returns nil.
 	FleetBaseURL string
 

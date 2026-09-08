@@ -21,8 +21,8 @@ import type {
   PurchaseWorkspaceSeatsRequest,
   ShareLink,
   WorkspaceSeatPurchasePreview,
-} from "@patchbay/core/types";
-import { Badge } from "@patchbay/ui/components/ui/badge";
+} from "@orvilo/core/types";
+import { Badge } from "@orvilo/ui/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -32,13 +32,13 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
   AlertDialogAction,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import {
   Select,
   SelectValue,
   SelectContent,
   SelectItem,
-} from "@patchbay/ui/components/ui/select";
+} from "@orvilo/ui/components/ui/select";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -48,24 +48,24 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@patchbay/core/auth";
+import { useAuthStore } from "@orvilo/core/auth";
 import {
   usePreviewWorkspaceSeatPurchase,
   usePurchaseWorkspaceSeats,
   workspaceSubscriptionSummaryOptions,
-} from "@patchbay/core/billing";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
+} from "@orvilo/core/billing";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
 import {
   invitationListOptions,
   memberListOptions,
   shareLinkListOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import { api, errorCode } from "@patchbay/core/api";
+} from "@orvilo/core/workspace/queries";
+import { api, errorCode } from "@orvilo/core/api";
 import { useLocale, useT } from "../../i18n";
 import {
   SettingsCard,

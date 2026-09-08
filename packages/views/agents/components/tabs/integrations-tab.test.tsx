@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { ReactNode } from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Agent } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent } from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 import enSettings from "../../../locales/en/settings.json";
@@ -58,43 +58,43 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: <T,>(opts: T) => opts,
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/lark", () => ({
+vi.mock("@orvilo/core/lark", () => ({
   larkInstallationsOptions: () => ({
     queryKey: ["lark", "installations"],
     queryFn: vi.fn(),
   }),
 }));
 
-vi.mock("@patchbay/core/slack", () => ({
+vi.mock("@orvilo/core/slack", () => ({
   slackInstallationsOptions: () => ({
     queryKey: ["slack", "installations"],
     queryFn: vi.fn(),
   }),
 }));
 
-vi.mock("@patchbay/core/wecom", () => ({
+vi.mock("@orvilo/core/wecom", () => ({
   wecomInstallationsOptions: () => ({
     queryKey: ["wecom", "installations"],
     queryFn: vi.fn(),
   }),
 }));
 
-vi.mock("@patchbay/core/telegram", () => ({
+vi.mock("@orvilo/core/telegram", () => ({
   telegramInstallationsOptions: () => ({
     queryKey: ["telegram", "installations"],
     queryFn: vi.fn(),
   }),
 }));
 
-vi.mock("@patchbay/core/dingtalk", () => ({
+vi.mock("@orvilo/core/dingtalk", () => ({
   dingtalkInstallationsOptions: () => ({
     queryKey: ["dingtalk", "installations"],
     queryFn: vi.fn(),
@@ -112,7 +112,7 @@ vi.mock("@patchbay/core/dingtalk", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({ getAgentName: (id: string) => `Agent ${id}` }),
 }));
 
@@ -122,7 +122,7 @@ vi.mock("../../../common/actor-avatar", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@orvilo/core/auth", () => {
   const useAuthStore = Object.assign(
     (sel?: (s: { user: { id: string } }) => unknown) =>
       sel ? sel({ user: { id: "user-1" } }) : { user: { id: "user-1" } },

@@ -8,7 +8,7 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/patchbay-ios-run.XXXXXX")
+TEST_DIR=$(mktemp -d "${TMPDIR:-/tmp}/orvilo-ios-run.XXXXXX")
 BIN_DIR="$TEST_DIR/bin"
 CALLS_FILE="$TEST_DIR/pnpm-calls.log"
 

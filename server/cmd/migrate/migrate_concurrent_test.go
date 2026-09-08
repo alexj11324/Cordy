@@ -45,7 +45,7 @@ import (
 //     MUL-2923 / #3658) and effectively become a no-op.
 //
 // The test connects to whatever DATABASE_URL points at (default
-// postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable),
+// postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable),
 // matching the harness pattern already used in
 // server/internal/handler/handler_test.go. If Postgres is unreachable the
 // suite skips cleanly, the same way every other live-Postgres test in the
@@ -59,7 +59,7 @@ import (
 // during cleanup.
 
 const (
-	defaultTestDatabaseURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
+	defaultTestDatabaseURL = "postgres://orvilo:orvilo@localhost:5432/orvilo?sslmode=disable"
 	// concurrentRunners is the goroutine count for the race tests. Set
 	// large enough that a missing lock would reliably trip on a multi-
 	// core box with -race, but small enough to keep the suite fast on a

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
 )
 
 func TestDingTalkAuthenticatedDialConfirmsConnection(t *testing.T) {

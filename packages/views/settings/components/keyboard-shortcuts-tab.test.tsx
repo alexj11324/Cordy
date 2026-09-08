@@ -5,7 +5,7 @@ import {
   configureShortcutPlatform,
   getShortcut,
   useShortcutStore,
-} from "@patchbay/core/shortcuts";
+} from "@orvilo/core/shortcuts";
 import { renderWithI18n } from "../../test/i18n";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
 

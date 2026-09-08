@@ -22,7 +22,7 @@ When you set a team as executor, the team becomes the issue's executor and the t
 
 ## Execution after setting an executor
 
-Patchbay creates a [task](/tasks) for the executor agent. Once an online runtime claims the task, it invokes the AI coding tool on that machine; progress, comments, and results then appear in the issue.
+Orvilo creates a [task](/tasks) for the executor agent. Once an online runtime claims the task, it invokes the AI coding tool on that machine; progress, comments, and results then appear in the issue.
 
 If the runtime is temporarily offline, the task waits in the queue; a task is bound to its runtime and never moves to another machine.
 
@@ -37,7 +37,7 @@ What it can actually do is still limited by the agent's configuration, the runti
 
 During the run, the agent manages the issue's status by judging what its work changes: starting on the issue's own ask moves it to `in_progress` right away, delivery moves it to `in_review`, work continuing beyond the turn keeps it `in_progress`, and consultation or discussion leaves the status untouched — these actions appear under the agent's identity in the timeline. Task lifecycle and issue status are separate: a task completing does not by itself change the issue status.
 
-When the executor is a [team](/teams), the same rule applies: Patchbay enqueues the leader, and dispatching members is not delivery — a dispatch turn leaves the parent issue `in_progress`, and the leader only moves it to `in_review` once the overall goal is met.
+When the executor is a [team](/teams), the same rule applies: Orvilo enqueues the leader, and dispatching members is not delivery — a dispatch turn leaves the parent issue `in_progress`, and the leader only moves it to `in_review` once the overall goal is met.
 
 ## Assign without starting
 
@@ -70,14 +70,14 @@ Changing the owner, executor, reviewer, or issue status doesn't stop a run that 
 ## Use the CLI
 
 ```bash
-patchbay issue update MUL-42 --executor "Agent name"
-patchbay issue update MUL-42 --executor-id <agent-uuid> --no-start
-patchbay issue update MUL-42 --owner "Member name" --reviewer "Reviewer name"
-patchbay issue status MUL-42 in_progress --no-start
-patchbay issue assign MUL-42 --unassign
+orvilo issue update MUL-42 --executor "Agent name"
+orvilo issue update MUL-42 --executor-id <agent-uuid> --no-start
+orvilo issue update MUL-42 --owner "Member name" --reviewer "Reviewer name"
+orvilo issue status MUL-42 in_progress --no-start
+orvilo issue assign MUL-42 --unassign
 ```
 
-In scripts, use the role-specific `--executor-id`, `--owner-id`, or `--reviewer-id` to avoid matching the wrong object with the same name. Look up UUIDs with `patchbay agent list --output json`, `patchbay team list --output json`, or `patchbay workspace member list --output json`.
+In scripts, use the role-specific `--executor-id`, `--owner-id`, or `--reviewer-id` to avoid matching the wrong object with the same name. Look up UUIDs with `orvilo agent list --output json`, `orvilo team list --output json`, or `orvilo workspace member list --output json`.
 
 Use `--no-start` when an executor change should not create a new task — for example, when the same agent is already handling the issue from another run. The same flag is available on `issue update` and `issue status`. Changing the owner or reviewer never starts a task by itself. If a flow changes the executor and status, pass `--no-start` to both commands; suppressing the executor-triggered run does not suppress a later status-triggered run.
 

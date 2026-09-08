@@ -1,10 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { skillListOptions } from "@patchbay/core/workspace/queries";
-import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
-import type { SkillSummary } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { skillListOptions } from "@orvilo/core/workspace/queries";
+import { useCurrentWorkspace, useWorkspacePaths } from "@orvilo/core/paths";
+import type { SkillSummary } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";
 import {

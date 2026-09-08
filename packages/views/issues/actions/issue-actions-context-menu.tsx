@@ -11,11 +11,11 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@orvilo/core/types";
 import {
   ContextMenu,
   ContextMenuContent,
-} from "@patchbay/ui/components/ui/context-menu";
+} from "@orvilo/ui/components/ui/context-menu";
 import { useIssueActions } from "./use-issue-actions";
 import {
   IssueActionsMenuItems,

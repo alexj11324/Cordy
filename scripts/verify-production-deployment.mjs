@@ -12,7 +12,7 @@ async function request(fetchImpl, url) {
   return fetchImpl(url, {
     redirect: "manual",
     signal: AbortSignal.timeout(10_000),
-    headers: { "user-agent": "patchbay-production-verifier/1" },
+    headers: { "user-agent": "orvilo-production-verifier/1" },
   });
 }
 
@@ -29,7 +29,7 @@ export function requireHealthyResponse(
     throw new Error(`${url} returned unacceptable HTTP ${response.status}`);
   }
   if (expectedBuild !== undefined) {
-    const actual = response.headers.get("x-patchbay-build");
+    const actual = response.headers.get("x-orvilo-build");
     if (actual !== expectedBuild) {
       throw new Error(
         `${url} reported build ${actual ?? "<missing>"}, expected ${expectedBuild}`,
@@ -37,7 +37,7 @@ export function requireHealthyResponse(
     }
   }
   if (expectedCommit !== undefined) {
-    const actual = response.headers.get("x-patchbay-commit");
+    const actual = response.headers.get("x-orvilo-commit");
     if (actual !== expectedCommit) {
       throw new Error(
         `${url} reported commit ${actual ?? "<missing>"}, expected ${expectedCommit}`,
@@ -62,8 +62,8 @@ export async function verifyProductionOnce(sourceSha, fetchImpl = fetch) {
   });
 
   for (const url of [
-    "https://patchbay.aspectlylabs.com/login",
-    "https://patchbay.aspectlylabs.com/docs",
+    "https://orvilo.aspectlylabs.com/login",
+    "https://orvilo.aspectlylabs.com/docs",
   ]) {
     const response = await request(fetchImpl, url);
     requireHealthyResponse(response, {

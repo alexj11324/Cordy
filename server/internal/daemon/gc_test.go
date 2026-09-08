@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/repocache"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/repocache"
 )
 
 // newGCTestDaemon creates a minimal Daemon for GC testing with a mock HTTP server.
@@ -553,7 +553,7 @@ func TestRunGC_SharedRootPreservesForeignDirectories(t *testing.T) {
 	d.runGC(context.Background())
 
 	if got, err := os.ReadFile(database); err != nil || string(got) != "do not delete" {
-		t.Fatalf("GC mutated non-Patchbay data under a shared root: data=%q err=%v", got, err)
+		t.Fatalf("GC mutated non-Orvilo data under a shared root: data=%q err=%v", got, err)
 	}
 }
 

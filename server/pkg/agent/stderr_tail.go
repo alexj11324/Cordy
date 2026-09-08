@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/redact"
+	"github.com/orvilo-ai/orvilo/server/pkg/redact"
 )
 
 // agentStderrTailBytes bounds the stderr tail captured for inclusion in

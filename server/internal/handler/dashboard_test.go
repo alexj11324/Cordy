@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 // dashboardFixtureTZ is the zone the day-boundary fixtures in this file are

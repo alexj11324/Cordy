@@ -87,7 +87,7 @@ async function verifyAccountsLoginSurface(browser, sourceSha) {
     await expect(authShell).toBeVisible();
     await expect(formPanel).toBeVisible();
     await expect(brandPanel).toBeVisible();
-    await expect(page.getByTestId("patchbay-mark")).toBeVisible();
+    await expect(page.getByTestId("orvilo-mark")).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Login", exact: true }),
     ).toBeVisible();
@@ -204,8 +204,8 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
     // Simulate a prior production login: parent-domain cookies must not
     // shadow staging authentication or CSRF tokens.
     await context.addCookies([
-      { name: "patchbay_auth", value: "production-session-fixture", domain: ".aspectlylabs.com", path: "/", httpOnly: true, secure: true, sameSite: "Strict" },
-      { name: "patchbay_csrf", value: "production-csrf-fixture", domain: ".aspectlylabs.com", path: "/", secure: true, sameSite: "Strict" },
+      { name: "orvilo_auth", value: "production-session-fixture", domain: ".aspectlylabs.com", path: "/", httpOnly: true, secure: true, sameSite: "Strict" },
+      { name: "orvilo_csrf", value: "production-csrf-fixture", domain: ".aspectlylabs.com", path: "/", secure: true, sameSite: "Strict" },
     ]);
   }
   const page = await context.newPage();
@@ -221,7 +221,7 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
         data: { state, code_challenge: codeChallenge },
         headers: {
           origin: ACCOUNTS_ORIGIN,
-          "x-patchbay-auth-contract-version": "1",
+          "x-orvilo-auth-contract-version": "1",
         },
       },
     );
@@ -258,7 +258,7 @@ async function redeemSyntheticLogin(browser, credentials, publishableKey) {
 
     // This is the browser-side identity boundary: the Web app obtains the
     // active Clerk token, exchanges it at Go /auth/clerk, and only then can
-    // authenticated frontend requests use the Patchbay session cookie.
+    // authenticated frontend requests use the Orvilo session cookie.
     const clerkExchangePromise = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return (
@@ -403,7 +403,7 @@ async function verifyAuthenticatedProduct(browser, sourceSha, auth) {
   await context.clearCookies({ name: "last_workspace_slug" });
   await context.addCookies([
     {
-      name: "patchbay-locale",
+      name: "orvilo-locale",
       value: "en",
       domain: PRODUCT_COOKIE_DOMAIN,
       path: "/",

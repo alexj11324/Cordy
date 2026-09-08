@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
+	"github.com/orvilo-ai/orvilo/server/internal/daemonws"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
 )
 
 func (h *Handler) DaemonWebSocket(w http.ResponseWriter, r *http.Request) {

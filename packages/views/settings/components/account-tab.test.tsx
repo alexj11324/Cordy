@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -21,7 +21,7 @@ const userRef = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: { updateMe: mockUpdateMe },
 }));
 
@@ -29,10 +29,10 @@ vi.mock("sonner", () => ({
   toast: { success: mockToastSuccess, error: mockToastError },
 }));
 
-vi.mock("@patchbay/core/auth", async () => {
+vi.mock("@orvilo/core/auth", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/auth")>(
-      "@patchbay/core/auth",
+    await vi.importActual<typeof import("@orvilo/core/auth")>(
+      "@orvilo/core/auth",
     );
   type AuthState = {
     user: typeof userRef.current;

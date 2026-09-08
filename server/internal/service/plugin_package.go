@@ -13,14 +13,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
 )
 
 // Publishing.
 //
-// An author uploads an artifact bundle; Patchbay stores it and serves it. There
+// An author uploads an artifact bundle; Orvilo stores it and serves it. There
 // is no source URL, and there is no second way in: what an administrator
 // approves and what a reader's browser runs are the same rows in this database.
 //

@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/dispatch"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/dispatch"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // TestRerunIssueBlockedBeforeMutationWhenInvokeDenied is the security acceptance
@@ -107,7 +107,7 @@ func TestAutomationDispatchAdmitsClickerNotCreator(t *testing.T) {
 	// nor sit on its allow-list, so the creator gate denies them.
 	var apCreatorID string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('AP Creator', $1) RETURNING id`,
-		fmt.Sprintf("apc-%d@patchbay.test", time.Now().UnixNano())).Scan(&apCreatorID); err != nil {
+		fmt.Sprintf("apc-%d@orvilo.test", time.Now().UnixNano())).Scan(&apCreatorID); err != nil {
 		t.Fatalf("seed ap creator: %v", err)
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, apCreatorID) })

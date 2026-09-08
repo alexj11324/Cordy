@@ -19,7 +19,7 @@ test("release publishes the CLI as a cask in the dedicated Homebrew tap", async 
   assert.doesNotMatch(config, /^brews:$/mu);
   assert.match(config, /^\s+name: homebrew-tap$/mu);
   assert.match(config, /^\s+directory: Casks$/mu);
-  assert.match(config, /^\s+binaries:\n\s+- patchbay$/mu);
+  assert.match(config, /^\s+binaries:\n\s+- orvilo$/mu);
   assert.match(config, /^\s+skip_upload: true$/mu);
   assert.match(
     config,
@@ -50,7 +50,7 @@ test("release publishes the CLI as a cask in the dedicated Homebrew tap", async 
     workflow,
     /needs\.verify\.outputs\.is_stable == 'true'/u,
   );
-  assert.match(workflow, /path: dist\/homebrew\/Casks\/patchbay\.rb/u);
+  assert.match(workflow, /path: dist\/homebrew\/Casks\/orvilo\.rb/u);
   assert.match(workflow, /Verify GoReleaser reused the staged draft/u);
   assert.match(
     workflow,
@@ -68,7 +68,7 @@ test("release publishes the CLI as a cask in the dedicated Homebrew tap", async 
   );
   assert.match(
     publisher,
-    /repos\/alexj11324\/homebrew-tap\/contents\/Casks\/patchbay\.rb/u,
+    /repos\/alexj11324\/homebrew-tap\/contents\/Casks\/orvilo\.rb/u,
   );
 
   const promote = workflow.indexOf("Promote the fully gated release");
@@ -96,10 +96,10 @@ test("all supported Homebrew instructions use the dedicated tap", async () => {
     const content = await read(surface);
     assert.match(
       content,
-      /alexj11324\/tap\/patchbay/u,
+      /alexj11324\/tap\/orvilo/u,
       `${surface} must point to the dedicated Homebrew tap`,
     );
-    assert.doesNotMatch(content, /alexj11324\/Cordy\/patchbay/u);
+    assert.doesNotMatch(content, /alexj11324\/Cordy\/orvilo/u);
     assert.doesNotMatch(content, /brew tap alexj11324\/Cordy/u);
   }
 });

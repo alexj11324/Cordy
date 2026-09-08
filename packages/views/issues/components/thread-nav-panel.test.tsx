@@ -3,11 +3,11 @@
 import { useState, type ReactElement, type ReactNode } from "react";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TimelineEntry } from "@patchbay/core/types";
+import type { TimelineEntry } from "@orvilo/core/types";
 import {
   createShortcutChord,
   useShortcutStore,
-} from "@patchbay/core/shortcuts";
+} from "@orvilo/core/shortcuts";
 import { renderWithI18n } from "../../test/i18n";
 import {
   ThreadNavPanel,
@@ -36,7 +36,7 @@ vi.mock("../../common/actor-avatar", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (_type: string, id: string) =>
       ({ "user-1": "Jiayuan", "agent-1": "Lambda" })[id] ?? "Unknown",
@@ -49,7 +49,7 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
 // The mock keeps the parts this component actually drives — the controlled
 // `open` prop, the reason-carrying `onOpenChange`, and the content's keyboard
 // and focus handlers — so the open/pin state machine is what gets exercised.
-vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
+vi.mock("@orvilo/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ render }: { render: ReactElement }) => render,
   TooltipContent: ({ children }: { children: ReactNode }) => (
@@ -57,7 +57,7 @@ vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/popover", async () => {
+vi.mock("@orvilo/ui/components/ui/popover", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
   return {
     Popover: ({

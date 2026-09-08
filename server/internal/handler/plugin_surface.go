@@ -16,16 +16,16 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
 )
 
 const (
 	pluginSurfaceLaunchTTL       = 2 * time.Minute
 	pluginSurfaceProtocolVersion = 2
-	pluginSurfaceConnectMessage  = "patchbay:plugin-bridge-init"
-	pluginSurfacePortGlobal      = "__patchbayPluginBridgePortV2"
+	pluginSurfaceConnectMessage  = "orvilo:plugin-bridge-init"
+	pluginSurfacePortGlobal      = "__orviloPluginBridgePortV2"
 )
 
 var errInvalidPluginSurfaceOrigin = errors.New("plugin surface origin must be an absolute HTTP(S) origin without a path")
@@ -55,7 +55,7 @@ func NewPluginSurfaceTokenBox(deploymentKey []byte) (*secretbox.Box, error) {
 		return nil, secretbox.ErrInvalidKey
 	}
 	mac := hmac.New(sha256.New, deploymentKey)
-	_, _ = mac.Write([]byte("patchbay/plugin-surface-launch/v1"))
+	_, _ = mac.Write([]byte("orvilo/plugin-surface-launch/v1"))
 	return secretbox.New(mac.Sum(nil))
 }
 
@@ -296,13 +296,13 @@ func buildPluginSurfaceDocument(code, challenge string) string {
 	encodedCode := base64.StdEncoding.EncodeToString([]byte(code))
 	bootstrap := fmt.Sprintf(`(function () {
   var challenge = %s;
-  var codeElement = document.getElementById("patchbay-surface-code");
+  var codeElement = document.getElementById("orvilo-surface-code");
   var bootstrapElement = document.currentScript;
   var failed = false;
   function reportSurfaceError() {
     if (failed) return;
     failed = true;
-    parent.postMessage({ type: "patchbay:plugin-surface-error" }, "*");
+    parent.postMessage({ type: "orvilo:plugin-surface-error" }, "*");
   }
   window.addEventListener("error", reportSurfaceError);
   window.addEventListener("unhandledrejection", reportSurfaceError);
@@ -315,7 +315,7 @@ func buildPluginSurfaceDocument(code, challenge string) string {
       writable: false
     });
     window.addEventListener("pagehide", function () {
-      parent.postMessage({ type: "patchbay:plugin-surface-navigated" }, "*");
+      parent.postMessage({ type: "orvilo:plugin-surface-navigated" }, "*");
     });
     parent.postMessage({
       type: %s,
@@ -355,7 +355,7 @@ body {
 </head>
 <body>
 <div id="root"></div>
-<script type="text/plain" id="patchbay-surface-code">` + html.EscapeString(encodedCode) + `</script>
+<script type="text/plain" id="orvilo-surface-code">` + html.EscapeString(encodedCode) + `</script>
 <script>` + bootstrap + `</script>
 </body>
 </html>`

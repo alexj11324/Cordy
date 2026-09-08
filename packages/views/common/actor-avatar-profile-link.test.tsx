@@ -15,7 +15,7 @@ import { NavigationProvider } from "../navigation/context";
 import type { NavigationAdapter } from "../navigation/types";
 import { DeferredPopup } from "./deferred-popup";
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: () => "Ada Lovelace",
     getActorInitials: () => "AL",
@@ -23,7 +23,7 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({
     memberDetail: (id: string) => `/acme/members/${id}`,
     agentDetail: (id: string) => `/acme/agents/${id}`,
@@ -32,7 +32,7 @@ vi.mock("@patchbay/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "ws1", slug: "acme" }),
 }));
 
-vi.mock("@patchbay/core/agents", () => ({
+vi.mock("@orvilo/core/agents", () => ({
   useAgentPresenceDetail: () => ({ availability: "offline", workload: null }),
 }));
 

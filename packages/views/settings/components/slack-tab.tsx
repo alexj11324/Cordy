@@ -7,18 +7,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
 import { SlackMark } from "./slack-mark";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { cn } from "@orvilo/ui/lib/utils";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/ui/components/ui/dialog";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Label } from "@orvilo/ui/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,14 +28,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { slackInstallationsOptions, slackKeys } from "@patchbay/core/slack";
-import { api } from "@patchbay/core/api";
-import type { SlackInstallation } from "@patchbay/core/types";
+} from "@orvilo/ui/components/ui/alert-dialog";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { memberListOptions } from "@orvilo/core/workspace/queries";
+import { useActorName } from "@orvilo/core/workspace/hooks";
+import { slackInstallationsOptions, slackKeys } from "@orvilo/core/slack";
+import { api } from "@orvilo/core/api";
+import type { SlackInstallation } from "@orvilo/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
 import { useLocale, useT } from "../../i18n";
@@ -45,7 +45,7 @@ import { useLocale, useT } from "../../i18n";
 // enforces it; the UI hides the button for non-admins to match).
 //
 // Adding a new installation flows through the Agent detail page: the install
-// path is per-agent (each Patchbay agent gets exactly one bot — the
+// path is per-agent (each Orvilo agent gets exactly one bot — the
 // (workspace_id, agent_id, channel_type) UNIQUE in channel_installation), so
 // asking the user to pick an agent here would re-create that page's picker.
 export function SlackTab() {
@@ -340,7 +340,7 @@ const SLACK_BYO_VIDEO_URL = "";
 // app for doc links (e.g. the automations webhook docs link).
 function slackDocsUrl(lang: string | undefined): string {
   const prefix = lang?.startsWith("zh") ? "/zh" : "";
-  return `https://patchbay.aspectlylabs.com/docs${prefix}/slack-bot-integration`;
+  return `https://orvilo.aspectlylabs.com/docs${prefix}/slack-bot-integration`;
 }
 
 // SlackAgentBindButton is the per-agent CTA exposed from the agent detail page.

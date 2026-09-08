@@ -2,15 +2,15 @@ import { forwardRef, useEffect, useRef, useState, useImperativeHandle } from "re
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue, IssueStatusEntry, Label, TimelineEntry } from "@patchbay/core/types";
-import { issueStatusKeys } from "@patchbay/core/issue-statuses";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Issue, IssueStatusEntry, Label, TimelineEntry } from "@orvilo/core/types";
+import { issueStatusKeys } from "@orvilo/core/issue-statuses";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import { toast } from "sonner";
-import { useResolvedExpandStore } from "@patchbay/core/issues/stores/resolved-expand-store";
+import { useResolvedExpandStore } from "@orvilo/core/issues/stores/resolved-expand-store";
 import {
   DEFAULT_SUB_ISSUE_ROW_PROPERTIES,
   useSubIssueDisplayStore,
-} from "@patchbay/core/issues/stores/sub-issue-display-store";
+} from "@orvilo/core/issues/stores/sub-issue-display-store";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
@@ -27,15 +27,15 @@ const mockUseWSEvent = vi.hoisted(() => vi.fn());
 // stable identity. A fresh `[]` per call would loop useSyncExternalStore.
 const emptyDraftAttachments = vi.hoisted(() => [] as unknown[]);
 
-vi.mock("@patchbay/ui/hooks/use-mobile", () => ({
+vi.mock("@orvilo/ui/hooks/use-mobile", () => ({
   useIsMobile: () => mockViewport.isMobile,
 }));
 
 // useWorkspaceId() derives from useCurrentWorkspace (relative import inside
-// @patchbay/core/hooks.tsx). vi.mock("@patchbay/core/paths") only intercepts
+// @orvilo/core/hooks.tsx). vi.mock("@orvilo/core/paths") only intercepts
 // the bare-specifier, not the internal relative import. Mock the hooks module
 // directly so the bridge hook returns the test UUID.
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -43,9 +43,9 @@ vi.mock("@patchbay/core/hooks", () => ({
 // Mocks
 // ---------------------------------------------------------------------------
 
-// Mock @patchbay/core/auth
+// Mock @orvilo/core/auth
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@orvilo/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -57,8 +57,8 @@ vi.mock("@patchbay/core/auth", () => ({
   createAuthStore: vi.fn(),
 }));
 
-// Mock @patchbay/core/workspace/hooks
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+// Mock @orvilo/core/workspace/hooks
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({
     getMemberName: (id: string) => (id === "user-1" ? "Test User" : "Unknown"),
     getAgentName: (id: string) => (id === "agent-1" ? "Claude Agent" : "Unknown Agent"),
@@ -73,7 +73,7 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
 }));
 
 // Mock workspace queries
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   memberListOptions: () => ({
     queryKey: ["workspaces", "ws-1", "members"],
     queryFn: () => Promise.resolve([{ user_id: "user-1", name: "Test User", email: "test@test.com", role: "admin" }]),
@@ -96,12 +96,12 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
   }),
 }));
 
-// Mock @patchbay/core/paths — after the URL-driven workspace refactor,
+// Mock @orvilo/core/paths — after the URL-driven workspace refactor,
 // useCurrentWorkspace / useWorkspacePaths derive from the workspace slug in
 // URL Context. Tests don't mount a real route, so we short-circuit to fixtures.
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@orvilo/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@orvilo/core/paths")>(
+    "@orvilo/core/paths",
   );
   return {
     ...actual,
@@ -120,7 +120,7 @@ vi.mock("../../navigation", () => ({
   useNavigation: () => ({
     push: vi.fn(),
     pathname: "/issues/issue-1",
-    getShareableUrl: (p: string) => `https://app.patchbay.com${p}`,
+    getShareableUrl: (p: string) => `https://app.orvilo.com${p}`,
   }),
   useBackOrReplace: () => vi.fn(),
   NavigationProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -325,7 +325,7 @@ const mockApiObj = vi.hoisted(() => ({
   listProjects: vi.fn().mockResolvedValue({ projects: [] }),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: mockApiObj,
   getApi: () => mockApiObj,
   setApiInstance: vi.fn(),
@@ -336,7 +336,7 @@ vi.mock("@patchbay/core/api", () => ({
 }));
 
 // Mock issue config
-vi.mock("@patchbay/core/issues/config", () => ({
+vi.mock("@orvilo/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_CONFIG: {
@@ -361,23 +361,23 @@ vi.mock("@patchbay/core/issues/config", () => ({
 
 // Mock recent issues store
 const mockRecordVisit = vi.fn();
-vi.mock("@patchbay/core/issues/stores", async () => ({
+vi.mock("@orvilo/core/issues/stores", async () => ({
   // Real store, not a stub: resolved-thread expand/collapse behavior under
   // test runs through it. Deep import keeps the persisted sibling stores
   // (which need localStorage) out of this mock.
   ...(await vi.importActual<
-    typeof import("@patchbay/core/issues/stores/resolved-expand-store")
-  >("@patchbay/core/issues/stores/resolved-expand-store")),
+    typeof import("@orvilo/core/issues/stores/resolved-expand-store")
+  >("@orvilo/core/issues/stores/resolved-expand-store")),
   // Real store: sub-issue display tests drive it with setState, and the
   // component reads it through the barrel — both must hit the same instance.
   ...(await vi.importActual<
-    typeof import("@patchbay/core/issues/stores/sub-issue-display-store")
-  >("@patchbay/core/issues/stores/sub-issue-display-store")),
+    typeof import("@orvilo/core/issues/stores/sub-issue-display-store")
+  >("@orvilo/core/issues/stores/sub-issue-display-store")),
   // Real store, in-memory (no localStorage): backs the sub-issues section's
   // collapsed state.
   ...(await vi.importActual<
-    typeof import("@patchbay/core/issues/stores/sub-issues-collapse-store")
-  >("@patchbay/core/issues/stores/sub-issues-collapse-store")),
+    typeof import("@orvilo/core/issues/stores/sub-issues-collapse-store")
+  >("@orvilo/core/issues/stores/sub-issues-collapse-store")),
   useRecentIssuesStore: Object.assign(
     (selector?: any) => {
       const state = { byWorkspace: {}, recordVisit: mockRecordVisit, pruneWorkspaces: vi.fn() };
@@ -499,7 +499,7 @@ beforeEach(() => {
 
 // Mock modals
 const mockOpenModal = vi.hoisted(() => vi.fn());
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@orvilo/core/modals", () => ({
   useModalStore: Object.assign(
     (selector?: (state: { open: typeof mockOpenModal }) => unknown) => {
       const state = { open: mockOpenModal };
@@ -510,12 +510,12 @@ vi.mock("@patchbay/core/modals", () => ({
 }));
 
 // Mock core/hooks/use-file-upload
-vi.mock("@patchbay/core/hooks/use-file-upload", () => ({
+vi.mock("@orvilo/core/hooks/use-file-upload", () => ({
   useFileUpload: () => ({ uploadWithToast: vi.fn().mockResolvedValue("https://example.com/file.png") }),
 }));
 
 // Mock realtime
-vi.mock("@patchbay/core/realtime", () => ({
+vi.mock("@orvilo/core/realtime", () => ({
   useWSEvent: mockUseWSEvent,
   useWSReconnect: vi.fn(),
   useWS: () => ({ subscribe: vi.fn(() => () => {}), onReconnect: vi.fn(() => () => {}) }),
@@ -528,7 +528,7 @@ vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-// Mock react-resizable-panels (used by @patchbay/ui/components/ui/resizable)
+// Mock react-resizable-panels (used by @orvilo/ui/components/ui/resizable)
 vi.mock("react-resizable-panels", () => ({
   Group: ({ children, ...props }: any) => <div data-testid="panel-group" {...props}>{children}</div>,
   Panel: ({ children, ...props }: any) => <div data-testid="panel" {...props}>{children}</div>,

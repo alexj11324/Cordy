@@ -1,4 +1,4 @@
-import type { IssueActorType, TimelineEntry } from "@patchbay/core/types";
+import type { IssueActorType, TimelineEntry } from "@orvilo/core/types";
 
 export type HandoffActor = { type: IssueActorType; id: string };
 export type HandoffHop = { from: HandoffActor; to: HandoffActor };

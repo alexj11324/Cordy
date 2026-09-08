@@ -2,13 +2,13 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@patchbay/core/auth";
+import { useAuthStore } from "@orvilo/core/auth";
 import {
   paths,
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@patchbay/core/paths";
-import { useWorkspaceList } from "@patchbay/core/workspace";
+} from "@orvilo/core/paths";
+import { useWorkspaceList } from "@orvilo/core/workspace";
 
 /**
  * Root is an application entry point, not a marketing page.

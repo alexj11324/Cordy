@@ -2,23 +2,23 @@ import { createHash } from "node:crypto";
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const HANDOFF_VALUE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/u;
-const DESKTOP_CODE_PATTERN = /^pbd_[A-Za-z0-9_-]{43}$/u;
+const DESKTOP_CODE_PATTERN = /^ovd_[A-Za-z0-9_-]{43}$/u;
 
 const ORIGINS = {
   production: {
-    product: "https://patchbay.aspectlylabs.com",
+    product: "https://orvilo.aspectlylabs.com",
     api: "https://api.aspectlylabs.com",
     accounts: "https://accounts.aspectlylabs.com",
-    desktopCallbackProtocol: "patchbay",
+    desktopCallbackProtocol: "orvilo",
   },
   staging: {
     product: "https://staging.aspectlylabs.com",
     api: "https://api.staging.aspectlylabs.com",
     accounts: "https://accounts.staging.aspectlylabs.com",
     // Fixture scheme for the headless Desktop handoff. Unpackaged Staging
-    // uses patchbay-staging-<16 hex>://; this value is allow-listed and must
-    // never fall back to the production patchbay:// handler.
-    desktopCallbackProtocol: "patchbay-staging-aaaaaaaaaaaaaaaa",
+    // uses orvilo-staging-<16 hex>://; this value is allow-listed and must
+    // never fall back to the production orvilo:// handler.
+    desktopCallbackProtocol: "orvilo-staging-aaaaaaaaaaaaaaaa",
   },
 };
 
@@ -116,8 +116,8 @@ export function requireBuildHeaders(headers, sourceSha, label) {
   const expectedBuild = `sha-${sha}`;
   const get = (name) =>
     typeof headers?.get === "function" ? headers.get(name) : headers?.[name];
-  const build = get("x-patchbay-build");
-  const commit = get("x-patchbay-commit");
+  const build = get("x-orvilo-build");
+  const commit = get("x-orvilo-commit");
   if (build !== expectedBuild) {
     throw new Error(
       `${label} reported build ${build ?? "<missing>"}, expected ${expectedBuild}`,
@@ -180,9 +180,9 @@ export function requireDesktopCompletion(
 }
 
 export function requireRedeemedSession(payload) {
-  const token = requiredString(payload?.token, "redeemed Patchbay session");
+  const token = requiredString(payload?.token, "redeemed Orvilo session");
   if (token.length > 8192 || /[\r\n]/u.test(token)) {
-    throw new Error("redeemed Patchbay session is invalid");
+    throw new Error("redeemed Orvilo session is invalid");
   }
   return token;
 }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { hashKey, keepPreviousData, useQuery } from "@tanstack/react-query";
-import { api } from "@patchbay/core/api";
+import { api } from "@orvilo/core/api";
 import type {
   Issue,
   IssueStatusCategory,
@@ -13,27 +13,27 @@ import type {
   IssueTableQuerySpec,
   Project,
   WorkingAgentSummary,
-} from "@patchbay/core/types";
-import { workspaceWorkingAgentsOptions } from "@patchbay/core/agents";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { ALL_STATUSES } from "@patchbay/core/issues/config";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { statusFilterColumns } from "@patchbay/core/issues";
-import { dateOnlyToLocalDate } from "@patchbay/core/issues/date";
-import type { IssueSortParam } from "@patchbay/core/issues/queries";
-import { issueTableFacetsOptions } from "@patchbay/core/issues/queries";
+} from "@orvilo/core/types";
+import { workspaceWorkingAgentsOptions } from "@orvilo/core/agents";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { ALL_STATUSES } from "@orvilo/core/issues/config";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
+import { statusFilterColumns } from "@orvilo/core/issues";
+import { dateOnlyToLocalDate } from "@orvilo/core/issues/date";
+import type { IssueSortParam } from "@orvilo/core/issues/queries";
+import { issueTableFacetsOptions } from "@orvilo/core/issues/queries";
 import {
   buildIssueSurfaceQueryPlan,
   type IssueSurfaceQueryPlan,
-} from "@patchbay/core/issues/surface/query-plan";
+} from "@orvilo/core/issues/surface/query-plan";
 import {
   roleFiltersForActorKind,
   type IssueScope,
-} from "@patchbay/core/issues/surface/scope";
-import type { IssueDateFilter, SortField } from "@patchbay/core/issues/stores/view-store";
-import { propertyListOptions } from "@patchbay/core/properties";
-import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
-import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
+} from "@orvilo/core/issues/surface/scope";
+import type { IssueDateFilter, SortField } from "@orvilo/core/issues/stores/view-store";
+import { propertyListOptions } from "@orvilo/core/properties";
+import { propertyIdFromViewKey } from "@orvilo/core/issues/stores/view-store";
+import { useViewStore } from "@orvilo/core/issues/stores/view-store-context";
 import type { IssueFilters } from "../utils/filter";
 import type { ChildProgress } from "../components/list-row";
 import { IssueTableExportIntegrityError } from "../components/table-view-model";

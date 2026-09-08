@@ -1,6 +1,6 @@
 "use client";
 
-import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
+import { OrviloIcon } from "@orvilo/ui/components/common/orvilo-icon";
 import { useT } from "../i18n";
 
 /**
@@ -22,7 +22,7 @@ export function WorkspaceLoader({ name }: { name?: string | null }) {
       role="status"
     >
       <div className="flex flex-col items-center gap-4">
-        <PatchbayIcon className="size-8 animate-pulse" />
+        <OrviloIcon className="size-8 animate-pulse" />
         {name ? (
           <p className="text-body text-muted-foreground">
             {t(($) => $.workspace_loader.loading_named_prefix)}{" "}

@@ -52,8 +52,8 @@ func TestCodexShellEnvAllowlistUsesExactTaskAndSafeInheritedNames(t *testing.T) 
 	explicit := map[string]string{
 		"ORVILO_TOKEN":      "mat_task",
 		"ORVILO_SERVER_URL": "https://task.example",
-		"CUSTOM_FLAG":        "enabled",
-		"ANTHROPIC_API_KEY":  "agent-secret",
+		"CUSTOM_FLAG":       "enabled",
+		"ANTHROPIC_API_KEY": "agent-secret",
 	}
 	authorizedExplicit := []string{"ANTHROPIC_API_KEY"}
 
@@ -94,7 +94,7 @@ func TestCodexShellEnvAllowlistOnlyAuthorizesExplicitCustomSecrets(t *testing.T)
 		"x_secret":            "agent-secret",
 		"Y_KEY":               "agent-secret",
 		"UNAUTHORIZED_TOKEN":  "daemon-secret",
-		"ORVILO_TOKEN":       "mat_task",
+		"ORVILO_TOKEN":        "mat_task",
 	}
 	authorizedExplicit := []string{
 		"custom_access_token", // Authorization matching is case-insensitive.
@@ -284,7 +284,7 @@ func TestEnsureCodexShellEnvPolicyConfigIsIdempotent(t *testing.T) {
 	}
 	s := string(data)
 	assertValidToml(t, s)
-	if n := strings.Count(s, patchbayShellEnvBeginMarker); n != 1 {
+	if n := strings.Count(s, orviloShellEnvBeginMarker); n != 1 {
 		t.Fatalf("expected exactly one managed block, got %d:\n%s", n, s)
 	}
 }

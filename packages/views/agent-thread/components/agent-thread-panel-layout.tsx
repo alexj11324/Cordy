@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, type ReactNode } from "react";
-import { useAgentThreadPanelStore } from "@patchbay/core/agent-thread";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { useAgentThreadPanelStore } from "@orvilo/core/agent-thread";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from "@patchbay/ui/components/ui/resizable";
+} from "@orvilo/ui/components/ui/resizable";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { TaskAgentThreadPanel } from "./task-agent-thread-panel";

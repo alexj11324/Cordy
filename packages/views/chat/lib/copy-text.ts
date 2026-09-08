@@ -1,5 +1,5 @@
-import type { ChatMessage } from "@patchbay/core/types";
-import type { ChatTimelineItem } from "@patchbay/core/chat";
+import type { ChatMessage } from "@orvilo/core/types";
+import type { ChatTimelineItem } from "@orvilo/core/chat";
 
 /**
  * Split an assistant timeline into three regions for the conductor-style fold:

@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@orvilo/core/types";
 import { getIssueExecutor } from "./issue-executor";
 
 describe("getIssueExecutor", () => {

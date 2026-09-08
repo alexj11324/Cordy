@@ -34,8 +34,8 @@ describe("prefixLocale", () => {
     expect(
       prefixLocale("https://github.com/alexj11324/Cordy/releases/latest", "zh"),
     ).toBe("https://github.com/alexj11324/Cordy/releases/latest");
-    expect(prefixLocale("mailto:hello@patchbay.ai", "zh")).toBe(
-      "mailto:hello@patchbay.ai",
+    expect(prefixLocale("mailto:hello@orvilo.ai", "zh")).toBe(
+      "mailto:hello@orvilo.ai",
     );
     expect(prefixLocale("tel:+1234567890", "zh")).toBe("tel:+1234567890");
   });

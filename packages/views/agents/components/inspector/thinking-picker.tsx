@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { Brain, ChevronDown } from "lucide-react";
-import type { RuntimeModelThinkingLevel } from "@patchbay/core/types";
-import { Label } from "@patchbay/ui/components/ui/label";
+import type { RuntimeModelThinkingLevel } from "@orvilo/core/types";
+import { Label } from "@orvilo/ui/components/ui/label";
 import {
   PickerItem,
   PropertyPicker,

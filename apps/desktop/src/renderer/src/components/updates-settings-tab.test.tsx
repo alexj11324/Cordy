@@ -29,7 +29,7 @@ const translations = {
   },
 };
 
-vi.mock("@patchbay/views/i18n", () => ({
+vi.mock("@orvilo/views/i18n", () => ({
   useT: () => ({
     t: (
       selector: (resources: typeof translations) => string,

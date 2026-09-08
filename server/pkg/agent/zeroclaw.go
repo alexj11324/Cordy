@@ -238,7 +238,7 @@ func (b *zeroclawBackend) Execute(ctx context.Context, prompt string, opts ExecO
 	// runtime, so reaching here means a value saved before that — warn and
 	// continue rather than bricking the task over config we cannot honour.
 	if len(opts.McpConfig) > 0 {
-		b.cfg.Logger.Warn("zeroclaw ignores MCP servers supplied by Patchbay; its ACP server reads MCP only from its own config-dir ([[mcp.servers]] + [mcp_bundles.*] + agents.<alias>.mcp_bundles with acp_enable_mcp = true)",
+		b.cfg.Logger.Warn("zeroclaw ignores MCP servers supplied by Orvilo; its ACP server reads MCP only from its own config-dir ([[mcp.servers]] + [mcp_bundles.*] + agents.<alias>.mcp_bundles with acp_enable_mcp = true)",
 			"backend", "zeroclaw",
 		)
 	}
@@ -388,7 +388,7 @@ func (b *zeroclawBackend) Execute(ctx context.Context, prompt string, opts ExecO
 		initResult, err := c.request(runCtx, "initialize", map[string]any{
 			"protocolVersion": 1,
 			"clientInfo": map[string]any{
-				"name":    "patchbay-agent-sdk",
+				"name":    "orvilo-agent-sdk",
 				"version": "0.2.0",
 			},
 			"clientCapabilities": map[string]any{},

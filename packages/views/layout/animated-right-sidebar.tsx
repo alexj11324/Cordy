@@ -14,9 +14,9 @@ import {
   isEditableShortcutTarget,
   shortcutMatchesEvent,
   useShortcut,
-} from "@patchbay/core/shortcuts";
-import { isImeComposing } from "@patchbay/core/utils";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/core/shortcuts";
+import { isImeComposing } from "@orvilo/core/utils";
+import { cn } from "@orvilo/ui/lib/utils";
 
 export const rightSidebarPanelMotionProps = {
   "data-right-sidebar-panel": "true",

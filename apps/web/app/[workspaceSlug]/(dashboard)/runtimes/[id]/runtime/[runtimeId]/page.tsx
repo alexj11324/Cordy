@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { RuntimeSettingsPage } from "@patchbay/views/runtimes";
+import { RuntimeSettingsPage } from "@orvilo/views/runtimes";
 
 export default function RuntimeSettingsRoute({
   params,

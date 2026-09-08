@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/analytics"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
-	"github.com/patchbay-ai/patchbay/server/internal/middleware"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/analytics"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
+	"github.com/orvilo-ai/orvilo/server/internal/middleware"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // feedbackImageRegex is a coarse check for markdown image syntax ![alt](url).
@@ -48,7 +48,7 @@ type CreateFeedbackRequest struct {
 	Message string `json:"message"`
 	URL     string `json:"url"`
 	// Kind is the coarse category the feedback picker stamps. The metric
-	// label `patchbay_feedback_submitted_total{kind=...}` reads it via the
+	// label `orvilo_feedback_submitted_total{kind=...}` reads it via the
 	// fixed allow-list in metrics.NormalizeFeedbackKind ("bug", "feature",
 	// "general", "praise"); anything outside collapses to "other". Empty /
 	// missing falls back to "general" so legacy clients that don't send the

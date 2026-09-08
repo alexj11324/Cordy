@@ -4,11 +4,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { Check, ChevronRight, Copy, Terminal } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { runtimeKeys } from "@patchbay/core/runtimes/queries";
-import { useWSEvent } from "@patchbay/core/realtime";
-import { paths, useWorkspaceSlug } from "@patchbay/core/paths";
-import { useConfigStore } from "@patchbay/core/config";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { runtimeKeys } from "@orvilo/core/runtimes/queries";
+import { useWSEvent } from "@orvilo/core/realtime";
+import { paths, useWorkspaceSlug } from "@orvilo/core/paths";
+import { useConfigStore } from "@orvilo/core/config";
 import {
   Dialog,
   DialogContent,
@@ -16,15 +16,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { CODE_LIGATURE_CLASS } from "@patchbay/ui/lib/code-style";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+} from "@orvilo/ui/components/ui/dialog";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { CODE_LIGATURE_CLASS } from "@orvilo/ui/lib/code-style";
+import { copyText } from "@orvilo/ui/lib/clipboard";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@patchbay/ui/lib/motion";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/lib/motion";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 
@@ -33,7 +33,7 @@ type Step = "instructions" | "success";
 const INSTALL_CMD =
   "curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash";
 const CLOUD_SERVER_URL = "https://api.aspectlylabs.com";
-const CLOUD_APP_URL = "https://patchbay.aspectlylabs.com";
+const CLOUD_APP_URL = "https://orvilo.aspectlylabs.com";
 
 function normalizeCommandURL(url: string | undefined) {
   return url?.trim().replace(/\/+$/, "") ?? "";
@@ -44,20 +44,20 @@ function daemonCommands(serverUrl: string | undefined, appUrl: string | undefine
   const normalizedAppUrl = normalizeCommandURL(appUrl);
   if (normalizedServerUrl && normalizedAppUrl) {
     return {
-      setupCmd: `patchbay setup self-host --server-url ${normalizedServerUrl} --app-url ${normalizedAppUrl}`,
-      tokenCmd: `patchbay config set server_url ${normalizedServerUrl}
-patchbay config set app_url ${normalizedAppUrl}
-patchbay login --token <YOUR_TOKEN>
-patchbay daemon start`,
+      setupCmd: `orvilo setup self-host --server-url ${normalizedServerUrl} --app-url ${normalizedAppUrl}`,
+      tokenCmd: `orvilo config set server_url ${normalizedServerUrl}
+orvilo config set app_url ${normalizedAppUrl}
+orvilo login --token <YOUR_TOKEN>
+orvilo daemon start`,
     };
   }
 
   return {
-    setupCmd: "patchbay setup",
-    tokenCmd: `patchbay config set server_url ${CLOUD_SERVER_URL}
-patchbay config set app_url ${CLOUD_APP_URL}
-patchbay login --token <YOUR_TOKEN>
-patchbay daemon start`,
+    setupCmd: "orvilo setup",
+    tokenCmd: `orvilo config set server_url ${CLOUD_SERVER_URL}
+orvilo config set app_url ${CLOUD_APP_URL}
+orvilo login --token <YOUR_TOKEN>
+orvilo daemon start`,
   };
 }
 
@@ -70,7 +70,7 @@ export function ConnectRemoteDialog({ onClose }: { onClose: () => void }) {
   const shouldReduceMotion = useReducedMotion() ?? false;
   const newRuntimeIdRef = useRef<string | null>(null);
 
-  // `patchbay setup` is one blocking command that handles config + login
+  // `orvilo setup` is one blocking command that handles config + login
   // + daemon start; the dialog passively listens for the resulting
   // `daemon:register` WS event and auto-advances to success.
   const handleDaemonRegister = useCallback(
@@ -318,7 +318,7 @@ function TroubleshootingDetails({ tokenCmd }: { tokenCmd: string }) {
                 CODE_LIGATURE_CLASS,
               )}
             >
-              {"patchbay daemon status"}
+              {"orvilo daemon status"}
             </code>
           </li>
           <li className="flex items-center gap-1.5">
@@ -330,7 +330,7 @@ function TroubleshootingDetails({ tokenCmd }: { tokenCmd: string }) {
                 CODE_LIGATURE_CLASS,
               )}
             >
-              {"patchbay daemon logs -f"}
+              {"orvilo daemon logs -f"}
             </code>
           </li>
         </ul>

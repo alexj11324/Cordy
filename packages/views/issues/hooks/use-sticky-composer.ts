@@ -1,7 +1,7 @@
 "use client";
 
-import { useIsMobile } from "@patchbay/ui/hooks/use-mobile";
-import { useCommentComposerStore } from "@patchbay/core/issues/stores";
+import { useIsMobile } from "@orvilo/ui/hooks/use-mobile";
+import { useCommentComposerStore } from "@orvilo/core/issues/stores";
 
 /**
  * Whether the bottom comment composer is pinned to the scroll viewport.

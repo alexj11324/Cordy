@@ -2,7 +2,7 @@ import { queryOptions } from "@tanstack/react-query";
 import type {
   DependencyGraphResponse,
   ListDependencyGraphsResponse,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { api } from "@/data/api";
 
 export const dependencyGraphKeys = {

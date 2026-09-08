@@ -12,11 +12,11 @@ vi.mock("sonner", () => ({
   toast: { error: toastError, success: toastSuccess },
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: { getBaseUrl: () => "https://api.test" },
 }));
 
-vi.mock("@patchbay/core/hooks/use-file-upload", () => ({
+vi.mock("@orvilo/core/hooks/use-file-upload", () => ({
   useFileUpload: () => ({ upload: uploadMock }),
 }));
 

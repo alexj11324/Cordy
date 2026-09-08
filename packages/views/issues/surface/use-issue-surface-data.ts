@@ -2,15 +2,15 @@
 
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Issue, Project } from "@patchbay/core/types";
-import { ALL_STATUSES } from "@patchbay/core/issues/config";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import { childIssueProgressOptions } from "@patchbay/core/issues/queries";
-import { issueSurfaceGanttOptions } from "@patchbay/core/issues/surface/repository";
-import type { IssueSurfaceQueryPlan } from "@patchbay/core/issues/surface/query-plan";
-import type { IssueStatus, IssueStatusCategory, PropertyFilterValue } from "@patchbay/core/types";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { issueBehavesAsAny, statusFilterColumns } from "@patchbay/core/issues";
+import type { Issue, Project } from "@orvilo/core/types";
+import { ALL_STATUSES } from "@orvilo/core/issues/config";
+import { projectListOptions } from "@orvilo/core/projects/queries";
+import { childIssueProgressOptions } from "@orvilo/core/issues/queries";
+import { issueSurfaceGanttOptions } from "@orvilo/core/issues/surface/repository";
+import type { IssueSurfaceQueryPlan } from "@orvilo/core/issues/surface/query-plan";
+import type { IssueStatus, IssueStatusCategory, PropertyFilterValue } from "@orvilo/core/types";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
+import { issueBehavesAsAny, statusFilterColumns } from "@orvilo/core/issues";
 import {
   applyIssueFilters,
   type IssueFilterState,

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/delegatedrecoverybackfill"
+	"github.com/orvilo-ai/orvilo/server/internal/delegatedrecoverybackfill"
 )
 
 func cursorFor(createdAt time.Time, id string) *delegatedrecoverybackfill.Cursor {

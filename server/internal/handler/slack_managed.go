@@ -9,12 +9,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/slack"
 )
 
 // ManagedSlackOAuthCallbackPath is the public OAuth callback Slack redirects
 // the installer's browser to. It is public (no workspace auth): Slack's
-// browser redirect carries no Patchbay session, so the workspace + installer
+// browser redirect carries no Orvilo session, so the workspace + installer
 // are recovered from the single-use state token instead. The redirect_uri sent
 // to Slack is always this path joined onto the configured public API base URL.
 const ManagedSlackOAuthCallbackPath = "/api/integrations/slack/oauth/callback"
@@ -47,7 +47,7 @@ func (h *Handler) managedSlackCallbackURL() string {
 }
 
 // BeginManagedSlackInstall (POST /api/workspaces/{id}/slack/install/managed)
-// starts one hosted-OAuth authorization for the official Patchbay Slack app.
+// starts one hosted-OAuth authorization for the official Orvilo Slack app.
 // Admin-gated at the router like the BYO install: both connect a
 // workspace-level bot. The installer comes from the session, the workspace
 // from the URL — the same boundary shape as RegisterSlackBYO.
@@ -205,7 +205,7 @@ func (h *Handler) ManagedSlackOAuthCallback(w http.ResponseWriter, r *http.Reque
 		}
 		switch {
 		case errors.Is(err, slack.ErrTeamOwnedByAnotherWorkspace):
-			writeError(w, http.StatusConflict, "this Slack app is already installed in a different Patchbay workspace — remove that installation before installing it here")
+			writeError(w, http.StatusConflict, "this Slack app is already installed in a different Orvilo workspace — remove that installation before installing it here")
 		case errors.Is(err, slack.ErrManagedAlreadyConnected):
 			writeError(w, http.StatusConflict, err.Error())
 		default:

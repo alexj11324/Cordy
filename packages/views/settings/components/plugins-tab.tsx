@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, CalendarClock, Loader2, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { useCurrentMember } from "@patchbay/core/permissions";
+import { useCurrentMember } from "@orvilo/core/permissions";
 import {
   pluginInstallationsOptions,
   pluginPackagesOptions,
@@ -15,28 +15,28 @@ import {
   usePublishPluginPackage,
   useSetPluginEnabled,
   useUninstallPlugin,
-} from "@patchbay/core/plugins";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
+} from "@orvilo/core/plugins";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
 import type {
   PluginConfigField,
   PluginInstallation,
   PluginPackage,
   PluginPreview,
-} from "@patchbay/core/types";
-import { Alert, AlertDescription, AlertTitle } from "@patchbay/ui/components/ui/alert";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
+} from "@orvilo/core/types";
+import { Alert, AlertDescription, AlertTitle } from "@orvilo/ui/components/ui/alert";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+} from "@orvilo/ui/components/ui/select";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { Switch } from "@orvilo/ui/components/ui/switch";
 import { mcpHooks, PluginHookActivity, PluginMCPApproval, PluginScheduleActivity } from "../../plugins";
 import { useLocale, useT } from "../../i18n";
 import { SettingsCard, SettingsPillButton, SettingsSection, SettingsTab } from "./settings-layout";

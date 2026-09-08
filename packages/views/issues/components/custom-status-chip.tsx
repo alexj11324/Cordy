@@ -1,9 +1,9 @@
 "use client";
 
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import type { IssueStatusCatalog } from "@patchbay/core/issue-statuses";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import type { IssueStatus } from "@patchbay/core/types";
+import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
+import type { IssueStatusCatalog } from "@orvilo/core/issue-statuses";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import type { IssueStatus } from "@orvilo/core/types";
 import { StatusIcon } from "./status-icon";
 
 /**

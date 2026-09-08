@@ -18,17 +18,17 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@patchbay/core/issues/queries", () => ({
+vi.mock("@orvilo/core/issues/queries", () => ({
   sourceContextPreviewOptions: (wsId: string, anchorCommentId: string) => ({
     queryKey: ["source-context", "preview", wsId, anchorCommentId],
   }),
 }));
 
-vi.mock("@patchbay/core/issues/stores/draft-store", () => ({
+vi.mock("@orvilo/core/issues/stores/draft-store", () => ({
   useIssueDraftStore: {
     getState: () => ({
       beginIsolatedDraft: mockBeginIsolatedDraft,
@@ -42,7 +42,7 @@ const mockCreateModeStore = {
   setLastMode: mockSetLastMode,
 };
 
-vi.mock("@patchbay/core/issues/stores/create-mode-store", () => ({
+vi.mock("@orvilo/core/issues/stores/create-mode-store", () => ({
   useCreateModeStore: Object.assign(
     (selector: (s: typeof mockCreateModeStore) => unknown) =>
       selector(mockCreateModeStore),
@@ -50,7 +50,7 @@ vi.mock("@patchbay/core/issues/stores/create-mode-store", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/dialog", () => ({
+vi.mock("@orvilo/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogContent: ({
     className,

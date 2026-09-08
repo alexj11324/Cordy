@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
 	"github.com/slack-go/slack/socketmode"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
 )
 
 func TestSlackConnectionRequiresHello(t *testing.T) {

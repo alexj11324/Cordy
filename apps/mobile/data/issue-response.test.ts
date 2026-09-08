@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@orvilo/core/types";
 import {
   CreateIssueResponseSchema,
   IssueSchema,
-} from "@patchbay/core/api/schemas";
+} from "@orvilo/core/api/schemas";
 import {
   requireCreatedIssueResponse,
   requireUpdatedIssueResponse,

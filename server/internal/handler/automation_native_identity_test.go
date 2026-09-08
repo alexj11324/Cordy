@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func TestNativeSlackAuthenticatedSenderRequiresExistingBinding(t *testing.T) {
@@ -36,7 +36,7 @@ func TestNativeSlackAuthenticatedSenderRequiresExistingBinding(t *testing.T) {
 	}
 
 	dbfx.Insert(t, "channel_user_binding", testutil.Cols{
-		"workspace_id": testWorkspaceID, "patchbay_user_id": testUserID,
+		"workspace_id": testWorkspaceID, "orvilo_user_id": testUserID,
 		"installation_id": installationID, "channel_type": "slack", "channel_user_id": "U1",
 		"config": []byte(`{}`),
 	})

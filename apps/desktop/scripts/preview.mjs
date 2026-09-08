@@ -30,7 +30,7 @@ if (process.platform !== "darwin") {
 const require = createRequire(import.meta.url);
 const { build, Platform, Arch } = require("electron-builder");
 const identity = devBundleIdentity(appRoot, process.env.DESKTOP_APP_SUFFIX);
-const output = join(root, ".patchbay-dev", "preview");
+const output = join(root, ".orvilo-dev", "preview");
 await build({
   projectDir: appRoot,
   targets: Platform.MAC.createTarget("dir", process.arch === "arm64" ? Arch.arm64 : Arch.x64),
@@ -41,7 +41,7 @@ await build({
     protocols: [{ name: identity.callbackUrlName, schemes: identity.callbackSchemes }],
     directories: { output },
     extraMetadata: { desktopPreview: { bundleId: identity.bundleId, name: identity.name,
-      dataName: identity.name.replace("Orvilo", "Patchbay"), callbackProtocol: identity.callbackProtocol } },
+      dataName: identity.name, callbackProtocol: identity.callbackProtocol } },
     mac: { identity: "-", notarize: false },
     // Config arrays can inherit the release protocol. Replace the generated
     // bundle declaration before signing so this app owns only its Canary URL.

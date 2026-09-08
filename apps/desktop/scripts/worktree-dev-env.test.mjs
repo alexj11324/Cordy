@@ -43,10 +43,10 @@ describe("worktree-dev-env", () => {
   });
 
   it("never reuses 5173 even when the offset is 0", () => {
-    // POSIX cksum("/tmp/patchbay-3030") === 241176000, % 1000 === 0.
-    expect(offsetForPath("/tmp/patchbay-3030")).toBe(0);
-    expect(rendererPortForPath("/tmp/patchbay-3030")).toBe(5174);
-    expect(rendererPortForPath("/tmp/patchbay-3030")).not.toBe(5173);
+		// POSIX cksum("/tmp/orvilo-2125") === 323916000, % 1000 === 0.
+		expect(offsetForPath("/tmp/orvilo-2125")).toBe(0);
+		expect(rendererPortForPath("/tmp/orvilo-2125")).toBe(5174);
+		expect(rendererPortForPath("/tmp/orvilo-2125")).not.toBe(5173);
   });
 
   it("skips 6000, which Chromium refuses to load (ERR_UNSAFE_PORT)", () => {
@@ -88,29 +88,29 @@ describe("worktree-dev-env", () => {
   });
 
   it("disambiguates worktrees that share a folder name at different paths", () => {
-    // Same basename "patchbay", different parent dirs → different suffixes,
+    // Same basename "orvilo", different parent dirs → different suffixes,
     // so each gets its own userData and single-instance lock.
-    expect(appSuffixForPath("/tmp/a/patchbay")).not.toBe(
-      appSuffixForPath("/tmp/b/patchbay"),
+    expect(appSuffixForPath("/tmp/a/orvilo")).not.toBe(
+      appSuffixForPath("/tmp/b/orvilo"),
     );
   });
 
   it("derives a stable callback protocol from the full app path", () => {
-    expect(callbackProtocolForPath("/tmp/a/patchbay/apps/desktop")).toMatch(
-      /^patchbay-canary-[a-f0-9]{16}$/,
+    expect(callbackProtocolForPath("/tmp/a/orvilo/apps/desktop")).toMatch(
+      /^orvilo-canary-[a-f0-9]{16}$/,
     );
-    expect(callbackProtocolForPath("/tmp/a/patchbay/apps/desktop")).toBe(
-      callbackProtocolForPath("/tmp/a/patchbay/apps/desktop"),
+    expect(callbackProtocolForPath("/tmp/a/orvilo/apps/desktop")).toBe(
+      callbackProtocolForPath("/tmp/a/orvilo/apps/desktop"),
     );
-    expect(callbackProtocolForPath("/tmp/a/patchbay/apps/desktop")).not.toBe(
-      callbackProtocolForPath("/tmp/b/patchbay/apps/desktop"),
+    expect(callbackProtocolForPath("/tmp/a/orvilo/apps/desktop")).not.toBe(
+      callbackProtocolForPath("/tmp/b/orvilo/apps/desktop"),
     );
     expect(
-      callbackProtocolForPath("/tmp/a/patchbay/apps/desktop", "staging"),
-    ).toMatch(/^patchbay-staging-[a-f0-9]{16}$/);
+      callbackProtocolForPath("/tmp/a/orvilo/apps/desktop", "staging"),
+    ).toMatch(/^orvilo-staging-[a-f0-9]{16}$/);
     expect(
-      callbackProtocolForPath("/tmp/a/patchbay/apps/desktop", "staging"),
-    ).not.toBe(callbackProtocolForPath("/tmp/a/patchbay/apps/desktop"));
+      callbackProtocolForPath("/tmp/a/orvilo/apps/desktop", "staging"),
+    ).not.toBe(callbackProtocolForPath("/tmp/a/orvilo/apps/desktop"));
   });
 
   it("auto-isolates a linked worktree (.git is a file)", () => {
@@ -137,7 +137,7 @@ describe("worktree-dev-env", () => {
 
   it("uses a staging callback protocol when the desktop channel is staging", () => {
     const root = tmpRoot("dir");
-    const env = { PATCHBAY_DESKTOP_CHANNEL: "staging" };
+    const env = { ORVILO_DESKTOP_CHANNEL: "staging" };
     applyWorktreeDevEnv(env, { root });
     expect(env.DESKTOP_RENDERER_PORT).toBe("15173");
     expect(env.DESKTOP_CALLBACK_PROTOCOL).toBe(
@@ -148,7 +148,7 @@ describe("worktree-dev-env", () => {
   it("separates linked-worktree renderer channels and preserves explicit ports", () => {
     const root = tmpRoot("file");
     const development = {};
-    const staging = { PATCHBAY_DESKTOP_CHANNEL: "staging" };
+    const staging = { ORVILO_DESKTOP_CHANNEL: "staging" };
     applyWorktreeDevEnv(development, { root });
     applyWorktreeDevEnv(staging, { root });
     expect(staging.DESKTOP_RENDERER_PORT).toBe(String(15174 + offsetForPath(root)));
@@ -163,7 +163,7 @@ describe("worktree-dev-env", () => {
     const env = {
       DESKTOP_RENDERER_PORT: "9999",
       DESKTOP_APP_SUFFIX: "manual",
-      DESKTOP_CALLBACK_PROTOCOL: "patchbay-canary-0000000000000000",
+      DESKTOP_CALLBACK_PROTOCOL: "orvilo-canary-0000000000000000",
     };
     applyWorktreeDevEnv(env, { root });
     expect(env.DESKTOP_RENDERER_PORT).toBe("9999");

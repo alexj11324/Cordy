@@ -1,1 +1,1 @@
-export { TeamsPage as default } from "@patchbay/views/teams";
+export { TeamsPage as default } from "@orvilo/views/teams";

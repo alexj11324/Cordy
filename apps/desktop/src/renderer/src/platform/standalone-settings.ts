@@ -1,4 +1,4 @@
-import { isReservedSlug } from "@patchbay/core/paths";
+import { isReservedSlug } from "@orvilo/core/paths";
 
 /**
  * Settings is a window-level destination on desktop, not a tab session.

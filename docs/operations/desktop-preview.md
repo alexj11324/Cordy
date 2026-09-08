@@ -3,7 +3,7 @@
 Use the packaged preview to validate native login and callbacks:
 
 ```sh
-pnpm --filter @patchbay/desktop preview
+pnpm --filter @orvilo/desktop preview
 ```
 
 Quit that checkout's existing preview first. The command prepares Go binaries
@@ -16,13 +16,13 @@ URL dispatch even when their protocol declarations and signatures are valid.
 
 The preview has a stable, path-derived bundle ID and callback scheme for its
 checkout. Its build metadata selects the corresponding existing Canary data
-directory. It declares only that callback scheme, never production `patchbay`.
+directory. It declares only that callback scheme, never production `orvilo`.
 The launcher verifies the signature, protocol declaration and actual macOS
 handler. It refuses to replace a running preview. Preview updates cannot
 replace it with the production app.
 
 A production-built preview reads the regular validated desktop configuration,
-including the hosted defaults when `~/.patchbay/desktop.json` is absent.
+including the hosted defaults when `~/.orvilo/desktop.json` is absent.
 `pnpm dev:desktop` remains the frontend development loop with development
 endpoint overrides; opening that Electron window is not native-login acceptance.
 Release signing/notarization and production application identity are unchanged.

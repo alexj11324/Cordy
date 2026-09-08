@@ -24,7 +24,7 @@ import type {
   Reaction,
   TimelineEntry,
   UpdateIssueRequest,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { api } from "@/data/api";
 import { isIssueStatusCategory } from "@/lib/issue-status";
 import { issueKeys } from "@/data/queries/issues";

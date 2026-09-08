@@ -1,6 +1,6 @@
 import { AUTH_CONTRACT_HEADER, AUTH_CONTRACT_VERSION, GO_ATTEMPT_PATH, GO_COMPLETE_PATH, authContractResponseHeaders } from "./contract";
 import { isDesktopCallbackProtocol, isDesktopCode, isDesktopHandoffInput } from "./desktop-handoff";
-const BROKER_AUTH_HEADER = "x-patchbay-desktop-broker-auth";
+const BROKER_AUTH_HEADER = "x-orvilo-desktop-broker-auth";
 type Config = { apiOrigin: string; brokerOrigin: string; goBrokerAuthToken: string };
 export async function proxyGoDesktopGoogleRequest(request: Request, operation: "attempt" | "complete", config: Config, fetcher: typeof fetch = fetch): Promise<Response> {
   if (request.method !== "POST") return failure(405, "method_not_allowed");

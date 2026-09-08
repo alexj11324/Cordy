@@ -2,8 +2,8 @@
 
 import type { ReactNode } from "react";
 import { Check } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { cn } from "@orvilo/ui/lib/utils";
 
 const OTHER_INPUT_MAX_LENGTH = 80;
 

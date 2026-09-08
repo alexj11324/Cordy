@@ -12,10 +12,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/logger"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/logger"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // Issue Quick Actions (MUL-5465): workspace-level presets for "who to call and
@@ -296,7 +296,7 @@ func (h *Handler) agentInvocableByEveryone(ctx context.Context, agent db.Agent) 
 // costs less than thirty point lookups.
 type quickActionCatalog struct {
 	agents map[string]db.Agent
-	teams map[string]db.Team
+	teams  map[string]db.Team
 	// publicAgents holds agent ids every workspace member may invoke.
 	publicAgents map[string]bool
 }
@@ -304,7 +304,7 @@ type quickActionCatalog struct {
 func (h *Handler) loadQuickActionCatalog(ctx context.Context, workspaceID pgtype.UUID) quickActionCatalog {
 	cat := quickActionCatalog{
 		agents:       map[string]db.Agent{},
-		teams:       map[string]db.Team{},
+		teams:        map[string]db.Team{},
 		publicAgents: map[string]bool{},
 	}
 

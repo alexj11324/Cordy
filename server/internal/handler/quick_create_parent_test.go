@@ -8,10 +8,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
-	"github.com/patchbay-ai/patchbay/server/internal/entitlement/entitlementtest"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
+	"github.com/orvilo-ai/orvilo/server/internal/entitlement/entitlementtest"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // TestQuickCreateIssueParentTrustBoundary locks the server-side trust boundary
@@ -86,7 +86,7 @@ func TestQuickCreateIssueParentTrustBoundary(t *testing.T) {
 	var foreignWorkspaceID, foreignUserID, foreignParentID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id
-	`, "QuickCreate Foreign", "quickcreate-foreign@patchbay.ai").Scan(&foreignUserID); err != nil {
+	`, "QuickCreate Foreign", "quickcreate-foreign@orvilo.ai").Scan(&foreignUserID); err != nil {
 		t.Fatalf("create foreign user: %v", err)
 	}
 	t.Cleanup(func() {

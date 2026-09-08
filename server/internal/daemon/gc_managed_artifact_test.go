@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
 )
 
 // The managed Codex cache (codex-home/.sandbox-bin, a ~285 MiB copy of the

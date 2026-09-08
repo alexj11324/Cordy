@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -16,11 +16,11 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: data.skills, isLoading: data.isLoading }),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   skillListOptions: () => ({ queryKey: ["workspaces", "workspace-1", "skills"] }),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "workspace-1", name: "Acme", slug: "acme" }),
   useWorkspacePaths: () => ({ skills: () => "/acme/skills" }),
 }));

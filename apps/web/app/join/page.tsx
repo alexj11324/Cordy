@@ -3,13 +3,13 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { api, errorCode } from "@patchbay/core/api";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { useAuthStore } from "@patchbay/core/auth";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import type { ShareLinkInfo, Workspace } from "@patchbay/core/types";
+import { api, errorCode } from "@orvilo/core/api";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Card, CardContent } from "@orvilo/ui/components/ui/card";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { useAuthStore } from "@orvilo/core/auth";
+import { workspaceKeys } from "@orvilo/core/workspace/queries";
+import type { ShareLinkInfo, Workspace } from "@orvilo/core/types";
 
 function JoinInner() {
   const router = useRouter();

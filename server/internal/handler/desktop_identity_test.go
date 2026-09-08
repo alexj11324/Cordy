@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func identityAttempt(t *testing.T, h *Handler) desktopAuthHandoffRedeemRequest {
@@ -22,8 +22,8 @@ func identityAttempt(t *testing.T, h *Handler) desktopAuthHandoffRedeemRequest {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := desktopAuthHandoffRedeemRequest{State: strings.TrimPrefix(raw, "pbd_"), CodeVerifier: strings.Repeat("v", 43), Code: "pbl_" + strings.TrimPrefix(raw, "pbd_")}
-	if err := h.Queries.CreateDesktopAuthHandoff(t.Context(), db.CreateDesktopAuthHandoffParams{State: req.State, CodeChallenge: desktopHandoffCodeChallenge(req.CodeVerifier), CallbackProtocol: "patchbay"}); err != nil {
+	req := desktopAuthHandoffRedeemRequest{State: strings.TrimPrefix(raw, "ovd_"), CodeVerifier: strings.Repeat("v", 43), Code: "ovl_" + strings.TrimPrefix(raw, "ovd_")}
+	if err := h.Queries.CreateDesktopAuthHandoff(t.Context(), db.CreateDesktopAuthHandoffParams{State: req.State, CodeChallenge: desktopHandoffCodeChallenge(req.CodeVerifier), CallbackProtocol: "orvilo"}); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
@@ -58,7 +58,7 @@ func TestDesktopLocalIdentityGrantBoundaries(t *testing.T) {
 	bad.State = strings.Repeat("s", 43)
 	call(bad, 401)
 	bad = req
-	bad.Code = "pbd_" + strings.TrimPrefix(req.Code, "pbl_")
+	bad.Code = "ovd_" + strings.TrimPrefix(req.Code, "ovl_")
 	call(bad, 401)
 	testutil.Call(t, h.RedeemDesktopAuthHandoff, testutil.JSONRequest(http.MethodPost, "/api/desktop-handoff/redeem", req)).Want(401)
 	// Changing a local code's prefix cannot redeem it as a production session.
@@ -104,7 +104,7 @@ func TestDesktopGoogleCompletionPreservesWorktreeCallbackProtocol(t *testing.T) 
 		return ClerkIdentity{Email: handlerTestEmail}, nil
 	})}
 	req := identityAttempt(t, h)
-	if _, err := testPool.Exec(t.Context(), "UPDATE desktop_auth_handoff SET callback_protocol='patchbay-canary-5718c47b86bf9ece' WHERE state=$1", req.State); err != nil {
+	if _, err := testPool.Exec(t.Context(), "UPDATE desktop_auth_handoff SET callback_protocol='orvilo-canary-5718c47b86bf9ece' WHERE state=$1", req.State); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := h.Queries.RegisterDesktopGoogleAttempt(t.Context(), db.RegisterDesktopGoogleAttemptParams{State: req.State, CodeChallenge: desktopHandoffCodeChallenge(req.CodeVerifier)}); err != nil {
@@ -115,7 +115,7 @@ func TestDesktopGoogleCompletionPreservesWorktreeCallbackProtocol(t *testing.T) 
 	request.Header.Set("Authorization", "Bearer fixture-token")
 	var response map[string]string
 	testutil.Call(t, h.CompleteDesktopGoogleAttempt, request).Want(200).JSON(&response)
-	if response["callback_protocol"] != "patchbay-canary-5718c47b86bf9ece" {
+	if response["callback_protocol"] != "orvilo-canary-5718c47b86bf9ece" {
 		t.Fatalf("callback_protocol = %q, want worktree scheme", response["callback_protocol"])
 	}
 }
@@ -178,7 +178,7 @@ func TestDesktopIdentityRejectsMalformedResponses(t *testing.T) {
 }
 
 func TestDesktopIdentityRequestContainsOnlyGrantAndProof(t *testing.T) {
-	req := desktopAuthHandoffRedeemRequest{Code: "pbl_" + strings.Repeat("a", 43), State: strings.Repeat("s", 43), CodeVerifier: strings.Repeat("v", 43)}
+	req := desktopAuthHandoffRedeemRequest{Code: "ovl_" + strings.Repeat("a", 43), State: strings.Repeat("s", 43), CodeVerifier: strings.Repeat("v", 43)}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var got desktopAuthHandoffRedeemRequest
 		if r.Header.Get("Authorization") != "" || json.NewDecoder(r.Body).Decode(&got) != nil || got != req {
@@ -195,7 +195,7 @@ func TestDesktopIdentityRequestContainsOnlyGrantAndProof(t *testing.T) {
 
 func TestDesktopIdentityBoundsRequestBody(t *testing.T) {
 	h := &Handler{}
-	body := `{"code":"pbl_` + strings.Repeat("a", 43) + `","code_verifier":"` + strings.Repeat("v", 43) + `","state":"` + strings.Repeat("s", 43) + `"}` + strings.Repeat(" ", 5000)
+	body := `{"code":"ovl_` + strings.Repeat("a", 43) + `","code_verifier":"` + strings.Repeat("v", 43) + `","state":"` + strings.Repeat("s", 43) + `"}` + strings.Repeat(" ", 5000)
 	testutil.Call(t, h.RedeemDesktopLocalIdentity, testutil.JSONRequest(http.MethodPost, "/api/desktop-identity/redeem", body)).Want(401)
 }
 

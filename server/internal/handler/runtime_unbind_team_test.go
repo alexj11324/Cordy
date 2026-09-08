@@ -85,7 +85,7 @@ func seedAgentOnRuntime(t *testing.T, runtimeID, name string, archived bool) str
 
 // seedTeam creates a team with the given leader. If archived is true the
 // row is created with archived_at = now() (the case the user originally hit
-// — `patchbay team list` filters out archived teams, hiding the FK
+// — `orvilo team list` filters out archived teams, hiding the FK
 // blocker).
 func seedTeam(t *testing.T, leaderID, name string, archived bool) string {
 	t.Helper()
@@ -150,7 +150,7 @@ func runtimeExists(t *testing.T, runtimeID string) bool {
 // cleanly, and neither the teams nor the leaders may be destroyed.
 //
 // The archived team in this fixture is the case originally reported: it is
-// invisible to `patchbay team list`, so a user could not see what was blocking
+// invisible to `orvilo team list`, so a user could not see what was blocking
 // the delete — and the old fix resolved that by deleting the team.
 func TestDeleteAgentRuntime_KeepsTeamsLedByUnboundAgents(t *testing.T) {
 	if testHandler == nil {

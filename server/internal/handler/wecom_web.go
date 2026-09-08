@@ -18,9 +18,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/wecom"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/wecom"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // wecomBodyLimit caps what either WeCom JSON endpoint will read. Both bodies
@@ -35,34 +35,34 @@ const wecomBodyLimit = 16 * 1024
 // interface exists so the body ceiling can be pinned in a test without a live
 // channel_binding_token table.
 type WecomBindingRedeemer interface {
-	RedeemAndBind(ctx context.Context, raw string, patchbayUserID pgtype.UUID) (wecom.RedeemedBindingToken, error)
+	RedeemAndBind(ctx context.Context, raw string, orviloUserID pgtype.UUID) (wecom.RedeemedBindingToken, error)
 }
 
 // WecomInstallationResponse is the wire shape for a wecom installation
 // row. The secret is NEVER included — it remains sealed on the row. BotID
 // is surfaced because operators need to see which bot is bound.
 type WecomInstallationResponse struct {
-	Runtime MessagingConnectionStatus `json:"runtime"`
-	ID              string `json:"id"`
-	WorkspaceID     string `json:"workspace_id"`
-	AgentID         string `json:"agent_id"`
-	BotID           string `json:"bot_id"`
-	InstallerUserID string `json:"installer_user_id"`
-	Status          string `json:"status"`
-	InstallationStatus string `json:"installation_status"`
+	Runtime            MessagingConnectionStatus `json:"runtime"`
+	ID                 string                    `json:"id"`
+	WorkspaceID        string                    `json:"workspace_id"`
+	AgentID            string                    `json:"agent_id"`
+	BotID              string                    `json:"bot_id"`
+	InstallerUserID    string                    `json:"installer_user_id"`
+	Status             string                    `json:"status"`
+	InstallationStatus string                    `json:"installation_status"`
 }
 
 func wecomInstallationToResponse(inst wecom.Installation) WecomInstallationResponse {
 	canonicalStatus := string(inst.Status)
 	legacyStatus, installationStatus := messagingInstallationWireStatuses(canonicalStatus)
 	return WecomInstallationResponse{
-		Runtime: initialConnectionStatus(canonicalStatus),
-		ID:              uuidToString(inst.ID),
-		WorkspaceID:     uuidToString(inst.WorkspaceID),
-		AgentID:         uuidToString(inst.AgentID),
-		BotID:           inst.BotID,
-		InstallerUserID: uuidToString(inst.InstallerUserID),
-		Status:          legacyStatus,
+		Runtime:            initialConnectionStatus(canonicalStatus),
+		ID:                 uuidToString(inst.ID),
+		WorkspaceID:        uuidToString(inst.WorkspaceID),
+		AgentID:            uuidToString(inst.AgentID),
+		BotID:              inst.BotID,
+		InstallerUserID:    uuidToString(inst.InstallerUserID),
+		Status:             legacyStatus,
 		InstallationStatus: installationStatus,
 	}
 }
@@ -251,7 +251,7 @@ func writeWecomInstallError(w http.ResponseWriter, err error, wsUUID, agentUUID 
 			"this bot is installed for an archived agent in this workspace — restore that agent, or remove its bot installation, before installing it here")
 	case errors.Is(err, wecom.ErrBotOwnedByAnotherWorkspace):
 		writeErrorCode(w, http.StatusConflict, "wecom_bot_owned_by_another_workspace",
-			"this bot is already installed in a different Patchbay workspace — remove that installation before installing it here")
+			"this bot is already installed in a different Orvilo workspace — remove that installation before installing it here")
 	case errors.Is(err, wecom.ErrInvalidInstallationParams):
 		// Something the admin left out. Their input, their fix. This code means
 		// exactly that and nothing else — the two credential outcomes below get
@@ -366,7 +366,7 @@ func (h *Handler) wecomInstallService() *wecom.InstallationService {
 }
 
 // RedeemWecomBindingTokenRequest carries the raw token the user clicked
-// through from the bot's "link your Patchbay account" prompt.
+// through from the bot's "link your Orvilo account" prompt.
 type RedeemWecomBindingTokenRequest struct {
 	Token string `json:"token"`
 }
@@ -380,7 +380,7 @@ type RedeemWecomBindingTokenResponse struct {
 }
 
 // RedeemWecomBindingToken (POST /api/wecom/binding/redeem) binds the WeCom
-// aibot userid carried by the token to the logged-in Patchbay user. The
+// aibot userid carried by the token to the logged-in Orvilo user. The
 // redeemer's identity comes from the session, not the token, so a stolen
 // token cannot bind a WeCom id to an attacker's account. Failure modes map
 // to distinct status codes:
@@ -417,7 +417,7 @@ func (h *Handler) RedeemWecomBindingToken(w http.ResponseWriter, r *http.Request
 		case errors.Is(err, wecom.ErrBindingTokenInvalid):
 			writeError(w, http.StatusGone, "binding token invalid or expired")
 		case errors.Is(err, wecom.ErrBindingAlreadyAssigned):
-			writeError(w, http.StatusConflict, "this WeCom user is already bound to a different Patchbay user")
+			writeError(w, http.StatusConflict, "this WeCom user is already bound to a different Orvilo user")
 		case errors.Is(err, wecom.ErrBindingNotWorkspaceMember):
 			writeError(w, http.StatusForbidden, "binding refused (are you a workspace member?)")
 		default:

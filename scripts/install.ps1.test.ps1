@@ -161,7 +161,7 @@ $cases = @(
     @{ Label = "env-file empty BACKEND_PORT falls back"; Env = @{}; Mutation = @{ BACKEND_PORT = ""; PORT = "9100" }; Backend = "9100"; Frontend = "3000" }
 )
 
-$runnerScript = Join-Path ([System.IO.Path]::GetTempPath()) "patchbay-install-ps1-case.ps1"
+$runnerScript = Join-Path ([System.IO.Path]::GetTempPath()) "orvilo-install-ps1-case.ps1"
 
 # Each case runs in its own pwsh process: install.ps1 uses `exit` on failure, and
 # a child process is also the only way to control the ambient environment
@@ -255,7 +255,7 @@ Start-LocalInstall
 '@ | Set-Content -Path $runnerScript -Encoding UTF8
 
 foreach ($case in $cases) {
-    $workDir = Join-Path ([System.IO.Path]::GetTempPath()) ("patchbay-ps1-" + [guid]::NewGuid().ToString("N"))
+    $workDir = Join-Path ([System.IO.Path]::GetTempPath()) ("orvilo-ps1-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path (Join-Path $workDir ".git") -Force | Out-Null
 
     $envLines = @(
@@ -265,7 +265,7 @@ foreach ($case in $cases) {
         "# SERVER_PORT=8080"
         "FRONTEND_PORT=3000"
         "JWT_SECRET=change-me-in-production"
-        "POSTGRES_PASSWORD=patchbay"
+        "POSTGRES_PASSWORD=orvilo"
     )
     if ($case.Mutation) {
         foreach ($key in $case.Mutation.Keys) {

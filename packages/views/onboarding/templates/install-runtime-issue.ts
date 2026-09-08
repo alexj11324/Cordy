@@ -26,11 +26,11 @@ export const INSTALL_RUNTIME_ISSUE_TITLE = {
   zh: "连接运行时，和 Patrick 开始",
 } as const;
 
-const en = `Welcome to Patchbay.
+const en = `Welcome to Orvilo.
 
-Agents need a runtime before they can execute work. You can still use Patchbay as a lightweight project-management workspace while you install one.
+Agents need a runtime before they can execute work. You can still use Orvilo as a lightweight project-management workspace while you install one.
 
-## Try Patchbay first
+## Try Orvilo first
 
 Before the runtime is ready, you can:
 
@@ -43,7 +43,7 @@ That gives you the project-management layer first. Once a runtime is connected, 
 
 ## Install your first agent runtime
 
-Full guide: https://patchbay.aspectlylabs.com/docs/install-agent-runtime
+Full guide: https://orvilo.aspectlylabs.com/docs/install-agent-runtime
 
 For English users, the fastest first path is Codex:
 
@@ -55,10 +55,10 @@ For English users, the fastest first path is Codex:
 4. Confirm your terminal can find it:
    which codex
    codex --version
-5. Wait for Patchbay to pick it up. A running daemon re-checks for newly
+5. Wait for Orvilo to pick it up. A running daemon re-checks for newly
    installed CLIs every couple of minutes, so no restart is normally needed.
    To apply it immediately:
-   patchbay daemon restart
+   orvilo daemon restart
    In the desktop app, open any local runtime and click Restart. Quitting and
    reopening the app is NOT enough — the daemon keeps running in the background.
 6. Return to Runtimes and refresh. You should see a Codex runtime online.
@@ -68,9 +68,9 @@ Codex reference: https://developers.openai.com/codex/cli
 
 Patrick will turn one real goal into an issue, start it with the right agent, and suggest reusable specialists when your workflow needs them.`;
 
-const zh = `欢迎来到 Patchbay。
+const zh = `欢迎来到 Orvilo。
 
-智能体需要先连上运行时才能执行工作。运行时还没准备好时,你也可以先把 Patchbay 当作轻量项目管理工具体验起来。
+智能体需要先连上运行时才能执行工作。运行时还没准备好时,你也可以先把 Orvilo 当作轻量项目管理工具体验起来。
 
 ## 先体验项目管理功能
 
@@ -85,7 +85,7 @@ const zh = `欢迎来到 Patchbay。
 
 ## 安装第一个 Agent 运行时
 
-完整文档:https://patchbay.aspectlylabs.com/docs/install-agent-runtime
+完整文档:https://orvilo.aspectlylabs.com/docs/install-agent-runtime
 
 中文用户建议先装 Kimi CLI:
 
@@ -98,9 +98,9 @@ const zh = `欢迎来到 Patchbay。
 3. 在你想让 Kimi 工作的项目目录里启动一次:
    kimi
 4. 首次启动后输入 /login,按提示完成 Kimi Code 或 API key 配置。
-5. 等 Patchbay 识别到它。运行中的守护进程每隔几分钟会重新检查一次新装的 CLI,通常不需要重启。
+5. 等 Orvilo 识别到它。运行中的守护进程每隔几分钟会重新检查一次新装的 CLI,通常不需要重启。
    想立刻生效:
-   patchbay daemon restart
+   orvilo daemon restart
    桌面端请打开任意一个本机 runtime 并点 Restart。退出再打开 app 是不够的 —— 守护进程会继续在后台运行。
 6. 回到 Runtimes 页面刷新。你应该能看到一个在线的 Kimi 运行时。
 7. 打开"运行时"页面。页面会显示 **和 Patrick 开始**；点击后会创建 Patrick，并进入引导式的首次对话。

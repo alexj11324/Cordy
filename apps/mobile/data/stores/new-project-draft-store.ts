@@ -21,7 +21,7 @@
  */
 import { useEffect, useRef } from "react";
 import { create } from "zustand";
-import type { ProjectPriority, ProjectStatus } from "@patchbay/core/types";
+import type { ProjectPriority, ProjectStatus } from "@orvilo/core/types";
 
 interface NewProjectDraftState {
   status: ProjectStatus;

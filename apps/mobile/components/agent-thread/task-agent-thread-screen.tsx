@@ -6,9 +6,9 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Alert, KeyboardAvoidingView, Platform, View } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ChatMessage, TaskMessagePayload } from "@patchbay/core/types";
-import { createSafeId } from "@patchbay/core/utils";
-import { deriveAgentThreadTaskState } from "@patchbay/core/agent-thread";
+import type { ChatMessage, TaskMessagePayload } from "@orvilo/core/types";
+import { createSafeId } from "@orvilo/core/utils";
+import { deriveAgentThreadTaskState } from "@orvilo/core/agent-thread";
 import { api, ApiError } from "@/data/api";
 import { chatKeys, taskMessagesOptions } from "@/data/queries/chat";
 import { agentThreadOptions } from "@/data/queries/agent-thread";

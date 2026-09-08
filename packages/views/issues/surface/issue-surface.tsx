@@ -2,29 +2,29 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { AlertTriangle, FilterX, ListTodo, Plus } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { cn } from "@patchbay/ui/lib/utils";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { cn } from "@orvilo/ui/lib/utils";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import {
   useViewStore,
   ViewStoreProvider,
-} from "@patchbay/core/issues/stores/view-store-context";
+} from "@orvilo/core/issues/stores/view-store-context";
 import {
   getIssueSurfaceViewStore,
   seedIssueSurfaceViewState,
-} from "@patchbay/core/issues/stores/surface-view-store";
-import { useActiveIssueView } from "@patchbay/core/issue-views/use-active-view";
-import { baselineFromQuery } from "@patchbay/core/issue-views/baseline";
+} from "@orvilo/core/issues/stores/surface-view-store";
+import { useActiveIssueView } from "@orvilo/core/issue-views/use-active-view";
+import { baselineFromQuery } from "@orvilo/core/issue-views/baseline";
 import { ViewBaselineProvider, useViewBaseline } from "./view-baseline-context";
-import type { IssueViewScope } from "@patchbay/core/issue-views/queries";
+import type { IssueViewScope } from "@orvilo/core/issue-views/queries";
 import {
   actorKindForViewVariant,
   issueScopeKey,
   myRelationForViewVariant,
   type IssueScope,
-} from "@patchbay/core/issues/surface/scope";
-import type { Issue } from "@patchbay/core/types";
+} from "@orvilo/core/issues/surface/scope";
+import type { Issue } from "@orvilo/core/types";
 import { BoardView } from "../components/board-view";
 import { BatchActionToolbar } from "../components/batch-action-toolbar";
 import { GanttView } from "../components/gantt-view";

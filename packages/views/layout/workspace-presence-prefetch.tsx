@@ -1,7 +1,7 @@
 "use client";
 
-import { useWorkspaceId } from "@patchbay/core";
-import { useWorkspacePresencePrefetch } from "@patchbay/core/agents";
+import { useWorkspaceId } from "@orvilo/core";
+import { useWorkspacePresencePrefetch } from "@orvilo/core/agents";
 
 // Mount once inside any subtree that's already gated on "workspace resolved"
 // (DashboardLayout on web, WorkspaceRouteLayout on desktop). useWorkspaceId

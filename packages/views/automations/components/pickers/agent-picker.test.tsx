@@ -30,13 +30,13 @@ const fixtures = vi.hoisted(() => ({
   ],
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
 
-vi.mock("@patchbay/core/agents", () => ({
+vi.mock("@orvilo/core/agents", () => ({
   isAgentRuntimeBound: (agent: { runtime_id?: string }) => Boolean(agent.runtime_id),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   agentListOptions: (workspaceId: string) => ({
     queryKey: ["agents", workspaceId],
     queryFn: async () => fixtures.agents,

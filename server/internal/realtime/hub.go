@@ -17,7 +17,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
 )
 
 // MembershipChecker verifies a user belongs to a workspace.
@@ -681,7 +681,7 @@ func authenticateToken(tokenStr string, pr OpaqueTokenResolver, ctx context.Cont
 	if strings.HasPrefix(tokenStr, auth.GuestTokenPrefix) && !auth.ValidGuestToken(tokenStr) {
 		return "", `{"error":"invalid token"}`
 	}
-	if strings.HasPrefix(tokenStr, "pby_") || strings.HasPrefix(tokenStr, auth.GuestTokenPrefix) {
+	if strings.HasPrefix(tokenStr, "ovy_") || strings.HasPrefix(tokenStr, auth.GuestTokenPrefix) {
 		if pr == nil {
 			return "", `{"error":"invalid token"}`
 		}

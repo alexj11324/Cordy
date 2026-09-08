@@ -50,8 +50,8 @@ import type {
   ChatPendingTask,
   ChatQuickAction,
   TaskMessagePayload,
-} from "@patchbay/core/types";
-import type { AgentAvailability } from "@patchbay/core/agents";
+} from "@orvilo/core/types";
+import type { AgentAvailability } from "@orvilo/core/agents";
 import { taskMessagesOptions } from "@/data/queries/chat";
 import { Text } from "@/components/ui/text";
 import { Markdown } from "@/lib/markdown";

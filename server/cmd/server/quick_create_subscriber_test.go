@@ -9,9 +9,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Subscribing the quick-create requester moved OFF the completion path in
@@ -95,7 +95,7 @@ func TestQuickCreateFailure_DoesNotSubscribeRequester(t *testing.T) {
 }
 
 // TestQuickCreateFailure_SurfacesAgentOutput locks in the fix for GH #5885: when
-// a quick-create agent's `patchbay issue create` call fails (e.g. the active-
+// a quick-create agent's `orvilo issue create` call fails (e.g. the active-
 // duplicate guard rejects it), the failure inbox must carry the agent's real
 // final output — which the prompt requires to be the CLI error — instead of the
 // opaque "agent finished without creating an issue".

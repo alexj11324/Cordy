@@ -62,7 +62,7 @@ export async function assembleProductionManifest({
     if (!DIGEST_PATTERN.test(digest)) {
       throw new Error(`${file} has invalid digest: ${digest}`);
     }
-    const expectedRepository = `ghcr.io/${repositoryOwner}/patchbay-${name}`;
+    const expectedRepository = `ghcr.io/${repositoryOwner}/orvilo-${name}`;
     if (record.repository !== expectedRepository) {
       throw new Error(
         `${file} has repository ${record.repository}, expected ${expectedRepository}`,

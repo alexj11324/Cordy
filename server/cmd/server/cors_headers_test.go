@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/handler"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/handler"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // The app advertises its capabilities on the cancel request (#5219). Browsers

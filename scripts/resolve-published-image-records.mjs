@@ -29,7 +29,7 @@ export async function writePublishedImageRecords({
   }
   await mkdir(outputDirectory, { recursive: true });
   for (const name of REQUIRED_IMAGES) {
-    const repository = `ghcr.io/${repositoryOwner}/patchbay-${name}`;
+    const repository = `ghcr.io/${repositoryOwner}/orvilo-${name}`;
     const digest = parseInspectDigest(inspect(`${repository}:sha-${sourceSha}`));
     if (!DIGEST_PATTERN.test(digest)) {
       throw new Error(`invalid ${name} digest: ${digest}`);

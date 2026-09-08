@@ -18,14 +18,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/issueposition"
-	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/issueposition"
+	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 const (
@@ -553,33 +553,33 @@ type dependencyGraphPlanResponse struct {
 }
 
 type dependencyGraphNodeResponse struct {
-	ID                 string          `json:"id"`
-	PlanID             string          `json:"plan_id"`
-	WorkspaceID        string          `json:"workspace_id"`
-	TempID             string          `json:"temp_id"`
-	IssueID            string          `json:"issue_id"`
-	Issue              IssueResponse   `json:"issue"`
-	Title              string          `json:"title"`
-	Description        string          `json:"description"`
-	AcceptanceCriteria json.RawMessage `json:"acceptance_criteria"`
-	Context            json.RawMessage `json:"context"`
-	Outputs            json.RawMessage `json:"outputs"`
-	ExecutorType       *string         `json:"executor_type"`
-	ExecutorID         *string         `json:"executor_id"`
-	CandidateExecutors json.RawMessage `json:"candidate_executors"`
-	Wave               int32           `json:"wave"`
-	CreatedAt          string          `json:"created_at"`
-	UpdatedAt          string          `json:"updated_at"`
-	OwnerType          *string         `json:"owner_type"`
-	OwnerID            *string         `json:"owner_id"`
-	ReviewerType       *string         `json:"reviewer_type"`
-	ReviewerID         *string         `json:"reviewer_id"`
-	RuntimeID          *string         `json:"runtime_id"`
-	ModelID            *string         `json:"model_id"`
-	Status             string          `json:"status"`
-	StatusCategory     string          `json:"status_category"`
-	Ready              bool            `json:"ready"`
-	BlockedBy          []string        `json:"blocked_by"`
+	ID                 string                               `json:"id"`
+	PlanID             string                               `json:"plan_id"`
+	WorkspaceID        string                               `json:"workspace_id"`
+	TempID             string                               `json:"temp_id"`
+	IssueID            string                               `json:"issue_id"`
+	Issue              IssueResponse                        `json:"issue"`
+	Title              string                               `json:"title"`
+	Description        string                               `json:"description"`
+	AcceptanceCriteria json.RawMessage                      `json:"acceptance_criteria"`
+	Context            json.RawMessage                      `json:"context"`
+	Outputs            json.RawMessage                      `json:"outputs"`
+	ExecutorType       *string                              `json:"executor_type"`
+	ExecutorID         *string                              `json:"executor_id"`
+	CandidateExecutors json.RawMessage                      `json:"candidate_executors"`
+	Wave               int32                                `json:"wave"`
+	CreatedAt          string                               `json:"created_at"`
+	UpdatedAt          string                               `json:"updated_at"`
+	OwnerType          *string                              `json:"owner_type"`
+	OwnerID            *string                              `json:"owner_id"`
+	ReviewerType       *string                              `json:"reviewer_type"`
+	ReviewerID         *string                              `json:"reviewer_id"`
+	RuntimeID          *string                              `json:"runtime_id"`
+	ModelID            *string                              `json:"model_id"`
+	Status             string                               `json:"status"`
+	StatusCategory     string                               `json:"status_category"`
+	Ready              bool                                 `json:"ready"`
+	BlockedBy          []string                             `json:"blocked_by"`
 	Readiness          dependencyGraphNodeReadinessResponse `json:"readiness"`
 }
 
@@ -623,12 +623,12 @@ type dependencyGraphReadinessResponse struct {
 }
 
 type dependencyGraphResponse struct {
-	Plan      dependencyGraphPlanResponse   `json:"plan"`
-	Parent    IssueResponse                 `json:"parent"`
-	Children  []IssueResponse               `json:"children"`
-	Nodes     []dependencyGraphNodeResponse `json:"nodes"`
-	Edges     []dependencyGraphEdgeResponse `json:"edges"`
-	Waves     [][]string                     `json:"waves"`
+	Plan      dependencyGraphPlanResponse      `json:"plan"`
+	Parent    IssueResponse                    `json:"parent"`
+	Children  []IssueResponse                  `json:"children"`
+	Nodes     []dependencyGraphNodeResponse    `json:"nodes"`
+	Edges     []dependencyGraphEdgeResponse    `json:"edges"`
+	Waves     [][]string                       `json:"waves"`
 	Readiness dependencyGraphReadinessResponse `json:"readiness"`
 }
 
@@ -913,12 +913,12 @@ func (h *Handler) dependencyGraphResponseForPlan(ctx context.Context, plan db.De
 	resolver := issuestatus.NewResolver(plan.WorkspaceID)
 	issuePrefix := h.getIssuePrefix(ctx, plan.WorkspaceID)
 	response := dependencyGraphResponse{
-		Plan:           dependencyGraphPlanToResponse(plan),
-		Parent:         issueToResponse(parentIssue, issuePrefix),
-		Children:       make([]IssueResponse, 0, len(nodes)),
-		Nodes:          make([]dependencyGraphNodeResponse, 0, len(nodes)),
-		Edges:          make([]dependencyGraphEdgeResponse, 0, len(edges)),
-		Waves:          waves,
+		Plan:     dependencyGraphPlanToResponse(plan),
+		Parent:   issueToResponse(parentIssue, issuePrefix),
+		Children: make([]IssueResponse, 0, len(nodes)),
+		Nodes:    make([]dependencyGraphNodeResponse, 0, len(nodes)),
+		Edges:    make([]dependencyGraphEdgeResponse, 0, len(edges)),
+		Waves:    waves,
 	}
 	h.fillStatusCategory(ctx, plan.WorkspaceID, &response.Parent)
 	categoryOf := make(map[string]string, len(nodes))
@@ -2085,8 +2085,8 @@ func (h *Handler) RetireDependencyGraph(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	nodes, err := qtx.ListDependencyGraphNodesByPlan(r.Context(), db.ListDependencyGraphNodesByPlanParams{
-		PlanID:       plan.ID,
-		WorkspaceID:  actor.WorkspaceID,
+		PlanID:      plan.ID,
+		WorkspaceID: actor.WorkspaceID,
 	})
 	if err != nil {
 		writeDependencyGraphError(w, dependencyGraphDatabase("list dependency graph child nodes", err))

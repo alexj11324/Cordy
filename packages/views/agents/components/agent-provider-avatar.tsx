@@ -1,12 +1,12 @@
 "use client";
 
-import { AVATAR_SIZE_PX, type AvatarSize } from "@patchbay/ui/lib/avatar-size";
+import { AVATAR_SIZE_PX, type AvatarSize } from "@orvilo/ui/lib/avatar-size";
 import {
   Avatar,
   AvatarBadge,
   AvatarFallback,
-} from "@patchbay/ui/components/ui/avatar";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@orvilo/ui/components/ui/avatar";
+import { cn } from "@orvilo/ui/lib/utils";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
 
 export function AgentProviderAvatar({

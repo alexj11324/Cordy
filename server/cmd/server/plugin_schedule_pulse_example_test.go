@@ -20,13 +20,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
-	"github.com/patchbay-ai/patchbay/server/internal/scheduler"
-	"github.com/patchbay-ai/patchbay/server/internal/service"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/featureflag"
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/internal/featureflags"
+	"github.com/orvilo-ai/orvilo/server/internal/scheduler"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/featureflag"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
 )
 
 type schedulePulseState struct {
@@ -149,9 +149,9 @@ func TestSchedulePulseExampleManifestDrivesDurableRetry(t *testing.T) {
 		mu.Unlock()
 		if err := service.VerifyHookSignature(
 			secret,
-			r.Header.Get("X-Patchbay-Timestamp"),
+			r.Header.Get("X-Orvilo-Timestamp"),
 			raw,
-			r.Header.Get("X-Patchbay-Signature"),
+			r.Header.Get("X-Orvilo-Signature"),
 			time.Now(),
 		); err != nil {
 			http.Error(w, "signature", http.StatusUnauthorized)

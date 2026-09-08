@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/auth"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	"github.com/orvilo-ai/orvilo/server/internal/auth"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
 func enableDevLogin(t *testing.T) {
@@ -38,7 +38,7 @@ func TestDevLoginDisabledByDefault(t *testing.T) {
 	t.Setenv(devLoginEnv, "")
 
 	res := testutil.Call(t, testHandler.DevLogin,
-		testutil.JSONRequest(http.MethodPost, "/auth/dev-login", map[string]string{"email": "dev-login-off@patchbay.ai"}))
+		testutil.JSONRequest(http.MethodPost, "/auth/dev-login", map[string]string{"email": "dev-login-off@orvilo.ai"}))
 	res.Want(http.StatusNotFound)
 }
 
@@ -47,13 +47,13 @@ func TestDevLoginIgnoredInProduction(t *testing.T) {
 	t.Setenv(devLoginEnv, "1")
 
 	res := testutil.Call(t, testHandler.DevLogin,
-		testutil.JSONRequest(http.MethodPost, "/auth/dev-login", map[string]string{"email": "dev-login-prod@patchbay.ai"}))
+		testutil.JSONRequest(http.MethodPost, "/auth/dev-login", map[string]string{"email": "dev-login-prod@orvilo.ai"}))
 	res.Want(http.StatusNotFound)
 }
 
 func TestDevLoginCreatesUserAndIssuesSession(t *testing.T) {
 	enableDevLogin(t)
-	const email = "dev-login-new@patchbay.ai"
+	const email = "dev-login-new@orvilo.ai"
 	deleteUserAfterTest(t, email)
 
 	var body LoginResponse
@@ -85,7 +85,7 @@ func TestDevLoginCreatesUserAndIssuesSession(t *testing.T) {
 
 func TestDevLoginKeepsOnboardingWhenAsked(t *testing.T) {
 	enableDevLogin(t)
-	const email = "dev-login-onboarding@patchbay.ai"
+	const email = "dev-login-onboarding@orvilo.ai"
 	deleteUserAfterTest(t, email)
 
 	res := testutil.Call(t, testHandler.DevLogin,
@@ -103,7 +103,7 @@ func TestDevLoginKeepsOnboardingWhenAsked(t *testing.T) {
 
 func TestDevLoginReusesExistingUser(t *testing.T) {
 	enableDevLogin(t)
-	const email = "dev-login-existing@patchbay.ai"
+	const email = "dev-login-existing@orvilo.ai"
 	deleteUserAfterTest(t, email)
 
 	var first, second LoginResponse
@@ -121,7 +121,7 @@ func TestDevLoginReusesExistingUser(t *testing.T) {
 
 func TestDevLoginDefaultsToConfiguredEmail(t *testing.T) {
 	enableDevLogin(t)
-	const email = "dev-login-default@patchbay.ai"
+	const email = "dev-login-default@orvilo.ai"
 	t.Setenv(devLoginEmailEnv, email)
 	deleteUserAfterTest(t, email)
 
@@ -137,7 +137,7 @@ func TestDevLoginDefaultsToConfiguredEmail(t *testing.T) {
 func TestDevLoginGetRedirectsIntoTheApp(t *testing.T) {
 	enableDevLogin(t)
 	t.Setenv("FRONTEND_ORIGIN", "http://localhost:13000")
-	const email = "dev-login-redirect@patchbay.ai"
+	const email = "dev-login-redirect@orvilo.ai"
 	deleteUserAfterTest(t, email)
 
 	res := testutil.Call(t, testHandler.DevLogin,
@@ -157,7 +157,7 @@ func TestDevLoginGetRedirectsIntoTheApp(t *testing.T) {
 // signed them in as the default user instead.
 func TestDevLoginReadsBodyWithUnknownContentLength(t *testing.T) {
 	enableDevLogin(t)
-	const email = "dev-login-chunked@patchbay.ai"
+	const email = "dev-login-chunked@orvilo.ai"
 	deleteUserAfterTest(t, email)
 
 	req := testutil.JSONRequest(http.MethodPost, "/auth/dev-login", map[string]string{"email": email})
@@ -177,7 +177,7 @@ func TestDevLoginRedirectPrefersConfiguredAppURL(t *testing.T) {
 	enableDevLogin(t)
 	t.Setenv("FRONTEND_ORIGIN", "http://localhost:13000")
 	t.Setenv("ORVILO_APP_URL", "https://app.example.com")
-	const email = "dev-login-appurl@patchbay.ai"
+	const email = "dev-login-appurl@orvilo.ai"
 	deleteUserAfterTest(t, email)
 
 	res := testutil.Call(t, testHandler.DevLogin,

@@ -76,21 +76,21 @@ if ! health_ok; then
 fi
 
 echo ""
-echo "✓ Patchbay is running!"
+echo "✓ Orvilo is running!"
 echo "  Frontend: ${frontend_url}"
 echo "  Backend:  ${backend_url}"
 echo ""
 if [ "$mode" = "build" ]; then
   echo "Built images locally via docker-compose.selfhost.build.yml."
-  echo "Local tags: patchbay-backend:dev and patchbay-web:dev."
+  echo "Local tags: orvilo-backend:dev and orvilo-web:dev."
 else
-  echo "Images: ${ORVILO_BACKEND_IMAGE:-ghcr.io/alexj11324/patchbay-backend}:${ORVILO_IMAGE_TAG:-latest}"
-  echo "        ${ORVILO_WEB_IMAGE:-ghcr.io/alexj11324/patchbay-web}:${ORVILO_IMAGE_TAG:-latest}"
+  echo "Images: ${ORVILO_BACKEND_IMAGE:-ghcr.io/alexj11324/orvilo-backend}:${ORVILO_IMAGE_TAG:-latest}"
+  echo "        ${ORVILO_WEB_IMAGE:-ghcr.io/alexj11324/orvilo-web}:${ORVILO_IMAGE_TAG:-latest}"
 fi
 echo ""
 echo "Log in: configure RESEND_API_KEY in .env for email codes,"
 echo "        or read the generated code from backend logs when Resend is unset."
 echo ""
 echo "Next — install the CLI and connect your machine:"
-echo "  brew install alexj11324/tap/patchbay"
-echo "  patchbay setup self-host"
+echo "  brew install alexj11324/tap/orvilo"
+echo "  orvilo setup self-host"

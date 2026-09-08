@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 func dependencyGraphValidationFixture(edges []dependencyGraphEdgeInput) dependencyGraphApplyInput {
@@ -222,7 +222,7 @@ func TestListDependencyGraphsReturnsNestedResponses(t *testing.T) {
 	}
 	for _, n := range []struct {
 		temp, issue, title string
-		wave              int
+		wave               int
 	}{
 		{"a", issueAID, "task a", 0},
 		{"b", issueBID, "task b", 1},
@@ -316,9 +316,9 @@ func TestRetireDependencyGraphCancelsChildrenAndTasksAtomically(t *testing.T) {
 	parentID := dbfx.Issue(t, "graph retirement parent")
 	agentID := dbfx.Agent(t, "graph retirement agent", testRuntimeID)
 	childID := dbfx.Issue(t, "graph retirement child", testutil.Cols{
-		"status":        "in_progress",
-		"executor_type": "agent",
-		"executor_id":   agentID,
+		"status":          "in_progress",
+		"executor_type":   "agent",
+		"executor_id":     agentID,
 		"parent_issue_id": parentID,
 	})
 	taskID := dbfx.Task(t, agentID, testutil.Cols{

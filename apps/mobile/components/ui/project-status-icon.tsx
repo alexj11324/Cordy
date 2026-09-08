@@ -7,7 +7,7 @@
  */
 import * as React from "react";
 import Svg, { Circle, Line, Path } from "react-native-svg";
-import type { ProjectStatus } from "@patchbay/core/types";
+import type { ProjectStatus } from "@orvilo/core/types";
 import { projectStatusColor } from "@/lib/project-status";
 
 const CX = 7;

@@ -227,9 +227,9 @@ func (l *memoryWebhookRateLimiter) RetryAfter(_ context.Context, key string) tim
 // same nanosecond would otherwise collide on an identical member, ZADD would
 // update-in-place instead of inserting, and the window would under-count.
 const (
-	webhookLimiterKeyPrefix           = "pby:webhook:rate:"
-	webhookIPLimiterKeyPrefix         = "pby:webhook:ip:"
-	webhookAbsoluteIPLimiterKeyPrefix = "pby:webhook:absolute-ip:"
+	webhookLimiterKeyPrefix           = "ovy:webhook:rate:"
+	webhookIPLimiterKeyPrefix         = "ovy:webhook:ip:"
+	webhookAbsoluteIPLimiterKeyPrefix = "ovy:webhook:absolute-ip:"
 )
 
 // webhookLimiterAllowSrc runs the slide-window check atomically on Redis:

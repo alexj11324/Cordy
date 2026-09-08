@@ -1,6 +1,6 @@
 import { Cloud, Monitor, Wifi, WifiHigh, WifiOff } from "lucide-react";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import type { RuntimeHealth } from "@patchbay/core/runtimes";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import type { RuntimeHealth } from "@orvilo/core/runtimes";
 import { ProviderLogo } from "./provider-logo";
 import { useT } from "../../i18n";
 

@@ -2,12 +2,12 @@
 
 import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { workspaceAutomationRunsOptions } from "@patchbay/core/automations/queries";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Tabs, TabsList, TabsTrigger } from "@patchbay/ui/components/ui/tabs";
+import { workspaceAutomationRunsOptions } from "@orvilo/core/automations/queries";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Tabs, TabsList, TabsTrigger } from "@orvilo/ui/components/ui/tabs";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";
 import { RunHistoryList } from "./automation-detail-page";

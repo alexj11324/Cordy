@@ -9,8 +9,8 @@ import {
   Lock,
   Monitor,
 } from "lucide-react";
-import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
-import type { AgentRuntime, MemberWithUser } from "@patchbay/core/types";
+import { isRuntimeUsableForUser } from "@orvilo/core/runtimes";
+import type { AgentRuntime, MemberWithUser } from "@orvilo/core/types";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import {
   PickerItem,
@@ -22,7 +22,7 @@ import {
   runtimeRowLabel,
   type RuntimeMachine,
 } from "../../../runtimes/components/runtime-machines";
-import { Label } from "@patchbay/ui/components/ui/label";
+import { Label } from "@orvilo/ui/components/ui/label";
 import { CHIP_CLASS } from "./chip";
 import { useT } from "../../../i18n";
 

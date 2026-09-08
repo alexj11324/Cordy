@@ -74,7 +74,7 @@ picker selects a real Agent; model selection is a separate runtime setting.
 Model and MCP selections are applied on task claim.
 
 Memories are named Markdown records in `automation_memory`, outside repository
-files and provider-global memory. The UI and `patchbay automation memory
+files and provider-global memory. The UI and `orvilo automation memory
 list/read/write/delete` use the same API. Task credentials access only the
 running automation while memories are enabled. Human access requires the
 existing automation write permission. Revisions reject stale writes, including

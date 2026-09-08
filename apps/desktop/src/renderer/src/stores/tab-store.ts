@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { arrayMove } from "@dnd-kit/sortable";
-import { createPersistStorage, defaultStorage } from "@patchbay/core/platform";
-import { createSafeId } from "@patchbay/core/utils";
-import { isReservedSlug } from "@patchbay/core/paths";
+import { createPersistStorage, defaultStorage } from "@orvilo/core/platform";
+import { createSafeId } from "@orvilo/core/utils";
+import { isReservedSlug } from "@orvilo/core/paths";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -270,8 +270,8 @@ interface TabStore {
 // ---------------------------------------------------------------------------
 //
 // A tab's icon is NOT part of this model. It is derived from `tab.url` at
-// render time via `routeIconForPath` (@patchbay/views/layout), which shares the
-// route → icon map in `@patchbay/core/paths` with the sidebar nav — so the two
+// render time via `routeIconForPath` (@orvilo/views/layout), which shares the
+// route → icon map in `@orvilo/core/paths` with the sidebar nav — so the two
 // surfaces cannot drift, and no stale icon can survive in persisted state.
 // Title is likewise not determined here; it comes from document.title.
 
@@ -923,7 +923,7 @@ export const useTabStore = create<TabStore>()(
       },
     }),
     {
-      name: "patchbay_tabs",
+      name: "orvilo_tabs",
       version: 4,
       storage: createJSONStorage(() => createPersistStorage(defaultStorage)),
       migrate: (persistedState, version) => {

@@ -66,8 +66,8 @@ func (noopLivenessStore) Forget(_ context.Context, _ string) {}
 
 // runtimeLivenessKeyPrefix is the Redis key prefix for runtime liveness
 // records. Mirrors the namespacing used by the other runtime stores
-// (pby:update:*, pby:model_list:*, pby:local_skill_list:*).
-const runtimeLivenessKeyPrefix = "pby:runtime:hb:"
+// (ovy:update:*, ovy:model_list:*, ovy:local_skill_list:*).
+const runtimeLivenessKeyPrefix = "ovy:runtime:hb:"
 
 func runtimeLivenessKey(runtimeID string) string {
 	return runtimeLivenessKeyPrefix + runtimeID

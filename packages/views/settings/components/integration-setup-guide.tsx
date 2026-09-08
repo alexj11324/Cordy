@@ -1,7 +1,7 @@
 "use client";
 
 import { ExternalLink } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@orvilo/ui/components/ui/button";
 import { openExternal } from "../../platform";
 import { useT } from "../../i18n";
 import type { IntegrationChannel } from "./integration-channel-icon";

@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/testutil"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // position ranks an issue inside its own (workspace, status) column, so the

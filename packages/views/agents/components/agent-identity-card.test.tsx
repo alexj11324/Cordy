@@ -5,8 +5,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ComponentProps } from "react";
-import type { Agent, AgentRuntime, MemberWithUser } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent, AgentRuntime, MemberWithUser } from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 import {
@@ -26,9 +26,9 @@ const catalogRef = vi.hoisted(() => ({
   }>,
 }));
 
-vi.mock("@patchbay/core/runtimes", async (importOriginal) => {
+vi.mock("@orvilo/core/runtimes", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("@patchbay/core/runtimes")>();
+    await importOriginal<typeof import("@orvilo/core/runtimes")>();
   return {
     ...actual,
     runtimeModelsOptions: (id: string | null) => ({

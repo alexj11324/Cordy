@@ -30,7 +30,7 @@ func TestWriteProblemKeepsLegacyErrorAndStableFields(t *testing.T) {
 	if problem.Code != "missing_scope" || problem.Detail != "issues:read is required" || problem.Error != problem.Detail {
 		t.Fatalf("unexpected problem: %+v", problem)
 	}
-	if problem.RequestID != "request-123" || problem.Type != "urn:patchbay:problem:missing_scope" {
+	if problem.RequestID != "request-123" || problem.Type != "urn:orvilo:problem:missing_scope" {
 		t.Fatalf("unexpected identity fields: %+v", problem)
 	}
 }

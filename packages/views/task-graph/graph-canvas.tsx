@@ -13,8 +13,8 @@
  * wave/edge list one control away and that list stays the accessible path for
  * anyone a node-link diagram does not serve.
  */
-import type { DependencyGraphNode, DependencyGraphResponse } from "@patchbay/core/types";
-import { cn } from "@patchbay/ui/lib/utils";
+import type { DependencyGraphNode, DependencyGraphResponse } from "@orvilo/core/types";
+import { cn } from "@orvilo/ui/lib/utils";
 import { layoutGraph, type LaidOutNode } from "./graph-layout";
 import type { GraphFilter } from "./graph-utils";
 

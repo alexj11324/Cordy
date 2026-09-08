@@ -305,7 +305,7 @@ function handleDeepLink(url: string): void {
       return;
     }
 
-    // patchbay://invite/<invitationId>
+    // orvilo://invite/<invitationId>
     // Dispatched from the web invite page when the user chooses "Open in
     // desktop app". The renderer opens the invite overlay — no tab, no
     // route persistence, so deep-linking the same invite twice stays safe.
@@ -353,7 +353,7 @@ function loadRenderer(window: BrowserWindow): void {
 }
 
 function installLocaleRefresh(window: BrowserWindow): void {
-  // Electron has no dedicated OS-language event. Check whenever any Patchbay
+  // Electron has no dedicated OS-language event. Check whenever any Orvilo
   // window regains focus, then broadcast so all open windows remain aligned.
   window.on("focus", () => {
     const current = getSystemLocale();
@@ -659,9 +659,8 @@ function createIssueWindow(context: IssueWindowContext): void {
 // DESKTOP_APP_SUFFIX lets parallel worktrees run the same channel
 // side-by-side. The suffix is appended to the app name + userData path.
 // Preview builds keep their packaged identity. Hosted channels pin display
-// names (Orvilo*) separately from userData directories (Patchbay*) so
-// Canary / Staging / Production sessions cannot leak into each other, while
-// production keeps the pre-rebrand folder and Linux WM_CLASS stays "Orvilo".
+// names and userData directories per channel so Canary / Staging / Production
+// sessions cannot leak into each other. Linux WM_CLASS stays "Orvilo".
 app.setName(previewIdentity?.name ?? desktopIdentity.name);
 app.setPath(
   "userData",
@@ -752,7 +751,7 @@ if (!gotTheLock) {
     });
 
     electronApp.setAppUserModelId(
-      previewIdentity ? "ai.patchbay.desktop.dev" : desktopIdentity.appUserModelId,
+      previewIdentity ? "ai.orvilo.desktop.dev" : desktopIdentity.appUserModelId,
     );
 
     installApplicationMenu(previewIdentity ? undefined : async () => {

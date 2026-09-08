@@ -3,15 +3,15 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { buildCreateAgentRequest, type AgentDraft } from "@patchbay/core/agents";
-import { api, ApiError } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import type { Agent } from "@patchbay/core/types";
+import { buildCreateAgentRequest, type AgentDraft } from "@orvilo/core/agents";
+import { api, ApiError } from "@orvilo/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import type { Agent } from "@orvilo/core/types";
 import {
   cacheAgentResponse,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
+} from "@orvilo/core/workspace/queries";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 

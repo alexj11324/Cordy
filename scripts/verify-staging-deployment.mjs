@@ -13,7 +13,7 @@ async function request(fetchImpl, url) {
   return fetchImpl(url, {
     redirect: "manual",
     signal: AbortSignal.timeout(10_000),
-    headers: { "user-agent": "patchbay-staging-verifier/1" },
+    headers: { "user-agent": "orvilo-staging-verifier/1" },
   });
 }
 

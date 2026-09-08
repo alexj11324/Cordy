@@ -96,7 +96,7 @@ type EvidenceKind string
 const (
 	EvidenceComment         EvidenceKind = "comment"
 	EvidenceIssueAssignment EvidenceKind = "issue_assignment"
-	EvidenceAutomationRun    EvidenceKind = "automation_run"
+	EvidenceAutomationRun   EvidenceKind = "automation_run"
 	EvidenceRuleVersion     EvidenceKind = "rule_version"
 	EvidenceRerun           EvidenceKind = "rerun"
 	// EvidenceDelegatedFailure points at the terminal worker task that handed
@@ -116,21 +116,21 @@ const (
 type TriggerKind string
 
 const (
-	KindMemberComment     TriggerKind = "member_comment"
-	KindMemberMention     TriggerKind = "member_mention"
-	KindMemberAssign      TriggerKind = "member_assign"
-	KindAgentMention      TriggerKind = "agent_mention"
-	KindAgentComment      TriggerKind = "agent_comment"
-	KindSubIssueCreate    TriggerKind = "sub_issue_create"
-	KindStageWakeup       TriggerKind = "stage_wakeup"
-	KindQuickCreate       TriggerKind = "quick_create"
-	KindChat              TriggerKind = "chat"
+	KindMemberComment      TriggerKind = "member_comment"
+	KindMemberMention      TriggerKind = "member_mention"
+	KindMemberAssign       TriggerKind = "member_assign"
+	KindAgentMention       TriggerKind = "agent_mention"
+	KindAgentComment       TriggerKind = "agent_comment"
+	KindSubIssueCreate     TriggerKind = "sub_issue_create"
+	KindStageWakeup        TriggerKind = "stage_wakeup"
+	KindQuickCreate        TriggerKind = "quick_create"
+	KindChat               TriggerKind = "chat"
 	KindAutomationSchedule TriggerKind = "automation_schedule"
 	KindAutomationWebhook  TriggerKind = "automation_webhook"
 	KindAutomationManual   TriggerKind = "automation_manual"
-	KindRetry             TriggerKind = "retry"
-	KindRerun             TriggerKind = "rerun"
-	KindDeferredFallback  TriggerKind = "deferred_fallback"
+	KindRetry              TriggerKind = "retry"
+	KindRerun              TriggerKind = "rerun"
+	KindDeferredFallback   TriggerKind = "deferred_fallback"
 )
 
 // Result is the attribution stamped onto a queued run.

@@ -3,16 +3,16 @@
 import { memo, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { CheckCircle2, ChevronRight, ListChevronsDownUp, Copy, Loader2, MessageSquarePlus, MoreHorizontal, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Card } from "@patchbay/ui/components/ui/card";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Card } from "@orvilo/ui/components/ui/card";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@orvilo/ui/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -22,24 +22,24 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import { ActorAvatar } from "../../common/actor-avatar";
-import { ReactionBar } from "@patchbay/ui/components/common/reaction-bar";
-import { cn } from "@patchbay/ui/lib/utils";
-import { copyText } from "@patchbay/ui/lib/clipboard";
-import { useActorName } from "@patchbay/core/workspace/hooks";
+import { ReactionBar } from "@orvilo/ui/components/common/reaction-bar";
+import { cn } from "@orvilo/ui/lib/utils";
+import { copyText } from "@orvilo/ui/lib/clipboard";
+import { useActorName } from "@orvilo/core/workspace/hooks";
 import { useLocale, useTimeAgo } from "../../i18n";
 import { ContentEditor, type ContentEditorRef, ReadonlyContent, useFileDropZone, FileDropOverlay, Attachment as AttachmentRenderer, AttachmentDownloadProvider, useUploadGate, useComposerSubmit } from "../../editor";
 import { useCommentUploads } from "./use-comment-uploads";
-import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
-import { api, dispatchReasonCode, errorCode } from "@patchbay/core/api";
+import { FileUploadButton } from "@orvilo/ui/components/common/file-upload-button";
+import { api, dispatchReasonCode, errorCode } from "@orvilo/core/api";
 import { ReplyInput } from "./reply-input";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 import { useCommentTriggerPreview } from "../hooks/use-comment-trigger-preview";
-import type { TimelineEntry, Attachment } from "@patchbay/core/types";
-import { contentReferencesAttachment } from "@patchbay/core/types";
-import { selectStandaloneAttachments } from "@patchbay/core/attachments/image-sequence";
-import { useCommentCollapseStore, useCommentDraftStore } from "@patchbay/core/issues/stores";
+import type { TimelineEntry, Attachment } from "@orvilo/core/types";
+import { contentReferencesAttachment } from "@orvilo/core/types";
+import { selectStandaloneAttachments } from "@orvilo/core/attachments/image-sequence";
+import { useCommentCollapseStore, useCommentDraftStore } from "@orvilo/core/issues/stores";
 import { useT } from "../../i18n";
 import { CommentsFoldBar } from "./resolved-thread-bar";
 import { deriveThreadResolution } from "./thread-utils";

@@ -386,7 +386,7 @@
     "type_webhook": "Webhook",
     "label_field": "Label (optional)",
     "label_placeholder": "e.g. Weekday morning",
-    "webhook_help": "Patchbay will generate a webhook URL after you save. POST any JSON to it to fire this automation.",
+    "webhook_help": "Orvilo will generate a webhook URL after you save. POST any JSON to it to fire this automation.",
     "submit": "Add trigger",
     "submitting": "Adding...",
     "toast_added_schedule": "Schedule trigger added",

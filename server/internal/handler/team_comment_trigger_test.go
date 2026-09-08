@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // TestCommentMentionsAnyone covers the pure helper that drives the
@@ -68,7 +68,7 @@ func triggersContainIssueExecutorTeamLeader(triggers []commentAgentTrigger) bool
 // cascade integration tests.
 type teamCommentTriggerFixture struct {
 	Issue    db.Issue
-	TeamID  string
+	TeamID   string
 	LeaderID string
 	OtherID  string // second agent in workspace (with runtime), used as a non-leader @mention target
 }
@@ -120,7 +120,7 @@ func newTeamCommentTriggerFixture(t *testing.T) teamCommentTriggerFixture {
 
 	return teamCommentTriggerFixture{
 		Issue:    issue,
-		TeamID:  teamID,
+		TeamID:   teamID,
 		LeaderID: leaderID,
 		OtherID:  otherID,
 	}

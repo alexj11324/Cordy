@@ -3,8 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 async function loadSdk(port: MessagePort | null) {
   vi.resetModules();
-  if (port) vi.stubGlobal("__patchbayPluginBridgePortV2", port);
-  return import("@patchbay/plugin-sdk");
+  if (port) vi.stubGlobal("__orviloPluginBridgePortV2", port);
+  return import("@orvilo/plugin-sdk");
 }
 
 describe("surface SDK guest port", () => {
@@ -20,22 +20,22 @@ describe("surface SDK guest port", () => {
     };
     channel.port2.start();
 
-    const { patchbay } = await loadSdk(channel.port1);
-    await patchbay.context.get(true);
+    const { orvilo } = await loadSdk(channel.port1);
+    await orvilo.context.get(true);
 
     expect(asked).toHaveLength(1);
     expect(asked[0]).toMatchObject({ kind: "action", method: "GET", path: "/context" });
-    expect((globalThis as Record<string, unknown>).__patchbayPluginBridgePortV2).toBeUndefined();
+    expect((globalThis as Record<string, unknown>).__orviloPluginBridgePortV2).toBeUndefined();
   });
 
   it("applies theme events delivered before a plugin makes its first request", async () => {
     const style = { setProperty: vi.fn() };
     vi.stubGlobal("document", { documentElement: { style } });
     const channel = new MessageChannel();
-    const { patchbay } = await loadSdk(channel.port1);
+    const { orvilo } = await loadSdk(channel.port1);
     channel.port2.postMessage({ kind: "theme", theme: { "--background": "black" } });
 
     await vi.waitFor(() => expect(style.setProperty).toHaveBeenCalledWith("--background", "black"));
-    expect(typeof patchbay.ui.onThemeChange).toBe("function");
+    expect(typeof orvilo.ui.onThemeChange).toBe("function");
   });
 });

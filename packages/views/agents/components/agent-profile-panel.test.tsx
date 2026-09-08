@@ -3,21 +3,21 @@
 import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { Agent } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent } from "@orvilo/core/types";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({
     agentDetail: (id: string) => `/acme/agents/${id}`,
     newAgentManual: () => "/acme/agents/new/manual",
   }),
 }));
 
-vi.mock("@patchbay/core/agents", () => ({
+vi.mock("@orvilo/core/agents", () => ({
   effectiveAccessScope: () => "workspace",
   isAgentRuntimeBound: (
     candidate: Pick<Agent, "runtime_id" | "runtime_bound">,

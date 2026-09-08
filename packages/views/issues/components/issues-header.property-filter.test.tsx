@@ -14,19 +14,19 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createStore } from "zustand/vanilla";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
-import { createAuthStore, registerAuthStore } from "@patchbay/core/auth";
+import { setApiInstance } from "@orvilo/core/api";
+import type { ApiClient } from "@orvilo/core/api/client";
+import { createAuthStore, registerAuthStore } from "@orvilo/core/auth";
 import {
   type IssueViewState,
   viewStoreSlice,
-} from "@patchbay/core/issues/stores/view-store";
-import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
-import type { IssueProperty } from "@patchbay/core/types";
+} from "@orvilo/core/issues/stores/view-store";
+import { ViewStoreProvider } from "@orvilo/core/issues/stores/view-store-context";
+import type { IssueProperty } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueFilterMenu } from "./issues-header";
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 

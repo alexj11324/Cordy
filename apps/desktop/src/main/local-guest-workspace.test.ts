@@ -18,7 +18,7 @@ afterEach(async () => {
 });
 
 async function createTemporaryRoot(): Promise<string> {
-  const directory = await mkdtemp(join(tmpdir(), "patchbay-grant-"));
+  const directory = await mkdtemp(join(tmpdir(), "orvilo-grant-"));
   temporaryDirectories.push(directory);
   // macOS resolves /tmp through a symlink; compare against real paths only.
   return realpath(directory);

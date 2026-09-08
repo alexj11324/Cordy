@@ -2,9 +2,9 @@ import {
   matchLocale,
   SUPPORTED_LOCALES,
   type SupportedLocale,
-} from "@patchbay/core/i18n";
+} from "@orvilo/core/i18n";
 
-export const ORVILO_LOCALE_HEADER = "x-patchbay-locale";
+export const ORVILO_LOCALE_HEADER = "x-orvilo-locale";
 
 export function isSupportedLocale(
   value: string | null,

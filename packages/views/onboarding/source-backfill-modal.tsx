@@ -12,7 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useAuthStore } from "@patchbay/core/auth";
+import { useAuthStore } from "@orvilo/core/auth";
 import {
   agentCompletedIssueCountOptions,
   needsSourceBackfill,
@@ -20,13 +20,13 @@ import {
   SOURCE_BACKFILL_MIN_AGENT_DONE_ISSUES,
   type QuestionnaireAnswers,
   type Source,
-} from "@patchbay/core/onboarding";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/onboarding";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   GitHubIcon,
   GoogleIcon,
@@ -67,7 +67,7 @@ const EMPTY_BACKFILL: Pick<
  *      source recorded, never declined, dismiss cap not reached.
  *   2. Workspace-level: agents (or teams) have completed at least
  *      SOURCE_BACKFILL_MIN_AGENT_DONE_ISSUES issues here. Attribution
- *      is a zero-payoff ask for the user, so it waits until Patchbay
+ *      is a zero-payoff ask for the user, so it waits until Orvilo
  *      has visibly delivered value. The count query only runs while
  *      gate 1 passes, so settled users never pay for it.
  *

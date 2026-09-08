@@ -17,7 +17,7 @@ import type {
   DependencyGraphEdge,
   DependencyGraphNode,
   DependencyGraphResponse,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { edgeEndpoint, nodeMatchesFilter, type GraphFilter } from "./graph-utils";
 
 export const NODE_WIDTH = 176;

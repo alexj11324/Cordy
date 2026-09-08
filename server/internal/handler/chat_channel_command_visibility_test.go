@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 func insertChatVisibilityMessage(t *testing.T, sessionID, content, messageKind string, channelIngested bool, createdAt time.Time) {

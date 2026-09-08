@@ -29,7 +29,7 @@ describe("main renderer channel classification", () => {
     expect(CLOUD_MAIN_RENDERER_CHANNELS).toEqual(
       expect.arrayContaining([
         "auth:handoff", // accounts-broker handoff — carries a cloud credential
-        "invite:open", // patchbay://invite/<id>
+        "invite:open", // orvilo://invite/<id>
         "inbox:open", // notification click → cloud issue
       ]),
     );

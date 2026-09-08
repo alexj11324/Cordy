@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 // Concurrency regressions for MUL-5483 review round 7.
@@ -151,7 +151,7 @@ func TestDelegatedSubscribe_BlocksOnConcurrentMemberRevoke(t *testing.T) {
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
 
-	const email = "delegated-concurrent-revoke@patchbay.test"
+	const email = "delegated-concurrent-revoke@orvilo.test"
 	cleanupTestUser(t, email)
 	userID := createTestUser(t, email)
 	t.Cleanup(func() { cleanupTestUser(t, email) })

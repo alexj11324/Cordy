@@ -14,7 +14,7 @@ describe("runtime config", () => {
       schemaVersion: 1,
       apiUrl: "https://api.aspectlylabs.com",
       wsUrl: "wss://api.aspectlylabs.com/ws",
-      appUrl: "https://patchbay.aspectlylabs.com",
+      appUrl: "https://orvilo.aspectlylabs.com",
       accountsUrl: "https://accounts.aspectlylabs.com",
     });
   });
@@ -45,7 +45,7 @@ describe("runtime config", () => {
       schemaVersion: 1,
       apiUrl: "https://api.aspectlylabs.com",
       wsUrl: "wss://api.aspectlylabs.com/ws",
-      appUrl: "https://patchbay.aspectlylabs.com",
+      appUrl: "https://orvilo.aspectlylabs.com",
       accountsUrl: "https://accounts.aspectlylabs.com",
     });
   });
@@ -110,7 +110,7 @@ describe("runtime config", () => {
 
   it("rejects non-http api schemes", () => {
     expect(() =>
-      parseRuntimeConfig(JSON.stringify({ schemaVersion: 1, apiUrl: "file:///tmp/patchbay" })),
+      parseRuntimeConfig(JSON.stringify({ schemaVersion: 1, apiUrl: "file:///tmp/orvilo" })),
     ).toThrow(/apiUrl must use http or https/);
   });
 
@@ -168,7 +168,7 @@ describe("runtime config", () => {
   it("derives dev appUrl by stripping the leading api. label", () => {
     // When the dev renderer is pointed at a remote backend (e.g. a test
     // environment), copy-link / share URLs must reflect that environment's
-    // public web host, not the api host. Patchbay's convention exposes the
+    // public web host, not the api host. Orvilo's convention exposes the
     // api at `api.<web-host>`, so stripping the leading label gives the
     // right web origin without a separate VITE_APP_URL.
     expect(

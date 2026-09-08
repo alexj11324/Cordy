@@ -115,7 +115,7 @@ if curl -sf "http://localhost:${PORT}/health" > /dev/null 2>&1; then
   echo "    Backend already running on :$PORT"
 else
   echo "    Starting backend..."
-  (cd server && go run ./cmd/server) > /tmp/patchbay-check-backend.log 2>&1 &
+  (cd server && go run ./cmd/server) > /tmp/orvilo-check-backend.log 2>&1 &
   BACKEND_PID=$!
   STARTED_BACKEND=true
   wait_for_port "$PORT" "Backend" 90 "/health"
@@ -125,7 +125,7 @@ if curl -sf "http://localhost:${FRONTEND_PORT}" > /dev/null 2>&1; then
   echo "    Frontend already running on :$FRONTEND_PORT"
 else
   echo "    Starting frontend..."
-  pnpm dev:web > /tmp/patchbay-check-frontend.log 2>&1 &
+  pnpm dev:web > /tmp/orvilo-check-frontend.log 2>&1 &
   FRONTEND_PID=$!
   STARTED_FRONTEND=true
   wait_for_port "$FRONTEND_PORT" "Frontend" 120 "/"

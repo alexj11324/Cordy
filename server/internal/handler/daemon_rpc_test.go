@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
+	"github.com/orvilo-ai/orvilo/server/internal/daemonws"
 )
 
 // TestDaemonRPCHandler_TasksClaim pins the WS-first claim binding (MUL-4257):

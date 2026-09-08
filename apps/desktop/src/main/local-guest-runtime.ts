@@ -16,7 +16,7 @@ export function bundledCliPath(
   appPath: string,
   platform: NodeJS.Platform = process.platform,
 ): string {
-  const binaryName = platform === "win32" ? "patchbay.exe" : "patchbay";
+  const binaryName = platform === "win32" ? "orvilo.exe" : "orvilo";
   return join(appPath, "resources", "bin", binaryName).replace(
     "app.asar",
     "app.asar.unpacked",
@@ -27,7 +27,7 @@ function bundledCliDigestPath(
   appPath: string,
   platform: NodeJS.Platform = process.platform,
 ): string {
-  const binaryName = platform === "win32" ? "patchbay.exe" : "patchbay";
+  const binaryName = platform === "win32" ? "orvilo.exe" : "orvilo";
   return join(appPath, "resources", "bin", `${binaryName}.sha256`).replace(
     "app.asar",
     "app.asar.unpacked",

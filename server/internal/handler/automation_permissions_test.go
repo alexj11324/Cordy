@@ -160,7 +160,7 @@ func TestAutomationCollaborator_GrantedMemberCanWrite(t *testing.T) {
 	}
 
 	apID := createAutomationAs(t, "", "ap-collab-grant")
-	member := createPlainMember(t, "ap-collab-grantee@patchbay.test")
+	member := createPlainMember(t, "ap-collab-grantee@orvilo.test")
 
 	updateAs := func(caller string) int {
 		w := httptest.NewRecorder()
@@ -212,8 +212,8 @@ func TestAutomationCollaborator_NonWriterCannotGrant(t *testing.T) {
 	}
 
 	apID := createAutomationAs(t, "", "ap-collab-guard")
-	stranger := createPlainMember(t, "ap-collab-stranger@patchbay.test")
-	victim := createPlainMember(t, "ap-collab-victim@patchbay.test")
+	stranger := createPlainMember(t, "ap-collab-stranger@orvilo.test")
+	victim := createPlainMember(t, "ap-collab-victim@orvilo.test")
 
 	// A non-writer cannot grant access to anyone.
 	grantAutomationAccess(t, stranger, apID, victim, http.StatusForbidden)
@@ -232,9 +232,9 @@ func TestAutomationCollaborator_CannotManageAccessList(t *testing.T) {
 	}
 
 	apID := createAutomationAs(t, "", "ap-collab-noescalate")
-	carol := createPlainMember(t, "ap-collab-carol@patchbay.test")
-	dave := createPlainMember(t, "ap-collab-dave@patchbay.test")
-	bob := createPlainMember(t, "ap-collab-bob2@patchbay.test")
+	carol := createPlainMember(t, "ap-collab-carol@orvilo.test")
+	dave := createPlainMember(t, "ap-collab-dave@orvilo.test")
+	bob := createPlainMember(t, "ap-collab-bob2@orvilo.test")
 
 	// Owner grants two collaborators.
 	grantAutomationAccess(t, "", apID, carol, http.StatusCreated)
@@ -279,7 +279,7 @@ func TestAutomationWrite_PlainMemberCannotMutateOthers(t *testing.T) {
 	}
 
 	apID := createAutomationAs(t, "", "ap-perm-owner-created")
-	member := createPlainMember(t, "ap-perm-stranger@patchbay.test")
+	member := createPlainMember(t, "ap-perm-stranger@orvilo.test")
 
 	// Update.
 	w := httptest.NewRecorder()
@@ -316,7 +316,7 @@ func TestAutomationWrite_CreatorCanMutateOwn(t *testing.T) {
 		t.Skip("database not available")
 	}
 
-	member := createPlainMember(t, "ap-perm-creator@patchbay.test")
+	member := createPlainMember(t, "ap-perm-creator@orvilo.test")
 	apID := createAutomationAs(t, member, "ap-perm-member-created")
 
 	w := httptest.NewRecorder()
@@ -335,7 +335,7 @@ func TestAutomationWrite_AdminCanMutateMembersAutomation(t *testing.T) {
 		t.Skip("database not available")
 	}
 
-	member := createPlainMember(t, "ap-perm-admin-target@patchbay.test")
+	member := createPlainMember(t, "ap-perm-admin-target@orvilo.test")
 	apID := createAutomationAs(t, member, "ap-perm-admin-target")
 
 	// testUserID is the workspace owner.
@@ -358,7 +358,7 @@ func TestAutomationWrite_WebhookSecretRedactedForNonWriter(t *testing.T) {
 	}
 
 	apID := createAutomationAs(t, "", "ap-perm-secret")
-	stranger := createPlainMember(t, "ap-perm-secret-stranger@patchbay.test")
+	stranger := createPlainMember(t, "ap-perm-secret-stranger@orvilo.test")
 
 	// Owner adds a webhook trigger.
 	w := httptest.NewRecorder()

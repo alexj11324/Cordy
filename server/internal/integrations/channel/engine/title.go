@@ -3,8 +3,8 @@ package engine
 import (
 	"strings"
 
-	"github.com/patchbay-ai/patchbay/server/internal/chattitle"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/chattitle"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
 )
 
 // DeriveChatTitle is the deterministic fallback shared by channel-created

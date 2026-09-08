@@ -1855,11 +1855,11 @@ describe("Telegram installation schemas", () => {
       workspace_id: "w1",
       agent_id: "a1",
       bot_id: "12345",
-      bot_username: "patchbay_test_bot",
+      bot_username: "orvilo_test_bot",
       installer_user_id: "u1",
       status: "active",
     });
-    expect(parsed.bot_username).toBe("patchbay_test_bot");
+    expect(parsed.bot_username).toBe("orvilo_test_bot");
     expect(parsed.status).toBe("installed");
   });
 

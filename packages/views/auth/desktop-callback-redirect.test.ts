@@ -20,23 +20,23 @@ describe("redirectToDesktopApp", () => {
     return hrefSetter;
   }
 
-  it("opens the stored staging scheme instead of production patchbay://", () => {
+  it("opens the stored staging scheme instead of production orvilo://", () => {
     const hrefSetter = captureHref();
     redirectToDesktopApp(
       "staging-code",
       "desktop-state",
-      "patchbay-staging-5718c47b86bf9ece",
+      "orvilo-staging-5718c47b86bf9ece",
     );
     expect(hrefSetter).toHaveBeenCalledWith(
-      "patchbay-staging-5718c47b86bf9ece://auth/callback?code=staging-code&state=desktop-state",
+      "orvilo-staging-5718c47b86bf9ece://auth/callback?code=staging-code&state=desktop-state",
     );
   });
 
-  it("keeps packaged production on patchbay://", () => {
+  it("keeps packaged production on orvilo://", () => {
     const hrefSetter = captureHref();
     redirectToDesktopApp("one-time-code", "desktop-state");
     expect(hrefSetter).toHaveBeenCalledWith(
-      "patchbay://auth/callback?code=one-time-code&state=desktop-state",
+      "orvilo://auth/callback?code=one-time-code&state=desktop-state",
     );
   });
 

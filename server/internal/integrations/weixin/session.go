@@ -16,7 +16,7 @@ const (
 	installSessionTTL        = 5 * time.Minute
 	InstallSessionTTLSeconds = int(installSessionTTL / time.Second)
 	installSessionCap        = 1024
-	installSessionKey        = "patchbay:{weixin_install_session}:"
+	installSessionKey        = "orvilo:{weixin_install_session}:"
 	redisSessionTimeout      = 250 * time.Millisecond
 )
 

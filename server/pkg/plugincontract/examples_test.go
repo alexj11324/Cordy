@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
+	"github.com/orvilo-ai/orvilo/server/pkg/plugincontract"
 )
 
 // The shipped examples are documentation, and documentation that does not parse
@@ -28,7 +28,7 @@ func TestShippedExamplesParseAndInstallOnThisHost(t *testing.T) {
 		if !entry.IsDir() {
 			continue
 		}
-		path := filepath.Join(root, entry.Name(), "patchbay.plugin.json")
+		path := filepath.Join(root, entry.Name(), "orvilo.plugin.json")
 		raw, err := os.ReadFile(path)
 		if os.IsNotExist(err) {
 			continue

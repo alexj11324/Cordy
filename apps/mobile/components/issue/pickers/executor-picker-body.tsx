@@ -3,7 +3,7 @@ import { FlatList, Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, IssueExecutorType, Team } from "@patchbay/core/types";
+import type { Agent, IssueExecutorType, Team } from "@orvilo/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { agentListOptions } from "@/data/queries/agents";

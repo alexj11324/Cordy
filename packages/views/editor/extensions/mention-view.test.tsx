@@ -20,7 +20,7 @@ vi.mock("@tiptap/react", () => ({
   NodeViewWrapper: ({ children, ...rest }: any) => <span {...rest}>{children}</span>,
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/acme/issues/${id}`,
     projectDetail: (id: string) => `/acme/projects/${id}`,

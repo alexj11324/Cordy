@@ -4,7 +4,7 @@ import { type ReactNode } from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -46,13 +46,13 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: <T,>(opts: T) => opts,
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@orvilo/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({
     getAgentName: (agentId: string) => `Agent ${agentId}`,
     getMemberName: () => "Unknown",
@@ -69,7 +69,7 @@ vi.mock("../../common/actor-avatar", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/telegram", () => ({
+vi.mock("@orvilo/core/telegram", () => ({
   telegramInstallationsOptions: () => ({
     queryKey: ["telegram", "installations"],
     queryFn: vi.fn(),
@@ -77,14 +77,14 @@ vi.mock("@patchbay/core/telegram", () => ({
   telegramKeys: { installations: (wsId: string) => ["telegram", "installations", wsId] },
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@orvilo/core/api", () => ({
   api: {
     registerTelegramBot: mockRegister,
     deleteTelegramInstallation: mockDeleteInstallation,
   },
 }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@orvilo/core/auth", () => {
   const useAuthStore = Object.assign(
     (sel?: (s: { user: { id: string } }) => unknown) =>
       sel ? sel({ user: { id: "user-1" } }) : { user: { id: "user-1" } },
@@ -143,7 +143,7 @@ describe("TelegramAgentBindButton", () => {
     await userEvent.click(screen.getByTestId("telegram-agent-connect"));
     await userEvent.click(await screen.findByTestId("telegram-docs-link"));
     expect(mockOpenExternal).toHaveBeenCalledWith(
-      "https://patchbay.aspectlylabs.com/docs/telegram-bot-integration",
+      "https://orvilo.aspectlylabs.com/docs/telegram-bot-integration",
     );
   });
 

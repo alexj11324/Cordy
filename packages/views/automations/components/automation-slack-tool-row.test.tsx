@@ -4,11 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import type {
   AutomationToolsConfig,
-} from "@patchbay/core/automations";
+} from "@orvilo/core/automations";
 import type {
   SlackAutomationChannel,
   SlackInstallation,
-} from "@patchbay/core/types";
+} from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { AutomationSlackToolRow } from "./automation-slack-tool-row";
 

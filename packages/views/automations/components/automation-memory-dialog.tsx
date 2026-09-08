@@ -7,11 +7,11 @@ import {
   automationMemoryOptions,
   useDeleteAutomationMemory,
   useUpdateAutomationMemory,
-} from "@patchbay/core/automations";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import type { AutomationMemoryFile, AutomationMemorySummary } from "@patchbay/core/types";
-import { ApiError } from "@patchbay/core/api/client";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/automations";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import type { AutomationMemoryFile, AutomationMemorySummary } from "@orvilo/core/types";
+import { ApiError } from "@orvilo/core/api/client";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -19,16 +19,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
+} from "@orvilo/ui/components/ui/select";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 

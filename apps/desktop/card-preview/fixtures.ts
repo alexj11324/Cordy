@@ -1,4 +1,4 @@
-import type { Agent, AgentTask, Issue, Workspace } from "@patchbay/core/types";
+import type { Agent, AgentTask, Issue, Workspace } from "@orvilo/core/types";
 
 const timestamp = new Date().toISOString();
 export const workspace: Workspace = {

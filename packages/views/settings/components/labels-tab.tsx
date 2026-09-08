@@ -4,18 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MoreHorizontal, Pencil, Plus, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspaceId } from "@orvilo/core/hooks";
 import {
   labelListOptions,
   useCreateLabel,
   useDeleteLabel,
   useUpdateLabel,
-} from "@patchbay/core/labels";
-import type { Label, LabelResourceType } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
+} from "@orvilo/core/labels";
+import type { Label, LabelResourceType } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
+import { Label as FieldLabel } from "@orvilo/ui/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +23,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,13 +33,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@orvilo/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@orvilo/ui/components/ui/dropdown-menu";
 import { ColorPicker, COLOR_PICKER_PRESETS } from "../../common/color-picker";
 import { useLocale, useT } from "../../i18n";
 import { SettingsCard, SettingsEmpty, SettingsIconButton, SettingsListRow, SettingsPillButton, SettingsSearchField, SettingsSection, SettingsTab } from "./settings-layout";

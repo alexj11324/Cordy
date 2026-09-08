@@ -11,7 +11,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@patchbay/ui/components/ui/chart";
+} from "@orvilo/ui/components/ui/chart";
 import { useLocale, useT } from "../../../i18n";
 
 // Weekly counterpart of DailyTasksChart — same completed/cancelled/failed

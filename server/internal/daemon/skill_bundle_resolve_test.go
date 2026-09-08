@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/patchbay-ai/patchbay/server/pkg/skillbundle"
-	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
+	"github.com/orvilo-ai/orvilo/server/pkg/skillbundle"
+	"github.com/orvilo-ai/orvilo/server/pkg/taskfailure"
 )
 
 func TestSkillBundleResolveTimeout(t *testing.T) {

@@ -4,27 +4,27 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
 import { Minus, Maximize2, Minimize2, ChevronDown, Plus, Check, Archive, Pencil, Loader2, Square } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { cn } from "@orvilo/ui/lib/utils";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@orvilo/ui/components/ui/tooltip";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
+} from "@orvilo/ui/components/ui/popover";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useAuthStore } from "@patchbay/core/auth";
-import { agentListOptions, memberListOptions } from "@patchbay/core/workspace/queries";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import { canAssignAgent } from "@patchbay/views/issues/components";
-import { api, dispatchReasonCode } from "@patchbay/core/api";
+import { useWorkspaceId } from "@orvilo/core/hooks";
+import { useAuthStore } from "@orvilo/core/auth";
+import { agentListOptions, memberListOptions } from "@orvilo/core/workspace/queries";
+import { projectListOptions } from "@orvilo/core/projects/queries";
+import { canAssignAgent } from "@orvilo/views/issues/components";
+import { api, dispatchReasonCode } from "@orvilo/core/api";
 import {
   isAgentRuntimeBound,
   useAgentPresenceDetail,
   useCustomizeConversationStartersHref,
   useWorkspaceAgentAvailability,
-} from "@patchbay/core/agents";
+} from "@orvilo/core/agents";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useAppForeground } from "../../common/use-app-foreground";
 import {
@@ -51,7 +51,7 @@ import {
   pendingChatTasksOptions,
   chatKeys,
   isTaskMessageTaskId,
-} from "@patchbay/core/chat/queries";
+} from "@orvilo/core/chat/queries";
 import {
   useCreateChatSession,
   useMarkChatSessionRead,
@@ -59,14 +59,14 @@ import {
   useSetChatSessionArchived,
   useSetChatSessionProject,
   useUpdateChatSession,
-} from "@patchbay/core/chat/mutations";
-import { useChatStore } from "@patchbay/core/chat";
-import { upsertChatMessageToCaches } from "@patchbay/core/chat/message-cache";
-import { chatQuickActionsPendingOptions } from "@patchbay/core/chat/queries";
-import { useQuickActionsPendingTimeout } from "@patchbay/core/chat/use-quick-actions-pending-timeout";
+} from "@orvilo/core/chat/mutations";
+import { useChatStore } from "@orvilo/core/chat";
+import { upsertChatMessageToCaches } from "@orvilo/core/chat/message-cache";
+import { chatQuickActionsPendingOptions } from "@orvilo/core/chat/queries";
+import { useQuickActionsPendingTimeout } from "@orvilo/core/chat/use-quick-actions-pending-timeout";
 import { useQuickActionsFailureToast } from "./use-quick-actions-failure-toast";
-import { hideQueuedChatMessages } from "@patchbay/core/chat/pending";
-import { removeChatMessageFromCaches } from "@patchbay/core/realtime";
+import { hideQueuedChatMessages } from "@orvilo/core/chat/pending";
+import { removeChatMessageFromCaches } from "@orvilo/core/realtime";
 import { useChatDraftRestore } from "./use-chat-draft-restore";
 import { useChatTaskActions } from "./use-chat-task-actions";
 import { useChatInputFocus } from "./use-chat-input-focus";
@@ -79,7 +79,7 @@ import { ChatResizeHandles } from "./chat-resize-handles";
 import { useChatContextItems } from "./use-chat-context-items";
 import { useChatResize } from "./use-chat-resize";
 import { useVisualViewportKeyboard } from "./use-visual-viewport-keyboard";
-import { useIsMobile } from "@patchbay/ui/hooks/use-mobile";
+import { useIsMobile } from "@orvilo/ui/hooks/use-mobile";
 import {
   hasInFlightPendingTask,
   isStillOnComposeTarget,
@@ -87,8 +87,8 @@ import {
   seedAcceptedPendingTask,
 } from "./use-chat-controller";
 import { useChatProjectContextSupport } from "./use-chat-project-context-support";
-import { createLogger } from "@patchbay/core/logger";
-import type { Agent, Attachment, ChatMessage, ChatSession, PendingChatTasksResponse } from "@patchbay/core/types";
+import { createLogger } from "@orvilo/core/logger";
+import type { Agent, Attachment, ChatMessage, ChatSession, PendingChatTasksResponse } from "@orvilo/core/types";
 import { useLocale, useT } from "../../i18n";
 
 const uiLogger = createLogger("chat.ui");

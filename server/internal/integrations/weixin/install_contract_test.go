@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
 )
 
 func TestInstallationStatusFencesWorkspaceAndInitiatorBeforeProviderCall(t *testing.T) {

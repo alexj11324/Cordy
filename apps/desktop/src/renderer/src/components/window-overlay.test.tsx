@@ -11,10 +11,10 @@ vi.mock("./desktop-settings-page", () => ({
   ),
 }));
 
-vi.mock("@patchbay/views/invite", () => ({ InvitePage: () => null }));
-vi.mock("@patchbay/views/invitations", () => ({ InvitationsPage: () => null }));
-vi.mock("@patchbay/views/onboarding", () => ({ OnboardingFlow: () => null }));
-vi.mock("@patchbay/views/navigation", () => ({
+vi.mock("@orvilo/views/invite", () => ({ InvitePage: () => null }));
+vi.mock("@orvilo/views/invitations", () => ({ InvitationsPage: () => null }));
+vi.mock("@orvilo/views/onboarding", () => ({ OnboardingFlow: () => null }));
+vi.mock("@orvilo/views/navigation", () => ({
   useNavigation: () => ({ push: vi.fn() }),
 }));
 vi.mock("../platform/use-local-runtimes-pending", () => ({

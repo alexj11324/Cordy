@@ -7,9 +7,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/patchbay-ai/patchbay/server/internal/events"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/events"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 type noDeliveryOutboundQueries struct{}
@@ -67,7 +67,7 @@ func TestOutboundReassignmentRevokesOldDeliverySnapshot(t *testing.T) {
 			event := events.Event{
 				Type: protocol.EventChatDone, TaskID: "11111111-1111-1111-1111-111111111111",
 				ChatSessionID: "22222222-2222-2222-2222-222222222222",
-				Payload: protocol.ChatDonePayload{Content: "reply from the original agent"},
+				Payload:       protocol.ChatDonePayload{Content: "reply from the original agent"},
 			}
 			if err := o.processEvent(context.Background(), event); !errors.Is(err, tc.want) {
 				t.Fatalf("processEvent = %v, want %v", err, tc.want)
@@ -82,7 +82,7 @@ func TestOutboundFailsClosedWithoutTaskDeliverySnapshot(t *testing.T) {
 		Type:          protocol.EventChatDone,
 		TaskID:        "11111111-1111-1111-1111-111111111111",
 		ChatSessionID: "22222222-2222-2222-2222-222222222222",
-		Payload:       protocol.ChatDonePayload{Content: "must stay in Patchbay"},
+		Payload:       protocol.ChatDonePayload{Content: "must stay in Orvilo"},
 	}
 	if err := o.processEvent(context.Background(), event); err != nil {
 		t.Fatalf("processEvent: %v", err)

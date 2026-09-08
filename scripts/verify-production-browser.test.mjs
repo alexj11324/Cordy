@@ -23,10 +23,10 @@ const SOURCE_SHA = "a".repeat(40);
 
 test("uses only the three public Aspectly Labs product origins", () => {
   assert.equal(API_ORIGIN, "https://api.aspectlylabs.com");
-  assert.equal(PRODUCT_ORIGIN, "https://patchbay.aspectlylabs.com");
+  assert.equal(PRODUCT_ORIGIN, "https://orvilo.aspectlylabs.com");
   assert.equal(ACCOUNTS_ORIGIN, "https://accounts.aspectlylabs.com");
-  assert.equal(PRODUCT_COOKIE_DOMAIN, "patchbay.aspectlylabs.com");
-  assert.equal(DESKTOP_CALLBACK_PROTOCOL, "patchbay");
+  assert.equal(PRODUCT_COOKIE_DOMAIN, "orvilo.aspectlylabs.com");
+  assert.equal(DESKTOP_CALLBACK_PROTOCOL, "orvilo");
 });
 
 test("staging browser origins stay off the public product hosts", () => {
@@ -37,11 +37,11 @@ test("staging browser origins stay off the public product hosts", () => {
   assert.equal(staging.cookieDomain, "staging.aspectlylabs.com");
   assert.equal(
     staging.desktopCallbackProtocol,
-    "patchbay-staging-aaaaaaaaaaaaaaaa",
+    "orvilo-staging-aaaaaaaaaaaaaaaa",
   );
   assert.match(
     staging.desktopCallbackProtocol,
-    /^patchbay-staging-[a-f0-9]{16}$/u,
+    /^orvilo-staging-[a-f0-9]{16}$/u,
   );
   assert.notEqual(staging.cookieDomain, PRODUCT_COOKIE_DOMAIN);
   assert.notEqual(staging.desktopCallbackProtocol, DESKTOP_CALLBACK_PROTOCOL);
@@ -95,7 +95,7 @@ test("production browser acceptance includes the standalone broker and Go Clerk 
   assert.match(source, /user\?\.is_guest/u);
   assert.match(
     source,
-    /headers: \{\s*origin: ACCOUNTS_ORIGIN,\s*"x-patchbay-auth-contract-version": "1",\s*\}/u,
+    /headers: \{\s*origin: ACCOUNTS_ORIGIN,\s*"x-orvilo-auth-contract-version": "1",\s*\}/u,
   );
 });
 
@@ -122,7 +122,7 @@ test("authenticated Web acceptance carries the real cookie session", async () =>
   );
   assert.match(source, /storageState: await context\.storageState\(\)/u);
   assert.match(source, /storageState: auth\.storageState/u);
-  assert.doesNotMatch(source, /localStorage\.setItem\("patchbay_token"/u);
+  assert.doesNotMatch(source, /localStorage\.setItem\("orvilo_token"/u);
 });
 
 test("requires Google and not a lookalike OAuth destination", () => {
@@ -139,13 +139,13 @@ test("requires Google and not a lookalike OAuth destination", () => {
 
 test("requires matching build and commit headers", () => {
   const headers = new Headers({
-    "x-patchbay-build": `sha-${SOURCE_SHA}`,
-    "x-patchbay-commit": SOURCE_SHA,
+    "x-orvilo-build": `sha-${SOURCE_SHA}`,
+    "x-orvilo-commit": SOURCE_SHA,
   });
   assert.doesNotThrow(() =>
     requireBuildHeaders(headers, SOURCE_SHA, "runtime"),
   );
-  headers.set("x-patchbay-commit", "b".repeat(40));
+  headers.set("x-orvilo-commit", "b".repeat(40));
   assert.throws(
     () => requireBuildHeaders(headers, SOURCE_SHA, "runtime"),
     /reported commit/u,
@@ -173,10 +173,10 @@ test("accepts credentials only from the matching deployment receipt", () => {
 });
 
 test("validates one-time broker completion and redemption payloads", () => {
-  const code = `pbd_${"c".repeat(43)}`;
+  const code = `ovd_${"c".repeat(43)}`;
   assert.equal(
     requireDesktopCompletion({
-      callback_protocol: "patchbay",
+      callback_protocol: "orvilo",
       code,
     }),
     code,
@@ -192,7 +192,7 @@ test("validates one-time broker completion and redemption payloads", () => {
   assert.throws(
     () =>
       requireDesktopCompletion({
-        callback_protocol: "patchbay-staging-aaaaaaaaaaaaaaaa",
+        callback_protocol: "orvilo-staging-aaaaaaaaaaaaaaaa",
         code,
       }),
     /invalid desktop completion/u,
@@ -200,10 +200,10 @@ test("validates one-time broker completion and redemption payloads", () => {
   assert.equal(
     requireDesktopCompletion(
       {
-        callback_protocol: "patchbay-staging-aaaaaaaaaaaaaaaa",
+        callback_protocol: "orvilo-staging-aaaaaaaaaaaaaaaa",
         code,
       },
-      "patchbay-staging-aaaaaaaaaaaaaaaa",
+      "orvilo-staging-aaaaaaaaaaaaaaaa",
     ),
     code,
   );
@@ -223,8 +223,8 @@ test("browser acceptance uses the environment cookie domain and desktop scheme",
   );
   assert.match(source, /callback_protocol: DESKTOP_CALLBACK_PROTOCOL/u);
   assert.match(source, /domain: PRODUCT_COOKIE_DOMAIN/u);
-  assert.doesNotMatch(source, /callback_protocol: "patchbay"/u);
-  assert.doesNotMatch(source, /domain: "patchbay\.aspectlylabs\.com"/u);
+  assert.doesNotMatch(source, /callback_protocol: "orvilo"/u);
+  assert.doesNotMatch(source, /domain: "orvilo\.aspectlylabs\.com"/u);
 });
 
 test("refuses to open a browser without a real Clerk publishable key", () => {

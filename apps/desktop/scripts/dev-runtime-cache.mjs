@@ -34,18 +34,18 @@ export function defaultDevRuntimeCacheDir({
   const configured = env.ORVILO_DEV_RUNTIME_CACHE_DIR;
   if (configured) return resolve(configured);
   if (platform === "darwin") {
-    return join(home, "Library", "Caches", "Patchbay", "dev-runtime");
+    return join(home, "Library", "Caches", "Orvilo", "dev-runtime");
   }
   if (platform === "win32") {
     return join(
       env.LOCALAPPDATA || join(home, "AppData", "Local"),
-      "Patchbay",
+      "Orvilo",
       "dev-runtime",
     );
   }
   return join(
     env.XDG_CACHE_HOME || join(home, ".cache"),
-    "patchbay",
+    "orvilo",
     "dev-runtime",
   );
 }
@@ -74,7 +74,7 @@ export function listGoSourceFiles(repoRoot) {
 
 export function fingerprintFiles(repoRoot, files) {
   const hash = createHash("sha256");
-  hash.update(`patchbay-go-runtime-v${DEV_RUNTIME_CACHE_SCHEMA_VERSION}\0`);
+  hash.update(`orvilo-go-runtime-v${DEV_RUNTIME_CACHE_SCHEMA_VERSION}\0`);
 
   for (const relativePath of [...files].sort()) {
     const absolutePath = join(repoRoot, relativePath);

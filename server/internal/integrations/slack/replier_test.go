@@ -9,9 +9,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
-	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 )
 
 type fakeReplySender struct {
@@ -44,7 +44,7 @@ func newTestReplier(binding bindingMinter, sender replySender) *OutboundReplier 
 	r := NewOutboundReplier(OutboundReplierConfig{
 		Binding: binding,
 		Decrypt: nil, // identity: stored bot token is base64 plaintext
-		AppURL:  "https://patchbay.example",
+		AppURL:  "https://orvilo.example",
 	})
 	r.newSender = func(credentials) replySender { return sender }
 	return r
@@ -59,7 +59,7 @@ func testResolvedInstallation(t *testing.T) engine.ResolvedInstallation {
 		ID:          mustUUID(t, "44444444-4444-4444-4444-444444444444"),
 		WorkspaceID: mustUUID(t, "11111111-1111-1111-1111-111111111111"),
 		AgentID:     mustUUID(t, "22222222-2222-2222-2222-222222222222"),
-		Installed:      true,
+		Installed:   true,
 		Platform:    db.ChannelInstallation{Config: []byte(replierConfigJSON)},
 	}
 }
@@ -117,7 +117,7 @@ func TestReply_NeedsBinding_MintsAndPostsPrompt(t *testing.T) {
 	}
 	// The prompt must carry the redeem URL with the minted token, wrapped as a
 	// Slack link so formatMrkdwn does not mangle the base64url token.
-	wantLink := "<https://patchbay.example/slack/bind?token=tok_RAW-123|link your account>"
+	wantLink := "<https://orvilo.example/slack/bind?token=tok_RAW-123|link your account>"
 	if !strings.Contains(sender.sent.Text, wantLink) {
 		t.Errorf("prompt text = %q, want it to contain %q", sender.sent.Text, wantLink)
 	}

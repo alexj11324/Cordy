@@ -12,9 +12,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/patchbay-ai/patchbay/server/internal/util"
-	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
-	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/orvilo-ai/orvilo/server/internal/util"
+	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // Budgets for one suggestion pass. The whole call is a nicety attached to a
@@ -96,7 +96,7 @@ type ChatQuickActionsLLM interface {
 //
 // The rules are deliberately prescriptive about WHO the suggestions are for.
 // The retired daemon pass ran as a resumed turn inside the agent's own session,
-// so it inherited the Patchbay runtime brief's identity and drifted toward
+// so it inherited the Orvilo runtime brief's identity and drifted toward
 // agent-operations actions; this pass has no such context and must be told the
 // frame explicitly.
 //

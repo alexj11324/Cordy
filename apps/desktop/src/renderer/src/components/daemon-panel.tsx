@@ -15,17 +15,17 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { truncateWithEllipsis } from "@patchbay/core/utils";
-import { cn } from "@patchbay/ui/lib/utils";
-import { copyText } from "@patchbay/ui/lib/clipboard";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { truncateWithEllipsis } from "@orvilo/core/utils";
+import { cn } from "@orvilo/ui/lib/utils";
+import { copyText } from "@orvilo/ui/lib/clipboard";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import { toast } from "sonner";
-import { useT } from "@patchbay/views/i18n";
+import { useT } from "@orvilo/views/i18n";
 import type { DaemonStatus } from "../../../shared/daemon-types";
 import {
   DAEMON_STATE_COLORS,

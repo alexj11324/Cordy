@@ -63,13 +63,13 @@ jobs:
       matrix:
         include:
           - name: backend
-            repository: patchbay-backend
+            repository: orvilo-backend
           - name: web
-            repository: patchbay-web
+            repository: orvilo-web
           - name: docs
-            repository: patchbay-docs
+            repository: orvilo-docs
           - name: auth-broker
-            repository: patchbay-auth-broker
+            repository: orvilo-auth-broker
     steps:
       - name: Checkout exact source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -101,7 +101,7 @@ jobs:
           file: Dockerfile
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/patchbay-backend:sha-${{ needs.resolve-source.outputs.sha }}
+          tags: ghcr.io/${{ github.repository_owner }}/orvilo-backend:sha-${{ needs.resolve-source.outputs.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.resolve-source.outputs.sha }}
@@ -123,7 +123,7 @@ jobs:
           file: Dockerfile.web
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/patchbay-web:sha-${{ needs.resolve-source.outputs.sha }}
+          tags: ghcr.io/${{ github.repository_owner }}/orvilo-web:sha-${{ needs.resolve-source.outputs.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.resolve-source.outputs.sha }}
@@ -145,7 +145,7 @@ jobs:
           file: Dockerfile.docs
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/patchbay-docs:sha-${{ needs.resolve-source.outputs.sha }}
+          tags: ghcr.io/${{ github.repository_owner }}/orvilo-docs:sha-${{ needs.resolve-source.outputs.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.resolve-source.outputs.sha }}
@@ -166,7 +166,7 @@ jobs:
           file: Dockerfile.auth-broker
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker:sha-${{ needs.resolve-source.outputs.sha }}
+          tags: ghcr.io/${{ github.repository_owner }}/orvilo-auth-broker:sha-${{ needs.resolve-source.outputs.sha }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.resolve-source.outputs.sha }}
@@ -272,7 +272,7 @@ jobs:
       contents: read
     environment:
       name: production
-      url: https://patchbay.aspectlylabs.com
+      url: https://orvilo.aspectlylabs.com
     steps:
       - name: Checkout deployment verification
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

@@ -85,7 +85,7 @@ describe("useHtmlPreviewScrollRestore", () => {
       new MessageEvent("message", {
         source: iframe.contentWindow,
         data: {
-          __patchbay: "__patchbay",
+          __orvilo: "__orvilo",
           kind: "scroll",
           y: 512,
           height: 4000,
@@ -105,7 +105,7 @@ describe("useHtmlPreviewScrollRestore", () => {
       new MessageEvent("message", {
         source: iframe.contentWindow,
         data: {
-          __patchbay: "__patchbay",
+          __orvilo: "__orvilo",
           kind: "scroll",
           y: 9999,
           height: 1,
@@ -143,7 +143,7 @@ describe("useHtmlPreviewScrollRestore", () => {
       new MessageEvent("message", {
         source: iframe.contentWindow,
         data: {
-          __patchbay: "__patchbay",
+          __orvilo: "__orvilo",
           kind: "scroll",
           y: 800,
           height: 5000,
@@ -226,7 +226,7 @@ describe("useHtmlPreviewScrollRestore", () => {
     const { result } = renderWith(text, webAdapter);
     expect(result.current.restoreActive).toBe(false);
     const srcDoc = result.current.buildSrcDoc(text);
-    expect(srcDoc).not.toContain("__patchbay");
+    expect(srcDoc).not.toContain("__orvilo");
     expect(srcDoc).not.toContain(buildScrollBridge("x"));
   });
 
@@ -279,7 +279,7 @@ describe("useHtmlPreviewScrollRestore", () => {
         new MessageEvent("message", {
           source: iframe.contentWindow,
           data: {
-            __patchbay: "__patchbay",
+            __orvilo: "__orvilo",
             kind: "ready",
             y: 100 + i,
             height: 9000,
