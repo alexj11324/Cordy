@@ -239,25 +239,43 @@ RETURNING i.id, i.connection_id, i.delivery_id, i.event_type, i.payload,
           i.attempts, i.max_attempts;
 
 -- name: RenewLinearSyncInbox :execrows
-UPDATE linear_sync_inbox
-SET locked_until = now() + make_interval(secs => $2)
-WHERE id = $1 AND locked_by = $3 AND processed_at IS NULL AND dead_lettered_at IS NULL;
+-- Materialization keeps the wall-clock predicate above LockRows. Testing it
+-- in the locking SELECT can accept a lease that expires during the lock wait.
+WITH claimed AS MATERIALIZED (
+    SELECT owned.id, owned.locked_by, owned.attempts, owned.locked_until,
+           owned.processed_at, owned.dead_lettered_at
+    FROM linear_sync_inbox owned
+    WHERE owned.id = $1
+    FOR UPDATE OF owned
+)
+UPDATE linear_sync_inbox q
+SET locked_until = clock_timestamp() + make_interval(secs => $2)
+FROM claimed
+WHERE q.id = claimed.id AND claimed.locked_by = sqlc.narg('locked_by')::text AND claimed.attempts = sqlc.arg('attempts')::integer
+  AND claimed.locked_until > clock_timestamp()
+  AND claimed.processed_at IS NULL AND claimed.dead_lettered_at IS NULL;
 
 -- name: CompleteLinearSyncInbox :execrows
 UPDATE linear_sync_inbox
 SET processed_at = now(), locked_by = NULL, locked_until = NULL, last_error = NULL
-WHERE id = $1 AND locked_by = $2;
+WHERE id = $1 AND locked_by = $2
+  AND attempts = $3 AND locked_until > clock_timestamp()
+  AND processed_at IS NULL AND dead_lettered_at IS NULL;
 
 -- name: RetryLinearSyncInbox :execrows
 UPDATE linear_sync_inbox
-SET available_at = now() + make_interval(secs => $2), locked_by = NULL,
+SET available_at = clock_timestamp() + make_interval(secs => $2), locked_by = NULL,
     locked_until = NULL, last_error = $3
-WHERE id = $1 AND locked_by = $4;
+WHERE id = $1 AND locked_by = $4
+  AND attempts = $5 AND locked_until > clock_timestamp()
+  AND processed_at IS NULL AND dead_lettered_at IS NULL;
 
 -- name: DeadLetterLinearSyncInbox :execrows
 UPDATE linear_sync_inbox
 SET dead_lettered_at = now(), locked_by = NULL, locked_until = NULL, last_error = $2
-WHERE id = $1 AND locked_by = $3;
+WHERE id = $1 AND locked_by = $3
+  AND attempts = $4 AND locked_until > clock_timestamp()
+  AND processed_at IS NULL AND dead_lettered_at IS NULL;
 
 -- name: ClaimLinearSyncOutbox :one
 WITH candidate AS (
@@ -282,27 +300,45 @@ RETURNING o.id, o.workspace_id, o.binding_id, o.issue_id, o.event_type,
           o.payload, o.attempts, o.max_attempts;
 
 -- name: RenewLinearSyncOutbox :execrows
-UPDATE linear_sync_outbox
-SET locked_until = now() + make_interval(secs => $2), updated_at = now()
-WHERE id = $1 AND locked_by = $3 AND processed_at IS NULL AND dead_lettered_at IS NULL;
+-- Materialization keeps the wall-clock predicate above LockRows. Testing it
+-- in the locking SELECT can accept a lease that expires during the lock wait.
+WITH claimed AS MATERIALIZED (
+    SELECT owned.id, owned.locked_by, owned.attempts, owned.locked_until,
+           owned.processed_at, owned.dead_lettered_at
+    FROM linear_sync_outbox owned
+    WHERE owned.id = $1
+    FOR UPDATE OF owned
+)
+UPDATE linear_sync_outbox q
+SET locked_until = clock_timestamp() + make_interval(secs => $2), updated_at = now()
+FROM claimed
+WHERE q.id = claimed.id AND claimed.locked_by = sqlc.narg('locked_by')::text AND claimed.attempts = sqlc.arg('attempts')::integer
+  AND claimed.locked_until > clock_timestamp()
+  AND claimed.processed_at IS NULL AND claimed.dead_lettered_at IS NULL;
 
 -- name: CompleteLinearSyncOutbox :execrows
 UPDATE linear_sync_outbox
 SET processed_at = now(), locked_by = NULL, locked_until = NULL,
     last_error = NULL, updated_at = now()
-WHERE id = $1 AND locked_by = $2;
+WHERE id = $1 AND locked_by = $2
+  AND attempts = $3 AND locked_until > clock_timestamp()
+  AND processed_at IS NULL AND dead_lettered_at IS NULL;
 
 -- name: RetryLinearSyncOutbox :execrows
 UPDATE linear_sync_outbox
-SET available_at = now() + make_interval(secs => $2), locked_by = NULL,
+SET available_at = clock_timestamp() + make_interval(secs => $2), locked_by = NULL,
     locked_until = NULL, last_error = $3, updated_at = now()
-WHERE id = $1 AND locked_by = $4;
+WHERE id = $1 AND locked_by = $4
+  AND attempts = $5 AND locked_until > clock_timestamp()
+  AND processed_at IS NULL AND dead_lettered_at IS NULL;
 
 -- name: DeadLetterLinearSyncOutbox :execrows
 UPDATE linear_sync_outbox
 SET dead_lettered_at = now(), locked_by = NULL, locked_until = NULL,
     last_error = $2, updated_at = now()
-WHERE id = $1 AND locked_by = $3;
+WHERE id = $1 AND locked_by = $3
+  AND attempts = $4 AND locked_until > clock_timestamp()
+  AND processed_at IS NULL AND dead_lettered_at IS NULL;
 
 -- name: GetLinearIssueLinkByRemote :one
 SELECT id, workspace_id, binding_id, orvilo_issue_id, linear_issue_id,

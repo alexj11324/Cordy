@@ -33,6 +33,7 @@ func (w *LinearWorker) publishLinearWorkProducts(ctx context.Context, b workerBi
 			if !ok {
 				return errors.New("Linear attachment API is unavailable")
 			}
+			if err = w.checkLease(ctx); err != nil { return err }
 			if err = api.UpsertAttachment(ctx, token, remoteID, product.ExternalIdentity, product.ExternalUrl.String); err != nil {
 				return err
 			}
@@ -71,6 +72,7 @@ func (w *LinearWorker) deleteLinearWorkProductAttachment(ctx context.Context, b 
 	if err != nil {
 		return err
 	}
+	if err = w.checkLease(ctx); err != nil { return err }
 	return api.DeleteAttachmentByURL(ctx, token, remoteID, event.URL)
 }
 
