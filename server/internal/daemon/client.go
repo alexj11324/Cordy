@@ -673,8 +673,15 @@ func (c *Client) PinTaskSession(ctx context.Context, taskID, sessionID, workDir 
 // RecoverOrphans tells the server to fail any dispatched/running tasks the
 // previous daemon process for this runtime left behind. The server will
 // auto-retry eligible tasks.
-func (c *Client) RecoverOrphans(ctx context.Context, runtimeID string) error {
-	return c.postJSON(ctx, fmt.Sprintf("/api/daemon/runtimes/%s/recover-orphans", runtimeID), map[string]any{}, nil)
+func (c *Client) RecoverOrphans(ctx context.Context, runtimeID string, pending ...protocol.PendingTerminalReport) error {
+	path := fmt.Sprintf("/api/daemon/runtimes/%s/recover-orphans", runtimeID)
+	if len(pending) > 0 {
+		// Older servers silently ignore unknown JSON fields. Use an explicit
+		// route so they reject this request before failing a saved execution.
+		// Never fall back to unprotected recovery while reports are pending.
+		path += "/preserve-results"
+	}
+	return c.postJSON(ctx, path, protocol.RecoverOrphansRequest{PendingTerminalReports: pending}, nil)
 }
 
 // GetTaskStatus returns the current status of a task. Used by the daemon to

@@ -27,6 +27,7 @@ import (
 	"github.com/orvilo-ai/orvilo/server/internal/cli"
 	"github.com/orvilo-ai/orvilo/server/internal/daemon/execenv"
 	"github.com/orvilo-ai/orvilo/server/internal/daemon/repocache"
+	"github.com/orvilo-ai/orvilo/server/internal/daemon/terminalreport"
 	"github.com/orvilo-ai/orvilo/server/internal/selfexec"
 	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 	"github.com/orvilo-ai/orvilo/server/pkg/redact"
@@ -190,47 +191,6 @@ type taskRunnerFunc func(context.Context, Task, string, int, *slog.Logger) (Task
 
 func (f taskRunnerFunc) run(ctx context.Context, task Task, provider string, slot int, log *slog.Logger) (TaskResult, error) {
 	return f(ctx, task, provider, slot, log)
-}
-
-type terminalTaskReportKind uint8
-
-const (
-	terminalTaskReportComplete terminalTaskReportKind = iota + 1
-	terminalTaskReportFail
-
-	// CompleteTask and FailTask can make six 30-second HTTP attempts around
-	// the five backoffs in defaultTerminalRetrySchedule (124 seconds total).
-	// Keep the detached callback's own deadline above that worst-case budget
-	// so it does not silently shorten the client's existing retry contract.
-	// During daemon restart pollLoop still imposes its separate 30-second
-	// process drain boundary.
-	terminalTaskReportTimeout = 6 * time.Minute
-)
-
-// terminalTaskReport is the single daemon-side representation of a terminal
-// callback. Keeping every complete/fail path behind this value and
-// reportTerminalTask gives the durable outbox one insertion point without
-// revisiting every task exit when it is added.
-type terminalTaskReport struct {
-	kind           terminalTaskReportKind
-	taskID         string
-	output         string
-	branchName     string
-	errorMessage   string
-	sessionID      string
-	workDir        string
-	durableWorkDir string
-	failureReason  string
-	// sessionRolloutMissing is true when the daemon withheld this task's Codex
-	// session because its rollout was not in the store (MUL-5305). The server
-	// clears the resume pointer and flags the continuity gap for the next claim.
-	sessionRolloutMissing bool
-	// retiredSessionID names a session this run was told to resume and then
-	// abandoned as unresumable (GH #6066). The server records it so no later
-	// run on the issue or chat can select it again, however many clean rows
-	// still reference it.
-	retiredSessionID    string
-	executionProvenance ExecutionProvenanceReport
 }
 
 type executionEnvironmentCommand func() ([]string, error)
@@ -606,8 +566,13 @@ type Daemon struct {
 	// deleted bare clone and an unrelated `not empty` cleanup failure.
 	bgSyncs sync.WaitGroup
 
-	runner             taskRunner    // executes agent tasks; set to d.runTask by New(), overridable in tests
-	cancelPollInterval time.Duration // how often handleTask polls for server-side cancellation; overridable in tests
+	terminalStore             *terminalreport.Store
+	terminalSender            *terminalreport.Sender
+	terminalPersistenceFailed atomic.Bool
+	terminalRecoveryFailed    atomic.Bool
+	terminalDeliveryBlocked   atomic.Bool
+	runner                    taskRunner    // executes agent tasks; set to d.runTask by New(), overridable in tests
+	cancelPollInterval        time.Duration // how often handleTask polls for server-side cancellation; overridable in tests
 	// envRootBusyWait is how long a task that is entitled to a prior env root
 	// waits for the previous run to let go of it before giving up and preparing
 	// a fresh one. New() sets it; the zero value means "do not wait", which is
@@ -1857,9 +1822,8 @@ func (d *Daemon) reregisterWorkspaceAfterRuntimeGone(ctx context.Context, worksp
 	// because its surviving runtime IDs may still be actively executing
 	// tasks for the user (MUL-3332).
 	for _, rid := range newIDs {
-		if err := d.client.RecoverOrphans(ctx, rid); err != nil {
-			d.logger.Warn("recover-orphans after re-register failed",
-				"runtime_id", rid, "error", err)
+		if err := d.recoverOrphans(ctx, rid); err != nil {
+			return fmt.Errorf("recover-orphans after re-register failed for runtime %s: %w", rid, err)
 		}
 	}
 	return nil
@@ -1960,6 +1924,7 @@ func (d *Daemon) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	d.cancelFunc = cancel
 	d.rootCtx = ctx
+	defer cancel()
 
 	// Bind health port early to detect another running daemon.
 	healthLn, err := d.listenHealth()
@@ -2014,6 +1979,11 @@ func (d *Daemon) Run(ctx context.Context) error {
 		return err
 	}
 
+	if err := d.openTerminalReports(); err != nil {
+		healthLn.Close()
+		return err
+	}
+
 	// Bind and serve the health port before the (potentially slow) preflight,
 	// so `daemon start` and the desktop see a live "starting" daemon instead
 	// of connection-refused while preflightAuth runs. preflightAuth's initial
@@ -2033,6 +2003,12 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if err := d.preflightAuth(ctx); err != nil {
 		return err
 	}
+
+	// Replay saved results before admitting another provider execution.
+	if err := d.terminalSender.Flush(ctx); err != nil {
+		d.logger.Error("replay terminal reports", "error", err)
+	}
+	go d.terminalSender.Run(ctx)
 
 	// Deregister runtimes on shutdown (uses a fresh context since ctx will be cancelled).
 	defer d.deregisterRuntimes()
@@ -3910,6 +3886,16 @@ func (d *Daemon) syncWorkspacesFromAPI(ctx context.Context, reconcileProfiles bo
 	}
 	d.mu.Unlock()
 
+	// A previous registration may have reached the server but failed before
+	// orphan recovery completed. Retry that recovery before reconciling more
+	// workspace state; the failure barrier keeps the poller from claiming while
+	// this pass is outstanding.
+	if d.terminalRecoveryFailed.Load() {
+		if err := d.recoverTrackedOrphans(ctx); err != nil {
+			return err
+		}
+	}
+
 	// Built-in agent CLIs are installed per machine, so one probe round serves
 	// every workspace this sync has to register (MUL-5225). Probing is lazy —
 	// a sync that finds nothing new to register never shells out at all, which
@@ -4033,8 +4019,8 @@ func (d *Daemon) syncWorkspacesFromAPI(ctx context.Context, reconcileProfiles bo
 		// at in_progress until the slow heartbeat sweeper or the in-flight
 		// task timeout (2.5h) kicks in.
 		for _, rid := range runtimeIDs {
-			if err := d.client.RecoverOrphans(ctx, rid); err != nil {
-				d.logger.Warn("recover-orphans failed", "runtime_id", rid, "error", err)
+			if err := d.recoverOrphans(ctx, rid); err != nil {
+				return fmt.Errorf("recover-orphans failed for runtime %s: %w", rid, err)
 			}
 		}
 
@@ -4719,7 +4705,7 @@ func (d *Daemon) tryBeginServerUpdate(ctx context.Context) serverUpdateAcquireRe
 	}
 
 	d.claimMu.Lock()
-	if d.pauseClaims || d.activeTasks.Load() > 0 {
+	if d.pauseClaims || d.terminalPersistenceFailed.Load() || d.terminalRecoveryFailed.Load() || d.terminalDeliveryBlocked.Load() || d.activeTasks.Load() > 0 {
 		d.claimMu.Unlock()
 		d.updating.Store(false)
 		return serverUpdateRuntimeBusy
@@ -4840,7 +4826,7 @@ func (d *Daemon) reportUpdateResultWithRetry(ctx context.Context, runtimeID, upd
 func (d *Daemon) tryEnterClaim() bool {
 	d.claimMu.Lock()
 	defer d.claimMu.Unlock()
-	if d.pauseClaims {
+	if d.pauseClaims || d.terminalPersistenceFailed.Load() || d.terminalRecoveryFailed.Load() || d.terminalDeliveryBlocked.Load() {
 		return false
 	}
 	d.claimsInFlight++
@@ -4868,7 +4854,7 @@ func (d *Daemon) trySetClaimBarrier() bool {
 	// double-acquires: two holders both believe they own it, and whichever
 	// finishes first releases it out from under the other. tryBeginServerUpdate
 	// makes the same check for the same reason.
-	if d.pauseClaims || d.claimsInFlight > 0 || d.activeTasks.Load() > 0 {
+	if d.pauseClaims || d.terminalPersistenceFailed.Load() || d.terminalRecoveryFailed.Load() || d.terminalDeliveryBlocked.Load() || d.claimsInFlight > 0 || d.activeTasks.Load() > 0 {
 		return false
 	}
 	d.pauseClaims = true
@@ -5320,6 +5306,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		if err := d.reportTerminalTask(ctx, terminalTaskReport{
 			kind:          terminalTaskReportFail,
 			taskID:        task.ID,
+			claimFence:    task.ClaimFence,
 			errorMessage:  "runtime went offline before the task started",
 			failureReason: taskfailure.ReasonRuntimeOffline.String(),
 		}); err != nil {
@@ -5339,6 +5326,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 			if err := d.reportTerminalTask(ctx, terminalTaskReport{
 				kind:          terminalTaskReportFail,
 				taskID:        task.ID,
+				claimFence:    task.ClaimFence,
 				errorMessage:  "provider authorization requires a task capability lease",
 				failureReason: "authorization_denied",
 			}); err != nil {
@@ -5358,6 +5346,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 			if reportErr := d.reportTerminalTask(ctx, terminalTaskReport{
 				kind:          terminalTaskReportFail,
 				taskID:        task.ID,
+				claimFence:    task.ClaimFence,
 				errorMessage:  "provider authorization denied before provider start",
 				failureReason: failureReason,
 			}); reportErr != nil {
@@ -5513,6 +5502,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		if failErr := d.reportTerminalTask(ctx, terminalTaskReport{
 			kind:                terminalTaskReportFail,
 			taskID:              task.ID,
+			claimFence:          task.ClaimFence,
 			errorMessage:        err.Error(),
 			branchName:          result.BranchName,
 			workDir:             result.WorkDir,
@@ -5554,7 +5544,7 @@ func (d *Daemon) handleTask(ctx context.Context, task Task, slot int) {
 		return
 	}
 
-	d.reportTaskResult(ctx, task.ID, result, taskLog)
+	d.reportTaskResult(ctx, task, result, taskLog)
 
 	// Write GC metadata after the task finishes so the periodic GC loop
 	// can look up the parent record (issue / chat session / automation run /
@@ -5654,6 +5644,7 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		if failErr := d.reportTerminalTask(ctx, terminalTaskReport{
 			kind:          terminalTaskReportFail,
 			taskID:        task.ID,
+			claimFence:    task.ClaimFence,
 			errorMessage:  err.Error(),
 			failureReason: "local_directory_error",
 		}); failErr != nil {
@@ -5673,6 +5664,7 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		if failErr := d.reportTerminalTask(ctx, terminalTaskReport{
 			kind:          terminalTaskReportFail,
 			taskID:        task.ID,
+			claimFence:    task.ClaimFence,
 			errorMessage:  err.Error(),
 			failureReason: "local_directory_error",
 		}); failErr != nil {
@@ -5685,6 +5677,7 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		if failErr := d.reportTerminalTask(ctx, terminalTaskReport{
 			kind:          terminalTaskReportFail,
 			taskID:        task.ID,
+			claimFence:    task.ClaimFence,
 			errorMessage:  err.Error(),
 			failureReason: "local_directory_error",
 		}); failErr != nil {
@@ -5815,6 +5808,7 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 		if failErr := d.reportTerminalTask(ctx, terminalTaskReport{
 			kind:          terminalTaskReportFail,
 			taskID:        task.ID,
+			claimFence:    task.ClaimFence,
 			errorMessage:  fmt.Sprintf("local_directory wait cancelled: %s", err.Error()),
 			failureReason: failureReason,
 		}); failErr != nil {
@@ -5824,149 +5818,6 @@ func (d *Daemon) acquireLocalDirectoryLockIfNeeded(ctx context.Context, task Tas
 	}
 	taskLog.Info("local_directory: lock acquired")
 	return release, false
-}
-
-// reportTaskResult writes the final task disposition back to the server.
-//
-// Fail closed: only an explicit "completed" status is reported as success.
-// Anything else — "blocked", "cancelled", or any future status we forget to
-// enumerate — must go through FailTask, so a run that never produced a real
-// result can never be displayed as "Completed" in the UI (e.g. provider 429 /
-// out-of-credit / runtime crash). Forward SessionID/WorkDir on every path:
-// the agent may have built a real session before getting stuck, and we want
-// the next chat turn to resume there rather than start over and "forget"
-// the conversation.
-func (d *Daemon) reportTaskResult(ctx context.Context, taskID string, result TaskResult, taskLog *slog.Logger) {
-	switch result.Status {
-	case "completed":
-		taskLog.Info("task completed", "status", result.Status)
-		err := d.reportTerminalTask(ctx, terminalTaskReport{
-			kind:                  terminalTaskReportComplete,
-			taskID:                taskID,
-			output:                result.Comment,
-			branchName:            result.BranchName,
-			sessionID:             result.SessionID,
-			workDir:               result.WorkDir,
-			durableWorkDir:        result.DurableWorkDir,
-			sessionRolloutMissing: result.SessionRolloutMissing,
-			retiredSessionID:      result.RetiredSessionID,
-			executionProvenance:   executionProvenanceFromTaskResult(result),
-		})
-		if err == nil {
-			return
-		}
-		// CompleteTask retries transient errors internally. A transient
-		// error reaching us here means the schedule was exhausted while
-		// the upstream was still 5xx / unreachable. Converting that into
-		// a fail would lose the agent's actual result and surface a
-		// misleading red badge in the UI — leave the task in running
-		// instead so a future fix (server-side stuck-task reaper, or a
-		// daemon-side persistent pending queue) can recover it. Only
-		// permanent server-side rejections (4xx other than 408/429)
-		// warrant the legacy fallback, because at that point the server
-		// has already refused this task and the only useful UI signal
-		// left is a concrete failure.
-		if isTransientError(err) {
-			taskLog.Error("complete task failed after retries; leaving task in running rather than falling back to fail", "error", err)
-			return
-		}
-		taskLog.Error("complete task rejected by server, falling back to fail", "error", err)
-		// MUL-2946: this fallback fires when a server-side complete
-		// callback was permanently rejected (4xx other than 408/429)
-		// — the agent itself succeeded, so the err here describes the
-		// server response rather than an agent failure. The classifier
-		// is unlikely to match anything in the server's error text and
-		// will land at ReasonAgentUnknown ("agent_error.unknown"),
-		// which is the canonical replacement for the legacy
-		// "agent_error" coarse bucket.
-		fallbackErrMsg := fmt.Sprintf("complete task failed: %s", err.Error())
-		if failErr := d.reportTerminalTask(ctx, terminalTaskReport{
-			kind:         terminalTaskReportFail,
-			taskID:       taskID,
-			errorMessage: fallbackErrMsg,
-			// The agent succeeded here — only the server's complete callback was
-			// rejected. Its branch is real and already committed, so it must
-			// survive the downgrade to a failure report.
-			branchName:            result.BranchName,
-			sessionID:             result.SessionID,
-			workDir:               result.WorkDir,
-			durableWorkDir:        result.DurableWorkDir,
-			failureReason:         taskfailure.Classify(fallbackErrMsg).String(),
-			sessionRolloutMissing: result.SessionRolloutMissing,
-			retiredSessionID:      result.RetiredSessionID,
-			executionProvenance:   executionProvenanceFromTaskResult(result),
-		}); failErr != nil {
-			taskLog.Error("fail task fallback also failed", "error", failErr)
-		}
-	default:
-		failureReason := result.FailureReason
-		if failureReason == "" {
-			if result.Status == "cancelled" {
-				// "cancelled" is a deliberate non-failure terminal
-				// state masquerading as a failure_reason — preserved
-				// outside the canonical taxonomy so the UI can render
-				// it differently from a real failure.
-				failureReason = "cancelled"
-			} else {
-				// MUL-2946: classify the agent's comment text so the
-				// failure_reason lands in the refined taxonomy
-				// (provider_auth_or_access, context_overflow,
-				// process_failure, …) instead of the legacy coarse
-				// "agent_error" bucket. Empty comment lands in
-				// ReasonAgentUnknown.
-				failureReason = taskfailure.Classify(result.Comment).String()
-			}
-		}
-		taskLog.Info("task did not complete, reporting failure", "status", result.Status, "failure_reason", failureReason)
-		if err := d.reportTerminalTask(ctx, terminalTaskReport{
-			kind:           terminalTaskReportFail,
-			taskID:         taskID,
-			errorMessage:   result.Comment,
-			sessionID:      result.SessionID,
-			workDir:        result.WorkDir,
-			durableWorkDir: result.DurableWorkDir,
-			// Worktree mode commits the agent's leftovers before tearing the
-			// worktree down, so a failed run routinely still has a branch. This
-			// is the case where the user most needs it: the task went wrong and
-			// they want to see how far it got.
-			branchName:            result.BranchName,
-			failureReason:         failureReason,
-			sessionRolloutMissing: result.SessionRolloutMissing,
-			retiredSessionID:      result.RetiredSessionID,
-			executionProvenance:   executionProvenanceFromTaskResult(result),
-		}); err != nil {
-			taskLog.Error("report failed task failed", "error", err)
-		}
-	}
-}
-
-func executionProvenanceFromTaskResult(result TaskResult) ExecutionProvenanceReport {
-	return ExecutionProvenanceReport{
-		RepoIdentity:       result.ExecutionRepoIdentity,
-		ExecutionWorkspace: result.ExecutionWorkspace,
-		HeadBranch:         result.ExecutionHeadBranch,
-		HeadSHA:            result.ExecutionHeadSHA,
-		HeadState:          result.ExecutionHeadState,
-	}
-}
-
-// reportTerminalTask is the only path that sends complete/fail callbacks.
-// It deliberately preserves context values while discarding cancellation and
-// parent deadlines: daemon shutdown cancels the root context before pollLoop's
-// 30-second drain, but terminal callbacks must still use that remaining window.
-// The explicit timeout keeps this detached work bounded during normal runs.
-func (d *Daemon) reportTerminalTask(parentCtx context.Context, report terminalTaskReport) error {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), terminalTaskReportTimeout)
-	defer cancel()
-
-	switch report.kind {
-	case terminalTaskReportComplete:
-		return d.client.CompleteTaskWithProvenance(ctx, report.taskID, report.output, report.branchName, report.sessionID, report.workDir, report.sessionRolloutMissing, report.retiredSessionID, report.durableWorkDir, report.executionProvenance)
-	case terminalTaskReportFail:
-		return d.client.FailTaskWithProvenance(ctx, report.taskID, report.errorMessage, report.sessionID, report.workDir, report.branchName, report.failureReason, report.sessionRolloutMissing, report.retiredSessionID, report.durableWorkDir, report.executionProvenance)
-	default:
-		return fmt.Errorf("unsupported terminal task report kind %d", report.kind)
-	}
 }
 
 // gcMetaForTask classifies a finished task and produces a GCMeta of the right

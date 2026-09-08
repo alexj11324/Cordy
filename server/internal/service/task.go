@@ -6017,10 +6017,43 @@ func (s *TaskService) ExpireStaleQueuedTasks(ctx context.Context, arg db.ExpireS
 	})
 }
 
+// PendingTerminalReportClaim identifies completed local execution awaiting delivery.
+type PendingTerminalReportClaim struct {
+	TaskID     pgtype.UUID
+	ClaimFence int64
+}
+
 // RecoverOrphanedTasksForRuntime fails work a restarted daemon reports it lost.
-func (s *TaskService) RecoverOrphanedTasksForRuntime(ctx context.Context, runtimeID pgtype.UUID) ([]db.AgentTaskQueue, error) {
+// A result already persisted in the daemon outbox is not lost. Preserve only an
+// exact current claim, keeping the fence check and failure update in one transaction.
+func (s *TaskService) RecoverOrphanedTasksForRuntime(ctx context.Context, runtimeID pgtype.UUID, pending ...PendingTerminalReportClaim) ([]db.AgentTaskQueue, error) {
+	if len(pending) > 0 && s.TxStarter == nil {
+		return nil, errors.New("pending terminal report recovery requires a transaction starter")
+	}
 	return s.terminateTasksInTx(ctx, func(qtx *db.Queries) ([]db.AgentTaskQueue, error) {
-		return qtx.RecoverOrphanedTasksForRuntime(ctx, runtimeID)
+		preserved := make([]pgtype.UUID, 0, len(pending))
+		if len(pending) > 0 {
+			claims := make(map[PendingTerminalReportClaim]bool, len(pending))
+			ids := make([]pgtype.UUID, 0, len(pending))
+			seen := make(map[pgtype.UUID]bool, len(pending))
+			for _, claim := range pending {
+				claims[claim] = true
+				if !seen[claim.TaskID] {
+					ids = append(ids, claim.TaskID)
+					seen[claim.TaskID] = true
+				}
+			}
+			tasks, err := qtx.LockPendingTerminalReportTasksForRuntime(ctx, db.LockPendingTerminalReportTasksForRuntimeParams{RuntimeID: runtimeID, TaskIds: ids})
+			if err != nil {
+				return nil, err
+			}
+			for _, task := range tasks {
+				if claims[PendingTerminalReportClaim{TaskID: task.ID, ClaimFence: TaskClaimFence(task)}] {
+					preserved = append(preserved, task.ID)
+				}
+			}
+		}
+		return qtx.RecoverOrphanedTasksForRuntime(ctx, db.RecoverOrphanedTasksForRuntimeParams{RuntimeID: runtimeID, PreservedTaskIds: preserved})
 	})
 }
 

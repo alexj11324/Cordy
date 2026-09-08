@@ -6,12 +6,14 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/orvilo-ai/orvilo/server/internal/service"
 	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
+	"github.com/orvilo-ai/orvilo/server/pkg/protocol"
 )
 
 // RecoverOrphanedTasks is called by the daemon at startup for each runtime
@@ -30,7 +32,25 @@ func (h *Handler) RecoverOrphanedTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.TaskService.RecoverOrphanedTasksForRuntime(r.Context(), parseUUID(runtimeID))
+	var req protocol.RecoverOrphansRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "invalid recovery request body")
+		return
+	}
+	pending := make([]service.PendingTerminalReportClaim, 0, len(req.PendingTerminalReports))
+	for _, report := range req.PendingTerminalReports {
+		taskID, ok := parseUUIDOrBadRequest(w, report.TaskID, "pending_terminal_reports.task_id")
+		if !ok {
+			return
+		}
+		fence, err := strconv.ParseInt(report.ClaimFence, 10, 64)
+		if err != nil || fence <= 0 || strconv.FormatInt(fence, 10) != report.ClaimFence {
+			writeError(w, http.StatusBadRequest, "invalid pending terminal claim_fence")
+			return
+		}
+		pending = append(pending, service.PendingTerminalReportClaim{TaskID: taskID, ClaimFence: fence})
+	}
+	rows, err := h.TaskService.RecoverOrphanedTasksForRuntime(r.Context(), parseUUID(runtimeID), pending...)
 	if err != nil {
 		slog.Warn("recover-orphans failed", "runtime_id", runtimeID, "error", err)
 		writeError(w, http.StatusInternalServerError, "recover orphans failed")
