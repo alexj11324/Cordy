@@ -8,7 +8,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/orvilo-ai/orvilo/server/internal/events"
-	"github.com/orvilo-ai/orvilo/server/internal/handler"
 	"github.com/orvilo-ai/orvilo/server/internal/util"
 	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
@@ -24,11 +23,7 @@ func registerActivityListeners(bus *events.Bus, queries *db.Queries) {
 
 	// issue:created — record "created" activity
 	bus.Subscribe(protocol.EventIssueCreated, func(e events.Event) {
-		payload, ok := e.Payload.(map[string]any)
-		if !ok {
-			return
-		}
-		issue, ok := payload["issue"].(handler.IssueResponse)
+		issue, ok := issueCreatedForSideEffects(e)
 		if !ok {
 			return
 		}

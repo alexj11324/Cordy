@@ -196,7 +196,11 @@ func avatarKeyFromServedURL(raw string) (string, bool) {
 // Google/GitHub profile URL), when it is not an allowed image type, or when
 // the deployment already serves the object publicly.
 func (h *Handler) resolveAvatarURL(raw string) string {
-	if raw == "" || h.Storage == nil {
+	return resolveAvatarURL(raw, h.Storage, h.cfg.PublicURL, h.CFSigner != nil)
+}
+
+func resolveAvatarURL(raw string, store storage.Storage, publicURL string, signedCDN bool) string {
+	if raw == "" || store == nil {
 		return raw
 	}
 	// Already one of ours (a client round-tripped a resolved response back
@@ -204,16 +208,16 @@ func (h *Handler) resolveAvatarURL(raw string) string {
 	// signature check keeps this from being a way to get an arbitrary key
 	// signed.
 	if key, ok := avatarKeyFromServedURL(raw); ok {
-		return h.absolutizeAvatarPath(avatarURLPath(key))
+		return absolutizeAvatarPath(publicURL, avatarURLPath(key))
 	}
-	key := h.ownedStorageKey(raw)
+	key := ownedStorageKey(store, raw)
 	if key == "" || avatarContentType(key) == "" {
 		return raw
 	}
-	if h.avatarObjectLoadsUnauthenticated(raw) {
+	if avatarObjectLoadsUnauthenticated(store, signedCDN, raw) {
 		return raw
 	}
-	return h.absolutizeAvatarPath(avatarURLPath(key))
+	return absolutizeAvatarPath(publicURL, avatarURLPath(key))
 }
 
 // resolveAvatarURLPtr is resolveAvatarURL over the *string shape the response
@@ -336,12 +340,14 @@ func attachmentIDFromStorageKey(key string) (pgtype.UUID, bool) {
 // unrecognized inputs), so a Google or GitHub avatar URL would otherwise
 // yield a plausible-looking key. Re-deriving the URL from the key and
 // requiring an exact match rejects anything this storage did not mint.
-func (h *Handler) ownedStorageKey(rawURL string) string {
-	key := h.Storage.KeyFromURL(rawURL)
+func (h *Handler) ownedStorageKey(rawURL string) string { return ownedStorageKey(h.Storage, rawURL) }
+
+func ownedStorageKey(store storage.Storage, rawURL string) string {
+	key := store.KeyFromURL(rawURL)
 	if key == "" || key == rawURL {
 		return ""
 	}
-	if h.Storage.ObjectURL(key) != rawURL {
+	if store.ObjectURL(key) != rawURL {
 		return ""
 	}
 	return key
@@ -350,16 +356,16 @@ func (h *Handler) ownedStorageKey(rawURL string) string {
 // avatarObjectLoadsUnauthenticated reports whether the raw storage URL is
 // already loadable by an unauthenticated browser fetch, in which case
 // rewriting it would only add a pointless hop through the API.
-func (h *Handler) avatarObjectLoadsUnauthenticated(rawURL string) bool {
+func avatarObjectLoadsUnauthenticated(store storage.Storage, signedCDN bool, rawURL string) bool {
 	// LocalStorage objects are served by the public /uploads/* route, whether
 	// the stored URL is site-relative or absolute via LOCAL_UPLOAD_BASE_URL.
-	if _, ok := h.Storage.(*storage.LocalStorage); ok {
+	if _, ok := store.(*storage.LocalStorage); ok {
 		return true
 	}
 	// Otherwise: a public CDN domain with no per-request CloudFront signing.
 	// In signed-CloudFront mode the same domain serves private content and the
 	// unsigned URL is a 403, so that shape resolves through the endpoint too.
-	return h.storageURLIsPubliclyReadable(rawURL)
+	return storageURLIsPubliclyReadable(store, signedCDN, rawURL)
 }
 
 // absolutizeAvatarPath anchors the served path on ORVILO_PUBLIC_URL when it
@@ -369,7 +375,11 @@ func (h *Handler) avatarObjectLoadsUnauthenticated(rawURL string) bool {
 // resolves avatar URLs through resolvePublicFileUrl, which prefixes its API
 // base URL.
 func (h *Handler) absolutizeAvatarPath(relPath string) string {
-	if publicURL := strings.TrimRight(h.cfg.PublicURL, "/"); publicURL != "" {
+	return absolutizeAvatarPath(h.cfg.PublicURL, relPath)
+}
+
+func absolutizeAvatarPath(publicURL, relPath string) string {
+	if publicURL := strings.TrimRight(publicURL, "/"); publicURL != "" {
 		return publicURL + relPath
 	}
 	return relPath

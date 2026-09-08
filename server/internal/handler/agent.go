@@ -146,6 +146,10 @@ type AgentResponse struct {
 const runtimeConfigGatewayTokenMask = "***"
 
 func (h *Handler) agentToResponse(a db.Agent) AgentResponse {
+	return agentToResponseWithAvatar(a, h.resolveAvatarURLPtr(textToPtr(a.AvatarUrl)))
+}
+
+func agentToResponseWithAvatar(a db.Agent, avatarURL *string) AgentResponse {
 	var rc any
 	if a.RuntimeConfig != nil {
 		json.Unmarshal(a.RuntimeConfig, &rc)
@@ -212,7 +216,7 @@ func (h *Handler) agentToResponse(a db.Agent) AgentResponse {
 		ConversationStarters:     conversationStarters,
 		SystemKey:                a.SystemKey.String,
 		SystemInstructions:       systemInstructionsFor(a),
-		AvatarURL:                h.resolveAvatarURLPtr(textToPtr(a.AvatarUrl)),
+		AvatarURL:                avatarURL,
 		RuntimeMode:              a.RuntimeMode,
 		RuntimeConfig:            rc,
 		CustomArgs:               customArgs,

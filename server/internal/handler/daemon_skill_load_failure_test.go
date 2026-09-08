@@ -49,7 +49,7 @@ func (f skillFileBatchFailDBTX) QueryRow(ctx context.Context, sql string, args .
 // path behaves normally.
 func newSkillFileReadFailureHandler(t *testing.T) *Handler {
 	t.Helper()
-	return New(
+	return assembleTestHandler(
 		db.New(skillFileBatchFailDBTX{inner: testPool}),
 		testPool,
 		testHandler.Hub,

@@ -114,20 +114,23 @@ type coordinationReviewPublication struct {
 }
 
 // AgentCoordinationService is the durable producer/consumer for the
-// agent_coordination_outbox. The event bus is intentionally not a dependency:
-// a process restart must recover solely from PostgreSQL rows.
+// agent_coordination_outbox. PostgreSQL owns recovery; the bus and queue
+// notification callback only project committed work and synchronous handoffs.
 type AgentCoordinationService struct {
-	Queries   *db.Queries
-	TxStarter TxStarter
-	Tasks     *TaskService
-	WorkerID  string
+	Queries    *db.Queries
+	TxStarter  TxStarter
+	Bus        *events.Bus
+	TaskQueued func(context.Context, db.AgentTaskQueue)
+	WorkerID   string
 
 	wake      chan struct{}
 	done      chan struct{}
 	startOnce sync.Once
 }
 
-func NewAgentCoordinationService(q *db.Queries, tx TxStarter, tasks *TaskService) *AgentCoordinationService {
+var _ TaskCoordination = (*AgentCoordinationService)(nil)
+
+func NewAgentCoordinationService(q *db.Queries, tx TxStarter, bus *events.Bus, taskQueued func(context.Context, db.AgentTaskQueue)) *AgentCoordinationService {
 	workerID := "agent-coordination"
 	if id := dbid.NewV7(); id.Valid {
 		workerID += ":" + util.UUIDToString(id)
@@ -135,10 +138,10 @@ func NewAgentCoordinationService(q *db.Queries, tx TxStarter, tasks *TaskService
 	return &AgentCoordinationService{
 		Queries:   q,
 		TxStarter: tx,
-		Tasks:     tasks,
-		WorkerID:  workerID,
-		wake:      make(chan struct{}, 1),
-		done:      make(chan struct{}),
+		Bus:       bus, TaskQueued: taskQueued,
+		WorkerID: workerID,
+		wake:     make(chan struct{}, 1),
+		done:     make(chan struct{}),
 	}
 }
 
@@ -232,12 +235,11 @@ func (s *AgentCoordinationService) RunOnce(ctx context.Context) {
 			)
 			continue
 		}
-		if created && s.Tasks != nil {
+		if created && s.TaskQueued != nil {
 			// This happens after the transaction that linked the assignment and
 			// outbox completion, so a client can never observe a queue hint for a
 			// task whose assignment transaction later rolls back.
-			s.Tasks.BroadcastTaskQueued(ctx, task)
-			s.Tasks.NotifyTaskEnqueued(ctx, task)
+			s.TaskQueued(ctx, task)
 		}
 	}
 }
@@ -441,8 +443,8 @@ func (s *AgentCoordinationService) RecordReviewEntryTx(ctx context.Context, qtx 
 	if reviewerType == "member" {
 		return nil
 	}
-	if (reviewerType != "agent" && reviewerType != "team") || !issue.ReviewerID.Valid || s.Tasks == nil {
-		return errors.New("review entry requires a reviewer and task service")
+	if (reviewerType != "agent" && reviewerType != "team") || !issue.ReviewerID.Valid {
+		return errors.New("review entry requires an agent or team reviewer")
 	}
 	agentID := issue.ReviewerID
 	if reviewerType == "team" {
@@ -456,8 +458,11 @@ func (s *AgentCoordinationService) RecordReviewEntryTx(ctx context.Context, qtx 
 	if err != nil {
 		return fmt.Errorf("review entry: load reviewer agent: %w", err)
 	}
-	attr := s.Tasks.attributionForIssueTask(ctx, issue, pgtype.UUID{}, attribution.SourceCommentSource, actorUserID)
-	attr, err = s.Tasks.applyAttributionFallback(ctx, attr, agent)
+	// Reuse attribution rules against the caller's transaction without retaining
+	// TaskService as a coordination dependency or reading policy outside qtx.
+	tasks := TaskService{Queries: qtx}
+	attr := tasks.attributionForIssueTask(ctx, issue, pgtype.UUID{}, attribution.SourceCommentSource, actorUserID)
+	attr, err = tasks.applyAttributionFallback(ctx, attr, agent)
 	if err != nil {
 		return fmt.Errorf("review entry attribution: %w", err)
 	}
@@ -1464,11 +1469,11 @@ func (s *AgentCoordinationService) completeClaimedAssignment(
 }
 
 func (s *AgentCoordinationService) publishCoordinationReviewHandoff(ctx context.Context, publication coordinationReviewPublication) bool {
-	if s == nil || s.Tasks == nil || s.Tasks.Bus == nil {
+	if s == nil || s.Bus == nil {
 		return false
 	}
 	workspaceID := util.UUIDToString(publication.updated.WorkspaceID)
-	issuePayload := IssueToMapResolved(ctx, s.Tasks.Queries, publication.updated, s.Tasks.getIssuePrefix(publication.updated.WorkspaceID))
+	issuePayload := IssueToMapResolved(ctx, s.Queries, publication.updated, issuePrefix(ctx, s.Queries, publication.updated.WorkspaceID))
 	payload := map[string]any{
 		"issue":                        issuePayload,
 		"executor_changed":             false,
@@ -1490,7 +1495,7 @@ func (s *AgentCoordinationService) publishCoordinationReviewHandoff(ctx context.
 		"prev_reviewer_type":           util.TextToPtr(publication.previous.ReviewerType),
 		"prev_reviewer_id":             util.UUIDToPtr(publication.previous.ReviewerID),
 	}
-	s.Tasks.Bus.Publish(events.Event{
+	s.Bus.Publish(events.Event{
 		Type:        protocol.EventIssueUpdated,
 		WorkspaceID: workspaceID,
 		ActorType:   "system",
@@ -1502,7 +1507,7 @@ func (s *AgentCoordinationService) publishCoordinationReviewHandoff(ctx context.
 		return true
 	}
 	actorType := coordinationText(activity.ActorType)
-	s.Tasks.Bus.Publish(events.Event{
+	s.Bus.Publish(events.Event{
 		Type:        protocol.EventActivityCreated,
 		WorkspaceID: workspaceID,
 		ActorType:   "system",

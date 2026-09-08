@@ -801,6 +801,7 @@ func TestWebhookDeliveryWorker_PerTriggerLimitDefersWithoutDropping(t *testing.T
 	prev := testHandler.WebhookRateLimiter
 	testHandler.WebhookRateLimiter = NewMemoryWebhookRateLimiter(WebhookRateLimit{Limit: 1, Window: time.Minute})
 	t.Cleanup(func() { testHandler.WebhookRateLimiter = prev })
+	worker := NewWebhookDeliveryWorker(testHandler.Queries, testHandler.AutomationService, testHandler.WebhookRateLimiter, testHandler.Metrics)
 
 	firstID := requireAcceptedWebhookResponse(t, postWebhook(t, *trig.WebhookToken, map[string]any{"n": 1}, map[string]string{
 		"Idempotency-Key": "worker-pacing-1",
@@ -809,7 +810,7 @@ func TestWebhookDeliveryWorker_PerTriggerLimitDefersWithoutDropping(t *testing.T
 		"Idempotency-Key": "worker-pacing-2",
 	}))
 
-	worked, err := testHandler.WebhookDeliveryWorker.ProcessNext(context.Background())
+	worked, err := worker.ProcessNext(context.Background())
 	if err != nil || !worked {
 		t.Fatalf("first dispatch: worked=%v err=%v", worked, err)
 	}
@@ -830,7 +831,7 @@ func TestWebhookDeliveryWorker_PerTriggerLimitDefersWithoutDropping(t *testing.T
 		t.Fatalf("expected one delivery to remain queued: %#v", deliveries)
 	}
 
-	worked, err = testHandler.WebhookDeliveryWorker.ProcessNext(context.Background())
+	worked, err = worker.ProcessNext(context.Background())
 	if err != nil || !worked {
 		t.Fatalf("defer paced delivery: worked=%v err=%v", worked, err)
 	}
@@ -963,7 +964,7 @@ func TestWebhookDeliveryWorker_LeaseOwnershipChangeIsBenign(t *testing.T) {
 		t.Fatalf("replace lease owner: %v", err)
 	}
 
-	worker := NewWebhookDeliveryWorker(testHandler)
+	worker := NewWebhookDeliveryWorker(testHandler.Queries, testHandler.AutomationService, testHandler.WebhookRateLimiter, testHandler.Metrics)
 	if err := worker.complete(context.Background(), staleClaim, deliveryStatusDispatched, pgtype.UUID{}, ""); err != nil {
 		t.Fatalf("stale complete should be benign: %v", err)
 	}
@@ -980,7 +981,7 @@ func TestWebhookDeliveryWorker_LeaseOwnershipChangeIsBenign(t *testing.T) {
 }
 
 func TestWebhookDeliveryWorker_RunStopsBoundedPool(t *testing.T) {
-	worker := NewWebhookDeliveryWorker(testHandler)
+	worker := NewWebhookDeliveryWorker(testHandler.Queries, testHandler.AutomationService, testHandler.WebhookRateLimiter, testHandler.Metrics)
 	ctx, cancel := context.WithCancel(context.Background())
 	go worker.Run(ctx)
 	cancel()

@@ -143,7 +143,7 @@ func (h *Handler) validateTaskExplicitGitHubProduct(ctx context.Context, q *db.Q
 	if !headRepositoryMatches(metadata.HeadRepoIdentity, repoIdentity) {
 		return errors.New("provider head repository mismatch")
 	}
-	runtime := NewWorkProductDiscoveryRuntime(h)
+	runtime := NewWorkProductDiscoveryRuntime(h.Queries, h.DB, h.TxStarter, h.PRRefresh, h.Bus)
 	authorized, err := runtime.taskRepositoryAuthorized(ctx, task, workspace, repoIdentity)
 	if err != nil {
 		return errors.New("task repository authorization unavailable")

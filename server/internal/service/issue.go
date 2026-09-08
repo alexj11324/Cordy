@@ -529,7 +529,7 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	if err := tx.Commit(ctx); err != nil {
 		return IssueCreateResult{}, fmt.Errorf("commit: %w", err)
 	}
-	if reviewEntry && s.TaskService != nil {
+	if reviewEntry && s.TaskService != nil && s.TaskService.Coordination != nil {
 		s.TaskService.Coordination.Wake()
 	}
 
@@ -579,8 +579,7 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 				"issue_id", util.UUIDToString(issue.ID), "task_id", util.UUIDToString(executorTask.ID), "error", activateErr)
 		}
 	} else if executorTask.ID.Valid && executorTask.Status == "queued" {
-		s.TaskService.broadcastTaskEvent(ctx, protocol.EventTaskQueued, executorTask)
-		s.TaskService.NotifyTaskEnqueued(ctx, executorTask)
+		s.TaskService.PublishQueuedTask(ctx, executorTask)
 	}
 	if opts.ExecutorRunFireAt.IsZero() && issue.ExecutorType.String == "agent" && verdict.Reason == dispatch.ReasonRuntimeUnusable {
 		s.noteRuntimeUnusable(ctx, issue, verdict)
@@ -672,6 +671,14 @@ func (s *IssueService) publishIssueCreated(issue db.Issue, attachments []db.Atta
 		ActorType:   creatorType,
 		ActorID:     actorID,
 		Payload:     payload,
+		IssueCreated: &events.IssueCreated{
+			ID: util.UUIDToString(issue.ID), WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+			Title: issue.Title, Status: issue.Status, CreatorType: issue.CreatorType, CreatorID: util.UUIDToString(issue.CreatorID),
+			Description: util.TextToPtr(issue.Description),
+			OwnerType:   util.TextToPtr(issue.OwnerType), OwnerID: util.UUIDToPtr(issue.OwnerID),
+			ExecutorType: util.TextToPtr(issue.ExecutorType), ExecutorID: util.UUIDToPtr(issue.ExecutorID),
+			ReviewerType: util.TextToPtr(issue.ReviewerType), ReviewerID: util.UUIDToPtr(issue.ReviewerID),
+		},
 	})
 }
 

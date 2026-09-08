@@ -684,11 +684,7 @@ func registerNotificationListeners(bus *events.Bus, queries *db.Queries) {
 
 	// issue:created — direct notifications to owner/executor when they differ from the actor
 	bus.Subscribe(protocol.EventIssueCreated, func(e events.Event) {
-		payload, ok := e.Payload.(map[string]any)
-		if !ok {
-			return
-		}
-		issue, ok := payload["issue"].(handler.IssueResponse)
+		issue, ok := issueCreatedForSideEffects(e)
 		if !ok {
 			return
 		}

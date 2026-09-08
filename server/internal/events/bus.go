@@ -13,6 +13,11 @@ type Event struct {
 	ActorID     string
 	Payload     any // JSON-serializable, same shape as current WS payloads
 
+	// IssueCreated carries committed business facts independently of the HTTP
+	// response or WebSocket projection. It is internal-only and does not alter
+	// the public event envelope.
+	IssueCreated *IssueCreated `json:"-"`
+
 	// Optional scope hints used by the realtime fanout layer to route the
 	// event to a more specific scope than `workspace:{WorkspaceID}`. When set
 	// these tell the listener which Redis stream / Hub room to publish on

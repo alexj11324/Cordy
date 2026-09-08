@@ -25,7 +25,6 @@ import (
 	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
 	"github.com/orvilo-ai/orvilo/server/internal/profiling"
 	"github.com/orvilo-ai/orvilo/server/internal/realtime"
-	"github.com/orvilo-ai/orvilo/server/internal/scheduler"
 	"github.com/orvilo-ai/orvilo/server/internal/service"
 	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 	"github.com/orvilo-ai/orvilo/server/pkg/featureflag"
@@ -252,10 +251,6 @@ func envBool(name string, def bool) bool {
 		return def
 	}
 	return v
-}
-
-func backgroundServices(h *handler.Handler) (*service.TaskService, *service.AutomationService) {
-	return h.TaskService, h.AutomationService
 }
 
 // jwtSecretBootError returns a non-nil error when the combination of
@@ -552,9 +547,7 @@ func main() {
 	// Order matters: subscriber listeners must register BEFORE notification listeners.
 	// The notification listener queries the subscriber table to determine recipients,
 	// so subscribers must be written first within the same synchronous event dispatch.
-	registerSubscriberListeners(bus, pool)
-	registerActivityListeners(bus, queries)
-	registerNotificationListeners(bus, queries)
+	registerApplicationListeners(bus, pool, queries)
 
 	metricsConfig := obsmetrics.ConfigFromEnv()
 	var metricsServer *http.Server
@@ -604,7 +597,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	r, h := NewRouterWithOptions(pool, hub, bus, analyticsClient, storeRedis, RouterOptions{
+	app := newApplication(pool, hub, bus, analyticsClient, storeRedis, RouterOptions{
 		HTTPMetrics:         httpMetrics,
 		BusinessMetrics:     businessMetrics,
 		ChannelLeaseMetrics: channelLeaseMetrics,
@@ -618,7 +611,8 @@ func main() {
 		HeartbeatScheduler:  heartbeatScheduler,
 		LLMMaxRetries:       llmMaxRetries,
 	})
-	if err := messagingbootstrap.ProvisionFromEnvironment(context.Background(), pool, handler.ResolvedMessagingModeFromEnv()); err != nil {
+	r := newRouter(app)
+	if err := messagingbootstrap.ProvisionFromEnvironment(context.Background(), pool, app.messagingMode); err != nil {
 		slog.Error("self-hosted messaging bootstrap failed", "error", err)
 		os.Exit(1)
 	}
@@ -626,144 +620,7 @@ func main() {
 	srv := newMainHTTPServer(":"+port, r)
 	profilingServer := profiling.NewServer()
 
-	// Start background workers.
-	sweepCtx, sweepCancel := context.WithCancel(context.Background())
-	automationCtx, automationCancel := context.WithCancel(context.Background())
-	// Reuse the router's services here. In particular, the router wires the
-	// EmptyClaim cache into TaskService; constructing a second TaskService for
-	// scheduled Automation dispatch would send the daemon wakeup without bumping
-	// that cache's version, so an idle runtime could keep returning an empty
-	// claim until the cache TTL expires.
-	taskSvc, automationSvc := backgroundServices(h)
-	coordinationSvc := h.AgentCoordination
-	if coordinationSvc == nil {
-		coordinationSvc = service.NewAgentCoordinationService(queries, pool, taskSvc)
-		taskSvc.Coordination = coordinationSvc
-		h.AgentCoordination = coordinationSvc
-	}
-	coordinationSvc.Start(sweepCtx)
-	registerAutomationListeners(bus, automationSvc)
-
-	// Construct a LivenessStore that mirrors the one wired into the HTTP
-	// handler. Both the heartbeat write path (handler) and the sweeper read
-	// path (here) must agree on the same Redis-or-Noop choice; if they
-	// disagree, online runtimes get falsely marked offline.
-	var liveness handler.LivenessStore = handler.NewNoopLivenessStore()
-	if storeRedis != nil {
-		liveness = handler.NewRedisLivenessStore(storeRedis)
-	}
-
-	// Start background sweeper to mark stale runtimes as offline.
-	runtimeReconnectGrace := envDuration("ORVILO_RUNTIME_RECONNECT_GRACE", defaultRuntimeReconnectGrace)
-	if runtimeReconnectGrace < minimumRuntimeReconnectGrace {
-		slog.Warn("runtime reconnect grace is shorter than heartbeat freshness; clamping",
-			"configured", runtimeReconnectGrace,
-			"minimum", minimumRuntimeReconnectGrace,
-		)
-		runtimeReconnectGrace = minimumRuntimeReconnectGrace
-	}
-	// Queued work now expires on the same runtime-liveness signal as in-flight
-	// work, so there is no separate queue TTL to tune: a busy runtime keeps its
-	// backlog, and a departed one retires everything it owned at once.
-	go runRuntimeSweeper(sweepCtx, queries, liveness, taskSvc, bus, runtimeReconnectGrace)
-	// Seven-day runtime retention does not share the 30-second liveness tick:
-	// its bounded transactions run independently once per hour, so a slow GC
-	// round cannot delay offline detection or task recovery.
-	go runRuntimeGCSweeper(sweepCtx, pool, queries, taskSvc.Metrics, h)
-	// Source-context cleanup is object-store work, so it gets its own goroutine
-	// instead of a slot in the runtime sweep tick.
-	go runSourceContextSweeper(sweepCtx, taskSvc)
-	go heartbeatScheduler.Run(sweepCtx)
-	go runAutomationFailureMonitor(automationCtx, queries, bus, envFailureMonitorConfig())
-	if automationSvc.QuotaEnabled() {
-		go runAutomationQuotaReconciler(automationCtx, automationSvc)
-	}
-	go runDBStatsLogger(sweepCtx, pool)
-	if h.WebhookDeliveryWorker != nil {
-		go h.WebhookDeliveryWorker.Run(sweepCtx)
-	}
-	if h.SeatCapacityWorker != nil {
-		go h.SeatCapacityWorker.Run(sweepCtx)
-	}
-	// Hosted IM installation capacity sweep: re-aligns durable pause markers
-	// with the Cloud policy every interval. Nil (and never started) unless
-	// ORVILO_HOSTED_IM_CAPACITY is on.
-	if h.HostedCapacityWorker != nil {
-		go h.HostedCapacityWorker.Run(sweepCtx)
-	}
-	if h.ManagedSlackTokens != nil {
-		go h.ManagedSlackTokens.Run(sweepCtx)
-	}
-	if h.LinearWorker != nil {
-		go h.LinearWorker.Run(sweepCtx)
-	}
-	if h.TelegramOutbound != nil {
-		h.TelegramOutbound.Start(sweepCtx)
-	}
-	// GitHub PR-card API snapshot pipeline (MUL-5265): worker pool + TTL sweeper.
-	// No-op when unconfigured (no App private key).
-	h.PRRefresh.Start(sweepCtx)
-	// Consume the durable execution-provenance handoff and converge each row to
-	// an explicit discovery result. The worker itself also fails closed when the
-	// GitHub App is unavailable.
-	if h.WorkProductDiscovery != nil {
-		h.WorkProductDiscovery.Start(sweepCtx)
-	}
-
-	// Channel inbound supervisor (MUL-3620): holds the §4.4 WS lease per
-	// installation and drives each channel.Channel. It is channel-agnostic,
-	// not Lark-specific, but remains nil when lease startup validation fails
-	// (notably Redis fail-closed readiness). With no platform registered or no
-	// installation rows it simply idles. Lifecycle is bound to sweepCtx so it winds down
-	// alongside the other long-running workers, AFTER the HTTP server has
-	// drained.
-	if h.ChannelSupervisor != nil {
-		go h.ChannelSupervisor.Run(sweepCtx)
-	}
-
-	// Media intent-ledger reconciler (PR #5580): settles uploaded-but-unbound
-	// channel media objects. An independent worker so object-storage latency
-	// spikes cannot starve any other sweeper's cadence.
-	if h.ChannelMediaReconciler != nil {
-		h.ChannelMediaReconciler.Metrics = channelMediaMetrics
-		go h.ChannelMediaReconciler.Run(sweepCtx)
-	}
-
-	// MUL-2957: DB-backed execution scheduler. The scheduler turns the
-	// `sys_cron_executions` table into the distributed lease + audit
-	// log for internal periodic jobs. The first job is
-	// `rollup_task_usage_hourly`, which replaces the previously
-	// operator-registered `pg_cron` entry (still safe to run
-	// concurrently — the SQL function holds advisory lock 4246).
-	//
-	// A failure to register the job is treated as fatal here only at
-	// the registration step (a duplicate name is the only realistic
-	// cause and indicates a code bug). Once running, the manager
-	// surfaces transient errors — DB unreachable, sys_cron_executions
-	// missing because of an unusual partial-migration state — by
-	// logging them on the tick that fails and retrying on the next
-	// cycle, so a temporary outage does not crash the server.
-	schedulerMgr := scheduler.NewManager(pool, scheduler.Options{})
-	if err := schedulerMgr.Register(scheduler.TaskUsageHourlyJob(pool)); err != nil {
-		slog.Warn("scheduler: failed to register task_usage_hourly rollup job", "error", err)
-	}
-	// MUL-3551: scheduled-Automation dispatch runs on the same DB-backed
-	// scheduler. The job owns its plan_times via PlansForScope (each
-	// trigger has its own cron expression, so the Cadence planner does
-	// not fit). Crash recovery, occurrence-level idempotency, lease
-	// theft, and retry are all reused from the manager + sys_cron_executions
-	// — there is no separate goroutine for scheduled Automation anymore.
-	if err := schedulerMgr.Register(scheduler.AutomationScheduleDispatchJob(pool, queries, automationSvc)); err != nil {
-		slog.Warn("scheduler: failed to register automation_schedule_dispatch job", "error", err)
-	}
-	// Manifest-declared Plugin schedules share the same durable lease and retry
-	// machinery. The job is inert while plugins_v1 is disabled.
-	if err := schedulerMgr.Register(scheduler.PluginHookScheduleDispatchJob(queries, h.PluginService)); err != nil {
-		slog.Warn("scheduler: failed to register plugin_hook_schedule_dispatch job", "error", err)
-	}
-	go func() {
-		_ = schedulerMgr.Run(sweepCtx)
-	}()
+	background := app.startBackground(channelMediaMetrics)
 
 	if metricsServer != nil {
 		go func() {
@@ -805,81 +662,35 @@ func main() {
 	// joined — cancelling the sweeper context is already what makes every
 	// supervised connection clear its sender, and a drain past that point
 	// finds no socket to deliver over.
-	shutdownSequence{
-		StopAutomation: automationCancel,
-		DrainHTTP: func() {
-			apiShutdownCtx, apiShutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-			if err := srv.Shutdown(apiShutdownCtx); err != nil {
-				apiShutdownCancel()
-				slog.Error("server forced to shutdown", "error", err)
-				os.Exit(1)
-			}
+	shutdown := background.shutdownSequence()
+	shutdown.DrainHTTP = func() {
+		apiShutdownCtx, apiShutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		if err := srv.Shutdown(apiShutdownCtx); err != nil {
 			apiShutdownCancel()
-		},
-		StopOutboundRelay: stopRelay,
-		CancelWorkers: func() {
-			sweepCancel()
-			if !coordinationSvc.WaitWithTimeout(5 * time.Second) {
-				slog.Warn("agent coordination worker did not exit within shutdown timeout")
-			}
-		},
-		StopHeartbeats: heartbeatScheduler.Stop,
-		JoinSlackTokens: func() {
-			if h.ManagedSlackTokens != nil && !h.ManagedSlackTokens.WaitWithTimeout(5*time.Second) {
-				slog.Warn("managed Slack token worker did not exit within shutdown timeout")
-			}
-		},
-		JoinWebhookWorker: func() {
-			if h.WebhookDeliveryWorker != nil && !h.WebhookDeliveryWorker.WaitWithTimeout(5*time.Second) {
-				slog.Warn("webhook delivery worker did not exit within shutdown timeout")
-			}
-		},
-		JoinTelegram: func() {
-			if h.TelegramOutbound != nil && !h.TelegramOutbound.WaitWithTimeout(5*time.Second) {
-				slog.Warn("telegram outbound workers did not exit within shutdown timeout")
-			}
-		},
-		// Joined so the lease renewer can issue a final release before exit;
-		// otherwise the next replica waits out the whole LeaseTTL on the far
-		// side of a redeploy. Bounded: a wedged supervisor falls back to the
-		// natural expiry rather than holding shutdown open.
-		JoinChannelSupervisor: func() {
-			if h.ChannelSupervisor == nil {
-				return
-			}
-			if !h.ChannelSupervisor.WaitWithTimeout(h.ChannelSupervisor.ShutdownTimeout()) {
-				slog.Warn("channel supervisor: connections did not exit within shutdown timeout; proceeding",
-					"timeout", h.ChannelSupervisor.ShutdownTimeout().String(),
-				)
-			}
-		},
-		DrainChannelRouter: func() {
-			if h.ChannelSupervisor == nil || h.ChannelRouter == nil {
-				return
-			}
-			drainCtx, drainCancel := context.WithTimeout(context.Background(), 10*time.Second)
-			if !h.ChannelRouter.Drain(drainCtx) {
-				slog.Warn("channel router: drain deadline reached; deferred media fallback remains durable")
-			}
-			drainCancel()
-		},
-		StopMetricsServer: func() {
-			if metricsServer == nil {
-				return
-			}
-			metricsShutdownCtx, metricsShutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			if err := metricsServer.Shutdown(metricsShutdownCtx); err != nil {
-				slog.Error("metrics server forced to shutdown", "error", err)
-			}
-			metricsShutdownCancel()
-		},
-		StopProfiling: func() {
-			profilingShutdownCtx, profilingShutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
-			if err := profilingServer.Shutdown(profilingShutdownCtx); err != nil {
-				slog.Error("pprof server forced to shutdown", "error", err)
-			}
-			profilingShutdownCancel()
-		},
-	}.run()
+			slog.Error("server forced to shutdown", "error", err)
+			os.Exit(1)
+		}
+		apiShutdownCancel()
+	}
+	shutdown.StopOutboundRelay = stopRelay
+
+	shutdown.StopMetricsServer = func() {
+		if metricsServer == nil {
+			return
+		}
+		metricsShutdownCtx, metricsShutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		if err := metricsServer.Shutdown(metricsShutdownCtx); err != nil {
+			slog.Error("metrics server forced to shutdown", "error", err)
+		}
+		metricsShutdownCancel()
+	}
+	shutdown.StopProfiling = func() {
+		profilingShutdownCtx, profilingShutdownCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		if err := profilingServer.Shutdown(profilingShutdownCtx); err != nil {
+			slog.Error("pprof server forced to shutdown", "error", err)
+		}
+		profilingShutdownCancel()
+	}
+	shutdown.run()
 	slog.Info("server stopped")
 }
