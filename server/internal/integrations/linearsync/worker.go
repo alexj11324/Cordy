@@ -48,11 +48,11 @@ func NewWorker(executor DBExecutor, txs TxStarter, box *secretbox.Box, api linea
 	return &Worker{db: executor, txStarter: txs, box: box, api: api, clientID: clientID, clientSecret: clientSecret, pullEnabled: pull, pushEnabled: push, workerID: uuid.NewString(), wake: make(chan struct{}, 1), interval: 30 * time.Second, pollInterval: 5 * time.Minute, events: sink}
 }
 
-func (w *Worker) publishIssueEvent(issue db.Issue, eventType string) {
+func (w *Worker) publishIssueEvent(issue db.Issue, eventType string, projectChanged bool) {
 	if w == nil || w.events == nil {
 		return
 	}
-	w.events.IssueChanged(issue, eventType, "system", uuid.Nil.String())
+	w.events.IssueChanged(issue, eventType, "system", uuid.Nil.String(), projectChanged)
 }
 
 func (w *Worker) Wake() {

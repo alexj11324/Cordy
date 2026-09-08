@@ -26,7 +26,7 @@ type TxStarter interface {
 // EventSink receives committed domain changes. Its adapter chooses the
 // transport and response DTO; sync never imports the HTTP layer.
 type EventSink interface {
-	IssueChanged(issue db.Issue, eventType, actorType, actorID string)
+	IssueChanged(issue db.Issue, eventType, actorType, actorID string, projectChanged bool)
 	CommentChanged(comment db.Comment, issueRevision int64, created bool)
 }
 

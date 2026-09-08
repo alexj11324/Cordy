@@ -11,15 +11,17 @@ import (
 )
 
 type captureSyncEvents struct {
-	issues     []db.Issue
-	actorTypes []string
-	actorIDs   []string
+	issues         []db.Issue
+	actorTypes     []string
+	actorIDs       []string
+	projectChanges []bool
 }
 
-func (s *captureSyncEvents) IssueChanged(issue db.Issue, _ string, actorType, actorID string) {
+func (s *captureSyncEvents) IssueChanged(issue db.Issue, _ string, actorType, actorID string, projectChanged bool) {
 	s.issues = append(s.issues, issue)
 	s.actorTypes = append(s.actorTypes, actorType)
 	s.actorIDs = append(s.actorIDs, actorID)
+	s.projectChanges = append(s.projectChanges, projectChanged)
 }
 func (*captureSyncEvents) CommentChanged(db.Comment, int64, bool) {}
 

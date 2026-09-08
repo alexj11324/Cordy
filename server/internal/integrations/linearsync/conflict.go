@@ -162,7 +162,7 @@ func (w *Worker) ResolveConflict(ctx context.Context, workspaceID, conflictID, a
 		return db.LinearSyncConflict{}, db.Issue{}, err
 	}
 	if w.events != nil {
-		w.events.IssueChanged(updated, "issue:updated", "member", uuidToString(actorID))
+		w.events.IssueChanged(updated, "issue:updated", "member", uuidToString(actorID), false)
 	}
 	conflict.Status, conflict.Resolution, conflict.ResolvedValue, conflict.ResolvedByID = "resolved", pgtype.Text{String: resolution, Valid: true}, resolvedValue, actorID
 	return conflict, updated, nil
