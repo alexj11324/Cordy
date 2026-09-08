@@ -1,7 +1,8 @@
 # Nebula staging trial
 
 This independent OCI stack runs the four image digests from production run
-33940998112 (source 61a3adba7ba2d717160ce586a86b07bea9ff6251).
+34172677715, successful attempt 3 (source
+83df56a36b50a9971dd3e673ae0aa4d4b7cf5d50, the PR #779 merge).
 It does not automatically deploy new main commits or gate production.
 
 - Web: https://orvilo-staging.nebula-spaces.com
@@ -46,11 +47,38 @@ stop Docker containers. To stop the trial without deleting data, use
 to identify the five containers, then stop those exact IDs. Do not remove volumes.
 
 This is a Web/internal QA trial. Clerk development-instance sessions require
-separate sign-in on Accounts and Web. Packaged Desktop remains production;
-the PR's shared native callback scheme is not corrected by this deployment.
-No production credentials, DNS records or database contents were copied.
+separate sign-in on Accounts and Web. Authenticated staging browser acceptance
+for the current snapshot is still pending.
+
+## Migration verified on 2026-09-07 (America/New_York)
+
+- The snapshot uses the exact `production-manifest.json` artifact from
+  [production run 34172677715, attempt 3](https://github.com/alexj11324/Cordy/actions/runs/34172677715/attempts/3),
+  which succeeded after PR #779 merged as
+  `83df56a36b50a9971dd3e673ae0aa4d4b7cf5d50`.
+  The committed `nebula-staging.manifest.json` is byte-for-byte identical to
+  that artifact. Its accompanying SHA-256 checksum was verified:
+  `1bf744df7671e0246986fee4d5303626859de8a60bc2ffbe1b2ab056592e0332`.
+- The existing Clerk application `app_3IthtCgfLn1WhM4DCfzpsKZaF3G` was renamed
+  **Orvilo Staging**. Its identity and credentials were preserved.
+- Before applying the new application migrations, all 137 compared database
+  tables matched in both row counts and contents. This comparison records
+  preservation at that boundary; it is not a post-migration equality claim.
+- Four public probes on the flat Orvilo Nebula hosts returned HTTP 200 with
+  source `83df56a36b50a9971dd3e673ae0aa4d4b7cf5d50`: Web `/login` and Docs
+  `/docs` on `orvilo-staging.nebula-spaces.com`, API `/readyz` on
+  `orvilo-staging-api.nebula-spaces.com`, and Accounts `/readyz` on
+  `orvilo-staging-accounts.nebula-spaces.com`.
+- Authenticated staging browser acceptance remains **pending**. The historical
+  sign-in evidence below does not establish acceptance for this snapshot.
 
 ## Verified on 2026-09-05
+
+The following evidence belongs to production run 33940998112, source
+`61a3adba7ba2d717160ce586a86b07bea9ff6251`, before the current migration.
+At that time, packaged Desktop remained production and this deployment did not
+correct the PR's shared native callback scheme. No production credentials, DNS
+records or database contents were copied for that trial.
 
 - All five services started on OCI; 611 migration ledger entries, 16 MB database.
 - Public Web login, Docs, API readiness and Accounts readiness returned 200.
