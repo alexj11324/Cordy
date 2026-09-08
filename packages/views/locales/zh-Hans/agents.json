@@ -995,7 +995,8 @@
   "last_active": {
     "today": "今天",
     "days_ago_other": "{{count}} 天前",
-    "none": "30 天内无活动"
+    "none": "30 天内无活动",
+    "none_short": "无活动"
   },
   "toolbar": {
     "result_count_title": "当前结果 / 范围内全部",

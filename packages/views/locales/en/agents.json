@@ -1016,7 +1016,8 @@
     "today": "Today",
     "days_ago_one": "{{count}} day ago",
     "days_ago_other": "{{count}} days ago",
-    "none": "No activity (30d)"
+    "none": "No activity (30d)",
+    "none_short": "None"
   },
   "toolbar": {
     "result_count_title": "Matching agents / agents in scope",

@@ -15,6 +15,7 @@ import {
   type AgentSortField,
 } from "@orvilo/core/agents/stores";
 import { runtimeDisplayLabel } from "@orvilo/core/runtimes";
+import { Badge } from "@orvilo/ui/components/reui/badge";
 import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
 import {
   DataGrid,
@@ -419,8 +420,14 @@ export function AgentTable({
         }}
         tableClassNames={{
           base: "@2xl:min-w-[var(--agt-minw)]",
-          headerRow: "group/header",
-          bodyRow: "group/row h-16 cursor-pointer",
+          // h-9 matches the management-list header height; the muted band and
+          // its bottom border are the explicit header LAYER — without one the
+          // 64px rows and the column titles read as the same surface.
+          headerRow: "group/header h-9",
+          // Faint separators rather than a tighter row: two-line identity rows
+          // need the height, and at 64px with nothing between them the list
+          // reads as loose fragments.
+          bodyRow: "group/row h-16 cursor-pointer [&>td]:border-border/60",
         }}
       >
         {/* ONE scroll container owns BOTH axes: DataGridTableVirtual's own
@@ -611,7 +618,7 @@ function NameCell({ row }: { row: AgentListRow }) {
           <Tooltip>
             <TooltipTrigger
               render={
-                <Lock className="h-3 w-3 shrink-0 text-faint-foreground" />
+                <Lock className="size-3.5 shrink-0 text-faint-foreground" />
               }
             />
             <TooltipContent>{VISIBILITY_TOOLTIP.private}</TooltipContent>
@@ -627,26 +634,26 @@ function NameCell({ row }: { row: AgentListRow }) {
   );
 }
 
-// Availability dot + label, with the workload folded in as a suffix
-// ("Online · 2 tasks") — a 0-2 integer doesn't earn its own column.
+// Availability as a chip, with the workload folded in as a suffix
+// ("Online · 2 tasks") — a 0-2 integer doesn't earn its own column. The chip
+// variant comes from the shared availability config, so the list, the detail
+// header and the hover card can never disagree on tone.
 function StatusCell({ row }: { row: AgentListRow }) {
   const { t } = useT("agents");
   const { agent, presence } = row;
   if (agent.archived_at) {
     return (
-      <span className="text-caption text-muted-foreground">
+      <Badge variant="secondary" size="sm">
         {t(($) => $.row.archived)}
-      </span>
+      </Badge>
     );
   }
   if (!isAgentRuntimeBound(agent)) {
     return (
-      <span className="flex min-w-0 items-center gap-1.5">
-        <AlertCircle className="size-3.5 shrink-0 text-amber-500" />
-        <span className="truncate text-caption text-amber-600 dark:text-amber-400">
-          {t(($) => $.row.needs_runtime)}
-        </span>
-      </span>
+      <Badge variant="warning-light" size="sm">
+        <AlertCircle />
+        {t(($) => $.row.needs_runtime)}
+      </Badge>
     );
   }
   if (!presence) {
@@ -656,16 +663,14 @@ function StatusCell({ row }: { row: AgentListRow }) {
   const active = presence.runningCount + presence.queuedCount;
   return (
     <span className="flex min-w-0 items-center gap-1.5">
-      <span className={`size-1.5 shrink-0 rounded-full ${visual.dotClass}`} />
-      <span className={`truncate text-caption ${visual.textClass}`}>
+      <Badge variant={visual.badgeVariant} size="sm">
         {t(($) => $.availability[presence.availability])}
-        {active > 0 && (
-          <span className="text-muted-foreground">
-            {" · "}
-            {t(($) => $.row.task_count, { count: active })}
-          </span>
-        )}
-      </span>
+      </Badge>
+      {active > 0 && (
+        <span className="truncate text-caption text-muted-foreground">
+          {t(($) => $.row.task_count, { count: active })}
+        </span>
+      )}
     </span>
   );
 }
@@ -719,9 +724,9 @@ function RuntimeCell({ row }: { row: AgentListRow }) {
   const { t } = useT("agents");
   if (!isAgentRuntimeBound(row.agent)) {
     return (
-      <span className="truncate text-caption text-amber-600 dark:text-amber-400">
+      <Badge variant="warning-light" size="sm">
         {t(($) => $.row.needs_runtime)}
-      </span>
+      </Badge>
     );
   }
   const runtime = row.runtime;
@@ -734,7 +739,7 @@ function RuntimeCell({ row }: { row: AgentListRow }) {
     <span className="inline-flex min-w-0 items-center gap-1.5">
       <ProviderLogo
         provider={runtime.provider}
-        className="h-3.5 w-3.5 shrink-0"
+        className="size-3.5 shrink-0"
       />
       <span className="min-w-0 truncate text-caption text-muted-foreground">
         {runtimeDisplayLabel(runtime)}
@@ -747,14 +752,26 @@ function LastActiveCell({ row }: { row: AgentListRow }) {
   const { t } = useT("agents");
   const days = row.lastActiveDays;
   if (days === null) {
+    if (row.agent.archived_at) {
+      return <span className="text-caption text-faint-foreground">—</span>;
+    }
+    // The full sentence ("No activity (30d)") does not fit the track, so the
+    // cell carries the short form and the window moves to a tooltip.
     return (
-      <span className="truncate text-caption text-muted-foreground">
-        {row.agent.archived_at ? "—" : t(($) => $.last_active.none)}
-      </span>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <span className="truncate text-caption text-muted-foreground">
+              {t(($) => $.last_active.none_short)}
+            </span>
+          }
+        />
+        <TooltipContent>{t(($) => $.last_active.none)}</TooltipContent>
+      </Tooltip>
     );
   }
   return (
-    <span className="whitespace-nowrap text-caption tabular-nums text-muted-foreground">
+    <span className="whitespace-nowrap text-caption text-muted-foreground tabular-nums">
       {days === 0
         ? t(($) => $.last_active.today)
         : t(($) => $.last_active.days_ago, { count: days })}
