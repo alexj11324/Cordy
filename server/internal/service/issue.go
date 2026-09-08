@@ -14,7 +14,6 @@ import (
 	"github.com/orvilo-ai/orvilo/server/internal/dispatch"
 	"github.com/orvilo-ai/orvilo/server/internal/entitlement"
 	"github.com/orvilo-ai/orvilo/server/internal/events"
-	"github.com/orvilo-ai/orvilo/server/internal/featureflags"
 	"github.com/orvilo-ai/orvilo/server/internal/issueguard"
 	"github.com/orvilo-ai/orvilo/server/internal/issueposition"
 	"github.com/orvilo-ai/orvilo/server/internal/issuestatus"
@@ -220,17 +219,6 @@ type IssueCreateResult struct {
 func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts IssueCreateOpts) (IssueCreateResult, error) {
 	issueCountPolicy := ResolveIssueCountPolicy(ctx, s.Entitlements, p.WorkspaceID)
 	issueID := dbid.NewV7()
-	// Only the optional runtime overlay requires network I/O. Prepare it before
-	// taking any database locks; admission and provenance are re-read in the tx.
-	overlay, err := s.prepareCreatedIssueTaskOverlay(ctx, db.Issue{
-		ID: issueID, WorkspaceID: p.WorkspaceID, Status: p.Status,
-		ExecutorType: p.ExecutorType, ExecutorID: p.ExecutorID,
-		CreatorType: p.CreatorType, CreatorID: p.CreatorID,
-		OriginType: p.OriginType, OriginID: p.OriginID,
-	}, opts.ExecutorRunFireAt)
-	if err != nil {
-		return IssueCreateResult{}, fmt.Errorf("prepare executor task: %w", err)
-	}
 	tx, err := s.TxStarter.Begin(ctx)
 	if err != nil {
 		return IssueCreateResult{}, fmt.Errorf("begin tx: %w", err)
@@ -520,7 +508,7 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	if err != nil {
 		return IssueCreateResult{}, err
 	}
-	executorTask, verdict, err := s.createIssueExecutorTask(ctx, qtx, issue, opts.ExecutorRunFireAt, overlay)
+	executorTask, verdict, err := s.createIssueExecutorTask(ctx, qtx, issue, opts.ExecutorRunFireAt)
 	if err != nil {
 		return IssueCreateResult{}, fmt.Errorf("create executor task: %w", err)
 	}
@@ -554,6 +542,7 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	if issue.ExecutorType.String == "agent" {
 		executorTaskID = executorTask.ID
 	}
+	issueCreatedPending := isIssueCreatedPendingTask(executorTask)
 	if executorTask.ID.Valid && executorTask.Status == "deferred" {
 		if err := s.TaskService.hydrateDeferredChannelIssueTaskOverlay(ctx, executorTask); err != nil {
 			// The deferred task is already durable. An optional integration failure
@@ -562,9 +551,34 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 				"issue_id", util.UUIDToString(issue.ID), "task_id", util.UUIDToString(executorTask.ID), "error", err)
 		}
 	}
+	if issueCreatedPending {
+		if err := s.TaskService.hydrateIssueCreatedTaskOverlay(ctx, executorTask); err != nil {
+			// The overlay is optional, while the issue and task are already durable.
+			// Keep the publication fence until the task is activated so a slow or
+			// unavailable integration cannot race the first claim.
+			slog.Warn("hydrate issue-created task overlay failed",
+				"issue_id", util.UUIDToString(issue.ID), "task_id", util.UUIDToString(executorTask.ID), "error", err)
+		}
+	}
 	s.publishIssueCreated(issue, attachments, labels, p.CreatorType, actorID, opts)
 	s.captureCreatedAnalytics(issue, p.CreatorType, actorID, opts)
-	if executorTask.ID.Valid && executorTask.Status == "queued" {
+	if issueCreatedPending {
+		// Publish task:queued while the durable marker still excludes claims. The
+		// activation CAS below is the only step that opens the claim gate, so a
+		// polling daemon cannot emit task:dispatch between these two lifecycle
+		// events.
+		s.TaskService.broadcastTaskEvent(ctx, protocol.EventTaskQueued, executorTask)
+		activated, activateErr := s.TaskService.activateIssueCreatedTask(ctx, executorTask.ID)
+		if activateErr == nil {
+			executorTask = activated
+			s.TaskService.NotifyTaskEnqueued(ctx, executorTask)
+		} else if !errors.Is(activateErr, pgx.ErrNoRows) {
+			// A committed create must remain successful. A later claim poll will
+			// retry the durable publication fence if activation failed here.
+			slog.Warn("activate issue-created task failed",
+				"issue_id", util.UUIDToString(issue.ID), "task_id", util.UUIDToString(executorTask.ID), "error", activateErr)
+		}
+	} else if executorTask.ID.Valid && executorTask.Status == "queued" {
 		s.TaskService.broadcastTaskEvent(ctx, protocol.EventTaskQueued, executorTask)
 		s.TaskService.NotifyTaskEnqueued(ctx, executorTask)
 	}
@@ -777,35 +791,6 @@ func classifyOrigin(issue db.Issue, opts IssueCreateOpts) (source, taskID, autom
 	}
 }
 
-// issueExecutorOverlay is optional external preparation, tied to the exact
-// agent and human for whom it was built. Authoritative attribution is resolved
-// again inside the create transaction.
-type issueExecutorOverlay struct {
-	agentID, originatorUserID pgtype.UUID
-	data                      runtimeMCPOverlayData
-}
-
-func (s *IssueService) prepareCreatedIssueTaskOverlay(ctx context.Context, issue db.Issue, fireAt time.Time) (issueExecutorOverlay, error) {
-	if s.TaskService == nil || s.TaskService.Composio == nil ||
-		!featureflags.ComposioMCPAppsEnabled(ctx, s.TaskService.FeatureFlags) {
-		return issueExecutorOverlay{}, nil
-	}
-	if !fireAt.IsZero() && issue.ExecutorType.String == "agent" {
-		// Media-gated tasks cannot run yet; retain their existing post-commit
-		// hydration and comment-merge fence instead of preparing twice.
-		return issueExecutorOverlay{}, nil
-	}
-	target, err := s.resolveCreatedIssueExecutor(ctx, s.Queries, issue)
-	if err != nil || !target.admitted {
-		return issueExecutorOverlay{}, err
-	}
-	originator := s.TaskService.resolveOriginatorForIssueTask(ctx, issue, pgtype.UUID{})
-	return issueExecutorOverlay{
-		agentID: target.agent.ID, originatorUserID: originator,
-		data: s.TaskService.buildRuntimeMCPOverlay(ctx, originator, target.agent),
-	}, nil
-}
-
 type issueExecutorTarget struct {
 	agent    db.Agent
 	teamID   pgtype.UUID
@@ -861,7 +846,7 @@ func (s *IssueService) resolveCreatedIssueExecutor(ctx context.Context, q *db.Qu
 	return target, nil
 }
 
-func (s *IssueService) createIssueExecutorTask(ctx context.Context, q *db.Queries, issue db.Issue, fireAt time.Time, overlay issueExecutorOverlay) (db.AgentTaskQueue, AgentVerdict, error) {
+func (s *IssueService) createIssueExecutorTask(ctx context.Context, q *db.Queries, issue db.Issue, fireAt time.Time) (db.AgentTaskQueue, AgentVerdict, error) {
 	target, err := s.resolveCreatedIssueExecutor(ctx, q, issue)
 	if err != nil || !target.admitted {
 		return db.AgentTaskQueue{}, target.verdict, err
@@ -885,8 +870,11 @@ func (s *IssueService) createIssueExecutorTask(ctx context.Context, q *db.Querie
 	var deferredAt pgtype.Timestamptz
 	if !fireAt.IsZero() && !target.teamID.Valid {
 		deferredAt = pgtype.Timestamptz{Time: fireAt, Valid: true}
-	} else if overlay.agentID == params.AgentID && overlay.originatorUserID == params.OriginatorUserID {
-		params.RuntimeMcpOverlay, params.RuntimeConnectedApps = overlay.data.Overlay, overlay.data.ConnectedApps
+	} else {
+		// Keep ordinary tasks behind the durable issue-created publication fence.
+		// The optional Composio overlay is hydrated after the transaction commits,
+		// while the claim query still excludes this marker.
+		params.IssueCreatedPending = pgtype.Bool{Bool: true, Valid: true}
 	}
 	task, err := persistIssueTask(ctx, q, params, deferredAt)
 	return task, target.verdict, err

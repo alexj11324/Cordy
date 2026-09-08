@@ -1102,6 +1102,98 @@ func (s *TaskService) hydrateDeferredChannelIssueTaskOverlay(ctx context.Context
 	return nil
 }
 
+func isIssueCreatedPendingTask(task db.AgentTaskQueue) bool {
+	if len(task.Context) == 0 {
+		return false
+	}
+	var contextData map[string]any
+	if err := json.Unmarshal(task.Context, &contextData); err != nil {
+		return false
+	}
+	pending, _ := contextData["issue_created_pending"].(bool)
+	return pending
+}
+
+// hydrateIssueCreatedTaskOverlay prepares the optional external overlay after
+// the issue and task have passed their transactional admission checks. The
+// issue-created marker remains in place until this method's caller publishes
+// issue:created and activates the task.
+func (s *TaskService) hydrateIssueCreatedTaskOverlay(ctx context.Context, task db.AgentTaskQueue) error {
+	if s == nil || s.Queries == nil || s.Composio == nil || !featureflags.ComposioMCPAppsEnabled(ctx, s.FeatureFlags) {
+		return nil
+	}
+	agent, err := s.Queries.GetAgent(ctx, task.AgentID)
+	if err != nil {
+		return fmt.Errorf("load agent for issue-created task overlay: %w", err)
+	}
+	overlay := s.buildRuntimeMCPOverlay(ctx, task.OriginatorUserID, agent)
+	if len(overlay.Overlay) == 0 {
+		return nil
+	}
+	if _, err := s.Queries.SetIssueCreatedTaskRuntimeOverlay(ctx, db.SetIssueCreatedTaskRuntimeOverlayParams{
+		ID: task.ID, RuntimeMcpOverlay: overlay.Overlay,
+		RuntimeConnectedApps: overlay.ConnectedApps, OriginatorUserID: task.OriginatorUserID,
+	}); err != nil {
+		return fmt.Errorf("set issue-created task overlay: %w", err)
+	}
+	return nil
+}
+
+func (s *TaskService) activateIssueCreatedTask(ctx context.Context, taskID pgtype.UUID) (db.AgentTaskQueue, error) {
+	return s.Queries.ActivateIssueCreatedTask(ctx, taskID)
+}
+
+func (s *TaskService) publishRecoveredIssueCreated(ctx context.Context, task db.AgentTaskQueue) error {
+	if s.Bus == nil {
+		return nil
+	}
+	issue, err := s.Queries.GetIssue(ctx, task.IssueID)
+	if err != nil {
+		return fmt.Errorf("load issue for issue-created recovery: %w", err)
+	}
+	s.Bus.Publish(events.Event{
+		Type:        protocol.EventIssueCreated,
+		WorkspaceID: util.UUIDToString(issue.WorkspaceID),
+		ActorType:   "system",
+		Payload:     map[string]any{"issue_id": util.UUIDToString(issue.ID)},
+	})
+	return nil
+}
+
+// activatePendingIssueCreatedTasksForRuntime completes a create interrupted
+// after its database commit. It republishes issue:created before clearing the
+// durable claim fence, then emits the normal queued notification. A fresh
+// daemon therefore cannot dispatch an issue task before clients have seen the
+// issue even when the original creator process died.
+func (s *TaskService) activatePendingIssueCreatedTasksForRuntime(ctx context.Context, runtimeID pgtype.UUID) error {
+	tasks, err := s.Queries.ListPendingIssueCreatedTasksByRuntime(ctx, runtimeID)
+	if err != nil {
+		return fmt.Errorf("list issue-created pending tasks: %w", err)
+	}
+	for _, task := range tasks {
+		if err := s.hydrateIssueCreatedTaskOverlay(ctx, task); err != nil {
+			slog.Warn("hydrate recovered issue-created task overlay failed",
+				"task_id", util.UUIDToString(task.ID), "error", err)
+		}
+		if err := s.publishRecoveredIssueCreated(ctx, task); err != nil {
+			return err
+		}
+		// The task is still claim-fenced here. Emit task:queued before the CAS
+		// opens the gate, preserving issue:created -> task:queued -> task:dispatch
+		// even for a daemon that is recovering an interrupted creator.
+		s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, task)
+		activated, err := s.activateIssueCreatedTask(ctx, task.ID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("activate recovered issue-created task: %w", err)
+		}
+		s.NotifyTaskEnqueued(ctx, activated)
+	}
+	return nil
+}
+
 // EnqueueTaskForIssueWithHandoff is the executor-set/promote variant that carries a
 // handoff note into the run's opening context (MUL-3375). The note rides a
 // dedicated task column; the daemon renders it via the executor-handoff
@@ -3773,6 +3865,10 @@ func (s *TaskService) ClaimTaskForRuntime(ctx context.Context, runtimeID pgtype.
 	}()
 
 	runtimeKey := util.UUIDToString(runtimeID)
+	if err := s.activatePendingIssueCreatedTasksForRuntime(ctx, runtimeID); err != nil {
+		outcome = "error_activate_issue_created"
+		return nil, err
+	}
 	if err := s.PromoteDueDeferredTasksForRuntime(ctx, runtimeID); err != nil {
 		outcome = "error_promote_deferred"
 		return nil, err
@@ -4012,6 +4108,11 @@ func (s *TaskService) ClaimTasksForRuntimes(ctx context.Context, runtimeIDs []pg
 		}
 		seen[key] = struct{}{}
 		uniqueIDs = append(uniqueIDs, rid)
+	}
+	for _, rid := range uniqueIDs {
+		if err := s.activatePendingIssueCreatedTasksForRuntime(ctx, rid); err != nil {
+			return nil, err
+		}
 	}
 
 	claimed := make([]db.AgentTaskQueue, 0, maxTasks)
@@ -7265,7 +7366,9 @@ func (s *TaskService) notifyRuntimeMayHaveWork(runtimeID pgtype.UUID, taskID str
 	// just-queued task until the TTL expires. The cache itself bounds
 	// every Redis call with a short timeout so a wedged Redis cannot
 	// block enqueue.
-	s.EmptyClaim.Bump(context.Background(), runtimeKey)
+	if s.EmptyClaim != nil {
+		s.EmptyClaim.Bump(context.Background(), runtimeKey)
+	}
 	if s.Wakeup == nil {
 		return
 	}
@@ -7337,7 +7440,7 @@ func taskEvent(eventType, workspaceID string, task db.AgentTaskQueue, extra ...m
 }
 
 func (s *TaskService) publishTaskEvent(eventType, workspaceID string, task db.AgentTaskQueue, extra ...map[string]any) {
-	if workspaceID == "" {
+	if workspaceID == "" || s.Bus == nil {
 		return
 	}
 	s.Bus.Publish(taskEvent(eventType, workspaceID, task, extra...))

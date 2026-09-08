@@ -353,6 +353,11 @@ SELECT
     sqlc.narg(handoff_note),
     sqlc.narg(team_id),
     CASE
+        WHEN COALESCE(sqlc.narg('issue_created_pending')::boolean, FALSE)
+        THEN jsonb_strip_nulls(jsonb_build_object(
+            'head_sha', NULLIF(COALESCE(sqlc.narg('head_sha')::text, ''), ''),
+            'issue_created_pending', TRUE
+        ))
         WHEN COALESCE(sqlc.narg('head_sha')::text, '') <> ''
         THEN jsonb_build_object('head_sha', sqlc.narg('head_sha')::text)
         ELSE NULL
@@ -370,6 +375,38 @@ SELECT
     COALESCE(sqlc.narg('id')::uuid, gen_random_uuid())
 WHERE lock_task_owner_rows($1, $3, $2)
 RETURNING *;
+
+-- name: ListPendingIssueCreatedTasksByRuntime :many
+-- Issue creation commits the task before publishing issue:created. The durable
+-- marker keeps daemons from claiming it in that interval; a restarted daemon
+-- republishes a minimal issue event before clearing the marker.
+SELECT * FROM agent_task_queue
+WHERE runtime_id = $1
+  AND status = 'queued'
+  AND context->>'issue_created_pending' = 'true'
+ORDER BY priority DESC, created_at ASC, id ASC;
+
+-- name: ActivateIssueCreatedTask :one
+-- Clear the durable publication fence only after issue:created has been sent.
+-- The compare-and-set makes creator and recovery paths idempotent.
+UPDATE agent_task_queue
+SET context = context - 'issue_created_pending'
+WHERE id = $1
+  AND status = 'queued'
+  AND context->>'issue_created_pending' = 'true'
+RETURNING *;
+
+-- name: SetIssueCreatedTaskRuntimeOverlay :execrows
+-- The task stays behind issue_created_pending while the optional external
+-- overlay is prepared after admission. Attribution is part of the CAS so a
+-- later transaction cannot receive an overlay for an earlier originator.
+UPDATE agent_task_queue
+SET runtime_mcp_overlay = $2,
+    runtime_connected_apps = $3
+WHERE id = $1
+  AND status = 'queued'
+  AND context->>'issue_created_pending' = 'true'
+  AND originator_user_id IS NOT DISTINCT FROM $4;
 
 -- name: CreateCoordinationAgentTask :one
 -- Coordination handoffs must persist their provenance in the same INSERT as
@@ -1087,6 +1124,7 @@ WHERE id = (
     WHERE atq.agent_id = @agent_id
       AND atq.runtime_id = @runtime_id
       AND atq.status = 'queued'
+      AND COALESCE(atq.context->>'issue_created_pending', '') <> 'true'
       AND task_agent.archived_at IS NULL
       AND EXISTS (
           SELECT 1 FROM agent_runtime r
@@ -1754,6 +1792,7 @@ RETURNING *;
 WITH victims AS (
     SELECT id FROM agent_task_queue
     WHERE status = 'queued'
+      AND COALESCE(context->>'issue_created_pending', '') <> 'true'
       AND created_at < now() - make_interval(secs => @reconnect_grace_secs::double precision)
       AND (
           runtime_id IS NULL
@@ -1785,6 +1824,7 @@ SET status = 'failed',
 FROM victims v
 WHERE t.id = v.id
   AND t.status = 'queued'
+  AND COALESCE(t.context->>'issue_created_pending', '') <> 'true'
   AND t.created_at < now() - make_interval(secs => @reconnect_grace_secs::double precision)
   AND (
       t.runtime_id IS NULL
@@ -2497,6 +2537,7 @@ ORDER BY priority DESC, created_at ASC;
 SELECT atq.* FROM agent_task_queue atq
 WHERE atq.runtime_id = $1
   AND atq.status = 'queued'
+  AND COALESCE(atq.context->>'issue_created_pending', '') <> 'true'
   AND EXISTS (
       -- Keep this authorization fence in sync with ClaimAgentTask.
       SELECT 1
@@ -2624,6 +2665,7 @@ RETURNING *;
 SELECT atq.* FROM agent_task_queue atq
 WHERE atq.runtime_id = ANY(@runtime_ids::uuid[])
   AND atq.status = 'queued'
+  AND COALESCE(atq.context->>'issue_created_pending', '') <> 'true'
   AND EXISTS (
       -- Keep this authorization fence in sync with ClaimAgentTask.
       SELECT 1

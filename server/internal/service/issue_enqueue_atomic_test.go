@@ -171,7 +171,10 @@ func TestCreateIssueTaskClaimableAfterPostCommitInterruption(t *testing.T) {
 	}
 	// A fresh service has none of the interrupted creator's in-memory state.
 	// The real runtime poll must recover the task from the database alone.
-	restarted := &TaskService{Queries: db.New(f.Pool), TxStarter: f.Pool, Bus: events.New()}
+	restartedBus := events.New()
+	var recoveredEventOrder []string
+	restartedBus.SubscribeAll(func(event events.Event) { recoveredEventOrder = append(recoveredEventOrder, event.Type) })
+	restarted := &TaskService{Queries: db.New(f.Pool), TxStarter: f.Pool, Bus: restartedBus}
 	task, err := restarted.ClaimTaskForRuntime(context.Background(), util.MustParseUUID(runtimeID))
 	if err != nil || task == nil {
 		t.Fatalf("poll after creator interruption = %v, %v; want durable task", task, err)
@@ -182,6 +185,10 @@ func TestCreateIssueTaskClaimableAfterPostCommitInterruption(t *testing.T) {
 	if task.OriginatorUserID != params.CreatorID || task.AccountableUserID != params.CreatorID ||
 		task.OriginatorSource.String != "direct_human" || task.TriggerEvidenceRefID != task.IssueID {
 		t.Fatalf("claimed task provenance = %+v", task)
+	}
+	if len(recoveredEventOrder) < 3 || recoveredEventOrder[0] != protocol.EventIssueCreated ||
+		recoveredEventOrder[1] != protocol.EventTaskQueued || recoveredEventOrder[2] != protocol.EventTaskDispatch {
+		t.Fatalf("recovered lifecycle order = %v, want issue:created, task:queued, task:dispatch", recoveredEventOrder)
 	}
 }
 
@@ -274,16 +281,16 @@ func (s issueBeforeBeginTxStarter) Begin(ctx context.Context) (pgx.Tx, error) {
 	return s.pool.Begin(ctx)
 }
 
-func TestCreateIssueOverlayPreparedBeforeTransaction(t *testing.T) {
+func TestCreateIssueOverlayHydratesAfterTransactionalAdmission(t *testing.T) {
 	for _, fails := range []bool{false, true} {
 		t.Run(fmt.Sprintf("overlay fails %v", fails), func(t *testing.T) {
 			f, params, _ := newIssueEnqueueFixture(t)
 			q := db.New(f.Pool)
-			begun, calls := false, 0
+			committed, calls := false, 0
 			builder := issueOverlayFunc(func(_ context.Context, user pgtype.UUID, agent db.Agent) (runtimeapps.MCPOverlayResult, error) {
 				calls++
-				if begun {
-					t.Fatal("external overlay called after create transaction began")
+				if !committed {
+					t.Fatal("external overlay called before issue admission committed")
 				}
 				if user != params.CreatorID || agent.ID != params.ExecutorID {
 					t.Fatal("overlay prepared for wrong human or executor")
@@ -294,7 +301,7 @@ func TestCreateIssueOverlayPreparedBeforeTransaction(t *testing.T) {
 				return runtimeapps.MCPOverlayResult{MCPOverlay: json.RawMessage(`{"mcpServers":{"fixture":{"url":"https://fixture.example"}}}`)}, nil
 			})
 			tasks := &TaskService{Queries: q, TxStarter: f.Pool, Bus: events.New(), Composio: builder, FeatureFlags: composioMCPAppsTestFlags(true)}
-			starter := issueBeforeBeginTxStarter{pool: f.Pool, beforeBegin: func() { begun = true }}
+			starter := &afterCommitTxStarter{pool: f.Pool, afterCommit: func() { committed = true }}
 			result, err := NewIssueService(q, starter, nil, nil, tasks).Create(context.Background(), params, IssueCreateOpts{})
 			if err != nil {
 				t.Fatalf("create with optional overlay: %v", err)
@@ -332,7 +339,7 @@ func TestCreateDeferredIssueOverlayRemainsPostCommit(t *testing.T) {
 	}
 }
 
-func TestCreateIssueOverlayDoesNotCrossOriginatorChange(t *testing.T) {
+func TestCreateIssueOverlayUsesTransactionOriginator(t *testing.T) {
 	f, params, runtimeID := newIssueEnqueueFixture(t)
 	originID := f.Task(t, util.UUIDToString(params.ExecutorID), dbfx.Cols{"runtime_id": runtimeID, "status": "completed"})
 	otherUserID := f.User(t, "Other originator", fmt.Sprintf("other-originator-%d@example.test", time.Now().UnixNano()))
@@ -355,14 +362,14 @@ func TestCreateIssueOverlayDoesNotCrossOriginatorChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load task: %v", err)
 	}
-	if builder.calls != 1 || builder.lastUser != util.MustParseUUID(f.UserID) {
-		t.Fatal("preparation did not capture the original originator")
+	if builder.calls != 1 || builder.lastUser != otherUser {
+		t.Fatal("overlay did not use the transaction-time originator")
 	}
 	if task.OriginatorUserID != otherUser || task.AccountableUserID != otherUser || task.DelegatedFromTaskID != params.OriginID {
 		t.Fatal("task did not retain transaction-time delegated attribution")
 	}
-	if len(task.RuntimeMcpOverlay) != 0 || len(task.RuntimeConnectedApps) != 0 {
-		t.Fatal("a task attributed to another human inherited the old human's overlay")
+	if len(task.RuntimeMcpOverlay) == 0 {
+		t.Fatal("task attributed to the transaction-time human lost its overlay")
 	}
 }
 
