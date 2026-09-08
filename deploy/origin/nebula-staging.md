@@ -48,7 +48,8 @@ to identify the five containers, then stop those exact IDs. Do not remove volume
 
 This is a Web/internal QA trial. Clerk development-instance sessions require
 separate sign-in on Accounts and Web. Authenticated staging browser acceptance
-for the current snapshot is still pending.
+for the current snapshot passed for the Clerk development email OTP flows
+documented below, within the stated session and navigation limits.
 
 ## Migration verified on 2026-09-07 (America/New_York)
 
@@ -69,8 +70,31 @@ for the current snapshot is still pending.
   `/docs` on `orvilo-staging.nebula-spaces.com`, API `/readyz` on
   `orvilo-staging-api.nebula-spaces.com`, and Accounts `/readyz` on
   `orvilo-staging-accounts.nebula-spaces.com`.
-- Authenticated staging browser acceptance remains **pending**. The historical
-  sign-in evidence below does not establish acceptance for this snapshot.
+
+## Follow-up browser acceptance and old-stack retirement
+
+This evidence applies to the current snapshot above and is separate from the
+September 5 verification.
+
+- Native browser Web sign-in with the Clerk development test email
+  `migration+clerk_test@nebula-spaces.com` and documented test OTP `424242`
+  completed and landed on `/onboarding`. On reload, CDP
+  `Network.responseReceived` captured HTTP 200 for both `/auth/clerk` and
+  `/api/workspaces` on `orvilo-staging.nebula-spaces.com`.
+- Native browser Accounts email OTP login at
+  `https://orvilo-staging-accounts.nebula-spaces.com/login` also completed and
+  returned to Orvilo staging `/onboarding`. The existing Web session was already
+  signed in; this verifies the observed return navigation, not cross-origin
+  session transfer.
+- These checks do not establish Google consent, a native application callback,
+  or Resend delivery acceptance.
+- The three old Patchbay Nebula A records were deleted after exact record ID
+  and name validation. The old nginx enabled symlink was moved to
+  `/home/ubuntu/orvilo-nebula-migration-20260908/patchbay-nginx-enabled-link`;
+  `nginx -t` and reload passed.
+- The old service was disabled and all five old containers were stopped. The
+  new `orvilo-nebula-staging.service` was enabled and active. Old database and
+  uploads volumes and final backups were retained.
 
 ## Verified on 2026-09-05
 
