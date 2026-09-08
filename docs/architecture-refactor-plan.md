@@ -30,7 +30,7 @@ Preserve the Go modular monolith, PostgreSQL/sqlc, Redis relay, independent daem
 
 - Complete approved prose retrieved; its separate evidence attachment was not exposed by the conversation connector.
 - Fresh main confirms post-commit ordinary issue enqueue and Linear renewal loss gaps. Existing terminal transaction hooks and claim fences are available for reuse.
-- All eight implementation phases and the supplemental F01–F10 audit fixes are implemented and reviewed on the integrated `7b3b9a5fcf` baseline. See [verification and delivery status](architecture-refactor-verification.md).
+- All eight implementation phases and the supplemental F01–F10 audit fixes are implemented and reviewed on the integrated `83df56a36b` baseline, including the Orvilo identity cutover. See [verification and delivery status](architecture-refactor-verification.md).
 
 ### Accepted reliability checkpoints
 
