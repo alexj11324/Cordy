@@ -6,6 +6,7 @@
     "new_agent": "New agent",
     "actions_aria": "Agent actions",
     "view_cards": "Card view",
+    "view_kanban": "Kanban view",
     "view_table": "Table view",
     "cards_previous": "Previous",
     "cards_next": "Next",
@@ -40,6 +41,32 @@
     "working": "Working",
     "queued": "Queued",
     "idle": "Idle"
+  },
+  "kpi": {
+    "total_agents": "Total Agents",
+    "working": "Working",
+    "queued": "Queued",
+    "idle": "Idle & Ready",
+    "offline": "Offline",
+    "runs_30d": "30d Total Runs"
+  },
+  "kanban": {
+    "column_working": "Working",
+    "column_working_desc": "Agents with running or active tasks",
+    "column_queued": "Queued",
+    "column_queued_desc": "Agents waiting with pending queue",
+    "column_idle": "Idle & Ready",
+    "column_idle_desc": "Online runtimes ready for work",
+    "column_offline": "Offline / Issue",
+    "column_offline_desc": "Offline or needs runtime check",
+    "column_archived": "Archived",
+    "column_archived_desc": "Archived agents",
+    "empty_column": "No agents in this column",
+    "chat_button": "Chat",
+    "inspect_button": "Inspect",
+    "runs_count": "{{count}} runs (30d)",
+    "no_runs": "No runs yet",
+    "last_active": "Active {{time}}"
   },
   "presence_status_aria": "Status: {{status}}",
   "avatar_stack": {

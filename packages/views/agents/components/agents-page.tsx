@@ -5,6 +5,7 @@ import {
   AlertCircle,
   Bot,
   EllipsisVertical,
+  Kanban,
   LayoutGrid,
   Lock,
   Plus,
@@ -86,6 +87,8 @@ import {
   AGENT_CARD_GRID_CLASS,
 } from "./agent-card";
 import { AgentProfilePanel } from "./agent-profile-panel";
+import { AgentConsoleKpi } from "./agent-console-kpi";
+import { AgentKanbanView } from "./agent-kanban-view";
 import { useLocale, useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 
@@ -302,20 +305,29 @@ function PageHeaderBar({
             {t(($) => $.page.new_agent)}
           </DropdownMenuItem>
           {onViewModeChange && viewMode ? (
-            <DropdownMenuItem
-              onClick={() =>
-                onViewModeChange(viewMode === "cards" ? "table" : "cards")
-              }
-            >
-              {viewMode === "cards" ? (
-                <Rows3 aria-hidden="true" className="size-3.5" />
-              ) : (
+            <>
+              <DropdownMenuItem
+                onClick={() => onViewModeChange("kanban")}
+                className={viewMode === "kanban" ? "font-semibold" : undefined}
+              >
+                <Kanban aria-hidden="true" className="size-3.5" />
+                {t(($) => $.page.view_kanban)}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onViewModeChange("cards")}
+                className={viewMode === "cards" ? "font-semibold" : undefined}
+              >
                 <LayoutGrid aria-hidden="true" className="size-3.5" />
-              )}
-              {viewMode === "cards"
-                ? t(($) => $.page.view_table)
-                : t(($) => $.page.view_cards)}
-            </DropdownMenuItem>
+                {t(($) => $.page.view_cards)}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onViewModeChange("table")}
+                className={viewMode === "table" ? "font-semibold" : undefined}
+              >
+                <Rows3 aria-hidden="true" className="size-3.5" />
+                {t(($) => $.page.view_table)}
+              </DropdownMenuItem>
+            </>
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -844,7 +856,8 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
   const rawScope = useAgentsViewStore((s) => s.scope);
   const scope = AGENT_SCOPES.includes(rawScope) ? rawScope : "mine";
   const rawViewMode = useAgentsViewStore((s) => s.viewMode);
-  const viewMode: AgentViewMode = rawViewMode === "table" ? "table" : "cards";
+  const viewMode: AgentViewMode =
+    rawViewMode === "table" ? "table" : rawViewMode === "kanban" ? "kanban" : "cards";
   const setViewMode = useAgentsViewStore((s) => s.setViewMode);
   const setScope = useAgentsViewStore((s) => s.setScope);
   const sortField = useAgentsViewStore((s) => s.sortField);
@@ -1149,6 +1162,9 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
         </div>
       ) : (
         <>
+          <div className="px-6 pt-1 pb-3 sm:px-8">
+            <AgentConsoleKpi rows={scopeRows} />
+          </div>
           <AgentListToolbar
             scope={scope}
             onScopeChange={setScope}
@@ -1168,6 +1184,7 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
             members={members}
             visibleCount={rows.length}
             viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
           {viewMode === "table" ? (
           <div
@@ -1284,6 +1301,14 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
               </ListGridBody>
             </ListGrid>
           </div>
+          ) : viewMode === "kanban" ? (
+            <AgentKanbanView
+              rows={rows}
+              selectedIds={selectedIds}
+              onToggleSelected={toggleSelected}
+              onOpenSummary={(id) => setProfileAgentId(id)}
+              duplicateHref={duplicateHref}
+            />
           ) : (
             <div
               className="min-h-0 flex-1 overflow-y-auto @container"

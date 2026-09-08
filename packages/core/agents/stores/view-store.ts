@@ -23,9 +23,8 @@ export type AgentsScope = "mine" | "all" | "archived";
 
 export const AGENT_SCOPES: AgentsScope[] = ["mine", "all", "archived"];
 
-/** Presentation mode for the directory. Cards are the identity-first default;
- * the table remains available for deliberate field comparison. */
-export type AgentViewMode = "cards" | "table";
+/** Presentation mode for the directory. Cards, kanban, or table. */
+export type AgentViewMode = "cards" | "kanban" | "table";
 
 export type AgentSortField = "lastActive" | "name" | "runs" | "created";
 

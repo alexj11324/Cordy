@@ -6,6 +6,7 @@
     "new_agent": "新建智能体",
     "actions_aria": "智能体操作",
     "view_cards": "卡片视图",
+    "view_kanban": "看板视图",
     "view_table": "表格视图",
     "cards_previous": "上一页",
     "cards_next": "下一页",
@@ -40,6 +41,32 @@
     "working": "处理中",
     "queued": "排队中",
     "idle": "空闲"
+  },
+  "kpi": {
+    "total_agents": "全部智能体",
+    "working": "运行中",
+    "queued": "排队中",
+    "idle": "空闲就绪",
+    "offline": "离线",
+    "runs_30d": "30天总运行数"
+  },
+  "kanban": {
+    "column_working": "运行中",
+    "column_working_desc": "正在执行任务的智能体",
+    "column_queued": "排队中",
+    "column_queued_desc": "有待处理排队任务的智能体",
+    "column_idle": "空闲就绪",
+    "column_idle_desc": "在线且随时可承接任务",
+    "column_offline": "离线 / 待配置",
+    "column_offline_desc": "运行时离线或未绑定",
+    "column_archived": "已归档",
+    "column_archived_desc": "已归档的智能体",
+    "empty_column": "该列暂无智能体",
+    "chat_button": "私信",
+    "inspect_button": "详情",
+    "runs_count": "{{count}} 次运行（30天）",
+    "no_runs": "暂无运行",
+    "last_active": "活跃于 {{time}}"
   },
   "presence_status_aria": "状态：{{status}}",
   "avatar_stack": {

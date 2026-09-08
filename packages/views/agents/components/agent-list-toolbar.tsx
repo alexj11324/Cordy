@@ -5,6 +5,9 @@ import {
   ArrowUp,
   ChevronDown,
   Filter,
+  Kanban,
+  LayoutGrid,
+  Rows3,
   Search,
   X,
 } from "lucide-react";
@@ -114,6 +117,7 @@ export function AgentListToolbar({
   members,
   visibleCount,
   viewMode,
+  onViewModeChange,
 }: {
   scope: AgentsScope;
   onScopeChange: (scope: AgentsScope) => void;
@@ -137,6 +141,7 @@ export function AgentListToolbar({
   /** Rows surviving the filters — shown as "n / total" when narrowed. */
   visibleCount: number;
   viewMode?: AgentViewMode;
+  onViewModeChange?: (mode: AgentViewMode) => void;
 }) {
   const { t } = useT("agents");
 
@@ -512,6 +517,75 @@ export function AgentListToolbar({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {/* View Mode Toggle */}
+        {onViewModeChange && viewMode ? (
+          <div className="flex items-center rounded-lg border border-border/70 bg-muted/40 p-0.5 shadow-2xs">
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="sm"
+                    variant={viewMode === "kanban" ? "secondary" : "ghost"}
+                    className={cn(
+                      "size-7 p-0",
+                      viewMode === "kanban" && "bg-background text-foreground shadow-2xs",
+                    )}
+                    onClick={() => onViewModeChange("kanban")}
+                    aria-label={t(($) => $.page.view_kanban)}
+                  >
+                    <Kanban className="size-3.5" />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">
+                {t(($) => $.page.view_kanban)}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="sm"
+                    variant={viewMode === "cards" ? "secondary" : "ghost"}
+                    className={cn(
+                      "size-7 p-0",
+                      viewMode === "cards" && "bg-background text-foreground shadow-2xs",
+                    )}
+                    onClick={() => onViewModeChange("cards")}
+                    aria-label={t(($) => $.page.view_cards)}
+                  >
+                    <LayoutGrid className="size-3.5" />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">
+                {t(($) => $.page.view_cards)}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="sm"
+                    variant={viewMode === "table" ? "secondary" : "ghost"}
+                    className={cn(
+                      "size-7 p-0",
+                      viewMode === "table" && "bg-background text-foreground shadow-2xs",
+                    )}
+                    onClick={() => onViewModeChange("table")}
+                    aria-label={t(($) => $.page.view_table)}
+                  >
+                    <Rows3 className="size-3.5" />
+                  </Button>
+                }
+              />
+              <TooltipContent side="bottom">
+                {t(($) => $.page.view_table)}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        ) : null}
 
         {/* Display settings */}
         <Popover>

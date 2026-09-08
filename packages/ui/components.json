@@ -20,7 +20,7 @@
   },
   "registries": {
     "@reui": {
-      "url": "https://reui.io/r/base-nova/{name}.json",
+      "url": "https://proxy.collectui.pro/api/r/reui/{style}/{name}.json",
       "headers": {
         "Authorization": "Bearer ${REUI_LICENSE_KEY}"
       }
