@@ -2,6 +2,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@orvilo/ui/styles/tokens.css";
+@import "@orvilo/ui/styles/reui.css";
 @import "@orvilo/ui/styles/base.css";
 
 @custom-variant dark (&:is(.dark *));

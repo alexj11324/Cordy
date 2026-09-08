@@ -24,6 +24,7 @@
     "./lib/motion": "./lib/motion.ts",
     "./i18n-types": "./types/i18next.ts",
     "./styles/tokens.css": "./styles/tokens.css",
+    "./styles/reui.css": "./styles/reui.css",
     "./styles/base.css": "./styles/base.css"
   },
   "dependencies": {

@@ -22,9 +22,11 @@ import { describe, expect, it } from "vitest";
  * for `px` and so walked straight past four `0.8rem` call sites in
  * packages/ui — an off-scale size is off-scale however it is spelled.
  *
- * Scope is product UI. `apps/mobile` builds through its own NativeWind config
- * and `apps/docs` rides its own type system; both keep Tailwind's default scale
- * on purpose and are not scanned.
+ * Scope is product-authored UI. Directly adopted ReUI source stays under
+ * `packages/ui/components/reui/` and keeps ReUI's own class contract, so it is
+ * intentionally excluded from this product-only guard. `apps/mobile` builds
+ * through its own NativeWind config and `apps/docs` rides its own type system;
+ * both keep Tailwind's default scale on purpose and are not scanned.
  */
 
 const repoRoot = resolve(process.cwd(), "../..");
@@ -46,6 +48,10 @@ const SCALE = [
 const scanRoots = ["packages/ui", "packages/views", "apps/web", "apps/desktop/src"];
 const skipDirs = new Set(["node_modules", ".next", "dist", "out", "build", ".turbo"]);
 const sourceExtensions = [".ts", ".tsx", ".css"];
+
+function isDirectReUISource(rel: string): boolean {
+  return rel.startsWith("packages/ui/components/reui/") || rel.startsWith("vendor/reui-");
+}
 
 /**
  * Tailwind's default steps that the role scale replaces one-for-one. `text-4xl`
@@ -175,6 +181,7 @@ describe("type scale", () => {
     for (const root of scanRoots) {
       for (const path of collectSourceFiles(resolve(repoRoot, root))) {
         const rel = relative(repoRoot, path);
+        if (isDirectReUISource(rel)) continue;
         const lines = stripComments(readFileSync(path, "utf8")).split("\n");
         lines.forEach((line, index) => {
           for (const { label, regex, hint, appliesTo } of bannedPatterns) {

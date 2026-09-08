@@ -3,6 +3,7 @@
 @import "shadcn/tailwind.css";
 @import "@orvilo/auth-ui/styles.css";
 @import "../../../packages/ui/styles/tokens.css";
+@import "../../../packages/ui/styles/reui.css";
 @import "../../../packages/ui/styles/base.css";
 
 @custom-variant dark (&:is(.dark *));
