@@ -3,6 +3,7 @@
 import { AlertCircle, Check, Plus } from "lucide-react";
 import type { AgentAvailability } from "@orvilo/core/agents";
 import { isAgentRuntimeBound } from "@orvilo/core/agents";
+import { Badge } from "@orvilo/ui/components/reui/badge";
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { cn } from "@orvilo/ui/lib/utils";
@@ -13,83 +14,10 @@ import type { AgentListRow } from "./agents-page";
 import { availabilityConfig } from "../presence";
 
 /**
- * The card proportions and container breakpoints mirror Buzz's identity-card
- * gallery. The grid is container-query driven so the same gallery remains
- * useful when the profile panel is open beside it.
+ * Grid layout for agent identity cards.
  */
 export const AGENT_CARD_GRID_CLASS =
-  "grid-cols-1 [@container(min-width:21rem)]:grid-cols-2 [@container(min-width:32rem)]:grid-cols-3 [@container(min-width:43rem)]:grid-cols-4 [@container(min-width:54rem)]:grid-cols-5";
-
-interface AgentIdentityCardProps {
-  actions?: React.ReactNode;
-  ariaLabel: string;
-  avatar?: React.ReactNode;
-  dataTestId: string;
-  label: string;
-  selected?: boolean;
-  subtitle?: string | null;
-  onClick: () => void;
-}
-
-/**
- * Buzz's card interaction model uses a real full-bleed button behind the
- * visual card. That keeps the whole surface keyboard-accessible while leaving
- * the action menu and selection control as independent siblings.
- */
-export function AgentIdentityCard({
-  actions,
-  ariaLabel,
-  avatar,
-  dataTestId,
-  label,
-  selected = false,
-  subtitle,
-  onClick,
-}: AgentIdentityCardProps) {
-  return (
-    <div
-      className={cn(
-        "group/identity relative aspect-[4/5] w-full min-w-0 overflow-hidden rounded-2xl border bg-muted/50 text-left shadow-xs transition-colors hover:border-border hover:bg-muted/65",
-        selected
-          ? "border-brand/60 bg-brand/7 ring-1 ring-brand/20"
-          : "border-border/70",
-      )}
-      data-testid={dataTestId}
-    >
-      <button
-        aria-label={ariaLabel}
-        className="absolute inset-0 z-10 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        onClick={onClick}
-        type="button"
-      />
-
-      <div className="pointer-events-none relative z-20 flex h-full w-full min-w-0 flex-col items-center justify-center gap-5 px-4 pb-12 text-center">
-        <div className="flex h-24 w-24 items-center justify-center">
-          {avatar}
-        </div>
-      </div>
-
-      {actions ? (
-        <div className="absolute top-3 right-3 z-40 flex items-center gap-1">
-          {actions}
-        </div>
-      ) : null}
-
-      <div className="pointer-events-none absolute right-3 bottom-3 left-3 z-30 flex min-w-0 items-end gap-2 text-left leading-5">
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="min-w-0 truncate text-body font-semibold tracking-normal text-foreground">
-            {label}
-          </span>
-          {subtitle ? (
-            <span className="line-clamp-2 min-w-0 text-caption font-normal text-muted-foreground">
-              {subtitle}
-            </span>
-          ) : null}
-        </div>
-      </div>
-    </div>
-  );
-}
+  "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 [@container(min-width:24rem)]:grid-cols-2 [@container(min-width:44rem)]:grid-cols-3 [@container(min-width:64rem)]:grid-cols-4";
 
 export function AgentCreateCard({
   ariaLabel,
@@ -98,17 +26,26 @@ export function AgentCreateCard({
   ariaLabel: string;
   onClick: () => void;
 }) {
+  const { t } = useT("agents");
   return (
     <button
       aria-label={ariaLabel}
-      className="group relative flex aspect-[4/5] w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-border/80 bg-transparent text-muted-foreground shadow-xs transition-colors hover:border-border hover:bg-muted/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      className="group relative flex min-h-[190px] w-full min-w-0 flex-col items-center justify-center gap-3 overflow-hidden rounded-2xl border-2 border-dashed border-border/70 bg-card/30 p-5 text-muted-foreground shadow-2xs backdrop-blur-xs transition-all duration-200 hover:border-primary/50 hover:bg-primary/5 hover:text-foreground hover:shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       data-testid="new-agent-card"
       onClick={onClick}
       type="button"
     >
-      <span className="flex flex-col items-center justify-center gap-2 text-center">
-        <Plus className="size-7 transition-transform group-hover:scale-105" />
-      </span>
+      <div className="flex size-11 items-center justify-center rounded-xl bg-primary/10 text-primary transition-transform duration-200 group-hover:scale-110 group-hover:bg-primary/20">
+        <Plus className="size-5" />
+      </div>
+      <div className="flex flex-col items-center gap-0.5 text-center">
+        <span className="text-body font-semibold text-foreground">
+          {t(($) => $.page.new_agent)}
+        </span>
+        <span className="text-caption text-muted-foreground">
+          {t(($) => $.profile_panel.title)}
+        </span>
+      </div>
     </button>
   );
 }
@@ -127,13 +64,78 @@ export function AgentCard({
   duplicateHref: string;
 }) {
   const { t } = useT("agents");
-  const { agent } = row;
-  const subtitle = agent.model.trim() || t(($) => $.profile_card.model_unset);
+  const { agent, presence, runtime, runCount, owner } = row;
+
+  const availability: AgentAvailability | null = agent.archived_at
+    ? "archived"
+    : (presence?.availability ?? null);
+  const visual =
+    availability === null ? null : availabilityConfig[availability];
 
   return (
-    <AgentIdentityCard
-      actions={
-        <>
+    <div
+      className={cn(
+        "group/card relative flex min-h-[190px] w-full min-w-0 flex-col justify-between overflow-hidden rounded-2xl border p-4.5 text-left shadow-2xs backdrop-blur-xs transition-all duration-200",
+        "bg-card/75 hover:border-border hover:bg-card hover:shadow-xs",
+        selected
+          ? "border-primary/60 bg-primary/5 ring-1 ring-primary/20"
+          : "border-border/70",
+      )}
+      data-testid={`agent-card-${agent.id}`}
+    >
+      {/* Full-bleed button keeping keyboard accessibility */}
+      <button
+        aria-label={t(($) => $.profile_panel.open_profile, { name: agent.name })}
+        className="absolute inset-0 z-10 rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        onClick={onOpenSummary}
+        type="button"
+      />
+
+      {/* Top Header: Avatar + Title/Owner + Actions */}
+      <div className="relative z-20 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          <div className="relative shrink-0">
+            <ActorAvatar
+              actorId={agent.id}
+              actorType="agent"
+              className="bg-background shadow-2xs ring-1 ring-border/50"
+              profileLink={false}
+              size="lg"
+            />
+            {!agent.archived_at && !isAgentRuntimeBound(agent) ? (
+              <span
+                aria-label={t(($) => $.row.needs_runtime)}
+                className="absolute -bottom-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full border-2 border-background bg-warning text-warning-foreground"
+                role="img"
+                title={t(($) => $.row.needs_runtime)}
+              >
+                <AlertCircle className="size-2" />
+              </span>
+            ) : availability !== null && visual ? (
+              <span
+                aria-label={t(($) => $.availability[availability])}
+                className={cn(
+                  "absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-2 border-background",
+                  visual.dotClass,
+                )}
+                role="img"
+                title={t(($) => $.availability[availability])}
+              />
+            ) : null}
+          </div>
+
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="truncate text-body font-semibold text-foreground leading-snug">
+              {agent.name}
+            </span>
+            <span className="truncate text-caption text-muted-foreground">
+              {owner?.name || owner?.email || agent.description || t(($) => $.profile_card.model_unset)}
+            </span>
+          </div>
+        </div>
+
+        {/* Selection checkbox + overflow menu */}
+        <div className="relative z-30 flex items-center gap-1">
           <Button
             aria-label={
               selected
@@ -142,10 +144,10 @@ export function AgentCard({
             }
             aria-pressed={selected}
             className={cn(
-              "size-7 rounded-md bg-background/80 p-0 text-muted-foreground shadow-xs backdrop-blur-sm transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100",
+              "size-7 rounded-md bg-background/80 p-0 text-muted-foreground shadow-2xs backdrop-blur-sm transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100",
               selected
                 ? "opacity-100"
-                : "opacity-0 group-hover/identity:opacity-100",
+                : "opacity-0 group-hover/card:opacity-100",
               "[@media(hover:none)]:opacity-100",
             )}
             onClick={(event) => {
@@ -159,13 +161,14 @@ export function AgentCard({
             <span
               aria-hidden="true"
               className={cn(
-                "pointer-events-none flex size-4 items-center justify-center rounded-sm border",
+                "pointer-events-none flex size-3.5 items-center justify-center rounded-sm border",
                 selected ? "border-primary bg-primary text-primary-foreground" : "border-input",
               )}
             >
-              {selected ? <Check className="size-3" /> : null}
+              {selected ? <Check className="size-2.5" /> : null}
             </span>
           </Button>
+
           <AgentRowActions
             agent={agent}
             alwaysVisible
@@ -174,70 +177,83 @@ export function AgentCard({
             iconVariant="vertical"
             presence={row.presence}
           />
-        </>
-      }
-      ariaLabel={t(($) => $.profile_panel.open_profile, { name: agent.name })}
-      avatar={<AgentCardAvatar row={row} />}
-      dataTestId={`agent-card-${agent.id}`}
-      label={agent.name}
-      selected={selected}
-      subtitle={subtitle}
-      onClick={onOpenSummary}
-    />
-  );
-}
+        </div>
+      </div>
 
-function AgentCardAvatar({ row }: { row: AgentListRow }) {
-  const { t } = useT("agents");
-  const { agent, presence } = row;
-  const availability: AgentAvailability | null = agent.archived_at
-    ? "archived"
-    : (presence?.availability ?? null);
-  const visual =
-    availability === null ? null : availabilityConfig[availability];
+      {/* Middle: Badges (Model & Runtime) */}
+      <div className="relative z-20 flex flex-wrap items-center gap-1.5 my-2.5">
+        {agent.model ? (
+          <Badge
+            variant="outline"
+            className="border-border/60 bg-muted/40 font-mono text-[11px] text-foreground"
+          >
+            {agent.model}
+          </Badge>
+        ) : (
+          <Badge
+            variant="outline"
+            className="border-border/50 text-[11px] text-muted-foreground"
+          >
+            {t(($) => $.profile_card.model_unset)}
+          </Badge>
+        )}
 
-  return (
-    <div className="relative flex h-24 w-24 items-center justify-center">
-      <ActorAvatar
-        actorId={agent.id}
-        actorType="agent"
-        className="scale-[1.7] bg-background ring-2 ring-background shadow-sm"
-        profileLink={false}
-        size="2xl"
-      />
-      {!agent.archived_at && !isAgentRuntimeBound(agent) ? (
-        <span
-          aria-label={t(($) => $.row.needs_runtime)}
-          className="absolute right-1 bottom-1 flex size-4 items-center justify-center rounded-full border-2 border-background bg-warning text-warning-foreground"
-          role="img"
-          title={t(($) => $.row.needs_runtime)}
-        >
-          <AlertCircle className="size-2.5" />
+        {runtime ? (
+          <Badge
+            variant="outline"
+            className="border-border/50 text-[11px] text-muted-foreground"
+          >
+            {runtime.name}
+          </Badge>
+        ) : (
+          <Badge
+            variant="outline"
+            className="border-warning/40 text-[11px] text-warning"
+          >
+            {t(($) => $.row.needs_runtime)}
+          </Badge>
+        )}
+      </div>
+
+      {/* Bottom: Activity / Run Count + Status badge */}
+      <div className="relative z-20 flex items-center justify-between border-t border-border/50 pt-2.5 text-caption text-muted-foreground">
+        <span className="tabular-nums">
+          {runCount > 0
+            ? t(($) => $.kanban.runs_count, { count: runCount })
+            : t(($) => $.kanban.no_runs)}
         </span>
-      ) : availability !== null && visual ? (
-        <span
-          aria-label={t(($) => $.availability[availability])}
-          className={cn(
-            "absolute right-1 bottom-1 size-4 rounded-full border-2 border-background",
-            visual.dotClass,
-          )}
-          role="img"
-          title={t(($) => $.availability[availability])}
-        />
-      ) : null}
+
+        {availability && visual ? (
+          <span className="inline-flex items-center gap-1.5 font-medium text-[11px]">
+            <span className={cn("size-1.5 rounded-full", visual.dotClass)} />
+            {t(($) => $.availability[availability])}
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
 
 export function AgentCardSkeleton() {
   return (
-    <div className="relative aspect-[4/5] w-full min-w-0 overflow-hidden rounded-2xl border border-border/70 bg-muted/50 shadow-xs">
-      <div className="absolute inset-x-0 top-0 bottom-12 flex items-center justify-center">
-        <Skeleton className="size-24 rounded-full" />
+    <div className="relative flex min-h-[190px] w-full min-w-0 flex-col justify-between overflow-hidden rounded-2xl border border-border/70 bg-card/60 p-4.5 shadow-xs">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <Skeleton className="size-10 rounded-full" />
+          <div className="flex flex-col gap-1.5">
+            <Skeleton className="h-4 w-28 max-w-full" />
+            <Skeleton className="h-3 w-20 max-w-full" />
+          </div>
+        </div>
+        <Skeleton className="size-6 rounded-md" />
       </div>
-      <div className="absolute right-3 bottom-3 left-3 flex min-w-0 flex-col gap-1">
-        <Skeleton className="h-4 w-28 max-w-full" />
-        <Skeleton className="h-3.5 w-20 max-w-full" />
+      <div className="flex gap-2">
+        <Skeleton className="h-5 w-20 rounded-md" />
+        <Skeleton className="h-5 w-16 rounded-md" />
+      </div>
+      <div className="flex items-center justify-between border-t border-border/50 pt-2.5">
+        <Skeleton className="h-3.5 w-16" />
+        <Skeleton className="h-3.5 w-20" />
       </div>
     </div>
   );
