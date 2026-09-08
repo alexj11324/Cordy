@@ -18,6 +18,7 @@ test("main CI applies the same validated path decisions after merge", async () =
   assert.match(source, /sqlc=\$SQLC_CHANGED/u);
   assert.match(source, /- 'apps\/auth-broker\/\*\*'/u);
   assert.match(source, /- 'examples\/plugins\/\*\*'/u);
+  assert.match(source, /'codex\/architecture-\*'/u);
   assert.match(source, /- '\.gitignore'/u);
   assert.doesNotMatch(source, /EVENT_NAME/u);
   assert.doesNotMatch(source, /Always run everything on push to main/u);
@@ -26,6 +27,7 @@ test("main CI applies the same validated path decisions after merge", async () =
 test("mobile keeps its required check while gating expensive work", async () => {
   const source = await workflow("mobile-verify.yml");
 
+  assert.match(source, /'codex\/architecture-\*'/u);
   assert.match(source, /^  changes:\n/mu);
   assert.match(source, /^  mobile:\n    needs: changes\n    if: \$\{\{ !cancelled\(\) \}\}/mu);
   assert.match(source, /base: \$\{\{ github\.ref \}\}/u);
