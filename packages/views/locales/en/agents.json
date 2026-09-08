@@ -241,7 +241,12 @@
     "edit_description_title": "Edit description",
     "description_placeholder": "What does this agent do?",
     "save": "Save",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "prop_model_hint": "The model used to plan, write code, and call tools.",
+    "runtime_unassigned": "No runtime",
+    "concurrency_slots_one": "{{count}} slot",
+    "concurrency_slots_other": "{{count}} slots",
+    "concurrency_unit": "slots"
   },
   "overview": {
     "agent_context": "Agent",
@@ -323,7 +328,12 @@
     "discard_dialog_title": "Discard unsaved changes?",
     "discard_dialog_description": "You have unsaved changes in this tab. Leaving now will discard them.",
     "discard_keep": "Keep editing",
-    "discard_confirm": "Discard changes"
+    "discard_confirm": "Discard changes",
+    "unsaved": "Unsaved",
+    "environment_hint": "Secrets and endpoints injected into the run process, visible only to this agent.",
+    "custom_args_hint": "Extra arguments appended to the underlying run command.",
+    "runtime_config_hint": "Routing and sandbox options for the OpenClaw runtime.",
+    "integrations_hint": "Connect this agent to your configured chat channels."
   },
   "creation_studio": {
     "title": "Create an agent",

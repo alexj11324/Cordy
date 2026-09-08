@@ -3,6 +3,14 @@
 import { type ComponentProps, type ReactNode } from "react";
 import { Badge } from "@orvilo/ui/components/reui/badge";
 import { cn } from "@orvilo/ui/lib/utils";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+  FieldSeparator,
+  FieldTitle,
+} from "@orvilo/ui/components/ui/field";
 
 export interface SettingFieldProps {
   title: string;
@@ -17,6 +25,11 @@ export interface SettingFieldProps {
   contentClassName?: string;
 }
 
+/**
+ * One labelled row of a settings panel: title, description and its control.
+ * Vendored from the ReUI `settings-3` block; the only local change is the
+ * description font size, which uses this repo's role-named `--text-*` scale.
+ */
 export function SettingField({
   title,
   description,
@@ -28,18 +41,13 @@ export function SettingField({
 }: SettingFieldProps) {
   return (
     <>
-      <div className="flex flex-col gap-4 px-5 py-4.5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-1 flex-col gap-1 max-w-md">
+      <Field orientation="responsive" className="gap-4 px-4 py-4">
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5 @md/field-group:max-w-sm">
           <div className="flex flex-wrap items-center gap-2">
             {labelFor ? (
-              <label
-                htmlFor={labelFor}
-                className="text-body font-medium text-foreground cursor-pointer"
-              >
-                {title}
-              </label>
+              <FieldLabel htmlFor={labelFor}>{title}</FieldLabel>
             ) : (
-              <span className="text-body font-medium text-foreground">{title}</span>
+              <FieldTitle>{title}</FieldTitle>
             )}
 
             {badge ? (
@@ -49,17 +57,19 @@ export function SettingField({
             ) : null}
           </div>
 
-          <p className="text-caption text-muted-foreground leading-relaxed">
+          <FieldDescription className="text-caption">
             {description}
-          </p>
+          </FieldDescription>
         </div>
 
-        <div className={cn("min-w-0 w-full sm:w-80 shrink-0", contentClassName)}>
+        <FieldContent
+          className={cn("min-w-0 @md/field-group:w-78", contentClassName)}
+        >
           {children}
-        </div>
-      </div>
+        </FieldContent>
+      </Field>
 
-      {!last ? <div className="h-px w-full bg-border/60" /> : null}
+      {!last ? <FieldSeparator /> : null}
     </>
   );
 }

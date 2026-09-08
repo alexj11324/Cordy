@@ -20,6 +20,7 @@ import {
   FramePanel,
   FrameTitle,
 } from "@orvilo/ui/components/reui/frame";
+import { FieldGroup } from "@orvilo/ui/components/ui/field";
 import { useT } from "../../i18n";
 import { ModelPicker } from "./inspector/model-picker";
 import {
@@ -40,7 +41,8 @@ interface InspectorProps {
 }
 
 /**
- * ReUI-powered Agent Run & Execution Configuration form.
+ * Execution settings for one agent: which model it runs and how many tasks
+ * it may run in parallel.
  */
 export function AgentDetailInspector({
   agent,
@@ -98,11 +100,13 @@ export function AgentDetailInspector({
   );
 
   return (
-    <Frame className="w-full">
-      <FrameHeader className="px-1 py-1">
+    <Frame variant="ghost" spacing="sm" className="w-full">
+      <FrameHeader>
         <FrameTitle>{t(($) => $.inspector.section_execution)}</FrameTitle>
         <FrameDescription className="flex items-center gap-2">
-          <span>{runtime?.name ?? "默认宿主"}</span>
+          <span>
+            {runtime?.name ?? t(($) => $.inspector.runtime_unassigned)}
+          </span>
           <span
             aria-hidden="true"
             className="size-1 rounded-full bg-muted-foreground/50"
@@ -111,10 +115,11 @@ export function AgentDetailInspector({
         </FrameDescription>
       </FrameHeader>
 
-      <FramePanel className="p-0 divide-y divide-border/60">
+      <FramePanel className="p-0">
+        <FieldGroup className="gap-0 p-4">
         <SettingField
           title={t(($) => $.inspector.prop_model)}
-          description="智能体用于规划思考、生成代码及工具调用的核心基础大语言模型。"
+          description={t(($) => $.inspector.prop_model_hint)}
           badge={
             runtime?.provider
               ? {
@@ -193,7 +198,9 @@ export function AgentDetailInspector({
             max: AGENT_MAX_CONCURRENT_TASKS_MAX,
           })}
           badge={{
-            label: `${agent.max_concurrent_tasks} 并发槽位`,
+            label: t(($) => $.inspector.concurrency_slots, {
+              count: agent.max_concurrent_tasks,
+            }),
             variant: "info-light",
           }}
           labelFor="agent-concurrency"
@@ -207,6 +214,7 @@ export function AgentDetailInspector({
             />
           </div>
         </SettingField>
+        </FieldGroup>
       </FramePanel>
     </Frame>
   );
@@ -264,7 +272,7 @@ function ConcurrencyField({
         className="font-mono tabular-nums text-right pr-12 h-9"
       />
       <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-caption text-muted-foreground">
-        slots
+        {t(($) => $.inspector.concurrency_unit)}
       </span>
     </div>
   );

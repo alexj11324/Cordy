@@ -232,7 +232,11 @@
     "edit_description_title": "编辑描述",
     "description_placeholder": "这个智能体做什么？",
     "save": "保存",
-    "cancel": "取消"
+    "cancel": "取消",
+    "prop_model_hint": "用于规划、写代码和调用工具的模型。",
+    "runtime_unassigned": "未绑定运行时",
+    "concurrency_slots_other": "{{count}} 个槽位",
+    "concurrency_unit": "槽位"
   },
   "overview": {
     "agent_context": "智能体",
@@ -313,7 +317,12 @@
     "discard_dialog_title": "放弃未保存的修改？",
     "discard_dialog_description": "当前 tab 有未保存的修改，离开会丢弃这些修改。",
     "discard_keep": "继续编辑",
-    "discard_confirm": "放弃修改"
+    "discard_confirm": "放弃修改",
+    "unsaved": "未保存",
+    "environment_hint": "注入运行进程的密钥与端点，仅该智能体可见。",
+    "custom_args_hint": "追加到底层运行命令的额外参数。",
+    "runtime_config_hint": "OpenClaw 运行时的路由与沙箱选项。",
+    "integrations_hint": "把该智能体接入已配置的 IM 渠道。"
   },
   "creation_studio": {
     "title": "创建智能体",

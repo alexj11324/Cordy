@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Agent, AgentRuntime, MemberWithUser } from "@orvilo/core/types";
 import { useWorkspaceId } from "@orvilo/core/hooks";
@@ -32,6 +38,7 @@ import { RuntimeConfigTab } from "./tabs/runtime-config-tab";
 import { AgentDetailInspector } from "./agent-detail-inspector";
 import { AgentAccessSettings } from "./agent-access-settings";
 import { Badge } from "@orvilo/ui/components/reui/badge";
+import { FieldGroup } from "@orvilo/ui/components/ui/field";
 import {
   Frame,
   FrameDescription,
@@ -39,8 +46,6 @@ import {
   FramePanel,
   FrameTitle,
 } from "@orvilo/ui/components/reui/frame";
-import { OperatingPolicies } from "./operating-policies";
-import { RelatedControls } from "./related-controls";
 import { useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 
@@ -89,6 +94,33 @@ function viewFromUrl(value: string | null): DetailTab {
   if (isDetailTab(value)) return value;
   if (value !== null && LEGACY_VIEWS.has(value)) return "general";
   return "general";
+}
+
+/**
+ * One settings section, composed the way the ReUI `settings-3` block does:
+ * a plain header above a single bordered panel, rather than a card inside a
+ * card. Stacking several of these keeps one border per section.
+ */
+function SettingsSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <Frame variant="ghost" spacing="sm" className="w-full">
+      <FrameHeader>
+        <FrameTitle>{title}</FrameTitle>
+        <FrameDescription>{description}</FrameDescription>
+      </FrameHeader>
+      <FramePanel className="p-0">
+        <FieldGroup className="gap-0 p-4">{children}</FieldGroup>
+      </FramePanel>
+    </Frame>
+  );
 }
 
 interface AgentOverviewPaneProps {
@@ -281,30 +313,21 @@ export function AgentOverviewPane({
             </div>
 
             <section className="min-w-0 flex-1 md:overflow-y-auto">
-              <div className="mx-auto w-full max-w-4xl p-4 sm:p-6 md:p-8 space-y-6">
-                <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-border/60">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2.5">
-                      <h2 className="text-title font-semibold tracking-tight text-foreground">
-                        {agent.name} · {t(($) => $.tabs[activeSecondaryTab.labelKey])}
-                      </h2>
-                      <Badge
-                        variant={hasAnyDirty ? "warning-light" : "success-light"}
-                        size="sm"
-                      >
-                        {hasAnyDirty ? "未保存更改" : "已同步"}
-                      </Badge>
-                    </div>
-                    <p className="text-caption text-muted-foreground">
-                      {agent.description || "自定义工作区智能体配置与运行策略工作台"}
-                    </p>
-                  </div>
+              <div className="mx-auto w-full max-w-3xl space-y-6 p-4 sm:p-6 md:p-8">
+                <header className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                  <h2 className="text-title font-semibold tracking-tight text-foreground">
+                    {agent.name}
+                  </h2>
+                  {hasAnyDirty ? (
+                    <Badge variant="warning-light" size="sm">
+                      {t(($) => $.tabs.unsaved)}
+                    </Badge>
+                  ) : null}
                 </header>
 
                 <TabsContent value={effectiveView} className="mt-0">
                   {effectiveView === "general" && (
-                    <div className="space-y-8">
-                      {/* Section 1: Execution & Model Config */}
+                    <div className="space-y-6">
                       <AgentDetailInspector
                         agent={agent}
                         runtime={runtime}
@@ -315,87 +338,57 @@ export function AgentOverviewPane({
                         onUpdate={requestUpdate}
                       />
 
-                      {/* Section 2: ReUI Operating & Security Policies */}
-                      <OperatingPolicies canEdit={canEdit} />
-
-                      {/* Section 3: Environment Variables */}
                       {canEdit && (
-                        <Frame className="w-full">
-                          <FrameHeader className="px-1 py-1">
-                            <FrameTitle>{t(($) => $.tabs.environment)}</FrameTitle>
-                            <FrameDescription>
-                              运行时注入的环境变量密钥，保护 API Token 与私有端点配置。
-                            </FrameDescription>
-                          </FrameHeader>
-                          <FramePanel className="p-4 sm:p-5">
-                            <EnvTab
-                              agent={agent}
-                              onDirtyChange={(dirty) =>
-                                handleDirtyChange("env", dirty)
-                              }
-                            />
-                          </FramePanel>
-                        </Frame>
-                      )}
-
-                      {/* Section 4: Runtime Custom Arguments */}
-                      <Frame className="w-full">
-                        <FrameHeader className="px-1 py-1">
-                          <FrameTitle>{t(($) => $.tabs.custom_args)}</FrameTitle>
-                          <FrameDescription>
-                            传递给底层运行进程或容器命令行的额外标志位与高级参数。
-                          </FrameDescription>
-                        </FrameHeader>
-                        <FramePanel className="p-4 sm:p-5">
-                          <CustomArgsTab
+                        <SettingsSection
+                          title={t(($) => $.tabs.environment)}
+                          description={t(($) => $.tabs.environment_hint)}
+                        >
+                          <EnvTab
                             agent={agent}
-                            runtimeDevice={runtime ?? undefined}
-                            onSave={(updates) => onUpdate(agent.id, updates)}
                             onDirtyChange={(dirty) =>
-                              handleDirtyChange("custom_args", dirty)
+                              handleDirtyChange("env", dirty)
                             }
                           />
-                        </FramePanel>
-                      </Frame>
+                        </SettingsSection>
+                      )}
 
-                      {/* Section 5: OpenClaw Runtime Config (if provider is openclaw) */}
+                      <SettingsSection
+                        title={t(($) => $.tabs.custom_args)}
+                        description={t(($) => $.tabs.custom_args_hint)}
+                      >
+                        <CustomArgsTab
+                          agent={agent}
+                          runtimeDevice={runtime ?? undefined}
+                          onSave={(updates) => onUpdate(agent.id, updates)}
+                          onDirtyChange={(dirty) =>
+                            handleDirtyChange("custom_args", dirty)
+                          }
+                        />
+                      </SettingsSection>
+
                       {runtime?.provider === "openclaw" && (
-                        <Frame className="w-full">
-                          <FrameHeader className="px-1 py-1">
-                            <FrameTitle>{t(($) => $.tabs.runtime_config)}</FrameTitle>
-                            <FrameDescription>
-                              OpenClaw 专用运行时高级微调与隔离沙盒策略。
-                            </FrameDescription>
-                          </FrameHeader>
-                          <FramePanel className="p-4 sm:p-5">
-                            <RuntimeConfigTab
-                              agent={agent}
-                              onSave={(updates) => onUpdate(agent.id, updates)}
-                              onDirtyChange={(dirty) =>
-                                handleDirtyChange("runtime_config", dirty)
-                              }
-                            />
-                          </FramePanel>
-                        </Frame>
+                        <SettingsSection
+                          title={t(($) => $.tabs.runtime_config)}
+                          description={t(($) => $.tabs.runtime_config_hint)}
+                        >
+                          <RuntimeConfigTab
+                            agent={agent}
+                            onSave={(updates) => onUpdate(agent.id, updates)}
+                            onDirtyChange={(dirty) =>
+                              handleDirtyChange("runtime_config", dirty)
+                            }
+                          />
+                        </SettingsSection>
                       )}
 
-                      {/* Section 6: Integrations */}
                       {integrationsConfigured && (
-                        <Frame className="w-full">
-                          <FrameHeader className="px-1 py-1">
-                            <FrameTitle>{t(($) => $.tabs.integrations)}</FrameTitle>
-                            <FrameDescription>
-                              绑定 Slack、Lark、钉钉、企业微信等外部即时通信协同通道。
-                            </FrameDescription>
-                          </FrameHeader>
-                          <FramePanel className="p-4 sm:p-5">
-                            <IntegrationsTab agent={agent} />
-                          </FramePanel>
-                        </Frame>
+                        <SettingsSection
+                          title={t(($) => $.tabs.integrations)}
+                          description={t(($) => $.tabs.integrations_hint)}
+                        >
+                          <IntegrationsTab agent={agent} />
+                        </SettingsSection>
                       )}
-
-                      {/* Section 7: ReUI Related Controls */}
-                      <RelatedControls agentId={agent.id} />
                     </div>
                   )}
                   {effectiveView === "access" && (
