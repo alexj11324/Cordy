@@ -122,6 +122,26 @@ func TestTerminalReportConcurrentReplayIsOneCommittedOutcome(t *testing.T) {
 	}
 }
 
+func TestTerminalReportAcceptsTaskWithoutIssue(t *testing.T) {
+	f := newReportFixture(t, false)
+	f.fx.Exec(t, `UPDATE agent_task_queue SET issue_id = NULL WHERE id = $1`, f.task.ID)
+
+	report := mustTerminalReport(t, f.identity)
+	task, err := f.send(context.Background(), "complete", report, nil)
+	if err != nil {
+		t.Fatalf("complete task without issue: %v", err)
+	}
+	if task.Status != "completed" {
+		t.Fatalf("task status = %q, want completed", task.Status)
+	}
+	if report.Ack == nil {
+		t.Fatal("task without issue was not acknowledged")
+	}
+	if got := f.fx.Count(t, `SELECT count(*) FROM terminal_report_receipt WHERE task_id = $1`, f.task.ID); got != 1 {
+		t.Fatalf("receipts = %d, want 1", got)
+	}
+}
+
 func TestTerminalReportReceiptDeletedWithTaskBatch(t *testing.T) {
 	f := newReportFixture(t, false)
 	ctx := context.Background()

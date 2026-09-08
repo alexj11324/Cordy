@@ -82,7 +82,10 @@ func checkTerminalReport(ctx context.Context, qtx *db.Queries, taskID pgtype.UUI
 	if current.Status != "running" && current.Status != "dispatched" && current.Status != "waiting_local_directory" {
 		return ErrTerminalReportConflict
 	}
-	return qtx.LockTerminalReportIssue(ctx, taskID)
+	if current.IssueID.Valid {
+		return qtx.LockTerminalReportIssue(ctx, taskID)
+	}
+	return nil
 }
 
 func (report *TerminalReport) ack(taskID pgtype.UUID, status string) *protocol.TerminalReportAck {
