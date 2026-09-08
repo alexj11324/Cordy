@@ -1329,7 +1329,7 @@ func (q *Queries) ResolveLinearSyncConflict(ctx context.Context, arg ResolveLine
 
 const retryLinearSyncInbox = `-- name: RetryLinearSyncInbox :execrows
 UPDATE linear_sync_inbox
-SET available_at = now() + make_interval(secs => $2), locked_by = NULL,
+SET available_at = clock_timestamp() + make_interval(secs => $2), locked_by = NULL,
     locked_until = NULL, last_error = $3
 WHERE id = $1 AND locked_by = $4
   AND attempts = $5 AND locked_until > clock_timestamp()
@@ -1360,7 +1360,7 @@ func (q *Queries) RetryLinearSyncInbox(ctx context.Context, arg RetryLinearSyncI
 
 const retryLinearSyncOutbox = `-- name: RetryLinearSyncOutbox :execrows
 UPDATE linear_sync_outbox
-SET available_at = now() + make_interval(secs => $2), locked_by = NULL,
+SET available_at = clock_timestamp() + make_interval(secs => $2), locked_by = NULL,
     locked_until = NULL, last_error = $3, updated_at = now()
 WHERE id = $1 AND locked_by = $4
   AND attempts = $5 AND locked_until > clock_timestamp()

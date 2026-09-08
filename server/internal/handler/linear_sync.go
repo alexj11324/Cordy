@@ -30,7 +30,11 @@ func linearSyncDate(value *string) pgtype.Date {
 }
 
 func (w *LinearWorker) accessToken(ctx context.Context, connectionID pgtype.UUID) (string, error) {
-	tx, err := w.beginLeaseTx(ctx)
+	// Token refresh can make a provider request. Do not hold the claimed
+	// inbox/outbox row while waiting on Linear: the renewal goroutine must be
+	// able to extend that lease, and a rotated refresh token must still be
+	// committed even if the worker lease expires during the request.
+	tx, err := w.txStarter.Begin(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -217,7 +221,10 @@ func (w *LinearWorker) applyRemote(ctx context.Context, b workerBinding, remote 
 	if eventID == "" {
 		eventID = "remote:" + remote.ID + ":" + fmt.Sprint(eventAt)
 	}
-	tx, err := w.beginLeaseTx(ctx)
+	if err := w.checkLease(ctx); err != nil {
+		return err
+	}
+	tx, err := w.beginLeaseTxAfterLink(ctx)
 	if err != nil {
 		return err
 	}
@@ -441,7 +448,10 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 		if err = w.api.DeleteIssue(ctx, token, link.LinearIssueID); err != nil {
 			return err
 		}
-		tx, txErr := w.beginLeaseTx(ctx)
+		if txErr := w.checkLease(ctx); txErr != nil {
+			return txErr
+		}
+		tx, txErr := w.beginLeaseTxAfterLink(ctx)
 		if txErr != nil {
 			return txErr
 		}
@@ -537,7 +547,10 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 	if err = w.publishLinearWorkProducts(ctx, b, c.IssueID, remote.ID, token); err != nil {
 		return err
 	}
-	tx, err := w.beginLeaseTx(ctx)
+	if err = w.checkLease(ctx); err != nil {
+		return err
+	}
+	tx, err := w.beginLeaseTxAfterLink(ctx)
 	if err != nil {
 		return err
 	}

@@ -137,6 +137,25 @@ func (w *LinearWorker) beginLeaseTx(ctx context.Context) (pgx.Tx, error) {
 	return &linearLeaseTx{Tx: tx, lease: lease}, nil
 }
 
+// beginLeaseTxAfterLink starts a transaction whose first database lock may be
+// a linear_issue_link row. The normal beginLeaseTx deliberately locks the
+// claimed inbox/outbox row first, which is correct for most local writes but
+// deadlocks with binding removal when both paths touch link and queue rows in
+// opposite orders. Callers must perform the non-locking lease check before
+// their first local write; Commit/releaseLease performs the authoritative
+// queue-row fence after the link mutation.
+func (w *LinearWorker) beginLeaseTxAfterLink(ctx context.Context) (pgx.Tx, error) {
+	tx, err := w.txStarter.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	lease, ok := ctx.Value(linearLeaseKey{}).(linearLease)
+	if !ok {
+		return tx, nil
+	}
+	return &linearLeaseTx{Tx: tx, lease: lease}, nil
+}
+
 type linearLeaseTx struct {
 	pgx.Tx
 	lease    linearLease
