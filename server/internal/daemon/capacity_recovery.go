@@ -64,7 +64,7 @@ const capacityRecoveryPrompt = "Continue the interrupted task from the current c
 // provider is busy. Each executeAndDrain has already joined the old process and
 // flushed its messages. Waiting happens outside its inactivity watchdog. Only
 // a real terminal result finishes recovery; a successful handshake does not.
-func (d *Daemon) recoverCapacity(ctx context.Context, backend agent.Backend, result agent.Result, tools int32, opts agent.ExecOptions, logger *slog.Logger, taskID, codexHome string, seq *atomic.Int32, wait func(context.Context, time.Duration) error) (agent.Result, int32, error) {
+func (p *providerExecution) recoverCapacity(ctx context.Context, backend agent.Backend, result agent.Result, tools int32, opts agent.ExecOptions, logger *slog.Logger, taskID, codexHome string, seq *atomic.Int32, wait func(context.Context, time.Duration) error) (agent.Result, int32, error) {
 	for attempt := 0; canRecoverCapacity(result); attempt++ {
 		if ctx.Err() != nil {
 			result.Status = "cancelled"
@@ -76,7 +76,7 @@ func (d *Daemon) recoverCapacity(ctx context.Context, backend agent.Backend, res
 		// remains active without introducing a new task state or UI-only timer.
 		notice := fmt.Sprintf("\n\nModel temporarily busy. Progress is preserved; retrying in %s (attempt %d). You can stop this task at any time.\n\n", delay, attempt+1)
 		reportCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		reportErr := d.client.ReportTaskMessages(reportCtx, taskID, []TaskMessageData{{Seq: int(seq.Add(1)), Type: "thinking", Content: notice}})
+		reportErr := p.client.ReportTaskMessages(reportCtx, taskID, []TaskMessageData{{Seq: int(seq.Add(1)), Type: "thinking", Content: notice}})
 		cancel()
 		if reportErr != nil {
 			logger.Warn("capacity recovery notice failed", "error", reportErr)
@@ -88,7 +88,7 @@ func (d *Daemon) recoverCapacity(ctx context.Context, backend agent.Backend, res
 		opts.ResumeSessionID = result.SessionID
 		opts.RequireResume = true
 		prior := result
-		next, nextTools, err := d.executeAndDrain(ctx, backend, capacityRecoveryPrompt, opts, logger, taskID, codexHome, seq)
+		next, nextTools, err := p.executeAndDrain(ctx, backend, capacityRecoveryPrompt, opts, logger, taskID, codexHome, seq)
 		tools += nextTools
 		if err != nil {
 			// Preserve progress and usage, but stop on an unclassified launch failure.
