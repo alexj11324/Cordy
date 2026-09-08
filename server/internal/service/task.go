@@ -3271,7 +3271,7 @@ func (s *TaskService) CancelQueuedChatTasks(ctx context.Context, sessionID, agen
 }
 
 // lockChatSessionForTaskWrite takes the chat_session row a task belongs to. It
-// must be the FIRST statement of any transaction that ends up holding both that
+// must precede any task row lock or write in a transaction that holds both that
 // session row and the task's own row, which is every terminal-state path a chat
 // task has: complete, fail, cancel, the cancelled-turn finalize, and the
 // daemon's mid-flight pin.
@@ -4589,11 +4589,18 @@ func (s *TaskService) CompleteTaskWithTerminalHook(ctx context.Context, taskID p
 
 func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, result []byte, sessionID, workDir, branchName string, sessionRolloutMissing bool, retiredSessionID, durableWorkDir string, hook TerminalTaskTxHook, report *TerminalReport) (*db.AgentTaskQueue, error) {
 	var task db.AgentTaskQueue
+	var commentOutcome *terminalReportComment
+	var terminalCASMiss bool
 	// chatAssistantMsg is the single assistant outcome row written for a chat
 	// task inside the completion transaction below. It is broadcast (chat:done)
 	// only after the transaction commits.
 	var chatAssistantMsg *db.ChatMessage
 	if err := s.runTerminalTaskTx(ctx, &task, terminalReportHook(report, hook), func(qtx *db.Queries) error {
+		if report == nil {
+			if err := qtx.LockLegacyTerminalIssue(ctx, taskID); err != nil {
+				return err
+			}
+		}
 		if err := lockChatSessionForTaskWrite(ctx, qtx, taskID); err != nil {
 			return err
 		}
@@ -4611,6 +4618,7 @@ func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, resu
 			RetiredSessionID:      pgtype.Text{String: retiredSessionID, Valid: retiredSessionID != ""},
 		})
 		if err != nil {
+			terminalCASMiss = errors.Is(err, pgx.ErrNoRows)
 			return err
 		}
 		task = t
@@ -4676,10 +4684,16 @@ func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, resu
 				return fmt.Errorf("record coordination task completion: %w", err)
 			}
 		}
-		if err := s.prepareTerminalReportComment(ctx, qtx, task, result, "", report); err != nil {
-			return err
+		// Legacy callers can store an empty or unstructured result. Keep their
+		// established no-fallback behavior when it cannot provide output text.
+		if report == nil {
+			var payload protocol.TaskCompletedPayload
+			if err := json.Unmarshal(result, &payload); err != nil {
+				return nil
+			}
 		}
-		return nil
+		commentOutcome, err = s.prepareTerminalReportComment(ctx, qtx, task, result, "")
+		return err
 	}); err != nil {
 		if errors.Is(err, errTerminalReportReplay) {
 			return &task, nil
@@ -4687,9 +4701,10 @@ func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, resu
 		// When parallel agents race, a task may already be completed,
 		// cancelled, or failed by the time this call runs. The UPDATE
 		// … WHERE status = 'running' returns no rows in that case.
-		// Treat it as an idempotent success — same pattern as CancelTask.
+		// Only that CAS miss is idempotent. ErrNoRows from a later write or
+		// terminal hook means the transaction failed and must be redelivered.
 		if existing, lookupErr := s.Queries.GetAgentTask(ctx, taskID); lookupErr == nil {
-			if report == nil && errors.Is(err, pgx.ErrNoRows) {
+			if report == nil && terminalCASMiss && (existing.Status == "completed" || existing.Status == "cancelled" || existing.Status == "failed") {
 				slog.Info("complete task: already finalized",
 					"task_id", util.UUIDToString(taskID),
 					"current_status", existing.Status,
@@ -4717,7 +4732,7 @@ func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, resu
 		return nil, fmt.Errorf("complete task: %w", err)
 	}
 
-	s.publishTerminalReport(ctx, task, report)
+	s.publishTerminalReport(ctx, task, report, commentOutcome)
 	slog.Info("task completed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID))
 	s.captureTaskCompleted(ctx, task)
 	if task.IssueID.Valid {
@@ -4725,55 +4740,6 @@ func (s *TaskService) completeTask(ctx context.Context, taskID pgtype.UUID, resu
 			if err := s.WakeDependencyGraphDependents(ctx, issue.WorkspaceID, issue.ID); err != nil {
 				slog.Warn("dependency graph wakeup after task completion failed",
 					"issue_id", util.UUIDToString(issue.ID), "error", err)
-			}
-		}
-	}
-
-	// Invariant: every completed issue task must have at least one agent
-	// comment on the issue, so the user always sees something when a run
-	// ends. If the agent posted a comment during execution (result, progress
-	// ping, or CLI reply), HasAgentCommentedSince returns true and we skip.
-	// Otherwise, synthesize one from the final output. For comment-triggered
-	// tasks, TriggerCommentID threads the fallback under the original comment;
-	// for executor-triggered tasks it is NULL and the fallback is top-level.
-	// Chat tasks have no IssueID and are handled separately below.
-	if report == nil && task.IssueID.Valid {
-		suppressNoActionComment, err := HasTeamLeaderNoActionEvaluationForTask(ctx, s.Queries, task)
-		if err != nil {
-			slog.Warn("checking team leader no_action evaluation failed",
-				"task_id", util.UUIDToString(task.ID),
-				"issue_id", util.UUIDToString(task.IssueID),
-				"agent_id", util.UUIDToString(task.AgentID),
-				"error", err,
-			)
-		}
-		agentCommented, _ := s.Queries.HasAgentCommentedSince(ctx, db.HasAgentCommentedSinceParams{
-			IssueID:  task.IssueID,
-			AuthorID: task.AgentID,
-			Since:    task.StartedAt,
-		})
-		if !suppressNoActionComment && !agentCommented {
-			var payload protocol.TaskCompletedPayload
-			if err := json.Unmarshal(result, &payload); err == nil {
-				if payload.Output != "" {
-					// Match the CLI's --content / --description behavior: agents that
-					// emit literal `\n` 4-char sequences (Python/JSON-style) get them
-					// decoded into real newlines before the comment hits the DB. See
-					// util.UnescapeBackslashEscapes for the exact contract.
-					body := util.UnescapeBackslashEscapes(payload.Output)
-					if task.TriggerCommentID.Valid && isTrivialDoneOutput(body) {
-						slog.Warn("suppressing trivial comment-trigger fallback output",
-							"task_id", util.UUIDToString(task.ID),
-							"issue_id", util.UUIDToString(task.IssueID),
-							"agent_id", util.UUIDToString(task.AgentID),
-						)
-					} else {
-						// Redact first, then bound: a runaway raw-stream Output (GH #5455)
-						// must never reach the issue thread, even as a clipped excerpt.
-						content := truncateFallbackCommentBody(redact.Text(body), maxSynthesizedFallbackCommentRunes)
-						s.createAgentComment(ctx, task.IssueID, task.AgentID, content, "comment", task.TriggerCommentID, task.ID)
-					}
-				}
 			}
 		}
 	}
@@ -5114,7 +5080,14 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 
 	var task db.AgentTaskQueue
 	var retried *db.AgentTaskQueue
+	var commentOutcome *terminalReportComment
+	var terminalCASMiss bool
 	if err := s.runTerminalTaskTx(ctx, &task, terminalReportHook(report, hook), func(qtx *db.Queries) error {
+		if report == nil {
+			if err := qtx.LockLegacyTerminalIssue(ctx, taskID); err != nil {
+				return err
+			}
+		}
 		if err := lockChatSessionForTaskWrite(ctx, qtx, taskID); err != nil {
 			return err
 		}
@@ -5137,6 +5110,7 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 			RetiredSessionID:      pgtype.Text{String: retiredSessionID, Valid: retiredSessionID != ""},
 		})
 		if err != nil {
+			terminalCASMiss = errors.Is(err, pgx.ErrNoRows)
 			return err
 		}
 		task = t
@@ -5324,7 +5298,8 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 			}
 		}
 		if retried == nil {
-			if err := s.prepareTerminalReportComment(ctx, qtx, task, nil, errMsg, report); err != nil {
+			commentOutcome, err = s.prepareTerminalReportComment(ctx, qtx, task, nil, errMsg)
+			if err != nil {
 				return err
 			}
 		}
@@ -5334,7 +5309,7 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 			return &task, nil
 		}
 		if existing, lookupErr := s.Queries.GetAgentTask(ctx, taskID); lookupErr == nil {
-			if report == nil && errors.Is(err, pgx.ErrNoRows) {
+			if report == nil && terminalCASMiss && (existing.Status == "completed" || existing.Status == "cancelled" || existing.Status == "failed") {
 				slog.Info("fail task: already finalized",
 					"task_id", util.UUIDToString(taskID),
 					"current_status", existing.Status,
@@ -5362,7 +5337,7 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 		return nil, fmt.Errorf("fail task: %w", err)
 	}
 
-	s.publishTerminalReport(ctx, task, report)
+	s.publishTerminalReport(ctx, task, report, commentOutcome)
 	slog.Warn("task failed", "task_id", util.UUIDToString(task.ID), "issue_id", util.UUIDToString(task.IssueID), "error", errMsg, "failure_reason", failureReason)
 	s.captureTaskFailed(ctx, task)
 	if retried == nil && task.IssueID.Valid {
@@ -5406,16 +5381,6 @@ func (s *TaskService) failTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 				"error", recoveryErr,
 			)
 		}
-	}
-
-	// Skip the per-failure system comment when we'll immediately retry —
-	// the new task will surface its own status to the user, and we don't
-	// want to spam the issue with "task timed out" messages on every
-	// daemon hiccup. Delegated failures keep this existing failed-issue comment
-	// in addition to the coordinator recovery signal, preserving visibility on
-	// both sides of a cross-issue handoff.
-	if report == nil && errMsg != "" && task.IssueID.Valid && retried == nil {
-		s.createAgentComment(ctx, task.IssueID, task.AgentID, redact.Text(errMsg), "system", task.TriggerCommentID, task.ID)
 	}
 
 	// Quick-create tasks: push a failure inbox notification to the

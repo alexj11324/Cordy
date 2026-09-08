@@ -1,6 +1,15 @@
 -- name: LockTerminalReportTask :one
 SELECT * FROM agent_task_queue WHERE id = $1 FOR UPDATE;
 
+-- name: LockLegacyTerminalIssue :exec
+-- Legacy callbacks cannot rely on durable report redelivery. Wait for the
+-- issue before acquiring any chat-session or task row lock, matching issue
+-- writers such as rerun without holding their next lock while blocked.
+SELECT issue.id
+FROM issue JOIN agent_task_queue task ON task.issue_id = issue.id
+WHERE task.id = $1
+FOR UPDATE OF issue;
+
 -- name: LockTerminalReportIssue :exec
 -- Do not wait on an issue while holding its task: issue deletion acquires
 -- those locks in the reverse order. Contention rolls back the report so the

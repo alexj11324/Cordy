@@ -58,6 +58,21 @@ func (q *Queries) GetTerminalReportReceipt(ctx context.Context, arg GetTerminalR
 	return i, err
 }
 
+const lockLegacyTerminalIssue = `-- name: LockLegacyTerminalIssue :exec
+SELECT issue.id
+FROM issue JOIN agent_task_queue task ON task.issue_id = issue.id
+WHERE task.id = $1
+FOR UPDATE OF issue
+`
+
+// Legacy callbacks cannot rely on durable report redelivery. Wait for the
+// issue before acquiring any chat-session or task row lock, matching issue
+// writers such as rerun without holding their next lock while blocked.
+func (q *Queries) LockLegacyTerminalIssue(ctx context.Context, id pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, lockLegacyTerminalIssue, id)
+	return err
+}
+
 const lockTerminalReportIssue = `-- name: LockTerminalReportIssue :exec
 SELECT issue.id
 FROM issue JOIN agent_task_queue task ON task.issue_id = issue.id

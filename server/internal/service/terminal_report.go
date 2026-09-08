@@ -33,7 +33,6 @@ type TerminalReport struct {
 	Replayed bool
 	reportID pgtype.UUID
 	fence    int64
-	comment  *terminalReportComment
 }
 
 func NewTerminalReport(identity protocol.TerminalReportIdentity) (*TerminalReport, error) {
@@ -131,45 +130,45 @@ type terminalReportComment struct {
 	root    *db.Comment
 }
 
-func (s *TaskService) prepareTerminalReportComment(ctx context.Context, qtx *db.Queries, task db.AgentTaskQueue, result []byte, errMsg string, report *TerminalReport) error {
-	if report == nil || !task.IssueID.Valid {
-		return nil
+func (s *TaskService) prepareTerminalReportComment(ctx context.Context, qtx *db.Queries, task db.AgentTaskQueue, result []byte, errMsg string) (*terminalReportComment, error) {
+	if !task.IssueID.Valid {
+		return nil, nil
 	}
 	content, kind := redact.Text(errMsg), "system"
 	if task.Status == "completed" {
 		suppressed, err := HasTeamLeaderNoActionEvaluationForTask(ctx, qtx, task)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		commented, err := qtx.HasAgentCommentedSince(ctx, db.HasAgentCommentedSinceParams{IssueID: task.IssueID, AuthorID: task.AgentID, Since: task.StartedAt})
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if suppressed || commented {
-			return nil
+			return nil, nil
 		}
 		var payload protocol.TaskCompletedPayload
 		if err := json.Unmarshal(result, &payload); err != nil {
-			return err
+			return nil, err
 		}
 		body := util.UnescapeBackslashEscapes(payload.Output)
 		if task.TriggerCommentID.Valid && isTrivialDoneOutput(body) {
-			return nil
+			return nil, nil
 		}
 		content, kind = truncateFallbackCommentBody(redact.Text(body), maxSynthesizedFallbackCommentRunes), "comment"
 	}
 	if content == "" {
-		return nil
+		return nil, nil
 	}
 	issue, err := qtx.GetIssue(ctx, task.IssueID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	outcome := &terminalReportComment{issue: issue}
 	if task.TriggerCommentID.Valid {
 		root, err := qtx.GetThreadRoot(ctx, db.GetThreadRootParams{CommentID: task.TriggerCommentID, WorkspaceID: issue.WorkspaceID})
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			return err
+			return nil, err
 		}
 		if err == nil {
 			outcome.root = &root
@@ -177,19 +176,17 @@ func (s *TaskService) prepareTerminalReportComment(ctx context.Context, qtx *db.
 	}
 	created, err := qtx.CreateComment(ctx, db.CreateCommentParams{ID: dbid.NewV7(), IssueID: task.IssueID, WorkspaceID: issue.WorkspaceID, AuthorType: "agent", AuthorID: task.AgentID, Content: content, Type: kind, ParentID: task.TriggerCommentID, SourceTaskID: task.ID})
 	if err != nil {
-		return err
+		return nil, err
 	}
 	outcome.created = created
-	report.comment = outcome
-	return nil
+	return outcome, nil
 }
 
-func (s *TaskService) publishTerminalReport(ctx context.Context, task db.AgentTaskQueue, report *TerminalReport) {
-	if report == nil {
-		return
+func (s *TaskService) publishTerminalReport(ctx context.Context, task db.AgentTaskQueue, report *TerminalReport, outcome *terminalReportComment) {
+	if report != nil {
+		report.Ack = report.ack(task.ID, task.Status)
 	}
-	report.Ack = report.ack(task.ID, task.Status)
-	if outcome := report.comment; outcome != nil {
+	if outcome != nil {
 		s.publishAgentComment(ctx, outcome.issue, outcome.created, outcome.root)
 	}
 }
