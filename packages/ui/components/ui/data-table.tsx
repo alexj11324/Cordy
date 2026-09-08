@@ -2,11 +2,16 @@
 
 import {
   flexRender,
+  type CellData,
   type ColumnSizingState,
-  type Header as TanstackHeader,
-  type Row,
-  type Table as TanstackTable,
+  type Header as TanstackHeaderBase,
+  type Row as RowBase,
+  type RowData,
 } from "@tanstack/react-table";
+import type {
+  LegacyFeatures,
+  LegacyReactTable,
+} from "@tanstack/react-table/legacy";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import * as React from "react";
 import { createPortal } from "react-dom";
@@ -27,12 +32,19 @@ import {
 import { columnSizeVar, getCellStyle } from "@orvilo/ui/lib/data-table";
 import { cn } from "@orvilo/ui/lib/utils";
 
+type TanstackTable<TData extends RowData> = LegacyReactTable<TData>;
+type Row<TData extends RowData> = RowBase<LegacyFeatures, TData>;
+type TanstackHeader<
+  TData extends RowData,
+  TValue extends CellData = CellData,
+> = TanstackHeaderBase<LegacyFeatures, TData, TValue>;
+
 // Pointer travel that turns a press on the resize handle into a drag. Matches
 // the column-reorder sensor's activation distance so both gestures on the same
 // header behave alike, and keeps a plain click from committing a width.
 const RESIZE_DRAG_THRESHOLD = 4;
 
-interface DataTableProps<TData> extends React.ComponentProps<"div"> {
+interface DataTableProps<TData extends RowData> extends React.ComponentProps<"div"> {
   table: TanstackTable<TData>;
   // Optional bar shown below the table when ≥1 row is selected. We
   // don't currently use selection — kept on the API surface for parity
@@ -78,7 +90,7 @@ interface DataTableProps<TData> extends React.ComponentProps<"div"> {
 //     respect `min-width` on the table itself. When the container is
 //     wider than min-width the table tracks it; when narrower, the
 //     table pins to min-width and the outer overflow-auto scrolls.
-export function DataTable<TData>({
+export function DataTable<TData extends RowData>({
   table,
   actionBar,
   emptyMessage = "No results.",
@@ -430,8 +442,8 @@ export function DataTable<TData>({
                       // configured ones under fixed table-layout, so the
                       // boundary has to be read off the DOM, not summed.
                       data-pinned-edge={
-                        isPinned === "left" &&
-                        header.column.getIsLastColumn("left")
+                        isPinned === "start" &&
+                        header.column.getIsLastColumn("start")
                           ? ""
                           : undefined
                       }
@@ -570,7 +582,7 @@ export function DataTable<TData>({
   );
 }
 
-interface DataTableBodyProps<TData> {
+interface DataTableBodyProps<TData extends RowData> {
   table: TanstackTable<TData>;
   rows: Row<TData>[];
   emptyMessage: React.ReactNode;
@@ -585,7 +597,7 @@ interface DataTableBodyProps<TData> {
   virtualPaddingBottom: number;
 }
 
-function DataTableBody<TData>({
+function DataTableBody<TData extends RowData>({
   table,
   rows,
   emptyMessage,
