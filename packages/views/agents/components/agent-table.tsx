@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef } from "react";
+import { useCallback, useMemo } from "react";
 import { AlertCircle, Lock } from "lucide-react";
 import { useTable, type ColumnDef, type RowSelectionState } from "@tanstack/react-table";
 import type { Agent } from "@orvilo/core/types";
@@ -23,7 +23,6 @@ import {
   dataGridFeatures,
   type DataGridFeatures,
 } from "@orvilo/ui/components/reui/data-grid/data-grid";
-import { DataGridTableVirtual } from "@orvilo/ui/components/reui/data-grid/data-grid-table-virtual";
 import { DataGridTable } from "@orvilo/ui/components/reui/data-grid/data-grid-table";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import {
@@ -32,9 +31,9 @@ import {
   TooltipTrigger,
 } from "@orvilo/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
+import { ManagementGrid } from "../../common/management-grid";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
 import { useT } from "../../i18n";
-import { useRowLink } from "../../navigation";
 import { availabilityConfig } from "../presence";
 import { AgentRowActions } from "./agent-row-actions";
 import type { AgentListRow } from "./agents-page";
@@ -42,12 +41,6 @@ import type { AgentListRow } from "./agents-page";
 // Two-line rows: agents are identity-type entities (few, avatar + name), the
 // documented exception to the single-line management-list rule.
 export const AGENT_ROW_HEIGHT = 64;
-
-// Bottom clearance so the last row can scroll clear of floating UI anchored to
-// the pane's bottom edge (the chat FAB covers ~48px, the batch toolbar ~62px).
-// It rides a spacer row inside the SAME scroller as the data, so it scrolls
-// with the content instead of shrinking the viewport.
-const BOTTOM_CLEARANCE = 64;
 
 // Responsiveness is TWO-ZONE and CONTAINER-query driven, exactly as the
 // ListGrid convention this table replaces:
@@ -118,7 +111,6 @@ export function AgentTable({
   locale,
 }: AgentTableProps) {
   const { t } = useT("agents");
-  const rowLink = useRowLink();
   const anySelected = allSelected || someSelected;
 
   const columns = useMemo<ColumnDef<DataGridFeatures, AgentListRow>[]>(() => {
@@ -355,34 +347,28 @@ export function AgentTable({
     enableRowSelection: true,
     state: { rowSelection },
     onRowSelectionChange: handleRowSelectionChange,
+    // Identity stays put while the wide zone scrolls: losing the avatar and
+    // the name is what makes a scrolled row unreadable.
+    initialState: { columnPinning: { start: ["select", "name"], end: [] } },
     // `rows` already IS the page; without this the grid slices it to the
     // default page size and renders ten rows.
     manualPagination: true,
   });
 
-  // Row navigation is DELEGATED from the scroll container rather than spread
-  // onto each <tr>: the grid renders its own rows, and its `onRowClick` hands
-  // over row data without the MouseEvent - which would drop middle-click
-  // (new background tab) and hover prefetch. The rows carry `data-row-id`,
-  // so the event target resolves back to a row. Controls inside a row call
-  // stopPropagation, exactly as they did under ListGrid.
-  const rowsById = useMemo(
-    () => new Map(rows.map((row) => [row.agent.id, row])),
+  // Row ids ARE agent ids (getRowId), so the delegated row navigation in
+  // ManagementGrid resolves a row straight back to its detail route.
+  const nameById = useMemo(
+    () => new Map(rows.map((row) => [row.agent.id, row.agent.name])),
     [rows],
   );
-  const linkForTarget = useCallback(
-    (target: EventTarget | null) => {
-      if (!(target instanceof Element)) return null;
-      const id = target.closest("[data-row-id]")?.getAttribute("data-row-id");
-      const row = id ? rowsById.get(id) : undefined;
-      if (!row) return null;
-      return { id: row.agent.id, link: rowLink(agentDetailHref(row.agent.id), row.agent.name) };
+  const hrefForRow = useCallback(
+    (id: string) => {
+      const title = nameById.get(id);
+      if (title === undefined) return null;
+      return { href: agentDetailHref(id), title };
     },
-    [agentDetailHref, rowLink, rowsById],
+    [agentDetailHref, nameById],
   );
-  // onMouseEnter does not bubble, so hover prefetch rides onMouseOver and is
-  // latched per row id - otherwise every cell crossed inside one row refires.
-  const hoveredRowIdRef = useRef<string | null>(null);
 
   // Wide-zone minimum width: below it the columns would crush instead of
   // scrolling. Derived from the same widths the tracks use.
@@ -396,63 +382,15 @@ export function AgentTable({
     );
 
   return (
-    <div
-      className="min-h-0 flex-1 @container"
-      style={{ "--agt-minw": `${minWidth}px` } as React.CSSProperties}
-      onClick={(event) => linkForTarget(event.target)?.link.onClick(event)}
-      onAuxClick={(event) => linkForTarget(event.target)?.link.onAuxClick(event)}
-      onMouseOver={(event) => {
-        const hit = linkForTarget(event.target);
-        if (hit?.id === hoveredRowIdRef.current) return;
-        hoveredRowIdRef.current = hit?.id ?? null;
-        hit?.link.onMouseEnter();
-      }}
-    >
-      <DataGrid
-        table={table}
-        recordCount={rows.length}
-        emptyMessage={noMatchText}
-        tableLayout={{
-          width: "fixed",
-          headerSticky: true,
-          headerBackground: true,
-          rowBorder: true,
-        }}
-        tableClassNames={{
-          base: "@2xl:min-w-[var(--agt-minw)]",
-          // h-9 matches the management-list header height; the muted band and
-          // its bottom border are the explicit header LAYER — without one the
-          // 64px rows and the column titles read as the same surface.
-          headerRow: "group/header h-9",
-          // Faint separators rather than a tighter row: two-line identity rows
-          // need the height, and at 64px with nothing between them the list
-          // reads as loose fragments.
-          bodyRow: "group/row h-16 cursor-pointer [&>td]:border-border/60",
-        }}
-      >
-        {/* ONE scroll container owns BOTH axes: DataGridTableVirtual's own
-            viewport, since no DataGridScrollArea is composed around it.
-            Splitting horizontal and vertical scrolling across two elements
-            produced a non-converging layout loop (flickering double
-            scrollbars) in the list this replaces. */}
-        <DataGridContainer className="h-full">
-          <DataGridTableVirtual
-            height="100%"
-            estimateSize={AGENT_ROW_HEIGHT}
-            overscan={10}
-            footerContent={
-              <tr aria-hidden="true">
-                <td
-                  colSpan={columns.length}
-                  className="border-0 p-0"
-                  style={{ height: BOTTOM_CLEARANCE }}
-                />
-              </tr>
-            }
-          />
-        </DataGridContainer>
-      </DataGrid>
-    </div>
+    <ManagementGrid
+      table={table}
+      recordCount={rows.length}
+      emptyMessage={noMatchText}
+      rowHeight={AGENT_ROW_HEIGHT}
+      minWidth={minWidth}
+      columnCount={columns.length}
+      hrefForRow={hrefForRow}
+    />
   );
 }
 
