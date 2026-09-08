@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX CONCURRENTLY terminal_report_receipt_report_id_idx ON terminal_report_receipt (report_id);

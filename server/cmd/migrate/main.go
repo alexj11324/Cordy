@@ -322,8 +322,8 @@ var concurrentIndexCleanups = map[string]string{
 	"517_agent_task_execution_provenance_discovery_queue_index": "agent_task_execution_provenance_discovery_queue_idx",
 	"522_issue_category_policy_workspace_category_index":        "uq_workspace_issue_category_policy_workspace_category",
 	"530_channel_receive_state_unique_index":                    "idx_channel_receive_state_installation_type",
-	"587_linear_comment_link_local":                            "uq_linear_comment_link_local",
-	"588_linear_comment_link_remote":                           "uq_linear_comment_link_remote",
+	"587_linear_comment_link_local":                             "uq_linear_comment_link_local",
+	"588_linear_comment_link_remote":                            "uq_linear_comment_link_remote",
 	"532_uq_linear_connection_id":                               "uq_linear_connection_id",
 	"533_uq_linear_connection_workspace":                        "uq_linear_connection_workspace",
 	"534_uq_linear_connection_identity":                         "uq_linear_connection_identity",
@@ -355,8 +355,10 @@ var concurrentIndexCleanups = map[string]string{
 	"574_channel_installation_runtime_observation_index":        "channel_installation_runtime_observation_uidx",
 	"575_idx_chat_message_channel_task":                         "idx_chat_message_channel_task",
 	"579_channel_installation_installed_lease_index":            "idx_channel_installation_installed_lease",
-	"593_automation_trigger_event_index":                       "idx_automation_trigger_native_event",
-	"595_automation_memory_name_index":                         "idx_automation_memory_name",
+	"593_automation_trigger_event_index":                        "idx_automation_trigger_native_event",
+	"595_automation_memory_name_index":                          "idx_automation_memory_name",
+	"599_terminal_report_id_index":                              "terminal_report_receipt_report_id_idx",
+	"600_terminal_report_claim_index":                           "terminal_report_receipt_claim_idx",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction

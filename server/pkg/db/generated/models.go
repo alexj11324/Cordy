@@ -1760,6 +1760,15 @@ type TeamMember struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
+type TerminalReportReceipt struct {
+	ReportID      pgtype.UUID        `json:"report_id"`
+	TaskID        pgtype.UUID        `json:"task_id"`
+	ClaimFence    int64              `json:"claim_fence"`
+	PayloadSha256 string             `json:"payload_sha256"`
+	TaskStatus    string             `json:"task_status"`
+	AcceptedAt    pgtype.Timestamptz `json:"accepted_at"`
+}
+
 type User struct {
 	ID                      pgtype.UUID        `json:"id"`
 	Name                    string             `json:"name"`

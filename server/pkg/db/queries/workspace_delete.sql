@@ -212,6 +212,9 @@ deleted_task_messages AS (
 deleted_task_tokens AS (
     DELETE FROM task_token WHERE task_id IN (SELECT id FROM batch)
 ),
+deleted_terminal_report_receipts AS (
+    DELETE FROM terminal_report_receipt WHERE task_id IN (SELECT id FROM batch)
+),
 deleted_channel_outbound_cards AS (
     DELETE FROM channel_outbound_card_message WHERE task_id IN (SELECT id FROM batch)
 ),

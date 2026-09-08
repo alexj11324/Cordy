@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS terminal_report_receipt_report_id_idx;
