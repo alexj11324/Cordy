@@ -5,8 +5,8 @@
   "tsx": true,
   "tailwind": {
     "config": "",
-    "css": "styles/tokens.css",
-    "baseColor": "zinc",
+    "css": "styles/reui.css",
+    "baseColor": "neutral",
     "cssVariables": true,
     "prefix": ""
   },
