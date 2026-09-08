@@ -231,7 +231,11 @@ export function mergeTaskMessagesBySeq(
 ): TaskMessagePayload[] {
   if (incoming.length === 0) return existing as TaskMessagePayload[];
   const knownSeqs = new Set(existing.map((m) => m.seq));
-  const fresh = incoming.filter((m) => !knownSeqs.has(m.seq));
+  const fresh = incoming.filter((m) => {
+    if (knownSeqs.has(m.seq)) return false;
+    knownSeqs.add(m.seq);
+    return true;
+  });
   if (fresh.length === 0) return existing as TaskMessagePayload[];
   return [...existing, ...fresh].sort((a, b) => a.seq - b.seq);
 }

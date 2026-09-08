@@ -1,5 +1,6 @@
-import type { WSMessage, WSEventType } from "../types/events";
 import { type Logger, noopLogger } from "../logger";
+import type { WSEventType, WSMessage } from "../types/events";
+import { parseWSFrame } from "./ws-schema";
 
 type EventHandler = (payload: unknown, actorId?: string, actorType?: string) => void;
 
@@ -34,6 +35,10 @@ export interface WSClientIdentity {
 
 export class WSClient {
   private ws: WebSocket | null = null;
+  private generation = 0;
+
+  get connectionGeneration() { return this.generation; }
+  get subscriptionWorkspaceSlug() { return this.workspaceSlug; }
   private baseUrl: string;
   private token: string | null = null;
   private workspaceSlug: string | null = null;
@@ -71,6 +76,15 @@ export class WSClient {
   }
 
   connect() {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    const previous = this.ws;
+    this.ws = null;
+    const generation = ++this.generation;
+    if (previous) {
+      previous.onopen = previous.onmessage = previous.onclose = previous.onerror = null;
+      previous.close();
+    }
     this.badFrameLogged = false;
     const url = new URL(this.baseUrl);
     // Token is never sent as a URL query parameter — it would be logged by
@@ -86,73 +100,88 @@ export class WSClient {
     if (this.identity?.os)
       url.searchParams.set("client_os", this.identity.os);
 
-    this.ws = new WebSocket(url.toString());
-
-    this.ws.onopen = () => {
-      if (!this.cookieAuth && this.token) {
-        this.ws!.send(
-          JSON.stringify({ type: "auth", payload: { token: this.token } }),
-        );
-        return;
-      }
-
+    const socket = new WebSocket(url.toString());
+    this.ws = socket;
+    const token = this.token;
+    const isCurrent = () => this.ws === socket && this.generation === generation;
+    let authenticated = false;
+    const authenticate = () => {
+      if (!isCurrent() || authenticated) return;
+      authenticated = true;
       this.onAuthenticated();
     };
 
-    this.ws.onmessage = (event) => {
-      let msg: WSMessage;
-      try {
-        msg = JSON.parse(event.data as string) as WSMessage;
-      } catch {
-        this.logger.warn(
-          "ws: received unparseable message",
-          summarizeUnparseable(event.data),
+    socket.onopen = () => {
+      if (!isCurrent()) return;
+      if (!this.cookieAuth && token) {
+        socket.send(
+          JSON.stringify({ type: "auth", payload: { token } }),
         );
         return;
       }
-      // Trust boundary: a frame must be an object carrying a string `type`.
-      // The server protocol guarantees this for every frame, but a
-      // non-conforming frame — an out-of-protocol frame injected by a proxy /
-      // browser extension, or a bare JSON primitive — must degrade to a no-op
-      // here. Without this guard every downstream consumer (the onAny
-      // dispatcher and every ws.on subscriber) runs against a bad shape;
-      // `msg.type.split(...)` in the realtime sync threw an uncaught TypeError
-      // out of onmessage and surfaced as a flood of global `$exception` events
-      // (MUL-3418). Validate once at the boundary, trust the shape downstream.
-      if (!msg || typeof (msg as { type?: unknown }).type !== "string") {
+
+      authenticate();
+    };
+
+    socket.onmessage = (event) => {
+      if (!isCurrent()) return;
+      let data: unknown;
+      try {
+        data = JSON.parse(event.data as string);
+      } catch {
+        this.logger.warn("ws: received unparseable message", summarizeUnparseable(event.data));
+        return;
+      }
+      const result = parseWSFrame(data);
+      if (result.kind === "invalid") {
         if (!this.badFrameLogged) {
           this.badFrameLogged = true;
-          this.logger.warn(
-            "ws: dropping frame without a string type",
-            summarizeUnparseable(event.data),
-          );
+          // Log paths/codes only. A rejected frame may contain private content.
+          this.logger.warn("ws: dropping invalid frame", result.issues);
         }
         return;
       }
-      if ((msg as any).type === "auth_ack") {
-        this.onAuthenticated();
+      if (result.kind === "unknown") return;
+      if (result.kind === "auth") {
+        authenticate();
         return;
       }
+      const msg = result.message;
       this.logger.debug("received", msg.type);
       const eventHandlers = this.handlers.get(msg.type);
       if (eventHandlers) {
         for (const handler of eventHandlers) {
-          handler(msg.payload, msg.actor_id, msg.actor_type);
+          if (!isCurrent()) return;
+          this.invokeListener(msg.type, () => handler(msg.payload, msg.actor_id, msg.actor_type));
         }
       }
       for (const handler of this.anyHandlers) {
-        handler(msg);
+        if (!isCurrent()) return;
+        this.invokeListener(msg.type, () => handler(msg));
       }
     };
 
-    this.ws.onclose = () => {
+    socket.onclose = () => {
+      if (!isCurrent()) return;
+      this.ws = null;
+      ++this.generation;
       this.scheduleReconnect();
     };
 
-    this.ws.onerror = () => {
+    socket.onerror = () => {
       // Suppress — onclose handles reconnect; errors during StrictMode
       // double-fire are expected in dev and harmless.
     };
+  }
+
+  private invokeListener(type: string, listener: () => unknown) {
+    const report = () => this.logger.warn("ws: listener failed", { type });
+    try {
+      const pending = listener();
+      if (pending) void Promise.resolve(pending).catch(report);
+    } catch {
+      report();
+    }
   }
 
   /**
@@ -176,7 +205,10 @@ export class WSClient {
     this.logger.warn(
       `ws: disconnected, reconnecting in ${delay}ms (attempt ${this.reconnectAttempt})`,
     );
-    this.reconnectTimer = setTimeout(() => this.connect(), delay);
+    const generation = this.generation;
+    this.reconnectTimer = setTimeout(() => {
+      if (this.generation === generation) this.connect();
+    }, delay);
   }
 
   private onAuthenticated() {
@@ -196,12 +228,15 @@ export class WSClient {
   }
 
   disconnect() {
+    ++this.generation;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
     if (this.ws) {
       // Remove handlers before close to prevent onclose from scheduling a reconnect
+      this.ws.onopen = null;
+      this.ws.onmessage = null;
       this.ws.onclose = null;
       this.ws.onerror = null;
       this.ws.close();

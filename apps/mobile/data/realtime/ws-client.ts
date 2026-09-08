@@ -27,6 +27,7 @@ import type {
   WSEventType,
   WSMessage,
 } from "@orvilo/core/types";
+import { parseWSFrame } from "@orvilo/core/api/ws-schema";
 
 /** Generic handler used internally by the dispatcher map. Each `on<E>()`
  *  call narrows this to `(payload: WSEventPayload<E>, actorId?) => void`
@@ -216,37 +217,38 @@ export class WSClient {
     };
 
     ws.onmessage = (event) => {
-      let msg: WSMessage;
+      let data: unknown;
       try {
-        msg = JSON.parse(event.data as string) as WSMessage;
+        data = JSON.parse(event.data as string);
       } catch {
         this.logger.warn("[ws] non-JSON frame ignored");
         return;
       }
 
-      const type = (msg as { type?: string }).type;
-      if (type === "auth_ack") {
-        this.onAuthenticated();
-        return;
-      }
-      if (type === "pong") {
+      // Native heartbeat frames are transport-only and do not enter the
+      // shared business-event parser or any business subscription.
+      if (data !== null && typeof data === "object" && "type" in data && data.type === "pong") {
         this.onPong();
         return;
       }
-      if (!type) {
-        // Server-side error frames have shape {error: "..."}; log and drop.
-        // Reconnect loop is bounded by auth-store's 401 handler eventually
-        // tearing this client down via disconnect().
-        this.logger.warn("[ws] frame without type", event.data);
+      const parsed = parseWSFrame(data);
+      if (parsed.kind === "invalid") {
+        this.logger.warn("[ws] invalid frame ignored", parsed.issues);
+        return;
+      }
+      if (parsed.kind === "unknown") return;
+      if (parsed.kind === "auth") {
+        this.onAuthenticated();
         return;
       }
 
-      this.logger.debug("[ws] event", type);
+      const msg = parsed.message;
+      this.logger.debug("[ws] event", msg.type);
       const set = this.handlers.get(msg.type);
       if (set) {
-        for (const handler of set) handler(msg.payload, msg.actor_id);
+        for (const handler of set) this.invokeListener(msg.type, () => handler(msg.payload, msg.actor_id));
       }
-      for (const handler of this.anyHandlers) handler(msg);
+      for (const handler of this.anyHandlers) this.invokeListener(msg.type, () => handler(msg));
     };
 
     ws.onerror = () => {
@@ -266,6 +268,16 @@ export class WSClient {
       this.logger.warn("[ws] socket closed");
       if (this.state === "active") this.scheduleReconnect();
     };
+  }
+
+  private invokeListener(type: string, listener: () => unknown) {
+    const report = () => this.logger.warn("[ws] listener failed", { type });
+    try {
+      const pending = listener();
+      if (pending) void Promise.resolve(pending).catch(report);
+    } catch {
+      report();
+    }
   }
 
   private onAuthenticated() {

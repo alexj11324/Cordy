@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WSClient } from "./ws-client";
 import type { WSMessage } from "../types/events";
@@ -19,7 +20,7 @@ class FakeWebSocket {
     FakeWebSocket.lastInstance = this;
   }
   close() {}
-  send() {}
+  send = vi.fn();
 }
 
 describe("WSClient", () => {
@@ -59,6 +60,46 @@ describe("WSClient", () => {
     expect(url.searchParams.has("client_platform")).toBe(false);
     expect(url.searchParams.has("client_version")).toBe(false);
     expect(url.searchParams.has("client_os")).toBe(false);
+  });
+
+  it("isolates throwing event and catch-all listeners without logging private errors", () => {
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const ws = new WSClient("ws://example.test/ws", { logger });
+    const event = vi.fn();
+    const any = vi.fn();
+    const fail = () => { throw new Error("private listener content"); };
+    ws.on("issue:deleted", fail);
+    ws.on("issue:deleted", event);
+    ws.onAny(fail);
+    ws.onAny(any);
+    ws.connect();
+    expect(() => FakeWebSocket.lastInstance!.onmessage?.({ data: JSON.stringify({ type: "issue:deleted", payload: { issue_id: "i" } }) })).not.toThrow();
+    expect(event).toHaveBeenCalledOnce();
+    expect(any).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("private listener content");
+    ws.disconnect();
+  });
+
+  it("observes rejecting async event and catch-all listeners and continues dispatching", async () => {
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const ws = new WSClient("ws://example.test/ws", { logger });
+    const failure = new Error("private async content");
+    const observed = vi.fn();
+    const reject = () => ({ then: (_resolve: unknown, onReject: (error: unknown) => void) => { observed(); onReject(failure); } });
+    const later = vi.fn();
+    ws.on("issue:deleted", reject);
+    ws.onAny(reject);
+    ws.onAny(later);
+    ws.connect();
+    FakeWebSocket.lastInstance!.onmessage?.({ data: JSON.stringify({ type: "issue:deleted", payload: { issue_id: "i" } }) });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(observed).toHaveBeenCalledTimes(2);
+    expect(later).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("private async content");
+    ws.disconnect();
   });
 
   it("only includes the identity fields that are set", () => {
@@ -104,7 +145,7 @@ describe("WSClient", () => {
     };
     const ws = new WSClient("ws://example.test/ws", { logger });
     const handler = vi.fn();
-    ws.on("issue:updated", handler);
+    ws.on("issue:deleted", handler);
     ws.connect();
 
     expect(() => {
@@ -113,8 +154,8 @@ describe("WSClient", () => {
 
     FakeWebSocket.lastInstance!.onmessage?.({
       data: JSON.stringify({
-        type: "issue:updated",
-        payload: { id: "issue-1" },
+        type: "issue:deleted",
+        payload: { issue_id: "issue-1" },
       }),
     });
 
@@ -123,7 +164,7 @@ describe("WSClient", () => {
       `{"type":"issue`,
     );
     expect(handler).toHaveBeenCalledWith(
-      { id: "issue-1" },
+      { issue_id: "issue-1" },
       undefined,
       undefined,
     );
@@ -147,7 +188,7 @@ describe("WSClient", () => {
     const anyHandler = vi.fn((msg: WSMessage) => msg.type.split(":")[0]);
     ws.onAny(anyHandler);
     const issueHandler = vi.fn();
-    ws.on("issue:updated", issueHandler);
+    ws.on("issue:deleted", issueHandler);
     ws.connect();
 
     const badFrames = [
@@ -168,15 +209,15 @@ describe("WSClient", () => {
 
     // A valid frame after the bad ones still dispatches normally.
     FakeWebSocket.lastInstance!.onmessage?.({
-      data: JSON.stringify({ type: "issue:updated", payload: { id: "i-1" } }),
+      data: JSON.stringify({ type: "issue:deleted", payload: { issue_id: "i-1" } }),
     });
-    expect(issueHandler).toHaveBeenCalledWith({ id: "i-1" }, undefined, undefined);
+    expect(issueHandler).toHaveBeenCalledWith({ issue_id: "i-1" }, undefined, undefined);
     expect(anyHandler).toHaveBeenCalledTimes(1);
 
     // The drop is logged at most once per connection despite four bad frames.
     expect(logger.warn).toHaveBeenCalledTimes(1);
     expect(logger.warn.mock.calls[0]?.[0]).toBe(
-      "ws: dropping frame without a string type",
+      "ws: dropping invalid frame",
     );
   });
 
@@ -186,23 +227,103 @@ describe("WSClient", () => {
     ws.connect();
 
     const handler = vi.fn();
-    ws.on("issue:created", handler);
+    ws.on("issue:deleted", handler);
 
     const fakeWs = (ws as any).ws as FakeWebSocket;
     fakeWs.onmessage?.({
       data: JSON.stringify({
-        type: "issue:created",
-        payload: { id: "issue-1" },
+        type: "issue:deleted",
+        payload: { issue_id: "issue-1" },
         actor_id: "user-123",
         actor_type: "user",
       }),
     });
 
     expect(handler).toHaveBeenCalledWith(
-      { id: "issue-1" },
+      { issue_id: "issue-1" },
       "user-123",
       "user",
     );
+  });
+
+  it("drops malformed known payloads and unknown events before every subscription", () => {
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const ws = new WSClient("ws://example.test/ws", { logger });
+    const handler = vi.fn();
+    const any = vi.fn();
+    ws.on("task:message", handler);
+    ws.onAny(any);
+    ws.connect();
+    for (const payload of [null, {}, { task_id: "t", seq: "1", type: "text" }]) {
+      FakeWebSocket.lastInstance!.onmessage?.({ data: JSON.stringify({ type: "task:message", payload }) });
+    }
+    FakeWebSocket.lastInstance!.onmessage?.({ data: JSON.stringify({ type: "task:future_event", payload: {} }) });
+    expect(handler).not.toHaveBeenCalled();
+    expect(any).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+    FakeWebSocket.lastInstance!.onmessage?.({ data: JSON.stringify({ type: "task:message", payload: { task_id: "t", seq: 1, type: "text" } }) });
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(any).toHaveBeenCalledTimes(1);
+    ws.disconnect();
+  });
+
+  it("ignores callbacks retained by a socket replaced during a workspace switch", () => {
+    vi.useFakeTimers();
+    try {
+      const ws = new WSClient("ws://example.test/ws");
+      ws.setAuth("token-a", "workspace-a");
+      ws.connect();
+      const old = FakeWebSocket.lastInstance!;
+      const oldOpen = old.onopen!;
+      const oldMessage = old.onmessage!;
+      const oldClose = old.onclose!;
+      ws.disconnect();
+      ws.setAuth("token-b", "workspace-b");
+      const handler = vi.fn();
+      const reconnect = vi.fn();
+      ws.on("issue:deleted", handler);
+      ws.onReconnect(reconnect);
+      ws.connect();
+      const current = FakeWebSocket.lastInstance!;
+      oldOpen();
+      oldMessage({ data: JSON.stringify({ type: "auth_ack" }) });
+      oldMessage({ data: JSON.stringify({ type: "issue:deleted", payload: { issue_id: "a" } }) });
+      oldClose();
+      expect(current.send).not.toHaveBeenCalled();
+      expect(handler).not.toHaveBeenCalled();
+      expect(reconnect).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      current.onopen?.();
+      expect(current.send).toHaveBeenCalledWith(JSON.stringify({ type: "auth", payload: { token: "token-b" } }));
+      current.onmessage?.({ data: JSON.stringify({ type: "issue:deleted", payload: { issue_id: "b" } }) });
+      expect(handler).toHaveBeenCalledWith({ issue_id: "b" }, undefined, undefined);
+      ws.disconnect();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("delivers authenticated reconnect once and ignores a closed socket's late events", () => {
+    vi.useFakeTimers();
+    try {
+      const ws = new WSClient("ws://example.test/ws");
+      const reconnect = vi.fn();
+      const any = vi.fn();
+      ws.onReconnect(reconnect);
+      ws.onAny(any);
+      ws.connect();
+      const first = FakeWebSocket.lastInstance!;
+      first.onmessage?.({ data: '{"type":"auth_ack"}' });
+      first.onclose?.();
+      first.onmessage?.({ data: '{"type":"issue:deleted","payload":{"issue_id":"old"}}' });
+      first.onclose?.();
+      expect(vi.getTimerCount()).toBe(1);
+      vi.runOnlyPendingTimers();
+      const second = FakeWebSocket.lastInstance!;
+      second.onmessage?.({ data: '{"type":"auth_ack"}' });
+      second.onmessage?.({ data: '{"type":"auth_ack"}' });
+      expect(reconnect).toHaveBeenCalledTimes(1);
+      expect(any).not.toHaveBeenCalled();
+      ws.disconnect();
+    } finally { vi.useRealTimers(); }
   });
 
   // ── Reconnect backoff tests ────────────────────────────────────────

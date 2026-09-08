@@ -435,6 +435,20 @@ describe("useRealtimeSync — workspace:deleted self-initiated suppression", () 
     expect(defaultStorage.getItem("orvilo_issue_draft:delete-me")).toBe("draft");
   });
 
+  it("does not clear the active workspace for a removal from another workspace", () => {
+    const ws = createMockWs();
+    const onToast = vi.fn();
+    renderHook(() => useRealtimeSync(ws, stores, onToast), {
+      wrapper: createWrapper(qc),
+    });
+    defaultStorage.setItem("orvilo_issue_draft:test-ws", "draft");
+    const removed = vi.mocked(ws.on).mock.calls.find(([event]) => event === "member:removed")?.[1];
+    expect(removed).toBeDefined();
+    removed!({ workspace_id: "ws-2", member_id: "m", user_id: "u1" });
+    expect(defaultStorage.getItem("orvilo_issue_draft:test-ws")).toBe("draft");
+    expect(onToast).not.toHaveBeenCalled();
+  });
+
   it("still cleans up for a delete initiated elsewhere", () => {
     const ws = createMockWs();
     renderHook(() => useRealtimeSync(ws, stores), {

@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceChannel, WorkspaceChannelMessage } from "../types/channel";
+import { WSClient } from "../api/ws-client";
 import { useWS } from "../realtime/provider";
 import { channelKeys } from "./keys";
 import {
@@ -81,6 +82,42 @@ describe("channel realtime cache", () => {
   afterEach(() => {
     queryClient.clear();
     vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("projects valid channel frames delivered through the WebSocket transport", () => {
+    const sockets: Array<{ onmessage: ((event: { data: string }) => void) | null }> = [];
+    class ChannelSocket {
+      onmessage: ((event: { data: string }) => void) | null = null;
+      constructor() { sockets.push(this); }
+      close() {}
+    }
+    vi.stubGlobal("WebSocket", ChannelSocket);
+    const ws = new WSClient("ws://example.test/ws");
+    vi.mocked(useWS).mockReturnValue({ subscribe: ws.on.bind(ws), onReconnect: ws.onReconnect.bind(ws) });
+    const listKey = channelKeys.list("ws-1");
+    const messageKey = channelKeys.messages("ws-1", "channel-1");
+    queryClient.setQueryData(listKey, { channels: [] });
+    queryClient.setQueryData(messageKey, { messages: [] });
+    const { unmount } = renderHook(() => useChannelRealtime("ws-1"), { wrapper: wrapper(queryClient) });
+    ws.connect();
+    const receive = (type: string, payload: unknown) => sockets[0]!.onmessage?.({ data: JSON.stringify({ type, payload }) });
+
+    act(() => {
+      receive("channel:created", { channel: null });
+      receive("channel:message", { channel_id: channel.id, message: { ...message, content: {} } });
+      receive("channel:future_event", { channel });
+    });
+    expect(queryClient.getQueryData(listKey)).toEqual({ channels: [] });
+    expect(queryClient.getQueryData(messageKey)).toEqual({ messages: [] });
+    act(() => {
+      receive("channel:created", { channel });
+      receive("channel:message", { channel_id: channel.id, message });
+    });
+    expect(queryClient.getQueryData(listKey)).toEqual({ channels: [channel] });
+    expect(queryClient.getQueryData(messageKey)).toEqual({ messages: [message] });
+    unmount();
+    ws.disconnect();
   });
 
   it("writes a created channel and invalidates the list", () => {
