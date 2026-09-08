@@ -5,7 +5,8 @@ import { render, screen } from "@testing-library/react";
 import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
-import { AccessCell, type AgentListRow } from "./agents-page";
+import { AccessCell } from "./agent-table";
+import type { AgentListRow } from "./agents-page";
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
