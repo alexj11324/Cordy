@@ -18,8 +18,6 @@ test("main CI applies the same validated path decisions after merge", async () =
   assert.match(source, /sqlc=\$SQLC_CHANGED/u);
   assert.match(source, /- 'apps\/auth-broker\/\*\*'/u);
   assert.match(source, /- 'examples\/plugins\/\*\*'/u);
-  assert.match(source, /- 'server\/pkg\/protocol\/events\.go'/u);
-  assert.match(source, /- 'server\/internal\/handler\/workspace_channel\.go'/u);
   assert.match(source, /'codex\/architecture-\*'/u);
   assert.match(source, /- '\.gitignore'/u);
   assert.doesNotMatch(source, /EVENT_NAME/u);

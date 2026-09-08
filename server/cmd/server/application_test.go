@@ -105,8 +105,19 @@ func TestApplicationRegistersScheduledAutomationDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var lifecycle *ast.FuncDecl
+	for _, declaration := range file.Decls {
+		function, ok := declaration.(*ast.FuncDecl)
+		if ok && function.Name.Name == "startBackground" {
+			lifecycle = function
+			break
+		}
+	}
+	if lifecycle == nil || lifecycle.Body == nil {
+		t.Fatal("startBackground lifecycle is missing")
+	}
 	registered := 0
-	ast.Inspect(file, func(node ast.Node) bool {
+	ast.Inspect(lifecycle.Body, func(node ast.Node) bool {
 		call, ok := node.(*ast.CallExpr)
 		if !ok || !strings.HasSuffix(calleeName(call), ".Register") || len(call.Args) != 1 {
 			return true

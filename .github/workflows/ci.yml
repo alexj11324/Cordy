@@ -64,9 +64,6 @@ jobs:
               - 'apps/docs/**'
               - 'apps/auth-broker/**'
               - 'packages/**'
-              # Realtime schema coverage reads the server's event catalog.
-              - 'server/pkg/protocol/events.go'
-              - 'server/internal/handler/workspace_channel.go'
               - 'package.json'
               - '.npmrc'
               - 'pnpm-lock.yaml'

@@ -9,6 +9,12 @@ import (
 	"testing"
 )
 
+var sqlBlockComments = regexp.MustCompile(`(?s)/\*.*?\*/`)
+
+func stripSQLComments(body []byte) []byte {
+	return sqlBlockComments.ReplaceAll(stripSQLLineComments(body), nil)
+}
+
 // Historical migrations are immutable. Apply the current repository DDL rules
 // from this refactor's first migration onward, including rollback directions.
 func TestArchitectureMigrationsKeepApplicationRelationshipsAndConcurrentIndexes(t *testing.T) {
@@ -30,7 +36,7 @@ func TestArchitectureMigrationsKeepApplicationRelationshipsAndConcurrentIndexes(
 		if err != nil {
 			t.Fatal(err)
 		}
-		body = stripSQLLineComments(body)
+		body = stripSQLComments(body)
 		if foreignKey.Match(body) {
 			t.Errorf("%s: relationships must be enforced in application transactions", path)
 		}
