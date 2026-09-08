@@ -32,6 +32,7 @@ import (
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/ghsnapshot"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/lark"
 	linearapi "github.com/orvilo-ai/orvilo/server/internal/integrations/linear"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/linearsync"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/slack"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/telegram"
 	"github.com/orvilo-ai/orvilo/server/internal/integrations/wecom"
@@ -1483,9 +1484,10 @@ func newApplication(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, anal
 				slog.Warn("linear OAuth credentials incomplete; integration disabled")
 				h.LinearSecretBox = nil
 			} else {
-				workers.Linear = handler.NewLinearWorker(pool, pool, box, linearapi.NewHTTPClient(nil), h.LinearClientID, h.LinearClientSecret, h.LinearPullEnabled, h.LinearPushEnabled)
+				provider := linearapi.NewHTTPClient(nil)
+				h.LinearProvider = provider
+				workers.Linear = linearsync.NewWorker(pool, pool, box, provider, h.LinearClientID, h.LinearClientSecret, h.LinearPullEnabled, h.LinearPushEnabled, handler.NewLinearEventSink(bus))
 				h.LinearWorker = workers.Linear
-				h.LinearWorker.SetDependencies(queries, bus)
 				if h.LinearWebhookSecret == "" {
 					slog.Warn("linear webhook secret is not configured; OAuth/sync polling remain available")
 				}

@@ -1,4 +1,4 @@
-package handler
+package linearsync
 
 import (
 	"context"
@@ -9,8 +9,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/orvilo-ai/orvilo/server/internal/events"
-	"github.com/orvilo-ai/orvilo/server/internal/service"
 	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
 	"github.com/orvilo-ai/orvilo/server/pkg/dbid"
 )
@@ -35,11 +33,11 @@ func linearConflictField(field string) bool {
 	return false
 }
 
-func (h *Handler) resolveLinearConflict(ctx context.Context, workspaceID, conflictID, actorID pgtype.UUID, resolution string, manual any) (db.LinearSyncConflict, db.Issue, error) {
+func (w *Worker) ResolveConflict(ctx context.Context, workspaceID, conflictID, actorID pgtype.UUID, resolution string, manual any) (db.LinearSyncConflict, db.Issue, error) {
 	if resolution != "local" && resolution != "remote" && resolution != "manual" {
 		return db.LinearSyncConflict{}, db.Issue{}, errors.New("invalid Linear conflict resolution")
 	}
-	tx, err := h.TxStarter.Begin(ctx)
+	tx, err := w.txStarter.Begin(ctx)
 	if err != nil {
 		return db.LinearSyncConflict{}, db.Issue{}, err
 	}
@@ -163,8 +161,8 @@ func (h *Handler) resolveLinearConflict(ctx context.Context, workspaceID, confli
 	if err = tx.Commit(ctx); err != nil {
 		return db.LinearSyncConflict{}, db.Issue{}, err
 	}
-	if h.Bus != nil {
-		h.Bus.Publish(events.Event{Type: "issue:updated", WorkspaceID: uuidToString(workspaceID), ActorType: "member", ActorID: uuidToString(actorID), Payload: map[string]any{"issue": service.IssueToMap(updated, "")}, TaskID: uuidToString(updated.ID)})
+	if w.events != nil {
+		w.events.IssueChanged(updated, "issue:updated", "member", uuidToString(actorID))
 	}
 	conflict.Status, conflict.Resolution, conflict.ResolvedValue, conflict.ResolvedByID = "resolved", pgtype.Text{String: resolution, Valid: true}, resolvedValue, actorID
 	return conflict, updated, nil

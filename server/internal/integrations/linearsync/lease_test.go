@@ -1,4 +1,4 @@
-package handler
+package linearsync
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 )
 
 func TestLinearWorkerRejectsExpiredOutboxCompletion(t *testing.T) {
-	f := setupLinearWorker(t, "publish", &fakeLinearAPI{})
+	f := setupWorker(t, "publish", &fakeLinearAPI{})
 	issueID := dbfx.Issue(t, "Expired lease", testutil.Cols{"project_id": f.projectID})
 	claim, ok, err := f.worker.claimOutbox(context.Background())
 	if err != nil || !ok {
@@ -48,7 +48,7 @@ func TestLinearWorkerOldAttemptCannotFinishOrSetHealth(t *testing.T) {
 			name = "failure"
 		}
 		t.Run(name, func(t *testing.T) {
-			f := setupLinearWorker(t, "publish", &fakeLinearAPI{})
+			f := setupWorker(t, "publish", &fakeLinearAPI{})
 			dbfx.Issue(t, "New attempt", testutil.Cols{"project_id": f.projectID})
 			old, ok, err := f.worker.claimOutbox(context.Background())
 			if err != nil || !ok {
@@ -101,7 +101,7 @@ func (a *pausedLinearListAPI) ListIssues(ctx context.Context, token, projectID, 
 
 func TestLinearWorkerLosingInboxLeaseCannotApplyRemote(t *testing.T) {
 	api := &fakeLinearAPI{listed: []linearapi.Issue{{ID: "70000000-0000-0000-0000-000000000001", Identifier: "ENG-7", Title: "Remote after loss", ProjectID: "linear-project", TeamID: "linear-team", UpdatedAt: time.Now()}}}
-	f := setupLinearWorker(t, "import", api)
+	f := setupWorker(t, "import", api)
 	paused := &pausedLinearListAPI{fakeLinearAPI: api, entered: make(chan struct{}), resume: make(chan struct{})}
 	f.worker.api = paused
 	dbfx.Insert(t, "linear_sync_inbox", testutil.Cols{"connection_id": f.connectionID, "delivery_id": "lease-loss-import", "event_type": "binding_poll", "payload": map[string]any{"binding_id": f.bindingID}})
@@ -113,7 +113,7 @@ func TestLinearWorkerLosingInboxLeaseCannotApplyRemote(t *testing.T) {
 	go func() { done <- f.worker.handleInbox(context.Background(), claim) }()
 	<-paused.entered
 	expireLinearLease(t, "linear_sync_inbox", claim.ID)
-	next := NewLinearWorker(testPool, testPool, f.box, api, "client", "secret", true, true)
+	next := NewWorker(testPool, testPool, f.box, api, "client", "secret", true, true, nil)
 	if _, ok, err = next.claimInbox(context.Background()); err != nil || !ok {
 		close(paused.resume)
 		<-done
@@ -152,19 +152,19 @@ func (a *cancelledLinearCreateAPI) CreateIssue(ctx context.Context, _ string, _ 
 	return linearapi.Issue{}, ctx.Err()
 }
 
-type renewalFailureDB struct{ dbExecutor }
+type renewalFailureDB struct{ DBExecutor }
 
 func (d renewalFailureDB) Exec(ctx context.Context, query string, args ...any) (pgconn.CommandTag, error) {
 	if strings.Contains(query, "-- name: RenewLinearSync") {
 		return pgconn.CommandTag{}, errors.New("renewal database unavailable")
 	}
-	return d.dbExecutor.Exec(ctx, query, args...)
+	return d.DBExecutor.Exec(ctx, query, args...)
 }
 
 func TestLinearWorkerLeaseLossCancelsProvider(t *testing.T) {
 	for _, failure := range []string{"owner_changed", "database_error", "expired"} {
 		t.Run(failure, func(t *testing.T) {
-			f := setupLinearWorker(t, "publish", &fakeLinearAPI{})
+			f := setupWorker(t, "publish", &fakeLinearAPI{})
 			dbfx.Issue(t, "Cancelled provider request", testutil.Cols{"project_id": f.projectID})
 			claim, ok, err := f.worker.claimOutbox(context.Background())
 			if err != nil || !ok {
@@ -190,7 +190,7 @@ func TestLinearWorkerLeaseLossCancelsProvider(t *testing.T) {
 				expireLinearLease(t, "linear_sync_outbox", claim.ID)
 			}
 			if failure == "owner_changed" {
-				next := NewLinearWorker(testPool, testPool, f.box, f.api, "client", "secret", true, true)
+				next := NewWorker(testPool, testPool, f.box, f.api, "client", "secret", true, true, nil)
 				if _, ok, err = next.claimOutbox(context.Background()); err != nil || !ok {
 					t.Fatalf("reclaim: %v %v", ok, err)
 				}
@@ -232,7 +232,7 @@ func (a *acceptedLinearCreateAPI) CreateIssue(ctx context.Context, token string,
 }
 
 func TestLinearWorkerRecoversRemoteCreateAfterLeaseLoss(t *testing.T) {
-	f := setupLinearWorker(t, "publish", &fakeLinearAPI{})
+	f := setupWorker(t, "publish", &fakeLinearAPI{})
 	issueID := dbfx.Issue(t, "Remote committed before loss", testutil.Cols{"project_id": f.projectID})
 	claim, ok, err := f.worker.claimOutbox(context.Background())
 	if err != nil || !ok {
@@ -244,7 +244,7 @@ func TestLinearWorkerRecoversRemoteCreateAfterLeaseLoss(t *testing.T) {
 	go func() { handled <- f.worker.handleOutbox(context.Background(), claim) }()
 	<-api.entered
 	expireLinearLease(t, "linear_sync_outbox", claim.ID)
-	next := NewLinearWorker(testPool, testPool, f.box, f.api, "client", "secret", true, true)
+	next := NewWorker(testPool, testPool, f.box, f.api, "client", "secret", true, true, nil)
 	retaken, ok, err := next.claimOutbox(context.Background())
 	if err != nil || !ok {
 		close(api.resume)
@@ -279,7 +279,7 @@ func TestLinearWorkerRecoversRemoteCreateAfterLeaseLoss(t *testing.T) {
 }
 
 func TestLinearWorkerLostLeaseCannotImportComment(t *testing.T) {
-	f := setupLinearWorker(t, "two_way", &fakeLinearAPI{})
+	f := setupWorker(t, "two_way", &fakeLinearAPI{})
 	issueID := dbfx.Issue(t, "Comment host", testutil.Cols{"project_id": f.projectID})
 	if !f.worker.processOneOutbox(context.Background()) {
 		t.Fatal("issue did not publish")
@@ -310,7 +310,7 @@ func TestLinearWorkerLostLeaseCannotImportComment(t *testing.T) {
 }
 
 func TestLinearWorkerRechecksExpiryAtLocalCommit(t *testing.T) {
-	f := setupLinearWorker(t, "publish", &fakeLinearAPI{})
+	f := setupWorker(t, "publish", &fakeLinearAPI{})
 	dbfx.Issue(t, "Transaction expires", testutil.Cols{"project_id": f.projectID})
 	claim, ok, err := f.worker.claimOutbox(context.Background())
 	if err != nil || !ok {
@@ -352,7 +352,7 @@ func TestLinearWorkerLeaseExpiryWhileWaitingForRowLock(t *testing.T) {
 	for _, table := range []string{"linear_sync_inbox", "linear_sync_outbox"} {
 		for _, operation := range []string{"renew", "begin_local_transaction"} {
 			t.Run(table+"/"+operation, func(t *testing.T) {
-				f := setupLinearWorker(t, "publish", &fakeLinearAPI{})
+				f := setupWorker(t, "publish", &fakeLinearAPI{})
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
 				var id pgtype.UUID
@@ -473,7 +473,7 @@ func waitLinearLeaseLockAndExpiry(t *testing.T, ctx context.Context, table strin
 func TestLinearWorkerRenewsOwnedUnexpiredLease(t *testing.T) {
 	for _, table := range []string{"linear_sync_inbox", "linear_sync_outbox"} {
 		t.Run(table, func(t *testing.T) {
-			f := setupLinearWorker(t, "publish", &fakeLinearAPI{})
+			f := setupWorker(t, "publish", &fakeLinearAPI{})
 			ctx := context.Background()
 			var id pgtype.UUID
 			var attempt int32

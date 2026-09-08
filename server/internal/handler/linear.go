@@ -58,8 +58,8 @@ func (h *Handler) linearWebhookConfigured() bool {
 }
 
 func (h *Handler) linearAPI() linearapi.API {
-	if h.LinearWorker != nil && h.LinearWorker.api != nil {
-		return h.LinearWorker.api
+	if h.LinearProvider != nil {
+		return h.LinearProvider
 	}
 	return linearapi.NewHTTPClient(nil)
 }
@@ -332,7 +332,7 @@ func (h *Handler) linearAccessToken(ctx context.Context, ws pgtype.UUID) (string
 	if h.LinearWorker != nil {
 		var connectionID pgtype.UUID
 		if err := h.DB.QueryRow(ctx, `SELECT id FROM linear_connection WHERE workspace_id=$1 AND status='active' ORDER BY created_at DESC LIMIT 1`, ws).Scan(&connectionID); err == nil {
-			return h.LinearWorker.accessToken(ctx, connectionID)
+			return h.LinearWorker.AccessToken(ctx, connectionID)
 		}
 	}
 	var sealed []byte
@@ -403,23 +403,23 @@ func (h *Handler) GetLinearCatalog(w http.ResponseWriter, r *http.Request) {
 
 type linearBindingRequest struct {
 	ConnectionID, OrviloProjectID, LinearProjectID string
-	LinearTeamID                                     *string
-	Status, SyncMode                                 string
-	InitialSourceOfTruth                             *string
-	StatusMapping, AgentLabelMapping                 map[string]any
+	LinearTeamID                                   *string
+	Status, SyncMode                               string
+	InitialSourceOfTruth                           *string
+	StatusMapping, AgentLabelMapping               map[string]any
 }
 
 func (v *linearBindingRequest) UnmarshalJSON(b []byte) error {
 	var r struct {
-		ConnectionID      string         `json:"connection_id"`
+		ConnectionID    string         `json:"connection_id"`
 		OrviloProjectID string         `json:"orvilo_project_id"`
-		LinearProjectID   string         `json:"linear_project_id"`
-		LinearTeamID      *string        `json:"linear_team_id"`
-		Status            string         `json:"status"`
-		SyncMode          string         `json:"sync_mode"`
-		InitialSource     *string        `json:"initial_source_of_truth"`
-		StatusMapping     map[string]any `json:"status_mapping"`
-		AgentMapping      map[string]any `json:"agent_label_mapping"`
+		LinearProjectID string         `json:"linear_project_id"`
+		LinearTeamID    *string        `json:"linear_team_id"`
+		Status          string         `json:"status"`
+		SyncMode        string         `json:"sync_mode"`
+		InitialSource   *string        `json:"initial_source_of_truth"`
+		StatusMapping   map[string]any `json:"status_mapping"`
+		AgentMapping    map[string]any `json:"agent_label_mapping"`
 	}
 	if err := json.Unmarshal(b, &r); err != nil {
 		return err
@@ -550,16 +550,6 @@ func (h *Handler) validateLinearBindingScope(ctx context.Context, ws, cid, pid p
 	return nil
 }
 
-func (h *Handler) seedLinearOutbound(ctx context.Context, tx pgx.Tx, ws, bindingID, projectID pgtype.UUID) error {
-	if _, err := tx.Exec(ctx, `INSERT INTO linear_sync_outbox(id,workspace_id,binding_id,issue_id,event_key,event_type,payload) SELECT gen_random_uuid(),i.workspace_id,$2::uuid,i.id,'binding-seed:'||$2::uuid::text||':'||i.id::text||':'||i.revision::text,'issue_updated',jsonb_build_object('id',i.id,'revision',i.revision) FROM issue i WHERE i.workspace_id=$1::uuid AND i.project_id=$3::uuid AND i.status<>'cancelled' ON CONFLICT(binding_id,event_key) DO NOTHING`, ws, bindingID, projectID); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO linear_comment_link(workspace_id,binding_id,issue_id,comment_id,linear_comment_id,origin) SELECT c.workspace_id,$2::uuid,c.issue_id,c.id,gen_random_uuid()::text,'orvilo' FROM comment c JOIN issue i ON i.id=c.issue_id AND i.workspace_id=c.workspace_id WHERE c.workspace_id=$1::uuid AND i.project_id=$3::uuid AND i.status<>'cancelled' AND c.author_type IN ('member','agent') AND c.type='comment' ON CONFLICT(binding_id,comment_id) DO NOTHING`, ws, bindingID, projectID); err != nil {
-		return err
-	}
-	_, err := tx.Exec(ctx, `WITH RECURSIVE candidates AS (SELECT c.* FROM comment c JOIN issue i ON i.id=c.issue_id AND i.workspace_id=c.workspace_id WHERE c.workspace_id=$1::uuid AND i.project_id=$3::uuid AND i.status<>'cancelled' AND c.author_type IN ('member','agent') AND c.type='comment'), ordered AS (SELECT c.*,0 AS depth FROM candidates c WHERE c.parent_id IS NULL OR NOT EXISTS (SELECT 1 FROM candidates parent WHERE parent.id=c.parent_id) UNION ALL SELECT child.*,parent.depth+1 FROM candidates child JOIN ordered parent ON child.parent_id=parent.id) INSERT INTO linear_sync_outbox(id,workspace_id,binding_id,issue_id,event_key,event_type,payload,created_at) SELECT gen_random_uuid(),c.workspace_id,$2::uuid,c.issue_id,'binding-seed-comment:'||$2::uuid::text||':'||c.id::text||':'||c.revision::text,'comment_created',jsonb_build_object('comment_id',c.id,'body',c.content,'parent_id',CASE WHEN EXISTS (SELECT 1 FROM candidates parent WHERE parent.id=c.parent_id) THEN c.parent_id ELSE NULL END,'author_type',c.author_type,'author_id',c.author_id),transaction_timestamp()+((c.depth+1)*interval '1 millisecond') FROM ordered c ON CONFLICT(binding_id,event_key) DO NOTHING`, ws, bindingID, projectID)
-	return err
-}
 func (h *Handler) CreateLinearBinding(w http.ResponseWriter, r *http.Request) {
 	if !h.requireLinear(w, r) {
 		return
@@ -649,9 +639,9 @@ func (h *Handler) UpdateLinearBinding(w http.ResponseWriter, r *http.Request) {
 	}
 	var current struct {
 		ConnectionID, OrviloProjectID pgtype.UUID
-		LinearProjectID                 string
-		Status, SyncMode                string
-		LinearTeamID                    pgtype.Text
+		LinearProjectID               string
+		Status, SyncMode              string
+		LinearTeamID                  pgtype.Text
 	}
 	if err := h.DB.QueryRow(r.Context(), `SELECT connection_id,orvilo_project_id,linear_project_id,status,sync_mode,linear_team_id FROM linear_project_binding WHERE id=$1 AND workspace_id=$2`, bid, ws).Scan(&current.ConnectionID, &current.OrviloProjectID, &current.LinearProjectID, &current.Status, &current.SyncMode, &current.LinearTeamID); errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, 404, "Linear binding not found")
@@ -771,9 +761,9 @@ func (h *Handler) UpsertLinearMemberBinding(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var v struct {
-		ConnectionID   string `json:"connection_id"`
+		ConnectionID string `json:"connection_id"`
 		OrviloUserID string `json:"orvilo_user_id"`
-		LinearUserID   string `json:"linear_user_id"`
+		LinearUserID string `json:"linear_user_id"`
 	}
 	if json.NewDecoder(r.Body).Decode(&v) != nil || v.LinearUserID == "" {
 		writeError(w, 400, "invalid member binding")
@@ -1001,7 +991,11 @@ func (h *Handler) ResolveLinearSyncConflict(w http.ResponseWriter, r *http.Reque
 			return
 		}
 	}
-	conflict, _, err := h.resolveLinearConflict(r.Context(), ws, cid, member.UserID, resolution, manual)
+	if h.LinearWorker == nil {
+		writeError(w, http.StatusServiceUnavailable, "Linear sync worker is unavailable")
+		return
+	}
+	conflict, _, err := h.LinearWorker.ResolveConflict(r.Context(), ws, cid, member.UserID, resolution, manual)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeError(w, 404, "open Linear conflict not found")
 		return

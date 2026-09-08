@@ -1,4 +1,4 @@
-package handler
+package linearsync
 
 import (
 	"context"
@@ -29,7 +29,7 @@ func linearSyncDate(value *string) pgtype.Date {
 	return pgtype.Date{Time: parsed, Valid: true}
 }
 
-func (w *LinearWorker) accessToken(ctx context.Context, connectionID pgtype.UUID) (string, error) {
+func (w *Worker) AccessToken(ctx context.Context, connectionID pgtype.UUID) (string, error) {
 	// Token refresh can make a provider request. Do not hold the claimed
 	// inbox/outbox row while waiting on Linear: the renewal goroutine must be
 	// able to extend that lease, and a rotated refresh token must still be
@@ -211,7 +211,7 @@ func linearSyncStringPointer(value any) *string {
 	return nil
 }
 
-func (w *LinearWorker) applyRemote(ctx context.Context, b workerBinding, remote linearapi.Issue, eventID string, eventAt int64) error {
+func (w *Worker) applyRemote(ctx context.Context, b workerBinding, remote linearapi.Issue, eventID string, eventAt int64) error {
 	if strings.TrimSpace(remote.ID) == "" {
 		return errors.New("Linear issue omitted id")
 	}
@@ -397,11 +397,11 @@ func linearSyncLocalIssueInput(ctx context.Context, tx pgx.Tx, b workerBinding, 
 	return input, nil
 }
 
-func (w *LinearWorker) completeOutboxInTx(ctx context.Context, tx pgx.Tx, connectionID pgtype.UUID) error {
+func (w *Worker) completeOutboxInTx(ctx context.Context, tx pgx.Tx, connectionID pgtype.UUID) error {
 	return w.releaseLease(ctx, tx, connectionID, nil, 0)
 }
 
-func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) error {
+func (w *Worker) handleOutbox(ctx context.Context, c linearOutboxClaim) error {
 	ctx = w.withLease(ctx, "linear_sync_outbox", c.ID, c.Attempts)
 	if err := w.checkLease(ctx); err != nil {
 		return err
@@ -419,7 +419,7 @@ func (w *LinearWorker) handleOutbox(ctx context.Context, c linearOutboxClaim) er
 	if b.Mode != "publish" && b.Mode != "two_way" {
 		return nil
 	}
-	token, err := w.accessToken(ctx, b.ConnectionID)
+	token, err := w.AccessToken(ctx, b.ConnectionID)
 	if err != nil {
 		return err
 	}
