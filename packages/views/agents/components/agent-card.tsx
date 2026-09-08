@@ -185,14 +185,14 @@ export function AgentCard({
         {agent.model ? (
           <Badge
             variant="outline"
-            className="border-border/60 bg-muted/40 font-mono text-[11px] text-foreground"
+            className="border-border/60 bg-muted/40 font-mono text-micro text-foreground"
           >
             {agent.model}
           </Badge>
         ) : (
           <Badge
             variant="outline"
-            className="border-border/50 text-[11px] text-muted-foreground"
+            className="border-border/50 text-micro text-muted-foreground"
           >
             {t(($) => $.profile_card.model_unset)}
           </Badge>
@@ -201,14 +201,14 @@ export function AgentCard({
         {runtime ? (
           <Badge
             variant="outline"
-            className="border-border/50 text-[11px] text-muted-foreground"
+            className="border-border/50 text-micro text-muted-foreground"
           >
             {runtime.name}
           </Badge>
         ) : (
           <Badge
             variant="outline"
-            className="border-warning/40 text-[11px] text-warning"
+            className="border-warning/40 text-micro text-warning"
           >
             {t(($) => $.row.needs_runtime)}
           </Badge>
@@ -224,7 +224,7 @@ export function AgentCard({
         </span>
 
         {availability && visual ? (
-          <span className="inline-flex items-center gap-1.5 font-medium text-[11px]">
+          <span className="inline-flex items-center gap-1.5 font-medium text-micro">
             <span className={cn("size-1.5 rounded-full", visual.dotClass)} />
             {t(($) => $.availability[availability])}
           </span>

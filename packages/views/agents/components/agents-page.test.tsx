@@ -31,6 +31,7 @@ const mocks = vi.hoisted(() => ({
   },
   viewState: {
     scope: "all",
+    viewMode: "table" as const,
     sortField: "lastActive" as string,
     sortDirection: "desc" as string,
     hiddenColumns: ["model", "created"] as string[],

@@ -23,8 +23,8 @@ export type AgentsScope = "mine" | "all" | "archived";
 
 export const AGENT_SCOPES: AgentsScope[] = ["mine", "all", "archived"];
 
-/** Presentation mode for the directory. Cards, kanban, or table. */
-export type AgentViewMode = "cards" | "kanban" | "table";
+/** Presentation mode for the directory. Cards or table. */
+export type AgentViewMode = "cards" | "table";
 
 export type AgentSortField = "lastActive" | "name" | "runs" | "created";
 

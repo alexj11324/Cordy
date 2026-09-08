@@ -5,7 +5,6 @@ import {
   ArrowUp,
   ChevronDown,
   Filter,
-  Kanban,
   LayoutGrid,
   Rows3,
   Search,
@@ -521,27 +520,6 @@ export function AgentListToolbar({
         {/* View Mode Toggle */}
         {onViewModeChange && viewMode ? (
           <div className="flex items-center rounded-lg border border-border/70 bg-muted/40 p-0.5 shadow-2xs">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    size="sm"
-                    variant={viewMode === "kanban" ? "secondary" : "ghost"}
-                    className={cn(
-                      "size-7 p-0",
-                      viewMode === "kanban" && "bg-background text-foreground shadow-2xs",
-                    )}
-                    onClick={() => onViewModeChange("kanban")}
-                    aria-label={t(($) => $.page.view_kanban)}
-                  >
-                    <Kanban className="size-3.5" />
-                  </Button>
-                }
-              />
-              <TooltipContent side="bottom">
-                {t(($) => $.page.view_kanban)}
-              </TooltipContent>
-            </Tooltip>
             <Tooltip>
               <TooltipTrigger
                 render={

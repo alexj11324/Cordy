@@ -4,12 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Bot,
-  EllipsisVertical,
-  Kanban,
-  LayoutGrid,
   Lock,
   Plus,
-  Rows3,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
@@ -64,12 +60,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@orvilo/ui/components/ui/tooltip";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@orvilo/ui/components/ui/dropdown-menu";
 import { useNavigation, useRowLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
@@ -87,8 +77,6 @@ import {
   AGENT_CARD_GRID_CLASS,
 } from "./agent-card";
 import { AgentProfilePanel } from "./agent-profile-panel";
-import { AgentConsoleKpi } from "./agent-console-kpi";
-import { AgentKanbanView } from "./agent-kanban-view";
 import { useLocale, useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 
@@ -266,9 +254,9 @@ export interface AgentsPageProps {
 // ---------------------------------------------------------------------------
 
 function PageHeaderBar({
-  onViewModeChange,
+  onViewModeChange: _onViewModeChange,
   onCreate,
-  viewMode,
+  viewMode: _viewMode,
 }: {
   onViewModeChange?: (mode: AgentViewMode) => void;
   onCreate: () => void;
@@ -276,61 +264,26 @@ function PageHeaderBar({
 }) {
   const { t } = useT("agents");
   return (
-    <header className="flex shrink-0 items-start justify-between gap-4 px-6 pb-5 pt-7 sm:px-8">
-      <div className="min-w-0 space-y-1">
-        <h1 className="truncate text-display-sm font-semibold tracking-tight">
+    <header className="flex shrink-0 items-center justify-between gap-4 px-6 pb-4 pt-6 sm:px-8 border-b border-border/40">
+      <div className="min-w-0 space-y-0.5">
+        <h1 className="truncate text-display-sm font-semibold tracking-tight text-foreground">
           {t(($) => $.page.title)}
         </h1>
-        <p className="text-title-sm text-muted-foreground">
+        <p className="text-body text-muted-foreground">
           {t(($) => $.page.tagline)}
         </p>
       </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              aria-label={t(($) => $.page.actions_aria)}
-              className="shrink-0"
-              size="icon"
-              type="button"
-              variant="outline"
-            />
-          }
+      <div className="flex shrink-0 items-center gap-2">
+        <Button
+          onClick={onCreate}
+          size="sm"
+          className="gap-1.5 shadow-2xs"
+          data-testid="new-agent-header-btn"
         >
-          <EllipsisVertical aria-hidden="true" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-auto">
-          <DropdownMenuItem onClick={onCreate}>
-            <Plus aria-hidden="true" className="size-3.5" />
-            {t(($) => $.page.new_agent)}
-          </DropdownMenuItem>
-          {onViewModeChange && viewMode ? (
-            <>
-              <DropdownMenuItem
-                onClick={() => onViewModeChange("kanban")}
-                className={viewMode === "kanban" ? "font-semibold" : undefined}
-              >
-                <Kanban aria-hidden="true" className="size-3.5" />
-                {t(($) => $.page.view_kanban)}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => onViewModeChange("cards")}
-                className={viewMode === "cards" ? "font-semibold" : undefined}
-              >
-                <LayoutGrid aria-hidden="true" className="size-3.5" />
-                {t(($) => $.page.view_cards)}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() => onViewModeChange("table")}
-                className={viewMode === "table" ? "font-semibold" : undefined}
-              >
-                <Rows3 aria-hidden="true" className="size-3.5" />
-                {t(($) => $.page.view_table)}
-              </DropdownMenuItem>
-            </>
-          ) : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
+          <Plus className="size-3.5" data-icon="inline-start" />
+          <span>{t(($) => $.page.new_agent)}</span>
+        </Button>
+      </div>
     </header>
   );
 }
@@ -857,7 +810,7 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
   const scope = AGENT_SCOPES.includes(rawScope) ? rawScope : "mine";
   const rawViewMode = useAgentsViewStore((s) => s.viewMode);
   const viewMode: AgentViewMode =
-    rawViewMode === "table" ? "table" : rawViewMode === "kanban" ? "kanban" : "cards";
+    rawViewMode === "table" ? "table" : "cards";
   const setViewMode = useAgentsViewStore((s) => s.setViewMode);
   const setScope = useAgentsViewStore((s) => s.setScope);
   const sortField = useAgentsViewStore((s) => s.sortField);
@@ -1162,9 +1115,6 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
         </div>
       ) : (
         <>
-          <div className="px-6 pt-1 pb-3 sm:px-8">
-            <AgentConsoleKpi rows={scopeRows} />
-          </div>
           <AgentListToolbar
             scope={scope}
             onScopeChange={setScope}
@@ -1301,14 +1251,6 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
               </ListGridBody>
             </ListGrid>
           </div>
-          ) : viewMode === "kanban" ? (
-            <AgentKanbanView
-              rows={rows}
-              selectedIds={selectedIds}
-              onToggleSelected={toggleSelected}
-              onOpenSummary={(id) => setProfileAgentId(id)}
-              duplicateHref={duplicateHref}
-            />
           ) : (
             <div
               className="min-h-0 flex-1 overflow-y-auto @container"

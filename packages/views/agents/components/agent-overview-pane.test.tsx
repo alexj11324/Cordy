@@ -30,6 +30,21 @@ vi.mock("./tabs/runtime-config-tab", () => ({
     onDirtyChange: (dirty: boolean) => void;
   }) => <button onClick={() => onDirtyChange(true)}>runtime-config-tab</button>,
 }));
+vi.mock("./tabs/instructions-tab", () => ({
+  InstructionsTab: () => <div>instructions-tab</div>,
+}));
+vi.mock("./tabs/skills-tab", () => ({
+  SkillsTab: () => <div>skills-tab</div>,
+}));
+vi.mock("./tabs/mcp-config-tab", () => ({
+  McpConfigTab: () => <div>mcp-config-tab</div>,
+}));
+vi.mock("./tabs/agent-mcp-tab", () => ({
+  AgentMcpTab: () => <div>agent-mcp-tab</div>,
+}));
+vi.mock("./tabs/activity-tab", () => ({
+  ActivityTab: () => <div>activity-tab</div>,
+}));
 vi.mock("./agent-detail-inspector", () => ({
   AgentDetailInspector: ({
     onUpdate,
