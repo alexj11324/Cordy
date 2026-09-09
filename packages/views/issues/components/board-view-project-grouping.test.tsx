@@ -32,7 +32,7 @@ vi.mock("@orvilo/core/properties", async (importOriginal) => ({
 
 vi.mock("@orvilo/core/workspace/hooks", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@orvilo/core/workspace/hooks")>()),
-  useActorName: () => ({ getActorName: () => "Someone" }),
+  useActorName: () => ({ getActorName: () => "Someone", getActorInitials: () => "SO", getActorAvatarUrl: () => null }),
 }));
 
 vi.mock("@orvilo/core/auth", async (importOriginal) => ({

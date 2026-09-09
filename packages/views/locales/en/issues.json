@@ -317,6 +317,9 @@
     "hidden_columns_label": "Hidden columns",
     "hide_column": "Hide column",
     "show_column": "Show column",
+    "collapse_column": "Collapse {{name}}",
+    "expand_column": "Expand {{name}}",
+    "move_column": "Move {{name}} column",
     "add_issue_tooltip": "Add issue",
     "empty_column": "No issues",
     "empty_grouping": "No matching issues",
@@ -720,6 +723,9 @@
     "cancel": "Cancel"
   },
   "card": {
+    "created_on": "Created on {{date}}",
+    "starts_on": "Starts on {{date}}",
+    "due_on": "Due on {{date}}",
     "update_failed": "Failed to update issue",
     "updated_ago": "Updated {{time}}"
   },

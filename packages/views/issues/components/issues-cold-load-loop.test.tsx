@@ -15,10 +15,47 @@
  * point of the reproduction.)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { BoardView } from "./board-view";
+
+vi.mock("@orvilo/ui/components/reui/kanban", () => ({
+  Kanban: ({ children, value, onValueChange, onDragStart, onDragOver, onDragEnd, onDragCancel, onMove }: any) => {
+    lastOnDragCancel = onDragCancel;
+    lastOnValueChange = onValueChange;
+    lastOnDragStart = onDragStart;
+    lastOnDragOver = onDragOver;
+    lastOnDragEnd = (event: any) => {
+      onDragEnd?.(event);
+      if (event.over && !(event.active.id in value)) {
+        onMove?.({
+          event,
+          activeContainer: "",
+          activeIndex: -1,
+          overContainer: "",
+          overIndex: -1,
+        });
+      }
+    };
+    return <div>{children}</div>;
+  },
+  KanbanBoard: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+  KanbanColumn: ({ children, value, ...props }: any) => (
+    <div data-value={value} {...props}>{children}</div>
+  ),
+  KanbanColumnHandle: ({ children, render, ...props }: any) => typeof render === "function" ? render(props) : <div {...props}>{children}</div>,
+  KanbanColumnContent: ({ children }: any) => <div>{children}</div>,
+  KanbanItem: ({ children, value, ...props }: any) => (
+    <div data-value={value} {...props}>{children}</div>
+  ),
+  KanbanItemHandle: ({ children }: any) => <div>{children}</div>,
+  KanbanOverlay: () => null,
+}));
+
+vi.mock("./board-scroll-area", () => ({
+  BoardScrollArea: ({ children }: any) => <div>{children}</div>,
+}));
 import { SwimLaneView } from "./swimlane-view";
 import { IssueContextMenuProvider } from "../actions";
 import { setApiInstance } from "@orvilo/core/api";
@@ -165,6 +202,7 @@ vi.mock("@dnd-kit/core", () => ({
   PointerSensor: class {},
   useSensor: () => ({}),
   useSensors: () => [],
+  useDndContext: () => ({ over: null }),
   useDroppable: () => ({ setNodeRef: vi.fn(), isOver: false }),
   pointerWithin: vi.fn(),
   closestCenter: vi.fn(),
@@ -173,6 +211,7 @@ vi.mock("@dnd-kit/core", () => ({
 vi.mock("@dnd-kit/sortable", () => ({
   SortableContext: ({ children }: any) => children,
   verticalListSortingStrategy: {},
+  horizontalListSortingStrategy: {},
   arrayMove: <T,>(arr: T[]): T[] => arr.slice(),
   useSortable: () => ({
     attributes: {},
@@ -192,6 +231,8 @@ vi.mock("@dnd-kit/utilities", () => ({
 // the cold-load state. A never-resolving promise keeps `data` undefined.
 const pending = () => new Promise<never>(() => {});
 
+let lastOnDragCancel: (() => void) | undefined;
+let lastOnValueChange: ((value: Record<string, string[]>) => void) | undefined;
 let lastOnDragStart: ((event: any) => void) | undefined;
 let lastOnDragOver: ((event: any) => void) | undefined;
 let lastOnDragEnd: ((event: any) => void) | undefined;
@@ -256,6 +297,8 @@ function renderWithProviders(ui: ReactNode) {
 describe("Issues cold-load render loop (MUL-4985)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    lastOnDragCancel = undefined;
+    lastOnValueChange = undefined;
     lastOnDragStart = undefined;
     lastOnDragOver = undefined;
     lastOnDragEnd = undefined;
@@ -299,6 +342,67 @@ describe("Issues cold-load render loop (MUL-4985)", () => {
     expect(screen.getByText("Board Card 0")).toBeInTheDocument();
   });
 
+  it("releases the board drag lock when a card is dropped outside every column", () => {
+    const firstIssues = [makeIssue({ id: "first", status: "todo" })];
+    const nextIssues = [
+      ...firstIssues,
+      makeIssue({ id: "second", status: "todo", position: 200 }),
+    ];
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } },
+    });
+    const view = (issues: Issue[]) => (
+      <QueryClientProvider client={qc}>
+        <I18nProvider resources={TEST_RESOURCES} locale="en">
+          <IssueContextMenuProvider>
+            <BoardView
+              issues={issues}
+              visibleStatuses={["todo"]}
+              hiddenStatuses={[]}
+              onMoveIssue={vi.fn()}
+            />
+          </IssueContextMenuProvider>
+        </I18nProvider>
+      </QueryClientProvider>
+    );
+    const rendered = render(view(firstIssues));
+
+    act(() => lastOnDragStart?.({ active: { id: "first" } }));
+    act(() => lastOnDragEnd?.({ active: { id: "first" }, over: null }));
+    rendered.rerender(view(nextIssues));
+
+    expect(screen.getByText("Issue second")).toBeInTheDocument();
+  });
+
+  it("keeps reordered columns after data refresh without issuing a task move", () => {
+    const issues = [makeIssue({ id: "first", status: "todo" }), makeIssue({ id: "running", status: "in_progress" })];
+    const onMoveIssue = vi.fn();
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+    const view = (items: Issue[]) => (
+      <QueryClientProvider client={qc}>
+        <I18nProvider resources={TEST_RESOURCES} locale="en">
+          <IssueContextMenuProvider>
+            <BoardView issues={items} visibleStatuses={["todo", "in_progress"]} hiddenStatuses={[]} onMoveIssue={onMoveIssue} />
+          </IssueContextMenuProvider>
+        </I18nProvider>
+      </QueryClientProvider>
+    );
+    const rendered = render(view(issues));
+    act(() => lastOnDragStart?.({ active: { id: "status:todo" } }));
+    act(() => lastOnDragOver?.({ active: { id: "status:todo" }, over: { id: "status:in_progress" } }));
+    act(() => {
+      lastOnDragEnd?.({ active: { id: "status:todo" }, over: { id: "status:in_progress" } });
+      lastOnValueChange?.({ "status:in_progress": ["running"], "status:todo": ["first"] });
+    });
+    act(() => lastOnDragStart?.({ active: { id: "first" } }));
+    act(() => lastOnDragCancel?.());
+    rendered.rerender(view([...issues, makeIssue({ id: "next", status: "todo" })]));
+    expect(Array.from(rendered.container.querySelectorAll("[data-board-column]")).map((column) => column.getAttribute("data-board-column"))).toEqual(["status:in_progress", "status:todo"]);
+    expect(screen.getByText("Issue next")).toBeInTheDocument();
+    expect(onMoveIssue).not.toHaveBeenCalled();
+    qc.clear();
+  });
+
   it("Swimlane grouped by executor paints during cold load (real Virtuoso mounts, no update-depth loop)", async () => {
     mockViewState.swimlaneGrouping = "executor";
     const issues = [
@@ -317,7 +421,7 @@ describe("Issues cold-load render loop (MUL-4985)", () => {
     expect(screen.getByText("Swim Card 3")).toBeInTheDocument();
   });
 
-  it("hides empty status columns while keeping them as hidden drop targets", () => {
+  it("collapses empty statuses into ReUI rails that expand on click", () => {
     const issues = [makeIssue({ id: "todo-1", status: "todo" })];
     const pagination = {
       todo: page(1),
@@ -343,6 +447,9 @@ describe("Issues cold-load render loop (MUL-4985)", () => {
     expect(
       container.querySelector('[data-hidden-column-drop-target="in_progress"]'),
     ).not.toBeNull();
+    expect(screen.queryByText("Hidden columns")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Expand In Progress" }));
+    expect(container.querySelector('[data-board-column="status:in_progress"]')).toBeInTheDocument();
   });
 
   it("does not make filter-only hidden statuses drop targets", () => {

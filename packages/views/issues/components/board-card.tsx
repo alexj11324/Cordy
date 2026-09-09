@@ -2,6 +2,8 @@
 
 import { useCallback, memo, type ReactNode, type SyntheticEvent } from "react";
 import { AppLink } from "../../navigation";
+import { UserRound } from "lucide-react";
+import { Avatar, AvatarFallback } from "@orvilo/ui/components/ui/avatar";
 import { useSortable, defaultAnimateLayoutChanges } from "@dnd-kit/sortable";
 import type { AnimateLayoutChanges } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -18,6 +20,11 @@ import { useWorkspacePaths } from "@orvilo/core/paths";
 import { useLocale, useT } from "../../i18n";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { PriorityIcon } from "./priority-icon";
+import { StatusIcon } from "./status-icon";
+import { statusCategoryOfKey } from "@orvilo/core/issues";
+import { KanbanItem, KanbanItemHandle } from "@orvilo/ui/components/reui/kanban";
+
+export const BOARD_CARD_CONTENT_WIDTH = 304;
 import { PriorityPicker, ExecutorPicker, StartDatePicker, DueDatePicker } from "./pickers";
 import { useViewStore } from "@orvilo/core/issues/stores/view-store-context";
 import { ProgressRing } from "./progress-ring";
@@ -25,7 +32,7 @@ import type { ChildProgress } from "./list-row";
 import { IssueActionsContextMenu } from "../actions";
 import { LabelChip } from "../../labels/label-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
-import { CustomStatusChip, useIsCustomStatus } from "./custom-status-chip";
+import { CustomStatusChip } from "./custom-status-chip";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 import { cn } from "@orvilo/ui/lib/utils";
 import { shouldStopBoardCardDragKey } from "./board-card-keyboard";
@@ -49,9 +56,6 @@ function PickerWrapper({ children, className }: { children: ReactNode; className
 
 const HOVER_REVEAL_OPACITY_CLASS =
   "opacity-0 transition-opacity group-hover/card:opacity-100 group-data-[popup-open]/card:opacity-100 focus-within:opacity-100 has-[[data-open]]:opacity-100 has-[[data-popup-open]]:opacity-100 [@media(hover:none)]:opacity-100";
-
-const HOVER_REVEAL_FLEX_CLASS =
-  "hidden group-hover/card:inline-flex group-data-[popup-open]/card:inline-flex focus-within:inline-flex has-[[data-open]]:inline-flex has-[[data-popup-open]]:inline-flex [@media(hover:none)]:inline-flex";
 
 export const BoardCardContent = memo(function BoardCardContent({
   issue,
@@ -89,8 +93,7 @@ export const BoardCardContent = memo(function BoardCardContent({
   const canEdit = editable && !!surfaceActions;
 
   const showPriority = storeProperties.priority;
-  const isNonePriority = issue.priority === "none";
-  const showDescription = storeProperties.description && issue.description;
+  const showDescription = storeProperties.description;
   const showExecutorSection = storeProperties.executor;
   const hasExecutor = !!issue.executor_type && !!issue.executor_id;
   const showAssignedExecutor = showExecutorSection && hasExecutor;
@@ -101,29 +104,11 @@ export const BoardCardContent = memo(function BoardCardContent({
   const showProject = storeProperties.project && project;
   const showChildProgress = storeProperties.childProgress && childProgress;
   const showLabels = storeProperties.labels && labels.length > 0;
-  // Keeps the chip row from rendering an empty flex container when the status
-  // chip is the only thing in it and it decides to render nothing.
-  const showCustomStatus = useIsCustomStatus(issue.status);
-
   const priorityLabel = t(($) => $.priority[issue.priority]);
-  const showPriorityControl = showPriority && (!isNonePriority || canEdit);
-  const showVisibleChipRow =
-    showCustomStatus ||
-    showProject ||
-    showLabels ||
-    cardCustomProperties.length > 0 ||
-    (showPriority && !isNonePriority);
-  const showHoverOnlyPriority = !!showPriorityControl && isNonePriority && !showVisibleChipRow;
-  const showChipRow = showVisibleChipRow || showHoverOnlyPriority;
+  const showPriorityControl = showPriority;
   const priorityIconNode = showPriorityControl ? (
     canEdit ? (
-      <PickerWrapper
-        className={cn(
-          "flex",
-          isNonePriority &&
-            "hidden group-hover/card:flex group-data-[popup-open]/card:flex focus-within:flex has-[[data-open]]:flex has-[[data-popup-open]]:flex [@media(hover:none)]:flex",
-        )}
-      >
+      <PickerWrapper className="flex">
         <PriorityPicker
           priority={issue.priority}
           onUpdate={handleUpdate}
@@ -153,7 +138,7 @@ export const BoardCardContent = memo(function BoardCardContent({
       <ActorAvatar
         actorType={issue.executor_type!}
         actorId={issue.executor_id!}
-        size="xs"
+        size="md"
         enableHoverCard
         profileLink={false}
         className="shrink-0"
@@ -185,49 +170,34 @@ export const BoardCardContent = memo(function BoardCardContent({
     )
   ) : null;
 
-  const showMetaRow =
-    showCreatedDate ||
-    !!showStartDate ||
-    !!showDueDate ||
-    !!showChildProgress ||
-    showAssignedExecutor ||
-    showUnassignedAssign;
-
   return (
     <div className="running-task-card border-beam rounded-lg border-[0.5px] border-surface-border bg-surface py-2 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
-      {/* Row 1: identifier (left), existing agent-activity badge (right).
-          Status stays on the column heading + CustomStatusChip (MUL-6243);
-          working faces stay on IssueAgentActivityIndicator. */}
-      <div className="flex items-center justify-between gap-2">
+      {/* Identifier and assigned executor; live activity remains in the footer. */}
+      <div data-board-identifier-row="" className="flex min-h-6 items-center justify-between gap-2">
         <p className="min-w-0 truncate text-caption text-muted-foreground">{issue.identifier}</p>
-        <IssueAgentActivityIndicator issueId={issue.id} />
+        {executorNode}
       </div>
 
       {/* Row 2: Title */}
-      <p className="mt-1 text-body font-medium leading-snug line-clamp-2">
-        {issue.title}
-      </p>
+      <div data-board-title-row="" className="mt-1 flex min-h-10 items-start gap-1.5">
+        <span aria-label={issue.status_name ?? t(($) => $.status[issue.status_category ?? statusCategoryOfKey(issue.status)])}>
+          <StatusIcon status={issue.status} category={issue.status_category} className="mt-0.5 size-3.5" />
+        </span>
+        <p className="min-w-0 text-body font-medium leading-snug line-clamp-2">{issue.title}</p>
+      </div>
 
       {showDescription && (() => {
-        const preview = descriptionPreview(issue.description!);
-        if (!preview) return null;
+        const preview = descriptionPreview(issue.description ?? "");
         return (
-          <p className="mt-1 text-caption text-muted-foreground line-clamp-1">
-            {preview}
+          <p className="mt-1 min-h-4 text-caption text-muted-foreground line-clamp-1">
+            {preview || "—"}
           </p>
         );
       })()}
 
       {/* Chip row: priority + custom status + project + labels + custom values.
           Built-in category status is the column header, not a second glyph. */}
-      {showChipRow && (
-        <div
-          data-board-chip-row=""
-          className={cn(
-            "mt-1.5 items-center gap-1.5 flex-wrap",
-            showHoverOnlyPriority ? HOVER_REVEAL_FLEX_CLASS : "flex",
-          )}
-        >
+      <div data-board-chip-row="" className="mt-1.5 flex min-h-5 flex-wrap items-center gap-1.5">
           {priorityIconNode}
           <CustomStatusChip status={issue.status} />
           {showProject && (
@@ -248,12 +218,19 @@ export const BoardCardContent = memo(function BoardCardContent({
               <CustomPropertyValueDisplay property={property} value={issue.properties?.[property.id]} />
             </span>
           ))}
-        </div>
-      )}
+      </div>
 
-      {/* Meta row: dates (left), child progress + existing executor avatar (right) */}
-      {showMetaRow && (
-        <div className="mt-1.5 flex items-center gap-2">
+      {/* Meta row: human owner and dates (left), child progress and live activity (right) */}
+      <div data-board-meta-row="" className="mt-1.5 flex min-h-6 items-center gap-2">
+        <span data-board-owner="" className="inline-flex shrink-0">
+          {issue.owner_type === "member" && issue.owner_id ? (
+            <ActorAvatar actorType="member" actorId={issue.owner_id} size="md" enableHoverCard profileLink={false} />
+          ) : (
+            <Avatar size="sm" className="size-6" aria-label={t(($) => $.pickers.owner.trigger_unassigned)}>
+              <AvatarFallback><UserRound className="size-4" aria-hidden="true" /></AvatarFallback>
+            </Avatar>
+          )}
+        </span>
           {(showStartDate || showDueDate || showCreatedDate) && (
             <div className="flex min-w-0 flex-1 items-center gap-2">
               {showStartDate && (
@@ -264,14 +241,14 @@ export const BoardCardContent = memo(function BoardCardContent({
                       onUpdate={handleUpdate}
                       trigger={
                         <span className="truncate text-caption text-muted-foreground">
-                          {formatDate(issue.start_date!, locale)}
+                          {t(($) => $.card.starts_on, { date: formatDate(issue.start_date!, locale) })}
                         </span>
                       }
                     />
                   </PickerWrapper>
                 ) : (
                   <span className="truncate text-caption text-muted-foreground">
-                    {formatDate(issue.start_date!, locale)}
+                    {t(($) => $.card.starts_on, { date: formatDate(issue.start_date!, locale) })}
                   </span>
                 )
               )}
@@ -289,7 +266,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                               : "text-muted-foreground"
                           }`}
                         >
-                          {formatDate(issue.due_date!, locale)}
+                          {t(($) => $.card.due_on, { date: formatDate(issue.due_date!, locale) })}
                         </span>
                       }
                     />
@@ -302,19 +279,18 @@ export const BoardCardContent = memo(function BoardCardContent({
                         : "text-muted-foreground"
                     }`}
                   >
-                    {formatDate(issue.due_date!, locale)}
+                    {t(($) => $.card.due_on, { date: formatDate(issue.due_date!, locale) })}
                   </span>
                 )
               )}
               {showCreatedDate && (
                 <span className="truncate text-caption text-muted-foreground">
-                  {formatDate(issue.created_at, locale)}
+                  {t(($) => $.card.created_on, { date: formatDate(issue.created_at, locale) })}
                 </span>
               )}
             </div>
           )}
-          {(!!showChildProgress || executorNode) && (
-            <div className="ml-auto flex shrink-0 items-center gap-1.5">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
               {showChildProgress && (
                 <div className="inline-flex shrink-0 items-center gap-1">
                   <ProgressRing done={childProgress!.done} total={childProgress!.total} size={14} />
@@ -323,11 +299,9 @@ export const BoardCardContent = memo(function BoardCardContent({
                   </span>
                 </div>
               )}
-              {executorNode}
-            </div>
-          )}
-        </div>
-      )}
+              <IssueAgentActivityIndicator issueId={issue.id} size="md" />
+          </div>
+      </div>
     </div>
   );
 });
@@ -395,6 +369,48 @@ export const DraggableBoardCard = memo(function DraggableBoardCard({
           />
         </AppLink>
       </div>
+    </IssueActionsContextMenu>
+  );
+});
+
+/** ReUI's sortable item shell with Orvilo's real task card content. */
+export const KanbanBoardCard = memo(function KanbanBoardCard({
+  issue,
+  childProgress,
+  project,
+}: {
+  issue: Issue;
+  childProgress?: ChildProgress;
+  project?: Project;
+}) {
+  const p = useWorkspacePaths();
+
+  return (
+    <IssueActionsContextMenu issue={issue}>
+      <KanbanItem
+        value={issue.id}
+        data-board-card=""
+        className="group/card"
+        tabIndex={-1}
+      >
+        <KanbanItemHandle className="block" tabIndex={0} role="button" aria-label={issue.title}>
+          <AppLink
+            href={p.issueDetail(issue.id)}
+            newTabTitle={issue.identifier}
+            className="group block transition-colors"
+            onKeyDown={(event) => {
+              if (shouldStopBoardCardDragKey(event.key)) event.stopPropagation();
+            }}
+          >
+            <BoardCardContent
+              issue={issue}
+              editable
+              childProgress={childProgress}
+              project={project}
+            />
+          </AppLink>
+        </KanbanItemHandle>
+      </KanbanItem>
     </IssueActionsContextMenu>
   );
 });

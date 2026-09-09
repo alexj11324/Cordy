@@ -52,7 +52,7 @@ const IN_REVIEW = entry({
 const QA = entry({ id: "qa", key: "qa", name: "QA", color: "#ec7a2d" });
 
 /** StatusIcon's own glyph, told apart from the lucide check mark beside it. */
-const STATUS_ICON = 'svg[viewBox="0 0 14 14"]';
+const STATUS_ICON = 'svg[data-slot="issue-status-icon"]';
 
 function iconOf(row: Element | null): SVGElement | null {
   return row?.querySelector<SVGElement>(STATUS_ICON) ?? null;
@@ -76,7 +76,7 @@ afterEach(() => {
 describe("StatusPicker trigger color", () => {
   // The bug: the trigger read the catalog entry's raw color while the list read
   // the resolved one, so a built-in rendered as the server's seeded #22c55e in
-  // one and as the `text-success` token in the other — the same status in two
+  // one and as the `text-violet-500` token in the other — the same status in two
   // visibly different greens, side by side. (MUL-6440)
   it("paints a built-in from the token, exactly like its row in the list", () => {
     catalogEntries = [IN_REVIEW, QA];
@@ -88,11 +88,11 @@ describe("StatusPicker trigger color", () => {
     const row = iconOf(optionRow("In Review"));
 
     // No inline color on either: an inline color is precisely what overrides
-    // the token and produces the two-greens mismatch.
+    // the token and produces the two-colors mismatch.
     expect(trigger?.getAttribute("style")).toBeNull();
     expect(row?.getAttribute("style")).toBeNull();
-    expect(trigger?.getAttribute("class")).toContain("text-success");
-    expect(row?.getAttribute("class")).toContain("text-success");
+    expect(trigger?.getAttribute("class")).toContain("text-violet-500");
+    expect(row?.getAttribute("class")).toContain("text-violet-500");
   });
 
   // The other half of the same rule: a CUSTOM status has no token to fall back

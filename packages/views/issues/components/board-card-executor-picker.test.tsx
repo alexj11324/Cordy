@@ -69,7 +69,7 @@ vi.mock("@orvilo/core/workspace/hooks", () => ({
 vi.mock("../../i18n", () => ({
   useLocale: () => "en",
   useT: () => ({
-    t: (selector: (dict: Record<string, unknown>) => unknown) => {
+    t: (selector: (dict: Record<string, unknown>) => unknown, params?: { date?: string }) => {
       const path: string[] = [];
       const proxy: Record<string, unknown> = new Proxy(
         {},
@@ -81,7 +81,13 @@ vi.mock("../../i18n", () => ({
         },
       );
       selector(proxy);
-      return path.join(".");
+      const key = path.join(".");
+      const datePrefixes: Record<string, string> = {
+        "card.created_on": "Created on",
+        "card.starts_on": "Starts on",
+        "card.due_on": "Due on",
+      };
+      return key in datePrefixes ? `${datePrefixes[key]} ${params?.date}` : key;
     },
   }),
   useTimeAgo: () => () => "now",
@@ -164,12 +170,12 @@ function makeIssue(
 
 const defaultCardProperties = { ...viewState.cardProperties };
 
-function renderCard(issue: Issue) {
+function renderCard(issue: Issue, editable = true) {
   return render(
     <NavigationProvider value={navigation}>
       <IssueSurfaceActionsProvider actions={actions}>
         <AppLink href={`/acme/issues/${issue.id}`}>
-          <BoardCardContent issue={issue} editable />
+          <BoardCardContent issue={issue} editable={editable} />
         </AppLink>
       </IssueSurfaceActionsProvider>
     </NavigationProvider>,
@@ -187,7 +193,7 @@ describe("BoardCardContent executor picker", () => {
     (executorType) => {
       const issue = makeIssue(executorType);
       const { container } = renderCard(issue);
-      const avatar = container.querySelector('[data-slot="avatar"]');
+      const avatar = container.querySelector('[data-board-identifier-row] [data-slot="avatar"], [data-board-identifier-row] [data-agent-identity]');
 
       expect(avatar).not.toBeNull();
       expect(avatar!.closest('[role="link"]')).toBeNull();
@@ -202,7 +208,7 @@ describe("BoardCardContent executor picker", () => {
   it("does not render Unassigned copy on an empty executor slot", () => {
     const { container } = renderCard(makeIssue(null));
 
-    expect(container.querySelector('[data-slot="avatar"]')).toBeNull();
+    expect(container.querySelector('[data-board-identifier-row] [data-slot="avatar"], [data-board-identifier-row] [data-agent-identity]')).toBeNull();
     expect(
       screen.queryByText("pickers.executor.trigger_unassigned"),
     ).not.toBeInTheDocument();
@@ -218,6 +224,43 @@ describe("BoardCardContent executor picker", () => {
 
     expect(screen.getByRole("textbox")).toBeInTheDocument();
     expect(navigation.push).not.toHaveBeenCalled();
+  });
+
+  it("keeps an icon placeholder and structural rows when priority is unset", () => {
+    viewState.cardProperties.priority = true;
+    const empty = renderCard(makeIssue(null, { start_date: null, due_date: null }), false);
+    expect(screen.getByLabelText("priority.none")).toBeInTheDocument();
+    expect(screen.queryByText("priority.none")).not.toBeInTheDocument();
+    const emptyRows = ["identifier", "title", "chip", "meta"].map((name) =>
+      empty.container.querySelector(`[data-board-${name}-row]`)?.className,
+    );
+    expect(emptyRows.every(Boolean)).toBe(true);
+    empty.unmount();
+
+    const configured = renderCard(makeIssue("agent", { priority: "high", start_date: null, due_date: null }), false);
+    expect(screen.getByLabelText("priority.high")).toBeInTheDocument();
+    expect(["identifier", "title", "chip", "meta"].map((name) =>
+      configured.container.querySelector(`[data-board-${name}-row]`)?.className,
+    )).toEqual(emptyRows);
+  });
+
+  it("shows the human owner before an explicitly labeled creation date", () => {
+    const { container } = renderCard(makeIssue("agent", {
+      owner_type: "member", owner_id: "owner-1", start_date: null, due_date: null,
+    }));
+    const footer = container.querySelector("[data-board-meta-row]");
+    const owner = footer?.querySelector("[data-board-owner]");
+    expect(footer?.firstElementChild).toBe(owner);
+    expect(owner?.querySelector('[data-actor-type="member"]')).toBeInTheDocument();
+    expect(screen.getByText("Created on Aug 12")).toBeInTheDocument();
+  });
+
+  it("keeps an unassigned human placeholder and labels selected date types accurately", () => {
+    const { container } = renderCard(makeIssue(null));
+    expect(container.querySelector('[data-board-owner] [aria-label="pickers.owner.trigger_unassigned"]')).toBeInTheDocument();
+    expect(screen.getByText("Starts on Aug 12")).toBeInTheDocument();
+    expect(screen.getByText("Due on Aug 13")).toBeInTheDocument();
+    expect(screen.queryByText(/Created on/)).not.toBeInTheDocument();
   });
 
   it("renders board labels as a color dot instead of a filled pill", () => {
@@ -264,7 +307,7 @@ describe("BoardCardContent executor picker", () => {
     );
 
     const chipRow = container.querySelector("[data-board-chip-row]");
-    const identifierRow = screen.getByText("MUL-6082").closest(".justify-between");
+    const identifierRow = container.querySelector("[data-board-identifier-row]");
     const priority = screen.getByLabelText("priority.high");
     const feature = screen.getByLabelText("Feature");
     if (!(chipRow instanceof HTMLElement) || !(identifierRow instanceof HTMLElement)) {

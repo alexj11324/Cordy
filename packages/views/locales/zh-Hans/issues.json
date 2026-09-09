@@ -314,6 +314,9 @@
     "hidden_columns_label": "隐藏的列",
     "hide_column": "隐藏列",
     "show_column": "显示列",
+    "collapse_column": "折叠{{name}}",
+    "expand_column": "展开{{name}}",
+    "move_column": "移动{{name}}列",
     "add_issue_tooltip": "新建任务",
     "empty_column": "无任务",
     "empty_grouping": "没有匹配的任务",
@@ -689,6 +692,9 @@
     "cancel": "取消"
   },
   "card": {
+    "created_on": "创建于{{date}}",
+    "starts_on": "开始于{{date}}",
+    "due_on": "截止于{{date}}",
     "update_failed": "更新任务失败",
     "updated_ago": "更新于 {{time}}"
   },
