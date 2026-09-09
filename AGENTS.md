@@ -63,6 +63,18 @@ environment's backend and signs it in. After merge to `main`, production Web dep
 valid check. If Electron is unavailable or the renderer is broken, use Web (`make up` +
 `make dev-login`). Shared pages live in `packages/views`. Say which client you verified on.
 
+**CLI Web authorization requires deployed acceptance.** Verify the complete CLI →
+Web sign-in → code entry and explicit authorization → CLI API access flow against
+the real Web and backend deployed through GitHub CI/CD. Check that the workflow
+injects the Clerk publishable key from GitHub Secrets into the Web build/deployment
+and that the backend's Clerk signature-verification configuration matches that
+instance. A missing key in a local worktree does not mean the project or deployed
+environment lacks it: inspect the environment files, secret names, and deployment
+configuration first. Do not bypass Clerk, add an alternative login mode, or use
+`make dev-login`, mocked authorization, or local-only checks as proof that the
+deployed CLI authorization flow works. Other UI acceptance should continue to use
+Electron by default. Report CI/CD status separately from observed end-to-end login.
+
 `make dev-login` prints a URL that installs the session cookie and lands on this
 environment's issues page, plus a bearer token for `curl` — use it instead of
 requesting a verification code when you need to check a change in the running
