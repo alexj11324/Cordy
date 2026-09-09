@@ -1,5 +1,5 @@
 import { useLayoutEffect } from "react";
-import { ArrowLeft, Download, Server } from "lucide-react";
+import { Download, Server } from "lucide-react";
 import { SettingsPage } from "@orvilo/views/settings";
 import { useT } from "@orvilo/views/i18n";
 import { getActiveTab, useTabStore } from "@/stores/tab-store";
@@ -36,20 +36,7 @@ export function DesktopSettingsPage({ onBack }: { onBack?: () => void }) {
   return (
     <SettingsPage
       variant="standalone"
-      navigationHeader={
-        onBack ? (
-          <button
-            type="button"
-            onClick={onBack}
-            data-settings-initial-focus
-            className="mt-12 mb-1 flex h-9 w-full items-center gap-2 rounded-md p-1 text-body font-normal text-sidebar-text-secondary transition-colors hover:bg-sidebar-item-hover hover:text-sidebar-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-          >
-            <ArrowLeft className="size-[18px]" />
-            {t(($) => $.page.back_to_app)}
-          </button>
-        ) : undefined
-      }
+      onDismiss={onBack}
       extraAccountTabs={[
         {
           value: "daemon",

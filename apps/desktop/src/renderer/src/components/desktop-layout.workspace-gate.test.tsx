@@ -78,6 +78,7 @@ vi.mock("@orvilo/views/layout", () => ({
   AppSidebar: () => <div data-testid="app-sidebar" />,
   GlobalShortcuts: () => <div data-testid="global-shortcuts" />,
   NavigationProgress: () => <div data-testid="navigation-progress" />,
+  ShellBreadcrumb: () => <div data-testid="shell-breadcrumb" />,
 }));
 
 vi.mock("@orvilo/views/modals/registry", () => ({

@@ -107,12 +107,14 @@
     "general_title": "常规",
     "theme": {
       "title": "主题",
+      "description": "选择界面色调。",
       "light": "浅色",
       "dark": "深色",
       "system": "跟随系统"
     },
     "language": {
       "title": "语言",
+      "description": "设置产品语言。",
       "english": "English",
       "chinese": "中文",
       "sync_failed": "语言已在本设备保存，但同步到账号失败。其他设备可能仍显示旧语言。"
@@ -458,6 +460,8 @@
       "catalog_failed": "无法加载 Linear 目录，请重新连接后重试。"
     },
     "title": "设置",
+    "dialog_cancel": "取消",
+    "dialog_save": "保存更改",
     "my_account": "我的账号",
     "workspace_fallback": "工作区",
     "tabs": {

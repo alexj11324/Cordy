@@ -107,12 +107,14 @@
     "general_title": "General",
     "theme": {
       "title": "Theme",
+      "description": "Choose the interface tone.",
       "light": "Light",
       "dark": "Dark",
       "system": "System"
     },
     "language": {
       "title": "Language",
+      "description": "Set product language.",
       "english": "English",
       "chinese": "中文",
       "sync_failed": "Language saved on this device, but failed to sync to your account. Other devices may show the previous language."
@@ -458,6 +460,8 @@
       "catalog_failed": "Could not load the Linear catalog. Reconnect and try again."
     },
     "title": "Settings",
+    "dialog_cancel": "Cancel",
+    "dialog_save": "Save changes",
     "my_account": "My Account",
     "workspace_fallback": "Workspace",
     "tabs": {

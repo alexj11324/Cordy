@@ -16,6 +16,7 @@ vi.mock("@orvilo/ui/components/ui/sidebar", () => ({
 vi.mock("../modals/registry", () => ({ ModalRegistry: () => null }));
 vi.mock("../onboarding", () => ({ SourceBackfillModal: () => null }));
 vi.mock("./app-sidebar", () => ({ AppSidebar: () => null }));
+vi.mock("./shell-breadcrumb", () => ({ ShellBreadcrumb: () => null }));
 vi.mock("./dashboard-guard", () => ({
   DashboardGuard: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));

@@ -30,14 +30,6 @@
     "create_agent": "创建智能体",
     "unknown": "未知页面"
   },
-  "help": {
-    "trigger": "帮助",
-    "download_desktop": "桌面端",
-    "docs": "文档",
-    "changelog": "更新日志",
-    "feedback": "反馈",
-    "server_version": "服务器版本 {{version}}"
-  },
   "workspace_loader": {
     "loading_workspace": "正在加载工作区...",
     "loading_named_prefix": "正在加载"

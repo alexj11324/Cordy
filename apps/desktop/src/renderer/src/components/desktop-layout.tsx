@@ -8,6 +8,7 @@ import {
   useTabHistory,
 } from "@/hooks/use-tab-history";
 import {
+  SidebarInset,
   SidebarProvider,
   SidebarTrigger,
   useSidebar,
@@ -17,6 +18,7 @@ import {
   AppSidebar,
   GlobalShortcuts,
   NavigationProgress,
+  ShellBreadcrumb,
 } from "@orvilo/views/layout";
 import { SearchCommand, SearchTrigger } from "@orvilo/views/search";
 import { FloatingChat } from "@orvilo/views/chat";
@@ -34,7 +36,6 @@ import {
   routeContentLinkPath,
 } from "@/platform/navigation";
 import { TabContent } from "./tab-content";
-import { TabBar } from "./tab-bar";
 import { WindowOverlay } from "./window-overlay";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
@@ -130,7 +131,10 @@ function MainTopBar() {
   return (
     <motion.header
       animate={{ paddingLeft: sidebarOutOfFlow ? WINDOW_TOOLBAR_CLEARANCE : 0 }}
-      className={cn("relative shrink-0 flex items-center gap-2", TOP_BAR_HEIGHT_CLASS)}
+      className={cn(
+        "relative flex shrink-0 items-center gap-2 border-b border-border/60",
+        TOP_BAR_HEIGHT_CLASS,
+      )}
       initial={false}
       transition={toolbarMotion}
     >
@@ -142,8 +146,11 @@ function MainTopBar() {
         transition={toolbarMotion}
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       />
-      <div className="relative z-10 flex h-full min-w-0 max-w-full items-center">
-        <TabBar />
+      <div
+        className="relative z-10 flex h-full min-w-0 max-w-full items-center px-4"
+        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+      >
+        <ShellBreadcrumb />
       </div>
     </motion.header>
   );
@@ -152,18 +159,10 @@ function MainTopBar() {
 // Keep the canvas on the same in-flow signal as the sidebar gap and top bar.
 // Temporary hover reveal is an overlay and must not pull either sibling left.
 function MainCanvas({ children }: { children: React.ReactNode }) {
-  const { open, isCompact } = useSidebar();
-  const sidebarOutOfFlow = !open || isCompact;
-
   return (
-    <motion.div
-      animate={{ marginLeft: sidebarOutOfFlow ? 8 : 0 }}
-      className="relative flex flex-1 min-h-0 flex-col overflow-hidden mr-2 mb-2 rounded-xl bg-page-canvas"
-      initial={false}
-      transition={toolbarMotion}
-    >
+    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
       {children}
-    </motion.div>
+    </div>
   );
 }
 
@@ -277,11 +276,7 @@ export function DesktopShell() {
         <div
           data-slot="desktop-dashboard"
           inert={settingsOpen}
-          className={cn(
-            "flex h-screen",
-            settingsOpen && "invisible",
-            "bg-app-shell",
-          )}
+          className={cn("flex h-screen", "bg-app-shell")}
         >
           {/* WindowToolbar owns the one persistent sidebar trigger beside the
               traffic lights. Keep the provider flag so page headers do not
@@ -293,8 +288,6 @@ export function DesktopShell() {
             autoCollapse={false}
             className={cn(
               "flex-1 [--sidebar-width:260px] [--sidebar-border:transparent]",
-              "[&_[data-slot=sidebar-inner]]:border-border/80 [&_[data-slot=sidebar-inner]]:border",
-              "[&_[data-slot=sidebar-inner]]:shadow-xs [&_[data-slot=sidebar-inner]]:shadow-black/5",
               "[&_[data-slot=sidebar-menu-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-button][data-active]]:border",
               "[&_[data-slot=sidebar-menu-button][data-active]]:shadow-xs! [&_[data-slot=sidebar-menu-button][data-active]]:shadow-black/5!",
               "[&_[data-slot=sidebar-menu-button][data-active]]:bg-background! [&_[data-slot=sidebar-menu-button][data-active]]:hover:bg-background! **:data-[slot=sidebar-menu-button]:hover:bg-transparent!",
@@ -319,8 +312,7 @@ export function DesktopShell() {
                 searchSlot={<SearchTrigger />}
               />
             )}
-            {/* Right side: header + content container */}
-            <div className="flex flex-1 min-w-0 flex-col">
+            <SidebarInset className="ml-0! min-w-0 overflow-hidden">
               <MainTopBar />
               <MainCanvas>
                 {/* Same indicator, same anchor as web: DashboardLayout puts it
@@ -334,7 +326,7 @@ export function DesktopShell() {
                 </AgentThreadPanelLayout>
                 {slug && <FloatingChat />}
               </MainCanvas>
-            </div>
+            </SidebarInset>
           </SidebarProvider>
         </div>
         {slug && <ModalRegistry />}

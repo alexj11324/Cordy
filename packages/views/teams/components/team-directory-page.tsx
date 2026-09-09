@@ -1103,13 +1103,6 @@ export function TeamDirectoryPage() {
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:gap-5 md:p-6 lg:p-8">
       <div className="mx-auto flex w-full max-w-[1440px] items-center gap-2 text-body text-muted-foreground">
         <CollapsedNavTrigger />
-        <div className="flex min-w-0 items-center gap-2 truncate">
-          <span className="truncate">{workspace.name}</span>
-          <span aria-hidden="true">›</span>
-          <span className="truncate text-foreground">
-            {t(($) => $.directory.title)}
-          </span>
-        </div>
         <AppLink
           href={workspacePaths.agentTeams()}
           className="ml-auto shrink-0 rounded-md px-2 py-1 text-caption text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

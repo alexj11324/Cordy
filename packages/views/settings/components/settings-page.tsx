@@ -24,9 +24,19 @@ import {
 } from "lucide-react";
 import { GitHubMark } from "./github-mark";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@orvilo/ui/components/ui/tabs";
+import { Button } from "@orvilo/ui/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@orvilo/ui/components/ui/dialog";
+import { ScrollArea } from "@orvilo/ui/components/ui/scroll-area";
 import { cn } from "@orvilo/ui/lib/utils";
-import { useIsMobile } from "@orvilo/ui/hooks/use-mobile";
-import { useCurrentWorkspace } from "@orvilo/core/paths";
+import { useIsCompact } from "@orvilo/ui/hooks/use-mobile";
+import { useCurrentWorkspace, useWorkspacePaths } from "@orvilo/core/paths";
 import { useFeatureEnabled } from "@orvilo/core/config";
 import {
   BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
@@ -54,8 +64,9 @@ import { PluginsTab } from "./plugins-tab";
 import { McpTab } from "./mcp-tab";
 import { SkillsTab } from "./skills-tab";
 import { BillingTab } from "./billing-tab";
-import { CollapsedNavTrigger } from "../../layout/page-header";
+import { SettingsDialogBody } from "./settings-layout";
 import { useT } from "../../i18n";
+import type { TFunction } from "i18next";
 
 const ACCOUNT_TAB_KEYS = ["profile", "preferences", "shortcuts", "issue", "chat", "notifications", "tokens"] as const;
 const ACCOUNT_TAB_ICONS = {
@@ -120,27 +131,13 @@ const WORKSPACE_TAB_ICONS = {
 const DEFAULT_TAB = "profile";
 const TAB_QUERY_KEY = "tab";
 
-// Legacy `?tab=…` values that have been collapsed into another tab. Old
-// bookmarks still land on the correct surface without us preserving a
-// dead TabsContent entry. Lark used to be its own top-level workspace
-// tab; it now lives inside Integrations.
 const LEGACY_WORKSPACE_TAB_REDIRECTS: Record<string, string> = {
   lark: "integrations",
 };
 
-const SETTINGS_TAB_TRIGGER_CLASS =
-  "h-8 shrink-0 justify-start gap-2 rounded-lg px-2 hover:bg-surface-hover hover:text-foreground data-active:!bg-surface-selected data-active:!text-surface-selected-foreground data-active:hover:!bg-surface-selected data-active:hover:!text-surface-selected-foreground md:!w-full md:after:hidden";
-
-// Match the main sidebar's 36px rows, 14/20 type, 18px icons and 4px padding.
-const SETTINGS_SIDEBAR_TAB_TRIGGER_CLASS =
-  "group/settings-tab h-9 flex-none justify-start gap-2 rounded-md border-0 p-1 text-body font-normal text-sidebar-text-secondary dark:text-sidebar-text-secondary hover:text-sidebar-text-primary dark:hover:text-sidebar-text-primary hover:!bg-sidebar-item-hover data-active:!bg-sidebar-item-active data-active:!text-sidebar-item-active-foreground data-active:font-medium data-active:hover:!bg-sidebar-item-active md:!w-full md:after:hidden";
-
-const WIDE_CONTENT_TABS = new Set([
-  "labels",
-  "issue-statuses",
-  "properties",
-  "quick-actions",
-]);
+const DIALOG_INSET_SEPARATOR_CLASS = "border-border w-full";
+const SETTINGS_NAV_TRIGGER_CLASS =
+  "w-full justify-start gap-3 px-3 py-1.5 shadow-none";
 
 export interface ExtraSettingsTab {
   value: string;
@@ -150,32 +147,23 @@ export interface ExtraSettingsTab {
 }
 
 interface SettingsPageProps {
-  /** Additional tabs injected by platform (e.g. desktop daemon settings) */
   extraAccountTabs?: ExtraSettingsTab[];
-  /** Standalone windows (e.g. desktop settings) get the sidebar-tinted nav
-      panel and skip the embedded trigger row when they bring their own
-      back navigation. Defaults to the embedded tab look. */
   variant?: "embedded" | "standalone";
-  /** Back navigation rendered above the nav panel (standalone windows). */
+  /** @deprecated The flux dialog uses Cancel / Save instead of a back row. */
   navigationHeader?: React.ReactNode;
+  onDismiss?: () => void;
 }
 
 export function SettingsPage({
   extraAccountTabs,
   variant = "embedded",
-  navigationHeader,
+  onDismiss,
 }: SettingsPageProps = {}) {
   const { t } = useT("settings");
-  const standalone = variant === "standalone";
-  const tabTriggerClassName = standalone
-    ? SETTINGS_SIDEBAR_TAB_TRIGGER_CLASS
-    : SETTINGS_TAB_TRIGGER_CLASS;
-  const tabIconClassName = standalone
-    ? "size-[18px] text-sidebar-icon-secondary group-data-active/settings-tab:text-sidebar-icon-active"
-    : "h-4 w-4";
   const workspaceName = useCurrentWorkspace()?.name;
   const navigation = useNavigation();
-  const isMobile = useIsMobile();
+  const paths = useWorkspacePaths();
+  const isMobile = useIsCompact();
   const pluginsEnabled = useFeatureEnabled(PLUGINS_V1_FLAG, false);
   const billingEnabled = useFeatureEnabled(
     BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
@@ -192,9 +180,6 @@ export function SettingsPage({
     [billingEnabled, pluginsEnabled],
   );
 
-  // Whitelist of valid tab values; unknown ?tab=… values silently fall back to
-  // the default. Whitelisting also blocks junk like ?tab=<script> from
-  // surfacing in the DOM via Radix Tabs internals.
   const validTabs = React.useMemo(
     () =>
       new Set<string>([
@@ -214,124 +199,189 @@ export function SettingsPage({
   const activeTab =
     candidateTab && validTabs.has(candidateTab) ? candidateTab : DEFAULT_TAB;
 
-  // replace (not push) so settings tab switches don't pollute browser history.
-  // Preserve any other query params the page may carry.
   const handleTabChange = (next: string) => {
     const params = new URLSearchParams(navigation.searchParams);
     params.set(TAB_QUERY_KEY, next);
     navigation.replace(`${navigation.pathname}?${params.toString()}`);
   };
 
-  const contentClassName = cn(
-    "mx-auto flex w-full flex-col",
-    WIDE_CONTENT_TABS.has(activeTab) ? "max-w-5xl" : "max-w-4xl",
-  );
+  const dismiss = () => {
+    if (onDismiss) {
+      onDismiss();
+      return;
+    }
+    navigation.push(paths.issues());
+  };
+
+  const activeTitle = tabTitle(activeTab, t, extraAccountTabs);
+  const activeDescription = tabDescription(activeTab, t);
 
   return (
-    <Tabs
-      value={activeTab}
-      onValueChange={handleTabChange}
-      orientation={isMobile ? "horizontal" : "vertical"}
-      data-settings-variant={variant}
-      className="flex h-full min-h-0 flex-1 flex-col gap-0 overflow-y-auto bg-app-shell md:flex-row md:overflow-hidden"
+    <Dialog
+      open
+      onOpenChange={(next) => {
+        if (!next) dismiss();
+      }}
     >
-      {/* Nav sits on the app shell; the panel to the right is the floating
-          content card. Same chrome on web (inside the dashboard inset) and
-          desktop (the settings overlay). */}
-      <div
-        data-slot="settings-nav"
-        className={cn(
-          "flex shrink-0 flex-col overflow-x-auto text-sidebar-text-primary md:w-64 md:overflow-y-auto",
-          standalone ? "p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" : "p-2 md:p-3",
-        )}
+      <DialogContent
+        data-settings-variant={variant}
+        className="flex h-[min(88svh,48rem)] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 **:data-[slot=dialog-close]:top-4! **:data-[slot=dialog-close]:right-4! sm:max-w-4xl lg:max-w-[60rem]"
       >
-        {navigationHeader ? <div className="w-full">{navigationHeader}</div> : null}
-        {/* This page builds its own chrome instead of a PageHeader, so it has
-            to supply the nav trigger itself — below `xl` the nav is a sheet or
-            auto-collapsed, and settings has no other way back to it. */}
-        <div className="flex items-center">
-          {navigationHeader ? null : <CollapsedNavTrigger />}
-          <h1 className="sr-only">{t(($) => $.page.title)}</h1>
-        </div>
-        <TabsList
-          variant="line"
+        <Tabs
+          value={activeTab}
+          onValueChange={handleTabChange}
+          orientation={isMobile ? "horizontal" : "vertical"}
+          className="min-h-0 flex-1 flex-col gap-0 lg:flex-row lg:items-stretch"
+        >
+          <aside className="bg-muted/20 flex shrink-0 flex-col border-b py-3 pr-12 pl-5 lg:min-h-0 lg:w-56 lg:self-stretch lg:overflow-y-auto lg:border-r lg:border-b-0 lg:py-4 lg:pr-5">
+            <div className="min-w-0">
+              {isMobile ? (
+                <div className="-ml-5 overflow-x-auto overflow-y-hidden py-1 pl-5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <TabsList className="h-auto group-data-horizontal/tabs:h-auto w-max min-w-max justify-start gap-1 bg-transparent p-0">
+                    <SettingsNavItems
+                      activeTab={activeTab}
+                      extraAccountTabs={extraAccountTabs}
+                      visibleWorkspaceTabKeys={visibleWorkspaceTabKeys}
+                      workspaceName={workspaceName}
+                    />
+                  </TabsList>
+                </div>
+              ) : (
+                <TabsList className="h-auto group-data-horizontal/tabs:h-auto w-full flex-col items-stretch gap-1 bg-transparent p-0">
+                  <SettingsNavItems
+                    activeTab={activeTab}
+                    extraAccountTabs={extraAccountTabs}
+                    visibleWorkspaceTabKeys={visibleWorkspaceTabKeys}
+                    workspaceName={workspaceName}
+                  />
+                </TabsList>
+              )}
+            </div>
+          </aside>
+
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <DialogHeader className="shrink-0 gap-0 px-6 py-0 text-left">
+              <div
+                className={cn(
+                  DIALOG_INSET_SEPARATOR_CLASS,
+                  "flex flex-col gap-1.5 border-b py-4 pr-12",
+                )}
+              >
+                <DialogTitle className="text-lg leading-6">
+                  {activeTitle}
+                </DialogTitle>
+                {activeDescription ? (
+                  <DialogDescription>{activeDescription}</DialogDescription>
+                ) : (
+                  <DialogDescription className="sr-only">
+                    {activeTitle}
+                  </DialogDescription>
+                )}
+              </div>
+            </DialogHeader>
+
+            <div
+              className="flex min-h-0 flex-1 flex-col overflow-hidden"
+              data-slot="settings-content-surface"
+            >
+              <SettingsDialogBody>
+                <SettingsTabPanels
+                  billingEnabled={billingEnabled}
+                  extraAccountTabs={extraAccountTabs}
+                  pluginsEnabled={pluginsEnabled}
+                />
+              </SettingsDialogBody>
+            </div>
+
+            <DialogFooter className="m-0 border-0 bg-transparent! px-6 py-0">
+              <div
+                className={cn(
+                  DIALOG_INSET_SEPARATOR_CLASS,
+                  "flex shrink-0 items-center justify-end gap-2 border-t py-4",
+                )}
+              >
+                <Button type="button" variant="outline" onClick={dismiss}>
+                  {t(($) => $.page.dialog_cancel)}
+                </Button>
+                <Button type="button" onClick={dismiss}>
+                  {t(($) => $.page.dialog_save)}
+                </Button>
+              </div>
+            </DialogFooter>
+          </div>
+        </Tabs>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SettingsNavItems({
+  activeTab,
+  extraAccountTabs,
+  visibleWorkspaceTabKeys,
+  workspaceName,
+}: {
+  activeTab: string;
+  extraAccountTabs?: ExtraSettingsTab[];
+  visibleWorkspaceTabKeys: readonly (typeof WORKSPACE_TAB_KEYS)[number][];
+  workspaceName?: string;
+}) {
+  const { t } = useT("settings");
+  const iconClassName = "size-4 shrink-0";
+
+  return (
+    <>
+      {ACCOUNT_TAB_KEYS.map((key) => {
+        const Icon = ACCOUNT_TAB_ICONS[key];
+        return (
+          <TabsTrigger
+            key={key}
+            value={key}
+            data-settings-initial-focus={key === "profile" ? true : undefined}
+            className={cn(
+              SETTINGS_NAV_TRIGGER_CLASS,
+              activeTab === key ? "bg-muted!" : "bg-transparent",
+            )}
+          >
+            <Icon className={iconClassName} aria-hidden="true" />
+            <span className="truncate">{t(($) => $.page.tabs[key])}</span>
+          </TabsTrigger>
+        );
+      })}
+      {extraAccountTabs?.map((tab) => (
+        <TabsTrigger
+          key={tab.value}
+          value={tab.value}
           className={cn(
-            "flex w-max min-w-full flex-row items-center gap-0.5 p-0 md:w-full md:flex-col md:items-stretch",
-            standalone && "md:gap-0",
+            SETTINGS_NAV_TRIGGER_CLASS,
+            activeTab === tab.value ? "bg-muted!" : "bg-transparent",
           )}
         >
-          {/* My Account group */}
-          <span className={cn(
-            "hidden text-caption text-sidebar-text-secondary md:block",
-            standalone ? "mt-3 h-6 px-1 py-1 font-medium" : "px-2 pb-1.5 pt-3 font-semibold",
-          )}>
-            {t(($) => $.page.my_account)}
-          </span>
-          {ACCOUNT_TAB_KEYS.map((key) => {
-            const Icon = ACCOUNT_TAB_ICONS[key];
-            return (
-              <TabsTrigger
-                key={key}
-                value={key}
-                className={tabTriggerClassName}
-              >
-                <Icon className={tabIconClassName} />
-                {t(($) => $.page.tabs[key])}
-              </TabsTrigger>
-            );
-          })}
-          {extraAccountTabs?.map((tab) => (
-            <TabsTrigger
-              key={tab.value}
-              value={tab.value}
-              className={tabTriggerClassName}
-            >
-              <tab.icon className={tabIconClassName} />
-              {tab.label}
-            </TabsTrigger>
-          ))}
-
-          {/* Workspace group */}
-          <span className={cn(
-            "hidden truncate text-caption text-sidebar-text-secondary md:block",
-            standalone ? "mt-4 h-6 px-1 py-1 font-medium" : "px-2 pb-1.5 pt-5 font-semibold",
-          )}>
-            {workspaceName ?? t(($) => $.page.workspace_fallback)}
-          </span>
-          {visibleWorkspaceTabKeys.map((key) => {
-            const Icon = WORKSPACE_TAB_ICONS[key];
-            return (
-              <TabsTrigger
-                key={key}
-                value={WORKSPACE_TAB_VALUES[key]}
-                className={tabTriggerClassName}
-              >
-                <Icon className={tabIconClassName} />
-                {t(($) => $.page.tabs[key])}
-              </TabsTrigger>
-            );
-          })}
-        </TabsList>
-      </div>
-
-      <div className={cn(
-        "relative z-10 mb-2 ml-px mr-2 mt-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl bg-surface",
-        !standalone && "shadow-[var(--surface-shadow)] ring-1 ring-surface-border",
-      )}>
-        <div
-          className="min-h-0 flex-1 overflow-y-auto px-5 pb-12 pt-6 sm:px-6"
-          data-slot="settings-content-surface"
-        >
-          <div className={contentClassName}>
-            <SettingsTabPanels
-              billingEnabled={billingEnabled}
-              extraAccountTabs={extraAccountTabs}
-              pluginsEnabled={pluginsEnabled}
-            />
-          </div>
-        </div>
-      </div>
-    </Tabs>
+          <tab.icon className={iconClassName} aria-hidden="true" />
+          <span className="truncate">{tab.label}</span>
+        </TabsTrigger>
+      ))}
+      <span className="hidden px-3 pt-3 pb-1 text-caption text-muted-foreground lg:block">
+        {workspaceName ?? t(($) => $.page.workspace_fallback)}
+      </span>
+      {visibleWorkspaceTabKeys.map((key) => {
+        const Icon = WORKSPACE_TAB_ICONS[key];
+        const value = WORKSPACE_TAB_VALUES[key];
+        return (
+          <TabsTrigger
+            key={key}
+            value={value}
+            className={cn(
+              SETTINGS_NAV_TRIGGER_CLASS,
+              activeTab === value ? "bg-muted!" : "bg-transparent",
+            )}
+          >
+            <Icon className={iconClassName} aria-hidden="true" />
+            <span className="truncate">{t(($) => $.page.tabs[key])}</span>
+          </TabsTrigger>
+        );
+      })}
+    </>
   );
 }
 
@@ -346,32 +396,135 @@ function SettingsTabPanels({
 }) {
   return (
     <>
-      <TabsContent value="profile"><AccountTab /></TabsContent>
-      <TabsContent value="preferences"><PreferencesTab /></TabsContent>
-      <TabsContent value="shortcuts"><KeyboardShortcutsTab /></TabsContent>
-      <TabsContent value="issue"><IssueTab /></TabsContent>
-      <TabsContent value="chat"><ChatTab /></TabsContent>
-      <TabsContent value="notifications"><NotificationsTab /></TabsContent>
-      <TabsContent value="tokens"><TokensTab /></TabsContent>
-      <TabsContent value="workspace"><WorkspaceTab /></TabsContent>
-      <TabsContent value="repositories"><RepositoriesTab /></TabsContent>
-      <TabsContent value="github"><GitHubTab /></TabsContent>
-      <TabsContent value="integrations"><IntegrationsTab /></TabsContent>
-      <TabsContent value="labs"><LabsTab /></TabsContent>
-      <TabsContent value="members"><MembersTab /></TabsContent>
+      <DialogTabPanel value="profile"><AccountTab /></DialogTabPanel>
+      <DialogTabPanel value="preferences"><PreferencesTab /></DialogTabPanel>
+      <DialogTabPanel value="shortcuts"><KeyboardShortcutsTab /></DialogTabPanel>
+      <DialogTabPanel value="issue"><IssueTab /></DialogTabPanel>
+      <DialogTabPanel value="chat"><ChatTab /></DialogTabPanel>
+      <DialogTabPanel value="notifications"><NotificationsTab /></DialogTabPanel>
+      <DialogTabPanel value="tokens"><TokensTab /></DialogTabPanel>
+      <DialogTabPanel value="workspace"><WorkspaceTab /></DialogTabPanel>
+      <DialogTabPanel value="repositories"><RepositoriesTab /></DialogTabPanel>
+      <DialogTabPanel value="github"><GitHubTab /></DialogTabPanel>
+      <DialogTabPanel value="integrations"><IntegrationsTab /></DialogTabPanel>
+      <DialogTabPanel value="labs"><LabsTab /></DialogTabPanel>
+      <DialogTabPanel value="members"><MembersTab /></DialogTabPanel>
       {billingEnabled ? (
-        <TabsContent value="billing"><BillingTab /></TabsContent>
+        <DialogTabPanel value="billing"><BillingTab /></DialogTabPanel>
       ) : null}
-      <TabsContent value="labels"><LabelsTab /></TabsContent>
-      <TabsContent value="issue-statuses"><IssueStatusesTab /></TabsContent>
-      <TabsContent value="properties"><PropertiesTab /></TabsContent>
-      <TabsContent value="quick-actions"><QuickActionsTab /></TabsContent>
-      <TabsContent value="skills"><SkillsTab /></TabsContent>
-      <TabsContent value="mcp"><McpTab /></TabsContent>
-      {pluginsEnabled ? <TabsContent value="plugins"><PluginsTab /></TabsContent> : null}
+      <DialogTabPanel value="labels"><LabelsTab /></DialogTabPanel>
+      <DialogTabPanel value="issue-statuses"><IssueStatusesTab /></DialogTabPanel>
+      <DialogTabPanel value="properties"><PropertiesTab /></DialogTabPanel>
+      <DialogTabPanel value="quick-actions"><QuickActionsTab /></DialogTabPanel>
+      <DialogTabPanel value="skills"><SkillsTab /></DialogTabPanel>
+      <DialogTabPanel value="mcp"><McpTab /></DialogTabPanel>
+      {pluginsEnabled ? <DialogTabPanel value="plugins"><PluginsTab /></DialogTabPanel> : null}
       {extraAccountTabs?.map((tab) => (
-        <TabsContent key={tab.value} value={tab.value}>{tab.content}</TabsContent>
+        <DialogTabPanel key={tab.value} value={tab.value}>{tab.content}</DialogTabPanel>
       ))}
     </>
   );
+}
+
+function DialogTabPanel({
+  value,
+  children,
+}: {
+  value: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <TabsContent
+      value={value}
+      className="mt-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+    >
+      <ScrollArea
+        className={cn(
+          "min-h-0 flex-1",
+          "**:data-[slot=scroll-area-scrollbar]:opacity-0 **:data-[slot=scroll-area-scrollbar]:transition-opacity **:data-[slot=scroll-area-scrollbar]:duration-150 hover:**:data-[slot=scroll-area-scrollbar]:opacity-100",
+        )}
+      >
+        {children}
+      </ScrollArea>
+    </TabsContent>
+  );
+}
+
+function tabTitle(
+  tab: string,
+  t: TFunction<"settings">,
+  extraAccountTabs?: ExtraSettingsTab[],
+): string {
+  const extra = extraAccountTabs?.find((candidate) => candidate.value === tab);
+  if (extra) return extra.label;
+  switch (tab) {
+    case "profile":
+      return t(($) => $.page.tabs.profile);
+    case "preferences":
+      return t(($) => $.page.tabs.preferences);
+    case "shortcuts":
+      return t(($) => $.page.tabs.shortcuts);
+    case "issue":
+      return t(($) => $.page.tabs.issue);
+    case "chat":
+      return t(($) => $.page.tabs.chat);
+    case "notifications":
+      return t(($) => $.page.tabs.notifications);
+    case "tokens":
+      return t(($) => $.page.tabs.tokens);
+    case "workspace":
+      return t(($) => $.page.tabs.general);
+    case "repositories":
+      return t(($) => $.page.tabs.repositories);
+    case "github":
+      return t(($) => $.page.tabs.github);
+    case "integrations":
+      return t(($) => $.page.tabs.integrations);
+    case "labs":
+      return t(($) => $.page.tabs.labs);
+    case "members":
+      return t(($) => $.page.tabs.members);
+    case "billing":
+      return t(($) => $.page.tabs.billing);
+    case "labels":
+      return t(($) => $.page.tabs.labels);
+    case "issue-statuses":
+      return t(($) => $.page.tabs.issue_statuses);
+    case "properties":
+      return t(($) => $.page.tabs.properties);
+    case "quick-actions":
+      return t(($) => $.page.tabs.quick_actions);
+    case "skills":
+      return t(($) => $.page.tabs.skills);
+    case "mcp":
+      return t(($) => $.page.tabs.mcp);
+    case "plugins":
+      return t(($) => $.page.tabs.plugins);
+    default:
+      return t(($) => $.page.title);
+  }
+}
+
+function tabDescription(
+  tab: string,
+  t: TFunction<"settings">,
+): string {
+  switch (tab) {
+    case "profile":
+      return t(($) => $.account.page_description);
+    case "preferences":
+      return t(($) => $.preferences.page_description);
+    case "shortcuts":
+      return t(($) => $.shortcuts.description);
+    case "notifications":
+      return t(($) => $.notifications.page_description);
+    case "workspace":
+      return t(($) => $.workspace.page_description);
+    case "github":
+      return t(($) => $.github.page_description);
+    case "integrations":
+      return t(($) => $.page.integrations_description);
+    default:
+      return "";
+  }
 }

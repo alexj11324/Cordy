@@ -1,9 +1,11 @@
-import type {
-  ButtonHTMLAttributes,
-  ComponentProps,
-  InputHTMLAttributes,
-  ReactNode,
-  TextareaHTMLAttributes,
+import {
+  createContext,
+  useContext,
+  type ButtonHTMLAttributes,
+  type ComponentProps,
+  type InputHTMLAttributes,
+  type ReactNode,
+  type TextareaHTMLAttributes,
 } from "react";
 import { AlertCircle, Check, Loader2, Search, type LucideIcon } from "lucide-react";
 import { Input } from "@orvilo/ui/components/ui/input";
@@ -32,6 +34,16 @@ export const SETTINGS_CONTROL_CLASS =
 export const SETTINGS_TEXTAREA_CLASS =
   "min-h-[4.5rem] rounded-xl border-transparent bg-muted px-3 py-2 text-body shadow-none hover:bg-muted/80 focus-visible:border-transparent focus-visible:ring-2 focus-visible:ring-ring dark:bg-muted dark:hover:bg-muted/80";
 
+const SettingsDialogBodyContext = createContext(false);
+
+export function SettingsDialogBody({ children }: { children: ReactNode }) {
+  return (
+    <SettingsDialogBodyContext.Provider value={true}>
+      {children}
+    </SettingsDialogBodyContext.Provider>
+  );
+}
+
 export function SettingsTab({
   title,
   description,
@@ -43,6 +55,11 @@ export function SettingsTab({
   action?: ReactNode;
   children: ReactNode;
 }) {
+  const nestedInDialog = useContext(SettingsDialogBodyContext);
+  if (nestedInDialog) {
+    return <div className="space-y-12">{children}</div>;
+  }
+
   const copy = (
     <>
       <h2 className="text-display-sm font-semibold tracking-tight">{title}</h2>

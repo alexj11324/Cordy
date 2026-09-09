@@ -95,6 +95,7 @@ vi.mock("@orvilo/views/layout", () => ({
   AppSidebar: () => null,
   GlobalShortcuts: () => null,
   NavigationProgress: () => null,
+  ShellBreadcrumb: () => <nav aria-label="breadcrumb" data-testid="shell-breadcrumb" />,
 }));
 
 vi.mock("@orvilo/views/modals/registry", () => ({ ModalRegistry: () => null }));
@@ -179,10 +180,10 @@ describe("DesktopShell sidebar trigger", () => {
     );
   });
 
-  it("keeps the desktop tab strip reachable", () => {
+  it("keeps the shell breadcrumb reachable", () => {
     const { container } = renderShell();
 
-    expect(container.querySelector("[data-testid='tab-bar']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='shell-breadcrumb']")).not.toBeNull();
   });
 
   it("keeps the native toolbar clearance while a collapsed sidebar is hover-revealed", () => {
@@ -245,7 +246,7 @@ describe("DesktopShell sidebar trigger", () => {
   });
 });
 
-it("hides the mounted dashboard while glass Settings owns the window", () => {
+it("keeps the mounted dashboard visible under the settings dialog", () => {
   const { container, getByTestId } = renderShell();
   const dashboard = container.querySelector('[data-slot="desktop-dashboard"]')!;
   const content = getByTestId("page-content");
@@ -255,11 +256,10 @@ it("hides the mounted dashboard while glass Settings owns the window", () => {
     path: "/acme/settings",
   }));
   expect(dashboard).toHaveAttribute("inert");
-  expect(dashboard).toHaveClass("invisible");
+  expect(dashboard).not.toHaveClass("invisible");
   expect(content).toBeInTheDocument();
 
   act(() => useWindowOverlayStore.getState().close());
   expect(dashboard).not.toHaveAttribute("inert");
-  expect(dashboard).not.toHaveClass("invisible");
   expect(getByTestId("page-content")).toBe(content);
 });

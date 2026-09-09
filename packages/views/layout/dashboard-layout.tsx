@@ -6,6 +6,7 @@ import { SidebarProvider, SidebarInset } from "@orvilo/ui/components/ui/sidebar"
 import { ModalRegistry } from "../modals/registry";
 import { SourceBackfillModal } from "../onboarding";
 import { AppSidebar } from "./app-sidebar";
+import { ShellBreadcrumb } from "./shell-breadcrumb";
 import { DashboardGuard } from "./dashboard-guard";
 import { NavigationProgress } from "./navigation-progress";
 import { WorkspacePresencePrefetch } from "./workspace-presence-prefetch";
@@ -39,8 +40,6 @@ export function DashboardLayout({
       <SidebarProvider
         className={cn(
           "h-svh [--sidebar-width:260px] [--sidebar-border:transparent]",
-          "[&_[data-slot=sidebar-inner]]:border-border/80 [&_[data-slot=sidebar-inner]]:border",
-          "[&_[data-slot=sidebar-inner]]:shadow-xs [&_[data-slot=sidebar-inner]]:shadow-black/5",
           "[&_[data-slot=sidebar-menu-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-button][data-active]]:border",
           "[&_[data-slot=sidebar-menu-button][data-active]]:shadow-xs! [&_[data-slot=sidebar-menu-button][data-active]]:shadow-black/5!",
           "[&_[data-slot=sidebar-menu-button][data-active]]:bg-background! [&_[data-slot=sidebar-menu-button][data-active]]:hover:bg-background! **:data-[slot=sidebar-menu-button]:hover:bg-transparent!",
@@ -59,7 +58,10 @@ export function DashboardLayout({
         <GlobalShortcuts />
         <WorkspacePresencePrefetch />
         <AppSidebar searchSlot={searchSlot} />
-        <SidebarInset className="relative overflow-hidden">
+        <SidebarInset className="relative ml-0! overflow-hidden">
+          <header className="border-border/60 flex h-12 shrink-0 items-center border-b px-4">
+            <ShellBreadcrumb />
+          </header>
           <NavigationProgress />
           <AgentThreadPanelLayout>
             <div

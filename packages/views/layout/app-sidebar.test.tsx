@@ -127,9 +127,6 @@ vi.mock("@orvilo/ui/components/ui/tooltip", () => ({
 vi.mock("../common/use-app-foreground", () => ({
   useAppForeground: () => appForeground.current,
 }));
-vi.mock("./help-launcher", () => ({
-  HelpLauncher: () => <button type="button">Help</button>,
-}));
 vi.mock("../auth", () => ({ useLogout: () => vi.fn() }));
 vi.mock("../issues/components/status-icon", () => ({ StatusIcon: () => <span /> }));
 vi.mock("../navigation", () => ({
@@ -340,9 +337,10 @@ describe("collapsed footer", () => {
     };
   });
 
-  it("keeps the compact account control and hides Help until the sidebar is expanded", () => {
+  it("keeps the compact account control when the sidebar collapses", () => {
     const { rerender } = render(<AppSidebar />);
-    expect(screen.getByRole("button", { name: "Help" })).toBeInTheDocument();
+    expect(screen.getByText("Test User")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Help" })).not.toBeInTheDocument();
 
     sidebarState.current = "collapsed";
     rerender(<AppSidebar />);
@@ -367,12 +365,15 @@ describe("account footer", () => {
   });
 
   it("combines the signed-in account and workspace switcher in one menu", () => {
-    renderWithI18n(<AppSidebar />);
+    const { container } = renderWithI18n(<AppSidebar />);
     expect(screen.getByText("Test User")).toBeInTheDocument();
     expect(screen.getAllByText("Acme")).toHaveLength(2);
     expect(screen.getByText("user@example.com")).toBeInTheDocument();
     expect(screen.getByText("Account")).toBeInTheDocument();
     expect(screen.queryByText("Join our Discord")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Help" })).not.toBeInTheDocument();
+    // Workspace rows are names only — no letter/logo avatar, no indigo chip.
+    expect(container.querySelector(".bg-indigo-100")).toBeNull();
   });
 
   it("labels a Guest account in the footer instead of an email", () => {

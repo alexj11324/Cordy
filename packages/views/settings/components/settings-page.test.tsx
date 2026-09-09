@@ -1,9 +1,8 @@
 // @vitest-environment jsdom
 
-import { fireEvent, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, screen } from "@testing-library/react";
 
-import { SidebarProvider, useSidebar } from "@orvilo/ui/components/ui/sidebar";
 import { configStore } from "@orvilo/core/config";
 import {
   BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
@@ -11,8 +10,6 @@ import {
 } from "@orvilo/core/feature-flags";
 import { renderWithI18n } from "../../test/i18n";
 
-// This file tests the settings SHELL — the chrome around the tabs — so every
-// tab panel is stubbed out. Their contents have their own test files.
 const stub = vi.hoisted(
   () => (name: string) => () => ({ [name]: () => <div>{name}</div> }),
 );
@@ -40,9 +37,11 @@ vi.mock("./mcp-tab", stub("McpTab"));
 
 vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Acme" }),
+  useWorkspacePaths: () => ({ issues: () => "/acme/issues" }),
 }));
 
 const replace = vi.fn();
+const push = vi.fn();
 const navigationState = { search: "" };
 vi.mock("../../navigation", () => ({
   useNavigation: () => ({
@@ -50,11 +49,10 @@ vi.mock("../../navigation", () => ({
     hash: "",
     pathname: "/acme/settings",
     replace,
+    push,
   }),
 }));
 
-// Compact by default: that is the width where the nav is a sheet and this
-// trigger is the only way to reach it.
 const layout = { compact: true };
 vi.mock("@orvilo/ui/hooks/use-mobile", () => ({
   useIsMobile: () => layout.compact,
@@ -63,73 +61,43 @@ vi.mock("@orvilo/ui/hooks/use-mobile", () => ({
 
 import { SettingsPage } from "./settings-page";
 
-function NavStateProbe() {
-  const { openMobile } = useSidebar();
-  return <div data-testid="nav-open">{String(openMobile)}</div>;
-}
-
-function trigger() {
-  return screen.getByRole("button", { name: "Toggle left sidebar" });
-}
-
 beforeEach(() => {
   layout.compact = true;
   navigationState.search = "";
   configStore.getState().setFeatureFlags({});
   replace.mockClear();
+  push.mockClear();
 });
 
-describe("SettingsPage nav trigger", () => {
-  it("opens the nav from settings at compact widths", () => {
-    // Settings builds its own chrome instead of a PageHeader, so without this
-    // control a touch user who lands here has no way back to the nav at all —
-    // the keyboard shortcut is not an answer on a tablet.
-    renderWithI18n(
-      <SidebarProvider>
-        <NavStateProbe />
-        <SettingsPage />
-      </SidebarProvider>,
-    );
-
-    expect(screen.getByTestId("nav-open").textContent).toBe("false");
-
-    fireEvent.click(trigger());
-
-    expect(screen.getByTestId("nav-open").textContent).toBe("true");
-  });
-
-  it("hides the trigger only where the nav is a permanent column", () => {
-    // The nav is in-flow from `xl` up, so the control is CSS-gated rather than
-    // unmounted — jsdom applies no stylesheet, hence the class assertion.
-    renderWithI18n(
-      <SidebarProvider>
-        <SettingsPage />
-      </SidebarProvider>,
-    );
-
-    expect(trigger().className).toContain("xl:hidden");
-  });
-
-  it("still renders standalone, without a sidebar around it", () => {
-    // Desktop mounts settings inside its own shell; the trigger has to no-op
-    // rather than throw when there is no SidebarProvider above it.
+describe("SettingsPage flux dialog", () => {
+  it("opens as a dialog with Cancel and Save changes", () => {
     renderWithI18n(<SettingsPage />);
 
-    expect(
-      screen.queryByRole("button", { name: "Toggle left sidebar" }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByText("Settings")).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeInTheDocument();
   });
 
-  it("floats the panel in a rounded surface on the app shell", () => {
-    const { container } = renderWithI18n(<SettingsPage />);
+  it("dismisses to issues when Cancel is pressed without an overlay handler", () => {
+    renderWithI18n(<SettingsPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(push).toHaveBeenCalledWith("/acme/issues");
+  });
 
-    expect(container.querySelector("[data-settings-variant=embedded]")).toHaveClass(
-      "bg-app-shell",
-    );
-    expect(
-      container.querySelector("[data-slot=settings-content-surface]")?.parentElement,
-    ).toHaveClass("rounded-2xl");
+  it("calls onDismiss instead of navigating when the overlay owns close", () => {
+    const onDismiss = vi.fn();
+    renderWithI18n(<SettingsPage onDismiss={onDismiss} />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onDismiss).toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("lets the tall left rail scroll so every existing section stays reachable", () => {
+    layout.compact = false;
+    renderWithI18n(<SettingsPage />);
+
+    const profile = screen.getByRole("tab", { name: "Profile" });
+    expect(profile.closest("aside")).toHaveClass("lg:overflow-y-auto");
   });
 
   it("keeps every settings section that existed before the redesign", () => {
@@ -168,17 +136,19 @@ describe("SettingsPage nav trigger", () => {
     }
   });
 
-  it("keeps the same floating card when opened as a standalone window", () => {
-    const { container } = renderWithI18n(
-      <SettingsPage variant="standalone" />,
-    );
-
-    expect(container.querySelector("[data-settings-variant=standalone]")).toHaveClass(
-      "bg-app-shell",
-    );
+  it("marks standalone vs embedded on the dialog surface", () => {
+    renderWithI18n(<SettingsPage variant="standalone" />);
     expect(
-      container.querySelector("[data-slot=settings-content-surface]")?.parentElement,
-    ).toHaveClass("rounded-2xl");
+      document.querySelector("[data-settings-variant]"),
+    ).toHaveAttribute("data-settings-variant", "standalone");
+  });
+
+  it("puts initial focus on Profile so the desktop overlay can land in the rail", () => {
+    layout.compact = false;
+    renderWithI18n(<SettingsPage />);
+    expect(screen.getByRole("tab", { name: "Profile" })).toHaveAttribute(
+      "data-settings-initial-focus",
+    );
   });
 });
 

@@ -46,9 +46,11 @@ function SettingsWindow() {
   );
 
   useLayoutEffect(() => {
-    containerRef.current
-      ?.querySelector<HTMLElement>("[data-settings-initial-focus]")
-      ?.focus();
+    const initialFocus =
+      containerRef.current?.querySelector<HTMLElement>(
+        "[data-settings-initial-focus]",
+      ) ?? document.querySelector<HTMLElement>("[data-settings-initial-focus]");
+    initialFocus?.focus();
     const previousFocus = previousFocusRef.current;
     return () => {
       queueMicrotask(() => {
@@ -68,14 +70,10 @@ function SettingsWindow() {
   }, [close]);
 
   return (
-    <div
-      ref={containerRef}
-      data-slot="settings-window"
-      className="fixed inset-0 z-50 flex min-h-0 bg-app-shell"
-    >
+    <div ref={containerRef} data-slot="settings-window" className="contents">
       <div
         aria-hidden
-        className="fixed inset-x-0 top-0 z-10 h-10"
+        className="fixed inset-x-0 top-0 z-[60] h-10"
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       />
       <DesktopSettingsPage onBack={close} />
