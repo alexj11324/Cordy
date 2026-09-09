@@ -103,8 +103,13 @@ vi.mock("@orvilo/ui/components/ui/dropdown-menu", () => ({
   DropdownMenuGroup: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuRadioGroup: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuRadioItem: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
   DropdownMenuShortcut: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   DropdownMenuSeparator: () => null,
+  DropdownMenuSub: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuSubContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuSubTrigger: ({ children }: { children: React.ReactNode }) => <button type="button">{children}</button>,
   DropdownMenuTrigger: ({ render, children }: { render: React.ReactNode; children?: React.ReactNode }) => (
     React.isValidElement(render) ? React.cloneElement(render, undefined, children) : <>{render}</>
   ),

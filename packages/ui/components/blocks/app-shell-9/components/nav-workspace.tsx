@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react"
 import { useTheme } from "next-themes"
 
 import { cn } from "@orvilo/ui/lib/utils"
@@ -9,14 +9,18 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@orvilo/ui/components/ui/avatar"
-import { Button } from "@orvilo/ui/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@orvilo/ui/components/ui/dropdown-menu"
 import {
@@ -68,7 +72,7 @@ export type NavWorkspaceProps = {
   activeWorkspace?: Workspace
   labels?: Partial<NavWorkspaceLabels>
   workspaceMenuContent?: ReactNode
-  onSelectWorkspace?: (workspaceId: string) => void
+  onSelectWorkspace?: (workspaceId: string, event: MouseEvent<HTMLElement>) => void
   onCreateWorkspace?: () => void
   onProfile?: () => void
   onBilling?: () => void
@@ -98,7 +102,7 @@ const THEMES = [
   { value: "system", icon: <MonitorIcon className="size-3.5" aria-hidden="true" /> },
 ] as const
 
-function ThemeSegmentedToggle({ labels }: { labels: NavWorkspaceLabels }) {
+function ThemeSubmenu({ labels }: { labels: NavWorkspaceLabels }) {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
 
@@ -110,35 +114,25 @@ function ThemeSegmentedToggle({ labels }: { labels: NavWorkspaceLabels }) {
   const themeLabels = { light: labels.light, dark: labels.dark, system: labels.system }
 
   return (
-    <div
-      role="radiogroup"
-      aria-label={labels.theme}
-      className="inline-flex items-center gap-0.5 rounded-full bg-muted/60 p-0.5"
-    >
-      {THEMES.map(({ value, icon }) => {
-        const isActive = currentTheme === value
-        return (
-          <Button
-            key={value}
-            type="button"
-            role="radio"
-            aria-checked={isActive}
-            aria-label={themeLabels[value]}
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => setTheme(value)}
-            className={cn(
-              "rounded-full",
-              isActive
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {icon}
-          </Button>
-        )
-      })}
-    </div>
+    <DropdownMenuSub>
+      <DropdownMenuSubTrigger>
+        <PaletteIcon aria-hidden="true" />
+        {labels.theme}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent>
+        <DropdownMenuRadioGroup
+          value={currentTheme}
+          onValueChange={(value) => setTheme(value)}
+        >
+          {THEMES.map(({ value, icon }) => (
+            <DropdownMenuRadioItem key={value} value={value}>
+              {icon}
+              {themeLabels[value]}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
   )
 }
 
@@ -182,10 +176,15 @@ function WorkspaceItem({
 }: {
   workspace: Workspace
   isActive: boolean
-  onSelect: (id: string) => void
+  onSelect: (id: string, event: MouseEvent<HTMLElement>) => void
 }) {
   return (
-    <DropdownMenuItem onClick={() => onSelect(workspace.id)}>
+    <DropdownMenuItem
+      onClick={(event) => onSelect(workspace.id, event)}
+      onAuxClick={(event) => {
+        if (event.button === 1) onSelect(workspace.id, event)
+      }}
+    >
       <WorkspaceAvatar workspace={workspace} className="size-5!" />
       <span className="flex-1 truncate text-sm font-medium">{workspace.name}</span>
       {workspace.hasUnread && !isActive ? (
@@ -228,7 +227,8 @@ export function NavWorkspace({
     activeWorkspaceProp ??
     workspaces.find((workspace) => workspace.id === localWorkspaceId) ??
     workspaces[0]
-  const selectWorkspace = onSelectWorkspace ?? setLocalWorkspaceId
+  const selectWorkspace =
+    onSelectWorkspace ?? ((workspaceId: string) => setLocalWorkspaceId(workspaceId))
 
   if (!activeWorkspace) return null
 
@@ -329,16 +329,7 @@ export function NavWorkspace({
                 <SettingsIcon aria-hidden="true" />
                 {copy.preferences}
               </DropdownMenuItem>
-              <DropdownMenuItem
-                closeOnClick={false}
-                className="cursor-default focus:bg-transparent!"
-              >
-                <PaletteIcon aria-hidden="true" />
-                {copy.theme}
-                <div className="ml-auto">
-                  <ThemeSegmentedToggle labels={copy} />
-                </div>
-              </DropdownMenuItem>
+              <ThemeSubmenu labels={copy} />
             </DropdownMenuGroup>
 
             <DropdownMenuSeparator />
