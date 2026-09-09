@@ -27,10 +27,15 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import {
-  getCoreRowModel,
-  useLegacyTable,
-  type LegacyFeatures,
-} from "@tanstack/react-table/legacy";
+  columnPinningFeature,
+  columnOrderingFeature,
+  columnResizingFeature,
+  columnSizingFeature,
+  columnVisibilityFeature,
+  rowSelectionFeature,
+  tableFeatures,
+  useTable,
+} from "@tanstack/react-table";
 import type {
   CellContext as CellContextBase,
   ColumnDef as ColumnDefBase,
@@ -42,19 +47,28 @@ import type {
   TableMeta as TableMetaBase,
 } from "@tanstack/react-table";
 
-// TanStack v9 threads a feature set through every generic. This table runs on
-// `useLegacyTable`, so binding that feature set once keeps the definitions
-// below on the arity they already had.
-type TanstackTable<TData extends RowData> = TableBase<LegacyFeatures, TData>;
-type ColumnDef<TData extends RowData> = ColumnDefBase<LegacyFeatures, TData>;
-type TableMeta<TData extends RowData> = TableMetaBase<LegacyFeatures, TData>;
+// The issue table owns only the native v9 capabilities it renders. Visibility
+// is needed by the shared DataTable body, sizing/resizing powers its handles,
+// and pinning keeps the selection/title columns frozen.
+const issueTableFeatures = tableFeatures({
+  columnVisibilityFeature,
+  columnOrderingFeature,
+  columnSizingFeature,
+  columnResizingFeature,
+  columnPinningFeature,
+  rowSelectionFeature,
+});
+type IssueTableFeatures = typeof issueTableFeatures;
+type TanstackTable<TData extends RowData> = TableBase<IssueTableFeatures, TData>;
+type ColumnDef<TData extends RowData> = ColumnDefBase<IssueTableFeatures, TData>;
+type TableMeta<TData extends RowData> = TableMetaBase<IssueTableFeatures, TData>;
 type HeaderContext<TData extends RowData, TValue> = HeaderContextBase<
-  LegacyFeatures,
+  IssueTableFeatures,
   TData,
   TValue
 >;
 type CellContext<TData extends RowData, TValue> = CellContextBase<
-  LegacyFeatures,
+  IssueTableFeatures,
   TData,
   TValue
 >;
@@ -1841,7 +1855,7 @@ export function TableView({
           ?.name ?? String(value.value ?? "")
       );
     },
-    [getActorName, groupProjectMap, propertyById, t],
+    [getActorName, groupProjectMap, propertyById, resolveStatusLabel, t],
   );
 
   const serverDisplayRows = useMemo<IssueTableDisplayRow[]>(() => {
@@ -2270,11 +2284,11 @@ export function TableView({
     [columnSizing, setTableColumnWidth, visibleColumnConfigs],
   );
 
-  const table = useLegacyTable({
+  const table = useTable({
     data: displayRows,
     columns,
     getRowId: (row) => row.key,
-    getCoreRowModel: getCoreRowModel(),
+    features: issueTableFeatures,
     state: {
       columnSizing,
       columnPinning: { start: [SELECT_COLUMN_ID, "title"], end: [] },
@@ -2282,6 +2296,7 @@ export function TableView({
     meta: viewMeta as TableMeta<IssueTableDisplayRow>,
     onColumnSizingChange: handleColumnSizingChange,
     columnResizeMode: "onChange",
+    enableColumnResizing: true,
   });
 
   const sensors = useSensors(

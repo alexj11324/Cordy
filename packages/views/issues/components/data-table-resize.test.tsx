@@ -1,17 +1,32 @@
 import { act, render, screen } from "@testing-library/react";
 import {
-  getCoreRowModel,
-  useLegacyTable,
-  type LegacyColumnDef,
-} from "@tanstack/react-table/legacy";
-import type { ColumnSizingState } from "@tanstack/react-table";
+  columnPinningFeature,
+  columnOrderingFeature,
+  columnResizingFeature,
+  columnSizingFeature,
+  columnVisibilityFeature,
+  rowSelectionFeature,
+  tableFeatures,
+  useTable,
+  type ColumnDef,
+  type ColumnSizingState,
+} from "@tanstack/react-table";
 import * as React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { DataTable } from "@orvilo/ui/components/ui/data-table";
 
 type Row = { status: string; owner: string };
 
-const columns: LegacyColumnDef<Row>[] = [
+const testFeatures = tableFeatures({
+  columnVisibilityFeature,
+  columnOrderingFeature,
+  columnSizingFeature,
+  columnResizingFeature,
+  columnPinningFeature,
+  rowSelectionFeature,
+});
+
+const columns: ColumnDef<typeof testFeatures, Row>[] = [
   { accessorKey: "status", header: "Status", size: 150 },
   { accessorKey: "owner", header: "Owner", size: 90 },
 ];
@@ -24,10 +39,10 @@ function ResizableTable({
   pinFirstColumn?: boolean;
 }) {
   const [columnSizing, setColumnSizing] = React.useState<ColumnSizingState>({});
-  const table = useLegacyTable({
+  const table = useTable({
     data: [{ status: "In progress", owner: "Ada" }],
     columns,
-    getCoreRowModel: getCoreRowModel(),
+    features: testFeatures,
     state: {
       columnSizing,
       columnPinning: { start: pinFirstColumn ? ["status"] : [], end: [] },

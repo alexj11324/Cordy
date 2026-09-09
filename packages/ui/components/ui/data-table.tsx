@@ -5,13 +5,11 @@ import {
   type CellData,
   type ColumnSizingState,
   type Header as TanstackHeaderBase,
+  type ReactTable,
   type Row as RowBase,
   type RowData,
+  type TableFeatures,
 } from "@tanstack/react-table";
-import type {
-  LegacyFeatures,
-  LegacyReactTable,
-} from "@tanstack/react-table/legacy";
 import { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 import * as React from "react";
 import { createPortal } from "react-dom";
@@ -32,20 +30,23 @@ import {
 import { columnSizeVar, getCellStyle } from "@orvilo/ui/lib/data-table";
 import { cn } from "@orvilo/ui/lib/utils";
 
-type TanstackTable<TData extends RowData> = LegacyReactTable<TData>;
-type Row<TData extends RowData> = RowBase<LegacyFeatures, TData>;
+type TanstackTable<TData extends RowData> = ReactTable<TableFeatures, TData>;
+type Row<TData extends RowData> = RowBase<TableFeatures, TData>;
 type TanstackHeader<
   TData extends RowData,
   TValue extends CellData = CellData,
-> = TanstackHeaderBase<LegacyFeatures, TData, TValue>;
+> = TanstackHeaderBase<TableFeatures, TData, TValue>;
 
 // Pointer travel that turns a press on the resize handle into a drag. Matches
 // the column-reorder sensor's activation distance so both gestures on the same
 // header behave alike, and keeps a plain click from committing a width.
 const RESIZE_DRAG_THRESHOLD = 4;
 
-interface DataTableProps<TData extends RowData> extends React.ComponentProps<"div"> {
-  table: TanstackTable<TData>;
+interface DataTableProps<
+  TFeatures extends TableFeatures,
+  TData extends RowData,
+> extends React.ComponentProps<"div"> {
+  table: ReactTable<TFeatures, TData>;
   // Optional bar shown below the table when ≥1 row is selected. We
   // don't currently use selection — kept on the API surface for parity
   // with Dice UI's component so future row-select features just work.
@@ -90,8 +91,11 @@ interface DataTableProps<TData extends RowData> extends React.ComponentProps<"di
 //     respect `min-width` on the table itself. When the container is
 //     wider than min-width the table tracks it; when narrower, the
 //     table pins to min-width and the outer overflow-auto scrolls.
-export function DataTable<TData extends RowData>({
-  table,
+export function DataTable<
+  TFeatures extends TableFeatures,
+  TData extends RowData,
+>({
+  table: sourceTable,
   actionBar,
   emptyMessage = "No results.",
   onRowClick,
@@ -102,12 +106,17 @@ export function DataTable<TData extends RowData>({
   virtualOverscan = 10,
   className,
   ...props
-}: DataTableProps<TData>) {
+}: DataTableProps<TFeatures, TData>) {
+  // DataTable renders sizing, pinning, visibility, selection, and row-model
+  // APIs. Consumers register the exact native v9 feature bundle they need;
+  // this cast keeps the renderer's feature-gated helpers local to the
+  // shared component.
+  const table = sourceTable as unknown as TanstackTable<TData>;
   const [resizingColumnId, setResizingColumnId] = React.useState<string | null>(
     null,
   );
 
-  const columnSizing = table.getState().columnSizing;
+  const columnSizing = table.state.columnSizing;
   const hasExplicitSize = React.useCallback(
     (columnId: string) =>
       Object.prototype.hasOwnProperty.call(columnSizing, columnId),
