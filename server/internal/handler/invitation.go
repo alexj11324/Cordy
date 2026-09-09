@@ -350,7 +350,9 @@ func (h *Handler) ResendInvitation(w http.ResponseWriter, r *http.Request) {
 	// Reserve the admission budget before entering the network send. A slow
 	// provider must not let concurrent resend requests all pass the check phase
 	// before any one of them records its usage.
-	h.consumeInvitationAdmission(r, admission)
+	if !h.reserveInvitationAdmission(w, r, admission) {
+		return
+	}
 	if err := emailService.SendInvitationEmail(
 		invitation.InviteeEmail,
 		inviterName,

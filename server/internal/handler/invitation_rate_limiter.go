@@ -138,6 +138,44 @@ func (h *Handler) consumeInvitationAdmission(r *http.Request, admission *invitat
 	h.consumeInvitationGates(r, admission.gates)
 }
 
+// reserveInvitationAdmission consumes every resend gate before the email
+// provider is called. Unlike the create path, a resend has no durable write
+// whose unique constraint can absorb a concurrent retry, so a gate that fills
+// between Check and Allow must reject this send instead of permitting a
+// bounded overshoot.
+func (h *Handler) reserveInvitationAdmission(w http.ResponseWriter, r *http.Request, admission *invitationAdmission) bool {
+	if admission == nil {
+		return true
+	}
+
+	var deniedGates []invitationRateLimitGate
+	var retryAfter time.Duration
+	for _, gate := range admission.gates {
+		allowed, err := slidingWindowLimiterAllow(r.Context(), gate.limiter, gate.key)
+		if err != nil {
+			slog.Error("invitation rate limiter unavailable while reserving resend", append(logger.RequestAttrs(r), "gate", string(gate.dimension), "error", err)...)
+			writeInvitationLimiterUnavailable(w)
+			return false
+		}
+		if allowed {
+			continue
+		}
+		deniedGates = append(deniedGates, gate)
+		if retry := slidingWindowLimiterRetryAfter(r.Context(), gate.limiter, gate.key); retry > retryAfter {
+			retryAfter = retry
+		}
+	}
+
+	if len(deniedGates) == 0 {
+		return true
+	}
+	for _, gate := range deniedGates {
+		h.Metrics.RecordEmailRateLimited("workspace_invitation", string(gate.dimension))
+	}
+	writeInvitationRateLimited(w, retryAfter)
+	return false
+}
+
 // consumeInvitationActorAdmission charges persistent capacity rejections to
 // the caller without spending the shared workspace or recipient email budgets.
 func (h *Handler) consumeInvitationActorAdmission(r *http.Request, admission *invitationAdmission) {

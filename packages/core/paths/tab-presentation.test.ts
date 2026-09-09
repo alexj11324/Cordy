@@ -76,6 +76,13 @@ describe("resolveTabPresentation — direct resources", () => {
     });
   });
 
+  it("treats the agent-team route as a collection page", () => {
+    expect(present("/acme/teams/agent-teams")).toEqual({
+      visual: { kind: "icon", icon: "Users" },
+      title: { kind: "nav", navKey: "teams" },
+    });
+  });
+
   it("automation / skill / machine / runtime use a type icon + name", () => {
     expect(present("/acme/automations/a1", { automation: { title: "Nightly" } })).toEqual({
       visual: { kind: "icon", icon: "AlarmClock" },

@@ -315,11 +315,12 @@ func TestResendInvitation_RejectsRateLimitedAndExpiredInvitations(t *testing.T) 
 	resendRoute.URLParams.Add("invitationId", invitation.ID)
 	resendReq = resendReq.WithContext(context.WithValue(resendReq.Context(), chi.RouteCtxKey, resendRoute))
 
-	recipient.allowed = false
+	allowDenied := false
+	recipient.allowResult = &allowDenied
 	rateLimitedResponse := httptest.NewRecorder()
 	testHandler.ResendInvitation(rateLimitedResponse, resendReq)
 	if rateLimitedResponse.Code != http.StatusTooManyRequests {
-		t.Fatalf("rate-limited resend: expected 429, got %d: %s", rateLimitedResponse.Code, rateLimitedResponse.Body.String())
+		t.Fatalf("resend denied when reservation filled the gate: expected 429, got %d: %s", rateLimitedResponse.Code, rateLimitedResponse.Body.String())
 	}
 
 	if _, err := testPool.Exec(
@@ -329,6 +330,7 @@ func TestResendInvitation_RejectsRateLimitedAndExpiredInvitations(t *testing.T) 
 	); err != nil {
 		t.Fatalf("expire invitation: %v", err)
 	}
+	recipient.allowResult = nil
 	recipient.allowed = true
 	expiredResponse := httptest.NewRecorder()
 	testHandler.ResendInvitation(expiredResponse, resendReq)
