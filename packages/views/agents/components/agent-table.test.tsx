@@ -153,6 +153,11 @@ function renderTable({
   onSelectedIdsChange?: (ids: ReadonlySet<string>) => void;
   locale?: "en" | "zh-Hans";
 } = {}) {
+  // Base UI's scroll area settles its viewport with getAnimations(); keep the
+  // jsdom shim local to this ReUI table test instead of changing every view.
+  if (typeof Element.prototype.getAnimations !== "function") {
+    Element.prototype.getAnimations = () => [];
+  }
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });

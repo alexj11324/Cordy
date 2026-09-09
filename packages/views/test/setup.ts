@@ -70,10 +70,4 @@ if (typeof window !== "undefined") {
   if (typeof Element.prototype.scrollIntoView !== "function") {
     Element.prototype.scrollIntoView = () => {};
   }
-
-  // Base UI's scroll area settles its viewport with getAnimations(); jsdom
-  // has no animation implementation, so an empty list is the accurate result.
-  if (typeof Element.prototype.getAnimations !== "function") {
-    Element.prototype.getAnimations = () => [];
-  }
 }
