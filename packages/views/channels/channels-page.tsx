@@ -1,4 +1,5 @@
 "use client";
+import { AgentIdentityAvatar } from "../common/agent-identity-avatar";
 
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
@@ -535,7 +536,7 @@ function ChannelMessageRow({
 
   return (
     <article className="flex gap-3">
-      <ActorAvatar
+      {message.author_type === "agent" ? <AgentIdentityAvatar agentId={message.author_id} name={name} size="sm" /> : (<ActorAvatar
         name={name}
         initials={getActorInitials(message.author_type, message.author_id)}
         avatarUrl={getActorAvatarUrl(message.author_type, message.author_id)}
@@ -543,7 +544,7 @@ function ChannelMessageRow({
         isSystem={message.author_type === "system"}
         isTeam={message.author_type === "team"}
         size="sm"
-      />
+      />)}
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
           <span className="text-body font-medium">{name}</span>

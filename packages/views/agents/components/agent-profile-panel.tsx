@@ -389,7 +389,7 @@ function ProfileHero({
         <ActorAvatar
           actorId={agent.id}
           actorType="agent"
-          className="scale-[1.7] bg-background ring-2 ring-background shadow-sm"
+          className="scale-[1.7]"
           profileLink={false}
           size="2xl"
         />

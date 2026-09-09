@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
+import { AgentIdentityAvatar } from "../../common/agent-identity-avatar";
 import { useActorName } from "@orvilo/core/workspace/hooks";
 import { useWorkspaceId } from "@orvilo/core/hooks";
 import { runtimeListOptions } from "@orvilo/core/runtimes/queries";
@@ -69,7 +69,7 @@ function AgentActivityTaskRow({
   now: number;
 } & ActivityLookups) {
   const { t } = useT("issues");
-  const { getActorName, getActorInitials, getActorAvatarUrl } = useActorName();
+  const { getActorName } = useActorName();
 
   const agent = agentById.get(task.agent_id);
   const runtime = runtimeFrom(agent?.runtime_id, runtimeById);
@@ -98,13 +98,7 @@ function AgentActivityTaskRow({
 
   return (
     <div className="flex items-center gap-2 text-caption">
-      <ActorAvatarBase
-        name={getActorName("agent", task.agent_id)}
-        initials={getActorInitials("agent", task.agent_id)}
-        avatarUrl={getActorAvatarUrl("agent", task.agent_id)}
-        isAgent
-        size="sm"
-      />
+      <AgentIdentityAvatar agentId={task.agent_id} name={getActorName("agent", task.agent_id)} size="sm" />
       <span className="flex-1 truncate font-medium">
         {getActorName("agent", task.agent_id)}
       </span>

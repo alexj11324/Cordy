@@ -4,6 +4,8 @@ import type { CommentTriggerPreviewAgent } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 
+vi.mock("../../common/agent-identity-avatar", () => ({AgentIdentityAvatar: ({name}: {name:string}) => <span aria-label={name} />}));
+
 vi.mock("@orvilo/core/agents", () => ({
   useAgentPresenceDetail: () => ({ availability: "online", workload: "idle" }),
 }));

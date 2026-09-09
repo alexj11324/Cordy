@@ -1,12 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
+import { AgentIdentityAvatar } from "../../common/agent-identity-avatar";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { useWorkspaceId } from "@orvilo/core/hooks";
 import { useWorkspacePaths } from "@orvilo/core/paths";
 import { agentListOptions } from "@orvilo/core/workspace/queries";
-import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 import {
   agentTaskSnapshotOptions,
   useAgentPresenceDetail,
@@ -66,12 +65,6 @@ export function AgentLivePeekCard({ agentId }: AgentLivePeekCardProps) {
   const currentIssueId = runningTask?.issue_id ?? null;
   const lastTerminal = pickLatestTerminal(agentTasks);
 
-  const initials = agent.name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
 
   // Archived wins over workload — a retired agent reads "Archived", never
   // "Idle"/"Working". availability is the unified signal (see
@@ -86,13 +79,7 @@ export function AgentLivePeekCard({ agentId }: AgentLivePeekCardProps) {
     <div className="flex flex-col gap-3 text-left">
       {/* Header — avatar + name. */}
       <div className="flex items-start gap-3">
-        <ActorAvatarBase
-          name={agent.name}
-          initials={initials}
-          avatarUrl={resolvePublicFileUrl(agent.avatar_url)}
-          isAgent
-          size="xl"
-        />
+        <AgentIdentityAvatar agentId={agent.id} name={agent.name} size="xl" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-body font-semibold">{agent.name}</p>
           <div className="mt-0.5 inline-flex items-center gap-1.5">

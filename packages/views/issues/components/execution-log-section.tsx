@@ -151,7 +151,7 @@ export function ExecutionLogSection({ issueId, identifier }: ExecutionLogSection
               translation, not the everyday state. */}
           <span className="truncate">{t(($) => $.execution_log.section)}</span>
           <ChevronRight
-            className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${
+            className={`size-4 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${
               open ? "rotate-90" : ""
             }`}
           />
@@ -185,7 +185,7 @@ export function ExecutionLogSection({ issueId, identifier }: ExecutionLogSection
                 className="flex w-full items-center gap-1 rounded px-1 py-1 text-caption text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground"
               >
                 <ChevronRight
-                  className={`!size-3 shrink-0 stroke-[2.5] transition-transform ${
+                  className={`size-4 shrink-0 stroke-[2.5] transition-transform ${
                     showPast ? "rotate-90" : ""
                   }`}
                 />

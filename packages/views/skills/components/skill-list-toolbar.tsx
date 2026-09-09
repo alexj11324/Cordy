@@ -1,4 +1,5 @@
 "use client";
+import { AgentIdentityAvatar } from "../../common/agent-identity-avatar";
 
 import {
   ArrowDown,
@@ -333,13 +334,7 @@ export function SkillListToolbar({
                     className={FILTER_ITEM_CLASS}
                   >
                     <HoverCheck checked={filters.agents.includes(agent.id)} />
-                    <ActorAvatar
-                      name={agent.name}
-                      initials={agent.name.slice(0, 2).toUpperCase()}
-                      avatarUrl={resolvePublicFileUrl(agent.avatar_url)}
-                      isAgent
-                      size="sm"
-                    />
+                    <AgentIdentityAvatar agentId={agent.id} name={agent.name} size="sm" />
                     <span className="min-w-0 truncate">{agent.name}</span>
                     {countBadge(count)}
                   </DropdownMenuCheckboxItem>

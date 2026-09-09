@@ -2,9 +2,7 @@
 
 import { AVATAR_SIZE_PX, type AvatarSize } from "@orvilo/ui/lib/avatar-size";
 import {
-  Avatar,
   AvatarBadge,
-  AvatarFallback,
 } from "@orvilo/ui/components/ui/avatar";
 import { cn } from "@orvilo/ui/lib/utils";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
@@ -16,6 +14,7 @@ export function AgentProviderAvatar({
   online = false,
   onlineLabel,
   className,
+  unassigned = false,
 }: {
   provider?: string | null;
   name: string;
@@ -23,19 +22,19 @@ export function AgentProviderAvatar({
   online?: boolean;
   onlineLabel?: string;
   className?: string;
+  unassigned?: boolean;
 }) {
   const pixels = AVATAR_SIZE_PX[size];
 
   return (
-    <Avatar
+    <span
       aria-label={name}
-      size={pixels >= 40 ? "lg" : pixels <= 24 ? "sm" : "default"}
-      className={cn("bg-muted", className)}
+      data-size={pixels >= 40 ? "lg" : pixels <= 24 ? "sm" : "default"}
+      data-agent-identity={unassigned ? "unassigned" : "assigned"}
+      className={cn("group/avatar relative inline-flex shrink-0 items-center justify-center", unassigned && "rounded-full bg-muted", className)}
       style={{ width: pixels, height: pixels }}
     >
-      <AvatarFallback>
-        <ProviderLogo provider={provider ?? ""} className="size-[55%]" />
-      </AvatarFallback>
+      <ProviderLogo provider={provider ?? ""} className={unassigned ? "size-[75%]" : "size-full"} />
       {online ? (
         <AvatarBadge
           className="bg-success"
@@ -43,6 +42,6 @@ export function AgentProviderAvatar({
           aria-hidden={onlineLabel ? undefined : true}
         />
       ) : null}
-    </Avatar>
+    </span>
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import { AgentIdentityAvatar } from "../../common/agent-identity-avatar";
 
 import { useState } from "react";
 import {
@@ -19,7 +20,6 @@ import type { Agent, SkillSummary } from "@orvilo/core/types";
 import { api } from "@orvilo/core/api";
 import { workspaceKeys } from "@orvilo/core/workspace/queries";
 import { useWorkspacePaths } from "@orvilo/core/paths";
-import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
 import { Input } from "@orvilo/ui/components/ui/input";
@@ -48,7 +48,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@orvilo/ui/components/ui/tooltip";
-import { ActorAvatar } from "@orvilo/ui/components/common/actor-avatar";
 import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 import { useIntentNavigate } from "../../navigation";
@@ -126,13 +125,7 @@ function AgentPickerRow({
         tabIndex={-1}
         className="pointer-events-none"
       />
-      <ActorAvatar
-        name={agent.name}
-        initials={agent.name.slice(0, 2).toUpperCase()}
-        avatarUrl={resolvePublicFileUrl(agent.avatar_url)}
-        isAgent
-        size="md"
-      />
+      <AgentIdentityAvatar agentId={agent.id} name={agent.name} size="md" />
       <span className="min-w-0 flex-1 truncate text-body">{agent.name}</span>
       {hasAll ? (
         <Check className="size-3.5 shrink-0 text-muted-foreground" />

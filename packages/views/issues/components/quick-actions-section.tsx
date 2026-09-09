@@ -78,7 +78,7 @@ export function QuickActionsSection({ issueId }: { issueId: string }) {
         {t(($) => $.detail.section_quick_actions)}
         <ChevronRight
           className={cn(
-            "!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform",
+            "size-4 shrink-0 stroke-[2.5] text-muted-foreground transition-transform",
             open && "rotate-90",
           )}
         />

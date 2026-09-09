@@ -1,6 +1,6 @@
 "use client";
 
-import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
+import { AgentIdentityAvatar } from "../../common/agent-identity-avatar";
 import { AVATAR_SIZE_PX, type AvatarSize } from "@orvilo/ui/lib/avatar-size";
 import { useActorName } from "@orvilo/core/workspace/hooks";
 import { cn } from "@orvilo/ui/lib/utils";
@@ -41,7 +41,7 @@ export function AgentAvatarStack({
   opacity = "full",
   className,
 }: AgentAvatarStackProps) {
-  const { getActorName, getActorInitials, getActorAvatarUrl } = useActorName();
+  const { getActorName } = useActorName();
   const { t } = useT("agents");
   if (agentIds.length === 0) return null;
 
@@ -66,15 +66,9 @@ export function AgentAvatarStack({
           // Each subsequent head sits negative-margin over the previous so
           // the stack collapses horizontally instead of growing linearly.
           style={{ marginLeft: i === 0 ? 0 : -overlap }}
-          className="ring-2 ring-background rounded-full inline-flex"
+          className="inline-flex"
         >
-          <ActorAvatarBase
-            name={getActorName("agent", id)}
-            initials={getActorInitials("agent", id)}
-            avatarUrl={getActorAvatarUrl("agent", id)}
-            isAgent
-            size={size}
-          />
+          <AgentIdentityAvatar agentId={id} name={getActorName("agent", id)} size={size} />
         </span>
       ))}
       {overflow > 0 && (

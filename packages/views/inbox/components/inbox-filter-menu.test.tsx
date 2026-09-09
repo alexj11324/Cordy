@@ -23,6 +23,8 @@ import { InboxFilterMenu } from "./inbox-filter-menu";
 // this leaf render has none of — stubbed the same way the sibling
 // inbox-detail-label suite stubs it.
 const ACTOR_NAMES: Record<string, string> = { alice: "Alice", bob: "Bob" };
+vi.mock("../../common/agent-identity-avatar", () => ({AgentIdentityAvatar: ({name}: {name:string}) => <span aria-label={name} />}));
+
 vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (type: string, id: string) =>

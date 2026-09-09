@@ -1621,7 +1621,7 @@ function DraggableSwimLane({
       >
         {!lane.isPinned && (
           <GripVertical
-            className="!size-3 shrink-0 cursor-grab text-faint-foreground"
+            className="size-4 shrink-0 cursor-grab text-faint-foreground"
             aria-hidden
           />
         )}
@@ -1632,7 +1632,7 @@ function DraggableSwimLane({
           className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left transition-colors hover:bg-accent/70"
         >
           <ChevronRight
-            className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${isCollapsed ? "" : "rotate-90"}`}
+            className={`size-4 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${isCollapsed ? "" : "rotate-90"}`}
           />
           {lane.parentIssue && (
             <StatusIcon
