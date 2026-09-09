@@ -4,6 +4,7 @@ import { Bot, Monitor, Plus, UserRound } from "lucide-react";
 import {
   effectiveAccessScope,
   isAgentRuntimeBound,
+  type AgentAvailability,
 } from "@orvilo/core/agents";
 import {
   deviceDisplayName,
@@ -82,6 +83,33 @@ function toAtlasDealCard(
 ): AtlasDealCardOpportunity {
   const { agent, presence, runtime, owner } = row;
   const needsRuntime = !agent.archived_at && !isAgentRuntimeBound(agent);
+  const availability = getCardAvailability(row);
+  const status = {
+    label:
+      availability === "online"
+        ? t(($) => $.gallery_card.status_online)
+        : availability === "unstable"
+          ? t(($) => $.gallery_card.status_unstable)
+          : availability === "archived"
+            ? t(($) => $.gallery_card.status_archived)
+            : t(($) => $.gallery_card.status_offline),
+    variant:
+      availability === "online"
+        ? "success-light"
+        : availability === "unstable"
+          ? "warning-light"
+          : availability === "offline"
+            ? "destructive-light"
+            : "secondary",
+    dotClass:
+      availability === "online"
+        ? "bg-success"
+        : availability === "unstable"
+          ? "bg-warning"
+          : availability === "offline"
+            ? "bg-destructive"
+            : "bg-muted-foreground/50",
+  } satisfies AtlasDealCardOpportunity["status"];
 
   const access = effectiveAccessScope(
     agent.permission_mode,
@@ -105,23 +133,28 @@ function toAtlasDealCard(
     presence?.capacity ?? agent.max_concurrent_tasks ?? 1,
   );
   const runningCount = Math.max(0, presence?.runningCount ?? 0);
-  const concurrencyPercent =
-    capacity > 0 ? Math.min(100, (runningCount / capacity) * 100) : 0;
+  const availableCount = Math.max(0, capacity - runningCount);
+  const availablePercent =
+    capacity > 0 ? (availableCount / capacity) * 100 : 100;
+  // Base UI renders a zero-valued indicator with no visible fill. Keep a 2%
+  // red warning sliver when the agent is fully occupied so the exhausted
+  // state remains visible on the card.
+  const concurrencyPercent = Math.max(2, availablePercent);
+  const concurrencyProgressClass =
+    availablePercent <= 0
+      ? "**:data-[slot=progress-indicator]:bg-destructive"
+      : availablePercent <= 50
+        ? "**:data-[slot=progress-indicator]:bg-warning"
+        : "**:data-[slot=progress-indicator]:bg-success";
 
-  const ownerName = row.isOwnedByMe
-    ? t(($) => $.row.you)
-    : (owner?.name ?? agent.owner_id?.slice(0, 8) ?? "");
-  const ownerInitials = ownerName
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2);
+  const ownerName = owner?.name ?? agent.owner_id?.slice(0, 8) ?? "";
   const ownerAvatarSrc =
     (owner?.avatar_url ? resolvePublicFileUrl(owner.avatar_url) : null) ?? "";
 
   return {
     id: agent.id,
     account: agent.name,
+    status,
     logo:
       runtime && !needsRuntime ? (
         <ProviderLogo className="size-5" provider={runtime.provider} />
@@ -139,24 +172,34 @@ function toAtlasDealCard(
     deviceLabel: t(($) => $.gallery_card.device),
     deviceText: deviceLabel,
     concurrencyLabel: t(($) => $.gallery_card.concurrency),
-    concurrencyText: t(($) => $.gallery_card.concurrency_ratio, {
-      running: runningCount,
+    concurrencyText: t(($) => $.gallery_card.concurrency_available_ratio, {
+      available: availableCount,
       capacity,
     }),
     concurrency: concurrencyPercent,
+    concurrencyProgressClass,
     concurrencyCaption: t(($) => $.gallery_card.concurrency_label, {
       running: runningCount,
       capacity,
+      available: availableCount,
       name: agent.name,
     }),
     owner: {
       id: owner?.user_id || agent.owner_id || "",
       name: ownerName,
       title: runtime ? runtimeDisplayLabel(runtime) : deviceLabel,
-      initials: ownerInitials || "?",
       avatar: ownerAvatarSrc,
     },
   };
+}
+
+function getCardAvailability(row: AgentListRow): AgentAvailability {
+  if (row.agent.archived_at) return "archived";
+  if (!isAgentRuntimeBound(row.agent) || !row.runtime) return "offline";
+  return (
+    row.presence?.availability ??
+    (row.runtime.status === "online" ? "online" : "offline")
+  );
 }
 
 export function AgentCardSkeleton() {

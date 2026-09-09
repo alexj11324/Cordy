@@ -100,13 +100,81 @@ describe("AgentCard", () => {
     expect(screen.getByText("Workspace")).toBeInTheDocument();
     expect(screen.getByText("Device")).toBeInTheDocument();
     expect(screen.getByText("This machine")).toBeInTheDocument();
-    expect(screen.getByText("Concurrency")).toBeInTheDocument();
-    expect(screen.getByText("3:6")).toBeInTheDocument();
+    expect(screen.getByText("Concurrency headroom")).toBeInTheDocument();
+    expect(screen.getByText("3/6")).toBeInTheDocument();
+    expect(screen.getByText("Online")).toBeInTheDocument();
     expect(screen.getByTestId("provider-codex")).toBeInTheDocument();
     expect(screen.queryByText("Risk")).not.toBeInTheDocument();
     expect(screen.queryByText(/left/)).not.toBeInTheDocument();
     expect(screen.getByText("Mira Stone")).toBeInTheDocument();
     expect(screen.getByText("Alex MacBook Pro")).toBeInTheDocument();
+  });
+
+  it("shows full green headroom when idle", () => {
+    const { container } = renderCard(
+      row({
+        presence: {
+          availability: "online",
+          workload: "idle",
+          runningCount: 0,
+          queuedCount: 0,
+          capacity: 6,
+        },
+      }),
+    );
+
+    expect(screen.getByText("6/6")).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="progress"]')?.className).toContain(
+      "bg-success",
+    );
+  });
+
+  it("keeps a red sliver when all concurrency is occupied", () => {
+    const { container } = renderCard(
+      row({
+        presence: {
+          availability: "online",
+          workload: "working",
+          runningCount: 6,
+          queuedCount: 0,
+          capacity: 6,
+        },
+      }),
+    );
+
+    expect(screen.getByText("0/6")).toBeInTheDocument();
+    const indicator = container.querySelector('[data-slot="progress-indicator"]');
+    expect(container.querySelector('[data-slot="progress"]')?.className).toContain(
+      "bg-destructive",
+    );
+    expect(indicator).toHaveStyle({ width: "2%" });
+  });
+
+  it("uses amber for an unstable connection", () => {
+    renderCard(
+      row({
+        presence: {
+          availability: "unstable",
+          workload: "idle",
+          runningCount: 0,
+          queuedCount: 0,
+          capacity: 6,
+        },
+      }),
+    );
+
+    expect(screen.getByText("Unstable connection")).toBeInTheDocument();
+  });
+
+  it("uses red for an unavailable device", () => {
+    renderCard(
+      row({
+        runtime: null,
+        presence: null,
+      }),
+    );
+
+    expect(screen.getByText("Offline")).toBeInTheDocument();
   });
 
   it("uses the remote runtime name as the device value", () => {
@@ -123,6 +191,34 @@ describe("AgentCard", () => {
     expect(screen.getAllByText("Cloud Sandbox").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("This machine")).not.toBeInTheDocument();
     expect(screen.getByTestId("provider-cursor")).toBeInTheDocument();
+  });
+
+  it("uses the owner name and a colored ReUI icon fallback", () => {
+    const { container } = renderCard(
+      row({
+        isOwnedByMe: true,
+        owner: {
+          id: "mem-1",
+          workspace_id: "ws-1",
+          user_id: "user-1",
+          role: "owner",
+          created_at: "2026-01-01T00:00:00Z",
+          name: "Alex Jiang",
+          email: "alex@example.com",
+          avatar_url: null,
+        },
+      }),
+    );
+
+    expect(screen.getByText("Alex Jiang")).toBeInTheDocument();
+    expect(screen.queryByText("你")).not.toBeInTheDocument();
+    expect(container.querySelector('[data-slot="avatar-fallback"]')).toHaveClass(
+      "bg-primary/10",
+      "text-primary",
+    );
+    expect(
+      container.querySelector('[data-slot="avatar-fallback"] svg'),
+    ).toBeInTheDocument();
   });
 
   it("opens the overlay inspector from the card title", () => {

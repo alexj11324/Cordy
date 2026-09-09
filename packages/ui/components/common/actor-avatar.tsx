@@ -1,8 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { Bot, Users } from "lucide-react";
 import { cn } from "@orvilo/ui/lib/utils";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@orvilo/ui/components/ui/avatar";
 import {
   AVATAR_SIZE_PX,
   DEFAULT_AVATAR_SIZE,
@@ -32,56 +36,46 @@ function ActorAvatar({
   size = DEFAULT_AVATAR_SIZE,
   className,
 }: ActorAvatarProps) {
-  const [imgError, setImgError] = useState(false);
   const px = AVATAR_SIZE_PX[size];
   const emoji = parseAvatarEmoji(avatarUrl);
+  const avatarSize = px >= 40 ? "lg" : px <= 24 ? "sm" : "default";
 
-  useEffect(() => {
-    setImgError(false);
-  }, [avatarUrl]);
-
-  // Every actor — member, agent, team, or system — renders as a circle. This
-  // is the single source of truth for avatar shape; the upload editors mirror
-  // it (packages/views/common/avatar-upload-control.tsx).
+  // Use the Atlas/ReUI Avatar primitive for every actor. Product-specific
+  // identity rules stay in this adapter: emoji avatars are a fallback, while
+  // image failures are handled by Base UI Avatar's fallback state.
   return (
-    <div
-      data-slot="avatar"
+    <Avatar
+      aria-label={name}
+      data-actor-type={isAgent ? "agent" : isTeam ? "team" : isSystem ? "system" : "member"}
+      size={avatarSize}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center font-medium overflow-hidden",
-        (!avatarUrl || emoji || imgError) && "bg-muted text-muted-foreground",
+        "overflow-hidden bg-muted text-muted-foreground",
         className,
-        // rounded-full stays last so a call-site `className` can never override
-        // the circle — avatar shape is a hard invariant, not a per-site choice.
-        "rounded-full"
       )}
       style={{ width: px, height: px, fontSize: px * 0.45 }}
     >
-      {emoji ? (
-        <span
-          role="img"
-          aria-label={name}
-          className="select-none leading-none"
-          style={{ fontSize: px * 0.58 }}
-        >
-          {emoji}
-        </span>
-      ) : avatarUrl && !imgError ? (
-        <img
-          src={avatarUrl}
-          alt={name}
-          className="h-full w-full object-cover"
-          onError={() => setImgError(true)}
-        />
-      ) : isSystem ? (
-        <OrviloIcon noSpin style={{ width: px * 0.55, height: px * 0.55 }} />
-      ) : isAgent ? (
-        <Bot style={{ width: px * 0.55, height: px * 0.55 }} />
-      ) : isTeam ? (
-        <Users style={{ width: px * 0.55, height: px * 0.55 }} />
-      ) : (
-        initials
-      )}
-    </div>
+      {avatarUrl && !emoji ? <AvatarImage alt={name} src={avatarUrl} /> : null}
+      <AvatarFallback className="text-[inherit]">
+        {emoji ? (
+          <span
+            role="img"
+            aria-label={name}
+            className="select-none leading-none"
+            style={{ fontSize: px * 0.58 }}
+          >
+            {emoji}
+          </span>
+        ) : isSystem ? (
+          <OrviloIcon noSpin style={{ width: px * 0.55, height: px * 0.55 }} />
+        ) : isAgent ? (
+          <Bot aria-hidden="true" style={{ width: px * 0.55, height: px * 0.55 }} />
+        ) : isTeam ? (
+          <Users aria-hidden="true" style={{ width: px * 0.55, height: px * 0.55 }} />
+        ) : (
+          initials
+        )}
+      </AvatarFallback>
+    </Avatar>
   );
 }
 

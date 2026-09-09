@@ -2,6 +2,11 @@
 
 import { type ReactNode } from "react";
 import {
+  Badge,
+  type BadgeProps,
+} from "@orvilo/ui/components/reui/badge";
+import { UserRound } from "lucide-react";
+import {
   Card,
   CardContent,
   CardHeader,
@@ -32,14 +37,20 @@ export type DealPerson = {
   id: string;
   name: string;
   title: string;
-  initials: string;
   avatar: string;
+};
+
+export type AtlasDealCardStatus = {
+  label: string;
+  variant: NonNullable<BadgeProps["variant"]>;
+  dotClass: string;
 };
 
 export type AtlasDealCardOpportunity = {
   id: string;
   account: string;
   logo: ReactNode;
+  status: AtlasDealCardStatus;
   accessIcon: ReactNode;
   accessLabel: string;
   accessText: string;
@@ -49,6 +60,7 @@ export type AtlasDealCardOpportunity = {
   concurrencyLabel: string;
   concurrencyText: string;
   concurrency: number;
+  concurrencyProgressClass: string;
   concurrencyCaption: string;
   owner: DealPerson;
 };
@@ -116,8 +128,13 @@ function ConcurrencyProgress({
         </span>
       </div>
       <Progress
+        aria-label={opportunity.concurrencyCaption}
+        aria-valuetext={opportunity.concurrencyCaption}
         value={opportunity.concurrency}
-        className="gap-0 **:data-[slot=progress-indicator]:rounded-full **:data-[slot=progress-track]:h-1.5 **:data-[slot=progress-track]:rounded-full **:data-[slot=progress-track]:bg-muted"
+        className={cn(
+          "gap-0 **:data-[slot=progress-indicator]:rounded-full **:data-[slot=progress-track]:h-1.5 **:data-[slot=progress-track]:rounded-full **:data-[slot=progress-track]:bg-muted",
+          opportunity.concurrencyProgressClass,
+        )}
       >
         <ProgressLabel className="sr-only">
           {opportunity.concurrencyCaption}
@@ -127,16 +144,35 @@ function ConcurrencyProgress({
   );
 }
 
+function DealStatusBadge({ status }: { status: AtlasDealCardStatus }) {
+  return (
+    <Badge
+      aria-label={status.label}
+      className="max-w-full gap-1.5"
+      size="sm"
+      variant={status.variant}
+    >
+      <span
+        aria-hidden="true"
+        className={cn("size-1.5 shrink-0 rounded-full", status.dotClass)}
+      />
+      <span className="truncate">{status.label}</span>
+    </Badge>
+  );
+}
+
 function DealOwner({ opportunity }: { opportunity: AtlasDealCardOpportunity }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
       <Avatar size="sm" className="size-7">
-        <AvatarImage
-          src={opportunity.owner.avatar}
-          alt={opportunity.owner.name}
-        />
-        <AvatarFallback className="text-xs font-semibold">
-          {opportunity.owner.initials}
+        {opportunity.owner.avatar ? (
+          <AvatarImage
+            src={opportunity.owner.avatar}
+            alt={opportunity.owner.name}
+          />
+        ) : null}
+        <AvatarFallback className="bg-primary/10 text-primary">
+          <UserRound aria-hidden="true" className="size-3.5" />
         </AvatarFallback>
       </Avatar>
       <div className="min-w-0">
@@ -194,6 +230,7 @@ export function AtlasDealCard({
               {opportunity.account}
             </button>
           </CardTitle>
+          <DealStatusBadge status={opportunity.status} />
         </div>
       </CardHeader>
 

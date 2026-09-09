@@ -910,9 +910,14 @@
     "access": "Access",
     "device": "Device",
     "device_this_machine": "This machine",
-    "concurrency": "Concurrency",
+    "status_online": "Online",
+    "status_unstable": "Unstable connection",
+    "status_offline": "Offline",
+    "status_archived": "Archived",
+    "concurrency": "Concurrency headroom",
     "concurrency_ratio": "{{running}}:{{capacity}}",
-    "concurrency_label": "{{name}} concurrency {{running}} of {{capacity}}"
+    "concurrency_available_ratio": "{{available}}/{{capacity}}",
+    "concurrency_label": "{{name}} has {{running}} of {{capacity}} concurrency slots in use; {{available}} available"
   },
   "live_peek": {
     "current_issue_label": "Now on",

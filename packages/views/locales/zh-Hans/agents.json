@@ -894,9 +894,14 @@
     "access": "权限",
     "device": "设备",
     "device_this_machine": "本机",
-    "concurrency": "并发",
+    "status_online": "在线",
+    "status_unstable": "连接不稳定",
+    "status_offline": "离线",
+    "status_archived": "已归档",
+    "concurrency": "并发余量",
     "concurrency_ratio": "{{running}}:{{capacity}}",
-    "concurrency_label": "{{name}} 并发 {{running}} / {{capacity}}"
+    "concurrency_available_ratio": "{{available}}/{{capacity}}",
+    "concurrency_label": "{{name}} 已使用 {{running}} / {{capacity}} 个并发，剩余 {{available}} 个"
   },
   "live_peek": {
     "current_issue_label": "正在处理",
