@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@orvilo/core/api";
 import { renderWithI18n } from "../test/i18n";
@@ -66,6 +67,7 @@ vi.mock("@orvilo/ui/components/ui/sidebar", () => ({
   SidebarGroupLabel: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarHeader: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SidebarMenuBadge: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarMenuButton: ({
     children,
     isActive,
@@ -102,7 +104,9 @@ vi.mock("@orvilo/ui/components/ui/dropdown-menu", () => ({
   DropdownMenuItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuSeparator: () => null,
-  DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
+  DropdownMenuTrigger: ({ render, children }: { render: React.ReactNode; children?: React.ReactNode }) => (
+    React.isValidElement(render) ? React.cloneElement(render, undefined, children) : <>{render}</>
+  ),
 }));
 vi.mock("@orvilo/ui/components/ui/collapsible", () => ({
   Collapsible: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -375,7 +379,7 @@ describe("workspace-switcher unread dot", () => {
 
   // The aggregate switcher dot is the only `.ring-sidebar` span in the tree
   // (DraftDot is null when there's no draft, and there are no invitations).
-  const dot = (container: HTMLElement) => container.querySelector("span.bg-brand.ring-sidebar");
+  const dot = (container: HTMLElement) => container.querySelector("[data-slot=workspace-unread-dot]");
 
   it("shows a dot when another workspace has unread inbox items", () => {
     summary.current = [{ workspace_id: "ws-2", count: 3 }];
@@ -407,9 +411,9 @@ describe("workspace-switcher dropdown per-workspace dot", () => {
     ];
   });
 
-  // Row dots are brand dots WITHOUT the aggregate avatar dot's `ring-sidebar`.
+  // Row dots are primary dots in the workspace menu.
   const rowDots = (container: HTMLElement) =>
-    container.querySelectorAll("span.bg-brand:not(.ring-sidebar)");
+    container.querySelectorAll("[data-slot=workspace-row-unread-dot]");
 
   it("dots the specific other workspace that has unread", () => {
     summary.current = [{ workspace_id: "ws-2", count: 3 }];
@@ -417,8 +421,8 @@ describe("workspace-switcher dropdown per-workspace dot", () => {
     // Exactly one row dot, sitting right after the "Other WS" name; the active
     // row shows the check, not a dot.
     expect(rowDots(container)).toHaveLength(1);
-    expect(screen.getByText("Other WS").nextElementSibling?.className).toContain("bg-brand");
-    expect(screen.getByText("Active WS").nextElementSibling?.className ?? "").not.toContain("bg-brand");
+    expect(screen.getByText("Other WS").nextElementSibling?.className).toContain("bg-primary");
+    expect(screen.getByText("Active WS").nextElementSibling?.className ?? "").not.toContain("bg-primary");
   });
 
   it("does not dot a workspace whose unread count is zero", () => {

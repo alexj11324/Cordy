@@ -43,6 +43,7 @@
     "loading_named_prefix": "Loading"
   },
   "sidebar": {
+    "brand_name": "Orvilo",
     "unpin_tooltip": "Unpin",
     "workspaces_label": "Workspaces",
     "create_workspace": "Create workspace",

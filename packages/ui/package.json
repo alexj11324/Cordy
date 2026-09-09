@@ -15,6 +15,7 @@
     "./components/blocks/data-grid-base-1/components/*": "./components/blocks/data-grid-base-1/components/*.tsx",
     "./components/reui/data-grid/*": "./components/reui/data-grid/*.tsx",
     "./components/common/*": "./components/common/*.tsx",
+    "./components/blocks/*": "./components/blocks/*.tsx",
     "./markdown": "./markdown/index.ts",
     "./markdown/*": "./markdown/*.tsx",
     "./markdown/linkify": "./markdown/linkify.ts",

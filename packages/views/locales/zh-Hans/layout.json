@@ -43,6 +43,7 @@
     "loading_named_prefix": "正在加载"
   },
   "sidebar": {
+    "brand_name": "Orvilo",
     "unpin_tooltip": "取消固定",
     "workspaces_label": "工作区",
     "create_workspace": "创建工作区",
