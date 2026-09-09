@@ -241,7 +241,7 @@ export function NavWorkspace({
       <SidebarMenuItem>
         <DropdownMenu onOpenChange={onOpenChange}>
           <DropdownMenuTrigger
-            className="-ml-1 bg-transparent pr-0! group-data-[collapsible=icon]:ml-0! group-data-[collapsible=icon]:justify-center"
+            className="h-auto bg-transparent p-2 group-data-[collapsible=icon]:justify-center"
             render={<SidebarMenuButton aria-label={copy.menuAriaLabel} />}
           >
             <div className="relative flex min-w-0 flex-1 items-center gap-2">

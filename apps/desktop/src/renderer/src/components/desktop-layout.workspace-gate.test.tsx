@@ -147,6 +147,12 @@ beforeEach(() => {
 });
 
 describe("DesktopShell workspace gating", () => {
+  it("keeps the sidebar toggle available while workspace chrome is resolving", () => {
+    state.currentSlug = null;
+    const { getByRole, queryByTestId } = renderShell();
+    expect(queryByTestId("app-sidebar")).toBeNull();
+    expect(getByRole("button", { name: "Toggle sidebar" })).toBeInTheDocument();
+  });
   it("mounts workspace-scoped chrome while the slug resolves", () => {
     const { queryByTestId } = renderShell();
 

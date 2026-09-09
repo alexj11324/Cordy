@@ -345,7 +345,7 @@ function PinRow({
         pathname={pathname}
         onUnpin={onUnpin}
         label={view.name}
-        iconNode={<Layers className="!size-3.5 shrink-0 opacity-60" />}
+        iconNode={<Layers className="shrink-0" />}
         // Active only when this exact view is open on its surface — the
         // path alone also matches the plain tab.
         isActiveOverride={
@@ -362,11 +362,10 @@ function PinRow({
     const issue = issueQuery.data;
     const label = issue.title;
     const iconNode = (
-      /* Override parent [&_svg]:size-4 — pinned items need smaller icons to match sm size */
       <StatusIcon
         status={issue.status}
         category={issueStatusCategory(issue) ?? undefined}
-        className="!size-3.5 shrink-0"
+        className="shrink-0"
       />
     );
     return (
@@ -721,7 +720,7 @@ export function AppSidebar({
       {topSlot}
 
       <SidebarContent ref={sidebarScrollRef} style={sidebarFadeStyle}>
-        <div className="px-1 py-2 in-data-[state=collapsed]:flex in-data-[state=collapsed]:justify-center">
+        <div className="p-2 in-data-[state=collapsed]:flex in-data-[state=collapsed]:justify-center in-data-[state=collapsed]:px-1">
           {searchSlot}
         </div>
 
@@ -817,7 +816,7 @@ export function AppSidebar({
         </div>
       </SidebarContent>
 
-      <SidebarFooter className="px-1! in-data-[state=collapsed]:px-1!">
+      <SidebarFooter className="pb-2 in-data-[state=collapsed]:px-1">
         <NavWorkspace
           showWorkspaceIcons={false}
           user={{

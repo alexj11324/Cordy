@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { StrictMode, useEffect } from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { act, render, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -301,6 +301,13 @@ describe("WorkspaceRouteLayout across a tab swap", () => {
       </QueryClientProvider>
     );
   }
+
+  it("retains workspace ownership when React replays mounted effects", () => {
+    render(<StrictMode><TabHost slug="acme" /></StrictMode>);
+    expect(state.currentSlug).toBe("acme");
+    expect(state.childQuerySlugs.length).toBeGreaterThan(0);
+    expect(state.childQuerySlugs.every((slug) => slug === "acme")).toBe(true);
+  });
 
   it("keeps the workspace when the incoming tab is in the SAME workspace", () => {
     const { rerender } = render(<TabHost key="tab-1" slug="acme" />);

@@ -122,7 +122,7 @@ function useNativeNavigationGestures() {
 // Collapsed, the pin overflows the icon rail into this header. Keep a
 // `pointer-events-none` hole the same size as the pin (`w-7` / `size-7`)
 // so the inset cannot eat the overflow clicks.
-function MainTopBar() {
+function MainTopBar({ sidebarAvailable }: { sidebarAvailable: boolean }) {
   const { open, isCompact } = useSidebar();
   const sidebarOutOfFlow = !open || isCompact;
 
@@ -133,7 +133,12 @@ function MainTopBar() {
         TOP_BAR_HEIGHT_CLASS,
       )}
     >
-      {sidebarOutOfFlow ? (
+      {!sidebarAvailable ? (
+        <div className="flex h-full shrink-0 items-center" style={dragStyle}>
+          <div className="h-full shrink-0" style={{ width: pinOffsetPx() }} />
+          <SidebarPinTrigger />
+        </div>
+      ) : sidebarOutOfFlow ? (
         <div aria-hidden className="pointer-events-none w-7 shrink-0" />
       ) : (
         <div aria-hidden className="w-3 shrink-0" style={dragStyle} />
@@ -287,19 +292,6 @@ export function DesktopShell() {
             }
             className={cn(
               "flex-1 [--sidebar-width:260px] [--sidebar-border:transparent]",
-              "[&_[data-slot=sidebar-menu-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-button][data-active]]:border",
-              "[&_[data-slot=sidebar-menu-button][data-active]]:shadow-xs! [&_[data-slot=sidebar-menu-button][data-active]]:shadow-black/5!",
-              "[&_[data-slot=sidebar-menu-button][data-active]]:bg-background! [&_[data-slot=sidebar-menu-button][data-active]]:hover:bg-background! **:data-[slot=sidebar-menu-button]:hover:bg-transparent!",
-              "[&_[data-slot=sidebar-menu-button][data-active]]:text-foreground [&_[data-slot=sidebar-menu-button][data-active]>svg]:text-primary [&_[data-slot=sidebar-menu-button][data-active]>svg]:opacity-100",
-              "**:data-[slot=sidebar-menu-button]:text-accent-foreground/80 **:data-[slot=sidebar-menu-button]:hover:text-foreground",
-              "[&_[data-collapsible=icon]_[data-slot=sidebar-menu-button]]:mx-auto",
-              "[&_[data-slot=sidebar-menu-button]:hover>svg]:opacity-100 [&_[data-slot=sidebar-menu-button]>svg]:opacity-60",
-              "[&_[data-slot=sidebar-menu-sub-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-sub-button][data-active]]:border",
-              "[&_[data-slot=sidebar-menu-sub-button][data-active]]:shadow-xs! [&_[data-slot=sidebar-menu-sub-button][data-active]]:shadow-black/5!",
-              "[&_[data-slot=sidebar-menu-sub-button][data-active]]:bg-background! [&_[data-slot=sidebar-menu-sub-button][data-active]]:hover:bg-background! **:data-[slot=sidebar-menu-sub-button]:hover:bg-transparent!",
-              "[&_[data-slot=sidebar-menu-sub-button][data-active]]:text-foreground [&_[data-slot=sidebar-menu-sub-button][data-active]>svg]:text-primary [&_[data-slot=sidebar-menu-sub-button][data-active]>svg]:opacity-100",
-              "**:data-[slot=sidebar-menu-sub-button]:text-accent-foreground/80 **:data-[slot=sidebar-menu-sub-button]:hover:text-foreground",
-              "[&_[data-slot=sidebar-menu-sub-button]:hover>svg]:opacity-100 [&_[data-slot=sidebar-menu-sub-button]>svg]:opacity-60",
               "bg-app-shell",
             )}
           >
@@ -313,7 +305,7 @@ export function DesktopShell() {
               )}
               <SidebarInset className="min-w-0 flex-row! rounded-none! ring-0! shadow-none overflow-hidden">
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-slot="shell-main-column">
-                <MainTopBar />
+                <MainTopBar sidebarAvailable={!!slug} />
                 <MainCanvas>
                   {/* Same indicator, same anchor as web: DashboardLayout puts it
                       at the top of SidebarInset, and MainCanvas is desktop's
