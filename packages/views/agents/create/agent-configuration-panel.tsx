@@ -261,7 +261,7 @@ export function AgentNameField({
       label={t(($) => $.create_dialog.name_label)}
       htmlFor="agent-create-name"
     >
-      <div className="space-y-1.5">
+      <div className={cn("space-y-1.5", !compact && "ml-auto w-full max-w-60")}>
         <Input
           ref={inputRef}
           id="agent-create-name"
