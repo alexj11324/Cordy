@@ -6,12 +6,10 @@ import {
   SlidersHorizontal,
   Key,
   Settings,
-  Users,
   FolderGit2,
   FlaskConical,
   Bell,
   Plug,
-  MessageCircle,
   Tags,
   CircleDot,
   Keyboard,
@@ -45,11 +43,9 @@ import {
 import { useNavigation } from "../../navigation";
 import { AccountTab } from "./account-tab";
 import { PreferencesTab } from "./preferences-tab";
-import { ChatTab } from "./chat-tab";
 import { IssueTab } from "./issue-tab";
 import { TokensTab } from "./tokens-tab";
 import { WorkspaceTab } from "./workspace-tab";
-import { MembersTab } from "./members-tab";
 import { RepositoriesTab } from "./repositories-tab";
 import { GitHubTab } from "./github-tab";
 import { IntegrationsTab } from "./integrations-tab";
@@ -68,13 +64,12 @@ import { SettingsDialogBody } from "./settings-layout";
 import { useT } from "../../i18n";
 import type { TFunction } from "i18next";
 
-const ACCOUNT_TAB_KEYS = ["profile", "preferences", "shortcuts", "issue", "chat", "notifications", "tokens"] as const;
+const ACCOUNT_TAB_KEYS = ["profile", "preferences", "shortcuts", "issue", "notifications", "tokens"] as const;
 const ACCOUNT_TAB_ICONS = {
   profile: User,
   preferences: SlidersHorizontal,
   shortcuts: Keyboard,
   issue: ListTodo,
-  chat: MessageCircle,
   notifications: Bell,
   tokens: Key,
 } as const;
@@ -85,7 +80,6 @@ const WORKSPACE_TAB_KEYS = [
   "github",
   "integrations",
   "labs",
-  "members",
   "billing",
   "labels",
   "issue_statuses",
@@ -101,7 +95,6 @@ const WORKSPACE_TAB_VALUES = {
   github: "github",
   integrations: "integrations",
   labs: "labs",
-  members: "members",
   billing: "billing",
   labels: "labels",
   issue_statuses: "issue-statuses",
@@ -117,7 +110,6 @@ const WORKSPACE_TAB_ICONS = {
   github: GitHubMark,
   integrations: Plug,
   labs: FlaskConical,
-  members: Users,
   billing: CreditCard,
   labels: Tags,
   issue_statuses: CircleDot,
@@ -131,11 +123,12 @@ const WORKSPACE_TAB_ICONS = {
 const DEFAULT_TAB = "profile";
 const TAB_QUERY_KEY = "tab";
 
-const LEGACY_WORKSPACE_TAB_REDIRECTS: Record<string, string> = {
+const LEGACY_TAB_REDIRECTS: Record<string, string> = {
   lark: "integrations",
+  members: "workspace",
+  chat: "preferences",
 };
 
-const DIALOG_INSET_SEPARATOR_CLASS = "border-border w-full";
 const SETTINGS_NAV_TRIGGER_CLASS =
   "w-full justify-start gap-3 px-3 py-1.5 shadow-none";
 
@@ -194,7 +187,7 @@ export function SettingsPage({
   const candidateTab = tabFromUrl
     ? tabFromUrl === "billing" && !billingEnabled
       ? "workspace"
-      : LEGACY_WORKSPACE_TAB_REDIRECTS[tabFromUrl] ?? tabFromUrl
+      : LEGACY_TAB_REDIRECTS[tabFromUrl] ?? tabFromUrl
     : null;
   const activeTab =
     candidateTab && validTabs.has(candidateTab) ? candidateTab : DEFAULT_TAB;
@@ -262,10 +255,7 @@ export function SettingsPage({
           <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <DialogHeader className="shrink-0 gap-0 px-6 py-0 text-left">
               <div
-                className={cn(
-                  DIALOG_INSET_SEPARATOR_CLASS,
-                  "flex flex-col gap-1.5 border-b py-4 pr-12",
-                )}
+                className="flex w-full flex-col gap-1.5 py-4 pr-12"
               >
                 <DialogTitle className="text-lg leading-6">
                   {activeTitle}
@@ -295,10 +285,7 @@ export function SettingsPage({
 
             <DialogFooter className="m-0 border-0 bg-transparent! px-6 py-0">
               <div
-                className={cn(
-                  DIALOG_INSET_SEPARATOR_CLASS,
-                  "flex shrink-0 items-center justify-end gap-2 border-t py-4",
-                )}
+                className="flex w-full shrink-0 items-center justify-end gap-2 py-4"
               >
                 <Button type="button" variant="outline" onClick={dismiss}>
                   {t(($) => $.page.dialog_cancel)}
@@ -400,7 +387,6 @@ function SettingsTabPanels({
       <DialogTabPanel value="preferences"><PreferencesTab /></DialogTabPanel>
       <DialogTabPanel value="shortcuts"><KeyboardShortcutsTab /></DialogTabPanel>
       <DialogTabPanel value="issue"><IssueTab /></DialogTabPanel>
-      <DialogTabPanel value="chat"><ChatTab /></DialogTabPanel>
       <DialogTabPanel value="notifications"><NotificationsTab /></DialogTabPanel>
       <DialogTabPanel value="tokens"><TokensTab /></DialogTabPanel>
       <DialogTabPanel value="workspace"><WorkspaceTab /></DialogTabPanel>
@@ -408,7 +394,6 @@ function SettingsTabPanels({
       <DialogTabPanel value="github"><GitHubTab /></DialogTabPanel>
       <DialogTabPanel value="integrations"><IntegrationsTab /></DialogTabPanel>
       <DialogTabPanel value="labs"><LabsTab /></DialogTabPanel>
-      <DialogTabPanel value="members"><MembersTab /></DialogTabPanel>
       {billingEnabled ? (
         <DialogTabPanel value="billing"><BillingTab /></DialogTabPanel>
       ) : null}
@@ -444,7 +429,9 @@ function DialogTabPanel({
           "**:data-[slot=scroll-area-scrollbar]:opacity-0 **:data-[slot=scroll-area-scrollbar]:transition-opacity **:data-[slot=scroll-area-scrollbar]:duration-150 hover:**:data-[slot=scroll-area-scrollbar]:opacity-100",
         )}
       >
-        {children}
+        <div className="min-w-0 px-6" data-slot="settings-tab-body">
+          {children}
+        </div>
       </ScrollArea>
     </TabsContent>
   );
@@ -466,8 +453,6 @@ function tabTitle(
       return t(($) => $.page.tabs.shortcuts);
     case "issue":
       return t(($) => $.page.tabs.issue);
-    case "chat":
-      return t(($) => $.page.tabs.chat);
     case "notifications":
       return t(($) => $.page.tabs.notifications);
     case "tokens":
@@ -482,8 +467,6 @@ function tabTitle(
       return t(($) => $.page.tabs.integrations);
     case "labs":
       return t(($) => $.page.tabs.labs);
-    case "members":
-      return t(($) => $.page.tabs.members);
     case "billing":
       return t(($) => $.page.tabs.billing);
     case "labels":

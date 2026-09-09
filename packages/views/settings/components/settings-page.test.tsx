@@ -15,7 +15,6 @@ const stub = vi.hoisted(
 );
 vi.mock("./account-tab", stub("AccountTab"));
 vi.mock("./preferences-tab", stub("PreferencesTab"));
-vi.mock("./chat-tab", stub("ChatTab"));
 vi.mock("./issue-tab", stub("IssueTab"));
 vi.mock("./tokens-tab", stub("TokensTab"));
 vi.mock("./workspace-tab", stub("WorkspaceTab"));
@@ -100,7 +99,7 @@ describe("SettingsPage flux dialog", () => {
     expect(profile.closest("aside")).toHaveClass("lg:overflow-y-auto");
   });
 
-  it("keeps every settings section that existed before the redesign", () => {
+  it("keeps settings sections without duplicate member and floating-chat controls", () => {
     layout.compact = false;
     configStore.getState().setFeatureFlags({
       [PLUGINS_V1_FLAG]: true,
@@ -114,7 +113,6 @@ describe("SettingsPage flux dialog", () => {
       "Preferences",
       "Shortcuts",
       "Issue",
-      "Chat",
       "Notifications",
       "API Tokens",
       "General",
@@ -122,7 +120,6 @@ describe("SettingsPage flux dialog", () => {
       "GitHub",
       "Integrations",
       "Labs",
-      "Members",
       "Billing",
       "Labels",
       "Issue Statuses",
@@ -134,6 +131,21 @@ describe("SettingsPage flux dialog", () => {
     ]) {
       expect(screen.getByRole("tab", { name })).toBeInTheDocument();
     }
+  });
+
+  it("opens Workspace General for the removed members URL", () => {
+    navigationState.search = "tab=members";
+    renderWithI18n(<SettingsPage />);
+    expect(screen.queryByRole("tab", { name: "Members" })).not.toBeInTheDocument();
+    expect(screen.getByText("WorkspaceTab")).toBeInTheDocument();
+  });
+
+  it("opens Preferences for the removed floating-chat settings URL", () => {
+    navigationState.search = "tab=chat";
+    renderWithI18n(<SettingsPage />);
+    expect(screen.queryByRole("tab", { name: "Chat" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Preferences" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("PreferencesTab")).toBeInTheDocument();
   });
 
   it("marks standalone vs embedded on the dialog surface", () => {
