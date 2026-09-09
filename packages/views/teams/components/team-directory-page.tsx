@@ -495,6 +495,7 @@ export function TeamDirectoryPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [density, setDensity] = useState<TableDensity>("comfortable");
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteRecoveryPending, setInviteRecoveryPending] = useState(false);
   const [memberVisibility, setMemberVisibility] =
     useState<ColumnVisibilityState>({});
   const [invitationVisibility, setInvitationVisibility] =
@@ -623,6 +624,7 @@ export function TeamDirectoryPage() {
 
   const handleInvite = useCallback(
     async (email: string, role: MemberRole) => {
+      setInviteRecoveryPending(true);
       try {
         await sendInvitation(email, role);
       } catch (error) {
@@ -706,6 +708,8 @@ export function TeamDirectoryPage() {
                 : t(($) => $.directory.invite_failed),
             );
         }
+      } finally {
+        setInviteRecoveryPending(false);
       }
     },
     [
@@ -1289,7 +1293,7 @@ export function TeamDirectoryPage() {
         open={inviteOpen}
         onOpenChange={setInviteOpen}
         canManage={!!canManage}
-        isPending={inviteMutation.isPending}
+        isPending={inviteMutation.isPending || inviteRecoveryPending}
         onSubmit={(email, role) => void handleInvite(email, role)}
       />
 
