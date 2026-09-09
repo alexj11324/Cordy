@@ -53,7 +53,7 @@ export function AgentCreateCard({
     >
       <button
         aria-label={ariaLabel}
-        className="flex h-full w-full min-w-0 flex-col items-center justify-center gap-2 rounded-[inherit] px-4 py-5 text-sm text-muted-foreground transition-colors hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex h-full w-full min-w-0 flex-col items-center justify-center gap-2 rounded-[inherit] px-4 py-5 text-body text-muted-foreground transition-colors hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         data-testid="new-agent-card"
         onClick={onClick}
         type="button"
@@ -69,16 +69,18 @@ export function AgentCreateCard({
 
 export function AgentCard({
   row,
+  localDaemonId,
   onOpenSummary,
 }: {
   row: AgentListRow;
+  localDaemonId?: string | null;
   onOpenSummary: () => void;
 }) {
   const { t } = useT("agents");
   return (
     <AtlasDealCard
       onOpen={onOpenSummary}
-      opportunity={toAtlasDealCard(row, t)}
+      opportunity={toAtlasDealCard(row, t, localDaemonId)}
     />
   );
 }
@@ -86,6 +88,7 @@ export function AgentCard({
 function toAtlasDealCard(
   row: AgentListRow,
   t: ReturnType<typeof useT<"agents">>["t"],
+  localDaemonId?: string | null,
 ): AtlasDealCardOpportunity {
   const { agent, presence, runtime, owner } = row;
   const needsRuntime = !agent.archived_at && !isAgentRuntimeBound(agent);
@@ -128,8 +131,12 @@ function toAtlasDealCard(
         ? t(($) => $.access.scope_labels.specific_people)
         : t(($) => $.access.scope_labels.owner_only);
 
+  const isCurrentLocalDevice =
+    runtime?.runtime_mode === "local" &&
+    !!localDaemonId &&
+    runtime.daemon_id === localDaemonId;
   const deviceLabel = runtime
-    ? runtime.runtime_mode === "local"
+    ? isCurrentLocalDevice
       ? t(($) => $.gallery_card.device_this_machine)
       : deviceDisplayName(runtime)
     : t(($) => $.row.needs_device);

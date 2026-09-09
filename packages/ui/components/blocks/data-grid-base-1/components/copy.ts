@@ -26,6 +26,7 @@ export interface DataGridBase1Copy {
   edit: string
   copyId: string
   delete: string
+  restore: string
   deleteTitle: string
   deleteDescriptionBefore: string
   deleteDescriptionAfter: string
@@ -34,6 +35,7 @@ export interface DataGridBase1Copy {
   statusBlocked: string
   statusInactive: string
   statusPending: string
+  statusUnstable: string
   customerIdCopied: string
   reversalOnFile: string
   balanceInsight: string
@@ -70,6 +72,7 @@ export const DATA_GRID_BASE_1_COPY: DataGridBase1Copy = {
   edit: "Edit",
   copyId: "Copy ID",
   delete: "Delete",
+  restore: "Restore",
   deleteTitle: "Delete customer?",
   deleteDescriptionBefore: "This will remove",
   deleteDescriptionAfter:
@@ -79,6 +82,7 @@ export const DATA_GRID_BASE_1_COPY: DataGridBase1Copy = {
   statusBlocked: "Blocked",
   statusInactive: "Inactive",
   statusPending: "Pending",
+  statusUnstable: "Unstable",
   customerIdCopied: "Customer ID copied",
   reversalOnFile: "Reversal on file",
   balanceInsight: "Balance insight",
@@ -90,4 +94,5 @@ export interface DataGridBase1Actions {
   onView?: (id: string) => void
   onEdit?: (id: string) => void
   onDelete?: (id: string) => void
+  onRestore?: (id: string) => void
 }

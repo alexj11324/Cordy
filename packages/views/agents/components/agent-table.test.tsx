@@ -8,11 +8,21 @@ import { renderWithI18n } from "../../test/i18n";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import { AgentTable } from "./agent-table";
 import type { AgentListRow } from "./agents-page";
+import {
+  getColumns,
+  getRowActionState,
+} from "@orvilo/ui/components/blocks/data-grid-base-1/components/columns";
+import type { IEmployee } from "@orvilo/ui/components/blocks/data-grid-base-1/components/data-grid-view";
 
 vi.mock("../../runtimes/components/provider-logo", () => ({
   ProviderLogo: ({ provider }: { provider: string }) => (
     <span data-testid={`provider-logo-${provider}`}>{provider}</span>
   ),
+}));
+vi.mock("@orvilo/core/runtimes", () => ({
+  deviceDisplayName: (runtime: AgentRuntime) =>
+    runtime.name.match(/\(([^)]+)\)/)?.[1] ?? runtime.name,
+  deviceKind: () => "laptop",
 }));
 vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
@@ -24,7 +34,11 @@ vi.mock("@orvilo/core/paths", () => ({
   }),
 }));
 vi.mock("@orvilo/core/api", () => ({
-  api: { archiveAgent: vi.fn(), getBaseUrl: () => "" },
+  api: {
+    archiveAgent: vi.fn(),
+    restoreAgent: vi.fn(),
+    getBaseUrl: () => "",
+  },
 }));
 vi.mock("@orvilo/core/workspace/queries", () => ({
   workspaceKeys: { agents: (wsId: string) => ["agents", wsId] },
@@ -127,30 +141,40 @@ function makeAdapter(overrides: Partial<NavigationAdapter> = {}): NavigationAdap
 }
 
 function renderTable({
+  rows = ROWS,
   adapter = makeAdapter(),
   selectedIds = new Set<string>(),
   onSelectedIdsChange = vi.fn(),
+  locale = "en",
 }: {
+  rows?: AgentListRow[];
   adapter?: NavigationAdapter;
   selectedIds?: Set<string>;
   onSelectedIdsChange?: (ids: ReadonlySet<string>) => void;
+  locale?: "en" | "zh-Hans";
 } = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return renderWithI18n(
+  const buildUi = (nextRows: AgentListRow[]) => (
     <QueryClientProvider client={client}>
       <NavigationProvider value={adapter}>
         <AgentTable
-          rows={ROWS}
+          rows={nextRows}
           selectedIds={selectedIds}
           onSelectedIdsChange={onSelectedIdsChange}
           noMatchText="No agents"
-          locale="en"
+          locale={locale}
         />
       </NavigationProvider>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const view = renderWithI18n(buildUi(rows), { locale });
+  return {
+    ...view,
+    rerenderRows: (nextRows: AgentListRow[]) =>
+      view.rerender(buildUi(nextRows)),
+  };
 }
 
 describe("AgentTable uses data-grid-base-1", () => {
@@ -165,9 +189,7 @@ describe("AgentTable uses data-grid-base-1", () => {
     expect(screen.getByText("Beta Agent")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "New agent" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Filter by status" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Agent actions" }),
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Agent actions" })).not.toBeInTheDocument();
     expect(screen.getByText("Device")).toBeInTheDocument();
     expect(screen.getByText("Owner")).toBeInTheDocument();
     expect(screen.getByText("Runs")).toBeInTheDocument();
@@ -216,5 +238,95 @@ describe("AgentTable uses data-grid-base-1", () => {
 
     expect(onSelectedIdsChange).toHaveBeenCalled();
     expect(push).not.toHaveBeenCalled();
+  });
+
+  it("keeps pinyin matching in the ReUI table search", () => {
+    renderTable({
+      rows: [row("zh-1", "李云龙"), row("en-1", "Other Agent")],
+    });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Search agents…" }), {
+      target: { value: "lyl" },
+    });
+
+    expect(screen.getByText("李云龙")).toBeInTheDocument();
+    expect(screen.queryByText("Other Agent")).not.toBeInTheDocument();
+  });
+
+  it("localizes column menus and selection labels", () => {
+    renderTable({ locale: "zh-Hans" });
+
+    fireEvent.click(screen.getByRole("button", { name: "智能体" }));
+
+    expect(screen.getByText("升序排列")).toBeInTheDocument();
+    expect(screen.getByText("降序排列")).toBeInTheDocument();
+    expect(screen.getByText("固定到左侧")).toBeInTheDocument();
+    expect(screen.getByText("列")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "全选" })).toBeInTheDocument();
+  });
+
+  it("derives lifecycle actions from row ownership and state", () => {
+    const actions = { onDelete: vi.fn(), onRestore: vi.fn() };
+
+    expect(
+      getRowActionState(
+        { canManage: false, isArchived: false, isSystemAgent: false },
+        actions,
+      ),
+    ).toEqual({ canEdit: false, canArchive: false, canRestore: false });
+    expect(
+      getRowActionState(
+        { canManage: true, isArchived: true, isSystemAgent: false },
+        actions,
+      ),
+    ).toEqual({ canEdit: true, canArchive: false, canRestore: true });
+    expect(
+      getRowActionState(
+        { canManage: true, isArchived: false, isSystemAgent: true },
+        actions,
+      ),
+    ).toEqual({ canEdit: true, canArchive: false, canRestore: false });
+    expect(
+      getRowActionState(
+        { canManage: true, isArchived: false, isSystemAgent: false },
+        actions,
+      ),
+    ).toEqual({ canEdit: true, canArchive: true, canRestore: false });
+  });
+
+  it("sorts the Created column by the source timestamp", () => {
+    const joined = getColumns().find((column) => column.id === "joined");
+    const newer = {
+      joined: "9/1/2026",
+      joinedTimestamp: Date.parse("2026-09-01"),
+    } as IEmployee;
+    const older = {
+      joined: "10/1/2025",
+      joinedTimestamp: Date.parse("2025-10-01"),
+    } as IEmployee;
+
+    if (!joined || !("accessorFn" in joined) || typeof joined.accessorFn !== "function") {
+      throw new Error("Created column must sort through its source timestamp accessor");
+    }
+
+    expect(joined.accessorFn(newer, 0)).toBeGreaterThan(
+      joined.accessorFn(older, 1) as number,
+    );
+  });
+
+  it("resets pagination when the supplied rows shrink", async () => {
+    const rows = Array.from({ length: 6 }, (_, index) =>
+      row(`agent-${index}`, `Agent ${index}`),
+    );
+    const view = renderTable({ rows });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Go to next page" }),
+    );
+    expect(screen.getByText("Agent 5")).toBeInTheDocument();
+
+    view.rerenderRows([rows[0]!]);
+
+    expect(await screen.findByText("Agent 0")).toBeInTheDocument();
   });
 });

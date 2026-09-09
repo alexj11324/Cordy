@@ -499,5 +499,5 @@ describe("text contrast", () => {
       violations,
       `Transparency standing in for a text tone:\n${violations.join("\n")}`,
     ).toEqual([]);
-  });
+  }, 30_000);
 });

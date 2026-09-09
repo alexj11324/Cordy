@@ -15,6 +15,7 @@ import { useWorkspacePaths } from "@orvilo/core/paths";
 import { deviceDisplayName, deviceKind } from "@orvilo/core/runtimes";
 import { workspaceKeys } from "@orvilo/core/workspace/queries";
 import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
+import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import {
   DataGridView,
   DATA_GRID_BASE_1_COPY,
@@ -90,6 +91,7 @@ export function AgentTable({
       edit: t(($) => $.grid.edit),
       copyId: t(($) => $.grid.copy_id),
       delete: t(($) => $.row_actions.archive),
+      restore: t(($) => $.row_actions.restore),
       deleteTitle: t(($) => $.grid.delete_title),
       deleteDescriptionBefore: t(($) => $.grid.delete_before),
       deleteDescriptionAfter: t(($) => $.grid.delete_after),
@@ -98,6 +100,7 @@ export function AgentTable({
       statusBlocked: t(($) => $.availability.archived),
       statusInactive: t(($) => $.availability.offline),
       statusPending: t(($) => $.row.needs_device),
+      statusUnstable: t(($) => $.availability.unstable),
       customerIdCopied: t(($) => $.grid.id_copied),
       reversalOnFile: DATA_GRID_BASE_1_COPY.reversalOnFile,
       balanceInsight: DATA_GRID_BASE_1_COPY.balanceInsight,
@@ -132,20 +135,70 @@ export function AgentTable({
                 );
               }
             },
+            onRestore: async (id) => {
+              try {
+                await api.restoreAgent(id);
+                qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
+                toast.success(t(($) => $.row_actions.agent_restored_toast));
+              } catch (error) {
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : t(($) => $.row_actions.restore_failed_toast),
+                );
+              }
+            },
           }}
           copy={copy}
           data={data}
           hiddenColumns={["joined", "status"]}
           onSelectedIdsChange={onSelectedIdsChange}
           selectedIds={selectedIds}
+          searchPredicate={(employee, query) =>
+            matchesPinyin(employee.name, query) ||
+            matchesPinyin(employee.email, query)
+          }
           i18n={{
             labels: {
+              sortAscending: t(($) => $.grid.sort_ascending),
+              sortDescending: t(($) => $.grid.sort_descending),
+              pinColumnStart: t(($) => $.grid.pin_column_start),
+              pinColumnEnd: t(($) => $.grid.pin_column_end),
+              moveColumnStart: t(($) => $.grid.move_column_start),
+              moveColumnEnd: t(($) => $.grid.move_column_end),
+              columnsMenu: t(($) => $.grid.columns_menu),
+              unpinColumn: (title) =>
+                t(($) => $.grid.unpin_column, { title }),
+              toggleColumns: t(($) => $.grid.toggle_columns),
+              rowCreate: t(($) => $.page.new_agent),
+              pinRow: t(($) => $.grid.pin_row),
+              unpinRow: t(($) => $.grid.unpin_row),
+              selectRow: t(($) => $.grid.select_row),
+              selectAll: t(($) => $.grid.select_all),
+              expandRow: t(($) => $.grid.expand_row),
+              collapseRow: t(($) => $.grid.collapse_row),
+              dragToReorder: t(($) => $.grid.drag_to_reorder),
+              dragToReorderRow: t(($) => $.grid.drag_to_reorder_row),
+              reorderingUnavailable: t(
+                ($) => $.grid.reordering_unavailable,
+              ),
+              loading: t(($) => $.grid.loading),
+              empty: noMatchText,
+              allRowsLoaded: t(($) => $.grid.all_rows_loaded),
               rowsPerPage: t(($) => $.grid.rows_per_page),
               paginationInfo: ({ from, to, count }) =>
                 t(($) => $.grid.pagination_info)
                   .replace("{from}", String(from))
                   .replace("{to}", String(to))
                   .replace("{count}", String(count)),
+              previousPage: t(($) => $.grid.previous_page),
+              nextPage: t(($) => $.grid.next_page),
+              goToPage: (page) => t(($) => $.grid.go_to_page, { page }),
+              paginationEllipsis: t(($) => $.grid.pagination_ellipsis),
+              filterSelectedCount: (count) =>
+                t(($) => $.grid.filter_selected_count, { count }),
+              filterNoResults: t(($) => $.grid.filter_no_results),
+              filterClear: t(($) => $.grid.filter_clear),
             },
           }}
         />
@@ -251,6 +304,10 @@ function toEmployee(
     ),
     balance: runCount,
     balanceLabel: String(runCount),
+    joinedTimestamp: Date.parse(agent.created_at),
+    canManage: row.canManage,
+    isArchived: Boolean(agent.archived_at),
+    isSystemAgent: Boolean(agent.system_key),
     customerId: agent.id,
     lastActiveLabel: tenure,
   };
@@ -260,7 +317,7 @@ function toStatus(row: AgentListRow): Status {
   if (row.agent.archived_at) return "Blocked";
   if (!isAgentRuntimeBound(row.agent)) return "Pending";
   if (row.presence?.availability === "online") return "Active";
-  if (row.presence?.availability === "unstable") return "Pending";
+  if (row.presence?.availability === "unstable") return "Unstable";
   return "Inactive";
 }
 

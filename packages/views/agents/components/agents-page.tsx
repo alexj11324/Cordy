@@ -151,9 +151,7 @@ import { AgentBatchToolbar } from "./agent-batch-toolbar";
 export { isAccessChangeReady };
 
 export interface AgentsPageProps {
-  /** Desktop-only daemon wiring, currently unused by the list (kept for
-   *  platform-layer compatibility; the runtime filter lists runtimes by
-   *  name rather than grouped machines). */
+  /** Desktop daemon identity used to label the current local device on cards. */
   localDaemonId?: string | null;
   localMachineName?: string | null;
   hasLocalMachine?: boolean;
@@ -253,7 +251,7 @@ function EmptyState({ onCreate }: { onCreate: () => void }) {
 // Page
 // ---------------------------------------------------------------------------
 
-export function AgentsPage(_props: AgentsPageProps = {}) {
+export function AgentsPage({ localDaemonId }: AgentsPageProps = {}) {
   const { t } = useT("agents");
   const locale = useLocale();
   const wsId = useWorkspaceId();
@@ -497,15 +495,15 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
   // resolves. Gate the first real paint on exactly the auxiliary queries the
   // current sort / filter depends on — nothing for name/created, run-counts
   // for runs, activity + run-counts (its tiebreaker) for the default
-  // lastActive, plus presence whenever an availability filter is active. The
-  // queries still run in parallel, so this defers the first paint by at most
-  // one extra round-trip (shown as skeleton) and never serialises them. An
-  // empty workspace (showEmpty) skips the gate so the empty state is never
-  // blocked on the auxiliary queries.
+  // lastActive, plus presence for every non-empty view because cards and the
+  // table both render presence-dependent state. The queries still run in
+  // parallel, so this defers the first paint by at most one extra round-trip
+  // (shown as skeleton) and never serialises them. An empty workspace
+  // (showEmpty) skips the gate so the empty state is never blocked on the
+  // auxiliary queries.
   const needsRunCounts = sortField === "lastActive" || sortField === "runs";
   const needsActivity = sortField === "lastActive";
-  const needsPresence =
-    viewMode !== "table" && filters.availability.length > 0;
+  const needsPresence = true;
   const listReady =
     (!needsActivity || !activityLoading) &&
     (!needsRunCounts || !runCountsPending) &&
@@ -599,6 +597,7 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
                     <AgentCard
                       key={row.agent.id}
                       row={row}
+                      localDaemonId={localDaemonId}
                       onOpenSummary={() => setProfileAgentId(row.agent.id)}
                     />
                   ))}

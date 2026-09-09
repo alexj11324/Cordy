@@ -13,6 +13,13 @@ vi.mock("../../runtimes/components/provider-logo", () => ({
   ),
 }));
 
+vi.mock("@orvilo/core/runtimes", () => ({
+  deviceDisplayName: (runtime: AgentRuntime) =>
+    runtime.name.match(/\(([^)]+)\)/)?.[1] ?? runtime.name,
+  deviceKind: () => "desktop",
+  runtimeDisplayLabel: (runtime: AgentRuntime) => runtime.name,
+}));
+
 function agent(overrides: Partial<Agent> = {}): Agent {
   return {
     id: "agent-1",
@@ -36,7 +43,7 @@ function runtime(overrides: Partial<AgentRuntime> = {}): AgentRuntime {
   return {
     id: "rt-1",
     workspace_id: "ws-1",
-    daemon_id: null,
+    daemon_id: "daemon-1",
     name: "Alex MacBook Pro",
     runtime_mode: "local",
     provider: "codex",
@@ -83,11 +90,19 @@ function row(overrides: Partial<AgentListRow> = {}): AgentListRow {
   };
 }
 
-function renderCard(listRow: AgentListRow = row(), onOpenSummary = vi.fn()) {
+function renderCard(
+  listRow: AgentListRow = row(),
+  onOpenSummary = vi.fn(),
+  localDaemonId: string | null | undefined = "daemon-1",
+) {
   return {
     onOpenSummary,
     ...renderWithI18n(
-      <AgentCard onOpenSummary={onOpenSummary} row={listRow} />,
+      <AgentCard
+        localDaemonId={localDaemonId}
+        onOpenSummary={onOpenSummary}
+        row={listRow}
+      />,
     ),
   };
 }
@@ -206,6 +221,22 @@ describe("AgentCard", () => {
     expect(screen.getAllByText("Cloud Sandbox").length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByText("This machine")).not.toBeInTheDocument();
     expect(screen.getByTestId("provider-cursor")).toBeInTheDocument();
+  });
+
+  it("distinguishes another local daemon from this machine", () => {
+    renderCard(
+      row({
+        runtime: runtime({
+          daemon_id: "daemon-2",
+          name: "Codex (Other Mac)",
+        }),
+      }),
+      vi.fn(),
+      "daemon-1",
+    );
+
+    expect(screen.getByText("Other Mac")).toBeInTheDocument();
+    expect(screen.queryByText("This machine")).not.toBeInTheDocument();
   });
 
   it("uses the owner name and a colored ReUI icon fallback", () => {

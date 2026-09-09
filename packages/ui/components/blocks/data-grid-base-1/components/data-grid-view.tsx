@@ -30,13 +30,6 @@ import { toast } from "sonner"
 import { Button } from "@orvilo/ui/components/ui/button"
 import { Checkbox } from "@orvilo/ui/components/ui/checkbox"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@orvilo/ui/components/ui/dropdown-menu"
-import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
@@ -218,79 +211,6 @@ function Toolbar({
         )}
       </div>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button variant="outline" aria-label={copy.tableActionsAria}>
-              <IconPlaceholder
-                lucide="MoreHorizontalIcon"
-                tabler="IconDots"
-                hugeicons="MoreHorizontalCircle01Icon"
-                phosphor="DotsThreeIcon"
-                remixicon="RiMoreLine"
-                aria-hidden="true"
-              />
-              {copy.actions}
-            </Button>
-          }
-        />
-        <DropdownMenuContent align="end" className="w-36">
-          <DropdownMenuGroup>
-            <DropdownMenuItem
-              onClick={() =>
-                toast.success("Export ready", {
-                  description: "Wire this to your API. Demo only.",
-                })
-              }
-            >
-              <IconPlaceholder
-                lucide="FileDownIcon"
-                tabler="IconDownload"
-                hugeicons="Download01Icon"
-                phosphor="DownloadSimpleIcon"
-                remixicon="RiDownloadLine"
-                aria-hidden="true"
-              />
-              {copy.exportCsv}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() =>
-                toast.message("Refreshed", {
-                  description: "Demo. Connect to live data when integrating.",
-                })
-              }
-            >
-              <IconPlaceholder
-                lucide="RefreshCwIcon"
-                tabler="IconRefresh"
-                hugeicons="RefreshIcon"
-                phosphor="ArrowsClockwiseIcon"
-                remixicon="RiRefreshLine"
-                aria-hidden="true"
-              />
-              {copy.refresh}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() =>
-                toast.info("View settings", {
-                  description:
-                    "Open column layout and density in your app shell.",
-                })
-              }
-            >
-              <IconPlaceholder
-                lucide="SettingsIcon"
-                tabler="IconSettings"
-                hugeicons="SettingsIcon"
-                phosphor="GearIcon"
-                remixicon="RiSettings3Line"
-                aria-hidden="true"
-              />
-              {copy.viewSettings}
-            </DropdownMenuItem>
-          </DropdownMenuGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </div>
   )
 }
@@ -309,6 +229,7 @@ export function DataGridView({
   onSelectedIdsChange,
   i18n,
   hiddenColumns,
+  searchPredicate,
 }: {
   data?: IEmployee[]
   copy?: DataGridBase1Copy
@@ -318,6 +239,7 @@ export function DataGridView({
   onSelectedIdsChange?: (ids: ReadonlySet<string>) => void
   i18n?: DataGridI18nOverrides
   hiddenColumns?: string[]
+  searchPredicate?: (item: IEmployee, query: string) => boolean
 }) {
   const employees = data
   const columns = useMemo(() => getColumns(copy, actions), [actions, copy])
@@ -376,12 +298,14 @@ export function DataGridView({
     return employees.filter((item) => {
       const matchesStatus =
         !selectedStatuses.length || selectedStatuses.includes(item.status)
-      const searchLower = searchQuery.toLowerCase()
+      const searchLower = searchQuery.trim().toLowerCase()
       const matchesSearch =
-        !searchQuery || employeeSearchBlob(item).includes(searchLower)
+        !searchLower ||
+        employeeSearchBlob(item).includes(searchLower) ||
+        searchPredicate?.(item, searchLower) === true
       return matchesStatus && matchesSearch
     })
-  }, [employees, searchQuery, selectedStatuses])
+  }, [employees, searchPredicate, searchQuery, selectedStatuses])
 
   const hasActiveFilters =
     searchQuery.trim().length > 0 || selectedStatuses.length > 0
@@ -401,7 +325,13 @@ export function DataGridView({
     setPagination((current) =>
       current.pageIndex === 0 ? current : { ...current, pageIndex: 0 }
     )
-  }, [searchQuery, selectedStatuses])
+  }, [
+    employees,
+    filteredData.length,
+    pagination.pageSize,
+    searchQuery,
+    selectedStatuses,
+  ])
 
   const table = useTable({
     features: dataGridFeatures,

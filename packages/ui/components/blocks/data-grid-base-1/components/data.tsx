@@ -21,7 +21,7 @@ import { Supabase } from "@orvilo/ui/components/ui/svgs/supabase"
 
 // ── Types ──
 
-export type Status = "Active" | "Inactive" | "Pending" | "Blocked"
+export type Status = "Active" | "Inactive" | "Pending" | "Unstable" | "Blocked"
 export type Availability = "online" | "away" | "busy" | "offline"
 export type CompanyTier = "Enterprise" | "Pro" | "Starter"
 
@@ -66,6 +66,12 @@ export interface IEmployee {
   locationMedia?: ReactNode
   /** Replaces the currency-formatted balance when set. */
   balanceLabel?: string
+  /** Numeric source used for chronological sorting while `joined` stays formatted. */
+  joinedTimestamp?: number
+  /** Product row permissions and lifecycle state used by the action cell. */
+  canManage?: boolean
+  isArchived?: boolean
+  isSystemAgent?: boolean
 }
 
 // ── Logos ──
@@ -449,6 +455,7 @@ export const STATUS_ORDER: Status[] = [
   "Active",
   "Inactive",
   "Pending",
+  "Unstable",
   "Blocked",
 ]
 

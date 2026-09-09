@@ -13,8 +13,8 @@ import { AgentsPage } from "./agents-page";
 // (lastActiveDays null→Infinity, runCount 0) and visibly re-orders when each
 // query resolves. The gate waits per need — nothing for name/created,
 // run-counts for runs, activity + run-counts for the default lastActive,
-// presence when an availability filter is active — and never blocks the empty
-// state on those queries.
+// presence for every non-empty view — and never blocks the empty state on those
+// queries.
 
 const mocks = vi.hoisted(() => ({
   agents: [] as Agent[],
@@ -145,6 +145,9 @@ vi.mock("@orvilo/core/workspace/queries", () => ({
 
 vi.mock("@orvilo/core/runtimes", () => ({
   runtimeListOptions: () => ({ queryKey: ["runtimes"] }),
+  deviceDisplayName: (runtime: Agent) => runtime.name,
+  deviceKind: () => "desktop",
+  runtimeDisplayLabel: (runtime: Agent) => runtime.name,
 }));
 
 // View-layer children with heavy / portal deps — stub to keep the test focused
@@ -305,7 +308,7 @@ describe("AgentsPage listReady gate", () => {
     // Auxiliary queries are still in flight — name sort must not wait on them.
     mocks.activity = { byAgent: new Map(), loading: true };
     mocks.runCountsPending = true;
-    mocks.presence = { byAgent: new Map(), loading: true };
+    mocks.presence = { byAgent: new Map(), loading: false };
 
     renderPage();
 
@@ -337,12 +340,24 @@ describe("AgentsPage listReady gate", () => {
     mocks.viewState.sortField = "name";
     mocks.viewState.filters.availability = ["online"];
     mocks.viewState.filters.devices = ["missing-device"];
-    mocks.presence = { byAgent: new Map(), loading: true };
+    mocks.presence = { byAgent: new Map(), loading: false };
 
     renderPage();
 
     expect(screen.getByText("Alpha Agent")).toBeInTheDocument();
     expect(screen.getByText("Beta Agent")).toBeInTheDocument();
+  });
+
+  it("waits for presence before rendering table rows", () => {
+    mocks.viewState.viewMode = "table";
+    mocks.viewState.sortField = "name";
+    mocks.presence = { byAgent: new Map(), loading: true };
+
+    renderPage();
+
+    expect(screen.queryByText("Alpha Agent")).not.toBeInTheDocument();
+    expect(screen.queryByText("Beta Agent")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
   });
 
   it("shows the empty state without blocking on auxiliary queries when there are no agents", () => {

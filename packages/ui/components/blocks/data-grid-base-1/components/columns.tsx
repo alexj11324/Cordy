@@ -77,6 +77,8 @@ export const StatusBadge = memo(function StatusBadge({
     return <Badge variant="success-outline">{copy.statusActive}</Badge>
   if (status === "Blocked")
     return <Badge variant="destructive-outline">{copy.statusBlocked}</Badge>
+  if (status === "Unstable")
+    return <Badge variant="warning-outline">{copy.statusUnstable}</Badge>
   if (status === "Inactive")
     return <Badge variant="info-outline">{copy.statusInactive}</Badge>
   return <Badge variant="warning-outline">{copy.statusPending}</Badge>
@@ -258,6 +260,26 @@ const CustomerCell = memo(function CustomerCell({
   )
 })
 
+export interface DataGridRowActionState {
+  canEdit: boolean
+  canArchive: boolean
+  canRestore: boolean
+}
+
+export function getRowActionState(
+  row: Pick<IEmployee, "canManage" | "isArchived" | "isSystemAgent">,
+  actions?: DataGridBase1Actions,
+): DataGridRowActionState {
+  const canManage = row.canManage ?? true
+  const isArchived = row.isArchived ?? false
+  const isSystemAgent = row.isSystemAgent ?? false
+  return {
+    canEdit: canManage,
+    canArchive: canManage && !isArchived && !isSystemAgent && !!actions?.onDelete,
+    canRestore: canManage && isArchived && !!actions?.onRestore,
+  }
+}
+
 export function ActionsCell({
   row,
   copy = DATA_GRID_BASE_1_COPY,
@@ -269,6 +291,10 @@ export function ActionsCell({
 }) {
   const { copyToClipboard } = useCopyToClipboard()
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const { canEdit, canArchive, canRestore } = getRowActionState(
+    row.original,
+    actions,
+  )
 
   const handleCopyId = () => {
     copyToClipboard(row.original.id)
@@ -330,26 +356,28 @@ export function ActionsCell({
               />
               {copy.viewDetails}
             </DropdownMenuItem>
-            <DropdownMenuItem
-              onClick={() =>
-                actions?.onEdit
-                  ? actions.onEdit(row.original.id)
-                  : toast.info("Edit customer", {
-                      description: "Demo. Open your edit form.",
-                    })
-              }
-            >
-              <IconPlaceholder
-                lucide="PencilIcon"
-                tabler="IconPencil"
-                hugeicons="PenIcon"
-                phosphor="PencilIcon"
-                remixicon="RiPencilLine"
-                className="size-4"
-                aria-hidden="true"
-              />
-              {copy.edit}
-            </DropdownMenuItem>
+            {canEdit && (
+              <DropdownMenuItem
+                onClick={() =>
+                  actions?.onEdit
+                    ? actions.onEdit(row.original.id)
+                    : toast.info("Edit customer", {
+                        description: "Demo. Open your edit form.",
+                      })
+                }
+              >
+                <IconPlaceholder
+                  lucide="PencilIcon"
+                  tabler="IconPencil"
+                  hugeicons="PenIcon"
+                  phosphor="PencilIcon"
+                  remixicon="RiPencilLine"
+                  className="size-4"
+                  aria-hidden="true"
+                />
+                {copy.edit}
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={handleCopyId}>
               <IconPlaceholder
                 lucide="CopyIcon"
@@ -362,22 +390,42 @@ export function ActionsCell({
               />
               {copy.copyId}
             </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              onClick={() => setDeleteOpen(true)}
-            >
-              <IconPlaceholder
-                lucide="Trash2Icon"
-                tabler="IconTrash"
-                hugeicons="Delete02Icon"
-                phosphor="TrashIcon"
-                remixicon="RiDeleteBinLine"
-                className="size-4"
-                aria-hidden="true"
-              />
-              {copy.delete}
-            </DropdownMenuItem>
+            {canRestore && (
+              <DropdownMenuItem
+                onClick={() => actions?.onRestore?.(row.original.id)}
+              >
+                <IconPlaceholder
+                  lucide="RotateCcwIcon"
+                  tabler="IconRestore"
+                  hugeicons="RefreshIcon"
+                  phosphor="ArrowCounterClockwiseIcon"
+                  remixicon="RiRestartLine"
+                  className="size-4"
+                  aria-hidden="true"
+                />
+                {copy.restore}
+              </DropdownMenuItem>
+            )}
+            {canArchive && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <IconPlaceholder
+                    lucide="Trash2Icon"
+                    tabler="IconTrash"
+                    hugeicons="Delete02Icon"
+                    phosphor="TrashIcon"
+                    remixicon="RiDeleteBinLine"
+                    className="size-4"
+                    aria-hidden="true"
+                  />
+                  {copy.delete}
+                </DropdownMenuItem>
+              </>
+            )}
           </DropdownMenuGroup>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -538,8 +586,8 @@ export function getColumns(
     },
   },
   {
-    accessorKey: "joined",
     id: "joined",
+    accessorFn: (row) => row.joinedTimestamp ?? 0,
     header: ({ column }) => (
       <DataGridColumnHeader column={column} visibility={true} />
     ),

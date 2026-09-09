@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { runtimeDisplayLabel, runtimeDisplayName } from "./display";
+import {
+  deviceDisplayName,
+  deviceKind,
+  runtimeDisplayLabel,
+  runtimeDisplayName,
+  splitRuntimeName,
+} from "./display";
 
 describe("runtimeDisplayName", () => {
   it("prefers a custom name when set", () => {
@@ -141,5 +147,33 @@ describe("runtimeDisplayLabel", () => {
         provider: "codex",
       }),
     ).toBe("box (Codex)");
+  });
+});
+
+describe("device display helpers", () => {
+  it("separates a Harness prefix from its machine name", () => {
+    expect(splitRuntimeName("Claude (build-server-01)")).toEqual({
+      base: "Claude",
+      hostname: "build-server-01",
+    });
+    expect(
+      deviceDisplayName({
+        name: "Claude (build-server-01)",
+        custom_name: null,
+        device_info: "build-server-01 · linux-amd64",
+        runtime_mode: "local",
+        provider: "claude",
+      }),
+    ).toBe("build-server-01");
+  });
+
+  it("uses a terminal icon family for cloud runtimes", () => {
+    expect(
+      deviceKind({
+        name: "Cloud worker",
+        device_info: "",
+        runtime_mode: "cloud",
+      }),
+    ).toBe("terminal");
   });
 });
