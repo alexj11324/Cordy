@@ -1,6 +1,6 @@
 {
   "title": "依赖图",
-  "description": "按执行波次查看任务依赖、执行门控和规划器提醒。",
+  "description": "查看任务之间的依赖关系。",
   "loading": "正在加载依赖图…",
   "load_failed": "依赖图加载失败",
   "retry": "重试",
@@ -56,8 +56,10 @@
     "all": "全部项目"
   },
   "canvas": "{{plan}} 的依赖图画布",
-  "canvas_node": "{{identifier}}：{{title}}。波次 {{wave}}，{{state}}。",
+  "canvas_node": "{{identifier}}：{{title}}，{{state}}。",
   "canvas_edge": "从 {{from}} 到 {{to}} 的依赖，{{status}}。",
   "list_fallback_hint": "切换到列表视图，可以用标题和文字查看同一个计划。",
-  "canvas_undrawn": "因所连任务被当前筛选条件隐藏而未绘制的依赖：{{count}}"
+  "canvas_undrawn": "部分依赖的关联任务暂不可见：{{count}}",
+  "close_details": "关闭任务详情",
+  "back_to_board": "返回看板"
 }

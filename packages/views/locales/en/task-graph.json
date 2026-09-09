@@ -1,6 +1,6 @@
 {
   "title": "Dependency Graph",
-  "description": "Inspect task dependencies, execution gates, and planner attention by wave.",
+  "description": "Explore dependencies between tasks.",
   "loading": "Loading dependency graphs…",
   "load_failed": "Dependency graphs could not be loaded",
   "retry": "Retry",
@@ -56,8 +56,10 @@
     "all": "All projects"
   },
   "canvas": "Dependency graph canvas for {{plan}}",
-  "canvas_node": "{{identifier}}: {{title}}. Wave {{wave}}, {{state}}.",
+  "canvas_node": "{{identifier}}: {{title}}, {{state}}.",
   "canvas_edge": "Dependency from {{from}} to {{to}}, {{status}}.",
   "list_fallback_hint": "Switch to List view for the same plan as headings and text.",
-  "canvas_undrawn": "Dependencies not drawn because a task they connect is hidden by the current filter: {{count}}"
+  "canvas_undrawn": "Dependencies with unavailable tasks: {{count}}",
+  "close_details": "Close issue details",
+  "back_to_board": "Back to board"
 }

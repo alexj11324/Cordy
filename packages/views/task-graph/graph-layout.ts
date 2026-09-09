@@ -20,9 +20,10 @@ import type {
 } from "@orvilo/core/types";
 import { edgeEndpoint, nodeMatchesFilter, type GraphFilter } from "./graph-utils";
 
-export const NODE_WIDTH = 176;
-export const NODE_HEIGHT = 64;
-export const COLUMN_GAP = 72;
+// Matches the board card: 320px column minus 16px horizontal padding.
+export const NODE_WIDTH = 304;
+export const NODE_HEIGHT = 108;
+export const COLUMN_GAP = 48;
 export const ROW_GAP = 20;
 export const CANVAS_PADDING = 24;
 
@@ -88,6 +89,7 @@ function sortKey(node: DependencyGraphNode): string {
 export function layoutGraph(
   graph: DependencyGraphResponse,
   filter: GraphFilter,
+  heights: Readonly<Record<string, number>> = {},
 ): GraphLayout {
   const visible = graph.nodes.filter((node) => nodeMatchesFilter(node, filter));
 
@@ -105,16 +107,19 @@ export function layoutGraph(
     const waveNodes = visible
       .filter((node) => node.wave === wave)
       .sort((left, right) => sortKey(left).localeCompare(sortKey(right)));
-    waveNodes.forEach((node, row) => {
+    let y = CANVAS_PADDING;
+    waveNodes.forEach((node) => {
+      const height = heights[graphNodeId(node)] ?? NODE_HEIGHT;
       nodes.push({
         node,
         id: graphNodeId(node),
         wave,
         x: columnX.get(wave) ?? CANVAS_PADDING,
-        y: CANVAS_PADDING + row * (NODE_HEIGHT + ROW_GAP),
+        y,
         width: NODE_WIDTH,
-        height: NODE_HEIGHT,
+        height,
       });
+      y += height + ROW_GAP;
     });
   }
 

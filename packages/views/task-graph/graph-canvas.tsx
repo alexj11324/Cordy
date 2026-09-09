@@ -1,22 +1,34 @@
 "use client";
 
-/**
- * The interactive dependency-graph canvas.
- *
- * This is a renderer: every coordinate comes from `layoutGraph`, so the only
- * thing here is SVG and interaction. Nodes are real focusable controls with
- * `aria-label`s rather than decorative shapes, and activating one selects it
- * in the same inspector the list view drives, so keyboard and pointer users
- * reach the same state.
- *
- * The canvas is never the only way to read a plan — the page keeps the
- * wave/edge list one control away and that list stays the accessible path for
- * anyone a node-link diagram does not serve.
- */
-import type { DependencyGraphNode, DependencyGraphResponse } from "@orvilo/core/types";
+/** Focusable task nodes and dependency edges share the selection inspector. */
+import type {
+  DependencyGraphNode,
+  DependencyGraphResponse,
+} from "@orvilo/core/types";
 import { cn } from "@orvilo/ui/lib/utils";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { BoardCardContent } from "../issues/components/board-card";
 import { layoutGraph, type LaidOutNode } from "./graph-layout";
-import type { GraphFilter } from "./graph-utils";
+
+function GraphCard({ node, selected, onHeight }: {
+  node: DependencyGraphNode;
+  selected: boolean;
+  onHeight: (id: string, height: number) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const measure = () => onHeight(node.id, Math.ceil(element.getBoundingClientRect().height));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [node.id, onHeight]);
+  return <div ref={ref} className={cn("group/card rounded-xl group-focus-visible/graph-node:outline-2 group-focus-visible/graph-node:outline-foreground", selected && "outline-2 outline-foreground")}>
+    <BoardCardContent issue={node.issue} />
+  </div>;
+}
 
 export type CanvasSelection =
   | { kind: "node"; planId: string; nodeId: string }
@@ -28,57 +40,42 @@ function nodeIdentifier(node: DependencyGraphNode): string {
 }
 
 function nodeTitle(node: DependencyGraphNode): string {
-  return node.title.trim() || node.issue?.title || nodeIdentifier(node);
-}
-
-function nodeState(node: DependencyGraphNode): string {
-  return node.readiness?.state || node.status || "todo";
-}
-
-/**
- * Fill and stroke per readiness state. State is also carried in each node's
- * `aria-label`, so colour is never the only signal.
- */
-function nodeTone(state: string): { fill: string; stroke: string } {
-  switch (state) {
-    case "ready":
-      return { fill: "fill-emerald-500/10", stroke: "stroke-emerald-500/50" };
-    case "running":
-      return { fill: "fill-blue-500/10", stroke: "stroke-blue-500/50" };
-    case "blocked":
-      return { fill: "fill-amber-500/10", stroke: "stroke-amber-500/50" };
-    case "done":
-      return { fill: "fill-muted", stroke: "stroke-border" };
-    default:
-      return { fill: "fill-background", stroke: "stroke-border" };
-  }
-}
-
-function truncate(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+  return node.issue?.title || node.title.trim() || nodeIdentifier(node);
 }
 
 export function GraphCanvas({
   graph,
-  filter,
   selection,
   onSelect,
   labels,
 }: {
   graph: DependencyGraphResponse;
-  filter: GraphFilter;
   selection: CanvasSelection;
   onSelect: (selection: CanvasSelection) => void;
   labels: {
     canvas: string;
-    nodeHint: (args: { identifier: string; title: string; state: string; wave: number }) => string;
-    edgeHint: (args: { from: string; to: string; satisfied: boolean }) => string;
-    waveColumn: (wave: number) => string;
+    nodeHint: (args: {
+      identifier: string;
+      title: string;
+      state: string;
+      wave: number;
+    }) => string;
+    edgeHint: (args: {
+      from: string;
+      to: string;
+      satisfied: boolean;
+    }) => string;
+    status: (node: DependencyGraphNode) => string;
     empty: string;
     undrawn: (count: number) => string;
   };
 }) {
-  const layout = layoutGraph(graph, filter);
+  const [heights, setHeights] = useState<Record<string, number>>({});
+  const onHeight = useCallback((id: string, height: number) => {
+    if (height <= 0) return;
+    setHeights((current) => current[id] === height ? current : { ...current, [id]: height });
+  }, []);
+  const layout = layoutGraph(graph, "all", heights);
   const planId = graph.plan.id;
 
   if (layout.nodes.length === 0) {
@@ -114,20 +111,12 @@ export function GraphCanvas({
               refY="4"
               orient="auto"
             >
-              <path d="M 0 0 L 8 4 L 0 8 z" className="fill-muted-foreground/60" />
+              <path
+                d="M 0 0 L 8 4 L 0 8 z"
+                className="fill-muted-foreground/60"
+              />
             </marker>
           </defs>
-
-          {layout.columns.map((column) => (
-            <text
-              key={column.wave}
-              x={column.x}
-              y={12}
-              className="fill-muted-foreground text-micro"
-            >
-              {labels.waveColumn(column.wave)}
-            </text>
-          ))}
 
           {layout.edges.map((laidOutEdge) => {
             const selected =
@@ -143,13 +132,15 @@ export function GraphCanvas({
                   fill="none"
                   markerEnd={`url(#dependency-arrow-${planId})`}
                   strokeWidth={selected ? 2.5 : 1.5}
-                  strokeDasharray={laidOutEdge.edge.satisfied ? undefined : "5 4"}
+                  strokeDasharray={
+                    laidOutEdge.edge.satisfied ? undefined : "5 4"
+                  }
                   className={cn(
                     selected
-                      ? "stroke-brand"
+                      ? "stroke-foreground"
                       : laidOutEdge.edge.satisfied
-                        ? "stroke-emerald-500/60"
-                        : "stroke-amber-500/60",
+                        ? "stroke-muted-foreground"
+                        : "stroke-muted-foreground/60",
                   )}
                 />
                 {/* A wide transparent path over the visible one so the edge is
@@ -182,8 +173,7 @@ export function GraphCanvas({
           })}
 
           {layout.nodes.map((laidOut) => {
-            const state = nodeState(laidOut.node);
-            const tone = nodeTone(state);
+            const state = labels.status(laidOut.node);
             const identifier = nodeIdentifier(laidOut.node);
             const title = nodeTitle(laidOut.node);
             const selected =
@@ -203,7 +193,7 @@ export function GraphCanvas({
                   wave: laidOut.wave,
                 })}
                 data-testid="dependency-graph-canvas-node"
-                className="cursor-pointer focus:outline-none"
+                className="group/graph-node cursor-pointer outline-none"
                 onClick={() => selectNode(laidOut)}
                 onKeyDown={(event) => {
                   if (event.key !== "Enter" && event.key !== " ") return;
@@ -211,39 +201,15 @@ export function GraphCanvas({
                   selectNode(laidOut);
                 }}
               >
-                <rect
+                <foreignObject
                   x={laidOut.x}
                   y={laidOut.y}
                   width={laidOut.width}
                   height={laidOut.height}
-                  rx={8}
-                  strokeWidth={selected ? 2 : 1}
-                  className={cn(
-                    tone.fill,
-                    selected ? "stroke-brand" : tone.stroke,
-                  )}
-                />
-                <text
-                  x={laidOut.x + 10}
-                  y={laidOut.y + 22}
-                  className="fill-primary text-caption font-medium"
+                  className="overflow-visible"
                 >
-                  {truncate(identifier, 20)}
-                </text>
-                <text
-                  x={laidOut.x + 10}
-                  y={laidOut.y + 40}
-                  className="fill-foreground text-caption"
-                >
-                  {truncate(title, 22)}
-                </text>
-                <text
-                  x={laidOut.x + 10}
-                  y={laidOut.y + 55}
-                  className="fill-muted-foreground text-micro"
-                >
-                  {truncate(state, 22)}
-                </text>
+                  <GraphCard node={laidOut.node} selected={selected} onHeight={onHeight} />
+                </foreignObject>
               </g>
             );
           })}
