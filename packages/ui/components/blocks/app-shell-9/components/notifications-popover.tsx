@@ -187,7 +187,7 @@ function MiniProgress({
   return (
     <div className="bg-muted/55 relative mt-1.5 h-1 overflow-hidden rounded-full">
       <div
-        className="text-muted-foreground pointer-events-none absolute inset-0 opacity-20"
+        className="text-faint-foreground pointer-events-none absolute inset-0"
         aria-hidden="true"
         style={{
           backgroundImage:

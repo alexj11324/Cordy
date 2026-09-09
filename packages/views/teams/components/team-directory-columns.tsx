@@ -198,8 +198,8 @@ function MemberCell({
         <AvatarFallback>{member.initials}</AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{member.fullName}</div>
-        <div className="truncate text-sm text-muted-foreground">
+        <div className="truncate text-body font-medium">{member.fullName}</div>
+        <div className="truncate text-body text-muted-foreground">
           {member.displayName}
         </div>
       </div>
@@ -225,7 +225,7 @@ function ActiveStatusCell({ label }: { label: string }) {
         className="size-1.5 shrink-0 rounded-full bg-emerald-500"
         aria-hidden="true"
       />
-      <span className="truncate text-sm">{label}</span>
+      <span className="truncate text-body">{label}</span>
     </div>
   );
 }
@@ -284,7 +284,7 @@ export function createMemberGridColumns({
       cell: ({ row }) => (
         <a
           href={`mailto:${row.original.email}`}
-          className="block truncate text-sm transition-colors hover:text-primary hover:underline"
+          className="block truncate text-body transition-colors hover:text-primary hover:underline"
           title={row.original.email}
         >
           {row.original.email}
@@ -303,7 +303,7 @@ export function createMemberGridColumns({
         <DataGridColumnHeader column={column} visibility={true} />
       ),
       cell: ({ row }) => (
-        <span className="block truncate text-sm">
+        <span className="block truncate text-body">
           {row.original.role === "admin"
             ? labels.admin
             : row.original.role === "owner"
@@ -337,7 +337,7 @@ export function createMemberGridColumns({
         <DataGridColumnHeader column={column} visibility={true} />
       ),
       cell: ({ row }) => (
-        <span className="block truncate text-sm text-muted-foreground tabular-nums">
+        <span className="block truncate text-body text-muted-foreground tabular-nums">
           {row.original.joinedAt}
         </span>
       ),
@@ -380,8 +380,8 @@ function InvitationStatusBadge({
 function InviteeCell({ invitation }: { invitation: DirectoryInvitation }) {
   return (
     <div className="flex min-w-0 flex-col gap-px">
-      <span className="truncate text-sm font-medium">{invitation.email}</span>
-      <span className="truncate text-xs text-muted-foreground">
+      <span className="truncate text-body font-medium">{invitation.email}</span>
+      <span className="truncate text-caption text-muted-foreground">
         @{invitation.handle}
       </span>
     </div>
@@ -469,7 +469,7 @@ export function createInvitationGridColumns({
         <DataGridColumnHeader column={column} visibility={true} />
       ),
       cell: ({ row }) => (
-        <span className="block truncate text-sm">
+        <span className="block truncate text-body">
           {row.original.role === "admin" ? labels.admin : labels.memberRole}
         </span>
       ),
@@ -486,7 +486,7 @@ export function createInvitationGridColumns({
         <DataGridColumnHeader column={column} visibility={true} />
       ),
       cell: ({ row }) => (
-        <span className="block truncate text-sm text-muted-foreground">
+        <span className="block truncate text-body text-muted-foreground">
           {row.original.invitedBy}
         </span>
       ),
@@ -503,7 +503,7 @@ export function createInvitationGridColumns({
         <DataGridColumnHeader column={column} visibility={true} />
       ),
       cell: ({ row }) => (
-        <span className="block truncate text-sm text-muted-foreground tabular-nums">
+        <span className="block truncate text-body text-muted-foreground tabular-nums">
           {row.original.sentAt}
         </span>
       ),

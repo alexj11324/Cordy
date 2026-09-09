@@ -689,13 +689,13 @@ export function AppSidebar({
         const invitationName = invitation.workspace_name ?? t(($) => $.sidebar.invitation_workspace_fallback);
         return (
           <div key={invitation.id} className="flex items-center gap-2 px-2 py-1.5">
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-[10px] font-semibold text-primary">
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-micro font-semibold text-primary">
               {invitationName.charAt(0).toUpperCase()}
             </span>
-            <span className="min-w-0 flex-1 truncate text-sm">{invitationName}</span>
+            <span className="min-w-0 flex-1 truncate text-body">{invitationName}</span>
             <button
               type="button"
-              className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              className="rounded bg-primary px-2 py-0.5 text-caption text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               disabled={acceptInvitationMut.isPending}
               onClick={(event) => {
                 event.stopPropagation();
@@ -706,7 +706,7 @@ export function AppSidebar({
             </button>
             <button
               type="button"
-              className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted/80 disabled:opacity-50"
+              className="rounded bg-muted px-2 py-0.5 text-caption text-muted-foreground hover:bg-muted/80 disabled:opacity-50"
               disabled={declineInvitationMut.isPending}
               onClick={(event) => {
                 event.stopPropagation();
@@ -767,7 +767,7 @@ export function AppSidebar({
               >
                 <span>{t(($) => $.sidebar.pinned_label)}</span>
                 <ChevronRight className="ml-1 size-3 opacity-60 transition-transform duration-200 group-data-[panel-open]/trigger:rotate-90" />
-                <span className="ml-auto text-xs opacity-60">{visiblePinned.length}</span>
+                <span className="ml-auto text-caption opacity-60">{visiblePinned.length}</span>
               </SidebarGroupLabel>
               <CollapsibleContent>
                 <SidebarGroupContent>

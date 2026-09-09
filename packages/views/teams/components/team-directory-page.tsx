@@ -341,14 +341,14 @@ function ViewSettingsMenu({
       <PopoverContent align="end" className="w-[320px] p-0">
         <FieldGroup className="gap-3 px-3.5 py-3">
           <div className="space-y-2">
-            <div className="text-xs font-medium text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               {labels.table}
             </div>
             <Field
               orientation="horizontal"
               className="min-h-9 items-center justify-between gap-3"
             >
-              <FieldLabel className="text-sm font-normal">
+              <FieldLabel className="text-body font-normal">
                 {labels.density}
               </FieldLabel>
               <Select
@@ -375,7 +375,7 @@ function ViewSettingsMenu({
           </div>
           <Separator className="-mx-3.5" />
           <div className="space-y-2.5">
-            <div className="text-xs font-medium text-muted-foreground">
+            <div className="text-caption font-medium text-muted-foreground">
               {labels.columns}
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -474,7 +474,7 @@ function DirectoryGrid<TData extends object>({
             className="py-0"
           />
         ) : (
-          <p className="text-sm text-muted-foreground">0 {pageLabel}</p>
+          <p className="text-body text-muted-foreground">0 {pageLabel}</p>
         )}
       </div>
     </DataGrid>
@@ -1101,7 +1101,7 @@ export function TeamDirectoryPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:gap-5 md:p-6 lg:p-8">
-      <div className="mx-auto flex w-full max-w-[1440px] items-center gap-2 text-sm text-muted-foreground">
+      <div className="mx-auto flex w-full max-w-[1440px] items-center gap-2 text-body text-muted-foreground">
         <CollapsedNavTrigger />
         <div className="flex min-w-0 items-center gap-2 truncate">
           <span className="truncate">{workspace.name}</span>
@@ -1112,7 +1112,7 @@ export function TeamDirectoryPage() {
         </div>
         <AppLink
           href={workspacePaths.agentTeams()}
-          className="ml-auto shrink-0 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="ml-auto shrink-0 rounded-md px-2 py-1 text-caption text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           {t(($) => $.directory.agent_teams_link)}
         </AppLink>
@@ -1127,7 +1127,7 @@ export function TeamDirectoryPage() {
               <CardTitle className="text-balance">
                 {t(($) => $.directory.title)}
               </CardTitle>
-              <CardDescription className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+              <CardDescription className="mt-1 flex flex-wrap items-center gap-1.5 text-caption">
                 <span>
                   {t(($) => $.directory.member_count, {
                     count: members.length,
@@ -1177,7 +1177,7 @@ export function TeamDirectoryPage() {
                 >
                   <TabsTrigger
                     value="members"
-                    className="h-full! flex-none! gap-2 px-0 pb-3 text-sm after:z-10 group-data-horizontal/tabs:after:-bottom-px!"
+                    className="h-full! flex-none! gap-2 px-0 pb-3 text-body after:z-10 group-data-horizontal/tabs:after:-bottom-px!"
                   >
                     <span>{t(($) => $.directory.members_tab)}</span>
                     <TabCount
@@ -1187,7 +1187,7 @@ export function TeamDirectoryPage() {
                   </TabsTrigger>
                   <TabsTrigger
                     value="invitations"
-                    className="h-full! flex-none! gap-2 px-0 pb-3 text-sm after:z-10 group-data-horizontal/tabs:after:-bottom-px!"
+                    className="h-full! flex-none! gap-2 px-0 pb-3 text-body after:z-10 group-data-horizontal/tabs:after:-bottom-px!"
                   >
                     <span>{t(($) => $.directory.invitations_tab)}</span>
                     <TabCount
