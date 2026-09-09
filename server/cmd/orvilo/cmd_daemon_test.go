@@ -20,6 +20,7 @@ import (
 
 	"github.com/orvilo-ai/orvilo/server/internal/cli"
 	"github.com/orvilo-ai/orvilo/server/internal/daemon"
+	"github.com/orvilo-ai/orvilo/server/pkg/agent"
 )
 
 // TestDaemonAlive locks in the liveness predicate the lifecycle commands rely
@@ -72,6 +73,21 @@ func TestDaemonLocalCommandsFailClosedInTaskContext(t *testing.T) {
 }
 
 func TestDaemonProbeRuntimesLocalDoesNotLoadOrviloProfile(t *testing.T) {
+	// Discovery also checks application bundles and conventional install paths.
+	// Pin nonexistent executables so this profile-isolation test is independent
+	// of the host's installed CLIs; absolute overrides disable those fallbacks.
+	missingCLI := filepath.Join(t.TempDir(), "missing-cli")
+	for _, provider := range []string{
+		"CLAUDE", "CODEX", "OPENCODE", "CODEARTS", "DEVECO", "OPENCLAW",
+		"HERMES", "PI", "CURSOR", "COPILOT", "KIMI", "REASONIX", "DSH",
+		"KIRO", "CODEBUDDY", "ANTIGRAVITY", "QODER", "QODERCLICN", "TRAECLI",
+		"GROK", "QWEN", "QWENPAW", "DIM", "MCODE", "ZEROCLAW",
+	} {
+		t.Setenv("ORVILO_"+provider+"_PATH", missingCLI)
+	}
+	for _, descriptor := range agent.BuiltinRuntimes {
+		t.Setenv(descriptor.EnvPrefix+"_PATH", missingCLI)
+	}
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("SHELL", "/bin/false")

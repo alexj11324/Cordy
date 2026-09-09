@@ -212,7 +212,9 @@ func TestLegacyCompletePreservesFallbackSuppression(t *testing.T) {
 			result := []byte(`{"output":"Implemented the terminal report result."}`)
 			switch scenario {
 			case "already commented":
-				f.fx.Comment(t, util.UUIDToString(f.task.IssueID), "The implementation is ready.", testutil.Cols{"author_type": "agent", "author_id": util.UUIDToString(f.task.AgentID)})
+				// Use the task's timestamp so host/database clock skew cannot put
+				// this in-run comment before the run it is meant to cover.
+				f.fx.Comment(t, util.UUIDToString(f.task.IssueID), "The implementation is ready.", testutil.Cols{"author_type": "agent", "author_id": util.UUIDToString(f.task.AgentID), "created_at": f.task.StartedAt.Time})
 			case "no action":
 				details, err := json.Marshal(map[string]string{"outcome": "no_action", "task_id": util.UUIDToString(f.task.ID)})
 				if err != nil {
