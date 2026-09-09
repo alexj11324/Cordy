@@ -41,6 +41,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
+vi.mock("@orvilo/core/auth", () => ({
+  useAuthStore: (selector: (state: { user: { id: string } }) => unknown) => selector({ user: { id: "user-1" } }),
+}));
 
 vi.mock("@orvilo/core/paths", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@orvilo/core/paths")>();
@@ -71,6 +74,18 @@ vi.mock("@orvilo/core/workspace/queries", () => ({
   }),
   workspaceMcpServersOptions: (wsId: string) => ({
     queryKey: ["mcp", wsId],
+    queryFn: async () => [],
+  }),
+  teamListOptions: (wsId: string) => ({
+    queryKey: ["teams", wsId],
+    queryFn: async () => [],
+  }),
+}));
+
+vi.mock("@orvilo/core/runtimes", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@orvilo/core/runtimes")>(),
+  runtimeListOptions: (wsId: string) => ({
+    queryKey: ["runtimes", wsId],
     queryFn: async () => [],
   }),
 }));
@@ -606,15 +621,15 @@ describe("AutomationDetailPage settings layout", () => {
     expect(mocks.createTrigger).not.toHaveBeenCalled();
   });
 
-  it("offers a settings path when the MCP library is empty", async () => {
+  it("keeps MCP availability inline when the workspace library is empty", async () => {
     const user = userEvent.setup();
     renderPage();
     await user.click(
       await screen.findByRole("button", { name: "Add Tool or MCP" }),
     );
-    expect(
-      await screen.findByRole("link", { name: "Manage MCP servers" }),
-    ).toHaveAttribute("href", "/acme/settings?tab=mcp");
+    expect(await screen.findByTestId("automation-inherited-mcp")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Manage MCP servers" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Manage MCP servers" })).not.toBeInTheDocument();
   });
 
   it("opens the real memory notes dialog from Manage", async () => {

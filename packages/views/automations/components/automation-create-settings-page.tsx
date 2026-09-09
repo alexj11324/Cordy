@@ -284,6 +284,7 @@ export function AutomationCreateSettingsPage() {
         </div>
         <AutomationToolsSection
           automation={{ id: "", tools: { ...tools } }}
+          assignee={assignee}
           canWrite={!saving}
           saving={saving}
           onToolsChange={setTools}

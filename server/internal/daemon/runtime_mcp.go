@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/pelletier/go-toml/v2"
+	"gopkg.in/yaml.v3"
 )
 
 // runtimeLocalMcpServerSummary is the intentionally non-secret inventory
@@ -134,6 +135,10 @@ func codebuddyUserMcpConfigPath(home string) string {
 func unmarshalRuntimeMcpConfig(raw []byte, format string) (map[string]any, error) {
 	var cfg map[string]any
 	switch format {
+	case "yaml":
+		if err := yaml.Unmarshal(raw, &cfg); err != nil {
+			return nil, errors.New("parse runtime MCP config: invalid YAML")
+		}
 	case "toml":
 		if err := toml.Unmarshal(raw, &cfg); err != nil {
 			return nil, fmt.Errorf("parse runtime MCP config: %w", err)
@@ -419,6 +424,14 @@ func listRuntimeLocalMcpServers(provider string) ([]runtimeLocalMcpServerSummary
 		path, key, source, format = filepath.Join(codexHome, "config.toml"), "mcp_servers", "User config", "toml"
 	case "cursor":
 		path, key, source, format = filepath.Join(home, ".cursor", "mcp.json"), "mcpServers", "User config", "json"
+	case "hermes":
+		// Hermes loads this natively. Discover names only; re-injecting the
+		// same servers through ACP would duplicate its native connections.
+		hermesHome := strings.TrimSpace(os.Getenv("HERMES_HOME"))
+		if hermesHome == "" {
+			hermesHome = filepath.Join(home, ".hermes")
+		}
+		path, key, source, format = filepath.Join(hermesHome, "config.yaml"), "mcp_servers", "User config", "yaml"
 	case "opencode":
 		configHome := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME"))
 		if configHome == "" {
@@ -560,6 +573,9 @@ func nestedRuntimeMcpMap(cfg map[string]any, path string) (map[string]any, bool)
 
 func runtimeMcpTransport(entry map[string]any) string {
 	kind, _ := entry["type"].(string)
+	if kind == "" {
+		kind, _ = entry["transport"].(string)
+	}
 	switch strings.ToLower(kind) {
 	case "local", "stdio":
 		return "stdio"

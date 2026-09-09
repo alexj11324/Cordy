@@ -5,14 +5,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ComponentProps } from "react";
 import type { Automation } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
+import type { AssigneeSelection } from "./pickers/agent-picker";
 
 const mocks = vi.hoisted(() => ({
   update: vi.fn(),
   slackList: vi.fn(),
   slackCatalog: vi.fn(),
+  mcpList: vi.fn(),
+  inventory: vi.fn(),
 }));
 
 vi.mock("@orvilo/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@orvilo/core/auth", () => ({
+  useAuthStore: (selector: (state: { user: { id: string } }) => unknown) => selector({ user: { id: "user-1" } }),
+}));
 vi.mock("@orvilo/core/paths", () => ({
   useWorkspacePaths: () => ({ settings: () => "/acme/settings" }),
 }));
@@ -22,8 +28,15 @@ vi.mock("@orvilo/core/automations/mutations", () => ({
 vi.mock("@orvilo/core/workspace/queries", () => ({
   workspaceMcpServersOptions: () => ({
     queryKey: ["mcp"],
-    queryFn: async () => [{ id: "mcp-1", name: "Issue tracker" }],
+    queryFn: () => mocks.mcpList(),
   }),
+  agentListOptions: () => ({ queryKey: ["agents"], queryFn: async () => [{ id: "agent-1", name: "Scout", runtime_id: "runtime-1" }] }),
+  teamListOptions: () => ({ queryKey: ["teams"], queryFn: async () => [] }),
+}));
+vi.mock("@orvilo/core/runtimes", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@orvilo/core/runtimes")>(),
+  runtimeListOptions: () => ({ queryKey: ["runtimes"], queryFn: async () => [{ id: "runtime-1", runtime_mode: "local", status: "online", owner_id: "user-1", visibility: "public" }] }),
+  runtimeCapabilitiesOptions: (id: string | null) => ({ queryKey: ["runtime-mcp", id], queryFn: () => mocks.inventory(id), enabled: !!id }),
 }));
 vi.mock("@orvilo/core/slack/queries", () => ({
   slackInstallationsOptions: () => ({
@@ -63,11 +76,11 @@ function automation(tools: Record<string, unknown>): Automation {
   };
 }
 
-function renderSection(tools: Record<string, unknown>) {
+function renderSection(tools: Record<string, unknown>, assignee: AssigneeSelection | null = null) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const result = renderWithI18n(
     <QueryClientProvider client={queryClient}>
-      <AutomationToolsSection automation={automation(tools)} canWrite />
+      <AutomationToolsSection automation={automation(tools)} assignee={assignee} canWrite />
     </QueryClientProvider>,
   );
   return { ...result, queryClient };
@@ -78,6 +91,8 @@ describe("AutomationToolsSection built-in tools", () => {
     mocks.update.mockReset();
     mocks.slackList.mockReset().mockResolvedValue({ installations: [] });
     mocks.slackCatalog.mockReset().mockResolvedValue({ channels: [] });
+    mocks.mcpList.mockReset().mockResolvedValue([{ id: "mcp-1", name: "Issue tracker" }]);
+    mocks.inventory.mockReset().mockResolvedValue({ mcpSupported: true, mcpServers: [{ name: "Native docs", enabled: true }] });
   });
 
   it("removes Memories config while preserving Slack and MCP settings", async () => {
@@ -148,5 +163,30 @@ describe("AutomationToolsSection built-in tools", () => {
     });
 
     await waitFor(() => expect(mocks.slackCatalog).toHaveBeenCalled());
+  });
+
+  it("shows native MCP inline even with an empty workspace library and no settings jump", async () => {
+    mocks.mcpList.mockResolvedValue([]);
+    renderSection({}, { type: "agent", id: "agent-1" });
+    expect(mocks.inventory).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Add Tool or MCP" }));
+    expect(await screen.findByText("Native docs")).toBeInTheDocument();
+    expect(screen.getByText("Inherited")).toBeInTheDocument();
+    expect(screen.queryByText("No MCP servers in this workspace.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Additional MCP servers")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Manage MCP servers" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Manage MCP servers" })).not.toBeInTheDocument();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+
+  it("keeps workspace selection functional without storing inherited server names", async () => {
+    renderSection({ mcp_server_ids: [] }, { type: "agent", id: "agent-1" });
+    await userEvent.click(screen.getByRole("button", { name: "Add Tool or MCP" }));
+    await screen.findByText("Native docs");
+    await userEvent.click(screen.getByRole("checkbox", { name: "Issue tracker" }));
+    expect(mocks.update).toHaveBeenLastCalledWith({
+      id: "automation-1", tools: { mcp_server_ids: ["mcp-1"] },
+    }, expect.any(Object));
+    expect(screen.queryByRole("checkbox", { name: "Native docs" })).not.toBeInTheDocument();
   });
 });

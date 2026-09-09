@@ -5,8 +5,70 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+func TestListRuntimeLocalMcpServersHermesConfig(t *testing.T) {
+	for _, customHome := range []bool{false, true} {
+		t.Run(fmt.Sprintf("custom-home-%t", customHome), func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("HERMES_HOME", "")
+			configDir := filepath.Join(home, ".hermes")
+			if customHome {
+				configDir = filepath.Join(home, "custom-hermes")
+				t.Setenv("HERMES_HOME", configDir)
+			}
+			if err := os.MkdirAll(configDir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			config := "mcp_servers:\n  docs:\n    url: https://private.example/mcp\n    headers:\n      Authorization: hidden-token\n    enabled: false\n  fetch:\n    command: private-command\n    args: [private-argument]\n    env:\n      SECRET: hidden-secret\n"
+			if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte(config), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			servers, supported, err := listRuntimeLocalMcpServers("hermes")
+			if err != nil || !supported || len(servers) != 2 {
+				t.Fatalf("supported=%v servers=%#v error=%v", supported, servers, err)
+			}
+			if servers[0].Name != "docs" || servers[0].Transport != "http" || servers[0].Enabled ||
+				servers[1].Name != "fetch" || servers[1].Transport != "stdio" || !servers[1].Enabled {
+				t.Fatalf("unexpected inventory: %#v", servers)
+			}
+			raw, err := json.Marshal(servers)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, secret := range []string{"private.example", "hidden-token", "private-command", "private-argument", "hidden-secret"} {
+				if strings.Contains(string(raw), secret) {
+					t.Fatal("inventory exposed connection details")
+				}
+			}
+		})
+	}
+}
+
+func TestListRuntimeLocalMcpServersHermesMissingAndMalformed(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HERMES_HOME", home)
+	servers, supported, err := listRuntimeLocalMcpServers("hermes")
+	if err != nil || !supported || len(servers) != 0 {
+		t.Fatalf("missing config: supported=%v servers=%#v error=%v", supported, servers, err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "config.yaml"), []byte("mcp_servers: [secret-value"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, supported, err = listRuntimeLocalMcpServers("hermes")
+	if err == nil || !supported || strings.Contains(err.Error(), "secret-value") {
+		t.Fatalf("invalid YAML must fail without exposing config: supported=%v error=%v", supported, err)
+	}
+}
+
+func TestRuntimeMcpTransportHermesSSE(t *testing.T) {
+	if got := runtimeMcpTransport(map[string]any{"url": "https://example.test/sse", "transport": "sse"}); got != "sse" {
+		t.Fatalf("transport = %q, want sse", got)
+	}
+}
 
 func TestListRuntimeLocalMcpServersCodexRedactsDetails(t *testing.T) {
 	home := t.TempDir()
