@@ -1,4 +1,4 @@
-import { Cloud, Monitor, Wifi, WifiHigh, WifiOff } from "lucide-react";
+import { Cloud, Monitor } from "lucide-react";
 import { Badge } from "@orvilo/ui/components/ui/badge";
 import type { RuntimeHealth } from "@orvilo/core/runtimes";
 import { ProviderLogo } from "./provider-logo";
@@ -31,7 +31,7 @@ export function ProviderChip({ provider }: { provider: string }) {
 const HEALTH_VISUAL: Record<RuntimeHealth, { dot: string; tone: string }> = {
   online: { dot: "bg-success", tone: "bg-success/10 text-success" },
   recently_lost: { dot: "bg-warning", tone: "bg-warning/10 text-warning" },
-  offline: { dot: "bg-muted-foreground/40", tone: "bg-muted text-muted-foreground" },
+  offline: { dot: "bg-destructive", tone: "bg-destructive/10 text-destructive" },
   long_offline: { dot: "bg-destructive", tone: "bg-destructive/10 text-destructive" },
 };
 
@@ -56,37 +56,8 @@ export function HealthDot({
   );
 }
 
-// Wifi-style runtime health indicator. The icon shape carries the rough
-// state ("can it talk to us?") and the colour carries severity. Used
-// wherever a richer signal than the bare dot is appropriate (agent
-// hover-card runtime row, runtime list health column).
-//
-//   online        → Wifi (full bars, success)
-//   recently_lost → WifiHigh (fewer bars, warning) — transient hiccup
-//   offline       → WifiOff (slashed, muted) — long unreachable
-//   long_offline  → WifiOff (slashed, destructive) — prolonged outage
-const HEALTH_ICON: Record<
-  RuntimeHealth,
-  { Icon: typeof Wifi; tone: string }
-> = {
-  online: { Icon: Wifi, tone: "text-success" },
-  recently_lost: { Icon: WifiHigh, tone: "text-warning" },
-  offline: { Icon: WifiOff, tone: "text-muted-foreground" },
-  long_offline: { Icon: WifiOff, tone: "text-destructive" },
-};
-
-export function HealthIcon({
-  health,
-  className = "h-3 w-3",
-}: {
-  health: RuntimeHealth | "loading";
-  className?: string;
-}) {
-  if (health === "loading") {
-    return <Wifi className={`${className} text-faint-foreground`} />;
-  }
-  const { Icon, tone } = HEALTH_ICON[health];
-  return <Icon className={`${className} ${tone}`} />;
+export function HealthIcon({ health, className = "" }: { health: RuntimeHealth | "loading"; className?: string }) {
+  return <span aria-hidden="true" className={`inline-flex shrink-0 items-center justify-center ${className}`}><HealthDot health={health} /></span>;
 }
 
 // English-only fallback. Pure function form for non-component callers

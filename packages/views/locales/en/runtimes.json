@@ -298,7 +298,7 @@
   },
   "list": {
     "col_runtime": "Harness",
-    "col_health": "Health",
+    "col_health": "Status",
     "col_owner": "Owner",
     "col_agents": "Agents",
     "col_cost": "Cost · 7d",
