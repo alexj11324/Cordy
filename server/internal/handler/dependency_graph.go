@@ -1371,6 +1371,23 @@ func (h *Handler) applyDependencyGraphTransaction(ctx context.Context, input *de
 			defaultExecutionAgentID = configuredDefaultExecutionAgentID
 		}
 	}
+	// Reject before creating the plan rather than surfacing the database guard
+	// as a 500. A blocked node needs either an explicit or eligible default
+	// executor; independent root admission is unchanged by this invariant.
+	if !defaultExecutionAgentID.Valid {
+		blockedNodes := make(map[string]bool, len(input.Edges))
+		for _, edge := range input.Edges {
+			blockedNodes[edge.To] = true
+		}
+		for index, task := range input.Tasks {
+			if blockedNodes[task.TempID] && !assignments[index].executorID.Valid {
+				return dependencyGraphApplyResult{}, dependencyGraphInvalidReference(
+					"active_executor_required",
+					fmt.Sprintf("tasks[%d].executor is required for a blocked task; assign an executor or configure an eligible default execution agent", index),
+				)
+			}
+		}
+	}
 	plan, err := qtx.CreateDependencyGraphPlan(ctx, db.CreateDependencyGraphPlanParams{
 		WorkspaceID:    actor.WorkspaceID,
 		ParentIssueID:  lockedID,
