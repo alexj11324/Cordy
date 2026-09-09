@@ -347,6 +347,10 @@ func (h *Handler) ResendInvitation(w http.ResponseWriter, r *http.Request) {
 		inviterName = inviter.Name
 	}
 
+	// Reserve the admission budget before entering the network send. A slow
+	// provider must not let concurrent resend requests all pass the check phase
+	// before any one of them records its usage.
+	h.consumeInvitationAdmission(r, admission)
 	if err := emailService.SendInvitationEmail(
 		invitation.InviteeEmail,
 		inviterName,
@@ -368,8 +372,6 @@ func (h *Handler) ResendInvitation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to resend invitation")
 		return
 	}
-	h.consumeInvitationAdmission(r, admission)
-
 	slog.Info(
 		"invitation email resent",
 		append(
