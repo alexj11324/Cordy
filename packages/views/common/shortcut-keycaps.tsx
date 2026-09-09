@@ -104,23 +104,27 @@ export function ShortcutKeycaps({
       aria-hidden={decorative || undefined}
       data-slot="shortcut-keycaps"
     >
-      {shortcutTokens(shortcut, platform).map(({ id, label, text, icon: Icon }) => (
-        <Kbd
-          key={id}
-          aria-hidden="true"
-          title={label}
-          data-shortcut-key={id}
-          className={cn(
-            "border border-border/70 bg-muted/80 shadow-[0_1px_0_0_color-mix(in_oklab,var(--border)_70%,transparent)]",
-            size === "md"
-              ? "h-7 min-w-7 rounded-md px-1.5 text-caption [&_svg]:size-3.5"
-              : "h-5 min-w-5 px-1 text-micro [&_svg]:size-3",
-            keyClassName,
-          )}
-        >
-          {Icon ? <Icon aria-hidden="true" strokeWidth={1.8} /> : (text ?? label)}
-        </Kbd>
-      ))}
+      <Kbd
+        aria-hidden="true"
+        className={cn(
+          "gap-0.5",
+          size === "md"
+            ? "h-7 px-1.5 text-caption [&_svg]:size-3.5"
+            : "h-5 px-1 text-micro [&_svg]:size-3",
+          keyClassName,
+        )}
+      >
+        {shortcutTokens(shortcut, platform).map(({ id, label, text, icon: Icon }) => (
+          <span
+            key={id}
+            title={label}
+            data-shortcut-key={id}
+            className="inline-flex items-center justify-center"
+          >
+            {Icon ? <Icon aria-hidden="true" strokeWidth={1.8} /> : (text ?? label)}
+          </span>
+        ))}
+      </Kbd>
     </span>
   );
 }
