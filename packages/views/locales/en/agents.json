@@ -424,15 +424,15 @@
     "speed_label": "Speed",
     "access": {
       "private": {
-        "title": "Only me",
+        "title": "Personal",
         "description": "Only you can run this agent."
       },
       "workspace": {
-        "title": "Entire workspace",
+        "title": "Workspace",
         "description": "Every workspace member can run it."
       },
       "members": {
-        "title": "Specific people",
+        "title": "Selected members",
         "description": "Only selected members can run it.",
         "required": "Select at least one member."
       }

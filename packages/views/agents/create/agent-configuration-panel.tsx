@@ -40,6 +40,7 @@ export function AgentConfigurationPanel({
   nameError,
   onNameChange,
   compact = false,
+  showConversationStarters = true,
   onModelSelection,
   runtimeSwitchPending = false,
   runtimeSwitchInFlight = false,
@@ -53,6 +54,8 @@ export function AgentConfigurationPanel({
   nameError: string | null;
   onNameChange: (name: string) => void;
   compact?: boolean;
+  /** Existing builder sessions retain their editor; new plain agents omit it. */
+  showConversationStarters?: boolean;
   /** Builder sessions rebind the server-side carrier instead of only editing
    *  the draft. Absent for the plain create flows, where the draft is the only
    *  state that exists. */
@@ -89,7 +92,7 @@ export function AgentConfigurationPanel({
             onChange={onNameChange}
           />
         </SettingsCard>
-        {conversationStartersSupported ? (
+        {showConversationStarters && conversationStartersSupported ? (
           <SettingsCard>
             <div className="px-4 py-4">
               <ConversationStartersEditor
@@ -152,7 +155,6 @@ export function AgentConfigurationPanel({
 
       <SettingsSection
         title={t(($) => $.creation_studio.sections.access)}
-        description={t(($) => $.creation_studio.sections.access_hint)}
       >
         <SettingsCard>
           <div
@@ -168,14 +170,14 @@ export function AgentConfigurationPanel({
                 aria-checked={draft.permissionScope === scope}
                 onClick={() => set("permissionScope", scope)}
                 className={cn(
-                  "flex w-full items-start gap-3 rounded-md px-3 py-2.5 text-left transition-colors",
+                  "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left transition-colors",
                   "hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                   draft.permissionScope === scope && "bg-muted",
                 )}
               >
                 <span
                   className={cn(
-                    "mt-1 flex size-3.5 shrink-0 items-center justify-center rounded-full border",
+                    "flex size-3.5 shrink-0 items-center justify-center rounded-full border",
                     draft.permissionScope === scope && "border-primary",
                   )}
                   aria-hidden="true"
@@ -184,13 +186,8 @@ export function AgentConfigurationPanel({
                     <span className="size-1.5 rounded-full bg-primary" />
                   ) : null}
                 </span>
-                <span className="min-w-0">
-                  <span className="block text-body font-medium">
-                    {t(($) => $.creation_studio.access[scope].title)}
-                  </span>
-                  <span className="mt-0.5 block text-caption leading-5 text-muted-foreground">
-                    {t(($) => $.creation_studio.access[scope].description)}
-                  </span>
+                <span className="min-w-0 text-body font-medium">
+                  {t(($) => $.creation_studio.access[scope].title)}
                 </span>
               </button>
             ))}

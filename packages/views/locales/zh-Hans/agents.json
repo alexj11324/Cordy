@@ -413,11 +413,11 @@
     "speed_label": "速度",
     "access": {
       "private": {
-        "title": "仅自己",
+        "title": "个人",
         "description": "只有你可以运行此智能体。"
       },
       "workspace": {
-        "title": "整个工作区",
+        "title": "工作区",
         "description": "工作区中的所有成员都可以运行。"
       },
       "members": {

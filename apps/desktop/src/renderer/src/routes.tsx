@@ -24,8 +24,6 @@ import { SkillsPage } from "@orvilo/views/skills";
 import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { DesktopAgentsPage } from "./components/desktop-agents-page";
 import {
-  AiCreateAgentPage,
-  ChooseCreateMethodPage,
   ManualCreateAgentPage,
 } from "@orvilo/views/agents";
 import {
@@ -209,7 +207,7 @@ export const appRoutes: RouteObject[] = [
           { path: "agents", element: <DesktopAgentsPage />, handle: { title: "Agents" } },
           {
             path: "agents/new",
-            element: <ChooseCreateMethodPage />,
+            element: <ManualCreateAgentPage />,
             handle: { title: "Create Agent" },
           },
           {
@@ -219,7 +217,7 @@ export const appRoutes: RouteObject[] = [
           },
           {
             path: "agents/new/ai",
-            element: <AiCreateAgentPage />,
+            element: <ManualCreateAgentPage />,
             handle: { title: "Create Agent" },
           },
           {

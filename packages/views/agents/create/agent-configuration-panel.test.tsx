@@ -35,10 +35,11 @@ const RUNTIME: RuntimeDevice = {
   updated_at: "2026-04-01T00:00:00Z",
 };
 
-function renderPanel(startersSupported = false) {
+function renderPanel(startersSupported = false, showConversationStarters = true) {
   configStore.getState().setAgentConversationStartersSupported(startersSupported);
   return renderWithI18n(
     <AgentConfigurationPanel
+      showConversationStarters={showConversationStarters}
       draft={{ ...EMPTY_AGENT_DRAFT, name: "Draft agent", runtimeId: RUNTIME.id }}
       onChange={vi.fn()}
       runtimes={[RUNTIME]}
@@ -83,10 +84,15 @@ describe("AgentConfigurationPanel", () => {
     ).toBeNull();
   });
 
-  it("keeps conversation starters under identity when the server supports them", () => {
-    renderPanel(true);
+  it("does not add prompt fields to creation when conversation starters are supported", () => {
+    renderPanel(true, false);
 
-    expect(screen.getByText(enAgents.conversation_starters.label)).toBeInTheDocument();
+    expect(screen.queryByText(enAgents.conversation_starters.label)).not.toBeInTheDocument();
     expect(screen.queryByText(enAgents.creation_studio.sections.behavior)).toBeNull();
+  });
+
+  it("preserves conversation starter editing for existing builder sessions", () => {
+    renderPanel(true);
+    expect(screen.getByText(enAgents.conversation_starters.label)).toBeInTheDocument();
   });
 });
