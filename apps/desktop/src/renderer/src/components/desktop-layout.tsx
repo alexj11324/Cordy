@@ -9,6 +9,7 @@ import {
 } from "@/hooks/use-tab-history";
 import {
   SidebarProvider,
+  SidebarTrigger,
   useSidebar,
 } from "@orvilo/ui/components/ui/sidebar";
 import { ModalRegistry } from "@orvilo/views/modals/registry";
@@ -86,6 +87,12 @@ function WindowToolbar() {
           >
             <ChevronRight className="size-4" />
           </button>
+          <SidebarTrigger
+            aria-label="Toggle sidebar"
+            title="Toggle sidebar"
+            className={cn(navButtonClassName, "ml-1")}
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          />
         </div>
       </div>
     </div>
@@ -284,9 +291,9 @@ export function DesktopShell() {
               is transparent so Electron's native sidebar material can show
               through; descendants that need an opaque fill still read the
               app-shell token from --sidebar-wrapper-fill. */}
-          {/* The ReUI sidebar owns its trigger inside the app-shell header.
-              Keep the provider flag so page headers do not add a second
-              fallback trigger inside the canvas. */}
+          {/* WindowToolbar owns the one persistent sidebar trigger beside the
+              traffic lights. Keep the provider flag so page headers do not
+              add a second fallback trigger inside the canvas. */}
           <SidebarProvider
             hasExternalTrigger
             hoverReveal

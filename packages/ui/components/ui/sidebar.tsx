@@ -380,7 +380,6 @@ function Sidebar({
     isCompact,
     compactBehavior,
     state,
-    open,
     openMobile,
     setOpenMobile,
     hoverReveal,
@@ -463,7 +462,7 @@ function Sidebar({
       {/* This is what handles the sidebar gap on desktop */}
       <div
         data-slot="sidebar-gap"
-        data-layout-collapsible={open ? "" : collapsible}
+        data-layout-collapsible={state === "expanded" ? "" : collapsible}
         className={cn(
           "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-out motion-reduce:transition-none",
           "data-[layout-collapsible=offcanvas]:w-0",
