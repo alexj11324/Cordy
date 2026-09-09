@@ -487,15 +487,16 @@ function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar, state } = useSidebar()
+  const { toggleSidebar, state, isCompact, openMobile } = useSidebar()
   const { t } = useTranslation("ui")
+  const triggerState = isCompact ? (openMobile ? "expanded" : "collapsed") : state
 
   return (
     <Button
       data-sidebar="trigger"
       data-slot="sidebar-trigger"
-      data-sidebar-state={state}
-      aria-expanded={state === "expanded"}
+      data-sidebar-state={triggerState}
+      aria-expanded={triggerState === "expanded"}
       variant="ghost"
       size="icon-sm"
       className={cn(

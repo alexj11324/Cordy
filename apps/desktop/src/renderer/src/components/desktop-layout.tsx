@@ -34,6 +34,7 @@ import {
   routeContentLinkPath,
 } from "@/platform/navigation";
 import { TabContent } from "./tab-content";
+import { TabBar } from "./tab-bar";
 import { WindowOverlay } from "./window-overlay";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
@@ -141,6 +142,9 @@ function MainTopBar() {
         transition={toolbarMotion}
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       />
+      <div className="relative z-10 flex h-full min-w-0 max-w-full items-center">
+        <TabBar />
+      </div>
     </motion.header>
   );
 }

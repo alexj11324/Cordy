@@ -319,10 +319,12 @@ export function NavWorkspace({
                 <UserIcon aria-hidden="true" />
                 {copy.profile}
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={onBilling}>
-                <CreditCardIcon aria-hidden="true" />
-                {copy.billing}
-              </DropdownMenuItem>
+              {onBilling ? (
+                <DropdownMenuItem onClick={onBilling}>
+                  <CreditCardIcon aria-hidden="true" />
+                  {copy.billing}
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuItem onClick={onPreferences}>
                 <SettingsIcon aria-hidden="true" />
                 {copy.preferences}

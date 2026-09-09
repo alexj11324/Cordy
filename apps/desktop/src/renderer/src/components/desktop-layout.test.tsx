@@ -107,6 +107,7 @@ vi.mock("@orvilo/views/agent-thread", () => ({
   AgentThreadPanelLayout: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
 vi.mock("./window-overlay", () => ({ WindowOverlay: () => null }));
+vi.mock("./tab-bar", () => ({ TabBar: () => <div data-testid="tab-bar" /> }));
 
 // Stands in for whatever page the active tab is showing. Reports the one fact
 // a `PageHeader` reads before deciding to render its own fallback trigger.
@@ -178,10 +179,10 @@ describe("DesktopShell sidebar trigger", () => {
     );
   });
 
-  it("does not mount the desktop tab strip", () => {
+  it("keeps the desktop tab strip reachable", () => {
     const { container } = renderShell();
 
-    expect(container.querySelector("[data-testid='tab-bar']")).toBeNull();
+    expect(container.querySelector("[data-testid='tab-bar']")).not.toBeNull();
   });
 
   it("keeps the native toolbar clearance while a collapsed sidebar is hover-revealed", () => {

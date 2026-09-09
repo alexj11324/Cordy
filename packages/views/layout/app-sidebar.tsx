@@ -62,7 +62,8 @@ import { chatSessionsOptions } from "@orvilo/core/chat/queries";
 import { countUnreadChatMessages } from "@orvilo/core/chat/unread";
 import { useChatStore } from "@orvilo/core/chat";
 import { api, ApiError } from "@orvilo/core/api";
-import { useConfigStore } from "@orvilo/core/config";
+import { useConfigStore, useFeatureEnabled } from "@orvilo/core/config";
+import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@orvilo/core/feature-flags";
 import { pinListOptions } from "@orvilo/core/pins/queries";
 import { useDeletePin, useReorderPins } from "@orvilo/core/pins/mutations";
 import { issueDetailOptions } from "@orvilo/core/issues/queries";
@@ -484,6 +485,10 @@ export function AppSidebar({
   const { data: workspaces = EMPTY_WORKSPACES } = useQuery(workspaceListOptions());
   const { data: myInvitations = EMPTY_INVITATIONS } = useQuery(myInvitationListOptions());
   const workspaceCreationDisabled = useConfigStore((s) => s.workspaceCreationDisabled);
+  const billingEnabled = useFeatureEnabled(
+    BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
+    false,
+  );
 
   // On a phone the sidebar is a Sheet covering the page, so navigating out of
   // it has to dismiss it — otherwise the destination renders underneath and the
@@ -865,7 +870,9 @@ export function AppSidebar({
           }}
           onCreateWorkspace={workspaceCreationDisabled ? undefined : () => push(paths.newWorkspace())}
           onProfile={() => push(`${p.settings()}?tab=profile`)}
-          onBilling={() => push(`${p.settings()}?tab=billing`)}
+          onBilling={
+            billingEnabled ? () => push(`${p.settings()}?tab=billing`) : undefined
+          }
           onPreferences={() => push(`${p.settings()}?tab=preferences`)}
           onSignOut={logout}
         />

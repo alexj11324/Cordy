@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   Sidebar,
   SidebarProvider,
+  SidebarTrigger,
   useSidebar,
 } from "@orvilo/ui/components/ui/sidebar";
 import { renderWithI18n } from "../test/i18n";
@@ -193,6 +194,20 @@ describe("sidebar auto-collapse between lg and xl", () => {
     fireEvent.click(screen.getByTestId("state"));
 
     expect(document.querySelector("[data-mobile='true']")).toBeInTheDocument();
+  });
+
+  it("reports the compact Sheet state from the trigger", () => {
+    setWidth(963);
+    renderWithI18n(
+      <SidebarProvider>
+        <SidebarTrigger />
+      </SidebarProvider>,
+    );
+
+    const trigger = screen.getByRole("button", { name: /toggle left sidebar/i });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
   });
 
   it("gives a hover-revealed sidebar its own opaque raised surface", () => {
