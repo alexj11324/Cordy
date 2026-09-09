@@ -18,7 +18,7 @@ export function SearchTrigger() {
       onClick={() => useSearchStore.getState().setOpen(true)}
     >
       <Search />
-      <span>{t(($) => $.trigger.label)}</span>
+      <span className="in-data-[state=collapsed]:hidden">{t(($) => $.trigger.label)}</span>
       {shortcut ? (
         <ShortcutKeycaps shortcut={shortcut} decorative className="pointer-events-none ml-auto" />
       ) : null}

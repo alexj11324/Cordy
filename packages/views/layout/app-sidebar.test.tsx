@@ -88,6 +88,7 @@ vi.mock("@orvilo/ui/components/ui/sidebar", () => ({
   ),
   SidebarMenuItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarRail: () => null,
+  SidebarTrigger: () => <button type="button" aria-label="Toggle sidebar" />,
   useSidebar: () => ({
     state: sidebarState.current,
     setHoverRevealSuspended: sidebarState.setHoverRevealSuspended,

@@ -46,8 +46,10 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  SidebarTrigger,
   useSidebar,
 } from "@orvilo/ui/components/ui/sidebar";
+import { Separator } from "@patchbay/ui/components/ui/separator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -245,7 +247,7 @@ function SortablePinItem({
       >
         {iconNode}
         <span
-          className="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
+          className="min-w-0 flex-1 overflow-hidden whitespace-nowrap in-data-[state=collapsed]:hidden"
           style={{
             maskImage: "linear-gradient(to right, black calc(100% - 12px), transparent)",
             WebkitMaskImage: "linear-gradient(to right, black calc(100% - 12px), transparent)",
@@ -430,6 +432,8 @@ function PinSkeleton() {
 interface AppSidebarProps {
   /** Rendered above SidebarHeader (e.g. desktop traffic light spacer) */
   topSlot?: React.ReactNode;
+  /** Desktop parks the sidebar trigger in the window toolbar. */
+  hasExternalTrigger?: boolean;
   /** Rendered in the header between workspace switcher and new-issue button (e.g. search trigger) */
   searchSlot?: React.ReactNode;
   /** Extra className for SidebarHeader */
@@ -438,7 +442,13 @@ interface AppSidebarProps {
   headerStyle?: React.CSSProperties;
 }
 
-export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }: AppSidebarProps = {}) {
+export function AppSidebar({
+  topSlot,
+  searchSlot,
+  headerClassName,
+  headerStyle,
+  hasExternalTrigger = false,
+}: AppSidebarProps = {}) {
   const { t } = useT("layout");
   const { pathname, push } = useNavigation();
   const user = useAuthStore((s) => s.user);
@@ -612,10 +622,49 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
       : (user?.email ?? "");
 
   return (
-      <Sidebar variant="inset">
+      <Sidebar
+        collapsible="icon"
+        variant="floating"
+        className={cn(
+          "[--sidebar-width:260px] [--sidebar-border:transparent]",
+          "[&_[data-slot=sidebar-inner]]:border-border/80 [&_[data-slot=sidebar-inner]]:border",
+          "[&_[data-slot=sidebar-inner]]:shadow-xs [&_[data-slot=sidebar-inner]]:shadow-black/5",
+          "[&_[data-slot=sidebar-menu-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-button][data-active]]:border",
+          "[&_[data-slot=sidebar-menu-button][data-active]]:shadow-xs! [&_[data-slot=sidebar-menu-button][data-active]]:shadow-black/5!",
+          "[&_[data-slot=sidebar-menu-button][data-active]]:bg-background! [&_[data-slot=sidebar-menu-button][data-active]]:hover:bg-background! **:data-[slot=sidebar-menu-button]:hover:bg-transparent!",
+          "[&_[data-slot=sidebar-menu-button][data-active]]:text-foreground [&_[data-slot=sidebar-menu-button][data-active]>svg]:text-primary [&_[data-slot=sidebar-menu-button][data-active]>svg]:opacity-100",
+          "**:data-[slot=sidebar-menu-button]:text-accent-foreground/80 **:data-[slot=sidebar-menu-button]:hover:text-foreground",
+          "[&_[data-collapsible=icon]_[data-slot=sidebar-menu-button][data-active]>svg]:-ml-px",
+          "[&_[data-slot=sidebar-menu-button]:hover>svg]:opacity-100 [&_[data-slot=sidebar-menu-button]>svg]:opacity-60",
+          "[&_[data-slot=sidebar-menu-sub-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-sub-button][data-active]]:border",
+          "[&_[data-slot=sidebar-menu-sub-button][data-active]]:shadow-xs! [&_[data-slot=sidebar-menu-sub-button][data-active]]:shadow-black/5!",
+          "[&_[data-slot=sidebar-menu-sub-button][data-active]]:bg-background! [&_[data-slot=sidebar-menu-sub-button][data-active]]:hover:bg-background! **:data-[slot=sidebar-menu-sub-button]:hover:bg-transparent!",
+          "[&_[data-slot=sidebar-menu-sub-button][data-active]]:text-foreground [&_[data-slot=sidebar-menu-sub-button][data-active]>svg]:text-primary [&_[data-slot=sidebar-menu-sub-button][data-active]>svg]:opacity-100",
+          "**:data-[slot=sidebar-menu-sub-button]:text-accent-foreground/80 **:data-[slot=sidebar-menu-sub-button]:hover:text-foreground",
+          "[&_[data-slot=sidebar-menu-sub-button]:hover>svg]:opacity-100 [&_[data-slot=sidebar-menu-sub-button]>svg]:opacity-60",
+        )}
+      >
         {topSlot}
-        {/* Workspace Switcher */}
-        <SidebarHeader className={cn("py-3", headerClassName)} style={headerStyle}>
+        <SidebarHeader
+          className={cn(
+            "gap-2 p-2",
+            "in-data-[state=collapsed]:gap-1",
+            headerClassName,
+          )}
+          style={headerStyle}
+        >
+          <div className="flex min-h-10 items-center justify-between gap-2 px-0.5 transition-all duration-200 ease-linear">
+            <div className="inline-flex min-w-0 items-center gap-2">
+              <PatchbayIcon bordered size="sm" className="size-8 shrink-0 bg-primary text-primary-foreground" />
+              <span className="truncate text-sm font-medium in-data-[state=collapsed]:hidden">
+                {workspace?.name ?? t(($) => $.sidebar.workspaces_label)}
+              </span>
+            </div>
+            {!hasExternalTrigger && (
+              <SidebarTrigger className="shrink-0 opacity-60 hover:opacity-100 [&_svg]:transition-transform [&_svg]:duration-200 in-data-[state=collapsed]:[&_svg]:rotate-180" />
+            )}
+          </div>
+          {/* Workspace Switcher */}
           <SidebarMenu>
             <SidebarMenuItem>
               <DropdownMenu onOpenChange={setHoverRevealSuspended}>
@@ -632,10 +681,10 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                           <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-brand ring-1 ring-sidebar" />
                         )}
                       </span>
-                      <span className="flex-1 truncate font-medium">
+                      <span className="flex-1 truncate font-medium in-data-[state=collapsed]:hidden">
                         {workspace?.name ?? "Orvilo"}
                       </span>
-                      <ChevronDown className="size-3 text-sidebar-icon-secondary" />
+                      <ChevronDown className="size-3 text-sidebar-icon-secondary in-data-[state=collapsed]:hidden" />
                     </SidebarMenuButton>
                   }
                 />
@@ -737,9 +786,9 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                   <SquarePen className="text-sidebar-icon-secondary" />
                   <DraftDot />
                 </span>
-                <span>{t(($) => $.sidebar.new_issue)}</span>
+                <span className="in-data-[state=collapsed]:hidden">{t(($) => $.sidebar.new_issue)}</span>
                 {createIssueShortcut ? (
-                  <ShortcutKeycaps shortcut={createIssueShortcut} decorative className="pointer-events-none ml-auto" />
+                  <ShortcutKeycaps shortcut={createIssueShortcut} decorative className="pointer-events-none ml-auto in-data-[state=collapsed]:hidden" />
                 ) : null}
               </SidebarMenuButton>
             </SidebarMenuItem>
@@ -763,19 +812,19 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                         className={SIDEBAR_NAV_BUTTON_CLASS}
                       >
                         <Icon className={sidebarNavIconClassName(isActive)} />
-                        <span>{t(($) => $.nav[item.labelKey])}</span>
+                        <span className="in-data-[state=collapsed]:hidden">{t(($) => $.nav[item.labelKey])}</span>
                         {item.key === "inbox" && unreadCount > 0 && (
                           <CappedNumberFlow
                             value={unreadCount}
                             animated={false}
-                            className="ml-auto text-caption"
+                            className="ml-auto text-caption in-data-[state=collapsed]:hidden"
                           />
                         )}
                         {item.key === "chat" && chatUnreadCount > 0 && (
                           <CappedNumberFlow
                             value={chatUnreadCount}
                             animated={false}
-                            className="ml-auto text-caption"
+                            className="ml-auto text-caption in-data-[state=collapsed]:hidden"
                           />
                         )}
                       </SidebarMenuButton>
@@ -841,7 +890,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                         className={SIDEBAR_NAV_BUTTON_CLASS}
                       >
                         <Icon className={sidebarNavIconClassName(isActive)} />
-                        <span>{t(($) => $.nav[item.labelKey])}</span>
+                        <span className="in-data-[state=collapsed]:hidden">{t(($) => $.nav[item.labelKey])}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   );
@@ -866,7 +915,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                         className={SIDEBAR_NAV_BUTTON_CLASS}
                       >
                         <Icon className={sidebarNavIconClassName(isActive)} />
-                        <span>{t(($) => $.nav[item.labelKey])}</span>
+                        <span className="in-data-[state=collapsed]:hidden">{t(($) => $.nav[item.labelKey])}</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   );
@@ -876,7 +925,10 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="p-1">
+        <SidebarFooter className="gap-2 p-1">
+          <div className="px-2">
+            <Separator />
+          </div>
           <SidebarMenu>
             <SidebarMenuItem>
               <div className="flex min-w-0 items-center gap-1">
@@ -893,7 +945,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                           avatarUrl={resolvePublicFileUrl(user?.avatar_url)}
                           size="sm"
                         />
-                        <span className="min-w-0 flex-1">
+                        <span className="min-w-0 flex-1 in-data-[state=collapsed]:hidden">
                           <span className="block truncate text-body font-medium leading-tight">
                             {user?.name}
                           </span>

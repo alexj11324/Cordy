@@ -308,7 +308,13 @@ export function DesktopShell() {
           >
             {slug && <GlobalShortcuts />}
             {slug && <WindowToolbar />}
-            {slug && <AppSidebar topSlot={<SidebarTopSpacer />} searchSlot={<SearchTrigger />} />}
+            {slug && (
+              <AppSidebar
+                hasExternalTrigger
+                topSlot={<SidebarTopSpacer />}
+                searchSlot={<SearchTrigger />}
+              />
+            )}
             {/* Right side: header + content container */}
             <div className="flex flex-1 min-w-0 flex-col">
               <MainTopBar />
