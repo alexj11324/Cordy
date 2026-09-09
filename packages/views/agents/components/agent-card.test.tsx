@@ -1,0 +1,135 @@
+// @vitest-environment jsdom
+
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, screen } from "@testing-library/react";
+import type { Agent, AgentRuntime } from "@orvilo/core/types";
+import { renderWithI18n } from "../../test/i18n";
+import { AgentCard } from "./agent-card";
+import type { AgentListRow } from "./agents-page";
+
+vi.mock("../../runtimes/components/provider-logo", () => ({
+  ProviderLogo: ({ provider }: { provider: string }) => (
+    <span data-testid={`provider-${provider}`}>{provider}</span>
+  ),
+}));
+
+function agent(overrides: Partial<Agent> = {}): Agent {
+  return {
+    id: "agent-1",
+    name: "Codex",
+    description: "Reviews diffs.",
+    model: "gpt-5",
+    runtime_id: "rt-1",
+    runtime_bound: true,
+    owner_id: "user-1",
+    visibility: "workspace",
+    permission_mode: "public_to",
+    invocation_targets: [{ target_type: "workspace", target_id: null }],
+    archived_at: null,
+    created_at: "2026-01-01T00:00:00Z",
+    max_concurrent_tasks: 6,
+    ...overrides,
+  } as unknown as Agent;
+}
+
+function runtime(overrides: Partial<AgentRuntime> = {}): AgentRuntime {
+  return {
+    id: "rt-1",
+    workspace_id: "ws-1",
+    daemon_id: null,
+    name: "Alex MacBook Pro",
+    runtime_mode: "local",
+    provider: "codex",
+    launch_header: "",
+    status: "online",
+    device_info: "",
+    metadata: {},
+    owner_id: "user-1",
+    visibility: "private",
+    last_seen_at: null,
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function row(overrides: Partial<AgentListRow> = {}): AgentListRow {
+  return {
+    agent: agent(),
+    runtime: runtime(),
+    presence: {
+      availability: "online",
+      workload: "working",
+      runningCount: 3,
+      queuedCount: 0,
+      capacity: 6,
+    },
+    activity: null,
+    runCount: 4,
+    lastActiveDays: 15,
+    owner: {
+      id: "mem-1",
+      workspace_id: "ws-1",
+      user_id: "user-1",
+      role: "owner",
+      created_at: "2026-01-01T00:00:00Z",
+      name: "Mira Stone",
+      email: "mira@example.com",
+      avatar_url: null,
+    },
+    isOwnedByMe: false,
+    canManage: true,
+    ...overrides,
+  };
+}
+
+function renderCard(listRow: AgentListRow = row(), onOpenSummary = vi.fn()) {
+  return {
+    onOpenSummary,
+    ...renderWithI18n(
+      <AgentCard onOpenSummary={onOpenSummary} row={listRow} />,
+    ),
+  };
+}
+
+describe("AgentCard", () => {
+  it("maps agent fields onto the Atlas card without deal-specific slots", () => {
+    renderCard();
+
+    expect(screen.getByText("Access")).toBeInTheDocument();
+    expect(screen.getByText("Workspace")).toBeInTheDocument();
+    expect(screen.getByText("Device")).toBeInTheDocument();
+    expect(screen.getByText("This machine")).toBeInTheDocument();
+    expect(screen.getByText("Concurrency")).toBeInTheDocument();
+    expect(screen.getByText("3:6")).toBeInTheDocument();
+    expect(screen.getByTestId("provider-codex")).toBeInTheDocument();
+    expect(screen.queryByText("Risk")).not.toBeInTheDocument();
+    expect(screen.queryByText(/left/)).not.toBeInTheDocument();
+    expect(screen.getByText("Mira Stone")).toBeInTheDocument();
+    expect(screen.getByText("Alex MacBook Pro")).toBeInTheDocument();
+  });
+
+  it("uses the remote runtime name as the device value", () => {
+    renderCard(
+      row({
+        runtime: runtime({
+          runtime_mode: "cloud",
+          name: "Cloud Sandbox",
+          provider: "cursor",
+        }),
+      }),
+    );
+
+    expect(screen.getAllByText("Cloud Sandbox").length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText("This machine")).not.toBeInTheDocument();
+    expect(screen.getByTestId("provider-cursor")).toBeInTheDocument();
+  });
+
+  it("opens the overlay inspector from the card title", () => {
+    const { onOpenSummary } = renderCard();
+
+    fireEvent.click(screen.getByRole("button", { name: "Codex" }));
+
+    expect(onOpenSummary).toHaveBeenCalledTimes(1);
+  });
+});

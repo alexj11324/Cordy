@@ -98,7 +98,7 @@ function DataGridColumnFilter<TData extends object, TValue>({
         </div>
         <div className="max-h-[300px] overflow-y-auto">
           {filteredOptions.length === 0 ? (
-            <div className="text-muted-foreground py-6 text-center text-body">
+            <div className="text-muted-foreground py-6 text-center text-sm">
               {i18n.labels.filterNoResults}
             </div>
           ) : (
@@ -131,7 +131,7 @@ function DataGridColumnFilter<TData extends object, TValue>({
                       }
                     }}
                     className={cn(
-                      "rounded-md relative flex cursor-pointer items-center gap-2 px-2 py-1.5 text-body outline-hidden select-none",
+                      "rounded-md relative flex cursor-pointer items-center gap-2 px-2 py-1.5 text-sm outline-hidden select-none",
                       "hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
                     )}
                   >
@@ -150,7 +150,7 @@ function DataGridColumnFilter<TData extends object, TValue>({
                     )}
                     <span>{option.label}</span>
                     {facetCount !== undefined && (
-                      <span className="ms-auto flex h-4 w-4 items-center justify-center font-mono text-caption">
+                      <span className="ms-auto flex h-4 w-4 items-center justify-center font-mono text-xs">
                         {facetCount}
                       </span>
                     )}
@@ -173,7 +173,7 @@ function DataGridColumnFilter<TData extends object, TValue>({
                       column?.setFilterValue(undefined)
                     }
                   }}
-                  className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground rounded-md relative flex cursor-pointer items-center justify-center px-2 py-1.5 text-body outline-hidden select-none"
+                  className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground rounded-md relative flex cursor-pointer items-center justify-center px-2 py-1.5 text-sm outline-hidden select-none"
                 >
                   {i18n.labels.filterClear}
                 </div>

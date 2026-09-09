@@ -2565,7 +2565,7 @@ function DataGridSelectionBar({
               className
             )}
           >
-            <span className="text-foreground text-body font-medium">
+            <span className="text-foreground text-sm font-medium">
               {label ? label(count) : `${count} selected`}
             </span>
             <div className="flex flex-1 flex-wrap items-center justify-end gap-2.5">

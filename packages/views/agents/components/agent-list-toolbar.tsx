@@ -16,7 +16,7 @@ import {
   type AgentAvailability,
 } from "@orvilo/core/agents";
 import type { MemberWithUser } from "@orvilo/core/types";
-import { runtimeDisplayLabel } from "@orvilo/core/runtimes";
+import { deviceDisplayName } from "@orvilo/core/runtimes";
 import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 import {
   AGENT_SCOPES,
@@ -63,7 +63,7 @@ const COLUMN_KEYS: AgentColumnKey[] = [
   "status",
   "owner",
   "access",
-  "runtime",
+  "device",
   "lastActive",
   "runs",
   "model",
@@ -88,7 +88,7 @@ export function countActiveFilterDimensions(
 ): number {
   let count = 0;
   if (filters.availability.length > 0) count++;
-  if (filters.runtimes.length > 0) count++;
+  if (filters.devices.length > 0) count++;
   if (filters.owners.length > 0) count++;
   if (filters.models.length > 0) count++;
   if (filters.access.length > 0) count++;
@@ -164,7 +164,7 @@ export function AgentListToolbar({
     if (rt) {
       const entry = runtimeOptions.get(rt.id);
       if (entry) entry.count += 1;
-      else runtimeOptions.set(rt.id, { name: runtimeDisplayLabel(rt), count: 1 });
+      else runtimeOptions.set(rt.id, { name: deviceDisplayName(rt), count: 1 });
     }
     const a = effectiveAccessScope(row.agent.permission_mode, row.agent.invocation_targets);
     accessCounts.set(a, (accessCounts.get(a) ?? 0) + 1);
@@ -198,13 +198,14 @@ export function AgentListToolbar({
     status: t(($) => $.columns.status),
     owner: t(($) => $.columns.owner),
     access: t(($) => $.columns.access),
-    runtime: t(($) => $.columns.runtime),
+    device: t(($) => $.columns.device),
     lastActive: t(($) => $.columns.last_active),
     runs: t(($) => $.columns.runs),
     model: t(($) => $.columns.model),
     created: t(($) => $.columns.created),
   };
   const sortLabel = SORT_LABELS[sortField];
+  const tableLayout = viewMode === "table";
 
   const countBadge = (n: number) => (
     <span className="ml-auto pl-3 text-caption text-muted-foreground">{n}</span>
@@ -218,6 +219,7 @@ export function AgentListToolbar({
           styling and the <md dropdown collapse follow the issues header's
           scope buttons. */}
       <div className="flex min-w-0 items-center gap-2">
+        {!tableLayout ? (
         <div className="relative hidden shrink-0 md:block">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -228,6 +230,7 @@ export function AgentListToolbar({
             className="h-8 w-56 pl-8 text-body"
           />
         </div>
+        ) : null}
 
         <div className="hidden shrink-0 items-center gap-1 md:flex">
           {AGENT_SCOPES.map((s) => (
@@ -280,7 +283,7 @@ export function AgentListToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {(hasActiveFilters || hasSearch) && (
+        {!tableLayout && (hasActiveFilters || hasSearch) && (
           <span
             title={t(($) => $.toolbar.result_count_title)}
             className="hidden shrink-0 text-caption tabular-nums text-muted-foreground md:inline"
@@ -291,7 +294,8 @@ export function AgentListToolbar({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        {/* Filter */}
+        {/* Filter — table view uses the ReUI Status filter instead. */}
+        {!tableLayout ? (
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
@@ -416,15 +420,15 @@ export function AgentListToolbar({
               </DropdownMenuSubContent>
             </DropdownMenuSub>
 
-            {/* Runtime */}
+            {/* Device */}
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
                 <span className="flex-1">
-                  {t(($) => $.toolbar.section_runtime)}
+                  {t(($) => $.toolbar.section_device)}
                 </span>
-                {filters.runtimes.length > 0 && (
+                {filters.devices.length > 0 && (
                   <span className="text-caption font-medium text-primary">
-                    {filters.runtimes.length}
+                    {filters.devices.length}
                   </span>
                 )}
               </DropdownMenuSubTrigger>
@@ -432,11 +436,11 @@ export function AgentListToolbar({
                 {[...runtimeOptions.entries()].map(([id, { name, count }]) => (
                   <DropdownMenuCheckboxItem
                     key={id}
-                    checked={filters.runtimes.includes(id)}
-                    onCheckedChange={() => onToggleFilter("runtimes", id)}
+                    checked={filters.devices.includes(id)}
+                    onCheckedChange={() => onToggleFilter("devices", id)}
                     className={FILTER_ITEM_CLASS}
                   >
-                    <HoverCheck checked={filters.runtimes.includes(id)} />
+                    <HoverCheck checked={filters.devices.includes(id)} />
                     <span className="min-w-0 truncate">{name}</span>
                     {countBadge(count)}
                   </DropdownMenuCheckboxItem>
@@ -516,6 +520,7 @@ export function AgentListToolbar({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+        ) : null}
 
         {/* View Mode Toggle */}
         {onViewModeChange && viewMode ? (
@@ -565,7 +570,8 @@ export function AgentListToolbar({
           </div>
         ) : null}
 
-        {/* Display settings */}
+        {/* Display settings — table view sorts/hides columns on the grid. */}
+        {!tableLayout ? (
         <Popover>
           <Tooltip>
             <PopoverTrigger
@@ -673,6 +679,7 @@ export function AgentListToolbar({
             ) : null}
           </PopoverContent>
         </Popover>
+        ) : null}
       </div>
       </div>
     </div>

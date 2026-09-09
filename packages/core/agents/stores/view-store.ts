@@ -45,15 +45,15 @@ export const AGENT_SORT_DEFAULT_DIRECTION: Record<
 export interface AgentListFilters {
   /** AgentAvailability values (online / unstable / offline). */
   availability: string[];
-  /** Runtime ids. */
-  runtimes: string[];
+  /** Device ids (wire `runtime_id`). */
+  devices: string[];
   /** Owner user ids. Owner is the same person-axis as the Mine scope: the
    *  "mine" scope is the clean no-filter personal view, and applying any
    *  filter (owner or otherwise) leaves it for "all" — see setScope /
    *  toggleFilter. So owner-as-filter and Mine never coexist, which keeps
    *  the axis orthogonal (no "mine + owner=someone-else = empty" state). */
   owners: string[];
-  /** Runtime-native model identifiers (e.g. claude / codex / gpt-…). */
+  /** Harness-native model identifiers (e.g. claude / codex / gpt-…). */
   models: string[];
   /** Effective access-scope values (MUL-3963): workspace | specific-people | owner-only. */
   access: AccessScope[];
@@ -61,7 +61,7 @@ export interface AgentListFilters {
 
 export const EMPTY_AGENT_FILTERS: AgentListFilters = {
   availability: [],
-  runtimes: [],
+  devices: [],
   owners: [],
   models: [],
   access: [],
@@ -73,7 +73,7 @@ export type AgentColumnKey =
   | "status"
   | "owner"
   | "access"
-  | "runtime"
+  | "device"
   | "lastActive"
   | "runs"
   | "model"
@@ -187,15 +187,28 @@ export const useAgentsViewStore = create<AgentsViewState>()(
       // persisted is undefined, which would leak state across workspaces.
       merge: (persisted, current) => {
         if (!persisted) return { ...current, ...DEFAULTS };
-        const p = persisted as Partial<AgentsViewState>;
-        // Deep-merge filters so a payload persisted before a new filter
-        // dimension existed (e.g. `owners`) still gets that key's default
-        // instead of dropping it to `undefined` and crashing `.length`.
+        type LegacyColumnKey = AgentColumnKey | "runtime";
+        type LegacyFilters = Partial<AgentListFilters> & { runtimes?: string[] };
+        const p = persisted as Partial<AgentsViewState> & {
+          hiddenColumns?: LegacyColumnKey[];
+          filters?: LegacyFilters;
+        };
+        const hiddenColumns = (p.hiddenColumns ?? DEFAULTS.hiddenColumns).map(
+          (key: LegacyColumnKey) => (key === "runtime" ? "device" : key),
+        );
+        const persistedFilters: LegacyFilters = p.filters ?? {};
+        const devices =
+          persistedFilters.devices ?? persistedFilters.runtimes ?? [];
         return {
           ...current,
           ...p,
           viewMode: p.viewMode ?? DEFAULTS.viewMode,
-          filters: { ...EMPTY_AGENT_FILTERS, ...(p.filters ?? {}) },
+          hiddenColumns,
+          filters: {
+            ...EMPTY_AGENT_FILTERS,
+            ...persistedFilters,
+            devices,
+          },
         };
       },
     },

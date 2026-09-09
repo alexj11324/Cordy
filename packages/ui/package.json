@@ -10,6 +10,10 @@
   "exports": {
     "./components/ui/*": "./components/ui/*.tsx",
     "./components/reui/*": "./components/reui/*.tsx",
+    "./components/blocks/data-grid-base-1/components/data-grid-view": "./components/blocks/data-grid-base-1/components/data-grid-view.tsx",
+    "./components/blocks/data-grid-base-1/components/copy": "./components/blocks/data-grid-base-1/components/copy.ts",
+    "./components/blocks/data-grid-base-1/components/*": "./components/blocks/data-grid-base-1/components/*.tsx",
+    "./components/reui/data-grid/*": "./components/reui/data-grid/*.tsx",
     "./components/common/*": "./components/common/*.tsx",
     "./markdown": "./markdown/index.ts",
     "./markdown/*": "./markdown/*.tsx",

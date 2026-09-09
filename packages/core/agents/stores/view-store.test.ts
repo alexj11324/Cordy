@@ -131,6 +131,30 @@ describe("useAgentsViewStore", () => {
     const filters = useAgentsViewStore.getState().filters;
     expect(filters.owners).toEqual([]);
     expect(filters.availability).toEqual(["online"]);
+    expect(filters.devices).toEqual([]);
+  });
+
+  it("migrates persisted runtime column and filter keys to device", async () => {
+    localStorage.setItem(
+      "orvilo_agents_view:acme",
+      JSON.stringify({
+        state: {
+          hiddenColumns: ["runtime", "model"],
+          filters: { runtimes: ["rt-1"], availability: [] },
+        },
+        version: 0,
+      }),
+    );
+
+    setCurrentWorkspace("acme", "ws_a");
+    await flush();
+    await flush();
+
+    expect(useAgentsViewStore.getState().hiddenColumns).toEqual([
+      "device",
+      "model",
+    ]);
+    expect(useAgentsViewStore.getState().filters.devices).toEqual(["rt-1"]);
   });
 
   describe("access filter dimension", () => {

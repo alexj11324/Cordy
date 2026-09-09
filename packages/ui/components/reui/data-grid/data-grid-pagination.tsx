@@ -48,7 +48,7 @@ function DataGridPagination(props: DataGridPaginationProps): JSX.Element {
 
   const mergedProps: DataGridPaginationProps = { ...defaultProps, ...props }
 
-  const btnBaseClasses = "p-0 text-body"
+  const btnBaseClasses = "p-0 text-sm"
   const btnArrowClasses = btnBaseClasses + " rtl:transform rtl:rotate-180"
   const pageIndex = table.state.pagination.pageIndex
   const pageSize = table.state.pagination.pageSize
@@ -150,7 +150,7 @@ function DataGridPagination(props: DataGridPaginationProps): JSX.Element {
           mergedProps.sizesSkeleton
         ) : (
           <>
-            <div className="text-muted-foreground text-body">
+            <div className="text-muted-foreground text-sm">
               {mergedProps.rowsPerPageLabel}
             </div>
             <Select
@@ -197,7 +197,7 @@ function DataGridPagination(props: DataGridPaginationProps): JSX.Element {
           mergedProps.infoSkeleton
         ) : (
           <>
-            <div className="text-muted-foreground order-2 text-body text-nowrap sm:order-1">
+            <div className="text-muted-foreground order-2 text-sm text-nowrap sm:order-1">
               {paginationInfo}
             </div>
             {pageCount > 1 && (

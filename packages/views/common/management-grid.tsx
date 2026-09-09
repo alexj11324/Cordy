@@ -6,6 +6,7 @@ import {
   DataGrid,
   DataGridContainer,
 } from "@orvilo/ui/components/reui/data-grid/data-grid";
+import { DataGridTable } from "@orvilo/ui/components/reui/data-grid/data-grid-table";
 import { DataGridTableVirtual } from "@orvilo/ui/components/reui/data-grid/data-grid-table-virtual";
 import { useRowLink } from "../navigation";
 
@@ -37,13 +38,20 @@ interface ManagementGridProps<
   columnCount: number;
   /** Detail route for a row id, or null when the row does not navigate. */
   hrefForRow: (rowId: string) => { href: string; title?: string } | null;
+  /**
+   * `page` (default) is a flex-1 pane whose virtualizer owns both scroll
+   * axes. `inline` sizes to its rows and leaves overflow to the parent —
+   * used by the machine-detail runtime list, which is a handful of rows
+   * inside a card, not a full-page scroller.
+   */
+  layout?: "page" | "inline";
 }
 
 // Clearance so the last row can scroll clear of floating UI anchored to the
 // pane's bottom edge (the chat FAB covers ~48px, a batch toolbar ~62px). It
 // rides a spacer row inside the SAME scroller as the data, so it scrolls with
 // the content instead of shrinking the viewport.
-const BOTTOM_CLEARANCE = 64;
+export const MANAGEMENT_GRID_BOTTOM_CLEARANCE = 64;
 
 export function ManagementGrid<
   TFeatures extends TableFeatures,
@@ -56,8 +64,10 @@ export function ManagementGrid<
   minWidth,
   columnCount,
   hrefForRow,
+  layout = "page",
 }: ManagementGridProps<TFeatures, TData>) {
   const rowLink = useRowLink();
+  const inline = layout === "inline";
 
   // Row navigation is DELEGATED from the container rather than spread onto
   // each <tr>: the grid renders its own rows, and its `onRowClick` hands over
@@ -81,21 +91,24 @@ export function ManagementGrid<
   const hoveredRowIdRef = useRef<string | null>(null);
 
   const footerContent = useMemo(
-    () => (
-      <tr aria-hidden="true">
-        <td
-          colSpan={columnCount}
-          className="border-0 p-0"
-          style={{ height: BOTTOM_CLEARANCE }}
-        />
-      </tr>
-    ),
-    [columnCount],
+    () =>
+      inline ? undefined : (
+        <tr aria-hidden="true">
+          <td
+            colSpan={columnCount}
+            className="border-0 p-0"
+            style={{ height: MANAGEMENT_GRID_BOTTOM_CLEARANCE }}
+          />
+        </tr>
+      ),
+    [columnCount, inline],
   );
 
   return (
     <div
-      className="min-h-0 flex-1 @container"
+      className={
+        inline ? "@container" : "flex min-h-0 flex-1 flex-col @container"
+      }
       style={
         {
           "--mg-minw": `${minWidth}px`,
@@ -126,6 +139,11 @@ export function ManagementGrid<
         }}
         tableClassNames={{
           base: "@2xl:min-w-[var(--mg-minw)]",
+          // Opaque, no backdrop-filter. A sticky header with content
+          // scrolling beneath it flickers black in Electron if it blurs
+          // (electron#12906); the mix is the same tone as muted/30.
+          headerSticky:
+            "sticky top-0 z-40 bg-[color-mix(in_oklab,var(--muted)_30%,var(--background))]",
           // h-9 is the management-list header height; the muted band and its
           // bottom border are the explicit header LAYER - without one the
           // column titles read as part of the first row.
@@ -136,20 +154,60 @@ export function ManagementGrid<
             "group/row h-[var(--mg-rowh)] cursor-pointer [&>td]:border-border/60",
         }}
       >
-        {/* ONE scroll container owns BOTH axes: DataGridTableVirtual's own
-            viewport, since no DataGridScrollArea is composed around it.
-            Splitting horizontal and vertical scrolling across two elements
-            produced a non-converging layout loop (flickering double
-            scrollbars) in the lists this replaces. */}
-        <DataGridContainer className="h-full">
-          <DataGridTableVirtual
-            height="100%"
-            estimateSize={rowHeight}
-            overscan={10}
-            footerContent={footerContent}
-          />
-        </DataGridContainer>
+        {inline ? (
+          <DataGridContainer>
+            <DataGridTable footerContent={footerContent} />
+          </DataGridContainer>
+        ) : (
+          // ONE scroll container owns BOTH axes: DataGridTableVirtual's own
+          // viewport, since no DataGridScrollArea is composed around it.
+          // Splitting horizontal and vertical scrolling across two elements
+          // produced a non-converging layout loop (flickering double
+          // scrollbars) in the lists this replaces.
+          <DataGridContainer className="min-h-0 flex-1">
+            <DataGridTableVirtual
+              height="100%"
+              estimateSize={rowHeight}
+              overscan={10}
+              footerContent={footerContent}
+            />
+          </DataGridContainer>
+        )}
       </DataGrid>
     </div>
+  );
+}
+
+/** Sortable column title. The grid's own header chrome is not driving sort. */
+export function ManagementGridSortHeader({
+  active,
+  align = "start",
+  direction,
+  label,
+  onSort,
+}: {
+  active: boolean;
+  align?: "start" | "end";
+  direction: "asc" | "desc";
+  label: string;
+  onSort: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSort}
+      aria-sort={
+        active ? (direction === "asc" ? "ascending" : "descending") : undefined
+      }
+      className={`flex h-6 items-center rounded-md px-1.5 text-caption transition-colors ${
+        align === "end" ? "-mr-1.5 ml-auto" : "-ml-1.5"
+      } ${
+        active
+          ? "font-medium text-foreground"
+          : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+      }`}
+    >
+      {label}
+    </button>
   );
 }

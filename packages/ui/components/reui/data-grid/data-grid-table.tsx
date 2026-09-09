@@ -1,7 +1,9 @@
 "use client"
 
 import {
+  cloneElement,
   Fragment,
+  isValidElement,
   memo,
   useCallback,
   useEffect,
@@ -12,6 +14,7 @@ import {
 import type {
   CSSProperties,
   MouseEvent as ReactMouseEvent,
+  ReactElement,
   ReactNode,
   TouchEvent as ReactTouchEvent,
   Ref,
@@ -782,7 +785,7 @@ function DataGridTableBase({ children }: { children: ReactNode }) {
           : undefined
       }
       className={cn(
-        "text-foreground caption-bottom text-left align-middle text-body font-normal rtl:text-right",
+        "text-foreground caption-bottom text-left align-middle text-sm font-normal rtl:text-right",
         props.tableLayout?.columnsResizable ? "min-w-0" : "w-full min-w-full",
         props.tableLayout?.width === "auto" ? "table-auto" : "table-fixed",
         !props.tableLayout?.columnsResizable && "",
@@ -1922,7 +1925,24 @@ function DataGridTableRenderedRow<TData extends object>({
    */
   centerWindow?: { start: number; end: number }
 }) {
-  const { props, table } = useDataGrid()
+  const { props, table } = useDataGrid<TData>()
+  const customRow = props.renderRow?.(row)
+  if (customRow != null) {
+    if (isValidElement(customRow)) {
+      const existingRef = (
+        customRow as { ref?: Ref<HTMLTableRowElement> }
+      ).ref
+      return cloneElement(customRow as ReactElement<Record<string, unknown>>, {
+        ref: (node: HTMLTableRowElement | null) => {
+          assignRef(rowRef, node)
+          assignRef(existingRef, node)
+        },
+        "data-index": rowIndex,
+        "data-row-id": row.id,
+      })
+    }
+    return customRow
+  }
   const startVisibleCells = row.getStartVisibleCells()
   const centerVisibleCells = row.getCenterVisibleCells()
   const endVisibleCells = row.getEndVisibleCells()
@@ -2004,7 +2024,7 @@ function DataGridTableEmpty() {
     <tr>
       <td
         colSpan={Math.max(visibleColumnCount, 1)}
-        className="text-muted-foreground py-6 text-center text-body"
+        className="text-muted-foreground py-6 text-center text-sm"
       >
         {props.emptyMessage || i18n.labels.empty}
       </td>
@@ -2017,7 +2037,7 @@ function DataGridTableLoader() {
 
   return (
     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-      <div className="text-muted-foreground bg-card rounded-lg flex items-center gap-2 border px-4 py-2 text-body leading-none font-medium">
+      <div className="text-muted-foreground bg-card rounded-lg flex items-center gap-2 border px-4 py-2 text-sm leading-none font-medium">
         <Spinner className="size-5 opacity-60" />
         {props.loadingMessage || i18n.labels.loading}
       </div>

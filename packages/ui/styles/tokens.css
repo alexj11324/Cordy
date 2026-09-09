@@ -73,7 +73,9 @@
     --color-destructive-foreground: var(--destructive-foreground);
 }
 
-/* Type scale — the only font sizes product UI may use.
+/* Type scale for chrome we author (settings, issue page, sidebar).
+ * Do not rewrite ReUI/Atlas blocks onto these names; those files keep
+ * `text-sm` / `text-xs` / arbitrary sizes from the source.
  *
  * There was no `--text-*` token here before, so sizes grew ad hoc: 51 distinct
  * font sizes across web + desktop, 370 of them written as arbitrary values,
@@ -87,13 +89,13 @@
  * That is what keeps the scale from drifting again: "what is this text for"
  * has an answer a reader can check, "is this sm or base" does not.
  *
- * Six of the ten steps replace Tailwind's default scale and deliberately keep
- * that scale's exact size/line-height pairs, so `text-sm` -> `text-body` moves
- * nothing on screen. Only the steps that fill the old gaps — micro (11), label
- * (13), body-lg (15) — are new sizes; those are the gaps the arbitrary values
- * were papering over. Every step carries its own line-height so leading cannot
- * fragment the way size did; a `leading-*` utility still wins where a specific
- * block needs to override it.
+ * Six of the ten steps match Tailwind's default size/line-height pairs
+ * (`text-sm` and `text-body` are both 14/20). That is a coincidence for chrome
+ * we author, not a mandate to rewrite ReUI `text-sm` onto `text-body`. Only the
+ * steps that fill old gaps — micro (11), label (13), body-lg (15) — are new
+ * sizes. Every step carries its own line-height so leading cannot fragment the
+ * way size did; a `leading-*` utility still wins where a specific block needs
+ * to override it.
  *
  * Landing-page display type (rem/clamp, 2.2-6.4rem) is marketing typography on
  * a separate ramp and stays out of this scale on purpose. */

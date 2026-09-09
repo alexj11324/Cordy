@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, Bot, Plus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type {
@@ -20,7 +20,6 @@ import {
   type AgentListFilters,
   useAgentsViewStore,
   AGENT_SCOPES,
-  type AgentColumnKey,
   type AgentsScope,
   type AgentViewMode,
 } from "@orvilo/core/agents/stores";
@@ -33,7 +32,7 @@ import {
 } from "@orvilo/core/workspace/queries";
 import { runtimeListOptions } from "@orvilo/core/runtimes";
 import { Button } from "@orvilo/ui/components/ui/button";
-import { LIST_GRID_BOTTOM_CLEARANCE } from "@orvilo/ui/components/ui/list-grid";
+import { MANAGEMENT_GRID_BOTTOM_CLEARANCE } from "../../common/management-grid";
 import { useNavigation } from "../../navigation";
 import { CollectionPageState } from "../../layout/collection-page";
 import {
@@ -45,6 +44,7 @@ import {
   AgentCardsLoadingSkeleton,
   AgentCreateCard,
   AGENT_CARD_GRID_CLASS,
+  AGENT_CARD_GRID_GAP_CLASS,
 } from "./agent-card";
 import { AgentProfilePanel } from "./agent-profile-panel";
 import { useLocale, useT } from "../../i18n";
@@ -109,8 +109,8 @@ export function rowMatchesFilters(
     return false;
   }
   if (
-    filters.runtimes.length > 0 &&
-    !filters.runtimes.includes(row.agent.runtime_id)
+    filters.devices.length > 0 &&
+    !filters.devices.includes(row.agent.runtime_id)
   ) {
     return false;
   }
@@ -298,23 +298,11 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
   const sortDirection = useAgentsViewStore((s) => s.sortDirection);
   const hiddenColumns = useAgentsViewStore((s) => s.hiddenColumns);
   const filters = useAgentsViewStore((s) => s.filters);
-  const handleSort = useAgentsViewStore((s) => s.toggleSort);
   const handleSortFieldSelect = useAgentsViewStore((s) => s.setSortField);
   const setSortDirection = useAgentsViewStore((s) => s.setSortDirection);
   const toggleColumn = useAgentsViewStore((s) => s.toggleColumn);
   const toggleFilter = useAgentsViewStore((s) => s.toggleFilter);
   const clearFilters = useAgentsViewStore((s) => s.clearFilters);
-
-  const isColVisible = (key: AgentColumnKey) => !hiddenColumns.includes(key);
-
-  const toggleSelected = (id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const runtimesById = useMemo(() => {
     const m = new Map<string, AgentRuntime>();
@@ -410,9 +398,14 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
     }
   }, [profileAgentId, profileRow]);
 
-  // Visible rows: local search + filters, then sort.
+  // Visible rows: local search + filters, then sort. Table view uses the
+  // ReUI grid's own search/status filter, so card-toolbar filters must not
+  // silently shrink the dataset.
   const rows = useMemo<AgentListRow[]>(() => {
-    const filtered = scopeRows.filter((row) => rowMatchesFilters(row, filters, search));
+    const filtered =
+      viewMode === "table"
+        ? [...scopeRows]
+        : scopeRows.filter((row) => rowMatchesFilters(row, filters, search));
 
     const dir = sortDirection === "asc" ? 1 : -1;
     filtered.sort((a, b) => {
@@ -441,7 +434,7 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
       );
     });
     return filtered;
-  }, [scopeRows, search, filters, sortField, sortDirection]);
+  }, [scopeRows, search, filters, sortField, sortDirection, viewMode]);
 
   useEffect(() => {
     setCardPage(0);
@@ -482,22 +475,7 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
     return t(($) => $.no_matches.title);
   }, [filters, scope, search, t]);
 
-  // Straight to the manual form: a duplicate already has every field decided,
-  // so the method chooser would be a step with nothing to choose.
-  const duplicateHref = useCallback(
-    (agent: Agent) =>
-      `${paths.newAgentManual()}?duplicate=${encodeURIComponent(agent.id)}`,
-    [paths],
-  );
-
   const selectedRows = rows.filter((row) => selectedIds.has(row.agent.id));
-  const allSelected = rows.length > 0 && selectedRows.length === rows.length;
-  const someSelected = selectedRows.length > 0 && !allSelected;
-  const handleToggleAll = () => {
-    setSelectedIds(
-      allSelected ? new Set() : new Set(rows.map((r) => r.agent.id)),
-    );
-  };
 
   if (listError) {
     return (
@@ -526,7 +504,8 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
   // blocked on the auxiliary queries.
   const needsRunCounts = sortField === "lastActive" || sortField === "runs";
   const needsActivity = sortField === "lastActive";
-  const needsPresence = filters.availability.length > 0;
+  const needsPresence =
+    viewMode !== "table" && filters.availability.length > 0;
   const listReady =
     (!needsActivity || !activityLoading) &&
     (!needsRunCounts || !runCountsPending) &&
@@ -535,31 +514,32 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
   const openNewAgent = () => navigation.push(paths.newAgent());
 
   return (
-    // The list owns the left side of the split surface. Buzz keeps the
-    // profile panel beside the gallery instead of turning the profile into a
-    // second page, so card selection stays in this same layout.
-    <div className="relative flex min-h-0 flex-1 flex-row">
+    // The list is a single surface. Opening an agent overlays a right-hand
+    // sheet instead of splitting the gallery or navigating away.
+    <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="relative flex min-w-0 flex-1 flex-col">
-        <PageHeaderBar
-          onCreate={openNewAgent}
-          onViewModeChange={setViewMode}
-          viewMode={viewMode}
-        />
+        {viewMode !== "table" || showEmpty ? (
+          <PageHeaderBar
+            onCreate={openNewAgent}
+            onViewModeChange={setViewMode}
+            viewMode={viewMode}
+          />
+        ) : null}
 
       {isLoading || (!showEmpty && !listReady) ? (
+        viewMode === "table" ? (
+          <AgentTableSkeleton />
+        ) : (
         <div className="min-h-0 flex-1 overflow-y-auto @container">
           <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
-            {viewMode === "table" ? (
-              <AgentTableSkeleton />
-            ) : (
-              <AgentCardsLoadingSkeleton />
-            )}
+            <AgentCardsLoadingSkeleton />
           </div>
         </div>
+        )
       ) : showEmpty ? (
         <div className="min-h-0 flex-1 overflow-y-auto @container">
           <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
-            <div className={`grid gap-4 ${AGENT_CARD_GRID_CLASS}`}>
+            <div className={`grid ${AGENT_CARD_GRID_GAP_CLASS} ${AGENT_CARD_GRID_CLASS}`}>
               <AgentCreateCard
                 ariaLabel={t(($) => $.page.new_agent)}
                 onClick={openNewAgent}
@@ -595,15 +575,7 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
             <AgentTable
               rows={rows}
               selectedIds={selectedIds}
-              onToggleSelected={toggleSelected}
-              allSelected={allSelected}
-              someSelected={someSelected}
-              onToggleAll={handleToggleAll}
-              sort={{ field: sortField, direction: sortDirection }}
-              onSort={handleSort}
-              isColVisible={isColVisible}
-              duplicateHref={duplicateHref}
-              agentDetailHref={(id) => paths.agentDetail(id)}
+              onSelectedIdsChange={setSelectedIds}
               noMatchText={noMatchText}
               locale={locale}
             />
@@ -614,8 +586,8 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
             >
               <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
                 <div
-                  className={`grid gap-4 ${AGENT_CARD_GRID_CLASS}`}
-                  style={{ paddingBottom: LIST_GRID_BOTTOM_CLEARANCE }}
+                  className={`grid ${AGENT_CARD_GRID_GAP_CLASS} ${AGENT_CARD_GRID_CLASS}`}
+                  style={{ paddingBottom: MANAGEMENT_GRID_BOTTOM_CLEARANCE }}
                 >
                   {scope !== "archived" && (
                     <AgentCreateCard
@@ -625,12 +597,9 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
                   )}
                   {cardRows.map((row) => (
                     <AgentCard
-                      duplicateHref={duplicateHref(row.agent)}
                       key={row.agent.id}
                       row={row}
-                      selected={selectedIds.has(row.agent.id)}
                       onOpenSummary={() => setProfileAgentId(row.agent.id)}
-                      onToggleSelected={() => toggleSelected(row.agent.id)}
                     />
                   ))}
                 </div>

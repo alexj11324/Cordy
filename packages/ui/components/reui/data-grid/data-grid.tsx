@@ -49,6 +49,7 @@ import type {
   Column,
   ColumnFiltersState,
   ReactTable,
+  Row,
   RowData,
   SortingState,
   Table,
@@ -709,6 +710,16 @@ export interface DataGridProps<
   recordCount: number
   children?: ReactNode
   onRowClick?: (row: TData) => void
+  /**
+   * LOCAL PATCH (re-apply after `pnpm ui:add @reui/data-grid`).
+   * Escape hatch for semantic rows (group headers, load-more footers).
+   * Return a `<tr>`; the grid clones `data-row-id`, `data-index` and the
+   * virtualizer measuring ref onto it. Return null/undefined for the
+   * standard cell row. `onRowClick` is not given a MouseEvent — row
+   * navigation that needs modifiers should be delegated from a container
+   * via `data-row-id`.
+   */
+  renderRow?: (row: Row<DataGridFeatures, TData>) => ReactNode
   /**
    * Receives every spreadsheet write batch (paste, cut, clear, fill, edit).
    * Served through the props getter like `onRowClick`, so an inline identity
