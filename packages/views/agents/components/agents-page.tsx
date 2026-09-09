@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Bot, Plus } from "lucide-react";
+import { AlertCircle, Plus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import type {
   Agent,
@@ -209,17 +209,6 @@ function ListError({
         }
       />
     </div>
-  );
-}
-
-function EmptyState() {
-  const { t } = useT("agents");
-  return (
-    <CollectionPageState
-      icon={Bot}
-      title={t(($) => $.empty.title)}
-      description={t(($) => $.empty.description)}
-    />
   );
 }
 
@@ -518,7 +507,6 @@ export function AgentsPage({ localDaemonId }: AgentsPageProps = {}) {
                 onClick={openNewAgent}
               />
             </div>
-            <EmptyState />
           </div>
         </div>
       ) : (

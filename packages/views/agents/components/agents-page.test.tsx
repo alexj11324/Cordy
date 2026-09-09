@@ -363,7 +363,7 @@ describe("AgentsPage listReady gate", () => {
     expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
   });
 
-  it("shows the empty state without blocking on auxiliary queries when there are no agents", () => {
+  it("shows only the create entry without blocking on auxiliary queries when there are no agents", () => {
     mocks.agents = [];
     // All auxiliary queries pending — the empty state must not wait on them.
     mocks.activity = { byAgent: new Map(), loading: true };
@@ -372,7 +372,7 @@ describe("AgentsPage listReady gate", () => {
 
     renderPage();
 
-    expect(screen.getByText("No agents yet")).toBeInTheDocument();
+    expect(screen.queryByText("No agents yet")).not.toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "New agent" })).toHaveLength(1);
     expect(screen.queryByTestId("new-agent-header-btn")).not.toBeInTheDocument();
     expect(screen.queryByTestId("skeleton")).not.toBeInTheDocument();
