@@ -7,14 +7,12 @@ import {
   Key,
   Settings,
   FolderGit2,
-  FlaskConical,
   Bell,
   Plug,
   Tags,
   CircleDot,
   Keyboard,
   ListTodo,
-  Zap,
   Blocks,
   CreditCard,
   Server,
@@ -49,12 +47,10 @@ import { WorkspaceTab } from "./workspace-tab";
 import { RepositoriesTab } from "./repositories-tab";
 import { GitHubTab } from "./github-tab";
 import { IntegrationsTab } from "./integrations-tab";
-import { LabsTab } from "./labs-tab";
 import { NotificationsTab } from "./notifications-tab";
 import { LabelsTab } from "./labels-tab";
 import { IssueStatusesTab } from "./issue-statuses-tab";
 import { PropertiesTab } from "./properties-tab";
-import { QuickActionsTab } from "./quick-actions-tab";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
 import { PluginsTab } from "./plugins-tab";
 import { McpTab } from "./mcp-tab";
@@ -79,12 +75,10 @@ const WORKSPACE_TAB_KEYS = [
   "repositories",
   "github",
   "integrations",
-  "labs",
   "billing",
   "labels",
   "issue_statuses",
   "properties",
-  "quick_actions",
   "skills",
   "mcp",
   "plugins",
@@ -94,12 +88,10 @@ const WORKSPACE_TAB_VALUES = {
   repositories: "repositories",
   github: "github",
   integrations: "integrations",
-  labs: "labs",
   billing: "billing",
   labels: "labels",
   issue_statuses: "issue-statuses",
   properties: "properties",
-  quick_actions: "quick-actions",
   skills: "skills",
   mcp: "mcp",
   plugins: "plugins",
@@ -109,12 +101,10 @@ const WORKSPACE_TAB_ICONS = {
   repositories: FolderGit2,
   github: GitHubMark,
   integrations: Plug,
-  labs: FlaskConical,
   billing: CreditCard,
   labels: Tags,
   issue_statuses: CircleDot,
   properties: SlidersHorizontal,
-  quick_actions: Zap,
   skills: Sparkles,
   mcp: Server,
   plugins: Blocks,
@@ -393,14 +383,12 @@ function SettingsTabPanels({
       <DialogTabPanel value="repositories"><RepositoriesTab /></DialogTabPanel>
       <DialogTabPanel value="github"><GitHubTab /></DialogTabPanel>
       <DialogTabPanel value="integrations"><IntegrationsTab /></DialogTabPanel>
-      <DialogTabPanel value="labs"><LabsTab /></DialogTabPanel>
       {billingEnabled ? (
         <DialogTabPanel value="billing"><BillingTab /></DialogTabPanel>
       ) : null}
       <DialogTabPanel value="labels"><LabelsTab /></DialogTabPanel>
       <DialogTabPanel value="issue-statuses"><IssueStatusesTab /></DialogTabPanel>
       <DialogTabPanel value="properties"><PropertiesTab /></DialogTabPanel>
-      <DialogTabPanel value="quick-actions"><QuickActionsTab /></DialogTabPanel>
       <DialogTabPanel value="skills"><SkillsTab /></DialogTabPanel>
       <DialogTabPanel value="mcp"><McpTab /></DialogTabPanel>
       {pluginsEnabled ? <DialogTabPanel value="plugins"><PluginsTab /></DialogTabPanel> : null}
@@ -465,8 +453,6 @@ function tabTitle(
       return t(($) => $.page.tabs.github);
     case "integrations":
       return t(($) => $.page.tabs.integrations);
-    case "labs":
-      return t(($) => $.page.tabs.labs);
     case "billing":
       return t(($) => $.page.tabs.billing);
     case "labels":
@@ -475,8 +461,6 @@ function tabTitle(
       return t(($) => $.page.tabs.issue_statuses);
     case "properties":
       return t(($) => $.page.tabs.properties);
-    case "quick-actions":
-      return t(($) => $.page.tabs.quick_actions);
     case "skills":
       return t(($) => $.page.tabs.skills);
     case "mcp":

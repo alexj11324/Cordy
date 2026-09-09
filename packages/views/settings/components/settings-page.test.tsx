@@ -119,18 +119,18 @@ describe("SettingsPage flux dialog", () => {
       "Repositories",
       "GitHub",
       "Integrations",
-      "Labs",
       "Billing",
       "Labels",
       "Issue Statuses",
       "Properties",
-      "Quick Actions",
       "Skills",
       "MCP",
       "Plugins",
     ]) {
       expect(screen.getByRole("tab", { name })).toBeInTheDocument();
     }
+    expect(screen.queryByRole("tab", { name: "Labs" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Quick Actions" })).not.toBeInTheDocument();
   });
 
   it("opens Workspace General for the removed members URL", () => {
