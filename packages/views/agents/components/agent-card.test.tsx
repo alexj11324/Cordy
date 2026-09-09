@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, screen } from "@testing-library/react";
 import type { Agent, AgentRuntime } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
-import { AgentCard } from "./agent-card";
+import { AgentCard, AgentCreateCard } from "./agent-card";
 import type { AgentListRow } from "./agents-page";
 
 vi.mock("../../runtimes/components/provider-logo", () => ({
@@ -108,6 +108,21 @@ describe("AgentCard", () => {
     expect(screen.queryByText(/left/)).not.toBeInTheDocument();
     expect(screen.getByText("Mira Stone")).toBeInTheDocument();
     expect(screen.getByText("Alex MacBook Pro")).toBeInTheDocument();
+  });
+
+  it("keeps the create card in the same fixed gallery geometry", () => {
+    const { container } = renderCard();
+    const agentCard = container.querySelector('[data-slot="card"]');
+
+    renderWithI18n(
+      <AgentCreateCard ariaLabel="New agent" onClick={vi.fn()} />,
+    );
+
+    const createCard = screen.getByTestId("new-agent-card").closest(
+      '[data-slot="card"]',
+    );
+    expect(agentCard).toHaveClass("h-[13.75rem]");
+    expect(createCard).toHaveClass("h-[13.75rem]");
   });
 
   it("shows full green headroom when idle", () => {

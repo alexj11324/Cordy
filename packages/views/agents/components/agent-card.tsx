@@ -24,6 +24,7 @@ import type { AgentListRow } from "./agents-page";
 import { DeviceKindIcon } from "./device-kind-icon";
 import {
   AtlasDealCard,
+  ATLAS_DEAL_CARD_SIZE_CLASS,
   type AtlasDealCardOpportunity,
 } from "./atlas-deal-card";
 
@@ -33,7 +34,7 @@ import {
  * stretch with `grid-cols-3` / `1fr`.
  */
 export const AGENT_CARD_GRID_CLASS =
-  "[grid-template-columns:repeat(auto-fill,minmax(min(100%,18.5rem),18.5rem))]";
+  "justify-start [grid-template-columns:repeat(auto-fill,minmax(min(100%,18.5rem),18.5rem))]";
 
 export const AGENT_CARD_GRID_GAP_CLASS = "gap-3";
 
@@ -46,18 +47,23 @@ export function AgentCreateCard({
 }) {
   const { t } = useT("agents");
   return (
-    <button
-      aria-label={ariaLabel}
-      className="flex h-full min-h-[13.75rem] w-full min-w-0 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/70 bg-transparent px-4 py-5 text-sm text-muted-foreground transition-colors hover:border-primary/50 hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-      data-testid="new-agent-card"
-      onClick={onClick}
-      type="button"
+    <Card
+      className={`${ATLAS_DEAL_CARD_SIZE_CLASS} w-full min-w-0 gap-0 border border-dashed border-border/70 bg-card p-0 shadow-xs`}
+      size="sm"
     >
-      <Plus aria-hidden="true" className="size-5" />
-      <span className="font-medium text-foreground">
-        {t(($) => $.page.new_agent)}
-      </span>
-    </button>
+      <button
+        aria-label={ariaLabel}
+        className="flex h-full w-full min-w-0 flex-col items-center justify-center gap-2 rounded-[inherit] px-4 py-5 text-sm text-muted-foreground transition-colors hover:bg-primary/5 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        data-testid="new-agent-card"
+        onClick={onClick}
+        type="button"
+      >
+        <Plus aria-hidden="true" className="size-5" />
+        <span className="font-medium text-foreground">
+          {t(($) => $.page.new_agent)}
+        </span>
+      </button>
+    </Card>
   );
 }
 
@@ -204,7 +210,10 @@ function getCardAvailability(row: AgentListRow): AgentAvailability {
 
 export function AgentCardSkeleton() {
   return (
-    <Card className="w-full min-w-0 gap-0 bg-card p-0 shadow-xs" size="sm">
+    <Card
+      className={`${ATLAS_DEAL_CARD_SIZE_CLASS} w-full min-w-0 gap-0 bg-card p-0 shadow-xs`}
+      size="sm"
+    >
       <CardHeader className="grid min-h-5 grid-cols-[1.5rem_minmax(0,1fr)] items-center gap-x-2.5 px-3 pt-3 pb-0">
         <Skeleton className="size-5 rounded-md" />
         <Skeleton className="h-4 w-28 max-w-full" />

@@ -65,6 +65,9 @@ export type AtlasDealCardOpportunity = {
   owner: DealPerson;
 };
 
+/** Shared outer height for the gallery card and its create-card sibling. */
+export const ATLAS_DEAL_CARD_SIZE_CLASS = "h-[13.75rem]";
+
 function DealSnapshotItem({
   icon,
   label,
@@ -200,7 +203,8 @@ export function AtlasDealCard({
     <Card
       size="sm"
       className={cn(
-        "gap-0 bg-card p-0 shadow-xs transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-sm",
+        ATLAS_DEAL_CARD_SIZE_CLASS,
+        "w-full gap-0 bg-card p-0 shadow-xs transition-[border-color,box-shadow] hover:border-foreground/20 hover:shadow-sm",
         isOverlay && "shadow-lg",
       )}
     >

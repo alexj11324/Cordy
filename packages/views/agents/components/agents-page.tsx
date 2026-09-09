@@ -531,14 +531,14 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
           <AgentTableSkeleton />
         ) : (
         <div className="min-h-0 flex-1 overflow-y-auto @container">
-          <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+          <div className="w-full p-4 sm:p-6">
             <AgentCardsLoadingSkeleton />
           </div>
         </div>
         )
       ) : showEmpty ? (
         <div className="min-h-0 flex-1 overflow-y-auto @container">
-          <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+          <div className="w-full p-4 sm:p-6">
             <div className={`grid ${AGENT_CARD_GRID_GAP_CLASS} ${AGENT_CARD_GRID_CLASS}`}>
               <AgentCreateCard
                 ariaLabel={t(($) => $.page.new_agent)}
@@ -584,7 +584,7 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
               className="min-h-0 flex-1 overflow-y-auto @container"
               ref={cardScrollRef}
             >
-              <div className="mx-auto w-full max-w-6xl p-4 sm:p-6">
+              <div className="w-full p-4 sm:p-6">
                 <div
                   className={`grid ${AGENT_CARD_GRID_GAP_CLASS} ${AGENT_CARD_GRID_CLASS}`}
                   style={{ paddingBottom: MANAGEMENT_GRID_BOTTOM_CLEARANCE }}
