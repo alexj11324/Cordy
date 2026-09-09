@@ -17,6 +17,7 @@ describe("parseTabSubject", () => {
     ["/acme/automations/new?template=find_critical_bugs", { kind: "page", page: "automations" }],
     ["/acme/agents", { kind: "page", page: "agents" }],
     ["/acme/teams", { kind: "page", page: "teams" }],
+    ["/acme/teams/agent-teams", { kind: "page", page: "teams" }],
     ["/acme/usage", { kind: "page", page: "usage" }],
     ["/acme/runtimes", { kind: "page", page: "runtimes" }],
     ["/acme/skills", { kind: "page", page: "skills" }],

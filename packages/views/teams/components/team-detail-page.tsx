@@ -172,7 +172,7 @@ export function TeamDetailPage() {
 
   const deleteMut = useMutation({
     mutationFn: () => api.deleteTeam(teamId),
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: workspaceKeys.teams(wsId) }); push(p.teams()); toast.success(t(($) => $.archive_dialog.success)); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: workspaceKeys.teams(wsId) }); push(p.agentTeams()); toast.success(t(($) => $.archive_dialog.success)); },
     onError: (err) =>
       toast.error(err instanceof Error && err.message ? err.message : t(($) => $.toasts.archive_failed)),
   });
@@ -202,7 +202,7 @@ export function TeamDetailPage() {
   return (
     <div className="flex flex-1 min-h-0 flex-col">
       <BreadcrumbHeader
-        segments={[{ href: p.teams(), label: t(($) => $.page.title) }]}
+        segments={[{ href: p.agentTeams(), label: t(($) => $.page.title) }]}
         leaf={
           <>
             <TeamHeaderAvatar team={team} initials={initials} />
