@@ -295,6 +295,10 @@ func (h *Handler) ResendInvitation(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	requester, ok := h.workspaceMember(w, r, workspaceID)
+	if !ok {
+		return
+	}
 	invitationID, ok := parseUUIDOrBadRequest(
 		w,
 		chi.URLParam(r, "invitationId"),
@@ -311,9 +315,24 @@ func (h *Handler) ResendInvitation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "invitation not found")
 		return
 	}
+	if invitation.ExpiresAt.Valid && invitation.ExpiresAt.Time.Before(time.Now()) {
+		writeError(w, http.StatusGone, "invitation has expired")
+		return
+	}
 
-	if h.EmailService == nil {
+	emailService := h.EmailService
+	if emailService == nil {
 		writeError(w, http.StatusServiceUnavailable, "email service unavailable")
+		return
+	}
+	admission, ok := h.checkInvitationAdmission(
+		w,
+		r,
+		uuidToString(requester.UserID),
+		uuidToString(requester.WorkspaceID),
+		invitation.InviteeEmail,
+	)
+	if !ok {
 		return
 	}
 
@@ -328,7 +347,7 @@ func (h *Handler) ResendInvitation(w http.ResponseWriter, r *http.Request) {
 		inviterName = inviter.Name
 	}
 
-	if err := h.EmailService.SendInvitationEmail(
+	if err := emailService.SendInvitationEmail(
 		invitation.InviteeEmail,
 		inviterName,
 		workspace.Name,
@@ -349,6 +368,7 @@ func (h *Handler) ResendInvitation(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to resend invitation")
 		return
 	}
+	h.consumeInvitationAdmission(r, admission)
 
 	slog.Info(
 		"invitation email resent",
