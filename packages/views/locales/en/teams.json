@@ -17,6 +17,7 @@
   },
   "directory": {
     "title": "Team",
+    "agent_teams_link": "Agent teams",
     "member_count": "{{count}} members",
     "pending_invitation_count": "{{count}} pending invitations",
     "add_member": "Add member",

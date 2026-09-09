@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useTable,
@@ -11,6 +11,7 @@ import {
 import { toast } from "sonner";
 import {
   CheckIcon,
+  Loader2Icon,
   MailPlusIcon,
   PlusIcon,
   SearchIcon,
@@ -19,13 +20,25 @@ import {
 } from "lucide-react";
 import { api, errorCode } from "@orvilo/core/api";
 import { useAuthStore } from "@orvilo/core/auth";
-import { useCurrentWorkspace } from "@orvilo/core/paths";
+import {
+  useCurrentWorkspace,
+  useWorkspacePaths,
+} from "@orvilo/core/paths";
+import {
+  usePreviewWorkspaceSeatPurchase,
+  usePurchaseWorkspaceSeats,
+  workspaceSubscriptionSummaryOptions,
+} from "@orvilo/core/billing";
 import {
   invitationListOptions,
   memberListOptions,
   workspaceKeys,
 } from "@orvilo/core/workspace/queries";
-import type { MemberRole } from "@orvilo/core/types";
+import type {
+  MemberRole,
+  PurchaseWorkspaceSeatsRequest,
+  WorkspaceSeatPurchasePreview,
+} from "@orvilo/core/types";
 import { Badge } from "@orvilo/ui/components/reui/badge";
 import {
   DataGrid,
@@ -100,12 +113,43 @@ import {
   type DirectoryMember,
 } from "./team-directory-data";
 import { useLocale, useT } from "../../i18n";
+import { AppLink } from "../../navigation";
+import { CollapsedNavTrigger } from "../../layout/page-header";
+import { formatStripeMinorAmount } from "../../settings/components/billing-format";
+import {
+  isSingleSeatInvitePreview,
+  purchasedSeatIsReadyForInvitation,
+  seatInvitationCanRetryAfterPurchase,
+  seatPurchaseCanRetryWithSameQuote,
+  seatPurchaseMatchesPreview,
+} from "../../settings/components/seat-invite-purchase";
+import { classifyDirectoryInviteError } from "./team-directory-invite";
 
 type DirectoryTab = "members" | "invitations";
 type TableDensity = "comfortable" | "compact";
 type TeamsTranslator = ReturnType<typeof useT<"teams">>["t"];
 
+type DirectoryInviteSeatPurchase = {
+  workspaceId: string;
+  email: string;
+  role: MemberRole;
+  preview: WorkspaceSeatPurchasePreview;
+  idempotencyKey: string;
+  phase: "review" | "purchasing" | "waiting" | "inviting" | "error";
+  submittedAt?: number;
+  error?: string;
+  retryable?: boolean;
+};
+
 const PAGE_SIZES = [5, 10, 20] as const;
+const SEAT_PURCHASE_CONFIRM_TIMEOUT_MS = 2 * 60_000;
+
+function createSeatPurchaseKey(workspaceId: string): string {
+  const suffix =
+    globalThis.crypto?.randomUUID?.() ??
+    `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `invite-seat-${workspaceId}-${suffix}`.slice(0, 200);
+}
 
 function roleLabel(role: MemberRole, t: TeamsTranslator): string {
   if (role === "owner") return t(($) => $.directory.owner_role);
@@ -439,8 +483,11 @@ function DirectoryGrid<TData extends object>({
 
 export function TeamDirectoryPage() {
   const { t } = useT("teams");
+  const { t: settingsT } = useT("settings");
+  const { t: billingT } = useT("billing");
   const locale = useLocale();
   const workspace = useCurrentWorkspace();
+  const workspacePaths = useWorkspacePaths();
   const wsId = workspace?.id ?? "";
   const currentUser = useAuthStore((state) => state.user);
   const queryClient = useQueryClient();
@@ -463,6 +510,12 @@ export function TeamDirectoryPage() {
   );
   const [pendingInvitation, setPendingInvitation] =
     useState<DirectoryInvitation | null>(null);
+  const [inviteSeatPurchase, setInviteSeatPurchase] =
+    useState<DirectoryInviteSeatPurchase | null>(null);
+  const dispatchedInvitePurchaseKey = useRef<string | null>(null);
+
+  const previewSeatPurchase = usePreviewWorkspaceSeatPurchase();
+  const purchaseSeats = usePurchaseWorkspaceSeats(wsId);
 
   const { data: members = [], isLoading: membersLoading } = useQuery({
     ...memberListOptions(wsId),
@@ -472,12 +525,22 @@ export function TeamDirectoryPage() {
     ...invitationListOptions(wsId),
     enabled: !!wsId,
   });
+  const seatPurchaseSummary = useQuery({
+    ...workspaceSubscriptionSummaryOptions(wsId),
+    enabled:
+      inviteSeatPurchase?.phase === "waiting" &&
+      inviteSeatPurchase.workspaceId === wsId,
+    staleTime: 0,
+    refetchInterval: inviteSeatPurchase?.phase === "waiting" ? 2_000 : false,
+  });
 
   const currentMember = members.find(
     (member) => member.user_id === currentUser?.id,
   );
   const canManage =
     currentMember?.role === "owner" || currentMember?.role === "admin";
+  const canManageOwners = currentMember?.role === "owner";
+  const ownerCount = members.filter((member) => member.role === "owner").length;
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const memberRows = useMemo(
     () => members.map((member) => toDirectoryMember(member, locale)),
@@ -549,17 +612,113 @@ export function TeamDirectoryPage() {
       setInviteOpen(false);
       toast.success(t(($) => $.directory.invite_sent));
     },
-    onError: (error) => {
-      const code = errorCode(error);
-      toast.error(
-        code
-          ? t(($) => $.directory.invite_failed) + " (" + code + ")"
-          : error instanceof Error
-            ? error.message
-            : t(($) => $.directory.invite_failed),
-      );
-    },
   });
+
+  const sendInvitation = useCallback(
+    async (email: string, role: MemberRole) => {
+      await inviteMutation.mutateAsync({ email, role });
+    },
+    [inviteMutation],
+  );
+
+  const handleInvite = useCallback(
+    async (email: string, role: MemberRole) => {
+      try {
+        await sendInvitation(email, role);
+      } catch (error) {
+        const code = errorCode(error);
+        switch (classifyDirectoryInviteError(code)) {
+          case "purchase": {
+            try {
+              const preview = await previewSeatPurchase.mutateAsync({
+                additionalSeats: 1,
+              });
+              if (!isSingleSeatInvitePreview(preview)) {
+                toast.error(
+                  billingT(($) => $.workspace.seat_purchase.preview_unreadable),
+                );
+                return;
+              }
+              setInviteOpen(false);
+              setInviteSeatPurchase({
+                workspaceId: workspace?.id ?? wsId,
+                email,
+                role,
+                preview,
+                idempotencyKey: createSeatPurchaseKey(workspace?.id ?? wsId),
+                phase: "review",
+              });
+              dispatchedInvitePurchaseKey.current = null;
+            } catch (previewError) {
+              toast.error(
+                errorCode(previewError) === "seat_purchase_in_progress"
+                  ? billingT(($) => $.workspace.seat_purchase.in_progress)
+                  : billingT(($) => $.workspace.seat_purchase.preview_failed),
+              );
+            }
+            return;
+          }
+          case "overcommitted": {
+            try {
+              const summary = await queryClient.fetchQuery({
+                ...workspaceSubscriptionSummaryOptions(wsId),
+                staleTime: 0,
+              });
+              const capacity = summary?.seatCapacity;
+              toast.error(
+                billingT(($) => $.workspace.seats.members_over_capacity_title),
+                capacity
+                  ? {
+                      description: billingT(
+                        ($) =>
+                          $.workspace.seats.occupancy_over_capacity_description,
+                        {
+                          occupied: capacity.used + capacity.reserved,
+                          purchased: capacity.purchased,
+                          members: capacity.used,
+                          reserved: capacity.reserved,
+                        },
+                      ),
+                    }
+                  : undefined,
+              );
+            } catch {
+              toast.error(
+                billingT(($) => $.workspace.seats.members_over_capacity_title),
+              );
+            }
+            return;
+          }
+          case "unavailable":
+            toast.error(
+              settingsT(($) => $.members.toast_seat_capacity_unavailable),
+            );
+            return;
+          case "rate_limited":
+            toast.error(
+              settingsT(($) => $.members.toast_seat_capacity_rate_limited),
+            );
+            return;
+          default:
+            toast.error(
+              error instanceof Error
+                ? error.message
+                : t(($) => $.directory.invite_failed),
+            );
+        }
+      }
+    },
+    [
+      billingT,
+      previewSeatPurchase,
+      queryClient,
+      settingsT,
+      sendInvitation,
+      t,
+      workspace,
+      wsId,
+    ],
+  );
 
   const roleMutation = useMutation({
     mutationFn: async ({
@@ -611,6 +770,180 @@ export function TeamDirectoryPage() {
     },
     onError: () => toast.error(t(($) => $.directory.action_failed)),
   });
+
+  const handlePurchaseSeatAndInvite = useCallback(async () => {
+    if (
+      !inviteSeatPurchase ||
+      (inviteSeatPurchase.phase !== "review" &&
+        !(inviteSeatPurchase.phase === "error" &&
+          inviteSeatPurchase.retryable))
+    ) {
+      return;
+    }
+    const current = inviteSeatPurchase;
+    if (!workspace || current.workspaceId !== workspace.id) {
+      setInviteSeatPurchase(null);
+      return;
+    }
+
+    dispatchedInvitePurchaseKey.current = null;
+    setInviteSeatPurchase({
+      ...current,
+      phase: "purchasing",
+      error: undefined,
+      retryable: false,
+    });
+    const request: PurchaseWorkspaceSeatsRequest = {
+      additionalSeats: current.preview.additionalSeats,
+      expectedCurrentSeats: current.preview.currentSeats,
+      expectedPurchaseVersion: current.preview.purchaseVersion,
+      acceptedProrationAmount: current.preview.prorationAmount,
+      currency: current.preview.currency,
+      idempotencyKey: current.idempotencyKey,
+    };
+    try {
+      const response = await purchaseSeats.mutateAsync(request);
+      if (!seatPurchaseMatchesPreview(response, current.preview)) {
+        setInviteSeatPurchase({
+          ...current,
+          phase: "error",
+          error: billingT(
+            ($) => $.workspace.seat_purchase.purchase_unreadable,
+          ),
+          retryable: true,
+        });
+        return;
+      }
+      const submittedAt = Date.now();
+      setInviteSeatPurchase({
+        ...current,
+        phase: "waiting",
+        submittedAt,
+        error: undefined,
+        retryable: false,
+      });
+      await queryClient.invalidateQueries({
+        queryKey: workspaceSubscriptionSummaryOptions(wsId).queryKey,
+      });
+    } catch (error) {
+      const code = errorCode(error);
+      const message =
+        code === "seat_purchase_payment_failed"
+          ? billingT(($) => $.workspace.seat_purchase.payment_failed)
+          : code === "seat_purchase_in_progress"
+            ? billingT(($) => $.workspace.seat_purchase.in_progress)
+            : code === "seat_quote_changed" || code === "seat_capacity_changed"
+              ? billingT(($) => $.workspace.seat_purchase.quote_changed)
+              : billingT(($) => $.workspace.seat_purchase.purchase_failed);
+      setInviteSeatPurchase({
+        ...current,
+        phase: "error",
+        error: message,
+        retryable: seatPurchaseCanRetryWithSameQuote(code),
+      });
+    }
+  }, [
+    billingT,
+    inviteSeatPurchase,
+    purchaseSeats,
+    queryClient,
+    workspace,
+    wsId,
+  ]);
+
+  useEffect(() => {
+    setInviteSeatPurchase((current) =>
+      current && current.workspaceId !== wsId ? null : current,
+    );
+  }, [wsId]);
+
+  useEffect(() => {
+    const purchase = inviteSeatPurchase;
+    if (
+      purchase?.phase !== "waiting" ||
+      purchase.workspaceId !== wsId ||
+      purchase.submittedAt == null ||
+      dispatchedInvitePurchaseKey.current === purchase.idempotencyKey ||
+      !purchasedSeatIsReadyForInvitation(
+        seatPurchaseSummary.data,
+        purchase.preview,
+        purchase.submittedAt,
+        seatPurchaseSummary.dataUpdatedAt,
+      )
+    ) {
+      return;
+    }
+
+    dispatchedInvitePurchaseKey.current = purchase.idempotencyKey;
+    setInviteSeatPurchase({ ...purchase, phase: "inviting" });
+    void sendInvitation(purchase.email, purchase.role)
+      .then(() => setInviteSeatPurchase(null))
+      .catch((error) => {
+        const code = errorCode(error);
+        const kind = classifyDirectoryInviteError(code);
+        let message: string;
+        switch (kind) {
+          case "purchase":
+            message = settingsT(($) => $.members.seat_purchase_capacity_taken);
+            break;
+          case "unavailable":
+            message = settingsT(
+              ($) => $.members.toast_seat_capacity_unavailable,
+            );
+            break;
+          case "rate_limited":
+            message = settingsT(
+              ($) => $.members.toast_seat_capacity_rate_limited,
+            );
+            break;
+          case "overcommitted":
+          case "unknown":
+          default:
+            message =
+              error instanceof Error
+                ? error.message
+                : t(($) => $.directory.invite_failed);
+            break;
+        }
+        setInviteSeatPurchase({
+          ...purchase,
+          phase: "error",
+          retryable: seatInvitationCanRetryAfterPurchase(code),
+          error: message,
+        });
+      });
+  }, [
+    inviteSeatPurchase,
+    seatPurchaseSummary.data,
+    seatPurchaseSummary.dataUpdatedAt,
+    sendInvitation,
+    settingsT,
+    t,
+    wsId,
+  ]);
+
+  useEffect(() => {
+    if (
+      inviteSeatPurchase?.phase !== "waiting" ||
+      inviteSeatPurchase.submittedAt == null
+    ) {
+      return;
+    }
+    const elapsed = Date.now() - inviteSeatPurchase.submittedAt;
+    const timeout = window.setTimeout(() => {
+      setInviteSeatPurchase((current) =>
+        current?.phase === "waiting"
+          ? {
+              ...current,
+              phase: "error",
+              error: settingsT(($) => $.members.seat_purchase_timeout),
+              retryable: false,
+            }
+          : current,
+      );
+    }, Math.max(0, SEAT_PURCHASE_CONFIRM_TIMEOUT_MS - elapsed));
+    return () => window.clearTimeout(timeout);
+  }, [inviteSeatPurchase?.phase, inviteSeatPurchase?.submittedAt, settingsT]);
 
   const memberLabels = useMemo(
     () => ({
@@ -678,15 +1011,19 @@ export function TeamDirectoryPage() {
     () =>
       createMemberGridColumns({
         canManage: !!canManage && !roleMutation.isPending,
+        canManageOwners,
         currentUserId: currentUser?.id,
+        ownerCount,
         labels: memberLabels,
         onAction: handleMemberAction,
       }),
     [
       canManage,
+      canManageOwners,
       currentUser?.id,
       handleMemberAction,
       memberLabels,
+      ownerCount,
       roleMutation.isPending,
     ],
   );
@@ -761,9 +1098,20 @@ export function TeamDirectoryPage() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:gap-5 md:p-6 lg:p-8">
       <div className="mx-auto flex w-full max-w-[1440px] items-center gap-2 text-sm text-muted-foreground">
-        <span>{workspace.name}</span>
-        <span aria-hidden="true">›</span>
-        <span className="text-foreground">{t(($) => $.directory.title)}</span>
+        <CollapsedNavTrigger />
+        <div className="flex min-w-0 items-center gap-2 truncate">
+          <span className="truncate">{workspace.name}</span>
+          <span aria-hidden="true">›</span>
+          <span className="truncate text-foreground">
+            {t(($) => $.directory.title)}
+          </span>
+        </div>
+        <AppLink
+          href={workspacePaths.agentTeams()}
+          className="ml-auto shrink-0 rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {t(($) => $.directory.agent_teams_link)}
+        </AppLink>
       </div>
 
       {loading ? (
@@ -942,8 +1290,121 @@ export function TeamDirectoryPage() {
         onOpenChange={setInviteOpen}
         canManage={!!canManage}
         isPending={inviteMutation.isPending}
-        onSubmit={(email, role) => inviteMutation.mutate({ email, role })}
+        onSubmit={(email, role) => void handleInvite(email, role)}
       />
+
+      <AlertDialog
+        open={inviteSeatPurchase !== null}
+        onOpenChange={(open) => {
+          if (
+            !open &&
+            (inviteSeatPurchase?.phase === "review" ||
+              inviteSeatPurchase?.phase === "error")
+          ) {
+            setInviteSeatPurchase(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {settingsT(($) => $.members.seat_purchase_title)}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {inviteSeatPurchase?.phase === "review"
+                ? settingsT(($) => $.members.seat_purchase_description, {
+                    email: inviteSeatPurchase.email,
+                  })
+                : inviteSeatPurchase?.phase === "error"
+                  ? inviteSeatPurchase.error
+                  : settingsT(($) => $.members.seat_purchase_waiting)}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {inviteSeatPurchase?.phase === "review" && (
+            <div className="divide-y rounded-lg border text-body">
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <span className="text-muted-foreground">
+                  {billingT(($) => $.workspace.seat_purchase.seats_after)}
+                </span>
+                <span className="font-medium">
+                  {billingT(($) => $.workspace.seats.seat_count, {
+                    count: inviteSeatPurchase.preview.resultingSeats,
+                  })}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <span className="text-muted-foreground">
+                  {billingT(($) => $.workspace.seat_purchase.charge_today)}
+                </span>
+                <span className="font-medium">
+                  {formatStripeMinorAmount(
+                    inviteSeatPurchase.preview.prorationAmount,
+                    inviteSeatPurchase.preview.currency,
+                    locale,
+                  ) ?? "—"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-4 px-4 py-3">
+                <span className="text-muted-foreground">
+                  {billingT(($) => $.workspace.seat_purchase.next_invoice)}
+                </span>
+                <span className="font-medium">
+                  {formatStripeMinorAmount(
+                    inviteSeatPurchase.preview.nextInvoiceAmount,
+                    inviteSeatPurchase.preview.currency,
+                    locale,
+                  ) ?? "—"}
+                </span>
+              </div>
+              <p className="px-4 py-3 text-caption text-muted-foreground">
+                {billingT(($) => $.workspace.seat_purchase.tax_notice)}
+              </p>
+            </div>
+          )}
+
+          {(inviteSeatPurchase?.phase === "purchasing" ||
+            inviteSeatPurchase?.phase === "waiting" ||
+            inviteSeatPurchase?.phase === "inviting") && (
+            <div className="flex items-center gap-2 text-body text-muted-foreground">
+              <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />
+              {inviteSeatPurchase.phase === "inviting"
+                ? settingsT(($) => $.members.inviting)
+                : settingsT(($) => $.members.seat_purchase_waiting)}
+            </div>
+          )}
+
+          <AlertDialogFooter>
+            {(inviteSeatPurchase?.phase === "review" ||
+              inviteSeatPurchase?.phase === "error") && (
+              <AlertDialogCancel>
+                {settingsT(($) => $.members.confirm_cancel)}
+              </AlertDialogCancel>
+            )}
+            {inviteSeatPurchase?.phase === "review" && (
+              <AlertDialogAction
+                onClick={(event) => {
+                  event.preventDefault();
+                  void handlePurchaseSeatAndInvite();
+                }}
+              >
+                {settingsT(($) => $.members.purchase_seat_and_invite)}
+              </AlertDialogAction>
+            )}
+            {inviteSeatPurchase?.phase === "error" &&
+              inviteSeatPurchase.retryable && (
+                <AlertDialogAction
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void handlePurchaseSeatAndInvite();
+                  }}
+                >
+                  {settingsT(($) => $.members.retry_seat_purchase)}
+                </AlertDialogAction>
+              )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog
         open={pendingMember !== null}

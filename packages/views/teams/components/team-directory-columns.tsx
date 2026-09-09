@@ -34,6 +34,10 @@ import type {
   DirectoryInvitation,
   DirectoryMember,
 } from "./team-directory-data";
+import {
+  memberActionAvailability,
+  memberRoleOptions,
+} from "./team-directory-permissions";
 
 export type MemberRowAction =
   | { type: "role"; role: MemberRole }
@@ -73,21 +77,27 @@ type InvitationLabels = {
 function MemberRowActions({
   member,
   canManage,
+  canManageOwners,
   currentUserId,
+  ownerCount,
   labels,
   onAction,
 }: {
   member: DirectoryMember;
   canManage: boolean;
+  canManageOwners: boolean;
   currentUserId: string | undefined;
+  ownerCount: number;
   labels: MemberLabels;
   onAction: (action: MemberRowAction, member: DirectoryMember) => void;
 }) {
-  if (
-    !canManage ||
-    member.userId === currentUserId ||
-    member.role === "owner"
-  ) {
+  const { canEditRole, canRemove } = memberActionAvailability({
+    canManage,
+    canManageOwners,
+    isSelf: member.userId === currentUserId,
+    memberRole: member.role,
+  });
+  if (!canEditRole && !canRemove) {
     return null;
   }
 
@@ -110,32 +120,53 @@ function MemberRowActions({
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <ShieldIcon aria-hidden="true" />
-            {member.role === "admin" ? labels.admin : labels.memberRole}
+            {member.role === "owner"
+              ? labels.owner
+              : member.role === "admin"
+                ? labels.admin
+                : labels.memberRole}
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent>
-            {(["admin", "member"] as const).map((role) => (
+            {memberRoleOptions({
+              memberRole: member.role,
+              canManageOwners,
+              ownerCount,
+            }).map(({ role, disabled }) => (
               <DropdownMenuItem
                 key={role}
-                onClick={() => onAction({ type: "role", role }, member)}
+                disabled={disabled || !canEditRole}
+                onClick={() => {
+                  if (!disabled && canEditRole) {
+                    onAction({ type: "role", role }, member);
+                  }
+                }}
               >
                 {member.role === role ? (
                   <CheckIcon aria-hidden="true" />
                 ) : (
                   <span className="size-3.5" aria-hidden="true" />
                 )}
-                {role === "admin" ? labels.admin : labels.memberRole}
+                {role === "owner"
+                  ? labels.owner
+                  : role === "admin"
+                    ? labels.admin
+                    : labels.memberRole}
               </DropdownMenuItem>
             ))}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          onClick={() => onAction({ type: "remove" }, member)}
-        >
-          <Trash2Icon aria-hidden="true" />
-          {labels.remove}
-        </DropdownMenuItem>
+        {canRemove ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => onAction({ type: "remove" }, member)}
+            >
+              <Trash2Icon aria-hidden="true" />
+              {labels.remove}
+            </DropdownMenuItem>
+          </>
+        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -144,13 +175,17 @@ function MemberRowActions({
 function MemberCell({
   member,
   canManage,
+  canManageOwners,
   currentUserId,
+  ownerCount,
   labels,
   onAction,
 }: {
   member: DirectoryMember;
   canManage: boolean;
+  canManageOwners: boolean;
   currentUserId: string | undefined;
+  ownerCount: number;
   labels: MemberLabels;
   onAction: (action: MemberRowAction, member: DirectoryMember) => void;
 }) {
@@ -172,7 +207,9 @@ function MemberCell({
         <MemberRowActions
           member={member}
           canManage={canManage}
+          canManageOwners={canManageOwners}
           currentUserId={currentUserId}
+          ownerCount={ownerCount}
           labels={labels}
           onAction={onAction}
         />
@@ -201,12 +238,16 @@ export const MEMBER_TOGGLE_COLUMNS = [
 
 export function createMemberGridColumns({
   canManage,
+  canManageOwners,
   currentUserId,
+  ownerCount,
   labels,
   onAction,
 }: {
   canManage: boolean;
+  canManageOwners: boolean;
   currentUserId: string | undefined;
+  ownerCount: number;
   labels: MemberLabels;
   onAction: (action: MemberRowAction, member: DirectoryMember) => void;
 }): ColumnDef<DataGridFeatures, DirectoryMember>[] {
@@ -221,7 +262,9 @@ export function createMemberGridColumns({
         <MemberCell
           member={row.original}
           canManage={canManage}
+          canManageOwners={canManageOwners}
           currentUserId={currentUserId}
+          ownerCount={ownerCount}
           labels={labels}
           onAction={onAction}
         />

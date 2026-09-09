@@ -17,6 +17,7 @@
   },
   "directory": {
     "title": "团队",
+    "agent_teams_link": "智能体团队",
     "member_count": "{{count}} 名成员",
     "pending_invitation_count": "{{count}} 个待处理邀请",
     "add_member": "添加成员",
