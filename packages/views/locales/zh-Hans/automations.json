@@ -782,7 +782,7 @@
   },
   "create_settings": {
     "memory_after_save": "创建自动化后管理记忆文件",
-    "provider_after_save": "创建后在此配置连接和事件条件。",
+    "provider_after_save": "创建后在此配置事件条件。",
     "remove_trigger": "移除触发器",
     "draft": "未保存"
   }

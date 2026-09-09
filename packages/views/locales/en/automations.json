@@ -785,7 +785,7 @@
   },
   "create_settings": {
     "memory_after_save": "Create the automation to manage memory files",
-    "provider_after_save": "Configure the connection and event conditions here after creation.",
+    "provider_after_save": "Configure event conditions here after creation.",
     "remove_trigger": "Remove trigger",
     "draft": "Draft"
   }
