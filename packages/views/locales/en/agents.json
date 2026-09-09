@@ -619,7 +619,7 @@
       "update_action": "Update",
       "cancel_action": "Cancel",
       "command_preview_label": "Command preview",
-      "input_placeholder": "--profile",
+      "input_placeholder": "Enter an argument or value",
       "input_aria": "Argument {{index}}",
       "new_argument_aria": "New argument",
       "empty_title": "No arguments yet",

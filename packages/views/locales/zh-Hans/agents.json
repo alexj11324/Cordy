@@ -606,7 +606,7 @@
       "update_action": "更新",
       "cancel_action": "取消",
       "command_preview_label": "命令预览",
-      "input_placeholder": "--profile",
+      "input_placeholder": "输入参数或参数值",
       "input_aria": "参数 {{index}}",
       "new_argument_aria": "新参数",
       "empty_title": "还没有参数",

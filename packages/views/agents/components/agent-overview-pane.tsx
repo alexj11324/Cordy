@@ -95,14 +95,14 @@ function SettingsSection({
   children,
 }: {
   title: string;
-  description: string;
+  description?: string;
   children: ReactNode;
 }) {
   return (
     <section className="space-y-3 border-b pb-6 last:border-b-0 last:pb-0">
       <header className="space-y-1">
         <h3 className="text-body font-medium">{title}</h3>
-        <p className="text-caption text-muted-foreground">{description}</p>
+        {description && <p className="text-caption text-muted-foreground">{description}</p>}
       </header>
       {children}
     </section>
@@ -320,12 +320,10 @@ export function AgentOverviewPane({
 
                       <SettingsSection
                         title={t(($) => $.tabs.custom_args)}
-                        description={t(($) => $.tabs.custom_args_hint)}
                       >
                         <CustomArgsTab
                           compact
                           agent={agent}
-                          runtimeDevice={runtime ?? undefined}
                           onSave={(updates) => onUpdate(agent.id, updates)}
                           onDirtyChange={(dirty) =>
                             handleDirtyChange("custom_args", dirty)

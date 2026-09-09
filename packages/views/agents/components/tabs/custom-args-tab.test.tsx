@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Agent, RuntimeDevice } from "@orvilo/core/types";
+import { toast } from "sonner";
+import type { Agent } from "@orvilo/core/types";
 import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
@@ -44,27 +45,24 @@ const baseAgent: Agent = {
   archived_by: null,
 };
 
-const runtimeDevice = {
-  launch_header: "codex app-server",
-} as RuntimeDevice;
-
 function renderTab(
   overrides: Partial<Agent> = {},
   onSave = vi.fn().mockResolvedValue(undefined),
   compact = false,
+  onDirtyChange = vi.fn(),
 ) {
   const result = render(
     <I18nProvider locale="en" resources={TEST_RESOURCES}>
       <CustomArgsTab
         compact={compact}
         agent={{ ...baseAgent, ...overrides }}
-        runtimeDevice={runtimeDevice}
         onSave={onSave}
+        onDirtyChange={onDirtyChange}
       />
     </I18nProvider>,
   );
 
-  return { ...result, onSave };
+  return { ...result, onSave, onDirtyChange };
 }
 
 describe("CustomArgsTab", () => {
@@ -78,12 +76,13 @@ describe("CustomArgsTab", () => {
     expect(screen.getByText("--profile")).toBeInTheDocument();
     expect(screen.getByText("research")).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    expect(screen.getByText("codex app-server --profile research")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^save$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("codex app-server --profile research")).not.toBeInTheDocument();
   });
 
   it("uses one editor to add one argument token", async () => {
     const user = userEvent.setup();
-    renderTab({ custom_args: [] });
+    const { onSave, onDirtyChange } = renderTab({ custom_args: [] });
 
     await user.click(screen.getByRole("button", { name: /add argument/i }));
     const input = screen.getByRole("textbox", { name: /new argument/i });
@@ -92,11 +91,13 @@ describe("CustomArgsTab", () => {
 
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.getByText("value with spaces")).toBeInTheDocument();
+    expect(onSave).toHaveBeenCalledWith({ custom_args: ["value with spaces"] });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
 
   it("edits a list item in place with the same single editor", async () => {
     const user = userEvent.setup();
-    renderTab();
+    const { onSave } = renderTab();
 
     await user.click(screen.getByRole("button", { name: /edit argument 1/i }));
     const input = screen.getByRole("textbox", { name: /argument 1/i });
@@ -107,6 +108,7 @@ describe("CustomArgsTab", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     expect(screen.getByText("--model")).toBeInTheDocument();
     expect(screen.queryByText("--profile")).not.toBeInTheDocument();
+    expect(onSave).toHaveBeenCalledWith({ custom_args: ["--model", "research"] });
   });
 
   it.each([false, true])("preserves spaces inside one token when saving (compact: %s)", async (compact) => {
@@ -119,8 +121,57 @@ describe("CustomArgsTab", () => {
       "value with spaces",
     );
     await user.click(screen.getByRole("button", { name: /^add$/i }));
-    await user.click(screen.getByRole("button", { name: /^save$/i }));
 
     expect(onSave).toHaveBeenCalledWith({ custom_args: ["value with spaces"] });
+  });
+
+  it("preserves a failed edit for correction and retries without losing saved arguments", async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockRejectedValueOnce(new Error("Save failed")).mockResolvedValue(undefined);
+    const { onDirtyChange } = renderTab({}, onSave);
+    await user.click(screen.getByRole("button", { name: /edit argument 1/i }));
+    const input = screen.getByRole("textbox", { name: /argument 1/i });
+    await user.clear(input);
+    await user.type(input, "--retry");
+    await user.click(screen.getByRole("button", { name: /^update$/i }));
+
+    expect(input).toHaveValue("--retry");
+    expect(toast.error).toHaveBeenCalledWith("Save failed");
+    expect(screen.getByText("research")).toBeInTheDocument();
+    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    await user.click(screen.getByRole("button", { name: /^update$/i }));
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.getByText("--retry")).toBeInTheDocument();
+    expect(onSave).toHaveBeenLastCalledWith({ custom_args: ["--retry", "research"] });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("persists deletion once and disables other mutations until it finishes", async () => {
+    let finishSave!: () => void;
+    const onSave = vi.fn(() => new Promise<void>((resolve) => { finishSave = resolve; }));
+    renderTab({}, onSave);
+
+    const remove = screen.getByRole("button", { name: /remove argument 1/i });
+    fireEvent.click(remove);
+    fireEvent.click(remove);
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave).toHaveBeenCalledWith({ custom_args: ["research"] });
+    expect(screen.getByText("--profile")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /add argument/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /edit argument 2/i })).toBeDisabled();
+    expect(remove).toBeDisabled();
+
+    await act(async () => finishSave());
+    await waitFor(() => expect(screen.queryByText("--profile")).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /add argument/i })).toBeEnabled();
+  });
+
+  it("keeps a saved argument visible when deletion fails", async () => {
+    const user = userEvent.setup();
+    renderTab({}, vi.fn().mockRejectedValue(new Error("Delete failed")));
+    await user.click(screen.getByRole("button", { name: /remove argument 1/i }));
+    expect(screen.getByText("--profile")).toBeInTheDocument();
+    expect(toast.error).toHaveBeenCalledWith("Delete failed");
+    expect(screen.getByRole("button", { name: /remove argument 1/i })).toBeEnabled();
   });
 });
