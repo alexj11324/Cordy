@@ -697,7 +697,10 @@ func TestLinearWorkerSuppressesEchoOfItsOwnPush(t *testing.T) {
 func TestLinearWorkerAppliesRemoteOnlyEdit(t *testing.T) {
 	api := &fakeLinearAPI{}
 	f := setupWorker(t, "two_way", api)
-	issueID := dbfx.Issue(t, "Pushed title", testutil.Cols{"project_id": f.projectID, "description": "pushed body"})
+	// The remote started status is active work and requires a real executor.
+	runtimeID := dbfx.Runtime(t, "Remote edit runtime")
+	agentID := dbfx.Agent(t, "Remote edit executor", runtimeID)
+	issueID := dbfx.Issue(t, "Pushed title", testutil.Cols{"project_id": f.projectID, "description": "pushed body", "executor_type": "agent", "executor_id": agentID})
 	if !f.worker.processOneOutbox(context.Background()) {
 		t.Fatal("issue was not published")
 	}

@@ -2855,7 +2855,7 @@ func TestWebhook_PullRequest_AmbiguousCloseAcrossWorkspaces(t *testing.T) {
 	issueA, err := testHandler.Queries.CreateIssue(ctx, db.CreateIssueParams{
 		WorkspaceID: wsA.ID,
 		Title:       "unrelated issue that happens to share a number",
-		Status:      "in_progress",
+		Status:      "todo",
 		Priority:    "none",
 		CreatorType: "member",
 		CreatorID:   parseUUID(testUserID),

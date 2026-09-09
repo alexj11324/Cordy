@@ -273,9 +273,9 @@ func TestClaimTasksByRuntime_SkipsCrossWorkspaceRuntime(t *testing.T) {
 		t.Fatalf("foreign agent: %v", err)
 	}
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position)
-		VALUES ($1, 'foreign issue', 'in_progress', 'none', $2, 'member', 1, 0)
-		RETURNING id`, foreignWS, foreignUser).Scan(&foreignIssue); err != nil {
+		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position, executor_type, executor_id)
+		VALUES ($1, 'foreign issue', 'in_progress', 'none', $2, 'member', 1, 0, 'agent', $3)
+		RETURNING id`, foreignWS, foreignUser, foreignAgent).Scan(&foreignIssue); err != nil {
 		t.Fatalf("foreign issue: %v", err)
 	}
 	foreignTask := seedQueuedIssueTask(t, ctx, foreignAgent, foreignRT, foreignIssue)

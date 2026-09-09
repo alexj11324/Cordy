@@ -205,10 +205,10 @@ func createClaimCapacityFixture(t *testing.T, ctx context.Context, pool *pgxpool
 	for i := 0; i < 2; i++ {
 		var issueID string
 		if err := pool.QueryRow(ctx, `
-			INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position)
-			VALUES ($1, $2, 'in_progress', 'none', $3, 'member', $4, $5)
+			INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position, executor_type, executor_id)
+			VALUES ($1, $2, 'in_progress', 'none', $3, 'member', $4, $5, 'agent', $6)
 			RETURNING id
-		`, workspaceID, fmt.Sprintf("claim capacity issue %d", i+1), userID, 900000+i, i).Scan(&issueID); err != nil {
+		`, workspaceID, fmt.Sprintf("claim capacity issue %d", i+1), userID, 900000+i, i, agentID).Scan(&issueID); err != nil {
 			t.Fatalf("create issue %d: %v", i+1, err)
 		}
 		if _, err := pool.Exec(ctx, `

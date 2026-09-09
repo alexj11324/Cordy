@@ -196,14 +196,14 @@ func createClaimReclaimAgentAndIssue(t *testing.T, ctx context.Context, runtimeI
 
 	var issueID string
 	dbfx.QueryRow(t, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position)
+		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position, executor_type, executor_id)
 		VALUES (
 			$1, $2, 'in_progress', 'none', $3, 'member',
 			(SELECT COALESCE(MAX(number), 82649) + 1 FROM issue WHERE workspace_id = $1),
-			0
+			0, 'agent', $4
 		)
 		RETURNING id
-	`, testWorkspaceID, name+" issue", testUserID).Scan(&issueID)
+	`, testWorkspaceID, name+" issue", testUserID, agentID).Scan(&issueID)
 	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, issueID) })
 
 	return agentID, issueID
@@ -2433,7 +2433,7 @@ func TestCompleteTask_CommentTriggered_SynthesizesCommentWhenAgentSilent(t *test
 	setWorkspaceIssuePrefixForTest(t, "MUL")
 
 	issueID := dbfx.Issue(t, "mul-3310 agent output fixture", testutil.Cols{
-		"status": "in_progress",
+		"status": "in_progress", "executor_type": "agent", "executor_id": agentID,
 		"number": 3310,
 	})
 
@@ -2518,7 +2518,7 @@ func TestCompleteTask_CommentTriggered_SkipsSynthesisWhenAgentAlreadyCommented(t
 	`, testWorkspaceID).Scan(&agentID, &runtimeID)
 
 	issueID := dbfx.Issue(t, "mul-1198 dedup fixture", testutil.Cols{
-		"status": "in_progress",
+		"status": "in_progress", "executor_type": "agent", "executor_id": agentID,
 		"number": 81199,
 	})
 
@@ -2572,7 +2572,7 @@ func TestCompleteTask_CommentTriggered_SuppressesTrivialDoneOutput(t *testing.T)
 	`, testWorkspaceID).Scan(&agentID, &runtimeID)
 
 	issueID := dbfx.Issue(t, "trivial-done-suppression fixture", testutil.Cols{
-		"status": "in_progress",
+		"status": "in_progress", "executor_type": "agent", "executor_id": agentID,
 		"number": 81200,
 	})
 
@@ -2620,7 +2620,7 @@ func TestCompleteTask_ExecutorTriggered_DoesNotSuppressTrivialDoneOutput(t *test
 	`, testWorkspaceID).Scan(&agentID, &runtimeID)
 
 	issueID := dbfx.Issue(t, "executor-trivial-done fixture", testutil.Cols{
-		"status": "in_progress",
+		"status": "in_progress", "executor_type": "agent", "executor_id": agentID,
 		"number": 81201,
 	})
 
@@ -2886,7 +2886,7 @@ func TestClaimTask_IssuePriorSessionRuntimeGuard(t *testing.T) {
 	oldRuntimeID := createRuntimeGuardRuntime(t, ctx, "kimi")
 
 	skipIssueID := dbfx.Issue(t, "runtime-session-skip fixture", testutil.Cols{
-		"status": "in_progress",
+		"status": "in_progress", "executor_type": "agent", "executor_id": agentID,
 		"number": 81203,
 	})
 
@@ -2923,7 +2923,7 @@ func TestClaimTask_IssuePriorSessionRuntimeGuard(t *testing.T) {
 	`, skipIssueID)
 
 	resumeIssueID := dbfx.Issue(t, "runtime-session-resume fixture", testutil.Cols{
-		"status": "in_progress",
+		"status": "in_progress", "executor_type": "agent", "executor_id": agentID,
 		"number": 81204,
 	})
 
@@ -2952,7 +2952,7 @@ func TestClaimTask_IssuePriorSessionRuntimeGuard(t *testing.T) {
 	}
 
 	commentIssueID := dbfx.Issue(t, "comment-triggered-session-skip fixture", testutil.Cols{
-		"status": "in_progress",
+		"status": "in_progress", "executor_type": "agent", "executor_id": agentID,
 		"number": 81205,
 	})
 
@@ -2989,7 +2989,7 @@ func TestClaimTask_IssuePriorSessionRuntimeGuard(t *testing.T) {
 	`, commentIssueID)
 
 	freshIssueID := dbfx.Issue(t, "force-fresh-session fixture", testutil.Cols{
-		"status": "in_progress",
+		"status": "in_progress", "executor_type": "agent", "executor_id": agentID,
 		"number": 81206,
 	})
 	dbfx.Exec(t, `
@@ -3046,7 +3046,7 @@ func TestClaimTask_ManualRetryReusesWorkdir(t *testing.T) {
 		t.Helper()
 		issueNum++
 		issueID := dbfx.Issue(t, "manual-retry-reuse fixture", testutil.Cols{
-			"status": "in_progress",
+			"status": "in_progress", "executor_type": "agent", "executor_id": agentID,
 			"number": issueNum,
 		})
 		sourceID := dbfx.Task(t, agentID, testutil.Cols{
@@ -3118,7 +3118,7 @@ func TestClaimTask_ManualRetryReusesWorkdir(t *testing.T) {
 	t.Run("different_agent_source_starts_fresh", func(t *testing.T) {
 		issueNum++
 		issueID := dbfx.Issue(t, "manual-retry-cross-agent fixture", testutil.Cols{
-			"status": "in_progress",
+			"status": "in_progress", "executor_type": "agent", "executor_id": agentID,
 			"number": issueNum,
 		})
 		otherAgentID := dbfx.Agent(t, "Rerun Source Other Agent", runtimeID, testutil.Cols{})
@@ -4337,7 +4337,7 @@ func TestIssueGCChecksReportCategoryNotRawCustomStatus(t *testing.T) {
 		"status": gateApproved.Key, "priority": "medium", "number": 92501,
 	})
 	openID := dbfx.Issue(t, "gc-check-custom-open", testutil.Cols{
-		"status": humanReview.Key, "priority": "medium", "number": 92502,
+		"status": humanReview.Key, "executor_type": "agent", "executor_id": handlerSeededAgentID(t), "priority": "medium", "number": 92502,
 	})
 
 	t.Run("batch endpoint", func(t *testing.T) {
@@ -4412,8 +4412,8 @@ func TestBatchIssueGCCheckReadsCatalogOnceForManyCustomStatuses(t *testing.T) {
 	ids := []string{
 		dbfx.Issue(t, "gc-batch-custom-1", testutil.Cols{"status": gateApproved.Key, "priority": "medium", "number": 92601}),
 		dbfx.Issue(t, "gc-batch-custom-2", testutil.Cols{"status": gateApproved.Key, "priority": "medium", "number": 92602}),
-		dbfx.Issue(t, "gc-batch-custom-3", testutil.Cols{"status": humanReview.Key, "priority": "medium", "number": 92603}),
-		dbfx.Issue(t, "gc-batch-custom-4", testutil.Cols{"status": humanReview.Key, "priority": "medium", "number": 92604}),
+		dbfx.Issue(t, "gc-batch-custom-3", testutil.Cols{"status": humanReview.Key, "executor_type": "agent", "executor_id": handlerSeededAgentID(t), "priority": "medium", "number": 92603}),
+		dbfx.Issue(t, "gc-batch-custom-4", testutil.Cols{"status": humanReview.Key, "executor_type": "agent", "executor_id": handlerSeededAgentID(t), "priority": "medium", "number": 92604}),
 		dbfx.Issue(t, "gc-batch-builtin", testutil.Cols{"status": "done", "priority": "medium", "number": 92605}),
 	}
 
@@ -4465,7 +4465,7 @@ func TestBatchIssueGCCheckReadsNoCatalogForBuiltInStatuses(t *testing.T) {
 
 	ids := []string{
 		dbfx.Issue(t, "gc-batch-builtin-1", testutil.Cols{"status": "done", "priority": "medium", "number": 92611}),
-		dbfx.Issue(t, "gc-batch-builtin-2", testutil.Cols{"status": "in_progress", "priority": "medium", "number": 92612}),
+		dbfx.Issue(t, "gc-batch-builtin-2", testutil.Cols{"status": "in_progress", "executor_type": "agent", "executor_id": handlerSeededAgentID(t), "priority": "medium", "number": 92612}),
 	}
 
 	counter := withCountingCatalog(t)

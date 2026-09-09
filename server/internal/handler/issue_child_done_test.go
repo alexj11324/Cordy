@@ -366,7 +366,7 @@ func TestChildDoneMentionsParentExecutor_Agent(t *testing.T) {
 // (see server/internal/handler/issue.go), so the fixture must
 // match or it would be exercising a state that cannot occur for real.
 func TestChildDoneSkippedWhenParentMember(t *testing.T) {
-	fx := newChildDoneFixture(t, "in_progress")
+	fx := newChildDoneFixture(t, "todo")
 
 	var userID string
 	if err := testPool.QueryRow(context.Background(),

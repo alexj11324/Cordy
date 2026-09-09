@@ -47,10 +47,10 @@ func TestListIssuesSortsByStatusAndUpdatedAt(t *testing.T) {
 		if _, err := testPool.Exec(ctx, `
 			INSERT INTO issue (
 				workspace_id, title, status, priority, creator_type, creator_id,
-				position, number, project_id, created_at, updated_at, last_activity_at
+				position, number, project_id, created_at, updated_at, last_activity_at, executor_type, executor_id
 			)
-			VALUES ($1, $2, $3, 'none', 'member', $4, $5, $6, $7, $8, $8, $9)
-		`, testWorkspaceID, item.title, item.status, testUserID, index, number, projectID, item.updatedAt, item.activityAt); err != nil {
+			VALUES ($1, $2, $3, 'none', 'member', $4, $5, $6, $7, $8, $8, $9, 'agent', $10)
+		`, testWorkspaceID, item.title, item.status, testUserID, index, number, projectID, item.updatedAt, item.activityAt, handlerSeededAgentID(t)); err != nil {
 			t.Fatalf("create issue %q: %v", item.title, err)
 		}
 	}

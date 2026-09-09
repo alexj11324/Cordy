@@ -80,7 +80,7 @@ func TestListWorkspaceAgentTaskSnapshot(t *testing.T) {
 	var laneIssueIDs []string
 	for i := 0; i < 2; i++ {
 		var iid string
-		if err := testPool.QueryRow(ctx, `INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position) VALUES ($1, 'lane-issue-'||gen_random_uuid()::text, 'open', 'none', $2, 'member', 900000 + $3, 0) RETURNING id`, testWorkspaceID, testUserID, i).Scan(&iid); err != nil {
+		if err := testPool.QueryRow(ctx, `INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position) VALUES ($1, 'lane-issue-'||gen_random_uuid()::text, 'todo', 'none', $2, 'member', 900000 + $3, 0) RETURNING id`, testWorkspaceID, testUserID, i).Scan(&iid); err != nil {
 			t.Fatalf("create lane issue: %v", err)
 		}
 		laneIssueIDs = append(laneIssueIDs, iid)

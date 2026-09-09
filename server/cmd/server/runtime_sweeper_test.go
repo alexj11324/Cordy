@@ -772,7 +772,7 @@ func TestRuntimeReconnectRetryHasBoundedTerminalPath(t *testing.T) {
 	`, parentID); err != nil {
 		t.Fatalf("fail runtime_offline parent: %v", err)
 	}
-	if _, err := testPool.Exec(ctx, `UPDATE issue SET status = 'in_progress' WHERE id = $1`, issueID); err != nil {
+	if _, err := testPool.Exec(ctx, `UPDATE issue SET status = 'in_progress', executor_type = 'agent', executor_id = $2 WHERE id = $1`, issueID, agentID); err != nil {
 		t.Fatalf("mark issue in progress: %v", err)
 	}
 

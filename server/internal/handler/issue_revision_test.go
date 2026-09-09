@@ -928,13 +928,13 @@ func TestAuxiliaryVisibleMutationsAdvanceOwnerRevisionExactlyOnce(t *testing.T) 
 	}
 
 	statusIssue, err := testHandler.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
-		ID: issueUUID, Status: "in_progress", WorkspaceID: workspaceUUID,
+		ID: issueUUID, Status: "done", WorkspaceID: workspaceUUID,
 	})
 	if err != nil || statusIssue.Revision != 13 {
 		t.Fatalf("update status = (%+v, %v), want revision 13", statusIssue, err)
 	}
 	statusIssue, err = testHandler.Queries.UpdateIssueStatus(ctx, db.UpdateIssueStatusParams{
-		ID: issueUUID, Status: "in_progress", WorkspaceID: workspaceUUID,
+		ID: issueUUID, Status: "done", WorkspaceID: workspaceUUID,
 	})
 	if err != nil || statusIssue.Revision != 13 {
 		t.Fatalf("duplicate status update = (%+v, %v), want unchanged revision 13", statusIssue, err)

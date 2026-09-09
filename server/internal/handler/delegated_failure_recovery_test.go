@@ -33,13 +33,13 @@ func TestUpdateComment_RequeuesDelegatedFailureRecoverySurvivor(t *testing.T) {
 
 	var workerIssueID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position)
+		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position, executor_type, executor_id)
 		VALUES (
 			$1, 'delegated recovery worker issue', 'in_progress', 'none', $2, 'member',
 			(SELECT COALESCE(MAX(number), 82649) + 1 FROM issue WHERE workspace_id = $1),
-			0
+			0, 'agent', $3
 		)
-		RETURNING id`, testWorkspaceID, testUserID).Scan(&workerIssueID); err != nil {
+		RETURNING id`, testWorkspaceID, testUserID, workerID).Scan(&workerIssueID); err != nil {
 		t.Fatalf("create worker issue: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, workerIssueID) })
