@@ -18,25 +18,25 @@ import {
 } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { api, errorCode } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
+import { api, errorCode } from "@orvilo/core/api";
+import { useAuthStore } from "@orvilo/core/auth";
+import { useCurrentWorkspace } from "@orvilo/core/paths";
 import {
   invitationListOptions,
   memberListOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import type { Invitation, MemberRole, MemberWithUser } from "@patchbay/core/types";
-import { Avatar, AvatarFallback, AvatarImage } from "@patchbay/ui/components/ui/avatar";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@orvilo/core/workspace/queries";
+import type { Invitation, MemberRole, MemberWithUser } from "@orvilo/core/types";
+import { Avatar, AvatarFallback, AvatarImage } from "@orvilo/ui/components/ui/avatar";
+import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Card,
   CardAction,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@patchbay/ui/components/ui/card";
+} from "@orvilo/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -44,7 +44,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@orvilo/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,14 +55,14 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@patchbay/ui/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@patchbay/ui/components/ui/select";
-import { Separator } from "@patchbay/ui/components/ui/separator";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@patchbay/ui/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@patchbay/ui/components/ui/tabs";
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@orvilo/ui/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@orvilo/ui/components/ui/select";
+import { Separator } from "@orvilo/ui/components/ui/separator";
+import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@orvilo/ui/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@orvilo/ui/components/ui/tabs";
 import { useLocale, useT } from "../../i18n";
 
 type DirectoryTab = "members" | "invitations";

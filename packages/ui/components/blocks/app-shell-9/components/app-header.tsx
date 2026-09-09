@@ -5,8 +5,8 @@ import {
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
-} from "@patchbay/ui/components/ui/breadcrumb"
-import { SidebarTrigger } from "@patchbay/ui/components/ui/sidebar"
+} from "@orvilo/ui/components/ui/breadcrumb"
+import { SidebarTrigger } from "@orvilo/ui/components/ui/sidebar"
 import { BulletSeparator } from "./bullet-separator"
 import { HouseIcon } from "lucide-react"
 

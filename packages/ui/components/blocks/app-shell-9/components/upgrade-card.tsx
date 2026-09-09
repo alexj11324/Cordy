@@ -5,11 +5,11 @@ import {
   FrameHeader,
   FramePanel,
   FrameTitle,
-} from "@patchbay/ui/components/reui/frame"
+} from "@orvilo/ui/components/reui/frame"
 
-import { Button } from "@patchbay/ui/components/ui/button"
-import { Progress } from "@patchbay/ui/components/ui/progress"
-import { SidebarGroup } from "@patchbay/ui/components/ui/sidebar"
+import { Button } from "@orvilo/ui/components/ui/button"
+import { Progress } from "@orvilo/ui/components/ui/progress"
+import { SidebarGroup } from "@orvilo/ui/components/ui/sidebar"
 import { SparklesIcon } from "lucide-react"
 
 // ── Upgrade Card ──

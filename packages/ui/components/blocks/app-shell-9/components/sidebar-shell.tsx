@@ -2,12 +2,12 @@
 
 import { useEffect, type CSSProperties, type ReactNode } from "react"
 
-import { cn } from "@patchbay/ui/lib/utils"
+import { cn } from "@orvilo/ui/lib/utils"
 import {
   SidebarInset,
   SidebarProvider,
   useSidebar,
-} from "@patchbay/ui/components/ui/sidebar"
+} from "@orvilo/ui/components/ui/sidebar"
 
 import { AppSidebar } from "./app-sidebar"
 

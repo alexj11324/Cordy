@@ -1,26 +1,26 @@
 "use client"
 
 import type { ReactNode } from "react"
-import { Badge } from "@patchbay/ui/components/reui/badge"
+import { Badge } from "@orvilo/ui/components/reui/badge"
 
-import { cn } from "@patchbay/ui/lib/utils"
+import { cn } from "@orvilo/ui/lib/utils"
 import {
   Avatar,
   AvatarFallback,
   AvatarGroup,
   AvatarGroupCount,
   AvatarImage,
-} from "@patchbay/ui/components/ui/avatar"
-import { Button } from "@patchbay/ui/components/ui/button"
-import { ButtonGroup } from "@patchbay/ui/components/ui/button-group"
+} from "@orvilo/ui/components/ui/avatar"
+import { Button } from "@orvilo/ui/components/ui/button"
+import { ButtonGroup } from "@orvilo/ui/components/ui/button-group"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover"
-import { Progress } from "@patchbay/ui/components/ui/progress"
-import { ScrollArea } from "@patchbay/ui/components/ui/scroll-area"
-import { Separator } from "@patchbay/ui/components/ui/separator"
+} from "@orvilo/ui/components/ui/popover"
+import { Progress } from "@orvilo/ui/components/ui/progress"
+import { ScrollArea } from "@orvilo/ui/components/ui/scroll-area"
+import { Separator } from "@orvilo/ui/components/ui/separator"
 import {
   Sheet,
   SheetContent,
@@ -28,14 +28,14 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
-} from "@patchbay/ui/components/ui/sheet"
-import { useSidebar } from "@patchbay/ui/components/ui/sidebar"
+} from "@orvilo/ui/components/ui/sheet"
+import { useSidebar } from "@orvilo/ui/components/ui/sidebar"
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip"
+} from "@orvilo/ui/components/ui/tooltip"
 import {
   NOTIFICATIONS,
   type Notification,

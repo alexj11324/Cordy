@@ -2,12 +2,12 @@
 
 import { Fragment, useState } from "react"
 
-import { cn } from "@patchbay/ui/lib/utils"
+import { cn } from "@orvilo/ui/lib/utils"
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
-} from "@patchbay/ui/components/ui/avatar"
+} from "@orvilo/ui/components/ui/avatar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,7 +16,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu"
+} from "@orvilo/ui/components/ui/dropdown-menu"
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -25,7 +25,7 @@ import {
   SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@patchbay/ui/components/ui/sidebar"
+} from "@orvilo/ui/components/ui/sidebar"
 import { TEAM_MEMBER_ACTIONS, TEAM_MEMBERS, type TeamMember } from "./data"
 import { MoreHorizontalIcon, ChevronDownIcon } from "lucide-react"
 

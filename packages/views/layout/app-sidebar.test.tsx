@@ -142,6 +142,9 @@ vi.mock("@orvilo/core/auth", () => ({
     }) => unknown,
   ) => selector({ user: authUser.current }),
 }));
+vi.mock("@orvilo/core/shortcuts", () => ({
+  useShortcut: () => null,
+}));
 // Callable-store shape (selectorFn + getState) per the repo testing rules.
 vi.mock("@orvilo/core/chat", () => ({
   useChatStore: Object.assign(

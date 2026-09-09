@@ -7,20 +7,6 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Tab strip hairlines sit on each tab's own left edge, so the hairline between
-   two tabs belongs to the tab on the right. Hovering the left tab has to fade
-   it out as well, which no ancestor-based variant can reach — hence the
-   adjacent-sibling selector. The (hover: hover) gate mirrors what Tailwind
-   already wraps group-hover in, so both halves of the fade stay in step on
-   devices without a pointer. */
-@custom-variant prev-tab-hover {
-  @media (hover: hover) {
-    [data-tab-frame]:hover + [data-tab-frame] & {
-      @slot;
-    }
-  }
-}
-
 /* Font stack: Inter for Latin UI text + system CJK fonts for localized content.
    Web app uses the same stack via next/font/google in apps/web/app/layout.tsx —
    keep the CJK fallback tail in sync across both files. The Inter primary family
@@ -62,31 +48,4 @@
 /* Desktop-specific: override sidebar container padding for traffic light layout */
 [data-slot="sidebar-container"] {
   padding: 0 !important;
-}
-
-/* Let the native macOS material show through only after a glass dashboard
-   mounts. The layout emits this marker only for native macOS windows.
-   Login and issue windows retain their body fill; onboarding overlays
-   provide their own opaque surface. */
-html:has([data-native-vibrancy="true"]),
-html:has([data-native-vibrancy="true"]) body {
-  background: transparent;
-}
-
-/* Settings takes over the window. Its dashboard stays mounted but invisible,
-   so the settings glass reveals native material rather than navigation below. */
-html:has([data-native-vibrancy="true"]) [data-slot="settings-window"],
-html:has([data-native-vibrancy="true"]) [data-slot="settings-window"] [data-settings-variant="standalone"] {
-  background: transparent;
-}
-
-/* Native sidebar material already supplies blur and tint. Do not paint a
-   second darkened glass layer over it; keep the solid accessibility fallback. */
-@media not (prefers-reduced-transparency: reduce) {
-  html:has([data-native-vibrancy="true"]) [data-sidebar-glass="true"] [data-slot="sidebar-container"],
-  html:has([data-native-vibrancy="true"]) [data-slot="settings-nav"] {
-    background: transparent;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
 }

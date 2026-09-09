@@ -106,7 +106,6 @@ vi.mock("@orvilo/views/chat", () => ({ FloatingChat: () => null }));
 vi.mock("@orvilo/views/agent-thread", () => ({
   AgentThreadPanelLayout: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
-vi.mock("./tab-bar", () => ({ TabBar: () => <div data-testid="tab-bar" /> }));
 vi.mock("./window-overlay", () => ({ WindowOverlay: () => null }));
 
 // Stands in for whatever page the active tab is showing. Reports the one fact
@@ -179,6 +178,12 @@ describe("DesktopShell sidebar trigger", () => {
     );
   });
 
+  it("does not mount the desktop tab strip", () => {
+    const { container } = renderShell();
+
+    expect(container.querySelector("[data-testid='tab-bar']")).toBeNull();
+  });
+
   it("keeps the native toolbar clearance while a collapsed sidebar is hover-revealed", () => {
     const { container, getByTestId } = renderShell("macos");
     const header = container.querySelector("header")!;
@@ -227,38 +232,15 @@ describe("DesktopShell sidebar trigger", () => {
     });
   });
 
-  // The macOS shell is transparent so Electron's native sidebar material can
-  // show through; other platforms keep the opaque app-shell wrapper. The
-  // marker is what the globals.css `:has()` gate keys off to drop the body
-  // fill — without it the vibrancy stays buried under an opaque page.
-  it("enables the glass shell while reserving native transparency for macOS", () => {
-    const mac = renderShell("macos").container.querySelector<HTMLElement>(
+  it("keeps the desktop shell opaque on every host", () => {
+    const desktop = renderShell("macos").container.querySelector<HTMLElement>(
       "[data-slot='sidebar-wrapper']",
     )!;
 
-    expect(mac).toHaveAttribute("data-sidebar-glass", "true");
-    expect(mac).toHaveAttribute("data-native-vibrancy", "true");
-    expect(mac).toHaveClass("bg-transparent");
-    expect(mac.parentElement).toHaveClass("bg-transparent");
-
-    const windows = renderShell("windows").container.querySelector<HTMLElement>(
-      "[data-slot='sidebar-wrapper']",
-    )!;
-
-    expect(windows).toHaveAttribute("data-sidebar-glass", "true");
-    expect(windows).not.toHaveAttribute("data-native-vibrancy");
-    expect(windows).toHaveClass("bg-app-shell");
-    expect(windows.parentElement).toHaveClass("bg-app-shell");
-  });
-
-  it("keeps the opaque shell in browser hosts even on macOS", () => {
-    const browser = renderShell("macos", "browser").container.querySelector<HTMLElement>(
-      "[data-slot='sidebar-wrapper']",
-    )!;
-
-    expect(browser).toHaveAttribute("data-sidebar-glass", "true");
-    expect(browser).not.toHaveAttribute("data-native-vibrancy");
-    expect(browser).toHaveClass("bg-app-shell");
+    expect(desktop).not.toHaveAttribute("data-sidebar-glass");
+    expect(desktop).not.toHaveAttribute("data-native-vibrancy");
+    expect(desktop).toHaveClass("bg-app-shell");
+    expect(desktop.parentElement).toHaveClass("bg-app-shell");
   });
 });
 

@@ -1,13 +1,13 @@
 "use client"
 
-import { cn } from "@patchbay/ui/lib/utils"
+import { cn } from "@orvilo/ui/lib/utils"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
   useSidebar,
-} from "@patchbay/ui/components/ui/sidebar"
+} from "@orvilo/ui/components/ui/sidebar"
 
 import { Logo } from "./logo"
 import { NavMain } from "./nav-main"

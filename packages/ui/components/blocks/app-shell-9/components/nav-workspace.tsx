@@ -3,13 +3,13 @@
 import { useEffect, useState, type ReactNode } from "react"
 import { useTheme } from "next-themes"
 
-import { cn } from "@patchbay/ui/lib/utils"
+import { cn } from "@orvilo/ui/lib/utils"
 import {
   Avatar,
   AvatarFallback,
   AvatarImage,
-} from "@patchbay/ui/components/ui/avatar"
-import { Button } from "@patchbay/ui/components/ui/button"
+} from "@orvilo/ui/components/ui/avatar"
+import { Button } from "@orvilo/ui/components/ui/button"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -19,13 +19,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu"
+} from "@orvilo/ui/components/ui/dropdown-menu"
 import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
-} from "@patchbay/ui/components/ui/sidebar"
+} from "@orvilo/ui/components/ui/sidebar"
 import { USER, WORKSPACE_LOGOS, WORKSPACES, type Workspace } from "./data"
 import {
   SunIcon,

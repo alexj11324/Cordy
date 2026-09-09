@@ -1,5 +1,5 @@
-import { cn } from "@patchbay/ui/lib/utils"
-import { Item, ItemMedia } from "@patchbay/ui/components/ui/item"
+import { cn } from "@orvilo/ui/lib/utils"
+import { Item, ItemMedia } from "@orvilo/ui/components/ui/item"
 
 interface LogoProps {
   className?: string

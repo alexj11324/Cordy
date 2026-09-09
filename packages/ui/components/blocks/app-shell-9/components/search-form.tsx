@@ -2,20 +2,20 @@
 
 import { useEffect, useId, useState, type ComponentProps } from "react"
 
-import { Button } from "@patchbay/ui/components/ui/button"
+import { Button } from "@orvilo/ui/components/ui/button"
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog"
-import { Input } from "@patchbay/ui/components/ui/input"
-import { Kbd } from "@patchbay/ui/components/ui/kbd"
+} from "@orvilo/ui/components/ui/dialog"
+import { Input } from "@orvilo/ui/components/ui/input"
+import { Kbd } from "@orvilo/ui/components/ui/kbd"
 import {
   SidebarGroup,
   SidebarGroupContent,
-} from "@patchbay/ui/components/ui/sidebar"
+} from "@orvilo/ui/components/ui/sidebar"
 import { SearchIcon } from "lucide-react"
 
 // ── Search Form ──

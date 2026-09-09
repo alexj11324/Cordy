@@ -33,7 +33,6 @@ import {
   DesktopNavigationProvider,
   routeContentLinkPath,
 } from "@/platform/navigation";
-import { TabBar } from "./tab-bar";
 import { TabContent } from "./tab-content";
 import { WindowOverlay } from "./window-overlay";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
@@ -118,10 +117,10 @@ function useNativeNavigationGestures() {
 }
 
 
-// The main area's top bar doubles as a window drag region. Track `open`, which
-// owns the sidebar's in-flow gap, rather than `state`, which also becomes
-// expanded during a temporary hover overlay. A hover-revealed sidebar remains
-// out of flow, so the tab strip must keep clearing the fixed window toolbar and
+// The main area's top bar is the window drag region. Track `open`, which owns
+// the sidebar's in-flow gap, rather than `state`, which also becomes expanded
+// during a temporary hover overlay. A hover-revealed sidebar remains out of
+// flow, so the drag region must keep clearing the fixed window toolbar and
 // native traffic lights.
 function MainTopBar() {
   const { open, isCompact } = useSidebar();
@@ -142,9 +141,6 @@ function MainTopBar() {
         transition={toolbarMotion}
         style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
       />
-      <div className="relative z-10 flex h-full min-w-0 max-w-full items-center">
-        <TabBar />
-      </div>
     </motion.header>
   );
 }
@@ -261,10 +257,6 @@ export function DesktopShell() {
     currentSlug && workspaces.some((w) => w.slug === currentSlug)
       ? currentSlug
       : null;
-  const usesNativeVibrancy =
-    window.desktopAPI.host === "electron" &&
-    window.desktopAPI.appInfo?.os === "macos";
-
   return (
     <DesktopNavigationProvider>
       {/* WorkspaceSlugProvider accepts null — components that need slug
@@ -284,13 +276,9 @@ export function DesktopShell() {
           className={cn(
             "flex h-screen",
             settingsOpen && "invisible",
-            usesNativeVibrancy ? "bg-transparent" : "bg-app-shell",
+            "bg-app-shell",
           )}
         >
-          {/* Non-macOS keeps the opaque app-shell wrapper. On macOS, the shell
-              is transparent so Electron's native sidebar material can show
-              through; descendants that need an opaque fill still read the
-              app-shell token from --sidebar-wrapper-fill. */}
           {/* WindowToolbar owns the one persistent sidebar trigger beside the
               traffic lights. Keep the provider flag so page headers do not
               add a second fallback trigger inside the canvas. */}
@@ -298,10 +286,9 @@ export function DesktopShell() {
             hasExternalTrigger
             hoverReveal
             compactBehavior="collapse"
-            glass
-            data-native-vibrancy={usesNativeVibrancy ? "true" : undefined}
+            autoCollapse={false}
             className={cn(
-              "flex-1 [--sidebar-width:260px] [--sidebar-border:transparent] [--sidebar-wrapper-fill:var(--app-shell)]",
+              "flex-1 [--sidebar-width:260px] [--sidebar-border:transparent]",
               "[&_[data-slot=sidebar-inner]]:border-border/80 [&_[data-slot=sidebar-inner]]:border",
               "[&_[data-slot=sidebar-inner]]:shadow-xs [&_[data-slot=sidebar-inner]]:shadow-black/5",
               "[&_[data-slot=sidebar-menu-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-button][data-active]]:border",
@@ -317,7 +304,7 @@ export function DesktopShell() {
               "[&_[data-slot=sidebar-menu-sub-button][data-active]]:text-foreground [&_[data-slot=sidebar-menu-sub-button][data-active]>svg]:text-primary [&_[data-slot=sidebar-menu-sub-button][data-active]>svg]:opacity-100",
               "**:data-[slot=sidebar-menu-sub-button]:text-accent-foreground/80 **:data-[slot=sidebar-menu-sub-button]:hover:text-foreground",
               "[&_[data-slot=sidebar-menu-sub-button]:hover>svg]:opacity-100 [&_[data-slot=sidebar-menu-sub-button]>svg]:opacity-60",
-              usesNativeVibrancy ? "bg-transparent" : "bg-app-shell",
+              "bg-app-shell",
             )}
           >
             {slug && <GlobalShortcuts />}

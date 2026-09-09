@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 
-import { cn } from "@patchbay/ui/lib/utils"
+import { cn } from "@orvilo/ui/lib/utils"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,7 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu"
+} from "@orvilo/ui/components/ui/dropdown-menu"
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -23,7 +23,7 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   useSidebar,
-} from "@patchbay/ui/components/ui/sidebar"
+} from "@orvilo/ui/components/ui/sidebar"
 import { NAV_MAIN, type NavChild, type NavItem } from "./data"
 import { ChevronRightIcon } from "lucide-react"
 
@@ -126,7 +126,7 @@ function ExpandedNavItem({
                         )} aria-hidden="true" />
       </SidebarMenuButton>
 
-      {open && <NavSubMenu id={item.id} children={item.children} />}
+      {open && <NavSubMenu id={item.id}>{item.children}</NavSubMenu>}
     </SidebarMenuItem>
   )
 }

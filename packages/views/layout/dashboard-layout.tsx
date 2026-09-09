@@ -37,7 +37,6 @@ export function DashboardLayout({
       }
     >
       <SidebarProvider
-        glass
         className={cn(
           "h-svh [--sidebar-width:260px] [--sidebar-border:transparent]",
           "[&_[data-slot=sidebar-inner]]:border-border/80 [&_[data-slot=sidebar-inner]]:border",
