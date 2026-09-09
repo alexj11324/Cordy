@@ -147,7 +147,7 @@ describe("AgentProfilePanel", () => {
   it("switches the segmented profile tabs without leaving the panel", () => {
     renderPanel();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Runtime" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Harness" }));
 
     expect(screen.getByText("Codex Host")).toBeInTheDocument();
     expect(screen.getByText("claude-opus-4-8")).toBeInTheDocument();

@@ -43,11 +43,11 @@ import type { AgentListRow } from "./agents-page";
 import { useLocale, useT } from "../../i18n";
 import { availabilityConfig } from "../presence";
 
-type ProfileTab = "info" | "runtime" | "capabilities" | "work";
+type ProfileTab = "info" | "harness" | "capabilities" | "work";
 
 const PROFILE_TABS: Array<{ id: ProfileTab; labelKey: ProfileTab }> = [
   { id: "info", labelKey: "info" },
-  { id: "runtime", labelKey: "runtime" },
+  { id: "harness", labelKey: "harness" },
   { id: "capabilities", labelKey: "capabilities" },
   { id: "work", labelKey: "work" },
 ];
@@ -313,9 +313,9 @@ export function AgentProfilePanel({
                 </div>
               </TabsContent>
 
-              <TabsContent className="mt-5 outline-none" value="runtime">
+              <TabsContent className="mt-5 outline-none" value="harness">
                 <div className="space-y-5">
-                  <ProfileSection title={t(($) => $.profile_panel.tab_runtime)}>
+                  <ProfileSection title={t(($) => $.profile_panel.tab_harness)}>
                     <ProfileRow
                       icon={Activity}
                       label={t(($) => $.columns.status)}
@@ -323,7 +323,7 @@ export function AgentProfilePanel({
                         agent.archived_at ? (
                           t(($) => $.row.archived)
                         ) : needsRuntime ? (
-                          t(($) => $.row.needs_runtime)
+                          t(($) => $.row.needs_device)
                         ) : (
                           <AgentPresenceIndicator detail={presence} />
                         )
@@ -332,7 +332,7 @@ export function AgentProfilePanel({
                     <ProfileRow
                       href={detailWithView("general")}
                       icon={Server}
-                      label={t(($) => $.inspector.prop_runtime)}
+                      label={t(($) => $.inspector.prop_harness)}
                       onClick={onClose}
                       value={
                         runtime
@@ -455,10 +455,10 @@ function ProfileHero({
         />
         {needsRuntime ? (
           <span
-            aria-label={t(($) => $.row.needs_runtime)}
+            aria-label={t(($) => $.row.needs_device)}
             className="absolute right-1 bottom-1 flex size-4 items-center justify-center rounded-full border-2 border-background bg-warning text-warning-foreground"
             role="img"
-            title={t(($) => $.row.needs_runtime)}
+            title={t(($) => $.row.needs_device)}
           >
             <AlertCircle className="size-2.5" />
           </span>

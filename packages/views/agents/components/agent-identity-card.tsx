@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Bot, Gauge, MessageSquare, Server } from "lucide-react";
 import type { Agent, AgentRuntime, MemberWithUser } from "@orvilo/core/types";
 import type { AgentPresenceDetail } from "@orvilo/core/agents";
-import { runtimeDisplayLabel, runtimeModelsOptions } from "@orvilo/core/runtimes";
+import { deviceDisplayName, runtimeModelsOptions } from "@orvilo/core/runtimes";
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Input } from "@orvilo/ui/components/ui/input";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -193,12 +193,12 @@ export function AgentIdentityCard({
             className="gap-2 text-foreground [&_svg]:size-4"
           />
         </SummaryRow>
-        <SummaryRow label={t(($) => $.inspector.prop_runtime)}>
+        <SummaryRow label={t(($) => $.inspector.prop_device)}>
           <SummaryValue
             icon={<Server />}
             value={
               runtime
-                ? runtimeDisplayLabel(runtime)
+                ? deviceDisplayName(runtime)
                 : t(($) => $.pickers.runtime_none)
             }
           />

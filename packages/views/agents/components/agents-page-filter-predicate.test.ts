@@ -173,7 +173,7 @@ describe("rowMatchesFilters — access dimension", () => {
     const filters: AgentListFilters = {
       ...noFilters,
       access: ["owner-only"],
-      runtimes: ["rt-local"],
+      devices: ["rt-local"],
     };
     expect(rowMatchesFilters(localAgent, filters, "")).toBe(true);
     expect(rowMatchesFilters(cloudAgent, filters, "")).toBe(false);

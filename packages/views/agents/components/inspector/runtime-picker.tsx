@@ -140,7 +140,7 @@ export function RuntimePicker({
       if (!showLabel) return control;
       return (
         <div className="flex min-w-0 flex-col">
-          <Label>{t(($) => $.inspector.prop_runtime)}</Label>
+          <Label>{t(($) => $.inspector.prop_device)}</Label>
           <div className="mt-1.5">{control}</div>
         </div>
       );
@@ -485,7 +485,7 @@ export function RuntimePicker({
     if (!showLabel) return picker;
     return (
       <div className="flex min-w-0 flex-col">
-        <Label>{t(($) => $.inspector.prop_runtime)}</Label>
+        <Label>{t(($) => $.inspector.prop_device)}</Label>
         {picker}
       </div>
     );

@@ -1,17 +1,17 @@
 import { act, render, screen } from "@testing-library/react";
 import {
   getCoreRowModel,
-  useReactTable,
-  type ColumnDef,
-  type ColumnSizingState,
-} from "@tanstack/react-table";
+  useLegacyTable,
+  type LegacyColumnDef,
+} from "@tanstack/react-table/legacy";
+import type { ColumnSizingState } from "@tanstack/react-table";
 import * as React from "react";
 import { describe, expect, it, vi } from "vitest";
 import { DataTable } from "@orvilo/ui/components/ui/data-table";
 
 type Row = { status: string; owner: string };
 
-const columns: ColumnDef<Row>[] = [
+const columns: LegacyColumnDef<Row>[] = [
   { accessorKey: "status", header: "Status", size: 150 },
   { accessorKey: "owner", header: "Owner", size: 90 },
 ];
@@ -24,16 +24,16 @@ function ResizableTable({
   pinFirstColumn?: boolean;
 }) {
   const [columnSizing, setColumnSizing] = React.useState<ColumnSizingState>({});
-  const table = useReactTable({
+  const table = useLegacyTable({
     data: [{ status: "In progress", owner: "Ada" }],
     columns,
     getCoreRowModel: getCoreRowModel(),
     state: {
       columnSizing,
-      columnPinning: { left: pinFirstColumn ? ["status"] : [], right: [] },
+      columnPinning: { start: pinFirstColumn ? ["status"] : [], end: [] },
     },
     columnResizeMode: "onChange",
-    onColumnSizingChange: (updater) => {
+    onColumnSizingChange: (updater: unknown) => {
       const next =
         typeof updater === "function" ? updater(columnSizing) : updater;
       setColumnSizing(next);

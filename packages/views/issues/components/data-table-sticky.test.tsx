@@ -1,9 +1,9 @@
 import { render, screen } from "@testing-library/react";
 import {
   getCoreRowModel,
-  useReactTable,
-  type ColumnDef,
-} from "@tanstack/react-table";
+  useLegacyTable,
+  type LegacyColumnDef,
+} from "@tanstack/react-table/legacy";
 import { describe, expect, it, vi } from "vitest";
 import { DataTable } from "@orvilo/ui/components/ui/data-table";
 
@@ -31,24 +31,24 @@ type Row = {
   status: string;
 };
 
-const columns: ColumnDef<Row>[] = [
+const columns: LegacyColumnDef<Row>[] = [
   { accessorKey: "title", header: "Issue" },
   { accessorKey: "status", header: "Status" },
 ];
 
 function PinnedTable() {
-  const table = useReactTable({
+  const table = useLegacyTable({
     data: [{ title: "Pinned title", status: "In progress" }],
     columns,
     getCoreRowModel: getCoreRowModel(),
-    state: { columnPinning: { left: ["title"], right: [] } },
+    state: { columnPinning: { start: ["title"], end: [] } },
   });
 
   return <DataTable table={table} />;
 }
 
 function VirtualizedTable() {
-  const table = useReactTable({
+  const table = useLegacyTable({
     data: [
       { title: "First", status: "todo" },
       { title: "Second", status: "done" },

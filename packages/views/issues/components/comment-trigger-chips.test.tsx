@@ -114,7 +114,7 @@ describe("CommentTriggerChips", () => {
 
     fireEvent.click(screen.getByRole("button"));
 
-    const row = screen.getByRole("button", { name: /Bob/ });
+    const row = screen.getByRole("button", { name: "Bob trigger: @mention" });
     expect(row).toHaveTextContent("Bob");
     fireEvent.click(row);
     expect(onToggle).toHaveBeenCalledWith("agent-2");

@@ -17,6 +17,7 @@ import { DocsSettings } from "@/components/docs-settings";
 // ./global.css (CSP-safe, no inline <style>). Mirrors apps/web/app/layout.tsx.
 const inter = Inter({
   subsets: ["latin"],
+  display: "swap",
   variable: "--font-inter",
 });
 

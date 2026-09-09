@@ -1,5 +1,79 @@
 import type { AgentRuntime } from "../types";
 
+/** Product surface: a Device is the machine; a Harness is the CLI on it. */
+export type DeviceKind = "desktop" | "laptop" | "terminal";
+
+/** Split a daemon-baked name such as `Codex (host)` into its two parts. */
+export function splitRuntimeName(name: string): {
+  base: string;
+  hostname: string | null;
+} {
+  const match = name.match(/^(.+?)\s+\(([^)]+)\)$/);
+  if (!match || !match[1] || !match[2]) {
+    return { base: name, hostname: null };
+  }
+  return { base: match[1], hostname: match[2] };
+}
+
+/** Return the registered machine name without the Harness prefix. */
+export function deviceHostName(
+  runtime: Pick<AgentRuntime, "name" | "device_info">,
+): string | null {
+  const host = splitRuntimeName(runtime.name).hostname;
+  if (host) return host;
+  const raw = runtime.device_info?.trim();
+  if (!raw) return null;
+  return raw.split(" · ")[0]?.trim() || null;
+}
+
+/** User-facing machine name; never render the Harness name as the device. */
+export function deviceDisplayName(
+  runtime: Pick<
+    AgentRuntime,
+    "name" | "custom_name" | "device_info" | "runtime_mode" | "provider"
+  >,
+): string {
+  const host = deviceHostName(runtime);
+  if (host) return host;
+
+  const custom = runtime.custom_name?.trim();
+  const provider = runtime.provider?.trim() ?? "";
+  const providerLabel = provider ? providerDisplayName(provider) : "";
+  const name = runtime.name.trim();
+  const looksLikeHarnessOnly =
+    !!name &&
+    (name.toLowerCase() === provider.toLowerCase() || name === providerLabel);
+
+  if (name && !looksLikeHarnessOnly) return name;
+  if (custom) return custom;
+  if (runtime.runtime_mode === "cloud") {
+    return providerLabel ? `${providerLabel} cloud` : "Cloud";
+  }
+  return "Local";
+}
+
+/** User-facing Harness family name. */
+export function harnessDisplayName(
+  runtime: Pick<AgentRuntime, "provider" | "name">,
+): string {
+  const provider = runtime.provider?.trim();
+  if (provider) return providerDisplayName(provider);
+  return splitRuntimeName(runtime.name).base;
+}
+
+const LAPTOP_RE =
+  /macbook|laptop|notebook|thinkpad|xps|chromebook|surface laptop/;
+
+/** Pick a neutral device icon family from the runtime registration. */
+export function deviceKind(
+  runtime: Pick<AgentRuntime, "runtime_mode" | "device_info" | "name">,
+): DeviceKind {
+  if (runtime.runtime_mode === "cloud") return "terminal";
+  const blob = `${runtime.device_info ?? ""} ${runtime.name}`.toLowerCase();
+  if (LAPTOP_RE.test(blob)) return "laptop";
+  return "desktop";
+}
+
 /**
  * The name to show for a runtime (MUL-4217): the user's custom override when
  * set, otherwise the daemon-proposed default. Defends against older backends

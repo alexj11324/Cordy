@@ -182,7 +182,7 @@ describe("AgentIdentityCard", () => {
     expect(screen.queryByText("Online")).not.toBeInTheDocument();
     expect(screen.queryByText("Idle")).not.toBeInTheDocument();
     expect(document.querySelector('[data-slot="avatar-badge"]')).toHaveClass("bg-success");
-    expect(screen.getByText("Antigravity (Mac)")).toBeInTheDocument();
+    expect(screen.getByText("Mac")).toBeInTheDocument();
     expect(screen.getByText("dev")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send message" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit agent" })).toBeInTheDocument();

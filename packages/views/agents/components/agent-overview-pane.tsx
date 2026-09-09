@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { Agent, AgentRuntime, MemberWithUser } from "@orvilo/core/types";
 import { useWorkspaceId } from "@orvilo/core/hooks";
@@ -31,6 +37,15 @@ import { IntegrationsTab } from "./tabs/integrations-tab";
 import { RuntimeConfigTab } from "./tabs/runtime-config-tab";
 import { AgentDetailInspector } from "./agent-detail-inspector";
 import { AgentAccessSettings } from "./agent-access-settings";
+import { Badge } from "@orvilo/ui/components/reui/badge";
+import { FieldGroup } from "@orvilo/ui/components/ui/field";
+import {
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from "@orvilo/ui/components/reui/frame";
 import { useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 
@@ -79,6 +94,33 @@ function viewFromUrl(value: string | null): DetailTab {
   if (isDetailTab(value)) return value;
   if (value !== null && LEGACY_VIEWS.has(value)) return "general";
   return "general";
+}
+
+/**
+ * One settings section, composed the way the ReUI `settings-3` block does:
+ * a plain header above a single bordered panel, rather than a card inside a
+ * card. Stacking several of these keeps one border per section.
+ */
+function SettingsSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <Frame variant="ghost" spacing="sm" className="w-full">
+      <FrameHeader>
+        <FrameTitle>{title}</FrameTitle>
+        <FrameDescription>{description}</FrameDescription>
+      </FrameHeader>
+      <FramePanel className="p-0">
+        <FieldGroup className="gap-0 p-4">{children}</FieldGroup>
+      </FramePanel>
+    </Frame>
+  );
 }
 
 interface AgentOverviewPaneProps {
@@ -242,6 +284,7 @@ export function AgentOverviewPane({
   const activeSecondaryTab = visibleSettingsTabs.find(
     (tab) => tab.id === effectiveView,
   );
+  const hasAnyDirty = Object.values(dirtySections).some(Boolean);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
@@ -270,16 +313,21 @@ export function AgentOverviewPane({
             </div>
 
             <section className="min-w-0 flex-1 md:overflow-y-auto">
-              <div className="mx-auto w-full max-w-3xl p-4 sm:p-6 md:p-8">
-                <header>
-                  <h2 className="text-title-sm font-medium text-balance">
-                    {t(($) => $.tabs[activeSecondaryTab.labelKey])}
+              <div className="mx-auto w-full max-w-3xl space-y-6 p-4 sm:p-6 md:p-8">
+                <header className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                  <h2 className="text-title font-semibold tracking-tight text-foreground">
+                    {agent.name}
                   </h2>
+                  {hasAnyDirty ? (
+                    <Badge variant="warning-light" size="sm">
+                      {t(($) => $.tabs.unsaved)}
+                    </Badge>
+                  ) : null}
                 </header>
 
-                <TabsContent value={effectiveView} className="mt-6">
+                <TabsContent value={effectiveView} className="mt-0">
                   {effectiveView === "general" && (
-                    <div className="space-y-10">
+                    <div className="space-y-6">
                       <AgentDetailInspector
                         agent={agent}
                         runtime={runtime}
@@ -291,23 +339,23 @@ export function AgentOverviewPane({
                       />
 
                       {canEdit && (
-                        <section className="space-y-6">
-                          <h3 className="text-body font-medium">
-                            {t(($) => $.tabs.environment)}
-                          </h3>
+                        <SettingsSection
+                          title={t(($) => $.tabs.environment)}
+                          description={t(($) => $.tabs.environment_hint)}
+                        >
                           <EnvTab
                             agent={agent}
                             onDirtyChange={(dirty) =>
                               handleDirtyChange("env", dirty)
                             }
                           />
-                        </section>
+                        </SettingsSection>
                       )}
 
-                      <section className="space-y-6">
-                        <h3 className="text-body font-medium">
-                          {t(($) => $.tabs.custom_args)}
-                        </h3>
+                      <SettingsSection
+                        title={t(($) => $.tabs.custom_args)}
+                        description={t(($) => $.tabs.custom_args_hint)}
+                      >
                         <CustomArgsTab
                           agent={agent}
                           runtimeDevice={runtime ?? undefined}
@@ -316,13 +364,13 @@ export function AgentOverviewPane({
                             handleDirtyChange("custom_args", dirty)
                           }
                         />
-                      </section>
+                      </SettingsSection>
 
                       {runtime?.provider === "openclaw" && (
-                        <section className="space-y-6">
-                          <h3 className="text-body font-medium">
-                            {t(($) => $.tabs.runtime_config)}
-                          </h3>
+                        <SettingsSection
+                          title={t(($) => $.tabs.runtime_config)}
+                          description={t(($) => $.tabs.runtime_config_hint)}
+                        >
                           <RuntimeConfigTab
                             agent={agent}
                             onSave={(updates) => onUpdate(agent.id, updates)}
@@ -330,29 +378,31 @@ export function AgentOverviewPane({
                               handleDirtyChange("runtime_config", dirty)
                             }
                           />
-                        </section>
+                        </SettingsSection>
                       )}
 
                       {integrationsConfigured && (
-                        <section className="space-y-6">
-                          <h3 className="text-body font-medium">
-                            {t(($) => $.tabs.integrations)}
-                          </h3>
+                        <SettingsSection
+                          title={t(($) => $.tabs.integrations)}
+                          description={t(($) => $.tabs.integrations_hint)}
+                        >
                           <IntegrationsTab agent={agent} />
-                        </section>
+                        </SettingsSection>
                       )}
                     </div>
                   )}
                   {effectiveView === "access" && (
-                    <AgentAccessSettings
-                      agent={agent}
-                      members={members}
-                      currentUserId={currentUserId ?? null}
-                      onDirtyChange={(dirty) =>
-                        handleDirtyChange("access", dirty)
-                      }
-                      onUpdate={onUpdate}
-                    />
+                    <div className="py-2">
+                      <AgentAccessSettings
+                        agent={agent}
+                        members={members}
+                        currentUserId={currentUserId ?? null}
+                        onDirtyChange={(dirty) =>
+                          handleDirtyChange("access", dirty)
+                        }
+                        onUpdate={onUpdate}
+                      />
+                    </div>
                   )}
                 </TabsContent>
               </div>

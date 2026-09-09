@@ -100,9 +100,9 @@ describe("RuntimeMachineFilterDropdown", () => {
 
     renderDropdown(machines, null, vi.fn(), counts);
 
-    // Trigger button uses the "All runtimes" label.
+    // Trigger button uses the "All devices" label.
     const trigger = screen.getByTestId("agents-runtime-filter");
-    expect(trigger.textContent).toContain("All runtimes");
+    expect(trigger.textContent).toContain("All devices");
     // Sum across machines surfaces as the trigger count.
     expect(trigger.textContent).toContain("7");
   });
@@ -160,7 +160,7 @@ describe("RuntimeMachineFilterDropdown", () => {
     const counts = new Map([["m-local", 1]]);
     const onChange = vi.fn();
 
-    // Pre-select a machine so the "All runtimes" row is the one that
+    // Pre-select a machine so the "All devices" row is the one that
     // gets the data-testid="agents-runtime-filter-active" marker.
     renderDropdown(machines, "m-local", onChange, counts);
     fireEvent.click(screen.getByTestId("agents-runtime-filter"));
@@ -169,8 +169,8 @@ describe("RuntimeMachineFilterDropdown", () => {
     // raw <button>.
     const activeRow = screen.getByTestId("agents-runtime-filter-active");
     expect(activeRow.getAttribute("role")).toBe("menuitem");
-    // Click the explicit "All runtimes" menu item by its accessible name.
-    fireEvent.click(screen.getByRole("menuitem", { name: /All runtimes/ }));
+    // Click the explicit "All devices" menu item by its accessible name.
+    fireEvent.click(screen.getByRole("menuitem", { name: /All devices/ }));
     expect(onChange).toHaveBeenCalledWith(null);
   });
 

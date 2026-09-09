@@ -34,6 +34,7 @@ import "./globals.css";
 // `@fontsource-variable/inter/wght-italic.css` import.
 const inter = Inter({
   subsets: ["latin"],
+  display: "swap",
   style: ["normal", "italic"],
   variable: "--font-inter",
 });

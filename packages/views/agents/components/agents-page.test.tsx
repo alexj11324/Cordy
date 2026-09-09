@@ -13,8 +13,8 @@ import { AgentsPage } from "./agents-page";
 // (lastActiveDays null→Infinity, runCount 0) and visibly re-orders when each
 // query resolves. The gate waits per need — nothing for name/created,
 // run-counts for runs, activity + run-counts for the default lastActive,
-// presence when an availability filter is active — and never blocks the empty
-// state on those queries.
+// presence for every non-empty view — and never blocks the empty state on those
+// queries.
 
 const mocks = vi.hoisted(() => ({
   agents: [] as Agent[],
@@ -31,12 +31,13 @@ const mocks = vi.hoisted(() => ({
   },
   viewState: {
     scope: "all",
+    viewMode: "table" as "cards" | "table",
     sortField: "lastActive" as string,
     sortDirection: "desc" as string,
     hiddenColumns: ["model", "created"] as string[],
     filters: {
       availability: [] as string[],
-      runtimes: [] as string[],
+      devices: [] as string[],
       owners: [] as string[],
       models: [] as string[],
       access: [] as string[],
@@ -112,7 +113,11 @@ vi.mock("@orvilo/core/agents/stores", () => ({
 }));
 
 vi.mock("@orvilo/core/api", () => ({
-  api: { archiveAgent: vi.fn(), restoreAgent: vi.fn() },
+  api: {
+    archiveAgent: vi.fn(),
+    restoreAgent: vi.fn(),
+    getBaseUrl: () => "",
+  },
 }));
 
 vi.mock("@orvilo/core/auth", () => ({
@@ -140,6 +145,9 @@ vi.mock("@orvilo/core/workspace/queries", () => ({
 
 vi.mock("@orvilo/core/runtimes", () => ({
   runtimeListOptions: () => ({ queryKey: ["runtimes"] }),
+  deviceDisplayName: (runtime: Agent) => runtime.name,
+  deviceKind: () => "desktop",
+  runtimeDisplayLabel: (runtime: Agent) => runtime.name,
 }));
 
 // View-layer children with heavy / portal deps — stub to keep the test focused
@@ -162,6 +170,7 @@ vi.mock("@orvilo/ui/components/ui/tooltip", () => ({
   TooltipContent: ({ children }: { children: React.ReactNode }) => (
     <div role="tooltip">{children}</div>
   ),
+  TooltipProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
 const BASE_AGENT: Agent = {
@@ -249,7 +258,7 @@ beforeEach(() => {
   mocks.viewState.hiddenColumns = ["model", "created"];
   mocks.viewState.filters = {
     availability: [],
-    runtimes: [],
+    devices: [],
     owners: [],
     models: [],
     access: [],
@@ -270,8 +279,9 @@ describe("AgentsPage listReady gate", () => {
   });
 
   it("renders rows in the resolved lastActive order once deps land", () => {
-    // Alpha active 5d ago, Beta active today → lastActive desc puts Beta first,
-    // the opposite of the name-order fallback the ungated list would show.
+    // The listReady gate still waits on lastActive deps. The ReUI grid then
+    // sorts by the Customer/name column (template default), so Alpha precedes
+    // Beta even when activity would have ranked Beta first.
     mocks.activity = {
       byAgent: new Map<string, AgentActivity>([
         [ALPHA.id, activityLastActive(5)],
@@ -289,7 +299,7 @@ describe("AgentsPage listReady gate", () => {
 
     expect(screen.getByText("Alpha Agent")).toBeInTheDocument();
     expect(screen.getByText("Beta Agent")).toBeInTheDocument();
-    expect(betaPrecedesAlpha()).toBe(true);
+    expect(betaPrecedesAlpha()).toBe(false);
   });
 
   it("renders rows immediately for name sort without waiting on activity/run-counts", () => {
@@ -298,7 +308,7 @@ describe("AgentsPage listReady gate", () => {
     // Auxiliary queries are still in flight — name sort must not wait on them.
     mocks.activity = { byAgent: new Map(), loading: true };
     mocks.runCountsPending = true;
-    mocks.presence = { byAgent: new Map(), loading: true };
+    mocks.presence = { byAgent: new Map(), loading: false };
 
     renderPage();
 
@@ -311,9 +321,36 @@ describe("AgentsPage listReady gate", () => {
   it("shows a skeleton (not a false empty/false result) while an availability filter waits on presence", () => {
     // Availability filter needs presence; sort by name so ONLY presence gates.
     // Ungated, presence-null rows would all be filtered out → a false "no
-    // matches" state. Gated, we hold on a skeleton instead.
+    // matches" state. Gated, we hold on a skeleton instead. Card view owns
+    // this filter; table view uses the ReUI status filter instead.
+    mocks.viewState.viewMode = "cards";
     mocks.viewState.sortField = "name";
     mocks.viewState.filters.availability = ["online"];
+    mocks.presence = { byAgent: new Map(), loading: true };
+
+    renderPage();
+
+    expect(screen.queryByText("Alpha Agent")).not.toBeInTheDocument();
+    expect(screen.queryByText("Beta Agent")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton").length).toBeGreaterThan(0);
+  });
+
+  it("does not apply card-toolbar filters in table view", () => {
+    mocks.viewState.viewMode = "table";
+    mocks.viewState.sortField = "name";
+    mocks.viewState.filters.availability = ["online"];
+    mocks.viewState.filters.devices = ["missing-device"];
+    mocks.presence = { byAgent: new Map(), loading: false };
+
+    renderPage();
+
+    expect(screen.getByText("Alpha Agent")).toBeInTheDocument();
+    expect(screen.getByText("Beta Agent")).toBeInTheDocument();
+  });
+
+  it("waits for presence before rendering table rows", () => {
+    mocks.viewState.viewMode = "table";
+    mocks.viewState.sortField = "name";
     mocks.presence = { byAgent: new Map(), loading: true };
 
     renderPage();
@@ -336,7 +373,7 @@ describe("AgentsPage listReady gate", () => {
     expect(screen.queryByTestId("skeleton")).not.toBeInTheDocument();
   });
 
-  it("does not render agent description on the row", () => {
+  it("shows the agent description as the identity subtitle", () => {
     mocks.viewState.sortField = "name";
     mocks.agents = [
       makeAgent({
@@ -349,6 +386,6 @@ describe("AgentsPage listReady gate", () => {
     renderPage();
 
     expect(screen.getByText("Alpha Agent")).toBeInTheDocument();
-    expect(screen.queryByText("Hidden row description")).not.toBeInTheDocument();
+    expect(screen.getByText("Hidden row description")).toBeInTheDocument();
   });
 });

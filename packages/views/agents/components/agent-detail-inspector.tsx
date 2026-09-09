@@ -14,10 +14,13 @@ import {
 import { isImeComposing } from "@orvilo/core/utils";
 import { Input } from "@orvilo/ui/components/ui/input";
 import {
-  SettingsCard,
-  SettingsRow,
-  SettingsSection,
-} from "../../settings/components/settings-layout";
+  Frame,
+  FrameDescription,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from "@orvilo/ui/components/reui/frame";
+import { FieldGroup } from "@orvilo/ui/components/ui/field";
 import { useT } from "../../i18n";
 import { ModelPicker } from "./inspector/model-picker";
 import {
@@ -25,6 +28,7 @@ import {
   type ModelCatalog,
 } from "./inspector/model-change-cleanup";
 import { findModelCapabilityEntry } from "./inspector/model-capability";
+import { SettingField } from "./setting-field";
 
 interface InspectorProps {
   agent: Agent;
@@ -37,8 +41,8 @@ interface InspectorProps {
 }
 
 /**
- * Full-width General settings form. Identity (name/avatar) lives on the
- * page card; this surface is how the agent runs.
+ * Execution settings for one agent: which model it runs and how many tasks
+ * it may run in parallel.
  */
 export function AgentDetailInspector({
   agent,
@@ -59,9 +63,6 @@ export function AgentDetailInspector({
     runtime != null && isRuntimeUsableForUser(runtime, currentUserId);
   const canDiscoverRuntimeModels = isOnline && canReadRuntime;
 
-  // Same query the Thinking / Speed fields already use, so switching model
-  // costs no extra request. `null` = not authoritative (offline runtime, still
-  // loading, or discovery failed) and must not trigger any clearing.
   const modelsQuery = useQuery(
     runtimeModelsOptions(
       canDiscoverRuntimeModels ? agent.runtime_id : null,
@@ -77,6 +78,7 @@ export function AgentDetailInspector({
         : null,
     [modelsQuery.data, modelsQuery.isSuccess],
   );
+
   const handleModelChange = useCallback(
     (model: string) =>
       update(
@@ -98,13 +100,37 @@ export function AgentDetailInspector({
   );
 
   return (
-    <div className="space-y-8">
-      <SettingsSection
-        title={t(($) => $.inspector.section_execution)}
-        description={t(($) => $.inspector.section_execution_hint)}
-      >
-        <SettingsCard>
-          <SettingsRow label={t(($) => $.inspector.prop_model)} size="none">
+    <Frame variant="ghost" spacing="sm" className="w-full">
+      <FrameHeader>
+        <FrameTitle>{t(($) => $.inspector.section_execution)}</FrameTitle>
+        <FrameDescription className="flex items-center gap-2">
+          <span>
+            {runtime?.name ?? t(($) => $.inspector.runtime_unassigned)}
+          </span>
+          <span
+            aria-hidden="true"
+            className="size-1 rounded-full bg-muted-foreground/50"
+          />
+          <span>{t(($) => $.inspector.section_execution_hint)}</span>
+        </FrameDescription>
+      </FrameHeader>
+
+      <FramePanel className="p-0">
+        <FieldGroup className="gap-0 p-4">
+        <SettingField
+          title={t(($) => $.inspector.prop_model)}
+          description={t(($) => $.inspector.prop_model_hint)}
+          badge={
+            runtime?.provider
+              ? {
+                  label: runtime.provider,
+                  variant: "primary-light",
+                }
+              : undefined
+          }
+          labelFor="agent-model-picker"
+        >
+          <div className="flex justify-start sm:justify-end">
             <ModelPicker
               variant="chip"
               showLabel={false}
@@ -162,20 +188,35 @@ export function AgentDetailInspector({
               }}
               onChange={handleModelChange}
             />
-          </SettingsRow>
-          <SettingsRow
-            label={t(($) => $.inspector.prop_concurrency)}
-            size="select-wide"
-          >
+          </div>
+        </SettingField>
+
+        <SettingField
+          title={t(($) => $.inspector.prop_concurrency)}
+          description={t(($) => $.pickers.concurrency_range, {
+            min: AGENT_MAX_CONCURRENT_TASKS_MIN,
+            max: AGENT_MAX_CONCURRENT_TASKS_MAX,
+          })}
+          badge={{
+            label: t(($) => $.inspector.concurrency_slots, {
+              count: agent.max_concurrent_tasks,
+            }),
+            variant: "info-light",
+          }}
+          labelFor="agent-concurrency"
+          last
+        >
+          <div className="w-full sm:max-w-[200px] sm:ml-auto">
             <ConcurrencyField
               value={agent.max_concurrent_tasks}
               canEdit={canEdit}
               onSave={(next) => update({ max_concurrent_tasks: next })}
             />
-          </SettingsRow>
-        </SettingsCard>
-      </SettingsSection>
-    </div>
+          </div>
+        </SettingField>
+        </FieldGroup>
+      </FramePanel>
+    </Frame>
   );
 }
 
@@ -207,7 +248,7 @@ function ConcurrencyField({
   };
 
   return (
-    <div>
+    <div className="relative">
       <Input
         id="agent-concurrency"
         type="number"
@@ -228,14 +269,11 @@ function ConcurrencyField({
         }}
         disabled={!canEdit}
         aria-label={t(($) => $.inspector.prop_concurrency)}
-        className="font-mono tabular-nums"
+        className="font-mono tabular-nums text-right pr-12 h-9"
       />
-      <p className="mt-1 text-caption text-muted-foreground">
-        {t(($) => $.pickers.concurrency_range, {
-          min: AGENT_MAX_CONCURRENT_TASKS_MIN,
-          max: AGENT_MAX_CONCURRENT_TASKS_MAX,
-        })}
-      </p>
+      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-caption text-muted-foreground">
+        {t(($) => $.inspector.concurrency_unit)}
+      </span>
     </div>
   );
 }

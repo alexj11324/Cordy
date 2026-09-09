@@ -28,15 +28,36 @@ import {
 } from "@dnd-kit/sortable";
 import {
   getCoreRowModel,
-  useReactTable,
-  type CellContext,
-  type ColumnDef,
-  type ColumnSizingState,
-  type HeaderContext,
-  type OnChangeFn,
-  type Table as TanstackTable,
-  type TableMeta,
+  useLegacyTable,
+  type LegacyFeatures,
+} from "@tanstack/react-table/legacy";
+import type {
+  CellContext as CellContextBase,
+  ColumnDef as ColumnDefBase,
+  ColumnSizingState,
+  HeaderContext as HeaderContextBase,
+  OnChangeFn,
+  RowData,
+  Table as TableBase,
+  TableMeta as TableMetaBase,
 } from "@tanstack/react-table";
+
+// TanStack v9 threads a feature set through every generic. This table runs on
+// `useLegacyTable`, so binding that feature set once keeps the definitions
+// below on the arity they already had.
+type TanstackTable<TData extends RowData> = TableBase<LegacyFeatures, TData>;
+type ColumnDef<TData extends RowData> = ColumnDefBase<LegacyFeatures, TData>;
+type TableMeta<TData extends RowData> = TableMetaBase<LegacyFeatures, TData>;
+type HeaderContext<TData extends RowData, TValue> = HeaderContextBase<
+  LegacyFeatures,
+  TData,
+  TValue
+>;
+type CellContext<TData extends RowData, TValue> = CellContextBase<
+  LegacyFeatures,
+  TData,
+  TValue
+>;
 import {
   ArrowDown,
   ArrowUp,
@@ -2249,14 +2270,14 @@ export function TableView({
     [columnSizing, setTableColumnWidth, visibleColumnConfigs],
   );
 
-  const table = useReactTable({
+  const table = useLegacyTable({
     data: displayRows,
     columns,
     getRowId: (row) => row.key,
     getCoreRowModel: getCoreRowModel(),
     state: {
       columnSizing,
-      columnPinning: { left: [SELECT_COLUMN_ID, "title"], right: [] },
+      columnPinning: { start: [SELECT_COLUMN_ID, "title"], end: [] },
     },
     meta: viewMeta as TableMeta<IssueTableDisplayRow>,
     onColumnSizingChange: handleColumnSizingChange,

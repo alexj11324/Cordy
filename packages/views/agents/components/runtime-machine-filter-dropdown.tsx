@@ -12,7 +12,7 @@ import { useT } from "../../i18n";
 
 // ---------------------------------------------------------------------------
 // Runtime machine filter — dropdown next to the search input. The trigger
-// shows the active machine's title (or "All runtimes"); the menu groups
+// shows the active machine's title (or "All devices"); the menu groups
 // machines by section (Local / Remote / Cloud) the same way the
 // Runtimes page sidebar does, so a user moving between the two pages
 // sees consistent labels and counts.
@@ -30,7 +30,7 @@ export function RuntimeMachineFilterDropdown({
   onChange,
   agentCountByMachine,
   // Sourced separately from the in-scope agent list (not derived from
-  // `agentCountByMachine`) so the "All runtimes" badge stays accurate
+  // `agentCountByMachine`) so the "All devices" badge stays accurate
   // even when an in-scope agent is bound to a runtime that's been GC'd
   // and no longer shows up under any current machine.
   totalAgentCount,
@@ -47,8 +47,8 @@ export function RuntimeMachineFilterDropdown({
       ? null
       : machines.find((machine) => machine.id === value) ?? null;
 
-  const triggerLabel = selected ? selected.title : t(($) => $.runtime_filter.all);
-  // Always show a count, even when the trigger is "All runtimes" — keeps
+  const triggerLabel = selected ? selected.title : t(($) => $.device_filter.all);
+  // Always show a count, even when the trigger is "All devices" — keeps
   // the affordance scannable next to the other toolbar controls.
   const triggerCount = selected
     ? (agentCountByMachine.get(selected.id) ?? 0)
@@ -120,13 +120,13 @@ function RuntimeMachineFilterMenu({
       <RuntimeMachineFilterItem
         active={value === null}
         onClick={() => onChange(null)}
-        label={t(($) => $.runtime_filter.all)}
+        label={t(($) => $.device_filter.all)}
         count={totalAgentCount}
       />
       {grouped.map((group) => (
         <div key={group.section}>
           <div className="flex items-center gap-2 px-3 pb-1 pt-3 text-micro font-medium uppercase tracking-wider text-muted-foreground">
-            <span>{t(($) => $.runtime_filter[`section_${group.section}`])}</span>
+            <span>{t(($) => $.device_filter[`section_${group.section}`])}</span>
             <span className="h-px flex-1 bg-border" />
           </div>
           {group.machines.map((machine) => (
@@ -143,7 +143,7 @@ function RuntimeMachineFilterMenu({
       ))}
       {machines.length === 0 && (
         <div className="px-3 py-2 text-caption text-muted-foreground">
-          {t(($) => $.runtime_filter.empty)}
+          {t(($) => $.device_filter.empty)}
         </div>
       )}
     </div>
@@ -189,7 +189,7 @@ function RuntimeMachineFilterItem({
         )}
       </span>
       <span className="font-mono tabular-nums text-muted-foreground">
-        {t(($) => $.runtime_filter.agent_count, { count })}
+        {t(($) => $.device_filter.agent_count, { count })}
       </span>
     </DropdownMenuItem>
   );

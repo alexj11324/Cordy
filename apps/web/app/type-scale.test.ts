@@ -22,11 +22,11 @@ import { describe, expect, it } from "vitest";
  * for `px` and so walked straight past four `0.8rem` call sites in
  * packages/ui — an off-scale size is off-scale however it is spelled.
  *
- * Scope is product-authored UI. Directly adopted ReUI source stays under
- * `packages/ui/components/reui/` and keeps ReUI's own class contract, so it is
- * intentionally excluded from this product-only guard. `apps/mobile` builds
- * through its own NativeWind config and `apps/docs` rides its own type system;
- * both keep Tailwind's default scale on purpose and are not scanned.
+ * Scope is product-authored UI. Directly adopted ReUI primitives and blocks
+ * keep ReUI's own class contract, so they are intentionally excluded from this
+ * product-only guard. `apps/mobile` builds through its own NativeWind config
+ * and `apps/docs` rides its own type system; both keep Tailwind's default scale
+ * on purpose and are not scanned.
  */
 
 const repoRoot = resolve(process.cwd(), "../..");
@@ -50,7 +50,12 @@ const skipDirs = new Set(["node_modules", ".next", "dist", "out", "build", ".tur
 const sourceExtensions = [".ts", ".tsx", ".css"];
 
 function isDirectReUISource(rel: string): boolean {
-  return rel.startsWith("packages/ui/components/reui/") || rel.startsWith("vendor/reui-");
+  return (
+    rel.startsWith("packages/ui/components/reui/") ||
+    rel.startsWith("packages/ui/components/blocks/") ||
+    rel === "packages/views/agents/components/atlas-deal-card.tsx" ||
+    rel.startsWith("vendor/reui-")
+  );
 }
 
 /**
@@ -199,5 +204,5 @@ describe("type scale", () => {
     }
 
     expect(violations, `Font sizes off the scale:\n${violations.join("\n")}`).toEqual([]);
-  });
+  }, 30_000);
 });

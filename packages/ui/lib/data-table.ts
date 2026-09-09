@@ -1,4 +1,10 @@
-import type { Column, RowData } from "@tanstack/react-table";
+import type {
+  CellData,
+  Column,
+  RowData,
+  TableFeatures,
+} from "@tanstack/react-table";
+import type { LegacyFeatures } from "@tanstack/react-table/legacy";
 import type * as React from "react";
 
 // Extend TanStack Table's ColumnMeta with a `grow` flag. TanStack merges
@@ -8,7 +14,11 @@ import type * as React from "react";
 // the inline width for these columns until the user explicitly resizes them,
 // then the resized width wins.
 declare module "@tanstack/react-table" {
-  interface ColumnMeta<TData extends RowData, TValue> {
+  interface ColumnMeta<
+    in out TFeatures extends TableFeatures,
+    in out TData extends RowData,
+    TValue extends CellData = CellData,
+  > {
     grow?: boolean;
   }
 }
@@ -35,8 +45,8 @@ export function columnSizeVar(columnId: string) {
 // version writes `background: var(--background)` here, which can't
 // react to `:hover`. Consumers set bg via Tailwind classes paired with
 // `group-hover:`.
-export function getCellStyle<TData>(
-  column: Column<TData>,
+export function getCellStyle<TData extends RowData>(
+  column: Column<LegacyFeatures, TData>,
   options?: { hasExplicitSize?: boolean },
 ): React.CSSProperties {
   const grow = column.columnDef.meta?.grow;
@@ -57,8 +67,8 @@ export function getCellStyle<TData>(
   return {
     width,
     position: "sticky",
-    left: isPinned === "left" ? `${column.getStart("left")}px` : undefined,
-    right: isPinned === "right" ? `${column.getAfter("right")}px` : undefined,
+    left: isPinned === "start" ? `${column.getStart("start")}px` : undefined,
+    right: isPinned === "end" ? `${column.getAfter("end")}px` : undefined,
     zIndex: 1,
   };
 }

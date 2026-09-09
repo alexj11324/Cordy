@@ -8,6 +8,7 @@ import {
   PlugZap,
   type LucideIcon,
 } from "lucide-react";
+import type { BadgeProps } from "@orvilo/ui/components/reui/badge";
 import type { AgentAvailability, Workload } from "@orvilo/core/agents";
 
 // Visual mapping for the two presence dimensions, kept in matching shape
@@ -45,6 +46,10 @@ export interface AvailabilityVisual {
   textClass: string;
   // Icon used in larger badge contexts (detail header, hover card).
   icon: LucideIcon;
+  // Badge variant for surfaces that render the state as a chip rather than a
+  // dot (the list's Status column). Same tone mapping as dotClass/textClass,
+  // kept here so a chip and a dot can never drift apart.
+  badgeVariant: BadgeProps["variant"];
 }
 
 export const availabilityConfig: Record<AgentAvailability, AvailabilityVisual> = {
@@ -52,16 +57,19 @@ export const availabilityConfig: Record<AgentAvailability, AvailabilityVisual> =
     dotClass: "bg-success",
     textClass: "text-success",
     icon: CircleDot,
+    badgeVariant: "success-light",
   },
   unstable: {
     dotClass: "bg-warning",
     textClass: "text-warning",
     icon: PlugZap,
+    badgeVariant: "warning-light",
   },
   offline: {
     dotClass: "bg-muted-foreground/40",
     textClass: "text-muted-foreground",
     icon: CircleSlash,
+    badgeVariant: "secondary",
   },
   // Lifecycle state, not a runtime state — a retired agent. Gray like
   // offline (it can't take work) but labelled distinctly (via
@@ -71,6 +79,7 @@ export const availabilityConfig: Record<AgentAvailability, AvailabilityVisual> =
     dotClass: "bg-muted-foreground/40",
     textClass: "text-muted-foreground",
     icon: Archive,
+    badgeVariant: "secondary",
   },
 };
 
