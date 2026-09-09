@@ -214,7 +214,7 @@ describe("runtime list row menu", () => {
     expect(screen.getByLabelText("Row actions")).toBeInTheDocument();
   });
 
-  it("renders the kebab menu for a custom runtime when the profile is available", () => {
+  it("renders the kebab menu for a custom Harness when the profile is available", () => {
     const profile = makeProfile();
     renderActionsCell(
       makeRow(
@@ -226,7 +226,7 @@ describe("runtime list row menu", () => {
     expect(screen.getByLabelText("Row actions")).toBeInTheDocument();
   });
 
-  it("opens custom runtime editing from the unified row menu", () => {
+  it("opens custom Harness editing from the unified row menu", () => {
     const profile = makeProfile();
     renderActionsCell(
       makeRow(
@@ -237,10 +237,10 @@ describe("runtime list row menu", () => {
     );
 
     fireEvent.click(screen.getByLabelText("Row actions"));
-    fireEvent.click(screen.getByText("Edit custom runtime"));
+    fireEvent.click(screen.getByText("Edit custom Harness"));
 
     expect(
-      screen.getByRole("heading", { name: "Edit custom runtime" }),
+      screen.getByRole("heading", { name: "Edit custom Harness" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Display name")).toHaveValue("Custom Codex");
   });
@@ -261,7 +261,7 @@ describe("runtime list row menu", () => {
   });
 
   it("omits the new-tab entry for rows with no detail destination", () => {
-    // Pending custom runtimes are not navigable, so the list passes no href.
+    // Pending custom Harnesses are not navigable, so the list passes no href.
     renderActionsCell(makeRow(makeRuntime({ runtime_mode: "local" })));
 
     fireEvent.click(screen.getByLabelText("Row actions"));

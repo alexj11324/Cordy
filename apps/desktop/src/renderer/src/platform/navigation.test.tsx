@@ -28,6 +28,7 @@ vi.mock("@orvilo/core/auth", () => ({
 }));
 
 import { DesktopNavigationProvider, routeContentLinkPath } from "./navigation";
+import { LegacyRuntimesRedirect } from "../pages/legacy-runtimes-redirect";
 import { currentPath, useNavigation } from "@orvilo/views/navigation";
 import { useTabStore, getActiveTab } from "@/stores/tab-store";
 
@@ -265,5 +266,21 @@ describe("routeContentLinkPath (links inside content — MUL-5208)", () => {
     expect(
       state.byWorkspace.acme.tabs.some((t) => t.url === "/butter/issues/BUT-1"),
     ).toBe(false);
+  });
+});
+
+
+describe("legacy device route navigation", () => {
+  it.each([
+    ["/acme/runtimes", "/acme/devices"],
+    ["/acme/runtimes/local%3Amac/runtime/codex?scope=all#usage", "/acme/devices/local%3Amac/harness/codex?scope=all#usage"],
+  ])("replaces the authoritative tab session for %s", (legacy, canonical) => {
+    useTabStore.getState().navigateActiveSession(legacy);
+    const historyBefore = getActiveTab(useTabStore.getState())!.history;
+    render(<DesktopNavigationProvider><LegacyRuntimesRedirect /></DesktopNavigationProvider>);
+    const active = getActiveTab(useTabStore.getState())!;
+    expect(active.url).toBe(canonical);
+    expect(active.history.index).toBe(historyBefore.index);
+    expect(active.history.stack).toEqual(historyBefore.stack.map((url, index) => index === historyBefore.index ? canonical : url));
   });
 });

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { LegacyRuntimesRedirect } from "./pages/legacy-runtimes-redirect";
 import { createMemoryRouter, Outlet, useMatches, useParams } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { IssueDetailPage } from "./pages/issue-detail-page";
@@ -184,20 +185,22 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "My Issues" },
           },
           {
-            path: "runtimes",
+            path: "devices",
             element: <DesktopRuntimesPage />,
-            handle: { title: "Runtimes" },
+            handle: { title: "Devices" },
           },
           {
-            path: "runtimes/:id",
+            path: "devices/:id",
             element: <RuntimeDetailPage />,
-            handle: { title: "Machine" },
+            handle: { title: "Device" },
           },
           {
-            path: "runtimes/:id/runtime/:runtimeId",
+            path: "devices/:id/harness/:harnessId",
             element: <RuntimeSettingsPage />,
-            handle: { title: "Runtime" },
+            handle: { title: "Harness" },
           },
+          { path: "runtimes", element: <LegacyRuntimesRedirect /> },
+          { path: "runtimes/*", element: <LegacyRuntimesRedirect /> },
           { path: "skills", element: <SkillsPage />, handle: { title: "Skills" } },
           {
             path: "skills/:id",

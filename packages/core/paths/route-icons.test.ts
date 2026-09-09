@@ -47,6 +47,8 @@ describe("pageForSegment", () => {
     expect(pageForSegment("work-products")).toBe("workProducts");
     expect(pageForSegment("my-issues")).toBe("myIssues");
     expect(pageForSegment("settings")).toBe("settings");
+    expect(pageForSegment("devices")).toBe("runtimes");
+    expect(pageForSegment("runtimes")).toBe("runtimes");
   });
 
   it("returns null for an unknown segment", () => {

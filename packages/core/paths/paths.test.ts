@@ -28,9 +28,9 @@ describe("paths.workspace(slug)", () => {
       "/acme/chat?session=session%20one",
     );
     expect(ws.myIssues()).toBe("/acme/my-issues");
-    expect(ws.runtimes()).toBe("/acme/runtimes");
+    expect(ws.runtimes()).toBe("/acme/devices");
     expect(ws.runtimeSettings("machine/runtime", "runtime one")).toBe(
-      "/acme/runtimes/machine%2Fruntime/runtime/runtime%20one",
+      "/acme/devices/machine%2Fruntime/harness/runtime%20one",
     );
     expect(ws.skills()).toBe("/acme/skills");
     expect(ws.skillDetail("skl_123")).toBe("/acme/skills/skl_123");

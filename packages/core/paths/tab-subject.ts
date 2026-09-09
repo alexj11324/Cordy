@@ -108,10 +108,15 @@ export function parseTabSubject(url: string): TabSubject {
       };
     case "chat":
       return { kind: "chat", sessionId: query.get("session") || null };
+    case "devices":
     case "runtimes":
       if (!id) return { kind: "page", page: "runtimes" };
-      // `/runtimes/:machineId/runtime/:runtimeId` — nested runtime.
-      if (segments[3] === "runtime" && segments[4]) {
+      // `/devices/:machineId/harness/:id` (current) and
+      // `/runtimes/:machineId/runtime/:id` (bookmarks).
+      if (
+        (segments[3] === "harness" || segments[3] === "runtime") &&
+        segments[4]
+      ) {
         return { kind: "runtime", machineId: id, runtimeId: segments[4] };
       }
       return { kind: "machine", machineId: id };

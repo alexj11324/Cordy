@@ -72,6 +72,12 @@ describe("parseTabSubject", () => {
     expect(parseTabSubject(url)).toEqual(expected);
   });
 
+  it("recognizes devices and nested Harnesses", () => {
+    expect(parseTabSubject("/acme/devices")).toEqual({ kind: "page", page: "runtimes" });
+    expect(parseTabSubject("/acme/devices/device-1")).toEqual({ kind: "machine", machineId: "device-1" });
+    expect(parseTabSubject("/acme/devices/device-1/harness/h-1")).toEqual({ kind: "runtime", machineId: "device-1", runtimeId: "h-1" });
+  });
+
   it("ignores hash fragments", () => {
     expect(parseTabSubject("/acme/issues/bug-1#comment-3")).toEqual({
       kind: "issue",

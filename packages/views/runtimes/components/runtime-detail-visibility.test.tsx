@@ -304,7 +304,7 @@ describe("RuntimeDetail visibility section", () => {
 
     expect(screen.queryByTestId("usage-section")).not.toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Delete runtime/i }),
+      screen.getByRole("button", { name: /Delete Harness/i }),
     ).toBeInTheDocument();
   });
 
@@ -336,7 +336,7 @@ describe("RuntimeDetail visibility section", () => {
   // used to see a disabled Delete button with only a hover tooltip
   // explaining why. The new contract: the button is always clickable
   // for owner/admin; the dialog now carries the self-heal warning.
-  it("renders an enabled Delete runtime button for an owner on a self-healing local runtime", () => {
+  it("renders an enabled Delete Harness button for an owner on a self-healing local runtime", () => {
     renderDetail(
       makeRuntime({
         owner_id: "user-me",
@@ -345,12 +345,12 @@ describe("RuntimeDetail visibility section", () => {
       }),
     );
     const btn = screen.getByRole("button", {
-      name: /Delete runtime/i,
+      name: /Delete Harness/i,
     }) as HTMLButtonElement;
     expect(btn.disabled).toBe(false);
   });
 
-  it("hides the Delete runtime button entirely for callers who cannot edit", () => {
+  it("hides the Delete Harness button entirely for callers who cannot edit", () => {
     renderDetail(
       makeRuntime({
         owner_id: "someone-else",
@@ -359,11 +359,11 @@ describe("RuntimeDetail visibility section", () => {
       }),
     );
     expect(
-      screen.queryByRole("button", { name: /Delete runtime/i }),
+      screen.queryByRole("button", { name: /Delete Harness/i }),
     ).not.toBeInTheDocument();
   });
 
-  it("routes custom runtime deletion through the profile delete dialog for admins", async () => {
+  it("routes custom Harness deletion through the profile delete dialog for admins", async () => {
     const profile = makeProfile();
     mockQueryData.members = [
       { user_id: "user-me", role: "owner", name: "Me" },
@@ -377,13 +377,13 @@ describe("RuntimeDetail visibility section", () => {
       }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Delete runtime/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Delete Harness/i }));
     expect(
-      screen.getByText("Delete custom runtime from workspace?"),
+      screen.getByText("Delete custom Harness from workspace?"),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("alertdialog", {
-        name: "Delete custom runtime from workspace?",
+        name: "Delete custom Harness from workspace?",
       }),
     ).toBeInTheDocument();
 
@@ -395,7 +395,7 @@ describe("RuntimeDetail visibility section", () => {
     );
   });
 
-  it("hides custom runtime delete for non-admin runtime owners", () => {
+  it("hides custom Harness delete for non-admin runtime owners", () => {
     const profile = makeProfile();
     mockQueryData.profiles = [profile];
 
@@ -407,7 +407,7 @@ describe("RuntimeDetail visibility section", () => {
     );
 
     expect(
-      screen.queryByRole("button", { name: /Delete runtime/i }),
+      screen.queryByRole("button", { name: /Delete Harness/i }),
     ).not.toBeInTheDocument();
   });
 });

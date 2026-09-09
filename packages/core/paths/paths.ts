@@ -67,10 +67,14 @@ function workspaceScoped(slug: string) {
     chatSession: (sessionId: string) =>
       `${ws}/chat?session=${encode(sessionId)}`,
     myIssues: () => `${ws}/my-issues`,
-    runtimes: () => `${ws}/runtimes`,
-    runtimeDetail: (id: string) => `${ws}/runtimes/${encode(id)}`,
+    devices: () => `${ws}/devices`,
+    deviceDetail: (id: string) => `${ws}/devices/${encode(id)}`,
+    harnessSettings: (deviceId: string, harnessId: string) =>
+      `${ws}/devices/${encode(deviceId)}/harness/${encode(harnessId)}`,
+    runtimes: () => `${ws}/devices`,
+    runtimeDetail: (id: string) => `${ws}/devices/${encode(id)}`,
     runtimeSettings: (machineId: string, runtimeId: string) =>
-      `${ws}/runtimes/${encode(machineId)}/runtime/${encode(runtimeId)}`,
+      `${ws}/devices/${encode(machineId)}/harness/${encode(runtimeId)}`,
     skills: () => `${ws}/skills`,
     skillDetail: (id: string) => `${ws}/skills/${encode(id)}`,
     settings: () => `${ws}/settings`,

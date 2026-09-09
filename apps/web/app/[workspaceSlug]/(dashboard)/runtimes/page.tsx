@@ -1,8 +1,10 @@
-import { RuntimesPage } from "@orvilo/views/runtimes";
+import { redirect } from "next/navigation";
 
-const cloudRuntimeEnabled =
-  process.env.NEXT_PUBLIC_ENABLE_CLOUD_RUNTIME === "true";
-
-export default function RuntimesRoute() {
-  return <RuntimesPage cloudRuntimeEnabled={cloudRuntimeEnabled} />;
+export default async function LegacyRuntimesRedirect({
+  params,
+}: {
+  params: Promise<{ workspaceSlug: string }>;
+}) {
+  const { workspaceSlug } = await params;
+  redirect(`/${encodeURIComponent(workspaceSlug)}/devices`);
 }

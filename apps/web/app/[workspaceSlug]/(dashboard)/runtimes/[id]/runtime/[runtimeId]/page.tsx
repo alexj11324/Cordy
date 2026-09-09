@@ -1,13 +1,10 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { use } from "react";
-import { RuntimeSettingsPage } from "@orvilo/views/runtimes";
-
-export default function RuntimeSettingsRoute({
+export default async function LegacyRuntimeSettingsRedirect({
   params,
 }: {
-  params: Promise<{ id: string; runtimeId: string }>;
+  params: Promise<{ workspaceSlug: string; id: string; runtimeId: string }>;
 }) {
-  const { id, runtimeId } = use(params);
-  return <RuntimeSettingsPage machineId={id} runtimeId={runtimeId} />;
+  const { workspaceSlug, id, runtimeId } = await params;
+  redirect(`/${encodeURIComponent(workspaceSlug)}/devices/${encodeURIComponent(id)}/harness/${encodeURIComponent(runtimeId)}`);
 }

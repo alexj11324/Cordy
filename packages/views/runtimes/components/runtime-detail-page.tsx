@@ -17,6 +17,7 @@ import {
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { AppLink } from "../../navigation";
+import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { buildWorkloadIndex, RuntimeList } from "./runtime-list";
 import {
   buildRuntimeMachines,
@@ -206,19 +207,12 @@ export function RuntimeDetailPage({
   const busyCount = machine.runningCount + machine.queuedCount;
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <BreadcrumbHeader
+        segments={[{ href: paths.devices(), label: t(($) => $.page.title) }]}
+        leaf={<span className="min-w-0 truncate">{machine.title}</span>}
+      />
       <header className="shrink-0 border-b bg-background px-4 pb-5 pt-3 sm:px-6">
         <div className="mx-auto max-w-[1440px]">
-          <div className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
-            <AppLink
-              href={paths.runtimes()}
-              className="rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {t(($) => $.page.title)}
-            </AppLink>
-            <span aria-hidden="true">/</span>
-            <span className="truncate text-foreground">{machine.title}</span>
-          </div>
-
           <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex min-w-0 items-start gap-4">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border bg-card sm:h-14 sm:w-14">

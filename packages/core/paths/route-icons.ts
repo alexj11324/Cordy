@@ -106,7 +106,7 @@ export const WORKSPACE_PAGES: Record<WorkspacePageKey, WorkspacePage> = {
   teams: { segment: "teams", icon: "Users", navKey: "teams" },
   channels: { segment: "channels", icon: "Hash", navKey: "channels" },
   usage: { segment: "usage", icon: "BarChart3", navKey: "usage" },
-  runtimes: { segment: "runtimes", icon: "Monitor", navKey: "runtimes" },
+  runtimes: { segment: "devices", icon: "Monitor", navKey: "runtimes" },
   skills: { segment: "skills", icon: "BookOpenText", navKey: "skills" },
   settings: { segment: "settings", icon: "Settings", navKey: "settings" },
 };
@@ -121,7 +121,7 @@ const PAGE_BY_SEGMENT: Record<string, WorkspacePageKey> = Object.fromEntries(
 
 /** The page whose route segment is `segment`, or null if none matches. */
 export function pageForSegment(segment: string): WorkspacePageKey | null {
-  return PAGE_BY_SEGMENT[segment] ?? null;
+  return segment === "runtimes" ? "runtimes" : PAGE_BY_SEGMENT[segment] ?? null;
 }
 
 /** Fallback icon name used when a path's route segment has no explicit page. */
