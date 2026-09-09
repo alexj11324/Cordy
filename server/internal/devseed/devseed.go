@@ -195,11 +195,16 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, developerEmail string) (Resul
 		return Result{}, fmt.Errorf("seed built-in issue statuses: %w", err)
 	}
 
+	if err := ensureMembers(ctx, tx, workspaceID); err != nil {
+		return Result{}, err
+	}
+
 	issues := issueFixtures()
 	for _, issue := range issues {
 		metadata, err := json.Marshal(map[string]any{
-			"demo_seed":  FixtureSet,
-			"demo_index": issue.number,
+			"demo_seed":           FixtureSet,
+			"demo_index":          issue.number,
+			"demo_awaiting_agent": initialFixtureStatus(issue.status) != issue.status,
 		})
 		if err != nil {
 			return Result{}, fmt.Errorf("encode issue fixture %q: %w", issue.key, err)
@@ -212,10 +217,24 @@ func Seed(ctx context.Context, pool *pgxpool.Pool, developerEmail string) (Resul
 			) VALUES ($1, $2, $3, $4, $5, $6, 'member', $7, 'member', $7, $8, $9, $10, now())
 			ON CONFLICT (id) DO NOTHING`,
 			pgUUID(fixtureID("issue/"+issue.key)), workspaceID, issue.title,
-			issue.description, issue.status, issue.priority, developerID,
+			issue.description, initialFixtureStatus(issue.status), issue.priority, developerID,
 			issue.position, issue.number, metadata,
 		); err != nil {
 			return Result{}, fmt.Errorf("seed issue %q: %w", issue.key, err)
+		}
+	}
+
+	// Repair only untouched legacy active fixtures before committing.
+	for _, issue := range issues {
+		if initialFixtureStatus(issue.status) == issue.status {
+			continue
+		}
+		if _, err := tx.Exec(ctx, `UPDATE issue SET status='todo',metadata=metadata || '{"demo_awaiting_agent":true}'::jsonb
+ WHERE id=$1 AND workspace_id=$2 AND metadata->>'demo_seed'=$3 AND executor_id IS NULL
+ AND revision=1 AND title=$4 AND description=$5 AND owner_id=$6
+ AND (status=$7 OR (status='blocked' AND metadata->>'demo_awaiting_agent'='true'))`,
+			pgUUID(fixtureID("issue/"+issue.key)), workspaceID, FixtureSet, issue.title, issue.description, developerID, issue.status); err != nil {
+			return Result{}, err
 		}
 	}
 

@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/orvilo-ai/orvilo/server/internal/devseed"
@@ -41,6 +42,47 @@ func run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Wake real local daemons before creating runtime-bound starter Agents.
+	origin := "http://127.0.0.1:" + strings.TrimSpace(os.Getenv("PORT"))
+	if os.Getenv("PORT") == "" {
+		origin = "http://127.0.0.1:8080"
+	}
+	expectedRuntimes, err := devseed.OnlineSeedRuntimes(ctx, pool, email, "")
+	if err != nil {
+		return err
+	}
+	if len(expectedRuntimes) == 0 {
+		return fmt.Errorf("fixtures saved; start Desktop so its installed Harnesses register, then rerun make seed-dev")
+	}
+	if err := devseed.WakeRuntimeRegistration(ctx, pool, origin, email); err != nil {
+		return fmt.Errorf("fixtures saved, but runtime registration failed: %w; start the local API and Desktop, then rerun make seed-dev", err)
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	ticker := time.NewTicker(250 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		registered, err := devseed.OnlineSeedRuntimes(waitCtx, pool, email, result.WorkspaceID)
+		if err != nil {
+			return err
+		}
+		if devseed.RuntimeRegistrationComplete(expectedRuntimes, registered) {
+			break
+		}
+		select {
+		case <-waitCtx.Done():
+			return fmt.Errorf("fixtures saved; not all installed Harnesses registered; check Desktop and rerun make seed-dev")
+		case <-ticker.C:
+		}
+	}
+	agents, err := devseed.SeedRuntimeAgents(ctx, pool, email)
+	if err != nil {
+		return err
+	}
+	if err := devseed.SeedTeam(ctx, pool, email); err != nil {
+		return err
+	}
+	fmt.Printf("Added %d starter Agents using real local Harness defaults.\n", agents)
 	fmt.Printf("Seeded %s (%s): %d issues, %d graph nodes, %d graph edges.\n",
 		result.Workspace, result.WorkspaceID, result.Issues, result.GraphNodes, result.GraphEdges)
 	// The fixtures live in their own workspace, not the one a fresh sign-in
