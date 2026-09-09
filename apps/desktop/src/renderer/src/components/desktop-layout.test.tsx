@@ -68,9 +68,10 @@ vi.mock("@orvilo/views/platform", () => ({
 }));
 
 vi.mock("@orvilo/views/layout", () => ({
-  AppSidebar: ({ topSlot }: { topSlot?: ReactNode }) => (
-    <div data-slot="sidebar">{topSlot}</div>
-  ),
+  AppSidebar: ({ topSlot }: { topSlot?: ReactNode }) => {
+    const { open } = useSidebar();
+    return <div data-slot="sidebar">{open ? topSlot : null}</div>;
+  },
   GlobalShortcuts: () => null,
   NavigationProgress: () => null,
   ShellBreadcrumb: () => <nav aria-label="breadcrumb" data-testid="shell-breadcrumb" />,
@@ -178,11 +179,16 @@ describe("DesktopShell sidebar trigger", () => {
     const trigger = container.querySelector<HTMLElement>("[data-slot='sidebar-trigger']")!;
     fireEvent.pointerDown(trigger, { button: 0 });
     expect(getByTestId("page-content")).toHaveAttribute("data-sidebar-open", "false");
-    fireEvent.click(trigger, { detail: 0 });
+    // Closing moves the trigger from the sidebar title row into MainTopBar;
+    // reacquire the mounted element before simulating keyboard activation.
+    const headerTrigger = container.querySelector<HTMLElement>(
+      "header [data-slot='sidebar-trigger']",
+    )!;
+    fireEvent.click(headerTrigger, { detail: 0 });
     expect(getByTestId("page-content")).toHaveAttribute("data-sidebar-open", "true");
   });
 
-  it("keeps the pin in the window toolbar while a collapsed sidebar is hover-revealed", () => {
+  it("keeps the pin in the window toolbar while the sidebar is closed", () => {
     const { container, getByTestId } = renderShell("macos");
     const header = container.querySelector("header")!;
     const toolbar = container.querySelector<HTMLElement>(
@@ -200,17 +206,20 @@ describe("DesktopShell sidebar trigger", () => {
     fireEvent.click(trigger);
     expect(content).toHaveAttribute("data-sidebar-open", "false");
     expect(header).not.toHaveStyle({ WebkitAppRegion: "drag" });
-    expect(header.firstElementChild).toHaveClass("pointer-events-none", "w-7");
-    expect(container.querySelector("[data-slot='window-toolbar']")).toContainElement(
+    expect(header.firstElementChild).toHaveClass("flex", "h-full", "shrink-0", "items-center");
+    expect(header.firstElementChild).not.toHaveClass("pointer-events-none");
+    expect(header).toContainElement(
       container.querySelector("[data-slot='sidebar-trigger']")!,
     );
-    expect(header.querySelector("[data-slot='sidebar-trigger']")).toBeNull();
+    expect(header.querySelector("[data-slot='sidebar-trigger']")).not.toBeNull();
     expect(container.querySelectorAll("[data-slot='sidebar-trigger']")).toHaveLength(1);
 
+    // Hover reveal is disabled for this shell; the header trigger remains the
+    // only way to reopen the off-canvas sidebar.
     fireEvent.pointerEnter(content);
-    expect(content).toHaveAttribute("data-sidebar-state", "expanded");
-    expect(header.querySelector("[data-slot='sidebar-trigger']")).toBeNull();
-    expect(container.querySelector("[data-slot='window-toolbar']")).toContainElement(
+    expect(content).toHaveAttribute("data-sidebar-state", "collapsed");
+    expect(header.querySelector("[data-slot='sidebar-trigger']")).not.toBeNull();
+    expect(header).toContainElement(
       container.querySelector("[data-slot='sidebar-trigger']")!,
     );
     expect(container.querySelectorAll("[data-slot='sidebar-trigger']")).toHaveLength(1);
@@ -254,9 +263,7 @@ describe("DesktopShell sidebar trigger", () => {
 
     fireEvent.click(trigger);
     expect(getByTestId("page-content")).toHaveAttribute("data-sidebar-open", "false");
-    expect(
-      container.querySelector("[data-slot='window-toolbar']")?.firstElementChild,
-    ).toHaveStyle({
+    expect(header.firstElementChild?.firstElementChild).toHaveStyle({
       width: `${TRAFFIC_LIGHT_CONTENT_INSET}px`,
     });
   });

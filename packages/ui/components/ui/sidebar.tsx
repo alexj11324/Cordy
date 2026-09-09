@@ -511,6 +511,7 @@ function SidebarTrigger({
 
   return (
     <Button
+      {...props}
       data-sidebar="trigger"
       data-slot="sidebar-trigger"
       data-sidebar-state={triggerState}
@@ -527,7 +528,6 @@ function SidebarTrigger({
         if (event.defaultPrevented) return
         toggleSidebar()
       }}
-      {...props}
     >
       <PanelLeftIcon />
       <span className="sr-only">{t(($) => $.toggle_sidebar)}</span>

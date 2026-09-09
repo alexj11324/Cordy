@@ -488,7 +488,7 @@ export function AppSidebar({
   // pinned items, the workspace switcher's programmatic push, and anything
   // added later. `setOpenMobile` is a no-op on desktop, where the sheet is not
   // the sidebar's rendering at all.
-  const { setOpenMobile, setHoverRevealSuspended } = useSidebar();
+  const { open: sidebarOpen, setOpenMobile, setHoverRevealSuspended } = useSidebar();
   useEffect(() => {
     setOpenMobile(false);
   }, [pathname, search, setOpenMobile]);
@@ -716,8 +716,8 @@ export function AppSidebar({
   ) : null;
 
   return (
-    <Sidebar collapsible="icon" variant="inset">
-      {topSlot}
+    <Sidebar collapsible="offcanvas" variant="inset">
+      {sidebarOpen && topSlot}
 
       <SidebarContent ref={sidebarScrollRef} style={sidebarFadeStyle}>
         <div className="p-2 in-data-[state=collapsed]:flex in-data-[state=collapsed]:justify-center in-data-[state=collapsed]:px-1">
@@ -879,7 +879,7 @@ export function AppSidebar({
         />
       </SidebarFooter>
 
-      <SidebarRail />
+      {sidebarOpen && <SidebarRail />}
     </Sidebar>
   );
 

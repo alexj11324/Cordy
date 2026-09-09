@@ -133,13 +133,11 @@ function MainTopBar({ sidebarAvailable }: { sidebarAvailable: boolean }) {
         TOP_BAR_HEIGHT_CLASS,
       )}
     >
-      {!sidebarAvailable ? (
+      {!sidebarAvailable || sidebarOutOfFlow ? (
         <div className="flex h-full shrink-0 items-center" style={dragStyle}>
           <div className="h-full shrink-0" style={{ width: pinOffsetPx() }} />
           <SidebarPinTrigger />
         </div>
-      ) : sidebarOutOfFlow ? (
-        <div aria-hidden className="pointer-events-none w-7 shrink-0" />
       ) : (
         <div aria-hidden className="w-3 shrink-0" style={dragStyle} />
       )}
@@ -281,7 +279,7 @@ export function DesktopShell() {
               add a second fallback trigger inside the canvas. */}
           <SidebarProvider
             hasExternalTrigger
-            hoverReveal
+            hoverReveal={false}
             compactBehavior="collapse"
             autoCollapse={false}
             style={
