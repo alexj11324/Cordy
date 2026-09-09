@@ -313,19 +313,19 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     }
   };
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-[Canvas] text-[CanvasText] [--background:Canvas] [--font-heading:system-ui] [--font-sans:system-ui] [--page-canvas:Canvas] [--surface-foreground:CanvasText] [--surface-raised:Canvas] [--surface:Canvas]">
-      <div className="shrink-0 px-4 pt-3 sm:px-6">
-        <div className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
-          <AppLink
-            href={paths.agents()}
-            className="rounded-sm transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {t(($) => $.page.title)}
-          </AppLink>
-          <span aria-hidden="true">/</span>
-          <span className="truncate text-foreground">{agent.name}</span>
-        </div>
-      </div>
+    <div className="flex min-h-0 flex-1 flex-col bg-background text-foreground">
+      <AgentIdentityCard
+        breadcrumbHref={paths.agents()}
+        agent={agent}
+        runtime={runtime}
+        owner={owner}
+        presence={presence}
+        canEdit={canEdit.allowed}
+        dmPending={permissionsLoading}
+        dmHref={`${paths.chat()}?agent=${agent.id}`}
+        onDm={handleDm}
+        onUpdate={handleUpdate}
+      />
 
       {!canEdit.allowed && (
         <div className="px-6 pt-3">
@@ -373,8 +373,7 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
         </div>
       )}
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden xl:flex-row">
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <AgentOverviewPane
             agent={agent}
             runtime={runtime}
@@ -387,20 +386,6 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
             navIntent={tabNavIntent}
             onNavIntentHandled={() => setTabNavIntent(null)}
           />
-        </div>
-        <div className="flex shrink-0 justify-center overflow-x-auto px-4 pb-6 xl:w-[368px] xl:shrink-0 xl:overflow-y-auto xl:overflow-x-hidden xl:px-6 xl:py-6">
-          <AgentIdentityCard
-            agent={agent}
-            runtime={runtime}
-            owner={owner}
-            presence={presence}
-            canEdit={canEdit.allowed}
-            dmPending={permissionsLoading}
-            dmHref={`${paths.chat()}?agent=${agent.id}`}
-            onDm={handleDm}
-            onUpdate={handleUpdate}
-          />
-        </div>
       </div>
     </div>
   );
@@ -426,13 +411,10 @@ function DetailLoadingSkeleton() {
       <div className="shrink-0 px-6 pt-3">
         <Skeleton className="h-4 w-48" />
       </div>
-      <div className="mt-4 flex min-h-0 flex-1 flex-col xl:flex-row">
+      <div className="mt-4 flex min-h-0 flex-1 flex-col">
         <div className="min-w-0 flex-1 space-y-4 p-6">
           <Skeleton className="h-8 w-40" />
           <Skeleton className="h-64 w-full" />
-        </div>
-        <div className="shrink-0 p-6 xl:w-[320px]">
-          <Skeleton className="h-80 w-full rounded-xl" />
         </div>
       </div>
     </div>

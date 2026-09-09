@@ -31,21 +31,12 @@ import {
   TabsList,
   TabsTrigger,
 } from "@orvilo/ui/components/ui/tabs";
-import { EnvTab } from "./tabs/env-tab";
 import { CustomArgsTab } from "./tabs/custom-args-tab";
 import { IntegrationsTab } from "./tabs/integrations-tab";
 import { RuntimeConfigTab } from "./tabs/runtime-config-tab";
 import { AgentDetailInspector } from "./agent-detail-inspector";
 import { AgentAccessSettings } from "./agent-access-settings";
 import { Badge } from "@orvilo/ui/components/reui/badge";
-import { FieldGroup } from "@orvilo/ui/components/ui/field";
-import {
-  Frame,
-  FrameDescription,
-  FrameHeader,
-  FramePanel,
-  FrameTitle,
-} from "@orvilo/ui/components/reui/frame";
 import { useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 
@@ -77,11 +68,10 @@ const LEGACY_VIEWS = new Set([
   "runtime_config",
 ]);
 
-type DirtySection = "access" | "env" | "custom_args" | "runtime_config";
+type DirtySection = "access" | "custom_args" | "runtime_config";
 
 const CLEAN_SECTIONS: Record<DirtySection, boolean> = {
   access: false,
-  env: false,
   custom_args: false,
   runtime_config: false,
 };
@@ -97,9 +87,7 @@ function viewFromUrl(value: string | null): DetailTab {
 }
 
 /**
- * One settings section, composed the way the ReUI `settings-3` block does:
- * a plain header above a single bordered panel, rather than a card inside a
- * card. Stacking several of these keeps one border per section.
+ * Page settings use plain sections so their editors own any needed borders.
  */
 function SettingsSection({
   title,
@@ -111,15 +99,13 @@ function SettingsSection({
   children: ReactNode;
 }) {
   return (
-    <Frame variant="ghost" spacing="sm" className="w-full">
-      <FrameHeader>
-        <FrameTitle>{title}</FrameTitle>
-        <FrameDescription>{description}</FrameDescription>
-      </FrameHeader>
-      <FramePanel className="p-0">
-        <FieldGroup className="gap-0 p-4">{children}</FieldGroup>
-      </FramePanel>
-    </Frame>
+    <section className="space-y-3 border-b pb-6 last:border-b-0 last:pb-0">
+      <header className="space-y-1">
+        <h3 className="text-body font-medium">{title}</h3>
+        <p className="text-caption text-muted-foreground">{description}</p>
+      </header>
+      {children}
+    </section>
   );
 }
 
@@ -137,7 +123,7 @@ interface AgentOverviewPaneProps {
 }
 
 /**
- * Agent settings workbench. Identity lives on the page card; Skills and MCP
+ * Agent settings workbench. Identity lives in the page header; Skills and MCP
  * are workspace-shared in Settings. This pane keeps how the agent runs.
  */
 export function AgentOverviewPane({
@@ -295,7 +281,7 @@ export function AgentOverviewPane({
             onValueChange={(value) => requestView(value as DetailTab)}
             className="flex min-h-full flex-col gap-0 md:h-full"
           >
-            <div className="flex shrink-0 justify-center overflow-x-auto p-2 sm:px-6 md:px-8">
+            <div className="flex shrink-0 items-center gap-3 overflow-x-auto border-b px-4 py-2 sm:px-6">
               <TabsList
                 className="w-max"
                 aria-label={t(($) => $.tabs.section_navigation_aria)}
@@ -310,21 +296,15 @@ export function AgentOverviewPane({
                   </TabsTrigger>
                 ))}
               </TabsList>
+              {hasAnyDirty ? (
+                <Badge variant="warning-light" size="sm">
+                  {t(($) => $.tabs.unsaved)}
+                </Badge>
+              ) : null}
             </div>
 
             <section className="min-w-0 flex-1 md:overflow-y-auto">
-              <div className="mx-auto w-full max-w-3xl space-y-6 p-4 sm:p-6 md:p-8">
-                <header className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                  <h2 className="text-title font-semibold tracking-tight text-foreground">
-                    {agent.name}
-                  </h2>
-                  {hasAnyDirty ? (
-                    <Badge variant="warning-light" size="sm">
-                      {t(($) => $.tabs.unsaved)}
-                    </Badge>
-                  ) : null}
-                </header>
-
+              <div className="w-full max-w-5xl p-4 sm:p-6">
                 <TabsContent value={effectiveView} className="mt-0">
                   {effectiveView === "general" && (
                     <div className="space-y-6">
@@ -338,25 +318,12 @@ export function AgentOverviewPane({
                         onUpdate={requestUpdate}
                       />
 
-                      {canEdit && (
-                        <SettingsSection
-                          title={t(($) => $.tabs.environment)}
-                          description={t(($) => $.tabs.environment_hint)}
-                        >
-                          <EnvTab
-                            agent={agent}
-                            onDirtyChange={(dirty) =>
-                              handleDirtyChange("env", dirty)
-                            }
-                          />
-                        </SettingsSection>
-                      )}
-
                       <SettingsSection
                         title={t(($) => $.tabs.custom_args)}
                         description={t(($) => $.tabs.custom_args_hint)}
                       >
                         <CustomArgsTab
+                          compact
                           agent={agent}
                           runtimeDevice={runtime ?? undefined}
                           onSave={(updates) => onUpdate(agent.id, updates)}

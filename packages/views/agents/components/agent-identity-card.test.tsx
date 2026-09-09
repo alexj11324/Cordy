@@ -197,9 +197,21 @@ describe("AgentIdentityCard", () => {
     expect(screen.queryByText("Nor should instructions")).not.toBeInTheDocument();
   });
 
-  it("lets Edit change the name and saves on Done", async () => {
+  it("renders compact page identity once with owner, access, and message actions", () => {
+    renderCard({ breadcrumbHref: "/acme/agents" });
+
+    expect(screen.getAllByRole("heading", { name: agent.name })).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Agents" })).toHaveAttribute("href", "/acme/agents");
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+    expect(screen.queryByText("gpt-5.6-sol · low · Standard")).not.toBeInTheDocument();
+    expect(screen.getByText("dev")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit agent" })).toBeInTheDocument();
+  });
+
+  it.each([undefined, "/acme/agents"])("lets Edit change the name and saves on Done (%s)", async (breadcrumbHref) => {
     const user = userEvent.setup();
-    const { onUpdate } = renderCard();
+    const { onUpdate } = renderCard({ breadcrumbHref });
 
     await user.click(screen.getByRole("button", { name: "Edit agent" }));
     expect(document.querySelector('[data-slot="avatar"]')).toBeInTheDocument();

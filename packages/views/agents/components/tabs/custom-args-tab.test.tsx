@@ -51,10 +51,12 @@ const runtimeDevice = {
 function renderTab(
   overrides: Partial<Agent> = {},
   onSave = vi.fn().mockResolvedValue(undefined),
+  compact = false,
 ) {
   const result = render(
     <I18nProvider locale="en" resources={TEST_RESOURCES}>
       <CustomArgsTab
+        compact={compact}
         agent={{ ...baseAgent, ...overrides }}
         runtimeDevice={runtimeDevice}
         onSave={onSave}
@@ -107,9 +109,9 @@ describe("CustomArgsTab", () => {
     expect(screen.queryByText("--profile")).not.toBeInTheDocument();
   });
 
-  it("preserves spaces inside one token when saving", async () => {
+  it.each([false, true])("preserves spaces inside one token when saving (compact: %s)", async (compact) => {
     const user = userEvent.setup();
-    const { onSave } = renderTab({ custom_args: [] });
+    const { onSave } = renderTab({ custom_args: [] }, undefined, compact);
 
     await user.click(screen.getByRole("button", { name: /add argument/i }));
     await user.type(

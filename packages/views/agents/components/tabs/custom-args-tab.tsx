@@ -47,11 +47,14 @@ export function CustomArgsTab({
   runtimeDevice,
   onSave,
   onDirtyChange,
+  compact = false,
 }: {
   agent: Agent;
   runtimeDevice?: RuntimeDevice;
   onSave: (updates: Partial<Agent>) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
+  /** Embedded settings pages already provide their own section heading. */
+  compact?: boolean;
 }) {
   const { t } = useT("agents");
   const [entries, setEntries] = useState<ArgEntry[]>(
@@ -171,7 +174,7 @@ export function CustomArgsTab({
     : null;
 
   return (
-    <div className="space-y-6">
+    <div className={compact ? "space-y-3" : "space-y-6"}>
       <div className="space-y-3">
         <div className="flex justify-end">
           <Button
@@ -185,17 +188,17 @@ export function CustomArgsTab({
             {t(($) => $.tab_body.custom_args.add_argument_action)}
           </Button>
         </div>
-        <SettingsCard>
-          <div className="space-y-2 p-3">
+        <SettingsCard className={compact ? "rounded-none border-0 bg-transparent" : undefined}>
+          <div className={compact ? "space-y-2" : "space-y-2 p-3"}>
             {entries.length === 0 && editor?.kind !== "add" ? (
-              <div className="flex min-h-28 flex-col items-center justify-center px-4 py-6 text-center">
-                <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <div className={compact ? "space-y-1 py-1" : "flex min-h-28 flex-col items-center justify-center px-4 py-6 text-center"}>
+                {!compact && <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                   <Terminal className="size-4" aria-hidden="true" />
-                </span>
-                <p className="mt-3 text-body font-medium">
+                </span>}
+                <p className={compact ? "text-caption text-muted-foreground" : "mt-3 text-body font-medium"}>
                   {t(($) => $.tab_body.custom_args.empty_title)}
                 </p>
-                <p className="mt-1 max-w-sm text-caption leading-5 text-muted-foreground">
+                <p className={compact ? "text-caption leading-5 text-muted-foreground" : "mt-1 max-w-sm text-caption leading-5 text-muted-foreground"}>
                   {t(($) => $.tab_body.custom_args.empty_hint)}
                 </p>
               </div>
