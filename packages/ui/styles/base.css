@@ -251,66 +251,6 @@
   color: var(--sidebar-accent-foreground);
 }
 
-/* Desktop navigation glass. Electron supplies native `sidebar` vibrancy on
- * macOS; this translucent surface is also the browser/non-macOS fallback.
- * The compact Sheet is portalled outside the opted-in wrapper and stays solid.
- *
- * No edge border or drop shadow: the content plane is its own card, and a
- * sidebar glow reads as a divider against it (LobeHub-style glass sits flush). */
-[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-  [data-slot="sidebar-container"],
-[data-settings-variant="standalone"] [data-slot="settings-nav"] {
-  background-color: var(--sidebar);
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in oklab, white 9%, transparent),
-      transparent 36%
-    ),
-    color-mix(in oklab, var(--sidebar) 70%, transparent);
-  border-inline-end: none;
-  box-shadow: none;
-  -webkit-backdrop-filter: blur(24px) saturate(125%);
-  backdrop-filter: blur(24px) saturate(125%);
-}
-
-[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-  [data-slot="sidebar-inner"] {
-  background-color: transparent;
-}
-
-/* A collapsed desktop sidebar temporarily expands over the page instead of
- * taking layout space. Native glass is correct while the sidebar is pinned,
- * but here it lets the page's headings and controls show through navigation
- * text. This selector deliberately outranks both the glass rules above and
- * Electron's native-vibrancy container override while leaving pinned glass
- * untouched. */
-[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-  [data-slot="sidebar"][data-hover-revealed="true"]
-  [data-slot="sidebar-container"] {
-  background: var(--surface-raised);
-  border-inline-end: 1px solid var(--surface-border);
-  box-shadow: var(--floating-shadow);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
-
-[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-  [data-slot="sidebar"][data-hover-revealed="true"]
-  [data-slot="sidebar-inner"] {
-  background-color: var(--surface-raised);
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  [data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-    [data-slot="sidebar-container"],
-  [data-settings-variant="standalone"] [data-slot="settings-nav"] {
-    background: var(--sidebar);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-
 /* Sidebar resizing follows the same cursor contract as
  * react-resizable-panels: the resize cursor survives leaving the narrow rail
  * and wins over descendants with their own cursor declarations. Live width is

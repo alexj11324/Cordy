@@ -39,24 +39,6 @@ const SIDEBAR_HOVER_CLOSE_DELAY = 180
 // header's trigger brings it back.
 const SIDEBAR_AUTO_COLLAPSE_QUERY = "(min-width: 1024px) and (max-width: 1279px)"
 
-/**
- * Paints an element with whatever the sidebar wrapper is currently filled with.
- *
- * A descendant that has to lay down an opaque layer over the wrapper — rather
- * than over its own parent — must match the wrapper's fill exactly, and that
- * fill is conditional: `bg-sidebar` while an inset-variant sidebar is mounted,
- * the consumer's own background otherwise. A glass shell changes the inset
- * fill to transparent while keeping opaque descendants on the app-shell token.
- * Naming a token at the descendant reproduces that condition in a second place,
- * which then drifts (#6874). Use this class instead: the wrapper publishes its
- * fill as `--sidebar-wrapper-fill` under the same `:has()` condition that paints
- * it, so the two cannot disagree.
- *
- * Consumers that give the wrapper a background must declare the matching
- * non-inset half, e.g. `bg-app-shell [--sidebar-wrapper-fill:var(--app-shell)]`.
- */
-const SIDEBAR_WRAPPER_FILL_CLASS = "bg-(--sidebar-wrapper-fill)"
-
 function clampSidebarWidth(width: number) {
   return Math.max(SIDEBAR_WIDTH_MIN, Math.min(SIDEBAR_WIDTH_MAX, width))
 }
@@ -137,7 +119,7 @@ function SidebarProvider({
   hasExternalTrigger = false,
   hoverReveal = false,
   compactBehavior = "sheet",
-  glass = false,
+  autoCollapse = true,
   className,
   style,
   children,
@@ -159,8 +141,8 @@ function SidebarProvider({
   hoverReveal?: boolean
   /** Use an overlay Sheet or keep the normal collapsible column below 1024px. */
   compactBehavior?: "sheet" | "collapse"
-  /** Enable the translucent desktop treatment. Compact sheets stay opaque. */
-  glass?: boolean
+  /** Automatically collapse the in-flow sidebar in the lg–xl band. */
+  autoCollapse?: boolean
 }) {
   const belowCompactBreakpoint = useIsCompact()
   const isCompact = compactBehavior === "sheet" && belowCompactBreakpoint
@@ -262,6 +244,10 @@ function SidebarProvider({
   })
   const parkedOpenRef = React.useRef<boolean | null>(null)
   React.useEffect(() => {
+    if (!autoCollapse) {
+      parkedOpenRef.current = null
+      return
+    }
     const mql = window.matchMedia(SIDEBAR_AUTO_COLLAPSE_QUERY)
     const apply = (matches: boolean) => {
       if (matches) {
@@ -277,7 +263,7 @@ function SidebarProvider({
     const onChange = (e: MediaQueryListEvent) => apply(e.matches)
     mql.addEventListener("change", onChange)
     return () => mql.removeEventListener("change", onChange)
-  }, [])
+  }, [autoCollapse])
 
   // Helper to toggle the sidebar.
   const toggleSidebar = React.useCallback(() => {
@@ -341,18 +327,9 @@ function SidebarProvider({
           }
           className={cn(
             "group/sidebar-wrapper flex min-h-svh w-full",
-            // Both halves of the inset branch carry the identical :has()
-            // condition, so SIDEBAR_WRAPPER_FILL_CLASS can never name a colour
-            // this element is not actually painted with. The non-inset fill is
-            // the consumer's (this component paints nothing then), so the
-            // consumer declares that half of the variable next to its own
-            // background class.
-            glass
-              ? "has-data-[variant=inset]:bg-transparent has-data-[variant=inset]:[--sidebar-wrapper-fill:var(--app-shell)]"
-              : "has-data-[variant=inset]:bg-sidebar has-data-[variant=inset]:[--sidebar-wrapper-fill:var(--sidebar)]",
+            "has-data-[variant=inset]:bg-sidebar",
             className
           )}
-          data-sidebar-glass={glass ? "true" : undefined}
           data-compact-behavior={compactBehavior}
           {...props}
         >
@@ -494,9 +471,8 @@ function Sidebar({
           data-slot="sidebar-inner"
           className={cn(
             "flex size-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:shadow-sm group-data-[variant=floating]:ring-1 group-data-[variant=floating]:ring-sidebar-border",
-            isHoverRevealed
-              ? "rounded-r-xl bg-surface-raised shadow-[var(--floating-shadow)] ring-1 ring-surface-border"
-              : "[[data-sidebar-glass=true]_&]:bg-transparent"
+            isHoverRevealed &&
+              "rounded-r-xl bg-surface-raised shadow-[var(--floating-shadow)] ring-1 ring-surface-border"
           )}
         >
           {children}
@@ -511,16 +487,23 @@ function SidebarTrigger({
   onClick,
   ...props
 }: React.ComponentProps<typeof Button>) {
-  const { toggleSidebar } = useSidebar()
+  const { toggleSidebar, state, isCompact, openMobile } = useSidebar()
   const { t } = useTranslation("ui")
+  const triggerState = isCompact ? (openMobile ? "expanded" : "collapsed") : state
 
   return (
     <Button
       data-sidebar="trigger"
       data-slot="sidebar-trigger"
+      data-sidebar-state={triggerState}
+      aria-expanded={triggerState === "expanded"}
       variant="ghost"
       size="icon-sm"
-      className={cn(className)}
+      className={cn(
+        "[&_svg]:transition-transform [&_svg]:duration-200 [&_svg]:ease-linear",
+        "data-[sidebar-state=collapsed]:[&_svg]:rotate-180",
+        className,
+      )}
       onClick={(event) => {
         onClick?.(event)
         toggleSidebar()
@@ -1103,7 +1086,6 @@ function SidebarMenuSubButton({
 }
 
 export {
-  SIDEBAR_WRAPPER_FILL_CLASS,
   Sidebar,
   SidebarContent,
   SidebarFooter,

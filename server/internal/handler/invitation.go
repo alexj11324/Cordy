@@ -230,14 +230,15 @@ func (h *Handler) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 	))
 
 	// Send invitation email (fire-and-forget).
-	if h.EmailService != nil && workspaceName != "" {
+	emailService := h.EmailService
+	if emailService != nil && workspaceName != "" {
 		inviterName := email // fallback
 		if inviter, err := h.Queries.GetUser(r.Context(), requester.UserID); err == nil {
 			inviterName = inviter.Name
 		}
 		invID := uuidToString(inv.ID)
 		go func() {
-			if err := h.EmailService.SendInvitationEmail(email, inviterName, workspaceName, invID); err != nil {
+			if err := emailService.SendInvitationEmail(email, inviterName, workspaceName, invID); err != nil {
 				slog.Warn("failed to send invitation email", "email", email, "error", err)
 			}
 		}()
@@ -283,6 +284,107 @@ func (h *Handler) ListWorkspaceInvitations(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// ResendInvitation sends the existing invitation link again without creating
+// another pending invitation for the same email.
+// POST /api/workspaces/{id}/invitations/{invitationId}/resend
+func (h *Handler) ResendInvitation(w http.ResponseWriter, r *http.Request) {
+	workspaceID := workspaceIDFromURL(r, "id")
+	workspaceUUID, ok := parseUUIDOrBadRequest(w, workspaceID, "workspace id")
+	if !ok {
+		return
+	}
+	requester, ok := h.workspaceMember(w, r, workspaceID)
+	if !ok {
+		return
+	}
+	invitationID, ok := parseUUIDOrBadRequest(
+		w,
+		chi.URLParam(r, "invitationId"),
+		"invitation id",
+	)
+	if !ok {
+		return
+	}
+
+	invitation, err := h.Queries.GetInvitation(r.Context(), invitationID)
+	if err != nil ||
+		uuidToString(invitation.WorkspaceID) != uuidToString(workspaceUUID) ||
+		invitation.Status != "pending" {
+		writeError(w, http.StatusNotFound, "invitation not found")
+		return
+	}
+	if invitation.ExpiresAt.Valid && invitation.ExpiresAt.Time.Before(time.Now()) {
+		writeError(w, http.StatusGone, "invitation has expired")
+		return
+	}
+
+	emailService := h.EmailService
+	if emailService == nil {
+		writeError(w, http.StatusServiceUnavailable, "email service unavailable")
+		return
+	}
+	admission, ok := h.checkInvitationAdmission(
+		w,
+		r,
+		uuidToString(requester.UserID),
+		uuidToString(requester.WorkspaceID),
+		invitation.InviteeEmail,
+	)
+	if !ok {
+		return
+	}
+
+	workspace, err := h.Queries.GetWorkspace(r.Context(), workspaceUUID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load workspace")
+		return
+	}
+
+	inviterName := invitation.InviteeEmail
+	if inviter, userErr := h.Queries.GetUser(r.Context(), invitation.InviterID); userErr == nil {
+		inviterName = inviter.Name
+	}
+
+	// Reserve the admission budget before entering the network send. A slow
+	// provider must not let concurrent resend requests all pass the check phase
+	// before any one of them records its usage.
+	if !h.reserveInvitationAdmission(w, r, admission) {
+		return
+	}
+	if err := emailService.SendInvitationEmail(
+		invitation.InviteeEmail,
+		inviterName,
+		workspace.Name,
+		uuidToString(invitation.ID),
+	); err != nil {
+		slog.Warn(
+			"failed to resend invitation email",
+			append(
+				logger.RequestAttrs(r),
+				"error",
+				err,
+				"workspace_id",
+				workspaceID,
+				"invitation_id",
+				uuidToString(invitation.ID),
+			)...,
+		)
+		writeError(w, http.StatusInternalServerError, "failed to resend invitation")
+		return
+	}
+	slog.Info(
+		"invitation email resent",
+		append(
+			logger.RequestAttrs(r),
+			"workspace_id",
+			workspaceID,
+			"invitation_id",
+			uuidToString(invitation.ID),
+		)...,
+	)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // ---------------------------------------------------------------------------

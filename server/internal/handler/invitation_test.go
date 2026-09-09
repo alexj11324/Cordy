@@ -19,6 +19,7 @@ import (
 	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
 	"github.com/orvilo-ai/orvilo/server/internal/middleware"
 	"github.com/orvilo-ai/orvilo/server/internal/seatcapacity"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
 )
 
 const invitationTestEmail = "invitation-test@orvilo.ai"
@@ -201,6 +202,140 @@ func TestCreateInvitation_BlocksWhilePending(t *testing.T) {
 		if calls != 1 {
 			t.Errorf("%s limiter calls = %d, want 1; a pending retry must not consume budget", name, calls)
 		}
+	}
+}
+
+func TestResendInvitation_SendsExistingPendingInvitation(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	clearInvitationsForTestWorkspace(t)
+	actor := &stubInvitationRateLimiter{allowed: true}
+	workspace := &stubInvitationRateLimiter{allowed: true}
+	recipient := &stubInvitationRateLimiter{allowed: true}
+	useInvitationRateLimiters(t, InvitationRateLimiters{Actor: actor, Workspace: workspace, Recipient: recipient})
+
+	createReq := withURLParam(
+		newRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/members", CreateMemberRequest{
+			Email: "resend-invitation@orvilo.ai",
+			Role:  "member",
+		}),
+		"id",
+		testWorkspaceID,
+	)
+	createResponse := httptest.NewRecorder()
+	testHandler.CreateInvitation(createResponse, createReq)
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf("create invitation: expected 201, got %d: %s", createResponse.Code, createResponse.Body.String())
+	}
+
+	var invitation InvitationResponse
+	if err := json.NewDecoder(createResponse.Body).Decode(&invitation); err != nil {
+		t.Fatalf("decode invitation: %v", err)
+	}
+
+	previousEmailService := testHandler.EmailService
+	testHandler.EmailService = &service.EmailService{}
+	t.Cleanup(func() { testHandler.EmailService = previousEmailService })
+
+	resendReq := newRequest(
+		http.MethodPost,
+		"/api/workspaces/"+testWorkspaceID+"/invitations/"+invitation.ID+"/resend",
+		nil,
+	)
+	resendRoute := chi.NewRouteContext()
+	resendRoute.URLParams.Add("id", testWorkspaceID)
+	resendRoute.URLParams.Add("invitationId", invitation.ID)
+	resendReq = resendReq.WithContext(context.WithValue(resendReq.Context(), chi.RouteCtxKey, resendRoute))
+	resendResponse := httptest.NewRecorder()
+	testHandler.ResendInvitation(resendResponse, resendReq)
+	if resendResponse.Code != http.StatusNoContent {
+		t.Fatalf("resend invitation: expected 204, got %d: %s", resendResponse.Code, resendResponse.Body.String())
+	}
+
+	var status string
+	if err := testPool.QueryRow(
+		context.Background(),
+		`SELECT status FROM workspace_invitation WHERE id = $1`,
+		invitation.ID,
+	).Scan(&status); err != nil {
+		t.Fatalf("read invitation status: %v", err)
+	}
+	if status != "pending" {
+		t.Fatalf("resend changed invitation status to %q", status)
+	}
+	for name, limiter := range map[string]*stubInvitationRateLimiter{
+		"actor": actor, "workspace": workspace, "recipient": recipient,
+	} {
+		if len(limiter.checkKeys) != 2 || len(limiter.allowKeys) != 2 {
+			t.Errorf("%s limiter calls = checks %d/allows %d, want 2/2", name, len(limiter.checkKeys), len(limiter.allowKeys))
+		}
+	}
+}
+
+func TestResendInvitation_RejectsRateLimitedAndExpiredInvitations(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	clearInvitationsForTestWorkspace(t)
+	actor := &stubInvitationRateLimiter{allowed: true}
+	workspace := &stubInvitationRateLimiter{allowed: true}
+	recipient := &stubInvitationRateLimiter{allowed: true}
+	useInvitationRateLimiters(t, InvitationRateLimiters{Actor: actor, Workspace: workspace, Recipient: recipient})
+
+	previousEmailService := testHandler.EmailService
+	testHandler.EmailService = &service.EmailService{}
+	t.Cleanup(func() { testHandler.EmailService = previousEmailService })
+
+	createReq := withURLParam(
+		newRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/members", CreateMemberRequest{
+			Email: "resend-admission@orvilo.ai",
+			Role:  "member",
+		}),
+		"id",
+		testWorkspaceID,
+	)
+	createResponse := httptest.NewRecorder()
+	testHandler.CreateInvitation(createResponse, createReq)
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf("create invitation: expected 201, got %d: %s", createResponse.Code, createResponse.Body.String())
+	}
+	var invitation InvitationResponse
+	if err := json.NewDecoder(createResponse.Body).Decode(&invitation); err != nil {
+		t.Fatalf("decode invitation: %v", err)
+	}
+
+	resendReq := newRequest(
+		http.MethodPost,
+		"/api/workspaces/"+testWorkspaceID+"/invitations/"+invitation.ID+"/resend",
+		nil,
+	)
+	resendRoute := chi.NewRouteContext()
+	resendRoute.URLParams.Add("id", testWorkspaceID)
+	resendRoute.URLParams.Add("invitationId", invitation.ID)
+	resendReq = resendReq.WithContext(context.WithValue(resendReq.Context(), chi.RouteCtxKey, resendRoute))
+
+	allowDenied := false
+	recipient.allowResult = &allowDenied
+	rateLimitedResponse := httptest.NewRecorder()
+	testHandler.ResendInvitation(rateLimitedResponse, resendReq)
+	if rateLimitedResponse.Code != http.StatusTooManyRequests {
+		t.Fatalf("resend denied when reservation filled the gate: expected 429, got %d: %s", rateLimitedResponse.Code, rateLimitedResponse.Body.String())
+	}
+
+	if _, err := testPool.Exec(
+		context.Background(),
+		`UPDATE workspace_invitation SET expires_at = NOW() - INTERVAL '1 minute' WHERE id = $1`,
+		invitation.ID,
+	); err != nil {
+		t.Fatalf("expire invitation: %v", err)
+	}
+	recipient.allowResult = nil
+	recipient.allowed = true
+	expiredResponse := httptest.NewRecorder()
+	testHandler.ResendInvitation(expiredResponse, resendReq)
+	if expiredResponse.Code != http.StatusGone {
+		t.Fatalf("expired resend: expected 410, got %d: %s", expiredResponse.Code, expiredResponse.Body.String())
 	}
 }
 

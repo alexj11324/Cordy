@@ -43,9 +43,18 @@
     "loading_named_prefix": "Loading"
   },
   "sidebar": {
+    "brand_name": "Orvilo",
     "unpin_tooltip": "Unpin",
     "workspaces_label": "Workspaces",
     "create_workspace": "Create workspace",
+    "account": "Account",
+    "profile": "Profile",
+    "billing": "Billing",
+    "preferences": "Preferences",
+    "theme": "Theme",
+    "light": "Light",
+    "dark": "Dark",
+    "system": "System",
     "pending_invitations_label": "Pending invitations",
     "invitation_workspace_fallback": "Workspace",
     "invitation_join": "Join",

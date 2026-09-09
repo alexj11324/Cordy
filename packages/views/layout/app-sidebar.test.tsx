@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@orvilo/core/api";
 import { renderWithI18n } from "../test/i18n";
@@ -66,6 +67,7 @@ vi.mock("@orvilo/ui/components/ui/sidebar", () => ({
   SidebarGroupLabel: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarHeader: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  SidebarMenuBadge: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarMenuButton: ({
     children,
     isActive,
@@ -88,6 +90,7 @@ vi.mock("@orvilo/ui/components/ui/sidebar", () => ({
   ),
   SidebarMenuItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarRail: () => null,
+  SidebarTrigger: () => <button type="button" aria-label="Toggle sidebar" />,
   useSidebar: () => ({
     state: sidebarState.current,
     setHoverRevealSuspended: sidebarState.setHoverRevealSuspended,
@@ -99,9 +102,12 @@ vi.mock("@orvilo/ui/components/ui/dropdown-menu", () => ({
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuGroup: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
-  DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+  DropdownMenuLabel: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DropdownMenuShortcut: ({ children }: { children: React.ReactNode }) => <span>{children}</span>,
   DropdownMenuSeparator: () => null,
-  DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
+  DropdownMenuTrigger: ({ render, children }: { render: React.ReactNode; children?: React.ReactNode }) => (
+    React.isValidElement(render) ? React.cloneElement(render, undefined, children) : <>{render}</>
+  ),
 }));
 vi.mock("@orvilo/ui/components/ui/collapsible", () => ({
   Collapsible: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -135,6 +141,9 @@ vi.mock("@orvilo/core/auth", () => ({
       user: { id: string; name: string; email: string; is_guest: boolean };
     }) => unknown,
   ) => selector({ user: authUser.current }),
+}));
+vi.mock("@orvilo/core/shortcuts", () => ({
+  useShortcut: () => null,
 }));
 // Callable-store shape (selectorFn + getState) per the repo testing rules.
 vi.mock("@orvilo/core/chat", () => ({
@@ -224,6 +233,9 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
 
 beforeEach(() => {
   sidebarState.current = "expanded";
+  workspaces.current = [
+    { id: "ws-1", name: "Acme", slug: "acme", avatar_url: null },
+  ];
   authUser.current = {
     id: "user-1",
     name: "Test User",
@@ -312,6 +324,9 @@ describe("mobile sheet dismissal", () => {
 describe("collapsed footer", () => {
   beforeEach(() => {
     sidebarState.current = "expanded";
+    workspaces.current = [
+      { id: "ws-1", name: "Acme", slug: "acme", avatar_url: null },
+    ];
     authUser.current = {
       id: "user-1",
       name: "Test User",
@@ -321,20 +336,23 @@ describe("collapsed footer", () => {
   });
 
   it("keeps the compact account control and hides Help until the sidebar is expanded", () => {
-    const { container, rerender } = render(<AppSidebar />);
+    const { rerender } = render(<AppSidebar />);
     expect(screen.getByRole("button", { name: "Help" })).toBeInTheDocument();
 
     sidebarState.current = "collapsed";
     rerender(<AppSidebar />);
 
     expect(screen.queryByRole("button", { name: "Help" })).not.toBeInTheDocument();
-    expect(container.querySelector('button[data-size="lg"]')).not.toBeNull();
+    expect(screen.getByText("Test User")).toBeInTheDocument();
   });
 });
 
 describe("account footer", () => {
   beforeEach(() => {
     sidebarState.current = "expanded";
+    workspaces.current = [
+      { id: "ws-1", name: "Acme", slug: "acme", avatar_url: null },
+    ];
     authUser.current = {
       id: "user-1",
       name: "Test User",
@@ -343,11 +361,12 @@ describe("account footer", () => {
     };
   });
 
-  it("renders the signed-in account at the bottom, separate from the workspace switcher", () => {
-    const { container } = renderWithI18n(<AppSidebar />);
-    const account = container.querySelector('button[data-size="lg"]');
-    expect(account).toHaveTextContent("Test User");
-    expect(account).toHaveTextContent("user@example.com");
+  it("combines the signed-in account and workspace switcher in one menu", () => {
+    renderWithI18n(<AppSidebar />);
+    expect(screen.getByText("Test User")).toBeInTheDocument();
+    expect(screen.getAllByText("Acme")).toHaveLength(2);
+    expect(screen.getByText("user@example.com")).toBeInTheDocument();
+    expect(screen.getByText("Account")).toBeInTheDocument();
     expect(screen.queryByText("Join our Discord")).not.toBeInTheDocument();
   });
 
@@ -358,23 +377,24 @@ describe("account footer", () => {
       email: "guest@example.com",
       is_guest: true,
     };
-    const { container } = renderWithI18n(<AppSidebar />);
-    const account = container.querySelector('button[data-size="lg"]');
-    expect(account).toHaveTextContent("Alex");
-    expect(account).toHaveTextContent("Guest");
-    expect(account).not.toHaveTextContent("guest@example.com");
+    renderWithI18n(<AppSidebar />);
+    expect(screen.getByText("Alex")).toBeInTheDocument();
+    expect(screen.getByText("Guest")).toBeInTheDocument();
+    expect(screen.queryByText("guest@example.com")).not.toBeInTheDocument();
   });
 });
 
 describe("workspace-switcher unread dot", () => {
   beforeEach(() => {
     summary.current = [];
-    workspaces.current = [];
+    workspaces.current = [
+      { id: "ws-1", name: "Acme", slug: "acme", avatar_url: null },
+    ];
   });
 
   // The aggregate switcher dot is the only `.ring-sidebar` span in the tree
   // (DraftDot is null when there's no draft, and there are no invitations).
-  const dot = (container: HTMLElement) => container.querySelector("span.bg-brand.ring-sidebar");
+  const dot = (container: HTMLElement) => container.querySelector("[data-slot=workspace-unread-dot]");
 
   it("shows a dot when another workspace has unread inbox items", () => {
     summary.current = [{ workspace_id: "ws-2", count: 3 }];
@@ -406,9 +426,9 @@ describe("workspace-switcher dropdown per-workspace dot", () => {
     ];
   });
 
-  // Row dots are brand dots WITHOUT the aggregate avatar dot's `ring-sidebar`.
+  // Row dots are primary dots in the workspace menu.
   const rowDots = (container: HTMLElement) =>
-    container.querySelectorAll("span.bg-brand:not(.ring-sidebar)");
+    container.querySelectorAll("[data-slot=workspace-row-unread-dot]");
 
   it("dots the specific other workspace that has unread", () => {
     summary.current = [{ workspace_id: "ws-2", count: 3 }];
@@ -416,8 +436,8 @@ describe("workspace-switcher dropdown per-workspace dot", () => {
     // Exactly one row dot, sitting right after the "Other WS" name; the active
     // row shows the check, not a dot.
     expect(rowDots(container)).toHaveLength(1);
-    expect(screen.getByText("Other WS").nextElementSibling?.className).toContain("bg-brand");
-    expect(screen.getByText("Active WS").nextElementSibling?.className ?? "").not.toContain("bg-brand");
+    expect(screen.getByText("Other WS").nextElementSibling?.className).toContain("bg-primary");
+    expect(screen.getAllByText("Active WS").at(-1)?.nextElementSibling?.className ?? "").not.toContain("bg-primary");
   });
 
   it("does not dot a workspace whose unread count is zero", () => {

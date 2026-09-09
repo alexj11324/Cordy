@@ -4,7 +4,6 @@ import type {
   RowData,
   TableFeatures,
 } from "@tanstack/react-table";
-import type { LegacyFeatures } from "@tanstack/react-table/legacy";
 import type * as React from "react";
 
 // Extend TanStack Table's ColumnMeta with a `grow` flag. TanStack merges
@@ -46,7 +45,7 @@ export function columnSizeVar(columnId: string) {
 // react to `:hover`. Consumers set bg via Tailwind classes paired with
 // `group-hover:`.
 export function getCellStyle<TData extends RowData>(
-  column: Column<LegacyFeatures, TData>,
+  column: Column<TableFeatures, TData>,
   options?: { hasExplicitSize?: boolean },
 ): React.CSSProperties {
   const grow = column.columnDef.meta?.grow;

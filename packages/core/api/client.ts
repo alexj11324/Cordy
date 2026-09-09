@@ -3266,6 +3266,13 @@ export class ApiClient {
     return this.fetch(`/api/workspaces/${workspaceId}/invitations`);
   }
 
+  async resendInvitation(workspaceId: string, invitationId: string): Promise<void> {
+    await this.fetch(
+      `/api/workspaces/${workspaceId}/invitations/${invitationId}/resend`,
+      { method: "POST" },
+    );
+  }
+
   async revokeInvitation(workspaceId: string, invitationId: string): Promise<void> {
     await this.fetch(`/api/workspaces/${workspaceId}/invitations/${invitationId}`, {
       method: "DELETE",

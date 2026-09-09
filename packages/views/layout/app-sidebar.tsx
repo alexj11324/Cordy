@@ -17,17 +17,11 @@ import {
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Layers,
-  ChevronDown,
   ChevronRight,
-  ChevronUp,
-  LogOut,
-  Plus,
-  Check,
   SquarePen,
   X,
 } from "lucide-react";
-import { WorkspaceAvatar } from "../workspace/workspace-avatar";
-import { ActorAvatar } from "@orvilo/ui/components/common/actor-avatar";
+import { NavWorkspace } from "@orvilo/ui/components/blocks/app-shell-9/components/nav-workspace";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@orvilo/ui/components/ui/tooltip";
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from "@orvilo/ui/components/ui/collapsible";
 import { CappedNumberFlow } from "@orvilo/ui/components/ui/number-flow";
@@ -41,21 +35,17 @@ import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
-  SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
   useSidebar,
 } from "@orvilo/ui/components/ui/sidebar";
+import { Separator } from "@orvilo/ui/components/ui/separator";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@orvilo/ui/components/ui/dropdown-menu";
 import { useAuthStore } from "@orvilo/core/auth";
 import { issueViewDetailOptions } from "@orvilo/core/issue-views/queries";
@@ -72,7 +62,8 @@ import { chatSessionsOptions } from "@orvilo/core/chat/queries";
 import { countUnreadChatMessages } from "@orvilo/core/chat/unread";
 import { useChatStore } from "@orvilo/core/chat";
 import { api, ApiError } from "@orvilo/core/api";
-import { useConfigStore } from "@orvilo/core/config";
+import { useConfigStore, useFeatureEnabled } from "@orvilo/core/config";
+import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@orvilo/core/feature-flags";
 import { pinListOptions } from "@orvilo/core/pins/queries";
 import { useDeletePin, useReorderPins } from "@orvilo/core/pins/mutations";
 import { issueDetailOptions } from "@orvilo/core/issues/queries";
@@ -82,9 +73,7 @@ import { useLogout } from "../auth";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { routeIconForPath } from "./route-icon-components";
 import { useT } from "../i18n";
-import {
-  useShortcut,
-} from "@orvilo/core/shortcuts";
+import { useShortcut } from "@orvilo/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { useAppForeground } from "../common/use-app-foreground";
 
@@ -115,6 +104,7 @@ type NavKey =
   | "chat"
   | "myIssues"
   | "issues"
+  | "taskGraph"
   | "projects"
   | "automations"
   | "agents"
@@ -132,6 +122,7 @@ type NavLabelKey =
   | "chat"
   | "my_issues"
   | "issues"
+  | "task_graph"
   | "projects"
   | "automations"
   | "agents"
@@ -167,15 +158,8 @@ const configureNav: { key: NavKey; labelKey: NavLabelKey }[] = [
   { key: "settings", labelKey: "settings" },
 ];
 
-function sidebarNavIconClassName(isActive: boolean) {
-  return cn("text-sidebar-icon-secondary", isActive && "text-sidebar-icon-active");
-}
-
-const SIDEBAR_NAV_BUTTON_CLASS =
-  "text-sidebar-text-secondary hover:not-data-active:bg-sidebar-item-hover data-active:bg-sidebar-item-active data-active:text-sidebar-item-active-foreground";
-
 function DraftDot() {
-  const hasDraft = useIssueDraftStore((s) => s.hasDraft());
+  const hasDraft = useIssueDraftStore((state) => state.hasDraft());
   if (!hasDraft) return null;
   return <span className="absolute top-0 right-0 size-1.5 rounded-full bg-brand" />;
 }
@@ -239,13 +223,12 @@ function SortablePinItem({
           onNavigate?.();
         }}
         className={cn(
-          SIDEBAR_NAV_BUTTON_CLASS,
           isDragging && "pointer-events-none",
         )}
       >
         {iconNode}
         <span
-          className="min-w-0 flex-1 overflow-hidden whitespace-nowrap"
+          className="min-w-0 flex-1 overflow-hidden whitespace-nowrap in-data-[state=collapsed]:hidden"
           style={{
             maskImage: "linear-gradient(to right, black calc(100% - 12px), transparent)",
             WebkitMaskImage: "linear-gradient(to right, black calc(100% - 12px), transparent)",
@@ -254,7 +237,7 @@ function SortablePinItem({
         <Tooltip>
           <TooltipTrigger
             render={<span role="button" tabIndex={0} aria-label={t(($) => $.sidebar.unpin_tooltip)} />}
-            className="hidden size-2.5 shrink-0 items-center justify-center rounded-sm text-sidebar-text-secondary group-hover/pin:flex hover:text-sidebar-text-primary"
+            className="hidden size-2.5 shrink-0 items-center justify-center rounded-sm text-accent-foreground/80 group-hover/pin:flex hover:text-foreground"
             onClick={(event) => {
               event.preventDefault();
               event.stopPropagation();
@@ -364,7 +347,7 @@ function PinRow({
         pathname={pathname}
         onUnpin={onUnpin}
         label={view.name}
-        iconNode={<Layers className="!size-3.5 shrink-0 text-sidebar-icon-secondary" />}
+        iconNode={<Layers className="!size-3.5 shrink-0 opacity-60" />}
         // Active only when this exact view is open on its surface — the
         // path alone also matches the plain tab.
         isActiveOverride={
@@ -420,25 +403,78 @@ function PinSkeleton() {
   return (
     <SidebarMenuItem>
       <div className="flex h-7 w-full items-center gap-2 px-2">
-        <div className="size-3.5 shrink-0 rounded-sm bg-sidebar-accent/40" />
-        <div className="h-3 w-24 rounded bg-sidebar-accent/40" />
+        <div className="size-3.5 shrink-0 rounded-sm bg-muted/40" />
+        <div className="h-3 w-24 rounded bg-muted/40" />
       </div>
     </SidebarMenuItem>
   );
 }
 
-interface AppSidebarProps {
-  /** Rendered above SidebarHeader (e.g. desktop traffic light spacer) */
-  topSlot?: React.ReactNode;
-  /** Rendered in the header between workspace switcher and new-issue button (e.g. search trigger) */
-  searchSlot?: React.ReactNode;
-  /** Extra className for SidebarHeader */
-  headerClassName?: string;
-  /** Extra style for SidebarHeader */
-  headerStyle?: React.CSSProperties;
+type ReuiRouteItem = {
+  label: string;
+  href: string;
+  isActive: boolean;
+  Icon: React.ComponentType<{ className?: string }>;
+  badge?: React.ReactNode;
+};
+
+const WORKSPACE_AVATAR_CLASSES = [
+  "border-indigo-200 bg-indigo-100 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-300",
+  "border-cyan-200 bg-cyan-100 text-cyan-700 dark:border-cyan-800 dark:bg-cyan-950 dark:text-cyan-300",
+  "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
+  "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+] as const;
+
+function ReuiNavGroup({
+  label,
+  items,
+}: {
+  label?: string;
+  items: ReuiRouteItem[];
+}) {
+  return (
+    <SidebarGroup>
+      {label ? (
+        <SidebarGroupLabel className="in-data-[state=collapsed]:hidden">
+          {label}
+        </SidebarGroupLabel>
+      ) : null}
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {items.map(({ label: itemLabel, href, isActive, Icon, badge }) => (
+            <SidebarMenuItem key={href}>
+              <SidebarMenuButton
+                tooltip={itemLabel}
+                isActive={isActive}
+                render={<AppLink href={href} />}
+              >
+                <Icon aria-hidden="true" />
+                <span className="min-w-0 flex-1 truncate transition-[max-width,opacity] duration-200 group-data-[collapsible=icon]:max-w-0 group-data-[collapsible=icon]:opacity-0">
+                  {itemLabel}
+                </span>
+                {badge !== undefined ? (
+                  <SidebarMenuBadge>{badge}</SidebarMenuBadge>
+                ) : null}
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
 }
 
-export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }: AppSidebarProps = {}) {
+interface AppSidebarProps {
+  /** Rendered above the sidebar content (e.g. desktop traffic light spacer) */
+  topSlot?: React.ReactNode;
+  /** Rendered above the new-issue button (e.g. the search trigger) */
+  searchSlot?: React.ReactNode;
+}
+
+export function AppSidebar({
+  topSlot,
+  searchSlot,
+}: AppSidebarProps = {}) {
   const { t } = useT("layout");
   const { pathname, push } = useNavigation();
   const user = useAuthStore((s) => s.user);
@@ -449,6 +485,10 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   const { data: workspaces = EMPTY_WORKSPACES } = useQuery(workspaceListOptions());
   const { data: myInvitations = EMPTY_INVITATIONS } = useQuery(myInvitationListOptions());
   const workspaceCreationDisabled = useConfigStore((s) => s.workspaceCreationDisabled);
+  const billingEnabled = useFeatureEnabled(
+    BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
+    false,
+  );
 
   // On a phone the sidebar is a Sheet covering the page, so navigating out of
   // it has to dismiss it — otherwise the destination renders underneath and the
@@ -605,345 +645,247 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
     },
   });
 
+  const personalItems: ReuiRouteItem[] = personalNav.map((item) => {
+    const href = p[item.key]();
+    const Icon = routeIconForPath(href);
+    const isActive = isNavActive(pathname, href);
+    const badge =
+      item.key === "inbox" && unreadCount > 0 ? (
+        <CappedNumberFlow value={unreadCount} animated={false} />
+      ) : item.key === "chat" && chatUnreadCount > 0 ? (
+        <CappedNumberFlow value={chatUnreadCount} animated={false} />
+      ) : undefined;
+    return { label: t(($) => $.nav[item.labelKey]), href, isActive, Icon, badge };
+  });
+  const workspaceItems: ReuiRouteItem[] = workspaceNav.map((item) => {
+    const href = p[item.key]();
+    const Icon = routeIconForPath(href);
+    const isActive =
+      !isActivePinnedRoute &&
+      (isNavActive(pathname, href) ||
+        (item.key === "issues" && isNavActive(pathname, p.taskGraph())));
+    return { label: t(($) => $.nav[item.labelKey]), href, isActive, Icon };
+  });
+  const configureItems: ReuiRouteItem[] = configureNav.map((item) => {
+    const href = p[item.key]();
+    const Icon = routeIconForPath(href);
+    const isActive = isNavActive(pathname, href);
+    return { label: t(($) => $.nav[item.labelKey]), href, isActive, Icon };
+  });
+
+  const userName = user?.name?.trim() || "User";
+  const userInitials = userName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join("")
+    .toUpperCase() || "U";
+  const workspaceEntries = workspaces.map((ws, index) => ({
+    id: ws.id,
+    name: ws.name,
+    imageUrl: resolvePublicFileUrl(ws.avatar_url) ?? undefined,
+    avatarClassName: WORKSPACE_AVATAR_CLASSES[index % WORKSPACE_AVATAR_CLASSES.length],
+    hasUnread: ws.id !== workspace?.id && unreadWsIds.has(ws.id),
+  }));
+  const activeWorkspaceEntry = workspaceEntries.find((entry) => entry.id === workspace?.id);
   const createIssueShortcut = useShortcut("createIssue");
-  const accountSecondary =
-    user?.is_guest === true
-      ? t(($) => $.sidebar.guest_account)
-      : (user?.email ?? "");
+  const pendingInvitationMenu = myInvitations.length > 0 ? (
+    <>
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel>{t(($) => $.sidebar.pending_invitations_label)}</DropdownMenuLabel>
+      {myInvitations.map((invitation) => {
+        const invitationName = invitation.workspace_name ?? t(($) => $.sidebar.invitation_workspace_fallback);
+        return (
+          <div key={invitation.id} className="flex items-center gap-2 px-2 py-1.5">
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-micro font-semibold text-primary">
+              {invitationName.charAt(0).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-body">{invitationName}</span>
+            <button
+              type="button"
+              className="rounded bg-primary px-2 py-0.5 text-caption text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              disabled={acceptInvitationMut.isPending}
+              onClick={(event) => {
+                event.stopPropagation();
+                acceptInvitationMut.mutate(invitation.id);
+              }}
+            >
+              {t(($) => $.sidebar.invitation_join)}
+            </button>
+            <button
+              type="button"
+              className="rounded bg-muted px-2 py-0.5 text-caption text-muted-foreground hover:bg-muted/80 disabled:opacity-50"
+              disabled={declineInvitationMut.isPending}
+              onClick={(event) => {
+                event.stopPropagation();
+                declineInvitationMut.mutate(invitation.id);
+              }}
+            >
+              {t(($) => $.sidebar.invitation_decline)}
+            </button>
+          </div>
+        );
+      })}
+    </>
+  ) : null;
 
   return (
-      <Sidebar variant="inset">
-        {topSlot}
-        {/* Workspace Switcher */}
-        <SidebarHeader className={cn("py-3", headerClassName)} style={headerStyle}>
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <DropdownMenu onOpenChange={setHoverRevealSuspended}>
-                <DropdownMenuTrigger
-                  render={
-                    <SidebarMenuButton>
-                      <span className="relative">
-                        <WorkspaceAvatar name={workspace?.name ?? "M"} avatarUrl={workspace?.avatar_url} size="sm" />
-                        {/* Shared brand dot: a pending invitation OR another
-                            workspace with unread inbox items. The active
-                            workspace's own unread stays on the Inbox nav count
-                            (below), so it is deliberately excluded here. */}
-                        {(myInvitations.length > 0 || otherWorkspaceUnread) && (
-                          <span className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-brand ring-1 ring-sidebar" />
-                        )}
-                      </span>
-                      <span className="flex-1 truncate font-medium">
-                        {workspace?.name ?? "Orvilo"}
-                      </span>
-                      <ChevronDown className="size-3 text-sidebar-icon-secondary" />
-                    </SidebarMenuButton>
-                  }
-                />
-                <DropdownMenuContent
-                  className="w-auto min-w-56"
-                  align="start"
-                  side="bottom"
-                  sideOffset={4}
-                >
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel className="text-caption text-sidebar-text-secondary">
-                      {t(($) => $.sidebar.workspaces_label)}
-                    </DropdownMenuLabel>
-                    {workspaces.map((ws) => (
-                      <DropdownMenuItem
-                        key={ws.id}
-                        render={
-                          <AppLink href={paths.workspace(ws.slug).issues()} />
-                        }
-                      >
-                        <WorkspaceAvatar name={ws.name} avatarUrl={ws.avatar_url} size="sm" />
-                        <span className="flex-1 truncate">{ws.name}</span>
-                        {/* Points at the specific workspace holding unread
-                            inbox items. Sits in the same right-edge slot as the
-                            active-workspace check; the active workspace is
-                            excluded (its unread is the Inbox nav count), so dot
-                            and check never collide on one row. */}
-                        {ws.id !== workspace?.id && unreadWsIds.has(ws.id) && (
-                          <span className="size-2 rounded-full bg-brand" />
-                        )}
-                        {ws.id === workspace?.id && (
-                          <Check className="h-3.5 w-3.5 text-primary" />
-                        )}
-                      </DropdownMenuItem>
-                    ))}
-                    {!workspaceCreationDisabled && (
-                      <DropdownMenuItem
-                        onClick={() => push(paths.newWorkspace())}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        {t(($) => $.sidebar.create_workspace)}
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuGroup>
-                  {myInvitations.length > 0 && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuGroup>
-                        <DropdownMenuLabel className="text-caption text-sidebar-text-secondary">
-                          {t(($) => $.sidebar.pending_invitations_label)}
-                        </DropdownMenuLabel>
-                        {myInvitations.map((inv) => (
-                          <div key={inv.id} className="flex items-center gap-2 px-2 py-1.5">
-                            <WorkspaceAvatar name={inv.workspace_name ?? "W"} size="sm" />
-                            <span className="flex-1 truncate text-body">{inv.workspace_name ?? t(($) => $.sidebar.invitation_workspace_fallback)}</span>
-                            <button
-                              type="button"
-                              className="text-caption px-2 py-0.5 rounded bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-                              disabled={acceptInvitationMut.isPending}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                acceptInvitationMut.mutate(inv.id);
-                              }}
-                            >
-                              {t(($) => $.sidebar.invitation_join)}
-                            </button>
-                            <button
-                              type="button"
-                              className="text-caption px-2 py-0.5 rounded bg-muted text-sidebar-text-secondary hover:bg-muted/80 disabled:opacity-50"
-                              disabled={declineInvitationMut.isPending}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                declineInvitationMut.mutate(inv.id);
-                              }}
-                            >
-                              {t(($) => $.sidebar.invitation_decline)}
-                            </button>
-                          </div>
-                        ))}
-                      </DropdownMenuGroup>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </SidebarMenuItem>
-          </SidebarMenu>
-          <SidebarMenu>
-            {searchSlot && (
+    <Sidebar collapsible="icon" variant="floating">
+      {topSlot}
+
+      <SidebarContent ref={sidebarScrollRef} style={sidebarFadeStyle}>
+        <div className="py-2 pt-2">{searchSlot}</div>
+
+        <SidebarGroup className="py-0">
+          <SidebarGroupContent>
+            <SidebarMenu>
               <SidebarMenuItem>
-                {searchSlot}
-              </SidebarMenuItem>
-            )}
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                className="text-sidebar-text-secondary"
-                onClick={() => openCreateIssueWithPreference()}
-              >
-                <span className="relative">
-                  <SquarePen className="text-sidebar-icon-secondary" />
-                  <DraftDot />
-                </span>
-                <span>{t(($) => $.sidebar.new_issue)}</span>
-                {createIssueShortcut ? (
-                  <ShortcutKeycaps shortcut={createIssueShortcut} decorative className="pointer-events-none ml-auto" />
-                ) : null}
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarHeader>
-
-        {/* Navigation */}
-        <SidebarContent ref={sidebarScrollRef} style={sidebarFadeStyle}>
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {personalNav.map((item) => {
-                  const href = p[item.key]();
-                  const Icon = routeIconForPath(href);
-                  const isActive = isNavActive(pathname, href);
-                  return (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        render={<AppLink href={href} />}
-                        className={SIDEBAR_NAV_BUTTON_CLASS}
-                      >
-                        <Icon className={sidebarNavIconClassName(isActive)} />
-                        <span>{t(($) => $.nav[item.labelKey])}</span>
-                        {item.key === "inbox" && unreadCount > 0 && (
-                          <CappedNumberFlow
-                            value={unreadCount}
-                            animated={false}
-                            className="ml-auto text-caption"
-                          />
-                        )}
-                        {item.key === "chat" && chatUnreadCount > 0 && (
-                          <CappedNumberFlow
-                            value={chatUnreadCount}
-                            animated={false}
-                            className="ml-auto text-caption"
-                          />
-                        )}
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-
-          {visiblePinned.length > 0 && (
-            <Collapsible defaultOpen>
-              <SidebarGroup className="group/pinned">
-                <SidebarGroupLabel
-                  render={<CollapsibleTrigger />}
-                  className="group/trigger cursor-pointer hover:bg-sidebar-item-hover hover:text-sidebar-item-active-foreground"
+                <SidebarMenuButton
+                  tooltip={t(($) => $.sidebar.new_issue)}
+                  onClick={() => openCreateIssueWithPreference()}
                 >
-                  <span>{t(($) => $.sidebar.pinned_label)}</span>
-                  <ChevronRight className="!size-3 ml-1 stroke-[2.5] text-sidebar-icon-secondary transition-transform duration-200 group-data-[panel-open]/trigger:rotate-90" />
-                  <span className="ml-auto text-micro text-sidebar-text-secondary opacity-0 transition-opacity group-hover/pinned:opacity-100">{visiblePinned.length}</span>
-                </SidebarGroupLabel>
-                <CollapsibleContent>
-                  <SidebarGroupContent>
-                    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-                      <SortableContext items={visiblePinned.map((p) => p.id)} strategy={verticalListSortingStrategy}>
-                        <SidebarMenu className="gap-0.5">
-                          {visiblePinned.map((pin: PinnedItem) => (
-                            <PinRow
-                              key={pin.id}
-                              pin={pin}
-                              href={getPinHref(pin)}
-                              pathname={pathname}
-                              onUnpin={() => deletePin.mutate({ itemType: pin.item_type, itemId: pin.item_id })}
-                              wsId={wsId ?? ""}
-                            />
-                          ))}
-                        </SidebarMenu>
-                      </SortableContext>
-                    </DndContext>
-                  </SidebarGroupContent>
-                </CollapsibleContent>
-              </SidebarGroup>
-            </Collapsible>
-          )}
+                  <span className="relative">
+                    <SquarePen aria-hidden="true" />
+                    <DraftDot />
+                  </span>
+                  <span className="in-data-[state=collapsed]:hidden">
+                    {t(($) => $.sidebar.new_issue)}
+                  </span>
+                  {createIssueShortcut ? (
+                    <ShortcutKeycaps
+                      shortcut={createIssueShortcut}
+                      decorative
+                      className="pointer-events-none ml-auto in-data-[state=collapsed]:hidden"
+                    />
+                  ) : null}
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
-          <SidebarGroup>
-            <SidebarGroupLabel>{t(($) => $.sidebar.workspace_group)}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {workspaceNav.map((item) => {
-                  const href = p[item.key]();
-                  const Icon = routeIconForPath(href);
-                  const isActive =
-                    !isActivePinnedRoute &&
-                    (isNavActive(pathname, href) ||
-                      (item.key === "issues" &&
-                        isNavActive(pathname, p.taskGraph())));
-                  return (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        render={<AppLink href={href} />}
-                        className={SIDEBAR_NAV_BUTTON_CLASS}
-                      >
-                        <Icon className={sidebarNavIconClassName(isActive)} />
-                        <span>{t(($) => $.nav[item.labelKey])}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
+        <ReuiNavGroup items={personalItems} />
 
-          <SidebarGroup>
-            <SidebarGroupLabel>{t(($) => $.sidebar.configure_group)}</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu className="gap-0.5">
-                {configureNav.map((item) => {
-                  const href = p[item.key]();
-                  const Icon = routeIconForPath(href);
-                  const isActive = isNavActive(pathname, href);
-                  return (
-                    <SidebarMenuItem key={item.key}>
-                      <SidebarMenuButton
-                        isActive={isActive}
-                        render={<AppLink href={href} />}
-                        className={SIDEBAR_NAV_BUTTON_CLASS}
-                      >
-                        <Icon className={sidebarNavIconClassName(isActive)} />
-                        <span>{t(($) => $.nav[item.labelKey])}</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
-
-        <SidebarFooter className="p-1">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <div className="flex min-w-0 items-center gap-1">
-                <DropdownMenu onOpenChange={setHoverRevealSuspended}>
-                  <DropdownMenuTrigger
-                    render={
-                      <SidebarMenuButton
-                        size="lg"
-                        className="min-w-0 flex-1 text-left"
-                      >
-                        <ActorAvatar
-                          name={user?.name ?? ""}
-                          initials={(user?.name ?? "U").charAt(0).toUpperCase()}
-                          avatarUrl={resolvePublicFileUrl(user?.avatar_url)}
-                          size="sm"
-                        />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-body font-medium leading-tight">
-                            {user?.name}
-                          </span>
-                          <span className="block truncate text-caption text-sidebar-text-secondary leading-tight">
-                            {accountSecondary}
-                          </span>
-                        </span>
-                        <ChevronUp className="ml-auto size-4 text-sidebar-icon-secondary" />
-                      </SidebarMenuButton>
-                    }
-                  />
-                  <DropdownMenuContent
-                    side="top"
-                    align="start"
-                    sideOffset={8}
-                    className="min-w-56"
+        {visiblePinned.length > 0 ? (
+          <Collapsible defaultOpen>
+            <SidebarGroup className="group/pinned">
+              <SidebarGroupLabel
+                render={<CollapsibleTrigger />}
+                className="in-data-[state=collapsed]:hidden"
+              >
+                <span>{t(($) => $.sidebar.pinned_label)}</span>
+                <ChevronRight className="ml-1 size-3 opacity-60 transition-transform duration-200 group-data-[panel-open]/trigger:rotate-90" />
+                <span className="ml-auto text-caption opacity-60">{visiblePinned.length}</span>
+              </SidebarGroupLabel>
+              <CollapsibleContent>
+                <SidebarGroupContent>
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
                   >
-                    <div className="flex items-center gap-2.5 px-2 py-1.5">
-                      <ActorAvatar
-                        name={user?.name ?? ""}
-                        initials={(user?.name ?? "U").charAt(0).toUpperCase()}
-                        avatarUrl={resolvePublicFileUrl(user?.avatar_url)}
-                        size="lg"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-body font-medium leading-tight">
-                          {user?.name}
-                        </p>
-                        <p className="truncate text-caption text-sidebar-text-secondary leading-tight">
-                          {accountSecondary}
-                        </p>
-                      </div>
-                    </div>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuGroup>
-                      <DropdownMenuItem variant="destructive" onClick={logout}>
-                        <LogOut className="h-3.5 w-3.5" />
-                        {t(($) => $.sidebar.log_out)}
-                      </DropdownMenuItem>
-                    </DropdownMenuGroup>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                {sidebarState !== "collapsed" && (
-                  <HelpLauncher onOpenChange={setHoverRevealSuspended} />
-                )}
-              </div>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarFooter>
-        <SidebarRail />
-      </Sidebar>
+                    <SortableContext
+                      items={visiblePinned.map((pin) => pin.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <SidebarMenu>
+                        {visiblePinned.map((pin) => (
+                          <PinRow
+                            key={pin.id}
+                            pin={pin}
+                            href={getPinHref(pin)}
+                            pathname={pathname}
+                            onUnpin={() =>
+                              deletePin.mutate({
+                                itemType: pin.item_type,
+                                itemId: pin.item_id,
+                              })
+                            }
+                            wsId={wsId ?? ""}
+                          />
+                        ))}
+                      </SidebarMenu>
+                    </SortableContext>
+                  </DndContext>
+                </SidebarGroupContent>
+              </CollapsibleContent>
+            </SidebarGroup>
+          </Collapsible>
+        ) : null}
+
+        <ReuiNavGroup
+          label={t(($) => $.sidebar.workspace_group)}
+          items={workspaceItems}
+        />
+
+        <div className="mt-auto">
+          <ReuiNavGroup
+            label={t(($) => $.sidebar.configure_group)}
+            items={configureItems}
+          />
+        </div>
+      </SidebarContent>
+
+      <SidebarFooter className="px-1! in-data-[state=collapsed]:px-1!">
+        <div className="px-2">
+          <Separator />
+        </div>
+
+        <NavWorkspace
+          user={{
+            name: userName,
+            initials: userInitials,
+            email: user?.is_guest === true ? t(($) => $.sidebar.guest_account) : user?.email,
+            avatarUrl: resolvePublicFileUrl(user?.avatar_url),
+          }}
+          workspaces={workspaceEntries}
+          activeWorkspace={
+            activeWorkspaceEntry
+              ? {
+                  ...activeWorkspaceEntry,
+                  hasUnread: myInvitations.length > 0 || otherWorkspaceUnread,
+                }
+              : undefined
+          }
+          labels={{
+            menuAriaLabel: t(($) => $.sidebar.workspaces_label),
+            workspaces: t(($) => $.sidebar.workspaces_label),
+            createWorkspace: t(($) => $.sidebar.create_workspace),
+            account: t(($) => $.sidebar.account),
+            profile: t(($) => $.sidebar.profile),
+            billing: t(($) => $.sidebar.billing),
+            preferences: t(($) => $.sidebar.preferences),
+            theme: t(($) => $.sidebar.theme),
+            signOut: t(($) => $.sidebar.log_out),
+            light: t(($) => $.sidebar.light),
+            dark: t(($) => $.sidebar.dark),
+            system: t(($) => $.sidebar.system),
+          }}
+          workspaceMenuContent={pendingInvitationMenu}
+          onOpenChange={setHoverRevealSuspended}
+          onSelectWorkspace={(workspaceId) => {
+            const selected = workspaces.find((candidate) => candidate.id === workspaceId);
+            if (selected) push(paths.workspace(selected.slug).issues());
+          }}
+          onCreateWorkspace={workspaceCreationDisabled ? undefined : () => push(paths.newWorkspace())}
+          onProfile={() => push(`${p.settings()}?tab=profile`)}
+          onBilling={
+            billingEnabled ? () => push(`${p.settings()}?tab=billing`) : undefined
+          }
+          onPreferences={() => push(`${p.settings()}?tab=preferences`)}
+          onSignOut={logout}
+        />
+
+        {sidebarState !== "collapsed" ? (
+          <div className="px-1">
+            <HelpLauncher onOpenChange={setHoverRevealSuspended} />
+          </div>
+        ) : null}
+      </SidebarFooter>
+
+      <SidebarRail />
+    </Sidebar>
   );
+
 }

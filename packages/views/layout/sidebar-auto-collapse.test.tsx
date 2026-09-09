@@ -1,11 +1,10 @@
 import { act, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 
 import {
   Sidebar,
   SidebarProvider,
+  SidebarTrigger,
   useSidebar,
 } from "@orvilo/ui/components/ui/sidebar";
 import { renderWithI18n } from "../test/i18n";
@@ -197,14 +196,27 @@ describe("sidebar auto-collapse between lg and xl", () => {
     expect(document.querySelector("[data-mobile='true']")).toBeInTheDocument();
   });
 
-  it("gives a hover-revealed glass sidebar its own opaque raised surface", () => {
+  it("reports the compact Sheet state from the trigger", () => {
+    setWidth(963);
+    renderWithI18n(
+      <SidebarProvider>
+        <SidebarTrigger />
+      </SidebarProvider>,
+    );
+
+    const trigger = screen.getByRole("button", { name: /toggle left sidebar/i });
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("gives a hover-revealed sidebar its own opaque raised surface", () => {
     setWidth(963);
     const { container } = renderWithI18n(
       <SidebarProvider
         compactBehavior="collapse"
         defaultOpen={false}
         hoverReveal
-        glass
       >
         <Sidebar>Navigation</Sidebar>
         <Probe />
@@ -214,11 +226,14 @@ describe("sidebar auto-collapse between lg and xl", () => {
     const sidebarContainer = container.querySelector<HTMLElement>(
       "[data-slot='sidebar-container']",
     )!;
+    const sidebarGap = container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-gap']",
+    )!;
     const inner = container.querySelector<HTMLElement>("[data-slot='sidebar-inner']")!;
 
     expect(root).not.toHaveAttribute("data-hover-revealed");
+    expect(sidebarGap).toHaveAttribute("data-layout-collapsible", "offcanvas");
     expect(sidebarContainer).toHaveClass("inset-y-0", "h-svh", "z-10");
-    expect(inner.className).toContain("[[data-sidebar-glass=true]_&]:bg-transparent");
     expect(inner).not.toHaveClass("bg-surface-raised");
     fireEvent.pointerEnter(root);
 
@@ -226,6 +241,7 @@ describe("sidebar auto-collapse between lg and xl", () => {
     expect(root).toHaveAttribute("data-hover-revealed", "true");
     expect(sidebarContainer).toHaveClass("inset-y-0", "h-svh", "z-20");
     expect(sidebarContainer).not.toHaveClass("z-10");
+    expect(sidebarGap).toHaveAttribute("data-layout-collapsible", "offcanvas");
     expect(inner).toHaveClass(
       "bg-surface-raised",
       "ring-1",
@@ -233,19 +249,6 @@ describe("sidebar auto-collapse between lg and xl", () => {
       "shadow-[var(--floating-shadow)]",
     );
     expect(inner.className).not.toContain("bg-transparent");
-  });
-
-  it("overrides the native glass container and inner transparency for hover reveal", () => {
-    const css = readFileSync(
-      join(process.cwd(), "../ui/styles/base.css"),
-      "utf8",
-    );
-
-    expect(css).toContain(
-      '[data-slot="sidebar"][data-hover-revealed="true"]\n  [data-slot="sidebar-container"]',
-    );
-    expect(css).toContain("background: var(--surface-raised);");
-    expect(css).toContain("backdrop-filter: none;");
   });
 
   it("does not touch the collapsed state below the band", () => {

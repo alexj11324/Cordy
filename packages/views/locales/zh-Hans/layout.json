@@ -43,9 +43,18 @@
     "loading_named_prefix": "正在加载"
   },
   "sidebar": {
+    "brand_name": "Orvilo",
     "unpin_tooltip": "取消固定",
     "workspaces_label": "工作区",
     "create_workspace": "创建工作区",
+    "account": "账户",
+    "profile": "个人资料",
+    "billing": "账单",
+    "preferences": "偏好设置",
+    "theme": "主题",
+    "light": "浅色",
+    "dark": "深色",
+    "system": "跟随系统",
     "pending_invitations_label": "待处理的邀请",
     "invitation_workspace_fallback": "工作区",
     "invitation_join": "加入",

@@ -1,9 +1,15 @@
 import { render, screen } from "@testing-library/react";
 import {
-  getCoreRowModel,
-  useLegacyTable,
-  type LegacyColumnDef,
-} from "@tanstack/react-table/legacy";
+  columnPinningFeature,
+  columnOrderingFeature,
+  columnResizingFeature,
+  columnSizingFeature,
+  columnVisibilityFeature,
+  rowSelectionFeature,
+  tableFeatures,
+  useTable,
+  type ColumnDef,
+} from "@tanstack/react-table";
 import { describe, expect, it, vi } from "vitest";
 import { DataTable } from "@orvilo/ui/components/ui/data-table";
 
@@ -31,16 +37,25 @@ type Row = {
   status: string;
 };
 
-const columns: LegacyColumnDef<Row>[] = [
+const testFeatures = tableFeatures({
+  columnVisibilityFeature,
+  columnOrderingFeature,
+  columnSizingFeature,
+  columnResizingFeature,
+  columnPinningFeature,
+  rowSelectionFeature,
+});
+
+const columns: ColumnDef<typeof testFeatures, Row>[] = [
   { accessorKey: "title", header: "Issue" },
   { accessorKey: "status", header: "Status" },
 ];
 
 function PinnedTable() {
-  const table = useLegacyTable({
+  const table = useTable({
     data: [{ title: "Pinned title", status: "In progress" }],
     columns,
-    getCoreRowModel: getCoreRowModel(),
+    features: testFeatures,
     state: { columnPinning: { start: ["title"], end: [] } },
   });
 
@@ -48,13 +63,13 @@ function PinnedTable() {
 }
 
 function VirtualizedTable() {
-  const table = useLegacyTable({
+  const table = useTable({
     data: [
       { title: "First", status: "todo" },
       { title: "Second", status: "done" },
     ],
     columns,
-    getCoreRowModel: getCoreRowModel(),
+    features: testFeatures,
   });
 
   return (

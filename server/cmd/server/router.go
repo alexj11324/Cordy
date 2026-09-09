@@ -499,6 +499,7 @@ func newRouter(app *application) chi.Router {
 						r.Delete("/", h.DeleteMember)
 					})
 					r.Delete("/invitations/{invitationId}", h.RevokeInvitation)
+					r.Post("/invitations/{invitationId}/resend", h.ResendInvitation)
 					// Curating the shared MCP library is an admin action.
 					// Creating an entry binds it to no agent; an agent owner
 					// adds it to their own agent through the agent routes.

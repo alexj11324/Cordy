@@ -1,1 +1,1 @@
-export { TeamsPage, TeamDetailPage } from "./components";
+export { TeamsPage, AgentTeamsPage, TeamDetailPage } from "./components";

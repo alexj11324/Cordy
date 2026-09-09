@@ -28,6 +28,7 @@ import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { CustomStatusChip, useIsCustomStatus } from "./custom-status-chip";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 import { cn } from "@orvilo/ui/lib/utils";
+import { shouldStopBoardCardDragKey } from "./board-card-keyboard";
 
 function formatDate(date: string, locale: string): string {
   return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
@@ -382,6 +383,9 @@ export const DraggableBoardCard = memo(function DraggableBoardCard({
           href={p.issueDetail(issue.id)}
           newTabTitle={issue.identifier}
           className={`group block transition-colors ${isDragging ? "pointer-events-none" : ""}`}
+          onKeyDown={(event) => {
+            if (shouldStopBoardCardDragKey(event.key)) event.stopPropagation();
+          }}
         >
           <BoardCardContent
             issue={issue}

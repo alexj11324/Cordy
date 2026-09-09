@@ -28,7 +28,11 @@ import {
   ChooseCreateMethodPage,
   ManualCreateAgentPage,
 } from "@orvilo/views/agents";
-import { TeamsPage, TeamDetailPage as TeamDetailPageView } from "@orvilo/views/teams/components";
+import {
+  AgentTeamsPage,
+  TeamsPage,
+  TeamDetailPage as TeamDetailPageView,
+} from "@orvilo/views/teams/components";
 import { InboxPage } from "@orvilo/views/inbox";
 import { ChatPage } from "@orvilo/views/chat";
 import { ChannelsPage } from "@orvilo/views/channels";
@@ -234,6 +238,11 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Member" },
           },
           { path: "teams", element: <TeamsPage />, handle: { title: "Teams" } },
+          {
+            path: "teams/agent-teams",
+            element: <AgentTeamsPage />,
+            handle: { title: "Agent Teams" },
+          },
           {
             path: "teams/:id",
             element: <TeamDetailPageView />,

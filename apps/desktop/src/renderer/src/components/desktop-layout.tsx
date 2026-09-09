@@ -33,8 +33,8 @@ import {
   DesktopNavigationProvider,
   routeContentLinkPath,
 } from "@/platform/navigation";
-import { TabBar } from "./tab-bar";
 import { TabContent } from "./tab-content";
+import { TabBar } from "./tab-bar";
 import { WindowOverlay } from "./window-overlay";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
@@ -64,10 +64,6 @@ function WindowToolbar() {
         className="flex items-center gap-1 pl-[70px]"
         style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
       >
-        <SidebarTrigger
-          className="size-7 text-faint-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-          style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-        />
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -91,6 +87,12 @@ function WindowToolbar() {
           >
             <ChevronRight className="size-4" />
           </button>
+          <SidebarTrigger
+            aria-label="Toggle sidebar"
+            title="Toggle sidebar"
+            className={cn(navButtonClassName, "ml-1")}
+            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
+          />
         </div>
       </div>
     </div>
@@ -116,10 +118,10 @@ function useNativeNavigationGestures() {
 }
 
 
-// The main area's top bar doubles as a window drag region. Track `open`, which
-// owns the sidebar's in-flow gap, rather than `state`, which also becomes
-// expanded during a temporary hover overlay. A hover-revealed sidebar remains
-// out of flow, so the tab strip must keep clearing the fixed window toolbar and
+// The main area's top bar is the window drag region. Track `open`, which owns
+// the sidebar's in-flow gap, rather than `state`, which also becomes expanded
+// during a temporary hover overlay. A hover-revealed sidebar remains out of
+// flow, so the drag region must keep clearing the fixed window toolbar and
 // native traffic lights.
 function MainTopBar() {
   const { open, isCompact } = useSidebar();
@@ -259,10 +261,6 @@ export function DesktopShell() {
     currentSlug && workspaces.some((w) => w.slug === currentSlug)
       ? currentSlug
       : null;
-  const usesNativeVibrancy =
-    window.desktopAPI.host === "electron" &&
-    window.desktopAPI.appInfo?.os === "macos";
-
   return (
     <DesktopNavigationProvider>
       {/* WorkspaceSlugProvider accepts null — components that need slug
@@ -282,33 +280,45 @@ export function DesktopShell() {
           className={cn(
             "flex h-screen",
             settingsOpen && "invisible",
-            usesNativeVibrancy ? "bg-transparent" : "bg-app-shell",
+            "bg-app-shell",
           )}
         >
-          {/* Non-macOS keeps the opaque app-shell wrapper. On macOS, the shell
-              is transparent so Electron's native sidebar material can show
-              through; descendants that need an opaque fill still read the
-              app-shell token from --sidebar-wrapper-fill. */}
-          {/* hasExternalTrigger: WindowToolbar below parks a SidebarTrigger
-              beside the traffic lights, where it is always reachable. Page
-              headers inside the canvas must not add their own fallback one on
-              top of it — desktop windows sit below `xl`, exactly where that
-              fallback renders, so every page showed a second identical icon
-              50px under this one (MUL-6218). */}
+          {/* WindowToolbar owns the one persistent sidebar trigger beside the
+              traffic lights. Keep the provider flag so page headers do not
+              add a second fallback trigger inside the canvas. */}
           <SidebarProvider
             hasExternalTrigger
             hoverReveal
             compactBehavior="collapse"
-            glass
-            data-native-vibrancy={usesNativeVibrancy ? "true" : undefined}
+            autoCollapse={false}
             className={cn(
-              "flex-1 [--sidebar-wrapper-fill:var(--app-shell)]",
-              usesNativeVibrancy ? "bg-transparent" : "bg-app-shell",
+              "flex-1 [--sidebar-width:260px] [--sidebar-border:transparent]",
+              "[&_[data-slot=sidebar-inner]]:border-border/80 [&_[data-slot=sidebar-inner]]:border",
+              "[&_[data-slot=sidebar-inner]]:shadow-xs [&_[data-slot=sidebar-inner]]:shadow-black/5",
+              "[&_[data-slot=sidebar-menu-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-button][data-active]]:border",
+              "[&_[data-slot=sidebar-menu-button][data-active]]:shadow-xs! [&_[data-slot=sidebar-menu-button][data-active]]:shadow-black/5!",
+              "[&_[data-slot=sidebar-menu-button][data-active]]:bg-background! [&_[data-slot=sidebar-menu-button][data-active]]:hover:bg-background! **:data-[slot=sidebar-menu-button]:hover:bg-transparent!",
+              "[&_[data-slot=sidebar-menu-button][data-active]]:text-foreground [&_[data-slot=sidebar-menu-button][data-active]>svg]:text-primary [&_[data-slot=sidebar-menu-button][data-active]>svg]:opacity-100",
+              "**:data-[slot=sidebar-menu-button]:text-accent-foreground/80 **:data-[slot=sidebar-menu-button]:hover:text-foreground",
+              "[&_[data-collapsible=icon]_[data-slot=sidebar-menu-button][data-active]>svg]:-ml-px",
+              "[&_[data-slot=sidebar-menu-button]:hover>svg]:opacity-100 [&_[data-slot=sidebar-menu-button]>svg]:opacity-60",
+              "[&_[data-slot=sidebar-menu-sub-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-sub-button][data-active]]:border",
+              "[&_[data-slot=sidebar-menu-sub-button][data-active]]:shadow-xs! [&_[data-slot=sidebar-menu-sub-button][data-active]]:shadow-black/5!",
+              "[&_[data-slot=sidebar-menu-sub-button][data-active]]:bg-background! [&_[data-slot=sidebar-menu-sub-button][data-active]]:hover:bg-background! **:data-[slot=sidebar-menu-sub-button]:hover:bg-transparent!",
+              "[&_[data-slot=sidebar-menu-sub-button][data-active]]:text-foreground [&_[data-slot=sidebar-menu-sub-button][data-active]>svg]:text-primary [&_[data-slot=sidebar-menu-sub-button][data-active]>svg]:opacity-100",
+              "**:data-[slot=sidebar-menu-sub-button]:text-accent-foreground/80 **:data-[slot=sidebar-menu-sub-button]:hover:text-foreground",
+              "[&_[data-slot=sidebar-menu-sub-button]:hover>svg]:opacity-100 [&_[data-slot=sidebar-menu-sub-button]>svg]:opacity-60",
+              "bg-app-shell",
             )}
           >
             {slug && <GlobalShortcuts />}
             {slug && <WindowToolbar />}
-            {slug && <AppSidebar topSlot={<SidebarTopSpacer />} searchSlot={<SearchTrigger />} />}
+            {slug && (
+              <AppSidebar
+                topSlot={<SidebarTopSpacer />}
+                searchSlot={<SearchTrigger />}
+              />
+            )}
             {/* Right side: header + content container */}
             <div className="flex flex-1 min-w-0 flex-col">
               <MainTopBar />

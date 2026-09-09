@@ -52,7 +52,6 @@ import {
   snapshotWindowState,
   windowStateFilePath,
 } from "./window-state";
-import { resolveMainWindowAppearance } from "./window-appearance";
 import {
   isDesktopDeepLink,
   PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
@@ -416,7 +415,6 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 17 },
-    ...resolveMainWindowAppearance(process.platform),
     show: false,
     autoHideMenuBar: true,
     // Windows/Linux pick up the window/taskbar icon from this option.
