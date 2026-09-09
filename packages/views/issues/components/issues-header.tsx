@@ -123,7 +123,6 @@ import { useStatusOptions } from "../utils/status-options";
 import { NO_PROPERTY_VALUE } from "../utils/filter";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
-import { WorkspaceAgentWorkingChip } from "./workspace-agent-working-chip";
 import { TableColumnPicker } from "./table-view";
 import { getIssueExecutor } from "../utils/issue-executor";
 
@@ -1147,7 +1146,6 @@ export function ViewRefreshIndicator({ active }: { active: boolean }) {
 
 export function IssuesHeader({
   scopedIssues,
-  workingAgents,
   allowGantt = false,
   allowDependencyGraph = false,
   dateFilter = null,
@@ -1244,14 +1242,14 @@ export function IssuesHeader({
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- identity keyed on the primitive projections
   }, [dialogMyVariant, dialogProjectId, dialogActorKind, !!saveViewScope]);
-  // Bind the workspace agents-working chip to the active view store so
-  // shared IssuesHeader consumers (/issues and project detail) toggle the
-  // same filter state as the rest of the display controls. /my-issues keeps
-  // its own sibling header and passes chip state explicitly.
+  // Retire the persisted filter together with its removed toolbar entry.
   const agentRunningFilter = useViewStore((s) => s.agentRunningFilter);
   const toggleAgentRunningFilter = useViewStore(
     (s) => s.toggleAgentRunningFilter,
   );
+  useEffect(() => {
+    if (agentRunningFilter) toggleAgentRunningFilter();
+  }, [agentRunningFilter, toggleAgentRunningFilter]);
   const SCOPE_LABEL_KEY: Record<IssuesScope, "all_label" | "members_label" | "agents_label"> = {
     all: "all_label",
     members: "members_label",
@@ -1329,16 +1327,6 @@ export function IssuesHeader({
         </DropdownMenu>
 
         <div className="flex shrink-0 items-center gap-1">
-          {agentRunningFilter && (
-            <span className="mr-1 hidden text-caption text-muted-foreground md:inline">
-              {t(($) => $.agent_activity.filter_active_label)}
-            </span>
-          )}
-          <WorkspaceAgentWorkingChip
-            value={agentRunningFilter}
-            onToggle={toggleAgentRunningFilter}
-            agents={workingAgents}
-          />
           <IssueDisplayControls
             scopedIssues={scopedIssues}
             allowGantt={allowGantt}
