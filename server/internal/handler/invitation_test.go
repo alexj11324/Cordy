@@ -19,6 +19,7 @@ import (
 	obsmetrics "github.com/orvilo-ai/orvilo/server/internal/metrics"
 	"github.com/orvilo-ai/orvilo/server/internal/middleware"
 	"github.com/orvilo-ai/orvilo/server/internal/seatcapacity"
+	"github.com/orvilo-ai/orvilo/server/internal/service"
 )
 
 const invitationTestEmail = "invitation-test@orvilo.ai"
@@ -201,6 +202,60 @@ func TestCreateInvitation_BlocksWhilePending(t *testing.T) {
 		if calls != 1 {
 			t.Errorf("%s limiter calls = %d, want 1; a pending retry must not consume budget", name, calls)
 		}
+	}
+}
+
+func TestResendInvitation_SendsExistingPendingInvitation(t *testing.T) {
+	if testHandler == nil || testPool == nil {
+		t.Skip("database not available")
+	}
+	clearInvitationsForTestWorkspace(t)
+
+	createReq := withURLParam(
+		newRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/members", CreateMemberRequest{
+			Email: "resend-invitation@orvilo.ai",
+			Role:  "member",
+		}),
+		"id",
+		testWorkspaceID,
+	)
+	createResponse := httptest.NewRecorder()
+	testHandler.CreateInvitation(createResponse, createReq)
+	if createResponse.Code != http.StatusCreated {
+		t.Fatalf("create invitation: expected 201, got %d: %s", createResponse.Code, createResponse.Body.String())
+	}
+
+	var invitation InvitationResponse
+	if err := json.NewDecoder(createResponse.Body).Decode(&invitation); err != nil {
+		t.Fatalf("decode invitation: %v", err)
+	}
+
+	previousEmailService := testHandler.EmailService
+	testHandler.EmailService = &service.EmailService{}
+	t.Cleanup(func() { testHandler.EmailService = previousEmailService })
+
+	resendReq := withURLParam(
+		newRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/invitations/"+invitation.ID+"/resend", nil),
+		"id",
+		testWorkspaceID,
+	)
+	resendReq = withURLParam(resendReq, "invitationId", invitation.ID)
+	resendResponse := httptest.NewRecorder()
+	testHandler.ResendInvitation(resendResponse, resendReq)
+	if resendResponse.Code != http.StatusNoContent {
+		t.Fatalf("resend invitation: expected 204, got %d: %s", resendResponse.Code, resendResponse.Body.String())
+	}
+
+	var status string
+	if err := testPool.QueryRow(
+		context.Background(),
+		`SELECT status FROM workspace_invitation WHERE id = $1`,
+		invitation.ID,
+	).Scan(&status); err != nil {
+		t.Fatalf("read invitation status: %v", err)
+	}
+	if status != "pending" {
+		t.Fatalf("resend changed invitation status to %q", status)
 	}
 }
 

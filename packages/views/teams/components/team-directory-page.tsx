@@ -1,23 +1,22 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import {
-  Check,
-  ChevronLeft,
-  ChevronRight,
-  Clock3,
-  Mail,
-  MailPlus,
-  MoreHorizontal,
-  Plus,
-  Search,
-  Settings2,
-  Shield,
-  Trash2,
-  X,
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useTable,
+  type ColumnDef,
+  type ColumnVisibilityState,
+  type SortingState,
+} from "@tanstack/react-table";
 import { toast } from "sonner";
+import {
+  CheckIcon,
+  MailPlusIcon,
+  PlusIcon,
+  SearchIcon,
+  Settings2Icon,
+  XIcon,
+} from "lucide-react";
 import { api, errorCode } from "@orvilo/core/api";
 import { useAuthStore } from "@orvilo/core/auth";
 import { useCurrentWorkspace } from "@orvilo/core/paths";
@@ -26,13 +25,31 @@ import {
   memberListOptions,
   workspaceKeys,
 } from "@orvilo/core/workspace/queries";
-import type { Invitation, MemberRole, MemberWithUser } from "@orvilo/core/types";
-import { Avatar, AvatarFallback, AvatarImage } from "@orvilo/ui/components/ui/avatar";
-import { Badge } from "@orvilo/ui/components/ui/badge";
+import type { MemberRole } from "@orvilo/core/types";
+import { Badge } from "@orvilo/ui/components/reui/badge";
+import {
+  DataGrid,
+  dataGridFeatures,
+  type DataGridFeatures,
+} from "@orvilo/ui/components/reui/data-grid/data-grid";
+import { DataGridPagination } from "@orvilo/ui/components/reui/data-grid/data-grid-pagination";
+import { DataGridScrollArea } from "@orvilo/ui/components/reui/data-grid/data-grid-scroll-area";
+import { DataGridTable } from "@orvilo/ui/components/reui/data-grid/data-grid-table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@orvilo/ui/components/ui/alert-dialog";
 import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Card,
   CardAction,
+  CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
@@ -45,83 +62,67 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@orvilo/ui/components/ui/dialog";
+import { Field, FieldGroup, FieldLabel } from "@orvilo/ui/components/ui/field";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from "@orvilo/ui/components/ui/dropdown-menu";
-import { Input } from "@orvilo/ui/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@orvilo/ui/components/ui/popover";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@orvilo/ui/components/ui/select";
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@orvilo/ui/components/ui/input-group";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@orvilo/ui/components/ui/popover";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@orvilo/ui/components/ui/select";
 import { Separator } from "@orvilo/ui/components/ui/separator";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@orvilo/ui/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@orvilo/ui/components/ui/tabs";
+import {
+  createInvitationGridColumns,
+  createMemberGridColumns,
+  INVITATION_TOGGLE_COLUMNS,
+  MEMBER_TOGGLE_COLUMNS,
+  type InvitationRowAction,
+  type MemberRowAction,
+} from "./team-directory-columns";
+import {
+  toDirectoryInvitation,
+  toDirectoryMember,
+  type DirectoryInvitation,
+  type DirectoryMember,
+} from "./team-directory-data";
 import { useLocale, useT } from "../../i18n";
 
 type DirectoryTab = "members" | "invitations";
-type Density = "comfortable" | "compact";
-type ColumnKey = "role" | "status" | "joined" | "invitedBy" | "sent";
+type TableDensity = "comfortable" | "compact";
+type TeamsTranslator = ReturnType<typeof useT<"teams">>["t"];
 
 const PAGE_SIZES = [5, 10, 20] as const;
 
-function initialsFor(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .map((part) => part.charAt(0))
-    .join("")
-    .toUpperCase()
-    .slice(0, 2) || "U";
-}
-
-function formatDate(value: string, locale: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? "—"
-    : date.toLocaleDateString(locale, { year: "numeric", month: "short", day: "numeric" });
-}
-
-function MemberAvatar({ member }: { member: MemberWithUser }) {
-  return (
-    <Avatar className="size-8 shrink-0">
-      {member.avatar_url ? <AvatarImage src={member.avatar_url} alt={member.name} /> : null}
-      <AvatarFallback>{initialsFor(member.name)}</AvatarFallback>
-    </Avatar>
-  );
-}
-
-function InvitationAvatar({ invitation }: { invitation: Invitation }) {
-  return (
-    <span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-dashed border-primary/35 bg-primary/10 text-primary">
-      <Mail className="size-4" aria-hidden="true" />
-      <span className="sr-only">{invitation.invitee_email}</span>
-    </span>
-  );
-}
-
-function StatusDot({ label, tone }: { label: string; tone: "active" | "pending" }) {
-  return (
-    <span className="inline-flex items-center gap-2 truncate text-sm">
-      <span
-        aria-hidden="true"
-        className={tone === "active" ? "size-1.5 shrink-0 rounded-full bg-emerald-500" : "size-1.5 shrink-0 rounded-full bg-sky-500"}
-      />
-      {label}
-    </span>
-  );
-}
-
-function roleLabel(role: MemberRole, t: ReturnType<typeof useT<"teams">>["t"]): string {
+function roleLabel(role: MemberRole, t: TeamsTranslator): string {
   if (role === "owner") return t(($) => $.directory.owner_role);
   if (role === "admin") return t(($) => $.directory.admin_role);
   return t(($) => $.directory.member_role);
+}
+
+function TabCount({ active, count }: { active: boolean; count: number }) {
+  return (
+    <Badge
+      variant={active ? "primary-light" : "outline"}
+      radius="full"
+      className="tabular-nums"
+    >
+      {count}
+    </Badge>
+  );
 }
 
 function DirectorySkeleton() {
@@ -133,7 +134,10 @@ function DirectorySkeleton() {
       </CardHeader>
       <div className="space-y-3 p-5 md:p-6">
         {Array.from({ length: 5 }, (_, index) => (
-          <div key={index} className="flex items-center gap-4 border-b py-3 last:border-0">
+          <div
+            key={index}
+            className="flex items-center gap-4 border-b py-3 last:border-0"
+          >
             <Skeleton className="size-8 rounded-full" />
             <Skeleton className="h-4 w-36" />
             <Skeleton className="ml-auto h-4 w-40" />
@@ -174,52 +178,78 @@ function InviteDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{t(($) => $.directory.invite_title)}</DialogTitle>
-          <DialogDescription>{t(($) => $.directory.invite_description)}</DialogDescription>
+          <DialogDescription>
+            {t(($) => $.directory.invite_description)}
+          </DialogDescription>
         </DialogHeader>
         <form
           onSubmit={(event) => {
             event.preventDefault();
             if (valid && canManage && !isPending) onSubmit(email.trim(), role);
           }}
-          className="space-y-4"
         >
-          <label className="block space-y-1.5 text-sm font-medium" htmlFor="team-invite-email">
-            {t(($) => $.directory.email_label)}
-            <Input
-              id="team-invite-email"
-              type="email"
-              autoFocus
-              value={email}
-              placeholder={t(($) => $.directory.email_placeholder)}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </label>
-          <label className="block space-y-1.5 text-sm font-medium" htmlFor="team-invite-role">
-            {t(($) => $.directory.role_label)}
-            <Select
-              items={[
-                { value: "member", label: roleLabel("member", t) },
-                { value: "admin", label: roleLabel("admin", t) },
-              ]}
-              value={role}
-              onValueChange={(value) => setRole(value as MemberRole)}
+          <FieldGroup className="gap-4">
+            <Field>
+              <FieldLabel htmlFor="team-directory-invite-email">
+                {t(($) => $.directory.email_label)}
+              </FieldLabel>
+              <InputGroup>
+                <InputGroupInput
+                  id="team-directory-invite-email"
+                  type="email"
+                  autoFocus
+                  value={email}
+                  placeholder={t(($) => $.directory.email_placeholder)}
+                  autoComplete="off"
+                  name="email"
+                  spellCheck={false}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </InputGroup>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="team-directory-invite-role">
+                {t(($) => $.directory.role_label)}
+              </FieldLabel>
+              <Select
+                items={[
+                  { value: "member", label: roleLabel("member", t) },
+                  { value: "admin", label: roleLabel("admin", t) },
+                ]}
+                value={role}
+                onValueChange={(value) => value && setRole(value as MemberRole)}
+              >
+                <SelectTrigger
+                  id="team-directory-invite-role"
+                  className="w-full"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {(["member", "admin"] as const).map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {roleLabel(option, t)}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          </FieldGroup>
+          <DialogFooter className="mt-5">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
             >
-              <SelectTrigger id="team-invite-role" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="member">{roleLabel("member", t)}</SelectItem>
-                <SelectItem value="admin">{roleLabel("admin", t)}</SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               {t(($) => $.directory.cancel)}
             </Button>
-            <Button type="submit" disabled={!valid || isPending || !canManage}>
-              <MailPlus className="size-4" aria-hidden="true" />
-              {isPending ? t(($) => $.directory.inviting) : t(($) => $.directory.send_invite)}
+            <Button type="submit" disabled={!valid || !canManage || isPending}>
+              <MailPlusIcon aria-hidden="true" />
+              {isPending
+                ? t(($) => $.directory.inviting)
+                : t(($) => $.directory.send_invite)}
             </Button>
           </DialogFooter>
         </form>
@@ -228,157 +258,182 @@ function InviteDialog({
   );
 }
 
-function ViewSettings({
-  tab,
+function ViewSettingsMenu({
   density,
   onDensityChange,
-  visible,
+  toggleColumns,
+  columnVisibility,
   onToggleColumn,
+  labels,
 }: {
-  tab: DirectoryTab;
-  density: Density;
-  onDensityChange: (density: Density) => void;
-  visible: Record<ColumnKey, boolean>;
-  onToggleColumn: (key: ColumnKey) => void;
+  density: TableDensity;
+  onDensityChange: (value: TableDensity) => void;
+  toggleColumns: readonly { id: string; label: string }[];
+  columnVisibility: ColumnVisibilityState;
+  onToggleColumn: (id: string) => void;
+  labels: {
+    table: string;
+    density: string;
+    columns: string;
+    comfortable: string;
+    compact: string;
+  };
 }) {
-  const { t } = useT("teams");
-  const columns: { key: ColumnKey; label: string }[] = tab === "members"
-    ? [
-        { key: "role", label: t(($) => $.directory.role_column) },
-        { key: "status", label: t(($) => $.directory.status_column) },
-        { key: "joined", label: t(($) => $.directory.joined_column) },
-      ]
-    : [
-        { key: "role", label: t(($) => $.directory.role_column) },
-        { key: "invitedBy", label: t(($) => $.directory.invited_by_column) },
-        { key: "sent", label: t(($) => $.directory.sent_column) },
-      ];
+  const densityOptions = [
+    { value: "comfortable", label: labels.comfortable },
+    { value: "compact", label: labels.compact },
+  ];
 
   return (
     <Popover>
       <PopoverTrigger
         render={
-          <Button type="button" variant="outline" size="sm" className="gap-1.5 text-muted-foreground">
-            <Settings2 className="size-3.5" aria-hidden="true" />
-            <span className="hidden sm:inline">{t(($) => $.directory.view_settings)}</span>
+          <Button type="button" variant="outline">
+            <Settings2Icon aria-hidden="true" />
+            {labels.table}
           </Button>
         }
       />
-      <PopoverContent align="end" className="w-72 p-0">
-        <div className="space-y-3 px-3.5 py-3">
-          <div className="text-xs font-medium text-muted-foreground">{t(($) => $.directory.view_settings)}</div>
-          <div className="flex items-center justify-between gap-3">
-            <span className="text-sm">{t(($) => $.directory.density)}</span>
-            <div className="flex rounded-md border p-0.5">
-              {(["comfortable", "compact"] as const).map((option) => (
-                <Button
-                  key={option}
-                  type="button"
-                  size="xs"
-                  variant={density === option ? "secondary" : "ghost"}
-                  onClick={() => onDensityChange(option)}
-                >
-                  {option === "comfortable" ? "Comfortable" : "Compact"}
-                </Button>
-              ))}
-            </div>
-          </div>
-          <Separator />
+      <PopoverContent align="end" className="w-[320px] p-0">
+        <FieldGroup className="gap-3 px-3.5 py-3">
           <div className="space-y-2">
-            <div className="text-xs font-medium text-muted-foreground">{t(($) => $.directory.columns)}</div>
+            <div className="text-xs font-medium text-muted-foreground">
+              {labels.table}
+            </div>
+            <Field
+              orientation="horizontal"
+              className="min-h-9 items-center justify-between gap-3"
+            >
+              <FieldLabel className="text-sm font-normal">
+                {labels.density}
+              </FieldLabel>
+              <Select
+                value={density}
+                onValueChange={(value) =>
+                  onDensityChange(value as TableDensity)
+                }
+                items={densityOptions}
+              >
+                <SelectTrigger size="sm" className="w-[140px] shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  <SelectGroup>
+                    {densityOptions.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+          </div>
+          <Separator className="-mx-3.5" />
+          <div className="space-y-2.5">
+            <div className="text-xs font-medium text-muted-foreground">
+              {labels.columns}
+            </div>
             <div className="flex flex-wrap gap-1.5">
-              {columns.map(({ key, label }) => (
-                <Button
-                  key={key}
-                  type="button"
-                  size="xs"
-                  variant={visible[key] ? "secondary" : "outline"}
-                  className="rounded-full"
-                  onClick={() => onToggleColumn(key)}
-                >
-                  {visible[key] ? <Check className="size-3" aria-hidden="true" /> : null}
-                  {label}
-                </Button>
-              ))}
+              {toggleColumns.map((column) => {
+                const active = columnVisibility[column.id] !== false;
+                return (
+                  <Button
+                    key={column.id}
+                    type="button"
+                    size="xs"
+                    variant={active ? "secondary" : "outline"}
+                    className="rounded-full"
+                    onClick={() => onToggleColumn(column.id)}
+                  >
+                    {active ? (
+                      <CheckIcon className="size-3.5" aria-hidden="true" />
+                    ) : null}
+                    {column.label}
+                  </Button>
+                );
+              })}
             </div>
           </div>
-        </div>
+        </FieldGroup>
       </PopoverContent>
     </Popover>
   );
 }
 
-function MemberActions({
-  member,
-  canManage,
-  onRoleChange,
-  onRemove,
+function DirectoryGrid<TData extends object>({
+  columns,
+  data,
+  recordCount,
+  density,
+  columnVisibility,
+  onColumnVisibilityChange,
+  sorting,
+  onSortingChange,
+  emptyMessage,
+  pageLabel,
+  paginationLabels,
 }: {
-  member: MemberWithUser;
-  canManage: boolean;
-  onRoleChange: (role: MemberRole) => void;
-  onRemove: () => void;
+  columns: ColumnDef<DataGridFeatures, TData>[];
+  data: TData[];
+  recordCount: number;
+  density: TableDensity;
+  columnVisibility: ColumnVisibilityState;
+  onColumnVisibilityChange: (value: ColumnVisibilityState) => void;
+  sorting: SortingState;
+  onSortingChange: (value: SortingState) => void;
+  emptyMessage: string;
+  pageLabel: string;
+  paginationLabels: {
+    rowsPerPage: string;
+    previous: string;
+    next: string;
+  };
 }) {
-  const { t } = useT("teams");
-  if (!canManage) return null;
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button type="button" size="icon-sm" variant="ghost" aria-label={`${t(($) => $.directory.remove_member)} ${member.name}`} />}
-      >
-        <MoreHorizontal className="size-4" aria-hidden="true" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuLabel>{t(($) => $.directory.role_column)}</DropdownMenuLabel>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
-            <Shield className="size-3.5" aria-hidden="true" />
-            {roleLabel(member.role, t)}
-          </DropdownMenuSubTrigger>
-          <DropdownMenuSubContent>
-            {(["member", "admin"] as const).map((role) => (
-              <DropdownMenuItem key={role} onClick={() => onRoleChange(role)}>
-                {member.role === role ? <Check className="size-3.5" aria-hidden="true" /> : <span className="size-3.5" />}
-                {roleLabel(role, t)}
-              </DropdownMenuItem>
-            ))}
-          </DropdownMenuSubContent>
-        </DropdownMenuSub>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem variant="destructive" onClick={onRemove}>
-          <Trash2 className="size-3.5" aria-hidden="true" />
-          {t(($) => $.directory.remove_member)}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-}
+  const table = useTable({
+    features: dataGridFeatures,
+    data,
+    columns,
+    getRowId: (row, index) => (row as { id?: string }).id ?? String(index),
+    state: { columnVisibility, sorting },
+    onColumnVisibilityChange: (updater) =>
+      onColumnVisibilityChange(
+        typeof updater === "function" ? updater(columnVisibility) : updater,
+      ),
+    onSortingChange: (updater) =>
+      onSortingChange(
+        typeof updater === "function" ? updater(sorting) : updater,
+      ),
+    initialState: { pagination: { pageIndex: 0, pageSize: PAGE_SIZES[0] } },
+  });
 
-function InvitationActions({
-  invitation,
-  canManage,
-  onRevoke,
-}: {
-  invitation: Invitation;
-  canManage: boolean;
-  onRevoke: () => void;
-}) {
-  const { t } = useT("teams");
-  if (!canManage) return null;
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button type="button" size="icon-sm" variant="ghost" aria-label={`${t(($) => $.directory.revoke_invitation)} ${invitation.invitee_email}`} />}
-      >
-        <MoreHorizontal className="size-4" aria-hidden="true" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem variant="destructive" onClick={onRevoke}>
-          <X className="size-3.5" aria-hidden="true" />
-          {t(($) => $.directory.revoke_invitation)}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <DataGrid
+      table={table}
+      recordCount={recordCount}
+      emptyMessage={emptyMessage}
+      tableLayout={{ dense: density === "compact", width: "fixed" }}
+      tableClassNames={{ bodyRow: "group/member-row" }}
+    >
+      <DataGridScrollArea>
+        <DataGridTable />
+      </DataGridScrollArea>
+      <Separator />
+      <div className="px-4 py-3">
+        {recordCount > 0 ? (
+          <DataGridPagination
+            sizes={[...PAGE_SIZES]}
+            info={"{from} - {to} of {count} " + pageLabel}
+            rowsPerPageLabel={paginationLabels.rowsPerPage}
+            previousPageLabel={paginationLabels.previous}
+            nextPageLabel={paginationLabels.next}
+            className="py-0"
+          />
+        ) : (
+          <p className="text-sm text-muted-foreground">0 {pageLabel}</p>
+        )}
+      </div>
+    </DataGrid>
   );
 }
 
@@ -390,18 +445,24 @@ export function TeamDirectoryPage() {
   const currentUser = useAuthStore((state) => state.user);
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<DirectoryTab>("members");
-  const [search, setSearch] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [density, setDensity] = useState<TableDensity>("comfortable");
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [pageSize, setPageSize] = useState<(typeof PAGE_SIZES)[number]>(5);
-  const [page, setPage] = useState(0);
-  const [density, setDensity] = useState<Density>("comfortable");
-  const [visibleColumns, setVisibleColumns] = useState<Record<ColumnKey, boolean>>({
-    role: true,
-    status: true,
-    joined: true,
-    invitedBy: true,
-    sent: true,
-  });
+  const [memberVisibility, setMemberVisibility] =
+    useState<ColumnVisibilityState>({});
+  const [invitationVisibility, setInvitationVisibility] =
+    useState<ColumnVisibilityState>({});
+  const [memberSorting, setMemberSorting] = useState<SortingState>([
+    { id: "fullName", desc: false },
+  ]);
+  const [invitationSorting, setInvitationSorting] = useState<SortingState>([
+    { id: "sentAt", desc: true },
+  ]);
+  const [pendingMember, setPendingMember] = useState<DirectoryMember | null>(
+    null,
+  );
+  const [pendingInvitation, setPendingInvitation] =
+    useState<DirectoryInvitation | null>(null);
 
   const { data: members = [], isLoading: membersLoading } = useQuery({
     ...memberListOptions(wsId),
@@ -412,36 +473,74 @@ export function TeamDirectoryPage() {
     enabled: !!wsId,
   });
 
-  const currentMember = members.find((member) => member.user_id === currentUser?.id);
-  const canManage = currentMember?.role === "owner" || currentMember?.role === "admin";
-  const normalizedSearch = search.trim().toLowerCase();
-
+  const currentMember = members.find(
+    (member) => member.user_id === currentUser?.id,
+  );
+  const canManage =
+    currentMember?.role === "owner" || currentMember?.role === "admin";
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const memberRows = useMemo(
+    () => members.map((member) => toDirectoryMember(member, locale)),
+    [locale, members],
+  );
+  const invitationRows = useMemo(
+    () =>
+      invitations.map((invitation) =>
+        toDirectoryInvitation(invitation, locale),
+      ),
+    [invitations, locale],
+  );
   const filteredMembers = useMemo(
-    () => members.filter((member) => `${member.name} ${member.email} ${member.role}`.toLowerCase().includes(normalizedSearch)),
-    [members, normalizedSearch],
+    () =>
+      memberRows.filter((member) =>
+        [
+          member.fullName,
+          member.displayName,
+          member.email,
+          member.role,
+          member.joinedAt,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedQuery),
+      ),
+    [memberRows, normalizedQuery],
   );
   const filteredInvitations = useMemo(
-    () => invitations.filter((invitation) => `${invitation.invitee_email} ${invitation.inviter_name ?? ""} ${invitation.role}`.toLowerCase().includes(normalizedSearch)),
-    [invitations, normalizedSearch],
+    () =>
+      invitationRows.filter((invitation) =>
+        [
+          invitation.email,
+          invitation.handle,
+          invitation.role,
+          invitation.invitedBy,
+          invitation.sentAt,
+          invitation.status,
+        ]
+          .join(" ")
+          .toLowerCase()
+          .includes(normalizedQuery),
+      ),
+    [invitationRows, normalizedQuery],
   );
-  const rows = activeTab === "members" ? filteredMembers : filteredInvitations;
-  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
-  const safePage = Math.min(page, pageCount - 1);
-  const visibleRows = rows.slice(safePage * pageSize, (safePage + 1) * pageSize);
 
-  useEffect(() => {
-    setPage(0);
-  }, [activeTab, normalizedSearch, pageSize]);
-
-  const invalidateDirectory = async () => {
+  const invalidateDirectory = useCallback(async () => {
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: workspaceKeys.members(wsId) }),
-      queryClient.invalidateQueries({ queryKey: workspaceKeys.invitations(wsId) }),
+      queryClient.invalidateQueries({
+        queryKey: workspaceKeys.invitations(wsId),
+      }),
     ]);
-  };
+  }, [queryClient, wsId]);
 
   const inviteMutation = useMutation({
-    mutationFn: async ({ email, role }: { email: string; role: MemberRole }) => {
+    mutationFn: async ({
+      email,
+      role,
+    }: {
+      email: string;
+      role: MemberRole;
+    }) => {
       if (!workspace) throw new Error("Workspace is not ready");
       return api.createMember(workspace.id, { email, role });
     },
@@ -452,12 +551,24 @@ export function TeamDirectoryPage() {
     },
     onError: (error) => {
       const code = errorCode(error);
-      toast.error(code ? `${t(($) => $.directory.invite_failed)} (${code})` : error instanceof Error ? error.message : t(($) => $.directory.invite_failed));
+      toast.error(
+        code
+          ? t(($) => $.directory.invite_failed) + " (" + code + ")"
+          : error instanceof Error
+            ? error.message
+            : t(($) => $.directory.invite_failed),
+      );
     },
   });
 
   const roleMutation = useMutation({
-    mutationFn: async ({ memberId, role }: { memberId: string; role: MemberRole }) => {
+    mutationFn: async ({
+      memberId,
+      role,
+    }: {
+      memberId: string;
+      role: MemberRole;
+    }) => {
       if (!workspace) throw new Error("Workspace is not ready");
       return api.updateMember(workspace.id, memberId, { role });
     },
@@ -469,7 +580,7 @@ export function TeamDirectoryPage() {
   });
 
   const removeMutation = useMutation({
-    mutationFn: async (member: MemberWithUser) => {
+    mutationFn: async (member: DirectoryMember) => {
       if (!workspace) throw new Error("Workspace is not ready");
       return api.deleteMember(workspace.id, member.id);
     },
@@ -480,8 +591,17 @@ export function TeamDirectoryPage() {
     onError: () => toast.error(t(($) => $.directory.action_failed)),
   });
 
+  const resendMutation = useMutation({
+    mutationFn: async (invitation: DirectoryInvitation) => {
+      if (!workspace) throw new Error("Workspace is not ready");
+      return api.resendInvitation(workspace.id, invitation.id);
+    },
+    onSuccess: () => toast.success(t(($) => $.directory.resend_success)),
+    onError: () => toast.error(t(($) => $.directory.action_failed)),
+  });
+
   const revokeMutation = useMutation({
-    mutationFn: async (invitation: Invitation) => {
+    mutationFn: async (invitation: DirectoryInvitation) => {
       if (!workspace) throw new Error("Workspace is not ready");
       return api.revokeInvitation(workspace.id, invitation.id);
     },
@@ -492,194 +612,410 @@ export function TeamDirectoryPage() {
     onError: () => toast.error(t(($) => $.directory.action_failed)),
   });
 
-  if (!workspace) return null;
+  const memberLabels = useMemo(
+    () => ({
+      member: t(($) => $.directory.member_column),
+      email: t(($) => $.directory.email_column),
+      role: t(($) => $.directory.role_column),
+      status: t(($) => $.directory.status_column),
+      joined: t(($) => $.directory.joined_column),
+      active: t(($) => $.directory.active_status),
+      owner: t(($) => $.directory.owner_role),
+      admin: t(($) => $.directory.admin_role),
+      memberRole: t(($) => $.directory.member_role),
+      actions: t(($) => $.directory.actions),
+      remove: t(($) => $.directory.remove_member),
+      roleMenu: t(($) => $.directory.role_column),
+    }),
+    [t],
+  );
+  const invitationLabels = useMemo(
+    () => ({
+      invitee: t(($) => $.directory.email_column),
+      role: t(($) => $.directory.role_column),
+      admin: t(($) => $.directory.admin_role),
+      memberRole: t(($) => $.directory.member_role),
+      invitedBy: t(($) => $.directory.invited_by_column),
+      sent: t(($) => $.directory.sent_column),
+      status: t(($) => $.directory.status_column),
+      actions: t(($) => $.directory.actions),
+      resend: t(($) => $.directory.resend),
+      revoke: t(($) => $.directory.revoke_invitation),
+      statusValues: {
+        pending: t(($) => $.directory.pending_status),
+        accepted: t(($) => $.directory.accepted_status),
+        declined: t(($) => $.directory.declined_status),
+        expired: t(($) => $.directory.expired_status),
+      },
+    }),
+    [t],
+  );
 
-  const memberColumnVisible = (key: ColumnKey) => visibleColumns[key];
+  const handleMemberAction = useCallback(
+    (action: MemberRowAction, member: DirectoryMember) => {
+      if (action.type === "role") {
+        if (action.role !== member.role) {
+          roleMutation.mutate({ memberId: member.id, role: action.role });
+        }
+        return;
+      }
+      setPendingMember(member);
+    },
+    [roleMutation],
+  );
+  const handleInvitationAction = useCallback(
+    (action: InvitationRowAction, invitation: DirectoryInvitation) => {
+      if (action === "resend") {
+        resendMutation.mutate(invitation);
+        return;
+      }
+      setPendingInvitation(invitation);
+    },
+    [resendMutation],
+  );
+
+  const memberColumns = useMemo(
+    () =>
+      createMemberGridColumns({
+        canManage: !!canManage && !roleMutation.isPending,
+        currentUserId: currentUser?.id,
+        labels: memberLabels,
+        onAction: handleMemberAction,
+      }),
+    [
+      canManage,
+      currentUser?.id,
+      handleMemberAction,
+      memberLabels,
+      roleMutation.isPending,
+    ],
+  );
+  const invitationColumns = useMemo(
+    () =>
+      createInvitationGridColumns({
+        canManage:
+          !!canManage && !resendMutation.isPending && !revokeMutation.isPending,
+        labels: invitationLabels,
+        onAction: handleInvitationAction,
+      }),
+    [
+      canManage,
+      handleInvitationAction,
+      invitationLabels,
+      resendMutation.isPending,
+      revokeMutation.isPending,
+    ],
+  );
+
+  const memberToggleColumns = useMemo(
+    () =>
+      MEMBER_TOGGLE_COLUMNS.map(({ id }) => ({
+        id,
+        label:
+          id === "role"
+            ? memberLabels.role
+            : id === "status"
+              ? memberLabels.status
+              : memberLabels.joined,
+      })),
+    [memberLabels],
+  );
+  const invitationToggleColumns = useMemo(
+    () =>
+      INVITATION_TOGGLE_COLUMNS.map(({ id }) => ({
+        id,
+        label:
+          id === "role"
+            ? invitationLabels.role
+            : id === "invitedBy"
+              ? invitationLabels.invitedBy
+              : id === "sentAt"
+                ? invitationLabels.sent
+                : invitationLabels.status,
+      })),
+    [invitationLabels],
+  );
+  const activeVisibility =
+    activeTab === "members" ? memberVisibility : invitationVisibility;
+  const toggleColumns =
+    activeTab === "members" ? memberToggleColumns : invitationToggleColumns;
+  const pendingCount = invitations.filter(
+    (invitation) => invitation.status === "pending",
+  ).length;
+
+  const handleToggleColumn = useCallback(
+    (id: string) => {
+      const setter =
+        activeTab === "members" ? setMemberVisibility : setInvitationVisibility;
+      setter((current) => ({
+        ...current,
+        [id]: current[id] === false,
+      }));
+    },
+    [activeTab],
+  );
+
+  if (!workspace) return null;
   const loading = membersLoading || invitationsLoading;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:gap-5 md:p-6 lg:p-8">
       <div className="mx-auto flex w-full max-w-[1440px] items-center gap-2 text-sm text-muted-foreground">
         <span>{workspace.name}</span>
-        <ChevronRight className="size-4" aria-hidden="true" />
+        <span aria-hidden="true">›</span>
         <span className="text-foreground">{t(($) => $.directory.title)}</span>
       </div>
 
       {loading ? (
         <DirectorySkeleton />
       ) : (
-        <Card className="mx-auto w-full max-w-[1440px] py-0">
-          <CardHeader className="border-b px-5 py-5 md:px-6">
+        <Card className="mx-auto w-full max-w-[1440px] gap-0 pb-0">
+          <CardHeader className="items-center border-b px-5 py-5 md:px-6">
             <div>
-              <CardTitle className="text-xl">{t(($) => $.directory.title)}</CardTitle>
-              <CardDescription className="mt-1 flex flex-wrap items-center gap-2">
-                <span>{t(($) => $.directory.member_count, { count: members.length })}</span>
-                <span aria-hidden="true">•</span>
-                <span>{t(($) => $.directory.pending_invitation_count, { count: invitations.length })}</span>
+              <CardTitle className="text-balance">
+                {t(($) => $.directory.title)}
+              </CardTitle>
+              <CardDescription className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+                <span>
+                  {t(($) => $.directory.member_count, {
+                    count: members.length,
+                  })}
+                </span>
+                <span
+                  className="size-1 shrink-0 rounded-full bg-muted-foreground/40"
+                  aria-hidden="true"
+                />
+                <span>
+                  {t(($) => $.directory.pending_invitation_count, {
+                    count: pendingCount,
+                  })}
+                </span>
               </CardDescription>
             </div>
-            <CardAction className="flex gap-2">
-              <Button type="button" variant="outline" size="sm" disabled={!canManage} onClick={() => setInviteOpen(true)}>
-                <Plus className="size-3.5" aria-hidden="true" />
-                <span className="hidden sm:inline">{t(($) => $.directory.add_member)}</span>
+            <CardAction className="flex items-center gap-2 self-center">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!canManage}
+                onClick={() => setInviteOpen(true)}
+              >
+                <PlusIcon aria-hidden="true" />
+                {t(($) => $.directory.add_member)}
               </Button>
-              <Button type="button" size="sm" disabled={!canManage} onClick={() => setInviteOpen(true)}>
-                <MailPlus className="size-3.5" aria-hidden="true" />
-                <span>{t(($) => $.directory.invite_people)}</span>
+              <Button
+                type="button"
+                disabled={!canManage}
+                onClick={() => setInviteOpen(true)}
+              >
+                <MailPlusIcon aria-hidden="true" />
+                {t(($) => $.directory.invite_people)}
               </Button>
             </CardAction>
           </CardHeader>
 
-          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as DirectoryTab)}>
-            <div className="border-b px-5 md:px-6">
-              <TabsList variant="line" className="h-12 gap-5 rounded-none p-0">
-                <TabsTrigger value="members" className="h-full flex-none px-0 text-sm">
-                  {t(($) => $.directory.members_tab)}
-                  <Badge variant={activeTab === "members" ? "secondary" : "outline"}>{members.length}</Badge>
-                </TabsTrigger>
-                <TabsTrigger value="invitations" className="h-full flex-none px-0 text-sm">
-                  {t(($) => $.directory.invitations_tab)}
-                  <Badge variant={activeTab === "invitations" ? "secondary" : "outline"}>{invitations.length}</Badge>
-                </TabsTrigger>
-              </TabsList>
-            </div>
-
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3 md:px-6">
-              <div className="relative w-full max-w-sm">
-                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
-                <Input
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder={activeTab === "members" ? t(($) => $.directory.search_members) : t(($) => $.directory.search_invitations)}
-                  aria-label={activeTab === "members" ? t(($) => $.directory.search_members) : t(($) => $.directory.search_invitations)}
-                  className="h-9 pl-9 pr-8"
-                />
-                {search ? (
-                  <button type="button" aria-label={t(($) => $.directory.clear_search)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" onClick={() => setSearch("")}>
-                    <X className="size-3.5" aria-hidden="true" />
-                  </button>
-                ) : null}
-              </div>
-              <ViewSettings
-                tab={activeTab}
-                density={density}
-                onDensityChange={setDensity}
-                visible={visibleColumns}
-                onToggleColumn={(key) => setVisibleColumns((current) => ({ ...current, [key]: !current[key] }))}
-              />
-            </div>
-
-            <div className="overflow-x-auto">
-              <Table className="min-w-[820px]">
-                <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead className="w-[30%] px-5 md:px-6">
-                      {activeTab === "members" ? t(($) => $.directory.member_column) : t(($) => $.directory.email_column)}
-                    </TableHead>
-                    {activeTab === "members" ? <TableHead className="w-[24%]">{t(($) => $.directory.email_column)}</TableHead> : null}
-                    {memberColumnVisible("role") ? <TableHead>{t(($) => $.directory.role_column)}</TableHead> : null}
-                    {activeTab === "members" && memberColumnVisible("status") ? <TableHead>{t(($) => $.directory.status_column)}</TableHead> : null}
-                    {activeTab === "members" && memberColumnVisible("joined") ? <TableHead>{t(($) => $.directory.joined_column)}</TableHead> : null}
-                    {activeTab === "invitations" && memberColumnVisible("invitedBy") ? <TableHead>{t(($) => $.directory.invited_by_column)}</TableHead> : null}
-                    {activeTab === "invitations" && memberColumnVisible("sent") ? <TableHead>{t(($) => $.directory.sent_column)}</TableHead> : null}
-                    <TableHead className="w-12 px-3"><span className="sr-only">{t(($) => $.directory.actions)}</span></TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleRows.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={activeTab === "members" ? 7 : 5} className="h-36 text-center text-sm text-muted-foreground">
-                        {activeTab === "members" ? t(($) => $.directory.no_members) : t(($) => $.directory.no_invitations)}
-                      </TableCell>
-                    </TableRow>
-                  ) : activeTab === "members" ? (
-                    (visibleRows as MemberWithUser[]).map((member) => (
-                      <TableRow key={member.id} className="group/member-row">
-                        <TableCell className={`${density === "compact" ? "py-2" : "py-3"} px-5 md:px-6`}>
-                          <div className="flex min-w-0 items-center gap-2.5">
-                            <MemberAvatar member={member} />
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-medium">{member.name}</div>
-                              <div className="truncate text-sm text-muted-foreground">{member.user_id.slice(0, 8)}</div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-sm"><a className="hover:text-primary hover:underline" href={`mailto:${member.email}`}>{member.email}</a></TableCell>
-                        {memberColumnVisible("role") ? <TableCell><Badge variant="outline">{roleLabel(member.role, t)}</Badge></TableCell> : null}
-                        {memberColumnVisible("status") ? <TableCell><StatusDot label={t(($) => $.directory.active_status)} tone="active" /></TableCell> : null}
-                        {memberColumnVisible("joined") ? <TableCell className="text-sm tabular-nums text-muted-foreground">{formatDate(member.created_at, locale)}</TableCell> : null}
-                        <TableCell className="px-3 text-right">
-                          {member.user_id === currentUser?.id ? null : (
-                            <MemberActions
-                              member={member}
-                              canManage={canManage && member.role !== "owner"}
-                              onRoleChange={(role) => roleMutation.mutate({ memberId: member.id, role })}
-                              onRemove={() => removeMutation.mutate(member)}
-                            />
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  ) : (
-                    (visibleRows as Invitation[]).map((invitation) => (
-                      <TableRow key={invitation.id} className="group/invitation-row">
-                        <TableCell className={`${density === "compact" ? "py-2" : "py-3"} px-5 md:px-6`}>
-                          <div className="flex min-w-0 items-center gap-2.5">
-                            <InvitationAvatar invitation={invitation} />
-                            <div className="min-w-0">
-                              <div className="truncate text-sm font-medium">{invitation.invitee_email}</div>
-                              <div className="flex items-center gap-1 text-sm text-muted-foreground"><Clock3 className="size-3" aria-hidden="true" />{t(($) => $.directory.pending_status)}</div>
-                            </div>
-                          </div>
-                        </TableCell>
-                        {memberColumnVisible("role") ? <TableCell><Badge variant="outline">{roleLabel(invitation.role, t)}</Badge></TableCell> : null}
-                        {memberColumnVisible("invitedBy") ? <TableCell className="text-sm text-muted-foreground">{invitation.inviter_name ?? invitation.inviter_email ?? "—"}</TableCell> : null}
-                        {memberColumnVisible("sent") ? <TableCell className="text-sm tabular-nums text-muted-foreground">{formatDate(invitation.created_at, locale)}</TableCell> : null}
-                        <TableCell className="px-3 text-right">
-                          <InvitationActions invitation={invitation} canManage={canManage} onRevoke={() => revokeMutation.mutate(invitation)} />
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-
-            <Separator />
-            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm text-muted-foreground md:px-6">
-              <div className="flex items-center gap-2">
-                <span>{t(($) => $.directory.rows_per_page)}</span>
-                <Select
-                  items={PAGE_SIZES.map((size) => ({ value: String(size), label: String(size) }))}
-                  value={String(pageSize)}
-                  onValueChange={(value) => setPageSize(Number(value) as (typeof PAGE_SIZES)[number])}
+          <CardContent className="p-0">
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => setActiveTab(value as DirectoryTab)}
+            >
+              <div className="px-4 pt-3">
+                <TabsList
+                  variant="line"
+                  className="h-10 w-auto justify-start gap-5 p-0!"
                 >
-                  <SelectTrigger size="sm" className="w-16"><SelectValue /></SelectTrigger>
-                  <SelectContent>{PAGE_SIZES.map((size) => <SelectItem key={size} value={String(size)}>{size}</SelectItem>)}</SelectContent>
-                </Select>
+                  <TabsTrigger
+                    value="members"
+                    className="h-full! flex-none! gap-2 px-0 pb-3 text-sm after:z-10 group-data-horizontal/tabs:after:-bottom-px!"
+                  >
+                    <span>{t(($) => $.directory.members_tab)}</span>
+                    <TabCount
+                      active={activeTab === "members"}
+                      count={members.length}
+                    />
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="invitations"
+                    className="h-full! flex-none! gap-2 px-0 pb-3 text-sm after:z-10 group-data-horizontal/tabs:after:-bottom-px!"
+                  >
+                    <span>{t(($) => $.directory.invitations_tab)}</span>
+                    <TabCount
+                      active={activeTab === "invitations"}
+                      count={invitations.length}
+                    />
+                  </TabsTrigger>
+                </TabsList>
               </div>
-              <div className="flex items-center gap-3">
-                <span>
-                  {rows.length === 0 ? "0" : `${safePage * pageSize + 1}–${Math.min((safePage + 1) * pageSize, rows.length)} ${t(($) => activeTab === "members" ? $.directory.range_members : $.directory.range_invitations)} of ${rows.length}`}
-                </span>
-                <div className="flex items-center gap-1">
-                  <Button type="button" size="icon-sm" variant="ghost" aria-label={t(($) => $.directory.previous_page)} disabled={safePage === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}><ChevronLeft className="size-4" aria-hidden="true" /></Button>
-                  <span className="min-w-6 text-center tabular-nums">{safePage + 1}</span>
-                  <Button type="button" size="icon-sm" variant="ghost" aria-label={t(($) => $.directory.next_page)} disabled={safePage >= pageCount - 1} onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))}><ChevronRight className="size-4" aria-hidden="true" /></Button>
-                </div>
+              <Separator />
+              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                <InputGroup className="w-full min-w-52 sm:w-[280px]">
+                  <InputGroupAddon align="inline-start">
+                    <SearchIcon aria-hidden="true" />
+                  </InputGroupAddon>
+                  <InputGroupInput
+                    name="team-directory-search"
+                    autoComplete="off"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder={
+                      activeTab === "members"
+                        ? t(($) => $.directory.search_members)
+                        : t(($) => $.directory.search_invitations)
+                    }
+                    aria-label={
+                      activeTab === "members"
+                        ? t(($) => $.directory.search_members)
+                        : t(($) => $.directory.search_invitations)
+                    }
+                  />
+                  {searchQuery.length > 0 ? (
+                    <InputGroupAddon align="inline-end">
+                      <InputGroupButton
+                        size="icon-xs"
+                        aria-label={t(($) => $.directory.clear_search)}
+                        onClick={() => setSearchQuery("")}
+                      >
+                        <XIcon aria-hidden="true" />
+                      </InputGroupButton>
+                    </InputGroupAddon>
+                  ) : null}
+                </InputGroup>
+                <ViewSettingsMenu
+                  density={density}
+                  onDensityChange={setDensity}
+                  toggleColumns={toggleColumns}
+                  columnVisibility={activeVisibility}
+                  onToggleColumn={handleToggleColumn}
+                  labels={{
+                    table: t(($) => $.directory.view_settings),
+                    density: t(($) => $.directory.density),
+                    columns: t(($) => $.directory.columns),
+                    comfortable: t(($) => $.directory.density_comfortable),
+                    compact: t(($) => $.directory.density_compact),
+                  }}
+                />
               </div>
-            </div>
-          </Tabs>
+              <Separator />
+              {activeTab === "members" ? (
+                <DirectoryGrid
+                  columns={memberColumns}
+                  data={filteredMembers}
+                  recordCount={filteredMembers.length}
+                  density={density}
+                  columnVisibility={memberVisibility}
+                  onColumnVisibilityChange={setMemberVisibility}
+                  sorting={memberSorting}
+                  onSortingChange={setMemberSorting}
+                  emptyMessage={t(($) => $.directory.no_members)}
+                  pageLabel={t(($) => $.directory.range_members)}
+                  paginationLabels={{
+                    rowsPerPage: t(($) => $.directory.rows_per_page),
+                    previous: t(($) => $.directory.previous_page),
+                    next: t(($) => $.directory.next_page),
+                  }}
+                />
+              ) : (
+                <DirectoryGrid
+                  columns={invitationColumns}
+                  data={filteredInvitations}
+                  recordCount={filteredInvitations.length}
+                  density={density}
+                  columnVisibility={invitationVisibility}
+                  onColumnVisibilityChange={setInvitationVisibility}
+                  sorting={invitationSorting}
+                  onSortingChange={setInvitationSorting}
+                  emptyMessage={t(($) => $.directory.no_invitations)}
+                  pageLabel={t(($) => $.directory.range_invitations)}
+                  paginationLabels={{
+                    rowsPerPage: t(($) => $.directory.rows_per_page),
+                    previous: t(($) => $.directory.previous_page),
+                    next: t(($) => $.directory.next_page),
+                  }}
+                />
+              )}
+            </Tabs>
+          </CardContent>
         </Card>
       )}
 
       <InviteDialog
         open={inviteOpen}
         onOpenChange={setInviteOpen}
-        canManage={canManage}
+        canManage={!!canManage}
         isPending={inviteMutation.isPending}
         onSubmit={(email, role) => inviteMutation.mutate({ email, role })}
       />
+
+      <AlertDialog
+        open={pendingMember !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingMember(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t(($) => $.directory.remove_confirm, {
+                name: pendingMember?.fullName ?? "",
+              })}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(($) => $.directory.remove_description, {
+                name: pendingMember?.fullName ?? "",
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {t(($) => $.directory.cancel)}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={removeMutation.isPending}
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => {
+                if (pendingMember) removeMutation.mutate(pendingMember);
+                setPendingMember(null);
+              }}
+            >
+              {t(($) => $.directory.remove_member)}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={pendingInvitation !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingInvitation(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t(($) => $.directory.revoke_confirm)}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(($) => $.directory.revoke_description, {
+                email: pendingInvitation?.email ?? "",
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {t(($) => $.directory.cancel)}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={revokeMutation.isPending}
+              className="bg-destructive text-white hover:bg-destructive/90"
+              onClick={() => {
+                if (pendingInvitation) revokeMutation.mutate(pendingInvitation);
+                setPendingInvitation(null);
+              }}
+            >
+              {t(($) => $.directory.revoke_invitation)}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
