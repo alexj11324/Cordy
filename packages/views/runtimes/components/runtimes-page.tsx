@@ -4,49 +4,27 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronRight,
   Cloud,
-  Loader2,
   Monitor,
   Plus,
   Server,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { useAuthStore } from "@orvilo/core/auth";
 import { useWorkspaceId } from "@orvilo/core/hooks";
-import { memberNeedsPatrickSetup, useBootstrapPatrick } from "@orvilo/core/onboarding";
-import { PATRICK_PLACEHOLDER_EMOJI } from "../../onboarding/components/patrick-intro";
-import { useRequiredWorkspaceSlug, useWorkspacePaths } from "@orvilo/core/paths";
+import { useWorkspacePaths } from "@orvilo/core/paths";
 import { agentTaskSnapshotOptions } from "@orvilo/core/agents";
-import { chatSessionsOptions } from "@orvilo/core/chat/queries";
 import { runtimeProfileListOptions } from "@orvilo/core/runtimes";
 import { runtimeListOptions, runtimeKeys } from "@orvilo/core/runtimes/queries";
 import { useWSEvent } from "@orvilo/core/realtime";
 import { agentListOptions } from "@orvilo/core/workspace/queries";
-import type { AgentRuntime } from "@orvilo/core/types";
 import { Button } from "@orvilo/ui/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@orvilo/ui/components/ui/dialog";
-import {
-  PatrickRuntimeChoice,
-  type PatrickRuntimeSelection,
-} from "./patrick-runtime-choice";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import {
   CollectionPageHeaderAction,
   CollectionPageState,
 } from "../../layout/collection-page";
 import { ShellHeaderActions } from "../../layout/shell-header";
-import { AppLink, useNavigation } from "../../navigation";
-import {
-  getPatrickOnboarding,
-  pickContentLang,
-} from "../../onboarding/templates";
+import { AppLink } from "../../navigation";
 import { ConnectRemoteDialog } from "./connect-remote-dialog";
 import { CloudRuntimeDialog } from "./cloud-runtime-dialog";
 import { ProviderLogo } from "./provider-logo";
@@ -98,17 +76,10 @@ export function RuntimesPage({
   const { data: runtimeProfiles = [], isLoading: profilesLoading } = useQuery(
     runtimeProfileListOptions(wsId),
   );
-  const { data: agents = [], isLoading: agentsLoading } = useQuery(
+  const { data: agents = [] } = useQuery(
     agentListOptions(wsId),
   );
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
-  // The Patrick entrypoint is per member, not per workspace: the agent alone does
-  // not say whether *this* member's conversation was ever opened and kicked
-  // off. See memberNeedsPatrickSetup.
-  const { data: chatSessions = [], isLoading: chatSessionsLoading } = useQuery(
-    chatSessionsOptions(wsId),
-  );
-
   const handleDaemonEvent = useCallback(() => {
     qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
   }, [qc, wsId]);
@@ -176,17 +147,6 @@ export function RuntimesPage({
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex w-full max-w-[1440px] flex-col p-4 sm:p-6">
-            {!agentsLoading &&
-              !chatSessionsLoading &&
-              memberNeedsPatrickSetup(agents, chatSessions) &&
-              runtimes.length > 0 && (
-              <PatrickSetupCard
-                workspaceId={wsId}
-                runtimes={runtimes}
-                runtimesLoading={runtimesLoading}
-                currentUserId={currentUserId ?? null}
-              />
-            )}
             {(machines.length > 0 || bootstrapping) && (
               <MachineList
                 machines={machines}
@@ -211,134 +171,6 @@ export function RuntimesPage({
         <CloudRuntimeDialog onClose={() => setShowCloudRuntimeDialog(false)} />
       )}
     </div>
-  );
-}
-
-/**
- * Entry point for creating Patrick once a runtime exists.
- *
- * The action opens a picker rather than provisioning straight away. It used to
- * take `runtimes.find(online) ?? runtimes[0]` and create Patrick on it silently —
- * but one machine commonly exposes every agent CLI it has installed (nine, on
- * the box this was reported from), so "the first online one" is arbitrary and
- * could well be a CLI the member never intended to run their Chief of Staff
- * on. Onboarding already makes this an explicit choice; this is the same
- * decision reached from a different entry point, so it asks the same way and
- * reuses the same two controls.
- */
-function PatrickSetupCard({
-  workspaceId,
-  runtimes,
-  runtimesLoading,
-  currentUserId,
-}: {
-  workspaceId: string;
-  runtimes: AgentRuntime[];
-  runtimesLoading?: boolean;
-  currentUserId: string | null;
-}) {
-  const { t, i18n } = useT("runtimes");
-  const navigation = useNavigation();
-  const paths = useWorkspacePaths();
-  const wsSlug = useRequiredWorkspaceSlug();
-  const bootstrapPatrick = useBootstrapPatrick(workspaceId);
-
-  const [open, setOpen] = useState(false);
-  // Seeded with the old heuristic so the dialog opens on a sensible default;
-  // the point is that it is now visible and changeable, not that it is unset.
-  const defaultRuntimeId =
-    runtimes.find((runtime) => runtime.status === "online")?.id ??
-    runtimes[0]?.id ??
-    "";
-  const [choice, setChoice] = useState<PatrickRuntimeSelection | null>(null);
-
-  const value: PatrickRuntimeSelection = choice ?? {
-    runtimeId: defaultRuntimeId,
-    model: "",
-  };
-  const runtimeId = value.runtimeId;
-
-  const handleStart = async () => {
-    if (!runtimeId || bootstrapPatrick.isPending) return;
-    const lang = pickContentLang(i18n.language);
-    try {
-      const result = await bootstrapPatrick.mutateAsync({
-        workspaceSlug: wsSlug,
-        runtimeId,
-        model: value.model || undefined,
-        ...getPatrickOnboarding(lang),
-      });
-      setOpen(false);
-      navigation.push(paths.chatSession(result.chatSession.id));
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : t(($) => $.patrick_setup.failed),
-      );
-    }
-  };
-
-  return (
-    <>
-      <div className="mb-6 flex flex-col gap-4 rounded-xl border bg-card p-5 sm:flex-row sm:items-center">
-        <span
-          role="img"
-          aria-label={t(($) => $.patrick_setup.title)}
-          className="flex size-10 shrink-0 select-none items-center justify-center rounded-full bg-muted text-title-lg leading-none"
-        >
-          {PATRICK_PLACEHOLDER_EMOJI}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-body font-semibold">
-            {t(($) => $.patrick_setup.title)}
-          </h2>
-          <p className="mt-1 text-body leading-relaxed text-muted-foreground">
-            {t(($) => $.patrick_setup.description)}
-          </p>
-        </div>
-        <Button className="shrink-0" onClick={() => setOpen(true)}>
-          {t(($) => $.patrick_setup.action)}
-        </Button>
-      </div>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle>{t(($) => $.patrick_setup.dialog_title)}</DialogTitle>
-            <DialogDescription>
-              {t(($) => $.patrick_setup.dialog_description)}
-            </DialogDescription>
-          </DialogHeader>
-
-          <PatrickRuntimeChoice
-            runtimes={runtimes}
-            runtimesLoading={runtimesLoading}
-            currentUserId={currentUserId}
-            value={value}
-            onChange={setChoice}
-            disabled={bootstrapPatrick.isPending}
-          />
-
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => setOpen(false)}
-              disabled={bootstrapPatrick.isPending}
-            >
-              {t(($) => $.patrick_setup.cancel)}
-            </Button>
-            <Button
-              onClick={handleStart}
-              disabled={!runtimeId || bootstrapPatrick.isPending}
-            >
-              {bootstrapPatrick.isPending && (
-                <Loader2 aria-hidden className="size-4 animate-spin" />
-              )}
-              {t(($) => $.patrick_setup.action)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
   );
 }
 
