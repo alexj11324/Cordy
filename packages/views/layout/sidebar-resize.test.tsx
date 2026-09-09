@@ -10,6 +10,17 @@ import {
 import { renderWithI18n } from "../test/i18n";
 
 describe("left sidebar resizing", () => {
+  function spyOnStorageSetItem() {
+    const calls = vi.fn<(key: string, value: string) => void>();
+    vi.spyOn(window.localStorage, "setItem").mockImplementation((key, value) => {
+      calls(key, value);
+    });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation((key, value) => {
+      calls(key, value);
+    });
+    return calls;
+  }
+
   beforeEach(() => {
     localStorage.clear();
     document.documentElement.removeAttribute("data-sidebar-resizing");
@@ -22,7 +33,7 @@ describe("left sidebar resizing", () => {
 
   it("previews width directly and commits only when the pointer is released", () => {
     const stableConsumerRender = vi.fn();
-    const setItem = vi.spyOn(window.localStorage, "setItem");
+    const setItem = spyOnStorageSetItem();
 
     function StableSidebarConsumer() {
       useSidebar();
@@ -100,7 +111,7 @@ describe("left sidebar resizing", () => {
   });
 
   it("restores the committed width and cursor state when pointer capture is cancelled", () => {
-    const setItem = vi.spyOn(window.localStorage, "setItem");
+    const setItem = spyOnStorageSetItem();
     const { container } = renderWithI18n(
       <SidebarProvider>
         <Sidebar>

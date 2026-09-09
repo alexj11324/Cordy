@@ -234,12 +234,15 @@ func TestResendInvitation_SendsExistingPendingInvitation(t *testing.T) {
 	testHandler.EmailService = &service.EmailService{}
 	t.Cleanup(func() { testHandler.EmailService = previousEmailService })
 
-	resendReq := withURLParam(
-		newRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/invitations/"+invitation.ID+"/resend", nil),
-		"id",
-		testWorkspaceID,
+	resendReq := newRequest(
+		http.MethodPost,
+		"/api/workspaces/"+testWorkspaceID+"/invitations/"+invitation.ID+"/resend",
+		nil,
 	)
-	resendReq = withURLParam(resendReq, "invitationId", invitation.ID)
+	resendRoute := chi.NewRouteContext()
+	resendRoute.URLParams.Add("id", testWorkspaceID)
+	resendRoute.URLParams.Add("invitationId", invitation.ID)
+	resendReq = resendReq.WithContext(context.WithValue(resendReq.Context(), chi.RouteCtxKey, resendRoute))
 	resendResponse := httptest.NewRecorder()
 	testHandler.ResendInvitation(resendResponse, resendReq)
 	if resendResponse.Code != http.StatusNoContent {
