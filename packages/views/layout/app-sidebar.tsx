@@ -39,6 +39,7 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
   useSidebar,
 } from "@orvilo/ui/components/ui/sidebar";
 import { Separator } from "@orvilo/ui/components/ui/separator";
@@ -447,7 +448,9 @@ function ReuiNavGroup({
                 render={<AppLink href={href} />}
               >
                 <Icon aria-hidden="true" />
-                <span className="in-data-[state=collapsed]:hidden">{itemLabel}</span>
+                <span className="min-w-0 flex-1 truncate transition-[max-width,opacity] duration-200 group-data-[collapsible=icon]:max-w-0 group-data-[collapsible=icon]:opacity-0">
+                  {itemLabel}
+                </span>
                 {badge !== undefined ? (
                   <SidebarMenuBadge>{badge}</SidebarMenuBadge>
                 ) : null}
@@ -873,6 +876,8 @@ export function AppSidebar({
           </div>
         ) : null}
       </SidebarFooter>
+
+      <SidebarRail />
     </Sidebar>
   );
 

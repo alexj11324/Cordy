@@ -3,6 +3,7 @@ import type {
   MemberRole,
   MemberWithUser,
 } from "@orvilo/core/types";
+import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 
 export type DirectoryMember = {
   id: string;
@@ -13,6 +14,7 @@ export type DirectoryMember = {
   role: MemberRole;
   status: "active";
   joinedAt: string;
+  joinedAtTimestamp: string;
   avatarSrc: string | null;
   initials: string;
 };
@@ -25,6 +27,7 @@ export type DirectoryInvitation = {
   invitedBy: string;
   sentAt: string;
   status: Invitation["status"];
+  sentAtTimestamp: string;
 };
 
 function initialsFor(value: string): string {
@@ -63,7 +66,8 @@ export function toDirectoryMember(
     role: member.role,
     status: "active",
     joinedAt: formatDate(member.created_at, locale),
-    avatarSrc: member.avatar_url,
+    joinedAtTimestamp: member.created_at,
+    avatarSrc: resolvePublicFileUrl(member.avatar_url),
     initials: initialsFor(member.name),
   };
 }
@@ -83,5 +87,6 @@ export function toDirectoryInvitation(
       invitation.inviter_id,
     sentAt: formatDate(invitation.created_at, locale),
     status: invitation.status,
+    sentAtTimestamp: invitation.created_at,
   };
 }

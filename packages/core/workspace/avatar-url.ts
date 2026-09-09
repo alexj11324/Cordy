@@ -8,5 +8,6 @@ export function resolvePublicFileUrlWithBase(rawUrl: string | null | undefined, 
 }
 
 export function resolvePublicFileUrl(rawUrl: string | null | undefined): string | null {
+  if (!rawUrl) return null;
   return resolvePublicFileUrlWithBase(rawUrl, api.getBaseUrl());
 }

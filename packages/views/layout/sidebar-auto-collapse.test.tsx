@@ -211,9 +211,13 @@ describe("sidebar auto-collapse between lg and xl", () => {
     const sidebarContainer = container.querySelector<HTMLElement>(
       "[data-slot='sidebar-container']",
     )!;
+    const sidebarGap = container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-gap']",
+    )!;
     const inner = container.querySelector<HTMLElement>("[data-slot='sidebar-inner']")!;
 
     expect(root).not.toHaveAttribute("data-hover-revealed");
+    expect(sidebarGap).toHaveAttribute("data-layout-collapsible", "offcanvas");
     expect(sidebarContainer).toHaveClass("inset-y-0", "h-svh", "z-10");
     expect(inner).not.toHaveClass("bg-surface-raised");
     fireEvent.pointerEnter(root);
@@ -222,6 +226,7 @@ describe("sidebar auto-collapse between lg and xl", () => {
     expect(root).toHaveAttribute("data-hover-revealed", "true");
     expect(sidebarContainer).toHaveClass("inset-y-0", "h-svh", "z-20");
     expect(sidebarContainer).not.toHaveClass("z-10");
+    expect(sidebarGap).toHaveAttribute("data-layout-collapsible", "offcanvas");
     expect(inner).toHaveClass(
       "bg-surface-raised",
       "ring-1",

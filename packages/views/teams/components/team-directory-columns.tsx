@@ -203,7 +203,7 @@ function MemberCell({
           {member.displayName}
         </div>
       </div>
-      <div className="pointer-events-none flex shrink-0 items-center opacity-0 transition-opacity group-focus-within/member-row:pointer-events-auto group-focus-within/member-row:opacity-100 group-hover/member-row:pointer-events-auto group-hover/member-row:opacity-100">
+      <div className="pointer-events-none flex shrink-0 items-center opacity-0 transition-opacity group-focus-within/member-row:pointer-events-auto group-focus-within/member-row:opacity-100 group-hover/member-row:pointer-events-auto group-hover/member-row:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
         <MemberRowActions
           member={member}
           canManage={canManage}
@@ -342,8 +342,8 @@ export function createMemberGridColumns({
         </span>
       ),
       sortFn: (rowA, rowB) =>
-        new Date(rowA.original.joinedAt).getTime() -
-        new Date(rowB.original.joinedAt).getTime(),
+        new Date(rowA.original.joinedAtTimestamp).getTime() -
+        new Date(rowB.original.joinedAtTimestamp).getTime(),
       size: 140,
       enableSorting: true,
       enableHiding: true,
@@ -405,7 +405,7 @@ function InvitationRowActions({
   if (!canManage || invitation.status !== "pending") return null;
 
   return (
-    <div className="pointer-events-none flex shrink-0 items-center justify-end gap-1 opacity-0 transition-opacity group-focus-within/member-row:pointer-events-auto group-focus-within/member-row:opacity-100 group-hover/member-row:pointer-events-auto group-hover/member-row:opacity-100">
+    <div className="pointer-events-none flex shrink-0 items-center justify-end gap-1 opacity-0 transition-opacity group-focus-within/member-row:pointer-events-auto group-focus-within/member-row:opacity-100 group-hover/member-row:pointer-events-auto group-hover/member-row:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100">
       <Button
         type="button"
         size="sm"
@@ -508,8 +508,8 @@ export function createInvitationGridColumns({
         </span>
       ),
       sortFn: (rowA, rowB) =>
-        new Date(rowA.original.sentAt).getTime() -
-        new Date(rowB.original.sentAt).getTime(),
+        new Date(rowA.original.sentAtTimestamp).getTime() -
+        new Date(rowB.original.sentAtTimestamp).getTime(),
       size: 140,
       enableSorting: true,
       enableHiding: true,

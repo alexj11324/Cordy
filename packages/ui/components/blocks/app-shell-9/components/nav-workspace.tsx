@@ -17,7 +17,6 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@orvilo/ui/components/ui/dropdown-menu"
 import {
@@ -319,7 +318,6 @@ export function NavWorkspace({
               <DropdownMenuItem onClick={onProfile}>
                 <UserIcon aria-hidden="true" />
                 {copy.profile}
-                <DropdownMenuShortcut>⇧⌘P</DropdownMenuShortcut>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onBilling}>
                 <CreditCardIcon aria-hidden="true" />
@@ -347,7 +345,6 @@ export function NavWorkspace({
               <DropdownMenuItem onClick={onSignOut}>
                 <LogOutIcon aria-hidden="true" />
                 {copy.signOut}
-                <DropdownMenuShortcut>⇧⌘Q</DropdownMenuShortcut>
               </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>
