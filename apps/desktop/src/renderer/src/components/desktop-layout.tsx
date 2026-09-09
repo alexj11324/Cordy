@@ -1,6 +1,4 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
-import { motion } from "motion/react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@orvilo/ui/lib/utils";
 import {
@@ -19,9 +17,11 @@ import {
   GlobalShortcuts,
   NavigationProgress,
   ShellBreadcrumb,
+  ShellHeaderActionsSlot,
+  ShellHeaderProvider,
 } from "@orvilo/views/layout";
 import { SearchCommand, SearchTrigger } from "@orvilo/views/search";
-import { FloatingChat } from "@orvilo/views/chat";
+import { GlobalRightSidebar, GlobalRightSidebarToggle } from "@orvilo/views/chat";
 import { AgentThreadPanelLayout } from "@orvilo/views/agent-thread";
 import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@orvilo/core/paths";
 import { workspaceListOptions } from "@orvilo/core/workspace";
@@ -38,70 +38,70 @@ import {
 import { TabContent } from "./tab-content";
 import { WindowOverlay } from "./window-overlay";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
+import {
+  TRAFFIC_LIGHT_CLUSTER_END,
+  TRAFFIC_LIGHT_CONTENT_GAP,
+  contentInsetAfterTrafficLights,
+} from "../../../shared/window-chrome";
 
 const TOP_BAR_HEIGHT_CLASS = "h-12";
-const WINDOW_TOOLBAR_CLEARANCE = 184;
-const toolbarMotion = {
-  type: "spring",
-  stiffness: 420,
-  damping: 38,
-  mass: 0.8,
-} as const;
+const pinTriggerClassName =
+  "flex size-7 items-center justify-center rounded-md bg-transparent text-faint-foreground shadow-none hover:bg-muted hover:text-foreground aria-expanded:bg-transparent! aria-expanded:text-faint-foreground!";
+const noDragStyle = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
+const dragStyle = { WebkitAppRegion: "drag" } as React.CSSProperties;
 
-function WindowToolbar() {
-  const { canGoBack, canGoForward, goBack, goForward } = useTabHistory();
-  const navButtonClassName =
-    "flex size-7 items-center justify-center rounded-md text-faint-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-30";
+function trafficLightEndPx(): number {
+  return window.desktopAPI.appInfo?.os === "macos" ? TRAFFIC_LIGHT_CLUSTER_END : 0;
+}
+
+function SidebarPinTrigger() {
+  const { toggleSidebar, open, guardCollapsedHoverReveal } = useSidebar();
+  const toggledFromPointerRef = useRef(false);
 
   return (
-    <div
-      className={cn(
-        "fixed left-0 top-0 z-30 flex w-[184px] shrink-0 items-center px-3",
-        TOP_BAR_HEIGHT_CLASS,
-      )}
-      style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-    >
-      <div
-        className="flex items-center gap-1 pl-[70px]"
-        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-      >
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={goBack}
-            disabled={!canGoBack}
-            aria-label="Go back"
-            title="Go back"
-            className={navButtonClassName}
-            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-          >
-            <ChevronLeft className="size-4" />
-          </button>
-          <button
-            type="button"
-            onClick={goForward}
-            disabled={!canGoForward}
-            aria-label="Go forward"
-            title="Go forward"
-            className={navButtonClassName}
-            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-          >
-            <ChevronRight className="size-4" />
-          </button>
-          <SidebarTrigger
-            aria-label="Toggle sidebar"
-            title="Toggle sidebar"
-            className={cn(navButtonClassName, "ml-1")}
-            style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-          />
-        </div>
-      </div>
-    </div>
+    <SidebarTrigger
+      aria-label="Toggle sidebar"
+      title="Toggle sidebar"
+      className={pinTriggerClassName}
+      style={noDragStyle}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        toggledFromPointerRef.current = true;
+        event.preventDefault();
+        // The pin sits inside the sidebar. Collapsing without a rail-leave
+        // guard would pop the floating column back under the cursor.
+        if (open) guardCollapsedHoverReveal();
+        toggleSidebar();
+      }}
+      onClick={(event) => {
+        const pairedPointerClick = toggledFromPointerRef.current && event.detail > 0;
+        toggledFromPointerRef.current = false;
+        if (pairedPointerClick) event.preventDefault();
+      }}
+    />
   );
 }
 
+function pinOffsetPx(): number {
+  return contentInsetAfterTrafficLights(trafficLightEndPx());
+}
+
+// Pin lives in the sidebar title row as a `no-drag` child of a drag parent —
+// the Electron-documented pattern. A `position: fixed` overlay is not a
+// descendant of any drag region, so Chromium's app-region hit test still
+// treated those pixels as the native titlebar.
 function SidebarTopSpacer() {
-  return <div className={cn("shrink-0", TOP_BAR_HEIGHT_CLASS)} />;
+  return (
+    <div
+      data-slot="window-toolbar"
+      className={cn("flex shrink-0 items-center overflow-visible", TOP_BAR_HEIGHT_CLASS)}
+      style={dragStyle}
+    >
+      <div className="h-full shrink-0" style={{ width: pinOffsetPx() }} />
+      <SidebarPinTrigger />
+      <div className="min-w-0 flex-1" />
+    </div>
+  );
 }
 
 function useNativeNavigationGestures() {
@@ -119,40 +119,33 @@ function useNativeNavigationGestures() {
 }
 
 
-// The main area's top bar is the window drag region. Track `open`, which owns
-// the sidebar's in-flow gap, rather than `state`, which also becomes expanded
-// during a temporary hover overlay. A hover-revealed sidebar remains out of
-// flow, so the drag region must keep clearing the fixed window toolbar and
-// native traffic lights.
+// Collapsed, the pin overflows the icon rail into this header. Keep a
+// `pointer-events-none` hole the same size as the pin (`w-7` / `size-7`)
+// so the inset cannot eat the overflow clicks.
 function MainTopBar() {
   const { open, isCompact } = useSidebar();
   const sidebarOutOfFlow = !open || isCompact;
 
   return (
-    <motion.header
-      animate={{ paddingLeft: sidebarOutOfFlow ? WINDOW_TOOLBAR_CLEARANCE : 0 }}
+    <header
       className={cn(
-        "relative flex shrink-0 items-center gap-2 border-b border-border/60",
+        "relative flex shrink-0 items-center gap-2 border-b border-border/60 pr-3",
         TOP_BAR_HEIGHT_CLASS,
       )}
-      initial={false}
-      transition={toolbarMotion}
     >
-      <motion.div
-        aria-hidden
-        animate={{ left: sidebarOutOfFlow ? WINDOW_TOOLBAR_CLEARANCE : 0 }}
-        className="absolute inset-y-0 right-0"
-        initial={false}
-        transition={toolbarMotion}
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-      />
-      <div
-        className="relative z-10 flex h-full min-w-0 max-w-full items-center px-4"
-        style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
-      >
-        <ShellBreadcrumb />
+      {sidebarOutOfFlow ? (
+        <div aria-hidden className="pointer-events-none w-7 shrink-0" />
+      ) : (
+        <div aria-hidden className="w-3 shrink-0" style={dragStyle} />
+      )}
+      <div className="h-full min-w-0 flex-1" style={dragStyle}>
+        <div className="flex h-full w-fit max-w-full items-center" style={noDragStyle}>
+          <ShellBreadcrumb />
+        </div>
       </div>
-    </motion.header>
+      <ShellHeaderActionsSlot style={noDragStyle} />
+      <div style={noDragStyle}><GlobalRightSidebarToggle /></div>
+    </header>
   );
 }
 
@@ -278,7 +271,7 @@ export function DesktopShell() {
           inert={settingsOpen}
           className={cn("flex h-screen", "bg-app-shell")}
         >
-          {/* WindowToolbar owns the one persistent sidebar trigger beside the
+          {/* The sidebar title row parks the one persistent trigger beside the
               traffic lights. Keep the provider flag so page headers do not
               add a second fallback trigger inside the canvas. */}
           <SidebarProvider
@@ -286,6 +279,12 @@ export function DesktopShell() {
             hoverReveal
             compactBehavior="collapse"
             autoCollapse={false}
+            style={
+              {
+                "--desktop-traffic-light-end": `${trafficLightEndPx()}px`,
+                "--desktop-content-gutter": `${TRAFFIC_LIGHT_CONTENT_GAP}px`,
+              } as React.CSSProperties
+            }
             className={cn(
               "flex-1 [--sidebar-width:260px] [--sidebar-border:transparent]",
               "[&_[data-slot=sidebar-menu-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-button][data-active]]:border",
@@ -293,7 +292,7 @@ export function DesktopShell() {
               "[&_[data-slot=sidebar-menu-button][data-active]]:bg-background! [&_[data-slot=sidebar-menu-button][data-active]]:hover:bg-background! **:data-[slot=sidebar-menu-button]:hover:bg-transparent!",
               "[&_[data-slot=sidebar-menu-button][data-active]]:text-foreground [&_[data-slot=sidebar-menu-button][data-active]>svg]:text-primary [&_[data-slot=sidebar-menu-button][data-active]>svg]:opacity-100",
               "**:data-[slot=sidebar-menu-button]:text-accent-foreground/80 **:data-[slot=sidebar-menu-button]:hover:text-foreground",
-              "[&_[data-collapsible=icon]_[data-slot=sidebar-menu-button][data-active]>svg]:-ml-px",
+              "[&_[data-collapsible=icon]_[data-slot=sidebar-menu-button]]:mx-auto",
               "[&_[data-slot=sidebar-menu-button]:hover>svg]:opacity-100 [&_[data-slot=sidebar-menu-button]>svg]:opacity-60",
               "[&_[data-slot=sidebar-menu-sub-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-sub-button][data-active]]:border",
               "[&_[data-slot=sidebar-menu-sub-button][data-active]]:shadow-xs! [&_[data-slot=sidebar-menu-sub-button][data-active]]:shadow-black/5!",
@@ -305,28 +304,31 @@ export function DesktopShell() {
             )}
           >
             {slug && <GlobalShortcuts />}
-            {slug && <WindowToolbar />}
-            {slug && (
-              <AppSidebar
-                topSlot={<SidebarTopSpacer />}
-                searchSlot={<SearchTrigger />}
-              />
-            )}
-            <SidebarInset className="ml-0! min-w-0 overflow-hidden">
-              <MainTopBar />
-              <MainCanvas>
-                {/* Same indicator, same anchor as web: DashboardLayout puts it
-                    at the top of SidebarInset, and MainCanvas is desktop's
-                    equivalent relative/overflow-hidden content box. Desktop
-                    used to have no navigation feedback at all — a click just
-                    froze until the destination committed (MUL-6404). */}
-                <AgentThreadPanelLayout>
-                  <NavigationProgress />
-                  <TabContent />
-                </AgentThreadPanelLayout>
-                {slug && <FloatingChat />}
-              </MainCanvas>
-            </SidebarInset>
+            <ShellHeaderProvider>
+              {slug && (
+                <AppSidebar
+                  topSlot={<SidebarTopSpacer />}
+                  searchSlot={<SearchTrigger />}
+                />
+              )}
+              <SidebarInset className="min-w-0 flex-row! rounded-none! ring-0! shadow-none overflow-hidden">
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-slot="shell-main-column">
+                <MainTopBar />
+                <MainCanvas>
+                  {/* Same indicator, same anchor as web: DashboardLayout puts it
+                      at the top of SidebarInset, and MainCanvas is desktop's
+                      equivalent relative/overflow-hidden content box. Desktop
+                      used to have no navigation feedback at all — a click just
+                      froze until the destination committed (MUL-6404). */}
+                  <AgentThreadPanelLayout>
+                    <NavigationProgress />
+                    <TabContent />
+                  </AgentThreadPanelLayout>
+                </MainCanvas>
+                </div>
+                {slug && <GlobalRightSidebar />}
+              </SidebarInset>
+            </ShellHeaderProvider>
           </SidebarProvider>
         </div>
         {slug && <ModalRegistry />}

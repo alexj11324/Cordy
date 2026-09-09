@@ -19,7 +19,6 @@ import { useQuickActionsPendingTimeout } from "@orvilo/core/chat/use-quick-actio
 import { useQuickActionsFailureToast } from "./components/use-quick-actions-failure-toast";
 import { useQuery } from "@tanstack/react-query";
 import type { Agent, ChatSession } from "@orvilo/core/types";
-import { PageHeader } from "../layout/page-header";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
 import { ChatMessageList, ChatMessageSkeleton } from "./components/chat-message-list";
@@ -212,15 +211,15 @@ export function ChatPage() {
       agents={c.availableAgents}
       userId={c.user?.id}
       onStart={startNewChat}
+      showLabel
       side="bottom"
     />
   );
 
   const listHeader = (
-    <PageHeader>
-      <h1 className="flex-1 text-body font-semibold">{t(($) => $.page.title)}</h1>
+    <div className="flex h-12 shrink-0 items-center justify-end border-b px-3">
       {newChatButton}
-    </PageHeader>
+    </div>
   );
 
   const listBody = (

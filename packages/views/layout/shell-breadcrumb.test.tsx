@@ -53,7 +53,9 @@ describe("ShellBreadcrumb", () => {
       "href",
       "/acme/issues",
     );
-    expect(screen.getByText("Teams")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Teams", level: 1 }),
+    ).toBeInTheDocument();
   });
 
   it("renders nothing outside a workspace instead of throwing", () => {

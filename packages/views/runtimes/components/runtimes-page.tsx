@@ -38,11 +38,10 @@ import {
 } from "./patrick-runtime-choice";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import {
-  CollectionPageHeader,
   CollectionPageHeaderAction,
   CollectionPageState,
 } from "../../layout/collection-page";
-import { PageHeader } from "../../layout/page-header";
+import { ShellHeaderActions } from "../../layout/shell-header";
 import { AppLink, useNavigation } from "../../navigation";
 import {
   getPatrickOnboarding,
@@ -56,7 +55,6 @@ import { pendingRuntimeFromProfile } from "./pending-runtime";
 import { buildRuntimeMachines, type RuntimeMachine } from "./runtime-machines";
 import { HealthDot, HealthIcon, useHealthLabel } from "./shared";
 import { useT, useTimeAgo } from "../../i18n";
-import { daemonRuntimesDocsHref } from "./runtime-docs";
 
 export interface RuntimesPageProps {
   /** Desktop-only daemon id used to identify this device. */
@@ -165,8 +163,7 @@ export function RuntimesPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeaderBar
-        totalCount={machines.length}
+      <RuntimesHeaderActions
         onConnectRemote={() => setShowConnectDialog(true)}
         cloudRuntimeEnabled={cloudRuntimeEnabled}
         onOpenCloudRuntime={() => setShowCloudRuntimeDialog(true)}
@@ -372,45 +369,31 @@ function OrphanRuntimeProfiles({
   );
 }
 
-function PageHeaderBar({
-  totalCount,
+function RuntimesHeaderActions({
   onConnectRemote,
   cloudRuntimeEnabled,
   onOpenCloudRuntime,
 }: {
-  totalCount: number;
   onConnectRemote: () => void;
   cloudRuntimeEnabled: boolean;
   onOpenCloudRuntime: () => void;
 }) {
-  const { t, i18n } = useT("runtimes");
+  const { t } = useT("runtimes");
   return (
-    <CollectionPageHeader
-      icon={Server}
-      title={t(($) => $.page.title)}
-      count={totalCount}
-      description={t(($) => $.page.tagline)}
-      learnMore={{
-        href: daemonRuntimesDocsHref(i18n.language),
-        label: t(($) => $.page.learn_more),
-      }}
-      actions={
-        <>
-          {cloudRuntimeEnabled && (
-            <CollectionPageHeaderAction
-              icon={Cloud}
-              label={t(($) => $.cloud_runtime.action)}
-              onClick={onOpenCloudRuntime}
-            />
-          )}
-          <CollectionPageHeaderAction
-            icon={Plus}
-            label={t(($) => $.page.connect_remote)}
-            onClick={onConnectRemote}
-          />
-        </>
-      }
-    />
+    <ShellHeaderActions>
+      {cloudRuntimeEnabled && (
+        <CollectionPageHeaderAction
+          icon={Cloud}
+          label={t(($) => $.cloud_runtime.action)}
+          onClick={onOpenCloudRuntime}
+        />
+      )}
+      <CollectionPageHeaderAction
+        icon={Plus}
+        label={t(($) => $.page.connect_remote)}
+        onClick={onConnectRemote}
+      />
+    </ShellHeaderActions>
   );
 }
 
@@ -572,9 +555,6 @@ function EmptyState({ onConnectRemote }: { onConnectRemote: () => void }) {
 function RuntimesPageSkeleton() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader>
-        <Skeleton className="h-4 w-24" />
-      </PageHeader>
       <div className="mx-auto w-full max-w-[1440px] p-6">
         <div className="overflow-hidden rounded-lg border">
           {Array.from({ length: 5 }).map((_, index) => (

@@ -32,10 +32,10 @@ import {
 } from "@orvilo/ui/components/ui/select";
 import { cn } from "@orvilo/ui/lib/utils";
 import {
-  CollectionPageHeader,
   CollectionPageHeaderAction,
   CollectionPageState,
 } from "../layout";
+import { ShellHeaderActions } from "../layout/shell-header";
 import { AppLink } from "../navigation";
 import { useT } from "../i18n";
 import {
@@ -447,21 +447,15 @@ export function TaskGraphPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <CollectionPageHeader
-        icon={Network}
-        title={t(($) => $.title)}
-        count={graphs.length}
-        description={t(($) => $.description)}
-        actions={
-          <CollectionPageHeaderAction
-            icon={RefreshCw}
-            label={t(($) => $.refresh)}
-            aria-label={t(($) => $.refresh)}
-            onClick={() => void query.refetch()}
-            disabled={query.isFetching}
-          />
-        }
-      />
+      <ShellHeaderActions>
+        <CollectionPageHeaderAction
+          icon={RefreshCw}
+          label={t(($) => $.refresh)}
+          aria-label={t(($) => $.refresh)}
+          onClick={() => void query.refetch()}
+          disabled={query.isFetching}
+        />
+      </ShellHeaderActions>
 
       <div className="min-h-0 flex-1 overflow-auto">
         {query.isPending ? (

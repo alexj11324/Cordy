@@ -96,7 +96,7 @@ const apiLogger = createLogger("chat.api");
 const CHAT_VIRTUOSO_INITIAL_FIRST_ITEM_INDEX = 1_000_000;
 
 
-export function ChatWindow() {
+export function ChatWindow({ docked = false }: { docked?: boolean }) {
   const { t } = useT("chat");
   const wsId = useWorkspaceId();
   const isOpen = useChatStore((s) => s.isOpen);
@@ -763,7 +763,7 @@ export function ChatWindow() {
   // a real message, or a pending task whose timeline will stream in.
   const hasMessages = messages.length > 0 || !!pendingTaskId;
 
-  const isVisible = isOpen && (isExpanded || boundsReady);
+  const isVisible = isOpen && (docked || isExpanded || boundsReady);
 
   // Small screens drop the floating-card form entirely — a 90%-of-375px
   // "window" is all chrome and no content, so the panel goes full-screen
@@ -831,15 +831,15 @@ export function ChatWindow() {
   return (
     <motion.div
       ref={windowRef}
-      className={containerClass}
-      style={containerStyle}
+      className={docked ? "relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-background @container" : containerClass}
+      style={docked ? { pointerEvents: isVisible ? "auto" : "none" } : containerStyle}
       aria-hidden={!isVisible}
       inert={!isVisible ? true : undefined}
-      initial={{ opacity: 0, scale: 0.95, ...motionSize }}
+      initial={docked ? false : { opacity: 0, scale: 0.95, ...motionSize }}
       animate={{
         opacity: isVisible ? 1 : 0,
-        scale: isVisible ? 1 : 0.95,
-        ...motionSize,
+        scale: docked || isVisible ? 1 : 0.95,
+        ...(docked ? { width: "100%", height: "100%" } : motionSize),
       }}
       transition={{
         width: isDragging ? { duration: 0 } : { type: "spring", duration: 0.3, bounce: 0 },
@@ -848,11 +848,11 @@ export function ChatWindow() {
         scale: { type: "spring", duration: 0.2, bounce: 0 },
       }}
     >
-      {!isMobile && <ChatResizeHandles onDragStart={startDrag} />}
+      {!docked && !isMobile && <ChatResizeHandles onDragStart={startDrag} />}
       {/* Header — ⊕ new + session dropdown | window tools */}
       <div className="flex items-center justify-between border-b px-4 py-2.5 gap-2">
         <div className="flex items-center gap-1 min-w-0">
-          <Tooltip>
+          {!docked && <Tooltip>
             <TooltipTrigger
               render={
                 <Button
@@ -867,7 +867,7 @@ export function ChatWindow() {
               <Plus />
             </TooltipTrigger>
             <TooltipContent side="top">{t(($) => $.window.new_chat_tooltip)}</TooltipContent>
-          </Tooltip>
+          </Tooltip>}
           <SessionDropdown
             sessions={sessions}
             // Use the full agent list (incl. archived) so historical
@@ -875,10 +875,11 @@ export function ChatWindow() {
             agents={agents}
             activeSessionId={activeSessionId}
             onSelectSession={handleSelectSession}
+            onNewChat={docked ? handleNewChat : undefined}
           />
         </div>
-        <div className="flex items-center gap-0.5 shrink-0">
-          {!isMobile && (
+        {!docked && <div className="flex items-center gap-0.5 shrink-0">
+          {!docked && !isMobile && (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -918,7 +919,7 @@ export function ChatWindow() {
             </TooltipTrigger>
             <TooltipContent side="top">{t(($) => $.window.minimize_tooltip)}</TooltipContent>
           </Tooltip>
-        </div>
+        </div>}
       </div>
 
       {/* Messages / skeleton / empty state */}
@@ -1198,19 +1199,21 @@ interface SessionRowAction extends RowActionItem {
  * Session dropdown: a flat "Chat history" list of all non-archived
  * sessions. Selecting a session from a different agent implicitly
  * switches the agent too
- * (sessions are bound 1:1 to an agent). "New chat" lives in the header's
- * ⊕ button, not inside this dropdown.
+ * (sessions are bound 1:1 to an agent). Docked chat exposes its new-chat
+ * action inside this history list.
  */
 function SessionDropdown({
   sessions,
   agents,
   activeSessionId,
   onSelectSession,
+  onNewChat,
 }: {
   sessions: ChatSession[];
   agents: Agent[];
   activeSessionId: string | null;
   onSelectSession: (session: ChatSession) => void;
+  onNewChat?: () => void;
 }) {
   const { t } = useT("chat");
   const wsId = useWorkspaceId();
@@ -1628,6 +1631,20 @@ function SessionDropdown({
           className="max-h-96 w-auto min-w-[max(16rem,var(--anchor-width,16rem))] max-w-96 gap-0 overflow-y-auto p-1"
           onClick={(e) => e.stopPropagation()}
         >
+          {onNewChat && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full justify-start gap-2"
+              onClick={() => {
+                onNewChat();
+                setIsHistoryOpen(false);
+              }}
+            >
+              <Plus />
+              {t(($) => $.window.new_chat_tooltip)}
+            </Button>
+          )}
           {historySessions.length === 0 ? (
             <div className="px-2 py-1.5 text-caption text-muted-foreground">
               {t(($) => $.window.no_previous)}

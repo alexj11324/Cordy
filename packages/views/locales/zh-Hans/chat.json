@@ -118,7 +118,7 @@
     "row_actions_aria": "聊天操作"
   },
   "window": {
-    "new_chat_tooltip": "新对话",
+    "new_chat_tooltip": "新建聊天",
     "restore_tooltip": "还原",
     "expand_tooltip": "展开",
     "minimize_tooltip": "最小化",
@@ -242,5 +242,11 @@
     "delete": "删除会话",
     "archive": "归档会话",
     "unarchive": "取消归档"
+  },
+  "sidebar": {
+    "title": "智能体对话",
+    "open": "展开右侧边栏",
+    "close": "收起右侧边栏",
+    "chat_page_notice": "当前对话已在聊天页面中打开。"
   }
 }

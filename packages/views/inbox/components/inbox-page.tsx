@@ -83,7 +83,7 @@ import {
 } from "@orvilo/ui/components/ui/dropdown-menu";
 import { useIsCompact } from "@orvilo/ui/hooks/use-mobile";
 import { cn } from "@orvilo/ui/lib/utils";
-import { PAGE_GUTTER, PageHeader } from "../../layout/page-header";
+import { PAGE_GUTTER } from "../../layout/page-header";
 import { useTimeAgo } from "./inbox-list-item";
 import { InboxList } from "./inbox-list";
 import { InboxFilterMenu } from "./inbox-filter-menu";
@@ -513,19 +513,16 @@ export function InboxPage() {
   // -- Shared sub-components --------------------------------------------------
 
   const listHeader = (
-    <PageHeader>
-      <div className="flex flex-1 items-center gap-2">
-        <h1 className="text-body font-semibold">{t(($) => $.page.title)}</h1>
-        {unreadCount > 0 && (
-          <NumberFlow
-            value={unreadCount}
-            animated={false}
-            format={{ maximumFractionDigits: 0 }}
-            aria-label={String(unreadCount)}
-            className="text-caption text-muted-foreground"
-          />
-        )}
-      </div>
+    <div className={cn("flex h-12 shrink-0 items-center justify-end gap-2", PAGE_GUTTER)}>
+      {unreadCount > 0 && (
+        <NumberFlow
+          value={unreadCount}
+          animated={false}
+          format={{ maximumFractionDigits: 0 }}
+          aria-label={String(unreadCount)}
+          className="text-caption text-muted-foreground"
+        />
+      )}
       <InboxFilterMenu
         wsId={wsId}
         items={viewItems}
@@ -568,12 +565,13 @@ export function InboxPage() {
         </DropdownMenuContent>
       </DropdownMenu>
       )}
-    </PageHeader>
+    </div>
   );
 
   // Back out of the archive. Sits inside the list panel rather than replacing
-  // the PageHeader: the user is still in the Inbox, so the page title stays put
-  // and this reads as a sub-view — the same shape chat's archived view uses.
+  // the shell breadcrumb: the user is still in the Inbox, so the page title
+  // stays put and this reads as a sub-view — the same shape chat's archived
+  // view uses.
   const archivedBackRow = (
     <button
       type="button"
@@ -689,6 +687,7 @@ export function InboxPage() {
       <IssueDetail
         key={detailItem.issue_id}
         issueId={detailItem.issue_id}
+        inlineHeader
         defaultSidebarOpen={false}
         layoutId="orvilo_inbox_issue_detail_layout"
         highlightCommentId={detailItem.details?.comment_id ?? undefined}

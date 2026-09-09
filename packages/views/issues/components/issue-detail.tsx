@@ -1017,6 +1017,8 @@ interface IssueDetailProps {
    * the surface the reader arrived from, so only the host can spell that trip.
    */
   leadingAction?: ReactNode;
+  /** Keep navigation within a host pane such as the inbox. */
+  inlineHeader?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1138,7 +1140,7 @@ export function IssueDetailSkeleton({ leading }: { leading?: ReactNode } = {}) {
 // IssueDetail
 // ---------------------------------------------------------------------------
 
-export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "orvilo_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction }: IssueDetailProps) {
+export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "orvilo_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, inlineHeader = false }: IssueDetailProps) {
   const { t } = useT("issues");
   const locale = useLocale();
   const timeAgo = useTimeAgo();
@@ -2774,6 +2776,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           />
         )}
         <BreadcrumbHeader
+          inline={inlineHeader}
           leading={leadingAction}
           segments={breadcrumbSegments}
           leaf={

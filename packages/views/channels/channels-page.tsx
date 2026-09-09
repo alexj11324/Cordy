@@ -36,10 +36,10 @@ import { Label } from "@orvilo/ui/components/ui/label";
 import { Textarea } from "@orvilo/ui/components/ui/textarea";
 import { ActorAvatar } from "@orvilo/ui/components/common/actor-avatar";
 import {
-  CollectionPageHeader,
   CollectionPageHeaderAction,
   CollectionPageState,
 } from "../layout/collection-page";
+import { ShellHeaderActions } from "../layout/shell-header";
 import { useLocale, useT } from "../i18n";
 import { useNavigation } from "../navigation";
 
@@ -110,19 +110,13 @@ export function ChannelsPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <CollectionPageHeader
-        icon={Hash}
-        title={t(($) => $.page.title)}
-        count={channels.length}
-        description={t(($) => $.page.description)}
-        actions={
-          <CollectionPageHeaderAction
-            icon={Plus}
-            label={t(($) => $.page.new_button)}
-            onClick={() => setCreateOpen(true)}
-          />
-        }
-      />
+      <ShellHeaderActions>
+        <CollectionPageHeaderAction
+          icon={Plus}
+          label={t(($) => $.page.new_button)}
+          onClick={() => setCreateOpen(true)}
+        />
+      </ShellHeaderActions>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <aside

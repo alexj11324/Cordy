@@ -1,0 +1,65 @@
+"use client";
+
+import type { CSSProperties } from "react";
+import { PanelRight } from "lucide-react";
+import { useChatStore } from "@orvilo/core/chat";
+import { useWorkspacePaths } from "@orvilo/core/paths";
+import { Button } from "@orvilo/ui/components/ui/button";
+import { useNavigation } from "../navigation";
+import { useT } from "../i18n";
+import { ChatWindow } from "./components/chat-window";
+
+/** The shell owns this control, so route actions cannot hide its entry point. */
+export function GlobalRightSidebarToggle({ inSidebar = false }: { inSidebar?: boolean }) {
+  const { t } = useT("chat");
+  const isOpen = useChatStore((state) => state.isOpen);
+  const toggle = useChatStore((state) => state.toggle);
+  if (inSidebar !== isOpen) return null;
+  const label = isOpen ? t(($) => $.sidebar.close) : t(($) => $.sidebar.open);
+  return (
+    <Button
+      variant="ghost"
+      size="icon-sm"
+      className="shrink-0"
+      aria-label={label}
+      title={label}
+      aria-expanded={isOpen}
+      aria-controls="global-right-sidebar"
+      onClick={toggle}
+      style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
+    >
+      <PanelRight />
+    </Button>
+  );
+}
+
+/** In-flow shell column. The existing core store persists its open state. */
+export function GlobalRightSidebar() {
+  const { t } = useT("chat");
+  const isOpen = useChatStore((state) => state.isOpen);
+  const { pathname } = useNavigation();
+  const paths = useWorkspacePaths();
+  const chatPath = paths.chat();
+  const isChatPage = pathname === chatPath || pathname.startsWith(`${chatPath}/`);
+
+  return (
+    <aside
+      id="global-right-sidebar"
+      aria-label={t(($) => $.sidebar.title)}
+      hidden={!isOpen}
+      className={isOpen
+        ? "flex h-full min-h-0 w-[420px] max-w-[65%] shrink-0 flex-col overflow-hidden border-l border-border/60 bg-background"
+        : "hidden"}
+    >
+      <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3" style={{ WebkitAppRegion: "drag" } as CSSProperties}>
+        <span className="truncate text-sm font-medium">{t(($) => $.sidebar.title)}</span>
+        <GlobalRightSidebarToggle inSidebar />
+      </header>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      {isChatPage
+        ? <p className="p-4 text-sm text-muted-foreground">{t(($) => $.sidebar.chat_page_notice)}</p>
+        : <ChatWindow docked />}
+      </div>
+    </aside>
+  );
+}

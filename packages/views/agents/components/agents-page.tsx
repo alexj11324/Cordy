@@ -35,6 +35,7 @@ import { Button } from "@orvilo/ui/components/ui/button";
 import { MANAGEMENT_GRID_BOTTOM_CLEARANCE } from "../../common/management-grid";
 import { useNavigation } from "../../navigation";
 import { CollectionPageState } from "../../layout/collection-page";
+import { ShellHeaderActions } from "../../layout/shell-header";
 import {
   AgentListToolbar,
   countActiveFilterDimensions,
@@ -158,41 +159,23 @@ export interface AgentsPageProps {
 }
 
 // ---------------------------------------------------------------------------
-// Page header
+// List states
 // ---------------------------------------------------------------------------
 
-function PageHeaderBar({
-  onViewModeChange: _onViewModeChange,
-  onCreate,
-  viewMode: _viewMode,
-}: {
-  onViewModeChange?: (mode: AgentViewMode) => void;
-  onCreate: () => void;
-  viewMode?: AgentViewMode;
-}) {
+function AgentsCreateAction({ onCreate }: { onCreate: () => void }) {
   const { t } = useT("agents");
   return (
-    <header className="flex shrink-0 items-center justify-between gap-4 px-6 pb-4 pt-6 sm:px-8 border-b border-border/40">
-      <div className="min-w-0 space-y-0.5">
-        <h1 className="truncate text-display-sm font-semibold tracking-tight text-foreground">
-          {t(($) => $.page.title)}
-        </h1>
-        <p className="text-body text-muted-foreground">
-          {t(($) => $.page.tagline)}
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <Button
-          onClick={onCreate}
-          size="sm"
-          className="gap-1.5 shadow-2xs"
-          data-testid="new-agent-header-btn"
-        >
-          <Plus className="size-3.5" data-icon="inline-start" />
-          <span>{t(($) => $.page.new_agent)}</span>
-        </Button>
-      </div>
-    </header>
+    <ShellHeaderActions>
+      <Button
+        onClick={onCreate}
+        size="sm"
+        className="gap-1.5 shadow-2xs"
+        data-testid="new-agent-header-btn"
+      >
+        <Plus className="size-3.5" data-icon="inline-start" />
+        <span>{t(($) => $.page.new_agent)}</span>
+      </Button>
+    </ShellHeaderActions>
   );
 }
 
@@ -208,7 +191,7 @@ function ListError({
   const { t } = useT("agents");
   return (
     <div className="flex flex-1 min-h-0 flex-col">
-      <PageHeaderBar onCreate={onCreate} />
+      <AgentsCreateAction onCreate={onCreate} />
       <CollectionPageState
         role="alert"
         tone="destructive"
@@ -229,19 +212,13 @@ function ListError({
   );
 }
 
-function EmptyState({ onCreate }: { onCreate: () => void }) {
+function EmptyState() {
   const { t } = useT("agents");
   return (
     <CollectionPageState
       icon={Bot}
       title={t(($) => $.empty.title)}
       description={t(($) => $.empty.description)}
-      actions={
-        <Button type="button" onClick={onCreate} size="sm">
-          <Plus aria-hidden="true" className="size-3" />
-          {t(($) => $.page.new_agent)}
-        </Button>
-      }
     />
   );
 }
@@ -510,19 +487,17 @@ export function AgentsPage({ localDaemonId }: AgentsPageProps = {}) {
     (!needsPresence || !presenceLoading);
 
   const openNewAgent = () => navigation.push(paths.newAgent());
+  // The gallery card and the table toolbar already provide a create action.
+  const showCreateActionInContent =
+    !isLoading &&
+    (showEmpty || (listReady && (viewMode === "table" || scope !== "archived")));
 
   return (
     // The list is a single surface. Opening an agent overlays a right-hand
     // sheet instead of splitting the gallery or navigating away.
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="relative flex min-w-0 flex-1 flex-col">
-        {viewMode !== "table" || showEmpty ? (
-          <PageHeaderBar
-            onCreate={openNewAgent}
-            onViewModeChange={setViewMode}
-            viewMode={viewMode}
-          />
-        ) : null}
+        {!showCreateActionInContent && <AgentsCreateAction onCreate={openNewAgent} />}
 
       {isLoading || (!showEmpty && !listReady) ? (
         viewMode === "table" ? (
@@ -543,7 +518,7 @@ export function AgentsPage({ localDaemonId }: AgentsPageProps = {}) {
                 onClick={openNewAgent}
               />
             </div>
-            <EmptyState onCreate={openNewAgent} />
+            <EmptyState />
           </div>
         </div>
       ) : (

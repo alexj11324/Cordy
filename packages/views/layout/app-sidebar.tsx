@@ -721,7 +721,9 @@ export function AppSidebar({
       {topSlot}
 
       <SidebarContent ref={sidebarScrollRef} style={sidebarFadeStyle}>
-        <div className="py-2 pt-2">{searchSlot}</div>
+        <div className="px-1 py-2 in-data-[state=collapsed]:flex in-data-[state=collapsed]:justify-center">
+          {searchSlot}
+        </div>
 
         <SidebarGroup className="py-0">
           <SidebarGroupContent>

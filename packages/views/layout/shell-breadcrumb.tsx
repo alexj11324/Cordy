@@ -7,10 +7,10 @@ import {
   BreadcrumbItem,
   BreadcrumbLink,
   BreadcrumbList,
-  BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@orvilo/ui/components/ui/breadcrumb";
 import { useTabPresentation } from "./tab-presentation";
+import { ShellHeaderBreadcrumbSlot } from "./shell-header";
 
 /**
  * Workspace › current page trail for the shell header.
@@ -42,7 +42,16 @@ export function ShellBreadcrumb() {
         </BreadcrumbItem>
         <BreadcrumbSeparator className="shrink-0" />
         <BreadcrumbItem className="min-w-0">
-          <BreadcrumbPage className="truncate">{title}</BreadcrumbPage>
+          <ShellHeaderBreadcrumbSlot
+            fallback={
+              <h1
+                className="truncate text-body font-medium text-foreground"
+                aria-current="page"
+              >
+                {title}
+              </h1>
+            }
+          />
         </BreadcrumbItem>
       </BreadcrumbList>
     </Breadcrumb>

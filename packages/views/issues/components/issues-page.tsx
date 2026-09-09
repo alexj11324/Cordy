@@ -9,7 +9,6 @@ import type {
 } from "@orvilo/core/types";
 import { useIssuesScope } from "@orvilo/core/issues/stores/issues-scope-store";
 import { useViewStore } from "@orvilo/core/issues/stores/view-store-context";
-import { PageHeader } from "../../layout/page-header";
 import { useT } from "../../i18n";
 import { IssueSurface } from "../surface/issue-surface";
 import { IssuesHeader } from "./issues-header";
@@ -53,11 +52,6 @@ export function IssuesPage() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
-      <PageHeader>
-        <ListTodo className="h-4 w-4 text-muted-foreground" />
-        <h1 className="text-body font-medium">{t(($) => $.page.breadcrumb_title)}</h1>
-      </PageHeader>
-
       <IssueSurface
         scope={{ type: "workspace", actorKind: scope }}
         modes={["board", "list", "table"]}

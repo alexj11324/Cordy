@@ -237,12 +237,12 @@ function reset() {
 }
 
 describe("InboxPage", () => {
-  it("keeps the title unread count static", () => {
+  it("keeps the unread count static", () => {
     reset();
     const { container } = render(<InboxPage />);
-    const titleCount = container.querySelector("h1")?.parentElement?.querySelector(
-      "number-flow-react",
-    ) as (HTMLElement & { animated?: boolean }) | null;
+    const titleCount = container.querySelector("number-flow-react") as
+      | (HTMLElement & { animated?: boolean })
+      | null;
 
     expect(titleCount?.getAttribute("aria-label")).toBe("2");
     expect(titleCount?.animated).toBe(false);
@@ -402,6 +402,7 @@ describe("InboxPage", () => {
     render(<InboxPage />);
     fireEvent.click(screen.getByTestId("row"));
     expect(issueDetailProps.at(-1)?.highlightRequestToken).toBe(0);
+    expect(issueDetailProps.at(-1)?.inlineHeader).toBe(true);
 
     fireEvent.click(screen.getByTestId("row"));
     expect(issueDetailProps.at(-1)?.highlightRequestToken).toBe(1);

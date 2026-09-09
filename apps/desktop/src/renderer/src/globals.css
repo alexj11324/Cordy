@@ -45,7 +45,26 @@
 @source "../../../../../packages/views/**/*.{ts,tsx}";
 @source "./**/*.tsx";
 
-/* Desktop-specific: override sidebar container padding for traffic light layout */
+/* Desktop keeps the rail flush with the window so traffic lights sit on the
+   sidebar material. The inset collapsed width still budgets for that padding,
+   which left-aligns icons in a too-wide column. Size the icon column to the
+   native lights (or the icon token); the canvas stays edge-to-edge white
+   with only a left gutter from the rail. */
 [data-slot="sidebar-container"] {
   padding: 0 !important;
+  overflow: visible;
+}
+
+[data-slot="sidebar-inner"] {
+  overflow: visible;
+}
+
+[data-slot="sidebar-gap"][data-layout-collapsible="icon"],
+[data-collapsible="icon"][data-slot="sidebar"] [data-slot="sidebar-container"] {
+  width: max(var(--sidebar-width-icon), var(--desktop-traffic-light-end, 0px)) !important;
+}
+
+[data-slot="desktop-dashboard"] [data-slot="sidebar-inset"] {
+  margin: 0 !important;
+  margin-left: var(--desktop-content-gutter, 0px) !important;
 }

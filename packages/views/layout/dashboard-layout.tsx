@@ -2,11 +2,20 @@
 
 import type { ReactNode } from "react";
 import { cn } from "@orvilo/ui/lib/utils";
-import { SidebarProvider, SidebarInset } from "@orvilo/ui/components/ui/sidebar";
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@orvilo/ui/components/ui/sidebar";
 import { ModalRegistry } from "../modals/registry";
 import { SourceBackfillModal } from "../onboarding";
+import { GlobalRightSidebar, GlobalRightSidebarToggle } from "../chat/global-right-sidebar";
 import { AppSidebar } from "./app-sidebar";
 import { ShellBreadcrumb } from "./shell-breadcrumb";
+import {
+  ShellHeaderActionsSlot,
+  ShellHeaderProvider,
+} from "./shell-header";
 import { DashboardGuard } from "./dashboard-guard";
 import { NavigationProgress } from "./navigation-progress";
 import { WorkspacePresencePrefetch } from "./workspace-presence-prefetch";
@@ -38,6 +47,7 @@ export function DashboardLayout({
       }
     >
       <SidebarProvider
+        hasExternalTrigger
         className={cn(
           "h-svh [--sidebar-width:260px] [--sidebar-border:transparent]",
           "[&_[data-slot=sidebar-menu-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-button][data-active]]:border",
@@ -45,7 +55,7 @@ export function DashboardLayout({
           "[&_[data-slot=sidebar-menu-button][data-active]]:bg-background! [&_[data-slot=sidebar-menu-button][data-active]]:hover:bg-background! **:data-[slot=sidebar-menu-button]:hover:bg-transparent!",
           "[&_[data-slot=sidebar-menu-button][data-active]]:text-foreground [&_[data-slot=sidebar-menu-button][data-active]>svg]:text-primary [&_[data-slot=sidebar-menu-button][data-active]>svg]:opacity-100",
           "**:data-[slot=sidebar-menu-button]:text-accent-foreground/80 **:data-[slot=sidebar-menu-button]:hover:text-foreground",
-          "[&_[data-collapsible=icon]_[data-slot=sidebar-menu-button][data-active]>svg]:-ml-px",
+          "[&_[data-collapsible=icon]_[data-slot=sidebar-menu-button]]:mx-auto",
           "[&_[data-slot=sidebar-menu-button]:hover>svg]:opacity-100 [&_[data-slot=sidebar-menu-button]>svg]:opacity-60",
           "[&_[data-slot=sidebar-menu-sub-button][data-active]]:border-border/60! [&_[data-slot=sidebar-menu-sub-button][data-active]]:border",
           "[&_[data-slot=sidebar-menu-sub-button][data-active]]:shadow-xs! [&_[data-slot=sidebar-menu-sub-button][data-active]]:shadow-black/5!",
@@ -55,26 +65,36 @@ export function DashboardLayout({
           "[&_[data-slot=sidebar-menu-sub-button]:hover>svg]:opacity-100 [&_[data-slot=sidebar-menu-sub-button]>svg]:opacity-60",
         )}
       >
-        <GlobalShortcuts />
-        <WorkspacePresencePrefetch />
-        <AppSidebar searchSlot={searchSlot} />
-        <SidebarInset className="relative ml-0! overflow-hidden">
-          <header className="border-border/60 flex h-12 shrink-0 items-center border-b px-4">
-            <ShellBreadcrumb />
-          </header>
-          <NavigationProgress />
-          <AgentThreadPanelLayout>
-            <div
-              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain"
-              data-testid="web-route-scroll-viewport"
-            >
-              {children}
+        <ShellHeaderProvider>
+          <GlobalShortcuts />
+          <WorkspacePresencePrefetch />
+          <AppSidebar searchSlot={searchSlot} />
+          <SidebarInset className="relative m-0! flex-row! overflow-hidden">
+            <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-slot="shell-main-column">
+            <header className="border-border/60 flex h-12 shrink-0 items-center gap-2 border-b px-4">
+              <SidebarTrigger className="xl:hidden" />
+              <div className="min-w-0 flex-1">
+                <ShellBreadcrumb />
+              </div>
+              <ShellHeaderActionsSlot />
+              <GlobalRightSidebarToggle />
+            </header>
+            <NavigationProgress />
+            <AgentThreadPanelLayout>
+              <div
+                className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain"
+                data-testid="web-route-scroll-viewport"
+              >
+                {children}
+              </div>
+            </AgentThreadPanelLayout>
+            <ModalRegistry />
+            <SourceBackfillModal />
+            {extra}
             </div>
-          </AgentThreadPanelLayout>
-          <ModalRegistry />
-          <SourceBackfillModal />
-          {extra}
-        </SidebarInset>
+            <GlobalRightSidebar />
+          </SidebarInset>
+        </ShellHeaderProvider>
       </SidebarProvider>
     </DashboardGuard>
   );

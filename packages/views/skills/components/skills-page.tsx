@@ -56,10 +56,10 @@ import {
   useRowLink,
 } from "../../navigation";
 import {
-  CollectionPageHeader,
   CollectionPageHeaderAction,
   CollectionPageState,
 } from "../../layout/collection-page";
+import { ShellHeaderActions } from "../../layout/shell-header";
 import { canEditSkill } from "../hooks/use-can-edit-skill";
 import { originSourceUrl, readOrigin, type OriginInfo } from "../lib/origin";
 import { CreateSkillDialog } from "./create-skill-dialog";
@@ -167,32 +167,16 @@ export interface SkillRow {
 // h-12 chrome stay consistent with every other dashboard list page.
 // ---------------------------------------------------------------------------
 
-function PageHeaderBar({
-  totalCount,
-  onCreate,
-}: {
-  totalCount: number;
-  onCreate: () => void;
-}) {
+function SkillsCreateAction({ onCreate }: { onCreate: () => void }) {
   const { t } = useT("skills");
   return (
-    <CollectionPageHeader
-      icon={SkillIcon}
-      title={t(($) => $.page.title)}
-      count={totalCount}
-      description={t(($) => $.page.tagline)}
-      learnMore={{
-        href: "https://orvilo.aspectlylabs.com/docs/skills",
-        label: t(($) => $.page.learn_more),
-      }}
-      actions={
-        <CollectionPageHeaderAction
-          icon={Plus}
-          label={t(($) => $.page.new_skill)}
-          onClick={onCreate}
-        />
-      }
-    />
+    <ShellHeaderActions>
+      <CollectionPageHeaderAction
+        icon={Plus}
+        label={t(($) => $.page.new_skill)}
+        onClick={onCreate}
+      />
+    </ShellHeaderActions>
   );
 }
 
@@ -774,7 +758,7 @@ export default function SkillsPage() {
   if (listError) {
     return (
       <div className="flex flex-1 min-h-0 flex-col">
-        <PageHeaderBar totalCount={0} onCreate={() => setCreateOpen(true)} />
+        <SkillsCreateAction onCreate={() => setCreateOpen(true)} />
         <CollectionPageState
           role="alert"
           tone="destructive"
@@ -821,10 +805,7 @@ export default function SkillsPage() {
     // relative: positioning anchor for the batch toolbar (page-centered,
     // not viewport-centered).
     <div className="relative flex flex-1 min-h-0 flex-col">
-      <PageHeaderBar
-        totalCount={totalCount}
-        onCreate={() => setCreateOpen(true)}
-      />
+      <SkillsCreateAction onCreate={() => setCreateOpen(true)} />
 
       {supportingQueryDown && (
         <div

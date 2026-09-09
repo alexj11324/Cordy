@@ -279,6 +279,7 @@ describe("AgentsPage listReady gate", () => {
   });
 
   it("renders rows in the resolved lastActive order once deps land", () => {
+    mocks.viewState.viewMode = "table";
     // The listReady gate still waits on lastActive deps. The ReUI grid then
     // sorts by the Customer/name column (template default), so Alpha precedes
     // Beta even when activity would have ranked Beta first.
@@ -300,6 +301,8 @@ describe("AgentsPage listReady gate", () => {
     expect(screen.getByText("Alpha Agent")).toBeInTheDocument();
     expect(screen.getByText("Beta Agent")).toBeInTheDocument();
     expect(betaPrecedesAlpha()).toBe(false);
+    expect(screen.getAllByRole("button", { name: "New agent" })).toHaveLength(1);
+    expect(screen.queryByTestId("new-agent-header-btn")).not.toBeInTheDocument();
   });
 
   it("renders rows immediately for name sort without waiting on activity/run-counts", () => {
@@ -370,6 +373,8 @@ describe("AgentsPage listReady gate", () => {
     renderPage();
 
     expect(screen.getByText("No agents yet")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "New agent" })).toHaveLength(1);
+    expect(screen.queryByTestId("new-agent-header-btn")).not.toBeInTheDocument();
     expect(screen.queryByTestId("skeleton")).not.toBeInTheDocument();
   });
 

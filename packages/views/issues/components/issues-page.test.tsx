@@ -786,7 +786,7 @@ describe("IssuesPage (shared)", () => {
     expect(mockListIssues).not.toHaveBeenCalled();
   });
 
-  it("shows the 'Issues' section header without a workspace prefix", async () => {
+  it("does not repeat the page title under the shell breadcrumb", async () => {
     mockListIssues.mockImplementation((params: any) =>
       Promise.resolve({
         issues: mockIssues.filter((i) => i.status === params?.status),
@@ -796,9 +796,8 @@ describe("IssuesPage (shared)", () => {
 
     renderWithQuery(<IssuesPage />);
 
-    await screen.findByText("Issues");
-    // The list header is now `icon + title`, matching the other list pages.
-    // The workspace/org name is no longer rendered as a breadcrumb prefix.
+    expect(await screen.findAllByText("All")).not.toHaveLength(0);
+    expect(screen.queryByRole("heading", { name: "Issues" })).not.toBeInTheDocument();
     expect(screen.queryByText("Test WS")).not.toBeInTheDocument();
   });
 

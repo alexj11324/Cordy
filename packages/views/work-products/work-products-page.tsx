@@ -13,10 +13,7 @@ import type { WorkProduct } from "@orvilo/core/types";
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
-import {
-  CollectionPageHeader,
-  CollectionPageState,
-} from "../layout/collection-page";
+import { CollectionPageState } from "../layout/collection-page";
 import { AppLink } from "../navigation";
 import { useLocale, useT } from "../i18n";
 import { ProvenanceCard } from "./provenance-card";
@@ -44,13 +41,6 @@ export function WorkProductsPage() {
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <CollectionPageHeader
-        icon={FileText}
-        title={t(($) => $.page.title)}
-        count={products.length}
-        description={t(($) => $.page.description)}
-      />
-
       <div className="min-h-0 flex-1 overflow-auto px-4 pb-8 sm:px-6">
         {productsQuery.isPending ? (
           <ProductListSkeleton />

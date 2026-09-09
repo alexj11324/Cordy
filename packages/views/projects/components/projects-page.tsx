@@ -99,10 +99,10 @@ import type {
   UpdateProjectRequest,
 } from "@orvilo/core/types";
 import {
-  CollectionPageHeader,
   CollectionPageHeaderAction,
   CollectionPageState,
 } from "../../layout/collection-page";
+import { ShellHeaderActions } from "../../layout/shell-header";
 import { ProjectIcon } from "./project-icon";
 import { useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
@@ -939,18 +939,13 @@ export function ProjectsPage() {
   return (
     // relative: positioning anchor for the page-centered batch toolbar.
     <div className="relative flex flex-1 min-h-0 flex-col">
-      <CollectionPageHeader
-        icon={FolderKanban}
-        title={t(($) => $.page.title)}
-        count={projects.length}
-        actions={
-          <CollectionPageHeaderAction
-            icon={Plus}
-            label={t(($) => $.page.new_project)}
-            onClick={openCreateProject}
-          />
-        }
-      />
+      <ShellHeaderActions>
+        <CollectionPageHeaderAction
+          icon={Plus}
+          label={t(($) => $.page.new_project)}
+          onClick={openCreateProject}
+        />
+      </ShellHeaderActions>
 
       {showEmpty ? (
         <CollectionPageState
