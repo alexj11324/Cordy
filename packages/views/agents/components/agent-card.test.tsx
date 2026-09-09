@@ -122,7 +122,7 @@ describe("AgentCard", () => {
     expect(screen.queryByText("Risk")).not.toBeInTheDocument();
     expect(screen.queryByText(/left/)).not.toBeInTheDocument();
     expect(screen.getByText("Mira Stone")).toBeInTheDocument();
-    expect(screen.getByText("Alex MacBook Pro")).toBeInTheDocument();
+    expect(screen.queryByText("Alex MacBook Pro")).not.toBeInTheDocument();
   });
 
   it("keeps the create card in the same fixed gallery geometry", () => {

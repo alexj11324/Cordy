@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   Activity,
   AlertCircle,
@@ -35,6 +35,7 @@ import {
   TabsTrigger,
   TabsContent,
 } from "@orvilo/ui/components/ui/tabs";
+import { Sheet, SheetContent, SheetTitle } from "@orvilo/ui/components/ui/sheet";
 import { cn } from "@orvilo/ui/lib/utils";
 import { AppLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -69,70 +70,12 @@ export function AgentProfilePanel({
   const locale = useLocale();
   const paths = useWorkspacePaths();
   const [activeTab, setActiveTab] = useState<ProfileTab>("info");
-  const [isMobile, setIsMobile] = useState(false);
-  const panelRef = useRef<HTMLElement>(null);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
   const { agent, runtime, presence, owner } = row;
   const needsRuntime = !agent.archived_at && !isAgentRuntimeBound(agent);
 
   useEffect(() => {
     setActiveTab("info");
   }, [agent.id]);
-
-  useEffect(() => {
-    const media = window.matchMedia?.("(max-width: 1023px)");
-    if (!media) return;
-    const update = () => setIsMobile(media.matches);
-    update();
-    media.addEventListener("change", update);
-    return () => media.removeEventListener("change", update);
-  }, []);
-
-  useEffect(() => {
-    const panel = panelRef.current;
-    const previous =
-      isMobile && document.activeElement instanceof HTMLElement
-        ? document.activeElement
-        : null;
-    const focusables = () =>
-      Array.from(
-        panel?.querySelectorAll<HTMLElement>(
-          'a[href],button:not([disabled]),[tabindex]:not([tabindex="-1"])',
-        ) ?? [],
-      );
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onCloseRef.current();
-        return;
-      }
-      if (!isMobile || !panel || event.key !== "Tab") return;
-      const items = focusables();
-      if (items.length === 0) {
-        event.preventDefault();
-        panel.focus();
-        return;
-      }
-      const index = items.indexOf(document.activeElement as HTMLElement);
-      if (event.shiftKey && (index <= 0 || index === -1)) {
-        event.preventDefault();
-        items.at(-1)?.focus();
-      } else if (
-        !event.shiftKey &&
-        (index === -1 || index === items.length - 1)
-      ) {
-        event.preventDefault();
-        items[0]?.focus();
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    if (isMobile && panel) (focusables()[0] ?? panel).focus();
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      previous?.focus();
-    };
-  }, [agent.id, isMobile]);
 
   const detailHref = paths.agentDetail(agent.id);
   const detailWithView = (view: string) => `${detailHref}?view=${view}`;
@@ -164,28 +107,25 @@ export function AgentProfilePanel({
         : t(($) => $.last_active.days_ago, { count: row.lastActiveDays });
 
   return (
-    <>
-      <div
-        aria-hidden="true"
-        className="fixed inset-0 z-40 bg-black/10 lg:hidden"
-        onClick={onClose}
-      />
-      <aside
-        aria-labelledby="agent-profile-panel-title"
-        aria-modal={isMobile ? true : undefined}
-        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-[420px] min-w-0 flex-col border-l border-border/70 bg-background shadow-xl lg:relative lg:inset-auto lg:z-auto lg:w-[400px] lg:max-w-none lg:shadow-none"
+    <Sheet
+      open
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <SheetContent
+        aria-modal="true"
+        className="min-w-0 gap-0 bg-background data-[side=right]:w-full data-[side=right]:sm:max-w-[420px]"
         data-testid="agent-profile-panel"
-        ref={panelRef}
-        role="dialog"
-        tabIndex={-1}
+        side="right"
+        showCloseButton={false}
       >
         <header className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b px-4">
-          <h2
+          <SheetTitle
             className="min-w-0 truncate text-title-sm font-semibold tracking-tight"
-            id="agent-profile-panel-title"
           >
             {t(($) => $.profile_panel.title)}
-          </h2>
+          </SheetTitle>
           <div className="flex shrink-0 items-center gap-1">
             {row.canManage ? (
             <Button
@@ -418,8 +358,8 @@ export function AgentProfilePanel({
             </Tabs>
           </div>
         </div>
-      </aside>
-    </>
+      </SheetContent>
+    </Sheet>
   );
 }
 

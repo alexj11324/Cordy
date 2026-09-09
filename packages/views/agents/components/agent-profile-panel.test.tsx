@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { Agent } from "@orvilo/core/types";
 import { I18nProvider } from "@orvilo/core/i18n/react";
@@ -123,11 +123,26 @@ function renderPanel(onClose = vi.fn(), panelRow = row) {
 }
 
 describe("AgentProfilePanel", () => {
+  it("portals the right drawer outside the gallery layout", () => {
+    const { container } = renderPanel();
+    const dialog = screen.getByRole("dialog", { name: "Profile" });
+
+    expect(container).not.toContainElement(dialog);
+    expect(dialog).toHaveAttribute("data-side", "right");
+    expect(dialog).toHaveAttribute("aria-modal", "true");
+  });
+
+  it("closes the drawer with Escape", async () => {
+    const { onClose } = renderPanel();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
   it("hides Edit from read-only viewers and keeps unsupported destinations as text", () => {
-    const { container } = renderPanel(vi.fn(), { ...row, canManage: false });
+    renderPanel(vi.fn(), { ...row, canManage: false });
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(screen.getByText("Agent instructions").closest("a")).toBeNull();
-    expect(container.querySelector('a[href*="view=instructions"], a[href*="view=skills"], a[href*="view=mcp_config"], a[href*="view=work"]')).toBeNull();
+    expect(screen.getByRole("dialog").querySelector('a[href*="view=instructions"], a[href*="view=skills"], a[href*="view=mcp_config"], a[href*="view=work"]')).toBeNull();
   });
 
   it("uses the Buzz-style profile hero and grouped info rows", () => {
