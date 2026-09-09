@@ -9,20 +9,26 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type memberFixture struct{ key, name, role string }
+type memberFixture struct{ key, name, legacyName, role, avatarURL string }
 
+// Names and photo URLs match ReUI data-grid-base-1's original sample people.
 var teamMembers = []memberFixture{
-	{"lin", "林悦 · 示例", "产品设计"},
-	{"chen", "陈宇 · 示例", "前端开发"},
-	{"zhou", "周宁 · 示例", "后端开发"},
-	{"xu", "许言 · 示例", "测试验收"},
+	{"lin", "Alex Johnson", "林悦 · 示例", "产品设计", "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=96&h=96&dpr=2&q=80"},
+	{"chen", "Aron Thompson", "陈宇 · 示例", "前端开发", "https://images.unsplash.com/photo-1527980965255-d3b416303d12?w=96&h=96&dpr=2&q=80"},
+	{"zhou", "David Kim", "周宁 · 示例", "后端开发", "https://images.unsplash.com/photo-1607990281513-2c110a25bd8c?w=96&h=96&dpr=2&q=80"},
+	{"xu", "Emma Wilson", "许言 · 示例", "测试验收", "https://images.unsplash.com/photo-1485893086445-ed75865251e0?w=96&h=96&dpr=2&q=80"},
 }
 
 func ensureMembers(ctx context.Context, tx pgx.Tx, workspaceID pgtype.UUID) error {
 	for _, member := range teamMembers {
 		userID := pgUUID(fixtureID("user/" + member.key))
-		if _, err := tx.Exec(ctx, `INSERT INTO "user" (id,name,email) VALUES ($1,$2,$3) ON CONFLICT (id) DO NOTHING`, userID, member.name, "seed-"+member.key+"@dev-fixtures.invalid"); err != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO "user" (id,name,email,avatar_url) VALUES ($1,$2,$3,$4) ON CONFLICT (id) DO NOTHING`, userID, member.name, "seed-"+member.key+"@dev-fixtures.invalid", member.avatarURL); err != nil {
 			return fmt.Errorf("seed member user: %w", err)
+		}
+		// Upgrade only the exact original fixture profile; preserve user edits.
+		if _, err := tx.Exec(ctx, `UPDATE "user" SET name=$2,avatar_url=$3
+ WHERE id=$1 AND name=$4 AND COALESCE(avatar_url,'')='' AND email=$5`, userID, member.name, member.avatarURL, member.legacyName, "seed-"+member.key+"@dev-fixtures.invalid"); err != nil {
+			return fmt.Errorf("upgrade seed member profile: %w", err)
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO member (id,workspace_id,user_id,role) VALUES ($1,$2,$3,'member') ON CONFLICT DO NOTHING`, pgUUID(fixtureID("member/"+member.key)), workspaceID, userID); err != nil {
 			return fmt.Errorf("seed member: %w", err)
@@ -72,7 +78,10 @@ func SeedTeam(ctx context.Context, pool *pgxpool.Pool, developerEmail string) er
 		return tx.Commit(ctx)
 	}
 	teamID := pgUUID(fixtureID("team/product"))
-	if _, err := tx.Exec(ctx, `INSERT INTO team (id,workspace_id,name,description,leader_id,creator_id) VALUES ($1,$2,'产品研发 · 示例','用于查看多人协作和任务分工的开发样例；任务状态为示例，Agent 在线状态来自真实设备。',$3,$4) ON CONFLICT (id) DO NOTHING`, teamID, workspaceID, agents[0], developerID); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO team (id,workspace_id,name,description,leader_id,creator_id) VALUES ($1,$2,'产品研发','用于查看多人协作和任务分工的开发样例；任务状态为示例，Agent 在线状态来自真实设备。',$3,$4) ON CONFLICT (id) DO NOTHING`, teamID, workspaceID, agents[0], developerID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE team SET name='产品研发' WHERE id=$1 AND workspace_id=$2 AND name='产品研发 · 示例' AND creator_id=$3 AND description='用于查看多人协作和任务分工的开发样例；任务状态为示例，Agent 在线状态来自真实设备。'`, teamID, workspaceID, developerID); err != nil {
 		return err
 	}
 	for _, member := range teamMembers {
