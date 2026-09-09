@@ -218,6 +218,32 @@ function MemberCell({
   );
 }
 
+function MemberEmail({ email }: { email: string }) {
+  const host = (
+    globalThis as typeof globalThis & {
+      desktopAPI?: { host?: "electron" | "browser" };
+    }
+  ).desktopAPI?.host;
+
+  if (host === "electron") {
+    return (
+      <span className="block truncate text-body" title={email}>
+        {email}
+      </span>
+    );
+  }
+
+  return (
+    <a
+      href={`mailto:${email}`}
+      className="block truncate text-body transition-colors hover:text-primary hover:underline"
+      title={email}
+    >
+      {email}
+    </a>
+  );
+}
+
 function ActiveStatusCell({ label }: { label: string }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
@@ -281,15 +307,7 @@ export function createMemberGridColumns({
       header: ({ column }) => (
         <DataGridColumnHeader column={column} visibility={true} />
       ),
-      cell: ({ row }) => (
-        <a
-          href={`mailto:${row.original.email}`}
-          className="block truncate text-body transition-colors hover:text-primary hover:underline"
-          title={row.original.email}
-        >
-          {row.original.email}
-        </a>
-      ),
+      cell: ({ row }) => <MemberEmail email={row.original.email} />,
       size: 220,
       enableSorting: true,
       enableHiding: false,

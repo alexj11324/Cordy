@@ -228,7 +228,7 @@ function SortablePinItem({
       >
         {iconNode}
         <span
-          className="min-w-0 flex-1 overflow-hidden whitespace-nowrap in-data-[state=collapsed]:hidden"
+          className="min-w-0 flex-1 truncate whitespace-nowrap transition-[max-width,opacity] duration-200 group-data-[collapsible=icon]:max-w-0 group-data-[collapsible=icon]:opacity-0"
           style={{
             maskImage: "linear-gradient(to right, black calc(100% - 12px), transparent)",
             WebkitMaskImage: "linear-gradient(to right, black calc(100% - 12px), transparent)",
@@ -476,7 +476,8 @@ export function AppSidebar({
   searchSlot,
 }: AppSidebarProps = {}) {
   const { t } = useT("layout");
-  const { pathname, push } = useNavigation();
+  const { pathname, searchParams, push, openInNewTab } = useNavigation();
+  const search = searchParams?.toString() ?? "";
   const user = useAuthStore((s) => s.user);
   const userId = useAuthStore((s) => s.user?.id);
   const logout = useLogout();
@@ -500,7 +501,7 @@ export function AppSidebar({
   const { state: sidebarState, setOpenMobile, setHoverRevealSuspended } = useSidebar();
   useEffect(() => {
     setOpenMobile(false);
-  }, [pathname, setOpenMobile]);
+  }, [pathname, search, setOpenMobile]);
 
   const wsId = workspace?.id;
   const { data: inboxItems = EMPTY_INBOX } = useQuery({
@@ -742,13 +743,14 @@ export function AppSidebar({
               <SidebarMenuItem>
                 <SidebarMenuButton
                   tooltip={t(($) => $.sidebar.new_issue)}
+                  aria-label={t(($) => $.sidebar.new_issue)}
                   onClick={() => openCreateIssueWithPreference()}
                 >
                   <span className="relative">
                     <SquarePen aria-hidden="true" />
                     <DraftDot />
                   </span>
-                  <span className="in-data-[state=collapsed]:hidden">
+                  <span className="min-w-0 flex-1 truncate transition-[max-width,opacity] duration-200 group-data-[collapsible=icon]:max-w-0 group-data-[collapsible=icon]:opacity-0">
                     {t(($) => $.sidebar.new_issue)}
                   </span>
                   {createIssueShortcut ? (
@@ -864,9 +866,24 @@ export function AppSidebar({
           }}
           workspaceMenuContent={pendingInvitationMenu}
           onOpenChange={setHoverRevealSuspended}
-          onSelectWorkspace={(workspaceId) => {
+          onSelectWorkspace={(workspaceId, event) => {
             const selected = workspaces.find((candidate) => candidate.id === workspaceId);
-            if (selected) push(paths.workspace(selected.slug).issues());
+            if (!selected) return;
+            const href = paths.workspace(selected.slug).issues();
+            const wantsNewTab =
+              event.button === 1 || event.metaKey || event.ctrlKey;
+            if (wantsNewTab) {
+              event.preventDefault();
+              if (openInNewTab) {
+                openInNewTab(href, selected.name, {
+                  activate: event.button !== 1 && event.shiftKey,
+                });
+              } else {
+                window.open(href, "_blank", "noopener,noreferrer");
+              }
+              return;
+            }
+            push(href);
           }}
           onCreateWorkspace={workspaceCreationDisabled ? undefined : () => push(paths.newWorkspace())}
           onProfile={() => push(`${p.settings()}?tab=profile`)}

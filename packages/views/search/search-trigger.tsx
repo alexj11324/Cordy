@@ -24,9 +24,11 @@ export function SearchTrigger() {
         aria-hidden="true"
         className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 opacity-50 select-none"
       />
-      <Kbd className="absolute top-1/2 right-2 -translate-y-1/2 in-data-[state=collapsed]:hidden">
-        {formatShortcut(shortcut)}
-      </Kbd>
+      {shortcut ? (
+        <Kbd className="absolute top-1/2 right-2 -translate-y-1/2 in-data-[state=collapsed]:hidden">
+          {formatShortcut(shortcut)}
+        </Kbd>
+      ) : null}
     </div>
   );
 }
