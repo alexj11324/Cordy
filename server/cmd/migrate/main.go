@@ -361,6 +361,7 @@ var concurrentIndexCleanups = map[string]string{
 	"600_terminal_report_claim_index":                           "terminal_report_receipt_claim_idx",
 	"606_device_authorization_device_code_index":                "device_authorization_device_code_hash_uidx",
 	"607_device_authorization_user_code_index":                  "device_authorization_user_code_hash_uidx",
+	"608_device_authorization_id_index":                         "device_authorization_pkey",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction
@@ -391,8 +392,6 @@ var concurrentDownIndexCleanups = map[string]string{
 	"568_issue_vcs_pull_request_unique_index":               "issue_vcs_pull_request_restore_uidx",
 	"569_issue_vcs_pull_request_lookup_index":               "idx_issue_vcs_pull_request_pr",
 	"580_channel_installation_legacy_lease_index":           "idx_channel_installation_lease",
-	"606_device_authorization_device_code_index":            "device_authorization_device_code_hash_uidx",
-	"607_device_authorization_user_code_index":              "device_authorization_user_code_hash_uidx",
 }
 
 var preMigrationHooks = func() map[string]preMigrationHook {

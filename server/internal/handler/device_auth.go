@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,6 +27,7 @@ const (
 	deviceAuthorizationUserCodeLength   = 8
 	deviceAuthorizationCodePrefix       = "odc_"
 	deviceAuthorizationUserCodeAlphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+	deviceAuthorizationJSONBodyLimit    = 4 << 10
 )
 
 // Device authorization follows RFC 8628's public device-code and
@@ -187,9 +189,16 @@ func requireDeviceAuthorizationActor(w http.ResponseWriter, r *http.Request) boo
 	return true
 }
 
-func decodeJSONBody(r *http.Request, dst any) error {
+func decodeJSONBody(w http.ResponseWriter, r *http.Request, dst any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, deviceAuthorizationJSONBodyLimit)
 	decoder := json.NewDecoder(r.Body)
 	if err := decoder.Decode(dst); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errors.New("request body must contain a single JSON value")
+		}
 		return err
 	}
 	return nil
@@ -200,7 +209,7 @@ func decodeJSONBody(r *http.Request, dst any) error {
 // the browser must separately authenticate before the code can be approved.
 func (h *Handler) CreateDeviceAuthorization(w http.ResponseWriter, r *http.Request) {
 	var req DeviceAuthorizationCodeRequest
-	if err := decodeJSONBody(r, &req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeDeviceAuthorizationError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
 	}
@@ -257,7 +266,7 @@ func (h *Handler) InspectDeviceAuthorization(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	var req DeviceAuthorizationInspectRequest
-	if err := decodeJSONBody(r, &req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -289,7 +298,7 @@ func (h *Handler) DecideDeviceAuthorization(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	var req DeviceAuthorizationDecisionRequest
-	if err := decodeJSONBody(r, &req); err != nil || req.Approve == nil {
+	if err := decodeJSONBody(w, r, &req); err != nil || req.Approve == nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -423,7 +432,7 @@ func (h *Handler) issueDeviceAuthorizationToken(w http.ResponseWriter, r *http.R
 // code can produce at most one PAT even when two pollers race.
 func (h *Handler) ExchangeDeviceAuthorizationToken(w http.ResponseWriter, r *http.Request) {
 	var req DeviceAuthorizationTokenRequest
-	if err := decodeJSONBody(r, &req); err != nil {
+	if err := decodeJSONBody(w, r, &req); err != nil {
 		writeDeviceAuthorizationError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
 		return
 	}

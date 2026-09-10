@@ -4,7 +4,7 @@
 -- User ownership and token issuance are enforced by the application in a
 -- transaction. There are intentionally no foreign keys or cascades.
 CREATE TABLE device_authorization (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
     client_name TEXT NOT NULL,
     device_code_hash TEXT NOT NULL,
     user_code_hash TEXT NOT NULL,

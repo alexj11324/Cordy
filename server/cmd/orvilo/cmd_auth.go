@@ -196,7 +196,16 @@ func deviceAuthorizationErrorMessage(err error) string {
 // prints a URL and one-time code, then polls the server; it never opens a
 // local callback listener or runs a browser-facing HTTP server.
 func runAuthLoginDevice(cmd *cobra.Command) error {
-	serverURL := resolveHumanServerURL(cmd)
+	return runAuthLoginDeviceAt(cmd, "", "")
+}
+
+// runAuthLoginDeviceAt runs device authorization against an explicit setup
+// target. Setup keeps its previous profile on disk until this flow succeeds,
+// so the target cannot be obtained from the profile being protected.
+func runAuthLoginDeviceAt(cmd *cobra.Command, serverURL, appURL string) error {
+	if serverURL == "" {
+		serverURL = resolveHumanServerURL(cmd)
+	}
 	client := cli.NewAPIClient(serverURL, "", "")
 
 	requestCtx, requestCancel := cli.APIContext(context.Background())
@@ -239,7 +248,7 @@ func runAuthLoginDevice(cmd *cobra.Command) error {
 			if tokenResp.AccessToken == "" || !strings.EqualFold(tokenResp.TokenType, "bearer") {
 				return fmt.Errorf("server returned an incomplete device token")
 			}
-			return saveAuthenticatedLogin(cmd, serverURL, tokenResp.AccessToken)
+			return saveAuthenticatedLoginWithAppURL(cmd, serverURL, appURL, tokenResp.AccessToken)
 		}
 
 		if next, pending := deviceAuthorizationPollDelay(err, pollInterval); pending {
@@ -257,6 +266,10 @@ func runAuthLoginDevice(cmd *cobra.Command) error {
 }
 
 func saveAuthenticatedLogin(cmd *cobra.Command, serverURL, token string) error {
+	return saveAuthenticatedLoginWithAppURL(cmd, serverURL, "", token)
+}
+
+func saveAuthenticatedLoginWithAppURL(cmd *cobra.Command, serverURL, appURL, token string) error {
 	ctx, cancel := cli.APIContext(context.Background())
 	defer cancel()
 
@@ -274,7 +287,9 @@ func saveAuthenticatedLogin(cmd *cobra.Command, serverURL, token string) error {
 	cfg.WorkspaceID = ""
 	cfg.Token = token
 	cfg.ServerURL = serverURL
-	if cfg.AppURL == "" && serverURL == defaultCloudServerURL {
+	if appURL != "" {
+		cfg.AppURL = appURL
+	} else if cfg.AppURL == "" && serverURL == defaultCloudServerURL {
 		cfg.AppURL = defaultCloudAppURL
 	}
 	if err := cli.SaveCLIConfigForProfile(cfg, profile); err != nil {

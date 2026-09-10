@@ -74,6 +74,23 @@ func runLogin(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	return finishLogin(cmd)
+}
+
+// runSetupLogin authenticates a setup target without writing its URLs first.
+// The auth flow persists the new profile only after the server accepts the
+// issued credential, so cancellation or failure leaves the old profile intact.
+func runSetupLogin(cmd *cobra.Command, serverURL, appURL string) error {
+	if err := requireHumanLocalCommand("login"); err != nil {
+		return err
+	}
+	if err := runAuthLoginDeviceAt(cmd, serverURL, appURL); err != nil {
+		return err
+	}
+	return finishLogin(cmd)
+}
+
+func finishLogin(cmd *cobra.Command) error {
 	// Auto-discover and watch all workspaces.
 	if err := autoWatchWorkspaces(cmd); err != nil {
 		fmt.Fprintf(os.Stderr, "\nCould not auto-configure workspaces: %v\n", err)
