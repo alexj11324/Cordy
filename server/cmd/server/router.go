@@ -217,11 +217,18 @@ func newRouter(app *application) chi.Router {
 	trustedProxies := settings.TrustedRateProxies
 	authRL := middleware.RateLimit(rdb, settings.AuthRate, time.Minute, trustedProxies)
 	authVerifyRL := middleware.RateLimit(rdb, settings.VerifyRate, time.Minute, trustedProxies)
+	deviceAuthRL := middleware.RateLimit(rdb, settings.DeviceAuthRate, time.Minute, trustedProxies)
 	desktopHandoffRL := middleware.RateLimit(rdb, settings.HandoffRate, time.Minute, trustedProxies)
 	contactSalesRL := middleware.RateLimit(rdb, settings.ContactRate, time.Hour, trustedProxies)
 	r.With(authRL).Post("/auth/send-code", h.SendCode)
 	r.With(authRL).Post("/auth/clerk", h.ClerkLogin)
 	r.With(authVerifyRL).Post("/auth/verify-code", h.VerifyCode)
+	// Device authorization is public on the CLI side: the device code is
+	// intentionally useless until an authenticated browser approves it. Keep
+	// both issuance and polling behind a dedicated per-IP budget; the polling
+	// interval is longer than the normal auth request budget.
+	r.With(deviceAuthRL).Post("/api/auth/device/code", h.CreateDeviceAuthorization)
+	r.With(deviceAuthRL).Post("/api/auth/device/token", h.ExchangeDeviceAuthorizationToken)
 	// Google is retained only as the exchange leg for explicit Desktop/CLI
 	// broker flows; the Web login page uses email send-code and does not expose
 	// this endpoint as its primary sign-in path.
@@ -411,6 +418,11 @@ func newRouter(app *application) chi.Router {
 		r.Post("/api/me/onboarding/runtime-bootstrap", h.BootstrapOnboardingRuntime)
 		r.Post("/api/me/onboarding/no-runtime-bootstrap", h.BootstrapOnboardingNoRuntime)
 		r.Post("/api/cli-token", h.IssueCliToken)
+		r.Route("/api/auth/device", func(r chi.Router) {
+			r.Use(handler.RequireHumanActor)
+			r.Post("/inspect", h.InspectDeviceAuthorization)
+			r.Post("/decision", h.DecideDeviceAuthorization)
+		})
 		r.Post("/api/upload-file", h.UploadFile)
 		r.Post("/api/feedback", h.CreateFeedback)
 		r.With(handler.RequireHumanActor).Post("/api/client-usage", h.UpsertClientUsage)

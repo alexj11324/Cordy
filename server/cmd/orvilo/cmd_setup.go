@@ -20,16 +20,14 @@ var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Configure the CLI, authenticate, and start the daemon",
 	Long: `Configures the CLI to connect to Orvilo Cloud (orvilo.aspectlylabs.com), then
-authenticates via browser and starts the agent daemon.
+authenticates with a browser-entered device code and starts the agent daemon.
 
 If a configuration already exists, you will be prompted before overwriting.
 
 Use 'orvilo setup self-host' to connect to a self-hosted server instead.
 
-If you run this command over SSH on a remote machine, keep the localhost
-callback and follow the SSH tunnel hint printed during browser login. If your
-browser can reach this CLI directly on a private network address, pass
---callback-host <host-or-ip>.
+When the CLI runs on a server without a browser, open the printed verification
+URL on another computer and enter the one-time code shown in the terminal.
 
 Use --profile to create an isolated configuration for a separate environment:
   orvilo setup self-host --profile staging --server-url https://api-staging.co`,
@@ -41,10 +39,8 @@ var setupCloudCmd = &cobra.Command{
 	Short: "Configure the CLI for Orvilo Cloud (orvilo.aspectlylabs.com)",
 	Long: `Explicitly configures the CLI to connect to Orvilo Cloud (orvilo.aspectlylabs.com).
 
-If you run this command over SSH on a remote machine, keep the localhost
-callback and follow the SSH tunnel hint printed during browser login. If your
-browser can reach this CLI directly on a private network address, pass
---callback-host <host-or-ip>.
+When the CLI runs on a server without a browser, open the printed verification
+URL on another computer and enter the one-time code shown in the terminal.
 
 This is equivalent to running 'orvilo setup' without a subcommand.`,
 	RunE: runSetupCloud,
@@ -58,9 +54,8 @@ var setupSelfHostCmd = &cobra.Command{
 By default, connects to http://localhost:8080 (backend) and http://localhost:3000 (frontend).
 Use --server-url and --app-url to specify a custom server (e.g. an on-premise deployment).
 
-If you run this command from a different machine than the server, also pass
---callback-host <host-or-ip-the-browser-can-reach-back-to-this-machine-on> so
-the OAuth login flow can return the token to the CLI.
+When the CLI runs on a server without a browser, open the printed verification
+URL on another computer and enter the one-time code shown in the terminal.
 
 Examples:
   orvilo setup self-host

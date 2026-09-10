@@ -530,12 +530,12 @@ func wecomMetricsOrNil(m *obsmetrics.WecomMetrics) wecom.Metrics {
 }
 
 type routeSettings struct {
-	Origins                                                                  []string
-	Config                                                                   handler.Config
-	HTTPMetrics                                                              *obsmetrics.HTTPMetrics
-	RealtimeMetricsToken                                                     string
-	TrustedRateProxies                                                       []*net.IPNet
-	AuthRate, VerifyRate, HandoffRate, ContactRate, DevLoginRate, PluginRate int
+	Origins                                                                                  []string
+	Config                                                                                   handler.Config
+	HTTPMetrics                                                                              *obsmetrics.HTTPMetrics
+	RealtimeMetricsToken                                                                     string
+	TrustedRateProxies                                                                       []*net.IPNet
+	AuthRate, VerifyRate, HandoffRate, ContactRate, DevLoginRate, DeviceAuthRate, PluginRate int
 }
 
 type application struct {
@@ -1617,7 +1617,8 @@ func newApplication(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, anal
 			TrustedRateProxies:   middleware.ParseTrustedProxies(os.Getenv("RATE_LIMIT_TRUSTED_PROXIES")),
 			AuthRate:             envPositiveInt("RATE_LIMIT_AUTH", 5), VerifyRate: envPositiveInt("RATE_LIMIT_AUTH_VERIFY", 20),
 			HandoffRate: envPositiveInt("RATE_LIMIT_DESKTOP_HANDOFF", 20), ContactRate: envPositiveInt("RATE_LIMIT_CONTACT_SALES", 5),
-			DevLoginRate: envPositiveInt("RATE_LIMIT_DEV_LOGIN", 60), PluginRate: envPositiveInt("RATE_LIMIT_PLUGIN_API", 120)},
+			DevLoginRate: envPositiveInt("RATE_LIMIT_DEV_LOGIN", 60), DeviceAuthRate: envPositiveInt("RATE_LIMIT_DEVICE_AUTH", 120),
+			PluginRate: envPositiveInt("RATE_LIMIT_PLUGIN_API", 120)},
 	}
 }
 

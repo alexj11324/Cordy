@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS device_authorization_device_code_hash_uidx;

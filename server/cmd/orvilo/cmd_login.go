@@ -60,6 +60,8 @@ func init() {
 	// while `--token ovy_...` / `--token mcn_...` and the `=value` form
 	// consume the value normally.
 	loginCmd.Flags().Lookup("token").NoOptDefVal = tokenPromptSentinel
+	// Keep the deprecated flag accepted for scripts written against the local
+	// callback flow; device authorization ignores it.
 	loginCmd.Flags().String(callbackHostFlag, "", callbackHostFlagHelp)
 }
 
