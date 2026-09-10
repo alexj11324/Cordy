@@ -69,6 +69,37 @@ beforeEach(() => {
 });
 
 describe("SettingsPage flux dialog", () => {
+  it("filters settings without changing the active panel and clears the filter", () => {
+    layout.compact = false;
+    renderWithI18n(<SettingsPage />);
+    const search = screen.getByRole("searchbox", { name: "Search settings..." });
+    expect(screen.getByText("Workspace settings")).toBeInTheDocument();
+    fireEvent.change(search, { target: { value: "  GITHUB  " } });
+    expect(screen.getByRole("tab", { name: "GitHub" })).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Profile" })).not.toBeInTheDocument();
+    expect(screen.getByText("AccountTab")).toBeInTheDocument();
+    expect(replace).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "GitHub" }));
+    expect(replace).toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(search).toHaveValue("");
+    expect(screen.getByRole("tab", { name: "Profile" })).toBeInTheDocument();
+  });
+
+  it("shows an empty search state and Escape restores settings without closing", () => {
+    layout.compact = false;
+    const onDismiss = vi.fn();
+    renderWithI18n(<SettingsPage onDismiss={onDismiss} />);
+    const search = screen.getByRole("searchbox");
+    fireEvent.change(search, { target: { value: "no-such-setting-123" } });
+    expect(screen.getByRole("status")).toHaveTextContent("No matching settings");
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect(search).toHaveValue("");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Profile" })).toBeInTheDocument();
+    expect(onDismiss).not.toHaveBeenCalled();
+  });
+
   it("opens as a dialog with Cancel and Save changes", () => {
     renderWithI18n(<SettingsPage />);
 
@@ -115,10 +146,10 @@ describe("SettingsPage flux dialog", () => {
       "Issue",
       "Notifications",
       "API Tokens",
-      "General",
+      "general",
       "Repositories",
       "GitHub",
-      "Integrations",
+      "IM",
       "Billing",
       "Labels",
       "Issue Statuses",

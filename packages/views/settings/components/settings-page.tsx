@@ -3,6 +3,8 @@
 import React from "react";
 import {
   User,
+  Search,
+  X,
   SlidersHorizontal,
   Key,
   Settings,
@@ -21,6 +23,7 @@ import {
 import { GitHubMark } from "./github-mark";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@orvilo/ui/components/ui/tabs";
 import { Button } from "@orvilo/ui/components/ui/button";
+import { Input } from "@orvilo/ui/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -32,7 +35,7 @@ import {
 import { ScrollArea } from "@orvilo/ui/components/ui/scroll-area";
 import { cn } from "@orvilo/ui/lib/utils";
 import { useIsCompact } from "@orvilo/ui/hooks/use-mobile";
-import { useCurrentWorkspace, useWorkspacePaths } from "@orvilo/core/paths";
+import { useWorkspacePaths } from "@orvilo/core/paths";
 import { useFeatureEnabled } from "@orvilo/core/config";
 import {
   BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
@@ -143,7 +146,7 @@ export function SettingsPage({
   onDismiss,
 }: SettingsPageProps = {}) {
   const { t } = useT("settings");
-  const workspaceName = useCurrentWorkspace()?.name;
+  const [settingsSearch, setSettingsSearch] = React.useState("");
   const navigation = useNavigation();
   const paths = useWorkspacePaths();
   const isMobile = useIsCompact();
@@ -217,6 +220,28 @@ export function SettingsPage({
           className="min-h-0 flex-1 flex-col gap-0 lg:flex-row lg:items-stretch"
         >
           <aside className="bg-muted/20 flex shrink-0 flex-col border-b py-3 pr-12 pl-5 lg:min-h-0 lg:w-56 lg:self-stretch lg:overflow-y-auto lg:border-r lg:border-b-0 lg:py-4 lg:pr-5">
+            <div className="relative mb-3">
+              <Search aria-hidden="true" className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                role="searchbox"
+                value={settingsSearch}
+                onChange={(event) => setSettingsSearch(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && settingsSearch) {
+                    event.stopPropagation();
+                    setSettingsSearch("");
+                  }
+                }}
+                placeholder={t(($) => $.page.search_placeholder)}
+                aria-label={t(($) => $.page.search_placeholder)}
+                className="h-8 pr-8 pl-8"
+              />
+              {settingsSearch && (
+                <button type="button" onClick={() => setSettingsSearch("")} aria-label={t(($) => $.page.search_clear)} className="absolute top-1/2 right-2 -translate-y-1/2 rounded p-0.5 text-muted-foreground hover:text-foreground">
+                  <X aria-hidden="true" className="size-3.5" />
+                </button>
+              )}
+            </div>
             <div className="min-w-0">
               {isMobile ? (
                 <div className="-ml-5 overflow-x-auto overflow-y-hidden py-1 pl-5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -225,7 +250,7 @@ export function SettingsPage({
                       activeTab={activeTab}
                       extraAccountTabs={extraAccountTabs}
                       visibleWorkspaceTabKeys={visibleWorkspaceTabKeys}
-                      workspaceName={workspaceName}
+                      searchQuery={settingsSearch}
                     />
                   </TabsList>
                 </div>
@@ -235,7 +260,7 @@ export function SettingsPage({
                     activeTab={activeTab}
                     extraAccountTabs={extraAccountTabs}
                     visibleWorkspaceTabKeys={visibleWorkspaceTabKeys}
-                    workspaceName={workspaceName}
+                    searchQuery={settingsSearch}
                   />
                 </TabsList>
               )}
@@ -296,19 +321,26 @@ function SettingsNavItems({
   activeTab,
   extraAccountTabs,
   visibleWorkspaceTabKeys,
-  workspaceName,
+  searchQuery,
 }: {
   activeTab: string;
   extraAccountTabs?: ExtraSettingsTab[];
   visibleWorkspaceTabKeys: readonly (typeof WORKSPACE_TAB_KEYS)[number][];
-  workspaceName?: string;
+  searchQuery: string;
 }) {
   const { t } = useT("settings");
   const iconClassName = "size-4 shrink-0";
+  const query = searchQuery.trim().toLocaleLowerCase();
+  const matches = (value: string, label: string) =>
+    `${value} ${label} ${tabDescription(value, t)}`.toLocaleLowerCase().includes(query);
+  const accountTabs = ACCOUNT_TAB_KEYS.filter((key) => matches(key, t(($) => $.page.tabs[key])));
+  const extraTabs = extraAccountTabs?.filter((tab) => matches(tab.value, tab.label)) ?? [];
+  const workspaceTabs = visibleWorkspaceTabKeys.filter((key) => matches(WORKSPACE_TAB_VALUES[key], t(($) => $.page.tabs[key])));
+
 
   return (
     <>
-      {ACCOUNT_TAB_KEYS.map((key) => {
+      {accountTabs.map((key) => {
         const Icon = ACCOUNT_TAB_ICONS[key];
         return (
           <TabsTrigger
@@ -325,7 +357,7 @@ function SettingsNavItems({
           </TabsTrigger>
         );
       })}
-      {extraAccountTabs?.map((tab) => (
+      {extraTabs.map((tab) => (
         <TabsTrigger
           key={tab.value}
           value={tab.value}
@@ -338,10 +370,15 @@ function SettingsNavItems({
           <span className="truncate">{tab.label}</span>
         </TabsTrigger>
       ))}
-      <span className="hidden px-3 pt-3 pb-1 text-caption text-muted-foreground lg:block">
-        {workspaceName ?? t(($) => $.page.workspace_fallback)}
-      </span>
-      {visibleWorkspaceTabKeys.map((key) => {
+      {workspaceTabs.length > 0 && (
+        <span className="hidden px-3 pt-3 pb-1 text-caption text-muted-foreground lg:block">
+          {t(($) => $.page.workspace_settings)}
+        </span>
+      )}
+      {accountTabs.length + extraTabs.length + workspaceTabs.length === 0 && (
+        <p role="status" className="px-3 py-2 text-caption text-muted-foreground">{t(($) => $.page.search_empty)}</p>
+      )}
+      {workspaceTabs.map((key) => {
         const Icon = WORKSPACE_TAB_ICONS[key];
         const value = WORKSPACE_TAB_VALUES[key];
         return (

@@ -280,7 +280,7 @@ describe("Settings IntegrationsTab", () => {
 
     renderTab();
 
-    expect(screen.getAllByText("Configured by the server operator")).toHaveLength(6);
+    expect(screen.getAllByText("Admin-managed")).toHaveLength(6);
   });
 
   it("opens the platform setup guide without exposing deployment variables", () => {
@@ -336,7 +336,7 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.getByTestId("integration-channel-card-linear")).toBeInTheDocument();
   });
 
-  it("shows each channel description below its icon and title", () => {
+  it("shows channel icons and titles without description text", () => {
     renderTab();
 
     for (const channel of ["lark", "slack", "dingtalk", "wecom", "weixin", "telegram"]) {
@@ -345,8 +345,7 @@ describe("Settings IntegrationsTab", () => {
       const title = card.querySelector("h3");
       const description = title?.nextElementSibling;
       expect(title).not.toBeNull();
-      expect(description?.tagName).toBe("P");
-      expect(description).toHaveClass("text-caption", "text-muted-foreground");
+      expect(description).toBeNull();
       expect(icon).not.toHaveClass("border");
       expect(icon).not.toHaveClass("bg-muted/40");
     }
@@ -396,7 +395,7 @@ describe("Settings IntegrationsTab", () => {
       </I18nProvider>,
     );
 
-    expect(screen.getByRole("heading", { name: "Integrations" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "IM" })).toBeInTheDocument();
     expect(screen.getByTestId("integration-channel-card-lark")).toBeInTheDocument();
   });
 });
