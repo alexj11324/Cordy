@@ -26,6 +26,10 @@ describe("mobile chat copy", () => {
       expect(copy.failure.labels["agent_error.provider_network"]).toBeTruthy();
       expect(copy.processSteps(1)).toBeTruthy();
       expect(copy.processSteps(2)).toContain("2");
+      expect(copy.queueTitle(2)).toContain("2");
+      expect(copy.queueFallback).toBeTruthy();
+      expect(copy.toolState["output-available"]).toBeTruthy();
+      expect(copy.toolState["output-error"]).toBeTruthy();
       expect(copy.deleteChatDescription("Example")).toContain("Example");
       expect(copy.openChatWith("Example")).toContain("Example");
     }

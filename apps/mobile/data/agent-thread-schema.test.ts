@@ -35,7 +35,14 @@ describe("mobile Agent thread availability compatibility", () => {
       thread_tasks: [{ id: "task-1", status: "completed" }],
       current_task_id: "task-1",
       agent: { id: "agent-1", name: "Builder" },
-      events: [{ task_id: "task-1", seq: 1, type: "tool_use", content: "done" }],
+      events: [{
+        task_id: "task-1",
+        seq: 1,
+        type: "tool_use",
+        content: "done",
+        call_id: "call-1",
+        state: "input-available",
+      }],
       availability: {
         state: "provider_reconnecting",
         reason_code: "provider_reconnecting",
@@ -47,6 +54,10 @@ describe("mobile Agent thread availability compatibility", () => {
     if (!parsed.success) return;
     expect(parsed.data.availability.state).toBe("unavailable");
     expect(parsed.data.events).toHaveLength(1);
+    expect(parsed.data.events[0]).toMatchObject({
+      call_id: "call-1",
+      state: "input-available",
+    });
     expect(parsed.data.thread_tasks[0]?.id).toBe("task-1");
   });
 });

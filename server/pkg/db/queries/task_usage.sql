@@ -22,6 +22,11 @@ SELECT * FROM task_usage
 WHERE task_id = $1
 ORDER BY model;
 
+-- name: ListTaskUsageForTasks :many
+SELECT * FROM task_usage
+WHERE task_id = ANY($1::uuid[])
+ORDER BY task_id, model;
+
 -- name: ListIssueTaskUsage :many
 -- Per-(task, provider, model) usage rows for every task on one issue — the
 -- per-run half of GetIssueUsageSummary's issue-wide total.
@@ -226,7 +231,6 @@ ORDER BY total_seconds DESC;
 -- Shape note: this returns EVERY terminal task, not just the failures. The
 -- `failure_reason = ''` row of each date carries that date's succeeded
 -- count, which is the denominator the client needs for an error rate. A
--- failed row whose failure_reason column is NULL or empty (pre-MUL-1949
 -- rows, or a failure path that forgot to classify) collapses into the
 -- 'unclassified' bucket so it stays countable instead of masquerading as a
 -- success. Cardinality is bounded by days x (21 reasons + 2), so the whole

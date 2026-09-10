@@ -1,10 +1,28 @@
-import type { Issue, IssueMetadata, IssueStatus, IssueStatusCategory, IssuePriority, IssueActorType, IssueOwnerType, IssueExecutorType, IssueReviewerType } from "./issue";
+import type {
+  Issue,
+  IssueMetadata,
+  IssueStatus,
+  IssueStatusCategory,
+  IssuePriority,
+  IssueActorType,
+  IssueOwnerType,
+  IssueExecutorType,
+  IssueReviewerType,
+} from "./issue";
 import type { PropertyFilterValue } from "./property";
-import type { MemberRole } from "./workspace";
+import type { MemberRole, UserProfileDetails } from "./workspace";
 import type { Project } from "./project";
 
 // Issue API
+export interface IssueReviewSubmission {
+  worktree: string;
+  branch: string;
+  commit: string;
+  pull_requests: string[];
+}
+
 export interface CreateIssueRequest {
+  review_submission?: IssueReviewSubmission;
   title: string;
   description?: string;
   status?: IssueStatus;
@@ -52,6 +70,7 @@ export type CreateCommentSubIssueRequest =
   | CreateCommentSubIssueAgentRequest;
 
 export interface UpdateIssueRequest {
+  review_submission?: IssueReviewSubmission;
   /** Legacy aggregate compare-and-swap token. New text editors use field
    * baselines so unrelated issue activity does not reject their edits. */
   expected_revision?: number;
@@ -81,13 +100,9 @@ export interface UpdateIssueRequest {
    *  Used by the description editor to register newly uploaded files so they
    *  surface in `issueAttachments` and keep their preview Eye on refresh. */
   attachment_ids?: string[];
-  /** Skip starting the agent run this write would trigger ("暂时不启动",
-   *  MUL-3375). The assignee/status change still applies. Control field —
-   *  strip from optimistic cache patches; never written onto the Issue. */
+
   suppress_run?: boolean;
-  /** Free-text handoff instruction injected into the started run's opening
-   *  context (MUL-3375). Only consumed when a run actually starts. Control
-   *  field — strip from optimistic cache patches. */
+
   handoff_note?: string;
 }
 
@@ -96,19 +111,19 @@ export interface UpdateIssueRequest {
  * optimistic animation, but the canonical position is derived from these
  * workspace-scoped neighbors by `POST /api/issues/:id/move`.
  */
-export interface MoveIssueRequest
-  extends Pick<
-    UpdateIssueRequest,
-    | "status"
-    | "owner_type"
-    | "owner_id"
-    | "executor_type"
-    | "executor_id"
-    | "reviewer_type"
-    | "reviewer_id"
-    | "parent_issue_id"
-    | "project_id"
-  > {
+export interface MoveIssueRequest extends Pick<
+  UpdateIssueRequest,
+  | "status"
+  | "owner_type"
+  | "owner_id"
+  | "executor_type"
+  | "executor_id"
+  | "reviewer_type"
+  | "reviewer_id"
+  | "review_submission"
+  | "parent_issue_id"
+  | "project_id"
+> {
   before_id: string | null;
   after_id: string | null;
 }
@@ -148,12 +163,7 @@ export interface ListIssuesParams {
   status?: IssueStatus;
   /** Multi-value table facet. OR within the field. */
   statuses?: IssueStatus[];
-  /**
-   * Filter by status CATEGORY rather than by exact key, so one bucket holds a
-   * category's canonical status plus every custom status that inherits it.
-   * This is what keeps the board's fan-out fixed at 7 requests however many
-   * custom statuses a workspace defines. (MUL-6243)
-   */
+
   status_category?: IssueStatusCategory;
   /** Multi-value form of `status_category`. OR within the field. */
   status_categories?: IssueStatusCategory[];
@@ -318,8 +328,17 @@ export interface GroupedIssuesResponse {
 // are evaluated against the complete result set; the browser only owns view
 // state such as collapsed groups/parents.
 export type IssueTableScope =
-  | { kind: "workspace"; owner_types?: IssueOwnerType[]; executor_types?: IssueExecutorType[] }
-  | { kind: "project"; project_id: string; owner_types?: IssueOwnerType[]; executor_types?: IssueExecutorType[] }
+  | {
+      kind: "workspace";
+      owner_types?: IssueOwnerType[];
+      executor_types?: IssueExecutorType[];
+    }
+  | {
+      kind: "project";
+      project_id: string;
+      owner_types?: IssueOwnerType[];
+      executor_types?: IssueExecutorType[];
+    }
   | { kind: "owner"; actor: IssueOwnerRef }
   | { kind: "executor"; actor: IssueExecutorRef }
   | { kind: "creator"; actor: IssueActorRef }
@@ -378,17 +397,6 @@ export interface IssueTableQuerySpec {
 export type IssueTableGroupSpec =
   | { kind: "none" }
   | { kind: "status" }
-  /**
-   * Group by the CATEGORY a status behaves as, not by the status key.
-   *
-   * Board columns, list sections and swimlane cells are categories, so a custom
-   * status folds into the column it behaves as instead of getting one of its
-   * own — which is what keeps the surface's fan-out pinned at 7 no matter how
-   * many statuses a workspace defines. The descriptor still reports
-   * `value.kind === "status"` because a category's value IS its canonical
-   * status key; the group KEY is what distinguishes the two contracts.
-   * (MUL-6243)
-   */
   | { kind: "status_category" }
   | { kind: "executor" }
   | { kind: "project" }
@@ -546,7 +554,6 @@ export interface IssueStatusBucket {
  * `api.listIssues` responses by the query functions in `issues/queries.ts`.
  */
 export interface ListIssuesCache {
-  /** Bucketed by status CATEGORY — see PAGINATED_CATEGORIES. (MUL-6243) */
   byStatus: Partial<Record<IssueStatusCategory, IssueStatusBucket>>;
 }
 
@@ -573,6 +580,7 @@ export interface SearchProjectsResponse {
 }
 
 export interface UpdateMeRequest {
+  profile_details?: Partial<UserProfileDetails>;
   name?: string;
   avatar_url?: string;
   language?: string;

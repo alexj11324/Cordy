@@ -1,14 +1,7 @@
 import type { Label } from "./label";
 import type { IssuePropertyValues } from "./property";
 
-/**
- * A status CATEGORY — the behavior equivalence class an issue's status belongs
- * to. There are exactly 7, and each is also the key of the built-in status that
- * defines it, which is why this stayed a closed union while `Issue.status`
- * became open. Board columns, filters and the presentation config are all keyed
- * off categories, so their shape is fixed no matter how many custom statuses a
- * workspace defines. (MUL-6243)
- */
+
 export type IssueStatusCategory =
   | "backlog"
   | "todo"
@@ -18,16 +11,7 @@ export type IssueStatusCategory =
   | "blocked"
   | "cancelled";
 
-/**
- * A status KEY as stored on the issue: one of the 7 built-ins, or a custom key
- * an admin defined for this workspace.
- *
- * OPEN by design. `(string & {})` keeps editor autocomplete for the 7 built-ins
- * while accepting any catalog key, which is what the server has always been
- * able to send. Anything that needs presentation (label, colour, board column)
- * must resolve the key to its CATEGORY first — `useIssueStatuses(wsId)` in a
- * component, `statusCategoryOfKey` in a pure path. (MUL-6243)
- */
+
 export type IssueStatus = IssueStatusCategory | (string & {});
 
 export type IssuePriority = "urgent" | "high" | "medium" | "low" | "none";
@@ -56,6 +40,15 @@ export interface IssueReaction {
  */
 export type IssueMetadataValue = string | number | boolean;
 export type IssueMetadata = Record<string, IssueMetadataValue>;
+
+export interface IssueReviewSubmissionRecord {
+  worktree: string;
+  branch: string;
+  commit: string;
+  pull_requests: string[];
+  submission_id: string;
+  submitted_at: string;
+}
 
 export interface SourceContextAttachment {
   id: string;
@@ -168,21 +161,9 @@ export interface Issue {
   title: string;
   description: string | null;
   status: IssueStatus;
-  /**
-   * The category `status` belongs to, when the endpoint resolved it. Optional
-   * because a BUILT-IN status is its own category and needs no resolution —
-   * use `issueStatusCategory(issue)` rather than reading this directly.
-   * (MUL-6243)
-   */
+
   status_category?: IssueStatusCategory;
-  /**
-   * A CUSTOM status's display name, carried beside the key. Empty for the 7
-   * built-ins, which are localized from the key — prefer `useStatusLabel`,
-   * which handles both and stays correct when an admin renames a status.
-   *
-   * Optional only for compatibility with a server that predates it; a current
-   * server always sends the field. (MUL-6749)
-   */
+
   status_name?: string;
   priority: IssuePriority;
   owner_type: IssueOwnerType | null;
@@ -206,6 +187,7 @@ export interface Issue {
   start_date: string | null;
   due_date: string | null;
   metadata: IssueMetadata;
+  review_submission?: IssueReviewSubmissionRecord | null;
   // Custom property values keyed by property definition id. Always present
   // in responses (empty object when unset), mirroring `metadata`.
   properties: IssuePropertyValues;

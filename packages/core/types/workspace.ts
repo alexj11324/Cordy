@@ -14,6 +14,8 @@ export interface Workspace {
   settings: Record<string, unknown>;
   repos: WorkspaceRepo[];
   issue_prefix: string;
+  /** Normal, unarchived agent used for new assistant entry points. */
+  lead_agent_id?: string | null;
   avatar_url: string | null;
   created_at: string;
   updated_at: string;
@@ -48,7 +50,20 @@ export interface Member {
   created_at: string;
 }
 
+export interface UserProfileDetails {
+  first_name?: string;
+  last_name?: string;
+  preferred_name?: string;
+  username?: string;
+  role?: string;
+  phone?: string;
+  website?: string;
+  start_week?: string;
+  time_format?: string;
+}
+
 export interface User {
+  profile_details?: UserProfileDetails;
   id: string;
   /** True when this is a persisted server-backed guest account. */
   is_guest?: boolean;

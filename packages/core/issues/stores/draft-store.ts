@@ -5,6 +5,7 @@ import type {
   IssuePriority,
   IssueExecutorType,
   IssueReviewerType,
+  IssueReviewSubmission,
   IssuePropertyValues,
 } from "../../types";
 import type { CreateMode } from "./create-mode-store";
@@ -14,7 +15,7 @@ import { defaultStorage } from "../../platform/storage";
 import { registerDraftCleanup } from "../../drafts/cleanup-registry";
 import { normalizeStoredUploads, type DraftUpload } from "../../drafts/draft-upload";
 
-// One logical Issue-Create draft (MUL-5181), split so switching between the
+
 // manual form and the agent form never destroys the other side's content.
 //
 //   shared  — belongs to the issue no matter how it is filed: project,
@@ -36,12 +37,7 @@ export interface IssueCreateShared {
   projectId?: string;
   priority: IssuePriority;
   dueDate: string | null;
-  /** Uploads for the dialog (placeholders + completed), referenced by the
-   *  manual description OR the agent prompt markdown. A single pool so an
-   *  image survives a mode switch from either side; each submit path sends
-   *  only the ids its own content references. Coordinator-owned (MUL-5181 L2):
-   *  a placeholder written at pick time survives dialog close, and one still
-   *  `uploading` at load time is dropped on rehydrate. */
+
   attachments: DraftUpload[];
 }
 
@@ -55,6 +51,7 @@ export interface IssueCreateManual {
   executorId?: string;
   reviewerType?: IssueReviewerType;
   reviewerId?: string;
+  reviewSubmission?: IssueReviewSubmission;
   /** Label IDs chosen in the create dialog. Attached to the issue right after
    *  it is created (the create endpoint takes no labels), so they are kept as
    *  a plain id list rather than full Label objects. */
@@ -92,6 +89,7 @@ const emptyManual = (): IssueCreateManual => ({
   executorId: undefined,
   reviewerType: undefined,
   reviewerId: undefined,
+  reviewSubmission: undefined,
   labelIds: [],
   propertyValues: {},
 });
@@ -179,7 +177,7 @@ function migrateManualRole(
 }
 
 // Drafts persisted by older builds either predate a later-added sub-field or
-// use the pre-MUL-5181 flat shape. Backfill defaults so every read site can
+
 // rely on the declared IssueCreateDraft shape instead of re-defending, and lift
 // a legacy flat draft into the manual/shared slots (there was no agent prompt
 // in that store — it lived in `orvilo_quick_create` and is not carried over).

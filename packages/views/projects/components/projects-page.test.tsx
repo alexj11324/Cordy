@@ -1,5 +1,5 @@
 import React from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Project } from "@orvilo/core/types";
@@ -226,7 +226,7 @@ function renderProjects(adapter = makeAdapter()) {
 }
 
 function projectRow() {
-  const row = screen.getByText(PROJECT.title).closest('[role="row"]');
+  const row = screen.getByText(PROJECT.title).closest("tr");
   if (!row) throw new Error("project row not found");
   return row as HTMLElement;
 }
@@ -248,6 +248,12 @@ beforeEach(() => {
   mocks.projectViewState.sortDirection = "asc";
   mocks.projectViewState.hiddenColumns = [];
   mocks.projectViewState.filters = { statuses: [], priorities: [], leads: [] };
+});
+
+beforeAll(() => {
+  if (typeof Element.prototype.getAnimations !== "function") {
+    Element.prototype.getAnimations = () => [] as Animation[];
+  }
 });
 
 describe("ProjectsPage compact row navigation", () => {
@@ -278,7 +284,7 @@ describe("ProjectsPage compact row navigation", () => {
     renderProjects(makeAdapter({ push }));
     const row = projectRow();
 
-    await user.click(within(row).getByRole("button", { pressed: false }));
+    await user.click(within(row).getByRole("checkbox", { name: "Select row" }));
     await user.click(within(row).getByRole("button", { name: "Project actions" }));
     await user.click(within(row).getAllByRole("button", { name: "In Progress" })[0]!);
     await user.click(within(row).getAllByRole("button", { name: "High" })[0]!);
@@ -312,7 +318,7 @@ describe("ProjectsPage compact row navigation", () => {
 
   // Web (no adapter): the row is a <div>, so nothing native catches a
   // modifier or middle click — rowLink opens the browser tab itself instead
-  // of navigating in place (MUL-5456).
+
   it("has a single rowLink path for modifier and middle clicks without openInNewTab", () => {
     const push = vi.fn();
     const open = vi.spyOn(window, "open").mockReturnValue(null);
@@ -340,5 +346,26 @@ describe("ProjectsPage compact row navigation", () => {
     }
     expect(push).not.toHaveBeenCalled();
     open.mockRestore();
+  });
+});
+
+describe("ProjectsPage ReUI project grid", () => {
+  it("renders the Linear project columns through the ReUI data grid", () => {
+    renderProjects();
+
+    expect(document.querySelector('[data-slot="data-grid-table"]')).toBeTruthy();
+    for (const columnId of ["name", "health", "priority", "lead", "targetDate", "issues", "status"]) {
+      expect(document.querySelector(`th[data-col-id="${columnId}"]`)).toBeInTheDocument();
+    }
+    expect(screen.getByRole("cell", { name: "Launch Plan" })).toBeInTheDocument();
+  });
+
+  it("keeps row selection in the existing batch toolbar", async () => {
+    const user = userEvent.setup();
+    renderProjects();
+
+    await user.click(screen.getByRole("checkbox", { name: "Select row" }));
+
+    expect(screen.getByText("1 selected")).toBeInTheDocument();
   });
 });

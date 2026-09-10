@@ -1,9 +1,18 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
 import type { TaskMessagePayload } from "@orvilo/core/types/events";
-import { appendTimelineItem, buildTimeline, coalesceTimelineItems, type TimelineItem } from "./build-timeline";
+import {
+  appendTimelineItem,
+  buildTimeline,
+  coalesceTimelineItems,
+  type TimelineItem,
+} from "./build-timeline";
 
-function message(seq: number, type: TaskMessagePayload["type"], content?: string): TaskMessagePayload {
+function message(
+  seq: number,
+  type: TaskMessagePayload["type"],
+  content?: string,
+): TaskMessagePayload {
   return {
     task_id: "task-1",
     issue_id: "issue-1",
@@ -24,7 +33,11 @@ describe("task transcript timeline", () => {
 
     expect(items).toEqual([
       expect.objectContaining({ seq: 1, type: "text", content: "hello world" }),
-      expect.objectContaining({ seq: 3, type: "thinking", content: "step one" }),
+      expect.objectContaining({
+        seq: 3,
+        type: "thinking",
+        content: "step one",
+      }),
     ]);
   });
 
@@ -46,9 +59,43 @@ describe("task transcript timeline", () => {
     ]);
   });
 
+  it("folds one tool call's lifecycle into a single AI Elements tool", () => {
+    const items = buildTimeline([
+      {
+        ...message(1, "tool_use"),
+        tool: "read_file",
+        call_id: "call-1",
+        state: "input-available",
+      },
+      {
+        ...message(2, "tool_result"),
+        tool: "read_file",
+        call_id: "call-1",
+        state: "output-available",
+        output: "contents",
+      },
+    ]);
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        type: "tool_use",
+        call_id: "call-1",
+        state: "output-available",
+        tool: "read_file",
+        output: "contents",
+      }),
+    ]);
+  });
+
   it("coalesces newly appended live text with the previous text item", () => {
-    const existing: TimelineItem[] = [{ seq: 1, type: "text", content: "hello" }];
-    const items = appendTimelineItem(existing, { seq: 2, type: "text", content: " world" });
+    const existing: TimelineItem[] = [
+      { seq: 1, type: "text", content: "hello" },
+    ];
+    const items = appendTimelineItem(existing, {
+      seq: 2,
+      type: "text",
+      content: " world",
+    });
 
     expect(items).toEqual([
       expect.objectContaining({ seq: 1, type: "text", content: "hello world" }),
@@ -60,7 +107,11 @@ describe("task transcript timeline", () => {
       { seq: 1, type: "text", content: "A" },
       { seq: 3, type: "text", content: "C" },
     ];
-    const items = appendTimelineItem(existing, { seq: 2, type: "text", content: "B" });
+    const items = appendTimelineItem(existing, {
+      seq: 2,
+      type: "text",
+      content: "B",
+    });
 
     expect(items).toEqual([
       expect.objectContaining({ seq: 1, type: "text", content: "ABC" }),
@@ -80,8 +131,18 @@ describe("task transcript timeline", () => {
 
   it("keeps the latest created_at when coalescing streaming fragments", () => {
     const items = coalesceTimelineItems([
-      { seq: 1, type: "text", content: "hello ", created_at: "2026-06-09T09:00:00.000Z" },
-      { seq: 2, type: "text", content: "world", created_at: "2026-06-09T09:00:05.000Z" },
+      {
+        seq: 1,
+        type: "text",
+        content: "hello ",
+        created_at: "2026-06-09T09:00:00.000Z",
+      },
+      {
+        seq: 2,
+        type: "text",
+        content: "world",
+        created_at: "2026-06-09T09:00:05.000Z",
+      },
     ]);
 
     expect(items).toEqual([
@@ -96,7 +157,12 @@ describe("task transcript timeline", () => {
 
   it("falls back to the previous created_at when the merged fragment has none", () => {
     const items = coalesceTimelineItems([
-      { seq: 1, type: "text", content: "hello ", created_at: "2026-06-09T09:00:00.000Z" },
+      {
+        seq: 1,
+        type: "text",
+        content: "hello ",
+        created_at: "2026-06-09T09:00:00.000Z",
+      },
       { seq: 2, type: "text", content: "world" },
     ]);
 

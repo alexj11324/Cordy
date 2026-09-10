@@ -21,6 +21,30 @@ type providerExecutionClient interface {
 	PinTaskSession(context.Context, string, string, string) error
 }
 
+// taskMessageState converts the provider-neutral Message event into the state
+// vocabulary consumed by AI Elements' ToolHeader. A daemon tool-use event is a
+// complete invocation event, including tools with no arguments, so it remains
+// in the running state until the matching result arrives. Tool results carry
+// a provider status when one is available, while providers that do not report
+// one are successful by default because they emitted a terminal result event.
+func taskMessageState(msg agent.Message) string {
+	switch msg.Type {
+	case agent.MessageToolUse:
+		return "input-available"
+	case agent.MessageToolResult:
+		switch strings.ToLower(strings.TrimSpace(msg.Status)) {
+		case "denied", "rejected":
+			return "output-denied"
+		case "failed", "error", "errored", "cancelled", "canceled":
+			return "output-error"
+		default:
+			return "output-available"
+		}
+	default:
+		return ""
+	}
+}
+
 // providerExecution owns the stream/drain lifecycle of one provider session.
 // Its counter remains shared with the owning daemon for health and shutdown.
 type providerExecution struct {
@@ -28,6 +52,63 @@ type providerExecution struct {
 	idleWatchdog time.Duration
 	toolWatchdog time.Duration
 	runningTasks *atomic.Int64
+}
+
+// attributedTextBuffer coalesces provider text chunks without losing the
+// provider's explicit attribution. Citation offsets arrive relative to each
+// chunk, so appending shifts them into the coalesced UTF-8 byte range.
+type attributedTextBuffer struct {
+	content   strings.Builder
+	sources   []agent.MessageSource
+	citations []agent.MessageCitation
+	sourceIDs map[string]agent.MessageSource
+}
+
+func (b *attributedTextBuffer) append(msg agent.Message) {
+	base := b.content.Len()
+	b.content.WriteString(msg.Content)
+	if len(msg.Sources) > 0 && b.sourceIDs == nil {
+		b.sourceIDs = make(map[string]agent.MessageSource, len(msg.Sources))
+	}
+	remappedIDs := make(map[string]string, len(msg.Sources))
+	for _, source := range msg.Sources {
+		originalID := source.ID
+		if existing, exists := b.sourceIDs[source.ID]; exists {
+			if existing == source {
+				remappedIDs[originalID] = source.ID
+				continue
+			}
+			for suffix := 2; ; suffix++ {
+				candidate := fmt.Sprintf("%s#%d", originalID, suffix)
+				if _, used := b.sourceIDs[candidate]; !used {
+					source.ID = candidate
+					break
+				}
+			}
+		}
+		remappedIDs[originalID] = source.ID
+		b.sourceIDs[source.ID] = source
+		b.sources = append(b.sources, source)
+	}
+	for _, citation := range msg.Citations {
+		if remapped, ok := remappedIDs[citation.SourceID]; ok {
+			citation.SourceID = remapped
+		}
+		citation.Start += base
+		citation.End += base
+		b.citations = append(b.citations, citation)
+	}
+}
+
+func (b *attributedTextBuffer) drain() (string, []agent.MessageSource, []agent.MessageCitation) {
+	content := b.content.String()
+	sources := b.sources
+	citations := b.citations
+	b.content.Reset()
+	b.sources = nil
+	b.citations = nil
+	b.sourceIDs = nil
+	return content, sources, citations
 }
 
 // executeAndDrain runs a backend, drains its message stream (forwarding to the
@@ -49,7 +130,6 @@ func (p *providerExecution) executeAndDrain(ctx context.Context, backend agent.B
 		// One provider-agnostic boundary for launches: every backend's
 		// cmd.Start() failure arrives here, so diagnosing ENOEXEC at this point
 		// covers claude, opencode and any CLI added later without a wrap in
-		// each backend (MUL-6164).
 		err = agent.ExplainExecError(err)
 		taskLog.Debug("backend execute returned error", "error", err)
 		return agent.Result{}, 0, err
@@ -67,7 +147,6 @@ func (p *providerExecution) executeAndDrain(ctx context.Context, backend agent.B
 	// backend's own deadline fires). With no cap (opts.Timeout <= 0) the
 	// inactivity watchdog is the only liveness net, so the drain must NOT
 	// impose its own deadline either — otherwise an actively streaming long run
-	// would be cut off here regardless of progress (MUL-3064).
 	var drainCtx context.Context
 	var drainCancel context.CancelFunc
 	if opts.Timeout > 0 {
@@ -116,30 +195,34 @@ func (p *providerExecution) executeAndDrain(ctx context.Context, backend agent.B
 	go func() {
 		defer close(drainFinished)
 		var mu sync.Mutex
-		var pendingText strings.Builder
-		var pendingThinking strings.Builder
+		var pendingText attributedTextBuffer
+		var pendingThinking attributedTextBuffer
 		var batch []TaskMessageData
 		callIDToTool := map[string]string{}
 
 		flush := func() {
 			mu.Lock()
-			if pendingThinking.Len() > 0 {
+			if pendingThinking.content.Len() > 0 {
 				s := msgSeq.Add(1)
+				content, sources, citations := pendingThinking.drain()
 				batch = append(batch, TaskMessageData{
-					Seq:     int(s),
-					Type:    "thinking",
-					Content: pendingThinking.String(),
+					Seq:       int(s),
+					Type:      "thinking",
+					Content:   content,
+					Sources:   sources,
+					Citations: citations,
 				})
-				pendingThinking.Reset()
 			}
-			if pendingText.Len() > 0 {
+			if pendingText.content.Len() > 0 {
 				s := msgSeq.Add(1)
+				content, sources, citations := pendingText.drain()
 				batch = append(batch, TaskMessageData{
-					Seq:     int(s),
-					Type:    "text",
-					Content: pendingText.String(),
+					Seq:       int(s),
+					Type:      "text",
+					Content:   content,
+					Sources:   sources,
+					Citations: citations,
 				})
-				pendingText.Reset()
 			}
 			toSend := batch
 			batch = nil
@@ -192,7 +275,6 @@ func (p *providerExecution) executeAndDrain(ctx context.Context, backend agent.B
 					// reveals them. Without this, a daemon crash mid-run
 					// loses the resume pointer and the auto-retry fires
 					// without context.
-					// MUL-5305: pin the resume pointer only once the session's
 					// rollout is actually in the store, so a crash-recovery pointer
 					// the daemon cannot resume never poisons the next follow-up
 					// (FailAgentTask keeps the pinned session_id via COALESCE, so a
@@ -232,9 +314,11 @@ func (p *providerExecution) executeAndDrain(ctx context.Context, backend agent.B
 					s := msgSeq.Add(1)
 					mu.Lock()
 					batch = append(batch, TaskMessageData{
-						Seq:  int(s),
-						Type: "tool_use",
-						Tool: msg.Tool,
+						Seq:    int(s),
+						Type:   "tool_use",
+						Tool:   msg.Tool,
+						CallID: msg.CallID,
+						State:  taskMessageState(msg),
 						// Redact before the payload leaves this process, not
 						// only on arrival. The server redacts again in its
 						// ingest handler, but that is the *remote* side: a
@@ -280,19 +364,21 @@ func (p *providerExecution) executeAndDrain(ctx context.Context, backend agent.B
 						Type:   "tool_result",
 						Tool:   toolName,
 						Output: output,
+						CallID: msg.CallID,
+						State:  taskMessageState(msg),
 					})
 					mu.Unlock()
 				case agent.MessageThinking:
 					if msg.Content != "" {
 						mu.Lock()
-						pendingThinking.WriteString(msg.Content)
+						pendingThinking.append(msg)
 						mu.Unlock()
 					}
 				case agent.MessageText:
 					if msg.Content != "" {
 						taskLog.Debug("agent", "text", truncateLog(msg.Content, 200))
 						mu.Lock()
-						pendingText.WriteString(msg.Content)
+						pendingText.append(msg)
 						mu.Unlock()
 					}
 				case agent.MessageError:
@@ -435,7 +521,6 @@ func idleWatchdogTickInterval(window time.Duration) time.Duration {
 //     toolWindow <= 0 keeps the historical behavior of never force-stopping
 //     while a tool is in flight. Without this in-flight budget a backend that
 //     emits tool_use and never the matching tool_result would run forever now
-//     that there is no wall-clock cap (MUL-3064).
 //
 // In both cases the watchdog also requires the session.Messages buffer to be
 // empty — a buffered-but-undrained message means the drain loop is behind, not

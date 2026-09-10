@@ -5,7 +5,7 @@ RETURNING *;
 
 -- name: GetLatestVerificationCode :one
 SELECT * FROM verification_code
-WHERE email = $1
+WHERE email = $1 AND purpose = 'login'
   AND used = FALSE
   AND expires_at > now()
   AND attempts < 5
@@ -24,7 +24,7 @@ WHERE id = $1;
 
 -- name: GetLatestCodeByEmail :one
 SELECT * FROM verification_code
-WHERE email = $1
+WHERE email = $1 AND purpose = 'login'
 ORDER BY created_at DESC
 LIMIT 1;
 

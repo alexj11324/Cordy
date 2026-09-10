@@ -119,7 +119,6 @@ SELECT EXISTS (
 // server-driven turn: an intro session starts with zero user messages, so the
 // opening run gets the "introduce yourself" prompt. Once the creator replies,
 // later turns in the same session must fall back to the normal reply prompt
-// instead of repeating the introduction every turn (MUL-4259).
 func (q *Queries) ChatSessionHasUserMessage(ctx context.Context, chatSessionID pgtype.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, chatSessionHasUserMessage, chatSessionID)
 	var has_user_message bool
@@ -246,7 +245,7 @@ const createChatMessage = `-- name: CreateChatMessage :one
 INSERT INTO chat_message (
     chat_session_id, role, content, task_id, failure_reason, elapsed_ms,
     message_kind, quick_actions, channel_media_pending_until, channel_ingested,
-    channel_context_revision, id
+    channel_context_revision, sources, citations, id
 )
 VALUES (
     $1, $2, $3, $4, $5, $6,
@@ -262,9 +261,11 @@ VALUES (
          ELSE now() + make_interval(secs => $9::float8) END,
     COALESCE($10::boolean, FALSE),
     $11,
-    COALESCE($12::uuid, gen_random_uuid())
+    COALESCE($12::jsonb, '[]'::jsonb),
+    COALESCE($13::jsonb, '[]'::jsonb),
+    COALESCE($14::uuid, gen_random_uuid())
 )
-RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids
+RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids, sources, citations
 `
 
 type CreateChatMessageParams struct {
@@ -279,12 +280,13 @@ type CreateChatMessageParams struct {
 	ChannelMediaPendingSecs pgtype.Float8 `json:"channel_media_pending_secs"`
 	ChannelIngested         pgtype.Bool   `json:"channel_ingested"`
 	ChannelContextRevision  pgtype.Int8   `json:"channel_context_revision"`
+	Sources                 []byte        `json:"sources"`
+	Citations               []byte        `json:"citations"`
 	ID                      pgtype.UUID   `json:"id"`
 }
 
 // message_kind and quick_actions default via COALESCE so every existing caller
 // (which omits it) keeps writing ordinary messages; the empty-reply path passes
-// 'no_response' to mark a visible turn with no text output (MUL-4351).
 func (q *Queries) CreateChatMessage(ctx context.Context, arg CreateChatMessageParams) (ChatMessage, error) {
 	row := q.db.QueryRow(ctx, createChatMessage,
 		arg.ChatSessionID,
@@ -298,6 +300,8 @@ func (q *Queries) CreateChatMessage(ctx context.Context, arg CreateChatMessagePa
 		arg.ChannelMediaPendingSecs,
 		arg.ChannelIngested,
 		arg.ChannelContextRevision,
+		arg.Sources,
+		arg.Citations,
 		arg.ID,
 	)
 	var i ChatMessage
@@ -319,6 +323,8 @@ func (q *Queries) CreateChatMessage(ctx context.Context, arg CreateChatMessagePa
 		&i.ChannelOutboundInstallationID,
 		&i.ChannelOutboundChatID,
 		&i.ChannelOutboundMessageIds,
+		&i.Sources,
+		&i.Citations,
 	)
 	return i, err
 }
@@ -420,10 +426,8 @@ type CreateChatTaskParams struct {
 // Fenced against workspace teardown: lock_task_owner_rows (migration 284)
 // locks the owners' workspace rows in the writer's own transaction and returns
 // false once they are gone, so this statement writes no row instead of stranding
-// a task in a workspace that has just been deleted (MUL-5999).
 // The chat sender (initiator) is a direct_human originator and accountable;
 // attribution provenance is stamped so this path is not a NULL-source enqueue
-// bypass (MUL-4302 §2).
 func (q *Queries) CreateChatTask(ctx context.Context, arg CreateChatTaskParams) (AgentTaskQueue, error) {
 	row := q.db.QueryRow(ctx, createChatTask,
 		arg.AgentID,
@@ -517,7 +521,7 @@ VALUES (
     $3::timestamptz + interval '1 microsecond',
     COALESCE($4::uuid, gen_random_uuid())
 )
-RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids
+RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids, sources, citations
 `
 
 type CreatePatrickOnboardingOpeningParams struct {
@@ -528,7 +532,6 @@ type CreatePatrickOnboardingOpeningParams struct {
 }
 
 // Patrick's opening reply, written by the server rather than produced by an agent
-// run (MUL-5827). Paired with the hidden kickoff row in one transaction, which
 // is why created_at is derived instead of defaulted: now() is the TRANSACTION
 // timestamp, so both rows would land on the identical microsecond, and the
 // session-list LATERAL picks the last message with `ORDER BY created_at DESC
@@ -565,6 +568,8 @@ func (q *Queries) CreatePatrickOnboardingOpening(ctx context.Context, arg Create
 		&i.ChannelOutboundInstallationID,
 		&i.ChannelOutboundChatID,
 		&i.ChannelOutboundMessageIds,
+		&i.Sources,
+		&i.Citations,
 	)
 	return i, err
 }
@@ -681,7 +686,6 @@ DELETE FROM chat_draft_restore
 WHERE chat_session_id = $1
 `
 
-// chat_draft_restore carries no chat_session FK (MUL-3515), so DeleteChatSession
 // prunes its pending restores in the same tx that deletes the session.
 func (q *Queries) DeleteChatDraftRestoresBySession(ctx context.Context, chatSessionID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteChatDraftRestoresBySession, chatSessionID)
@@ -703,7 +707,6 @@ WHERE chat_session_id IN (
 // same tx, BEFORE the agent rows go: the join below needs them. Mirrors
 // DeleteChannelInstallationsBySystemRuntimeAgents.
 //
-// Only system agents are hard-deleted on runtime teardown since MUL-5559; user
 // agents (archived or not) are unbound and keep their sessions and restores.
 func (q *Queries) DeleteChatDraftRestoresBySystemRuntimeAgents(ctx context.Context, runtimeID pgtype.UUID) error {
 	_, err := q.db.Exec(ctx, deleteChatDraftRestoresBySystemRuntimeAgents, runtimeID)
@@ -791,12 +794,11 @@ DELETE FROM chat_message
 WHERE task_id = $1
   AND role = 'user'
   AND message_kind <> 'onboarding_kickoff'
-RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids
+RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids, sources, citations
 `
 
 // Deletes the MEMBER-TYPED input of a cancelled/edited turn.
 //
-// The kickoff exclusion is load-bearing since MUL-5827: an onboarding session's
 // first real turn owns two user rows — the member's message and the adopted
 // kickoff — so an unqualified delete would take the kickoff with it. That row
 // is the only copy of the onboarding context and of "you have already greeted
@@ -826,6 +828,8 @@ func (q *Queries) DeleteUserChatMessageByTask(ctx context.Context, taskID pgtype
 		&i.ChannelOutboundInstallationID,
 		&i.ChannelOutboundChatID,
 		&i.ChannelOutboundMessageIds,
+		&i.Sources,
+		&i.Citations,
 	)
 	return i, err
 }
@@ -868,7 +872,7 @@ func (q *Queries) GetChannelMediaPendingUntil(ctx context.Context, arg GetChanne
 }
 
 const getChatMessage = `-- name: GetChatMessage :one
-SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids FROM chat_message
+SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids, sources, citations FROM chat_message
 WHERE id = $1
 `
 
@@ -893,12 +897,14 @@ func (q *Queries) GetChatMessage(ctx context.Context, id pgtype.UUID) (ChatMessa
 		&i.ChannelOutboundInstallationID,
 		&i.ChannelOutboundChatID,
 		&i.ChannelOutboundMessageIds,
+		&i.Sources,
+		&i.Citations,
 	)
 	return i, err
 }
 
 const getChatMessageByTaskAssistant = `-- name: GetChatMessageByTaskAssistant :one
-SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids FROM chat_message
+SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids, sources, citations FROM chat_message
 WHERE task_id = $1 AND role = 'assistant'
 ORDER BY created_at DESC
 LIMIT 1
@@ -927,6 +933,8 @@ func (q *Queries) GetChatMessageByTaskAssistant(ctx context.Context, taskID pgty
 		&i.ChannelOutboundInstallationID,
 		&i.ChannelOutboundChatID,
 		&i.ChannelOutboundMessageIds,
+		&i.Sources,
+		&i.Citations,
 	)
 	return i, err
 }
@@ -1061,7 +1069,6 @@ WHERE session_id NOT IN (SELECT session_id FROM retired_sessions)
                AND COALESCE(error, '') ~* 'role[^a-z0-9]{0,2}assistant|assistant message|message at position|messages\.[0-9]|messages\[[0-9]')
     )
   )
-  -- MUL-5722, mirroring GetLastTaskSession: an overflowed resume records no
   -- session, so exclude by time instead of by matching the failed row. Note
   -- this only guards the FALLBACK for legacy tasks — the claim handler reads
   -- chat_session.session_id first for them, so a pointer still naming the
@@ -1137,14 +1144,13 @@ func (q *Queries) GetLastChatTaskSession(ctx context.Context, arg GetLastChatTas
 }
 
 const getLatestAssistantChatMessageForSession = `-- name: GetLatestAssistantChatMessageForSession :one
-SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids FROM chat_message
+SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids, sources, citations FROM chat_message
 WHERE chat_session_id = $1 AND role = 'assistant' AND task_id IS NOT NULL
 ORDER BY created_at DESC
 LIMIT 1
 `
 
 // The session's most recent assistant turn, used as the regeneration target
-// when the user clicks "refresh" on the quick-actions row (MUL-5149). Only rows
 // with a task_id qualify — the daemon suggest supplement keys off task_id and
 // a resume needs a real completed turn to resume from.
 func (q *Queries) GetLatestAssistantChatMessageForSession(ctx context.Context, chatSessionID pgtype.UUID) (ChatMessage, error) {
@@ -1168,6 +1174,8 @@ func (q *Queries) GetLatestAssistantChatMessageForSession(ctx context.Context, c
 		&i.ChannelOutboundInstallationID,
 		&i.ChannelOutboundChatID,
 		&i.ChannelOutboundMessageIds,
+		&i.Sources,
+		&i.Citations,
 	)
 	return i, err
 }
@@ -1223,7 +1231,6 @@ SELECT id, status, created_at FROM agent_task_queue
 WHERE chat_session_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
   -- Background quick-actions regeneration passes are invisible to the chat UI:
   -- they own no assistant turn and must not raise the StatusPill or disable the
-  -- composer (MUL-5149 refresh follow-up).
   AND regenerate_quick_actions_for IS NULL
 ORDER BY created_at DESC
 LIMIT 1
@@ -1312,14 +1319,12 @@ SELECT EXISTS (
 // target we'd resume is already stale even before its assistant row lands; and a
 // second concurrent regenerate would double-spend quota on the same turn. Read
 // inside the same session lock as the enqueue so it cannot race a sibling insert
-// (MUL-5149 review §1/§2).
 //
 // 'deferred' is included: an auto-retry armed with a backoff fire_at is inserted
 // deferred (CreateRetryTask), and provider_network's final chat attempt waits
 // ~5s that way. During that window the failed turn has written no assistant row,
 // so the latest-persisted check still points at the OLD turn — omitting deferred
 // would let a refresh resume a session the retry is about to advance and attach
-// the new turn's suggestions to the old one (MUL-5149 re-review §1).
 func (q *Queries) HasActiveChatTaskForSession(ctx context.Context, chatSessionID pgtype.UUID) (bool, error) {
 	row := q.db.QueryRow(ctx, hasActiveChatTaskForSession, chatSessionID)
 	var has_active bool
@@ -1335,7 +1340,6 @@ SELECT EXISTS (
   WHERE atq.chat_session_id IS NOT NULL
     AND atq.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
     -- Background quick-actions regeneration passes own no visible turn and must
-    -- never light the FAB "running" indicator (MUL-5149 refresh follow-up).
     AND atq.regenerate_quick_actions_for IS NULL
     AND cs.workspace_id = $1
     AND cs.creator_id = $2
@@ -1623,7 +1627,6 @@ type ListAgentBuilderSessionsByCreatorRow struct {
 // cs.runtime_id: that is the daemon's resume pointer, left stale on purpose
 // after a runtime switch (see RebindAgentBuilderRuntime), so resuming from it
 // would put the picker on a runtime that no longer executes anything — the
-// exact split MUL-5163 removed.
 //
 // A conversation qualifies once it holds something the user would miss: a
 // message, or a saved configuration. Requiring a message alone was wrong — the
@@ -1739,7 +1742,6 @@ type ListAllChatSessionsByCreatorRow struct {
 // unread state), but an archived session is read-only and hidden from history,
 // so any residual unread is uncleanable and must not light up any badge. Gating
 // on status here is the single source of truth for all unread surfaces (FAB,
-// sidebar Chat tab, chat-window header) — see MUL-4360.
 func (q *Queries) ListAllChatSessionsByCreator(ctx context.Context, arg ListAllChatSessionsByCreatorParams) ([]ListAllChatSessionsByCreatorRow, error) {
 	rows, err := q.db.Query(ctx, listAllChatSessionsByCreator, arg.WorkspaceID, arg.CreatorID)
 	if err != nil {
@@ -1875,7 +1877,7 @@ func (q *Queries) ListChatDraftRestoresBySession(ctx context.Context, chatSessio
 }
 
 const listChatInputMessages = `-- name: ListChatInputMessages :many
-SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids FROM chat_message
+SELECT id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids, sources, citations FROM chat_message
 WHERE task_id = $1 AND role = 'user'
 ORDER BY created_at ASC, id ASC
 `
@@ -1914,6 +1916,8 @@ func (q *Queries) ListChatInputMessages(ctx context.Context, taskID pgtype.UUID)
 			&i.ChannelOutboundInstallationID,
 			&i.ChannelOutboundChatID,
 			&i.ChannelOutboundMessageIds,
+			&i.Sources,
+			&i.Citations,
 		); err != nil {
 			return nil, err
 		}
@@ -1926,7 +1930,7 @@ func (q *Queries) ListChatInputMessages(ctx context.Context, taskID pgtype.UUID)
 }
 
 const listChatMessages = `-- name: ListChatMessages :many
-SELECT message.id, message.chat_session_id, message.role, message.content, message.task_id, message.created_at, message.failure_reason, message.elapsed_ms, message.message_kind, message.channel_media_pending_until, message.channel_ingested, message.quick_actions, message.channel_context_revision, message.channel_outbound_type, message.channel_outbound_installation_id, message.channel_outbound_chat_id, message.channel_outbound_message_ids FROM chat_message AS message
+SELECT message.id, message.chat_session_id, message.role, message.content, message.task_id, message.created_at, message.failure_reason, message.elapsed_ms, message.message_kind, message.channel_media_pending_until, message.channel_ingested, message.quick_actions, message.channel_context_revision, message.channel_outbound_type, message.channel_outbound_installation_id, message.channel_outbound_chat_id, message.channel_outbound_message_ids, message.sources, message.citations FROM chat_message AS message
 WHERE message.chat_session_id = $1
   AND message.message_kind != 'channel_command'
   AND NOT (
@@ -1998,6 +2002,8 @@ func (q *Queries) ListChatMessages(ctx context.Context, chatSessionID pgtype.UUI
 			&i.ChannelOutboundInstallationID,
 			&i.ChannelOutboundChatID,
 			&i.ChannelOutboundMessageIds,
+			&i.Sources,
+			&i.Citations,
 		); err != nil {
 			return nil, err
 		}
@@ -2010,7 +2016,7 @@ func (q *Queries) ListChatMessages(ctx context.Context, chatSessionID pgtype.UUI
 }
 
 const listChatMessagesForLegacyTask = `-- name: ListChatMessagesForLegacyTask :many
-SELECT message.id, message.chat_session_id, message.role, message.content, message.task_id, message.created_at, message.failure_reason, message.elapsed_ms, message.message_kind, message.channel_media_pending_until, message.channel_ingested, message.quick_actions, message.channel_context_revision, message.channel_outbound_type, message.channel_outbound_installation_id, message.channel_outbound_chat_id, message.channel_outbound_message_ids FROM chat_message AS message
+SELECT message.id, message.chat_session_id, message.role, message.content, message.task_id, message.created_at, message.failure_reason, message.elapsed_ms, message.message_kind, message.channel_media_pending_until, message.channel_ingested, message.quick_actions, message.channel_context_revision, message.channel_outbound_type, message.channel_outbound_installation_id, message.channel_outbound_chat_id, message.channel_outbound_message_ids, message.sources, message.citations FROM chat_message AS message
 WHERE message.chat_session_id = $1
   AND NOT (
     message.role = 'user'
@@ -2071,6 +2077,8 @@ func (q *Queries) ListChatMessagesForLegacyTask(ctx context.Context, chatSession
 			&i.ChannelOutboundInstallationID,
 			&i.ChannelOutboundChatID,
 			&i.ChannelOutboundMessageIds,
+			&i.Sources,
+			&i.Citations,
 		); err != nil {
 			return nil, err
 		}
@@ -2083,7 +2091,7 @@ func (q *Queries) ListChatMessagesForLegacyTask(ctx context.Context, chatSession
 }
 
 const listChatMessagesPage = `-- name: ListChatMessagesPage :many
-SELECT message.id, message.chat_session_id, message.role, message.content, message.task_id, message.created_at, message.failure_reason, message.elapsed_ms, message.message_kind, message.channel_media_pending_until, message.channel_ingested, message.quick_actions, message.channel_context_revision, message.channel_outbound_type, message.channel_outbound_installation_id, message.channel_outbound_chat_id, message.channel_outbound_message_ids FROM chat_message AS message
+SELECT message.id, message.chat_session_id, message.role, message.content, message.task_id, message.created_at, message.failure_reason, message.elapsed_ms, message.message_kind, message.channel_media_pending_until, message.channel_ingested, message.quick_actions, message.channel_context_revision, message.channel_outbound_type, message.channel_outbound_installation_id, message.channel_outbound_chat_id, message.channel_outbound_message_ids, message.sources, message.citations FROM chat_message AS message
 WHERE message.chat_session_id = $1
   AND message.message_kind != 'channel_command'
   AND NOT (
@@ -2160,6 +2168,8 @@ func (q *Queries) ListChatMessagesPage(ctx context.Context, arg ListChatMessages
 			&i.ChannelOutboundInstallationID,
 			&i.ChannelOutboundChatID,
 			&i.ChannelOutboundMessageIds,
+			&i.Sources,
+			&i.Citations,
 		); err != nil {
 			return nil, err
 		}
@@ -2172,7 +2182,7 @@ func (q *Queries) ListChatMessagesPage(ctx context.Context, arg ListChatMessages
 }
 
 const listChatMessagesPageForChannelContext = `-- name: ListChatMessagesPageForChannelContext :many
-SELECT message.id, message.chat_session_id, message.role, message.content, message.task_id, message.created_at, message.failure_reason, message.elapsed_ms, message.message_kind, message.channel_media_pending_until, message.channel_ingested, message.quick_actions, message.channel_context_revision, message.channel_outbound_type, message.channel_outbound_installation_id, message.channel_outbound_chat_id, message.channel_outbound_message_ids
+SELECT message.id, message.chat_session_id, message.role, message.content, message.task_id, message.created_at, message.failure_reason, message.elapsed_ms, message.message_kind, message.channel_media_pending_until, message.channel_ingested, message.quick_actions, message.channel_context_revision, message.channel_outbound_type, message.channel_outbound_installation_id, message.channel_outbound_chat_id, message.channel_outbound_message_ids, message.sources, message.citations
 FROM chat_message AS message
 LEFT JOIN agent_task_queue AS owner ON owner.id = message.task_id
 WHERE message.chat_session_id = $1
@@ -2247,6 +2257,8 @@ func (q *Queries) ListChatMessagesPageForChannelContext(ctx context.Context, arg
 			&i.ChannelOutboundInstallationID,
 			&i.ChannelOutboundChatID,
 			&i.ChannelOutboundMessageIds,
+			&i.Sources,
+			&i.Citations,
 		); err != nil {
 			return nil, err
 		}
@@ -2372,7 +2384,6 @@ JOIN chat_session cs ON cs.id = atq.chat_session_id
 WHERE atq.chat_session_id IS NOT NULL
   AND atq.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
   -- Exclude background quick-actions regeneration passes: they own no assistant
-  -- turn and must not surface as "running" chat work (MUL-5149 refresh follow-up).
   AND atq.regenerate_quick_actions_for IS NULL
   AND cs.workspace_id = $1
   AND cs.creator_id = $2
@@ -2720,7 +2731,6 @@ FOR UPDATE
 // send reads the carrier agent's runtime_id, the switch then passes its
 // pending-task check and rebinds the carrier, and the send finally inserts a task
 // still stamped with the pre-switch runtime — so the user is told the switch
-// succeeded while their message runs on the old runtime (MUL-5163).
 //
 // The lock alone is not sufficient: the send path must also re-read the agent
 // INSIDE the locked transaction, because a send blocked at INSERT would otherwise
@@ -3095,7 +3105,6 @@ WITH latest_visible AS (
       -- member's message so the runtime reads "context, then their words";
       -- moving it to dispatch time reverses that, and because the batch's two
       -- rows would then share one timestamp, their order falls to random UUIDs
-      -- (MUL-5827).
       AND claimed_input.message_kind <> 'onboarding_kickoff'
 )
 UPDATE chat_message AS claimed_input
@@ -3187,7 +3196,6 @@ type ReanchorNextQueuedDirectChatInputParams struct {
 }
 
 // An assistant outcome can make the next queued direct task the positional
-// head before a daemon claims it (MUL-5750). Its user row was persisted before
 // this reply, so move that still-hidden single-row input just after the reply.
 // Callers run this immediately after CreateChatMessage in the same transaction:
 // readers see either the old active head without the reply, or the settled
@@ -3342,7 +3350,7 @@ WHERE id = (
     ORDER BY inner_msg.created_at DESC
     LIMIT 1
 )
-RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids
+RETURNING id, chat_session_id, role, content, task_id, created_at, failure_reason, elapsed_ms, message_kind, channel_media_pending_until, channel_ingested, quick_actions, channel_context_revision, channel_outbound_type, channel_outbound_installation_id, channel_outbound_chat_id, channel_outbound_message_ids, sources, citations
 `
 
 type SetChatMessageQuickActionsByTaskParams struct {
@@ -3371,6 +3379,8 @@ func (q *Queries) SetChatMessageQuickActionsByTask(ctx context.Context, arg SetC
 		&i.ChannelOutboundInstallationID,
 		&i.ChannelOutboundChatID,
 		&i.ChannelOutboundMessageIds,
+		&i.Sources,
+		&i.Citations,
 	)
 	return i, err
 }
@@ -3581,7 +3591,6 @@ SELECT
 `
 
 // Whether this input batch is a kickoff and NOTHING else — the shape only a
-// pre-MUL-5827 opening task has, where the kickoff was a turn of its own.
 //
 // Reachable exclusively during a rolling deploy: a kickoff task enqueued by the
 // old server and claimed by the new one. The reply to it is still that member's
@@ -3598,7 +3607,6 @@ SELECT
 //
 // $1 is the INPUT-OWNING task id — COALESCE(task.chat_input_task_id, task.id),
 // i.e. chatInputOwnerID — never a retry clone's own id, since the whole retry
-// chain consumes the root's input batch (MUL-4351).
 func (q *Queries) TaskInputIsOnboardingKickoffOnly(ctx context.Context, taskID pgtype.UUID) (pgtype.Bool, error) {
 	row := q.db.QueryRow(ctx, taskInputIsOnboardingKickoffOnly, taskID)
 	var kickoff_only pgtype.Bool
@@ -3768,7 +3776,6 @@ type UpdateChatSessionTitleIfCurrentParams struct {
 
 // Compare-and-swap the title: only overwrite it when it still equals the
 // value the caller observed (@expected_title). This is the idempotency /
-// no-clobber guard behind LLM auto-titling (MUL-4295): the async generator
 // captures the session's current (default/original) title before calling the
 // model, and this write lands only if a manual rename or a competing writer
 // has not changed the title in the meantime. A mismatch returns pgx.ErrNoRows

@@ -614,6 +614,8 @@ type ChatMessage struct {
 	ChannelOutboundInstallationID pgtype.UUID        `json:"channel_outbound_installation_id"`
 	ChannelOutboundChatID         pgtype.Text        `json:"channel_outbound_chat_id"`
 	ChannelOutboundMessageIds     []string           `json:"channel_outbound_message_ids"`
+	Sources                       []byte             `json:"sources"`
+	Citations                     []byte             `json:"citations"`
 }
 
 type ChatPinnedAgent struct {
@@ -1675,6 +1677,10 @@ type TaskMessage struct {
 	Input     []byte             `json:"input"`
 	Output    pgtype.Text        `json:"output"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	CallID    pgtype.Text        `json:"call_id"`
+	State     pgtype.Text        `json:"state"`
+	Sources   []byte             `json:"sources"`
+	Citations []byte             `json:"citations"`
 }
 
 // Short-lived, revocable task capability leases. Raw mat_ bearer values are never stored. scope is server-computed; parent/depth/fences enforce monotonic delegation.
@@ -1807,8 +1813,9 @@ type User struct {
 	Language                pgtype.Text        `json:"language"`
 	ProfileDescription      string             `json:"profile_description"`
 	// User-preferred IANA timezone for report rendering (Viewing tz). NULL means "use the browser-detected tz at render time". Affects dashboards, charts, and any "today" label shown to this user. Does not affect data materialisation — all rollups remain in UTC.
-	Timezone pgtype.Text `json:"timezone"`
-	IsGuest  bool        `json:"is_guest"`
+	Timezone       pgtype.Text `json:"timezone"`
+	IsGuest        bool        `json:"is_guest"`
+	ProfileDetails []byte      `json:"profile_details"`
 }
 
 type UserComposioConnection struct {
@@ -1875,13 +1882,15 @@ type VcsPullRequest struct {
 }
 
 type VerificationCode struct {
-	ID        pgtype.UUID        `json:"id"`
-	Email     string             `json:"email"`
-	Code      string             `json:"code"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
-	Used      bool               `json:"used"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	Attempts  int32              `json:"attempts"`
+	ID              pgtype.UUID        `json:"id"`
+	Email           string             `json:"email"`
+	Code            string             `json:"code"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	Used            bool               `json:"used"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	Attempts        int32              `json:"attempts"`
+	Purpose         string             `json:"purpose"`
+	RequesterUserID pgtype.UUID        `json:"requester_user_id"`
 }
 
 type WebhookDelivery struct {

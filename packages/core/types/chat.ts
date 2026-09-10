@@ -6,17 +6,7 @@ export interface ChatPinnedAgent {
   position: number;
 }
 
-/**
- * Kind of a chat message. Additive (MUL-4351): the server always sends a
- * concrete value, but treat a missing/unknown value as "message" so an older
- * server or a future kind never breaks rendering.
- * - "message"     — an ordinary user/assistant message.
- * - "no_response" — a completed direct-chat turn that produced no text reply.
- * - "onboarding_kickoff" — a product-authored opening input that is sent to
- *   Patrick but never rendered as a member message.
- * - "onboarding_opening" — Patrick's reply to the kickoff; chat renders the
- *   onboarding starter cards under it instead of quick-action chips.
- */
+
 export type ChatMessageKind =
   | "message"
   | "no_response"
@@ -43,24 +33,11 @@ export interface ChatQuickAction {
 export interface ChatQuickActionsPendingState {
   message_id: string;
   task_id: string;
-  /**
-   * Absolute epoch-ms deadline after which a client gives up waiting for the
-   * chat:quick_actions supplement and clears this marker. Stored on the marker
-   * (not as a component timer) so switching chat surfaces — which unmounts and
-   * remounts the timeout hook — resumes the SAME deadline instead of re-arming
-   * a fresh window each time (MUL-5149 review).
-   */
+
   expires_at: number;
 }
 
-/**
- * Client-only signal (never persisted, never fetched) that an explicit refresh's
- * background regeneration FAILED — the daemon suggestion pass never completed, so
- * the turn's pills are unchanged. Set by the realtime layer off a failed
- * chat:quick_actions and consumed once by a view to toast "couldn't refresh"
- * before clearing itself. `at` is a per-event nonce so a second failure re-fires
- * even when the message_id repeats (MUL-5149 review).
- */
+
 export interface ChatQuickActionsFailureState {
   message_id: string;
   at: number;
@@ -137,6 +114,10 @@ export interface ChatMessage {
   chat_session_id: string;
   role: "user" | "assistant";
   content: string;
+  /** Provider-authored attribution. Ordinary Markdown links do not populate it. */
+  sources?: MessageSource[];
+  /** Half-open UTF-8 byte ranges into content, keyed to sources[].id. */
+  citations?: MessageCitation[];
   task_id: string | null;
   created_at: string;
   /**
@@ -164,14 +145,24 @@ export interface ChatMessage {
    * and on legacy assistant messages predating migration 063.
    */
   elapsed_ms?: number | null;
-  /**
-   * "message" (default) or "no_response" — a completed direct-chat turn that
-   * produced no text reply (MUL-4351). Optional/additive: absent on older
-   * servers and on user messages; treat a missing value as "message".
-   */
+  /** Provider-reported usage for the task that produced this assistant turn. */
+  usage?: import("./agent").TaskUsage[];
+
   message_kind?: ChatMessageKind;
   /** Up to three server-validated follow-ups generated with this reply. */
   quick_actions?: ChatQuickAction[];
+}
+
+export interface MessageSource {
+  id: string;
+  url: string;
+  title?: string;
+}
+
+export interface MessageCitation {
+  source_id: string;
+  start: number;
+  end: number;
 }
 
 export interface ChatMessagesCursor {

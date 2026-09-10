@@ -42,6 +42,7 @@ export function buildTaskAgentThreadMessages(
       failure_reason:
         task.status === "failed" ? task.failure_reason || "agent_error" : null,
       message_kind: content.trim() ? "message" : "no_response",
+      ...(task.usage ? { usage: task.usage } : {}),
     });
   }
   return messages;

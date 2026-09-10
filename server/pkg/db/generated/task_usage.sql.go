@@ -275,7 +275,6 @@ type ListDashboardFailuresDailyRow struct {
 // Shape note: this returns EVERY terminal task, not just the failures. The
 // `failure_reason = ”` row of each date carries that date's succeeded
 // count, which is the denominator the client needs for an error rate. A
-// failed row whose failure_reason column is NULL or empty (pre-MUL-1949
 // rows, or a failure path that forgot to classify) collapses into the
 // 'unclassified' bucket so it stays countable instead of masquerading as a
 // success. Cardinality is bounded by days x (21 reasons + 2), so the whole
@@ -654,6 +653,44 @@ func (q *Queries) ListIssueTaskUsage(ctx context.Context, issueID pgtype.UUID) (
 			&i.OutputTokens,
 			&i.CacheReadTokens,
 			&i.CacheWriteTokens,
+			&i.CostUsdTicks,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTaskUsageForTasks = `-- name: ListTaskUsageForTasks :many
+SELECT id, task_id, provider, model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, created_at, updated_at, cost_usd_ticks FROM task_usage
+WHERE task_id = ANY($1::uuid[])
+ORDER BY task_id, model
+`
+
+func (q *Queries) ListTaskUsageForTasks(ctx context.Context, dollar_1 []pgtype.UUID) ([]TaskUsage, error) {
+	rows, err := q.db.Query(ctx, listTaskUsageForTasks, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []TaskUsage{}
+	for rows.Next() {
+		var i TaskUsage
+		if err := rows.Scan(
+			&i.ID,
+			&i.TaskID,
+			&i.Provider,
+			&i.Model,
+			&i.InputTokens,
+			&i.OutputTokens,
+			&i.CacheReadTokens,
+			&i.CacheWriteTokens,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.CostUsdTicks,
 		); err != nil {
 			return nil, err

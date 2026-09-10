@@ -63,6 +63,7 @@ type UserResponse struct {
 	OnboardingQuestionnaire json.RawMessage `json:"onboarding_questionnaire"`
 	StarterContentState     *string         `json:"starter_content_state"`
 	ProfileDescription      string          `json:"profile_description"`
+	ProfileDetails          json.RawMessage `json:"profile_details"`
 	CreatedAt               string          `json:"created_at"`
 	UpdatedAt               string          `json:"updated_at"`
 	// The frontend gates guest-only
@@ -71,7 +72,6 @@ type UserResponse struct {
 }
 
 // MaxProfileDescriptionLen caps the user-supplied profile_description body.
-// Picked at 2000 chars per MUL-2406: enough room for role / stack / a few
 // preferences, short enough that injecting it into every agent brief
 // doesn't move the needle on prompt cost.
 const MaxProfileDescriptionLen = 2000
@@ -84,6 +84,10 @@ func (h *Handler) userToResponse(u db.User) UserResponse {
 	if len(q) == 0 {
 		q = []byte("{}")
 	}
+	profileDetails := u.ProfileDetails
+	if len(profileDetails) == 0 {
+		profileDetails = []byte("{}")
+	}
 	return UserResponse{
 		ID:                      uuidToString(u.ID),
 		Name:                    u.Name,
@@ -95,6 +99,7 @@ func (h *Handler) userToResponse(u db.User) UserResponse {
 		OnboardingQuestionnaire: json.RawMessage(q),
 		StarterContentState:     textToPtr(u.StarterContentState),
 		ProfileDescription:      u.ProfileDescription,
+		ProfileDetails:          json.RawMessage(profileDetails),
 		CreatedAt:               timestampToString(u.CreatedAt),
 		UpdatedAt:               timestampToString(u.UpdatedAt),
 		IsGuest:                 u.IsGuest,
@@ -552,10 +557,11 @@ func (h *Handler) GetMe(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateMeRequest struct {
-	Name               *string `json:"name"`
-	AvatarURL          *string `json:"avatar_url"`
-	Language           *string `json:"language"`
-	ProfileDescription *string `json:"profile_description"`
+	Name               *string                    `json:"name"`
+	AvatarURL          *string                    `json:"avatar_url"`
+	Language           *string                    `json:"language"`
+	ProfileDescription *string                    `json:"profile_description"`
+	ProfileDetails     map[string]json.RawMessage `json:"profile_details"`
 	// IANA tz to pin; "" clears back to NULL; nil leaves untouched.
 	Timezone *string `json:"timezone"`
 }
@@ -806,6 +812,36 @@ func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
 	params := db.UpdateUserParams{
 		ID:   currentUser.ID,
 		Name: name,
+	}
+	if req.ProfileDetails != nil {
+		patch, err := normalizeProfileDetails(req.ProfileDetails)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		_, firstTouched := patch["first_name"]
+		_, lastTouched := patch["last_name"]
+		_, preferredTouched := patch["preferred_name"]
+		if firstTouched || lastTouched || preferredTouched {
+			merged := map[string]string{}
+			_ = json.Unmarshal(currentUser.ProfileDetails, &merged)
+			if _, exists := merged["first_name"]; !exists {
+				merged["first_name"] = currentUser.Name
+			}
+			for key, value := range patch {
+				merged[key] = value
+			}
+			displayName := strings.TrimSpace(merged["preferred_name"])
+			if displayName == "" {
+				displayName = strings.TrimSpace(merged["first_name"] + " " + merged["last_name"])
+			}
+			if displayName == "" {
+				writeError(w, http.StatusBadRequest, "name is required")
+				return
+			}
+			params.Name = displayName
+		}
+		params.ProfileDetails, _ = json.Marshal(patch)
 	}
 	if req.AvatarURL != nil {
 		avatarURL, ok := h.acceptAvatarURL(w, r, *req.AvatarURL, currentUser.AvatarUrl.String)

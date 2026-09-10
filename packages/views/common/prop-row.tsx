@@ -17,12 +17,9 @@ import type { ReactNode } from "react";
  * that broke whenever a label (e.g. "Concurrency") rendered wider than 64px
  * — the label would overflow into the gap and collide with the value.
  *
- * `interactive` (default `true`) controls whether the row gets a hover
- * highlight. Most rows wrap a Picker/Popover trigger and are clickable
- * anywhere across the row, so the highlight tells users "this is one
- * target". Read-only rows (Owner / Created / Updated) should pass
- * `interactive={false}` so they don't pretend to be clickable when they
- * aren't.
+ * `interactive` (default `true`) highlights only the label and rendered value.
+ * The second parent track is flexible, but its empty remainder is not part of
+ * the control and must stay visually quiet.
  *
  * Used by:
  *   - issue detail sidebar (Status / Priority / Assignee / …)
@@ -38,16 +35,22 @@ export function PropRow({
   interactive?: boolean;
 }) {
   return (
-    <div
-      className={`-mx-2 col-span-2 grid min-h-8 grid-cols-subgrid items-center rounded-md px-2 ${
-        interactive ? "transition-colors hover:bg-accent/50" : ""
-      }`}
-    >
-      <span className="flex min-w-0 items-center gap-1.5 text-caption text-muted-foreground">
+    <div className="group/prop-row col-span-2 grid min-h-8 grid-cols-subgrid items-center">
+      <span
+        className={`-ml-2 -mr-2 flex min-w-0 self-stretch items-center gap-1.5 rounded-l-md px-2 text-caption text-muted-foreground ${
+          interactive ? "transition-colors group-hover/prop-row:bg-accent/50" : ""
+        }`}
+      >
         {label}
       </span>
-      <div className="flex min-w-0 items-center gap-1.5 truncate text-caption">
-        {children}
+      <div className="flex min-w-0 self-stretch items-stretch text-caption">
+        <div
+          className={`inline-flex min-w-0 max-w-full items-center gap-1.5 rounded-r-md px-2 ${
+            interactive ? "transition-colors group-hover/prop-row:bg-accent/50" : ""
+          }`}
+        >
+          {children}
+        </div>
       </div>
     </div>
   );

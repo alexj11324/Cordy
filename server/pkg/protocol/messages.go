@@ -17,7 +17,6 @@ const (
 	// editing the working copy the user asked to isolate. Version strings
 	// cannot answer that reliably: a git-describe dev build ("v0.4.21-24-g…")
 	// is deliberately exempted from the version floor so `make daemon` stays
-	// unblocked, which let exactly such a daemon through (MUL-5707). A daemon
 	// that implements the mode says so; one that does not, cannot.
 	DaemonCapabilityLocalWorktreeV1 = "local-worktree-v1"
 	// DaemonCapabilityLocalWorktreeCommittedBaseV1 advertises that the daemon
@@ -33,7 +32,6 @@ const (
 	DaemonCapabilitySourceContextQuickCreateV1 = "source_context_quick_create_v1"
 
 	// DaemonCapabilityRPCV1 advertises that the daemon can carry
-	// request/response RPCs over the WebSocket control connection (MUL-4257).
 	// Gated so only daemons+servers that both support it route claim over WS;
 	// everyone else keeps using the HTTP claim endpoint.
 	DaemonCapabilityRPCV1 = "rpc-v1"
@@ -67,7 +65,6 @@ type RPCRequestPayload struct {
 	// TimeoutMs is the server-side execution budget in milliseconds. The server
 	// bounds the handler's context by it so a slow RPC is cancelled (its work
 	// rolled back) rather than committing after the daemon has already timed
-	// out waiting and fallen back to HTTP (MUL-4257). 0 means no server-side
 	// bound (connection-lifetime only).
 	TimeoutMs int64 `json:"timeout_ms,omitempty"`
 }
@@ -134,7 +131,6 @@ const (
 // sending one immediate heartbeat for RuntimeID instead of waiting for its next
 // scheduled tick; the request itself is still claimed through the normal
 // heartbeat path, so this event carries no work and is safe to lose, duplicate,
-// or ignore (MUL-5444).
 type PendingWorkPayload struct {
 	RuntimeID string `json:"runtime_id"`
 	Kind      string `json:"kind,omitempty"`
@@ -168,22 +164,41 @@ type ChatQuickActionsPayload struct {
 	// because the regeneration FAILED (the provider pass or its delivery), not
 	// because it produced new suggestions. QuickActions then carries the turn's
 	// unchanged pills; the client shows a "couldn't refresh" notice instead of
-	// treating unchanged content as a silent success (MUL-5149). Omitted (false)
 	// on the normal success path and for the automatic best-effort pass.
 	Failed bool `json:"failed,omitempty"`
 }
 
 // TaskMessagePayload represents a single agent execution message (tool call, text, etc.)
 type TaskMessagePayload struct {
-	TaskID    string         `json:"task_id"`
-	IssueID   string         `json:"issue_id,omitempty"`
-	Seq       int            `json:"seq"`
-	Type      string         `json:"type"`              // "text", "tool_use", "tool_result", "error"
-	Tool      string         `json:"tool,omitempty"`    // tool name for tool_use/tool_result
-	Content   string         `json:"content,omitempty"` // text content
-	Input     map[string]any `json:"input,omitempty"`   // tool input (tool_use only)
-	Output    string         `json:"output,omitempty"`  // tool output (tool_result only)
-	CreatedAt string         `json:"created_at,omitempty"`
+	TaskID    string            `json:"task_id"`
+	IssueID   string            `json:"issue_id,omitempty"`
+	Seq       int               `json:"seq"`
+	Type      string            `json:"type"`              // "text", "tool_use", "tool_result", "error"
+	Tool      string            `json:"tool,omitempty"`    // tool name for tool_use/tool_result
+	Content   string            `json:"content,omitempty"` // text content
+	Sources   []MessageSource   `json:"sources,omitempty"`
+	Citations []MessageCitation `json:"citations,omitempty"`
+	Input     map[string]any    `json:"input,omitempty"`   // tool input (tool_use only)
+	Output    string            `json:"output,omitempty"`  // tool output (tool_result only)
+	CallID    string            `json:"call_id,omitempty"` // provider tool-call id, shared by use/result
+	State     string            `json:"state,omitempty"`   // AI Elements tool state
+	CreatedAt string            `json:"created_at,omitempty"`
+}
+
+// MessageSource is structured provider attribution. It is additive: messages
+// produced before this contract have empty source and citation arrays.
+type MessageSource struct {
+	ID    string `json:"id"`
+	URL   string `json:"url"`
+	Title string `json:"title,omitempty"`
+}
+
+// MessageCitation binds a source to a half-open UTF-8 byte range in the
+// message's Content. Ordinary Markdown links never create these records.
+type MessageCitation struct {
+	SourceID string `json:"source_id"`
+	Start    int    `json:"start"`
+	End      int    `json:"end"`
 }
 
 // DaemonRegisterPayload is sent from daemon to server on connection.
@@ -202,12 +217,14 @@ type RuntimeInfo struct {
 
 // ChatMessagePayload is broadcast when a new chat message is created.
 type ChatMessagePayload struct {
-	ChatSessionID string `json:"chat_session_id"`
-	MessageID     string `json:"message_id"`
-	Role          string `json:"role"`
-	Content       string `json:"content"`
-	TaskID        string `json:"task_id,omitempty"`
-	CreatedAt     string `json:"created_at"`
+	ChatSessionID string            `json:"chat_session_id"`
+	MessageID     string            `json:"message_id"`
+	Role          string            `json:"role"`
+	Content       string            `json:"content"`
+	Sources       []MessageSource   `json:"sources,omitempty"`
+	Citations     []MessageCitation `json:"citations,omitempty"`
+	TaskID        string            `json:"task_id,omitempty"`
+	CreatedAt     string            `json:"created_at"`
 }
 
 // Chat message kinds (chat_message.message_kind). Additive: unknown values
@@ -217,7 +234,6 @@ const (
 	ChatMessageKindMessage = "message"
 	// ChatMessageKindNoResponse marks a direct-chat turn the agent completed
 	// without any text reply — a visible, deliberate terminal outcome rather
-	// than a silently-dropped turn (MUL-4351).
 	ChatMessageKindNoResponse = "no_response"
 	// ChatMessageKindOnboardingKickoff is the server-authored, hidden first
 	// turn used to start Patrick's onboarding conversation. It is persisted so
@@ -227,7 +243,6 @@ const (
 	// ChatMessageKindOnboardingOpening marks the assistant reply produced by
 	// the onboarding kickoff. The kickoff row itself never reaches clients, so
 	// the opening self-describes: chat renders the starter cards under this
-	// kind instead of quick-action chips (MUL-5765).
 	ChatMessageKindOnboardingOpening = "onboarding_opening"
 )
 
@@ -237,7 +252,6 @@ const (
 // during the live-timeline → AssistantMessage handoff that previously caused
 // a visible flicker (#2123).
 //
-// MessageKind is additive (MUL-4351): older clients ignore it and fall back to
 // the non-empty Content the server always sends, so a no_response turn still
 // renders a real bubble instead of an empty one. Because direct-chat completion
 // now always writes exactly one assistant row (message or no_response),
@@ -249,6 +263,8 @@ type ChatDonePayload struct {
 	TaskID        string            `json:"task_id"`
 	MessageID     string            `json:"message_id,omitempty"`
 	Content       string            `json:"content,omitempty"`
+	Sources       []MessageSource   `json:"sources,omitempty"`
+	Citations     []MessageCitation `json:"citations,omitempty"`
 	ElapsedMs     int64             `json:"elapsed_ms,omitempty"`
 	CreatedAt     string            `json:"created_at,omitempty"`
 	MessageKind   string            `json:"message_kind,omitempty"`

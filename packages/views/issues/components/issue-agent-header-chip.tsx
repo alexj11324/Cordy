@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Popover,
@@ -12,7 +12,6 @@ import { cn } from "@orvilo/ui/lib/utils";
 import { api } from "@orvilo/core/api";
 import { issueKeys } from "@orvilo/core/issues/queries";
 import type { AgentTask } from "@orvilo/core/types";
-import { AgentThreadButton } from "../../agent-thread";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { ActiveTaskRow } from "./execution-log-section";
 import { useT } from "../../i18n";
@@ -37,8 +36,9 @@ import { useT } from "../../i18n";
 //
 // Hovering the chip opens a compact Popover card with the same active rows as
 // the right panel (click / keyboard still toggle it for touch and a11y). Those
-// rows show necessary status/time and task entry actions, but do not render
-// event counts or prefetch task messages for a count.
+// rows show necessary status/time and stop actions. Conversation navigation is
+// intentionally absent: the issue header's Agent conversation popover is the
+// single transcript and steer entry point.
 
 interface IssueAgentHeaderChipProps {
   issueId: string;
@@ -47,7 +47,6 @@ interface IssueAgentHeaderChipProps {
 export const IssueAgentHeaderChip = memo(function IssueAgentHeaderChip({
   issueId,
 }: IssueAgentHeaderChipProps) {
-  const { t } = useT("issues");
   // Same query options as ExecutionLogSection so both observe one cache entry.
   const { data: tasks = [] } = useQuery({
     queryKey: issueKeys.tasks(issueId),
@@ -77,40 +76,11 @@ export const IssueAgentHeaderChip = memo(function IssueAgentHeaderChip({
     return { running, queued };
   }, [tasks]);
 
-  const [openedTranscriptTaskSnapshot, setOpenedTranscriptTaskSnapshot] =
-    useState<AgentTask | null>(null);
-  const openedTranscriptTask = openedTranscriptTaskSnapshot
-    ? tasks.find((task) => task.id === openedTranscriptTaskSnapshot.id) ??
-      openedTranscriptTaskSnapshot
-    : null;
-
   // No active work → render nothing.
-  if (running.length === 0 && queued.length === 0 && !openedTranscriptTask) return null;
+  if (running.length === 0 && queued.length === 0) return null;
 
   return (
-    <>
-      {running.length > 0 || queued.length > 0 ? (
-        <ActiveChip
-          issueId={issueId}
-          running={running}
-          queued={queued}
-          onTranscriptOpenChange={(task, open) => {
-            setOpenedTranscriptTaskSnapshot(open ? task : null);
-          }}
-        />
-      ) : null}
-      {openedTranscriptTask ? (
-        <AgentThreadButton
-          task={openedTranscriptTask}
-          title={t(($) => $.execution_log.conversation_tooltip)}
-          renderButton={false}
-          open
-          onOpenChange={(open) => {
-            if (!open) setOpenedTranscriptTaskSnapshot(null);
-          }}
-        />
-      ) : null}
-    </>
+    <ActiveChip issueId={issueId} running={running} queued={queued} />
   );
 });
 
@@ -118,14 +88,12 @@ interface ActiveChipProps {
   issueId: string;
   running: AgentTask[];
   queued: AgentTask[];
-  onTranscriptOpenChange: (task: AgentTask, open: boolean) => void;
 }
 
 function ActiveChip({
   issueId,
   running,
   queued,
-  onTranscriptOpenChange,
 }: ActiveChipProps) {
   const { t } = useT("issues");
   const { getActorName } = useActorName();
@@ -214,9 +182,7 @@ function ActiveChip({
                 key={task.id}
                 task={task}
                 issueId={issueId}
-                onTranscriptOpenChange={(open) => {
-                  onTranscriptOpenChange(task, open);
-                }}
+                showConversationAction={false}
               />
             ))}
           </div>

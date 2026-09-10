@@ -71,7 +71,7 @@ export function ProjectPicker({
   );
 
   return (
-    <div className="inline-flex min-w-0">
+    <div className="flex min-w-0 max-w-full">
       <PropertyPicker
         open={open}
         onOpenChange={setOpen}

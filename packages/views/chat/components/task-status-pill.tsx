@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@orvilo/ui/lib/utils";
 import { UnicodeSpinner } from "@orvilo/ui/components/common/unicode-spinner";
+import { TaskItem } from "@orvilo/ui/components/ai-elements/task";
+import { Shimmer } from "@orvilo/ui/components/ai-elements/shimmer";
 import type { AgentAvailability } from "@orvilo/core/agents";
 import type { ChatPendingTask, TaskMessagePayload } from "@orvilo/core/types";
 import { formatElapsedSecs } from "../lib/format";
@@ -208,7 +210,7 @@ export function TaskStatusPill({
   );
 
   return (
-    <div
+    <TaskItem
       className="flex items-center gap-1.5 px-1 text-caption text-muted-foreground"
       aria-live="polite"
     >
@@ -216,11 +218,13 @@ export function TaskStatusPill({
         <UnicodeSpinner name="breathe" className="opacity-70" />
       )}
       <span className="truncate">
-        <span className={cn(!stage.static && "animate-chat-text-shimmer")}>
-          {stage.label}
-        </span>
+        {stage.static ? (
+          <span>{stage.label}</span>
+        ) : (
+          <Shimmer className={cn("inline text-caption")}>{stage.label}</Shimmer>
+        )}
         <span className="opacity-70 tabular-nums"> · {formatElapsedSecs(elapsedSecs)}</span>
       </span>
-    </div>
+    </TaskItem>
   );
 }

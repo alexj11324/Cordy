@@ -18,6 +18,10 @@ import {
   type UploadDraftBinding,
 } from "../../editor/use-coordinated-uploads";
 import { SubmitButton } from "@orvilo/ui/components/common/submit-button";
+import {
+  PromptInputBody,
+  PromptInputTools,
+} from "@orvilo/ui/components/ai-elements/prompt-input";
 import { ChatAddMenu } from "./chat-add-menu";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 import { useChatStore, DRAFT_NEW_SESSION } from "@orvilo/core/chat";
@@ -90,10 +94,7 @@ interface ChatInputProps {
    * therefore treat this as the single terminal transition and consume the row.
    */
   onRestoreDraftApplied?: () => void;
-  /** True when uploads are available for this composer (an agent is selected).
-   *  The transport itself is the coordinated-upload engine (MUL-5181 L2) —
-   *  the owner only says whether the affordance exists. When false,
-   *  paste/drag/button still type into the editor but no upload fires. */
+
   uploadEnabled?: boolean;
   onStop?: () => void;
   isRunning?: boolean;
@@ -108,12 +109,7 @@ interface ChatInputProps {
    *  as opposed to the session itself being archived — swaps the placeholder
    *  copy so the read-only reason reads accurately. */
   agentArchived?: boolean;
-  /** True when `disabled` is because the caller may no longer INVOKE the bound
-   *  agent (flipped to personal, ownership moved, dropped from the allow-list).
-   *  Distinct from `noAgent`: an agent IS bound and its transcript is readable,
-   *  the caller just cannot run it (MUL-6380). Takes precedence over `noAgent`
-   *  in the placeholder — when the only agent in the workspace is the revoked
-   *  one, both are true and "create an agent" would be the wrong instruction. */
+
   agentAccessRevoked?: boolean;
   agentRuntimeRequired?: boolean;
   /** Name of the currently selected agent, used in the placeholder. */
@@ -185,7 +181,7 @@ export function ChatInput({
   // so different sessions don't bleed text into each other. An uncreated chat
   // uses ONE slot per workspace, deliberately NOT keyed by agent: the composer
   // is "the chat I have not created yet", and `selectedAgentId` only decides
-  // where the first send goes (MUL-4864). This is a STORAGE key, not a React
+
   // identity.
   //
   // `editorKey` — React `key` on the ContentEditor, i.e. editor identity. It is
@@ -276,7 +272,7 @@ export function ChatInput({
   // the button entirely (Mod+Enter mid-paste, drag-drop racing the keyboard).
   // Both read the editor document, which is the actual upload queue — this
   // used to be a local in-flight counter that a manual delete of the pending
-  // image would leave stuck (MUL-4808).
+
   const uploadGate = useUploadGate(editorRef);
 
   // Reactive mirror of `editorDraftKeyRef` for the live-editor registry: a
@@ -303,7 +299,7 @@ export function ChatInput({
     () => makeUploadBinding(draftKey),
     [makeUploadBinding, draftKey],
   );
-  // Coordinator-owned uploads (MUL-5181 L2): survive window close, abort on
+
   // logout, are dropped after a reload. `gate` widens the editor gate
   // with the draft's placeholders so a REOPENED composer over a still-running
   // upload cannot send past it.
@@ -456,7 +452,7 @@ export function ChatInput({
     onDrop: (files) => files.forEach((f) => editorRef.current?.uploadFile(f)),
   });
 
-  // The unified await-then-render send contract (MUL-5181). `useComposerSubmit`
+
   // owns the six-step pessimistic submit — empty-guard, synchronous single-flight
   // (a ref, so a double Mod+Enter in one tick cannot slip past a render-behind
   // state boolean and double-send), the submit-time upload re-check, and the
@@ -515,7 +511,7 @@ export function ChatInput({
       // activeSessionId synchronously, so reading it after onSend would point
       // at the new session and leave the old draft orphaned.
       const keyAtSend = draftKey;
-      // Stale-submit guard (MUL-5181 P0): snapshot the sent draft's persisted
+
       // value, flushing the editor's pending debounce first so pre-submit
       // typing is inside the snapshot. A late success may only clear what it
       // actually sent — text typed DURING the send (or by a reopened composer
@@ -610,7 +606,7 @@ export function ChatInput({
       className={cn(
         // The composer grows with the draft up to half the surface it sits on
         // — a fixed 160px cap made long drafts unreadable in a five-line
-        // porthole (MUL-5196). `max-h-[50%]` resolves against the chat
+
         // surface (floating window, chat tab, agent builder), all of which
         // give this wrapper a definite height, so the cap scales when the
         // user resizes or expands the window. The wrapper must be a flex
@@ -682,7 +678,7 @@ export function ChatInput({
             )}
           </div>
         )}
-        <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
+        <PromptInputBody className="flex-1 min-h-0 overflow-y-auto px-3 py-2">
           <ContentEditor
             // See the editorKey / draftKey split note above — editor identity
             // intentionally tracks neither the session nor the agent.
@@ -711,12 +707,12 @@ export function ChatInput({
             // toggles. Once a `# ` input rule or a Markdown/HTML paste turns a
             // line into a heading, chat has no other way to remove it, so
             // without the bubble menu formatting can be created but never
-            // undone (MUL-5106).
+
             showBubbleMenu
           />
-        </div>
+        </PromptInputBody>
         {(uploadEnabled || projectSelectionEnabled || leftAdornment) && (
-          <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1">
+          <PromptInputTools className="absolute bottom-1.5 left-1.5">
             {(uploadEnabled || projectSelectionEnabled) && (
               <ChatAddMenu
                 onSelectFile={uploadEnabled
@@ -729,7 +725,7 @@ export function ChatInput({
               />
             )}
             {leftAdornment}
-          </div>
+          </PromptInputTools>
         )}
         <div className="absolute bottom-1 right-1.5 flex items-center gap-1">
           <SubmitButton

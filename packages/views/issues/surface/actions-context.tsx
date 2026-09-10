@@ -19,6 +19,11 @@ export interface IssueSurfaceActions {
     updates: Partial<UpdateIssueRequest>,
     options?: IssueSurfaceMutationOptions,
   ) => void;
+  updateIssueAsync: (
+    issueId: string,
+    updates: Partial<UpdateIssueRequest>,
+    options?: IssueSurfaceMutationOptions,
+  ) => Promise<Issue>;
   moveIssue: (
     issueId: string,
     updates: Partial<UpdateIssueRequest>,

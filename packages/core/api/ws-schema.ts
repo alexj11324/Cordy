@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { WSMessage } from "../types/events";
 import {
   ChatMessageSchema,
+  MessageCitationSchema,
+  MessageSourceSchema,
   CommentSchema,
   InboxItemListSchema,
   IssuePropertyValuesSchema,
@@ -70,6 +72,8 @@ const chatDoneFields = {
   task_id: id,
   message_id: id.optional(),
   content: z.string().optional(),
+  sources: z.array(MessageSourceSchema).optional(),
+  citations: z.array(MessageCitationSchema).optional(),
   created_at: z.string().optional(),
   elapsed_ms: z.number().nonnegative().optional(),
   message_kind: ChatMessageSchema.shape.message_kind,
@@ -123,6 +127,7 @@ const payloadSchemas: Record<string, z.ZodType> = {
       description: z.string().nullable(), context: z.string().nullable(),
       settings: z.record(z.string(), z.unknown()),
       repos: z.array(z.object({ url: z.string(), description: z.string().optional() }).loose()),
+      lead_agent_id: z.string().nullable().default(null),
       avatar_url: z.string().nullable(), created_at: z.string(), updated_at: z.string(),
     }).loose()
   }).loose(),
@@ -139,11 +144,14 @@ const payloadSchemas: Record<string, z.ZodType> = {
   "task:cancelled": task,
   "task:message": task.extend({
     seq: z.number().int().nonnegative(), type: id,
+    call_id: z.string().optional(), state: z.string().optional(),
     tool: z.string().optional(), content: z.string().optional(),
+    sources: z.array(MessageSourceSchema).optional(),
+    citations: z.array(MessageCitationSchema).optional(),
     input: z.record(z.string(), z.unknown()).optional(),
     output: z.string().optional(), created_at: z.string().optional(),
   }),
-  "chat:message": sessionId.extend({ message_id: id, role: z.string(), content: z.string(), task_id: id.optional(), created_at: z.string() }),
+  "chat:message": sessionId.extend({ message_id: id, role: z.string(), content: z.string(), sources: z.array(MessageSourceSchema).optional(), citations: z.array(MessageCitationSchema).optional(), task_id: id.optional(), created_at: z.string() }),
   "chat:done": z.object({ ...chatDoneFields, quick_actions: quickActions, quick_actions_pending: z.boolean().optional() }).loose(),
   "chat:quick_actions": sessionId.extend({ task_id: id, message_id: id, quick_actions: quickActions, failed: z.boolean().optional() }),
   "chat:cancel_finalized": z.object({ ...chatDoneFields, outcome: z.string(), initiator_user_id: id.optional() }).loose(),

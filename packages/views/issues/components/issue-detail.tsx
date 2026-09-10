@@ -11,7 +11,6 @@ import { priorityLabel } from "../utils/priority-label";
 import { useIssueStatuses } from "@orvilo/core/issue-statuses/hooks";
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment, type ReactNode } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
-import { useDefaultLayout, usePanelRef } from "react-resizable-panels";
 import { AppLink, useBackOrReplace } from "../../navigation";
 import {
   Archive,
@@ -24,20 +23,16 @@ import {
   CircleCheck,
   Milestone,
   MoreHorizontal,
-  PanelRight,
   Pin,
   PinOff,
   Plus,
   SlidersHorizontal,
-  Tag,
   Unlink,
   Users,
 } from "lucide-react";
 import { BreadcrumbHeader, type BreadcrumbSegment } from "../../layout/breadcrumb-header";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { Button } from "@orvilo/ui/components/ui/button";
-import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@orvilo/ui/components/ui/resizable";
-import { Sheet, SheetContent } from "@orvilo/ui/components/ui/sheet";
 import { useIsMobile } from "@orvilo/ui/hooks/use-mobile";
 import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useEditorUpload, ImageSequenceProvider } from "../../editor";
 import { collectImageSequence, type ImageSequenceBlock } from "@orvilo/core/attachments/image-sequence";
@@ -54,11 +49,11 @@ import {
   DropdownMenuItem,
 } from "@orvilo/ui/components/ui/dropdown-menu";
 import { Popover, PopoverTrigger, PopoverContent } from "@orvilo/ui/components/ui/popover";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@orvilo/ui/components/ui/dialog";
 import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@orvilo/ui/components/ui/command";
 import { AvatarGroup, AvatarGroupCount } from "@orvilo/ui/components/ui/avatar";
 import { ActorAvatar } from "../../common/actor-avatar";
+import { PillButton } from "../../common/pill-button";
 import { PropRow } from "../../common/prop-row";
 import { PropertyIcon } from "../../common/property-icon";
 import type { Attachment, Issue, IssueProperty, IssueStatus, IssueStatusCategory, IssuePriority, TimelineEntry, UpdateIssueRequest } from "@orvilo/core/types";
@@ -87,11 +82,10 @@ import { CurrentIssueRenderContextProvider } from "../current-issue-render-conte
 import { ResolvedThreadBar } from "./resolved-thread-bar";
 import { getShortcut, shortcutMatchesEvent } from "@orvilo/core/shortcuts";
 import { isImeComposing } from "@orvilo/core/utils";
-import { ThreadMinimap } from "./thread-minimap";
-import { ThreadNavPanel, mentionsUser, type ThreadNavThread } from "./thread-nav-panel";
+import { ThreadMinimap, type ThreadMinimapThread } from "./thread-minimap";
+import { IssueAgentConversationsPopover } from "./issue-agent-conversations-popover";
 import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
 import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
-import { ExecutionLogSection } from "./execution-log-section";
 import { QuickActionsSection } from "./quick-actions-section";
 import { PluginPanelSection } from "../../plugins";
 import { DependencyPrerequisites } from "./dependency-prerequisites";
@@ -142,13 +136,6 @@ import { useIssueDetailScrollRestore } from "../hooks/use-issue-detail-scroll-re
 import { useInPageFind } from "../hooks/use-in-page-find";
 import { useStickyComposer } from "../hooks/use-sticky-composer";
 import { FindBar } from "./find-bar";
-import {
-  AnimatedRightSidebar,
-  getAnimatedRightSidebarInitialOpen,
-  rightSidebarPanelMotionProps,
-  useAnimatedRightSidebarState,
-  useRightSidebarShortcut,
-} from "../../layout/animated-right-sidebar";
 
 /**
  * Memento entry recording that the comment-highlight deep link for this
@@ -179,15 +166,7 @@ function SubscriberPopoverContent({
   agents: { id: string; name: string; archived_at?: string | null }[];
   subscribers: { user_type: string; user_id: string }[];
   toggleSubscriber: (id: string, type: "member" | "agent", subscribed: boolean) => void;
-  /**
-   * Every checkbox here is drawn from `subscribers`, which defaults to an empty
-   * list until the query resolves — so an unresolved query renders everyone as
-   * unsubscribed. Acting on that is not a harmless no-op: an explicit subscribe
-   * rewrites the target's reason to 'manual' and clears any opt-out scope
-   * (server/pkg/db/queries/subscriber.sql), which would quietly discard a
-   * delegated subscription or someone's deliberate opt-out. So these rows wait
-   * for a real answer, not just for the in-flight mutation (MUL-5714).
-   */
+
   togglesDisabled: boolean;
   t: ActivityT;
 }) {
@@ -269,12 +248,7 @@ function shortDate(date: string | null, locale: string): string {
 
 type ActivityT = ReturnType<typeof useT<"issues">>["t"];
 
-/**
- * Labels a status key from the activity feed. `resolveLabel` is the workspace
- * catalog resolver, which names custom statuses; without it — or for a status
- * since deleted — a built-in still gets its i18n name and anything else falls
- * back to the raw key. (MUL-6243)
- */
+
 function statusLabel(
   status: string,
   t: ActivityT,
@@ -410,13 +384,12 @@ const EMPTY_REPLIES: TimelineEntry[] = [];
 // its row and add-property entry are gated on `issue.parent_issue_id` at the
 // render site below — it stays in this list so seeding/visibility flow through
 // the same machinery as the other optional props.
-const OPTIONAL_PROP_KEYS = ["priority", "stage", "start_date", "due_date", "labels"] as const;
+const OPTIONAL_PROP_KEYS = ["priority", "stage", "start_date", "due_date"] as const;
 type OptionalPropKey = (typeof OPTIONAL_PROP_KEYS)[number];
 
 function isOptionalPropSet(
   issue: Issue,
   key: OptionalPropKey,
-  attachedLabelsCount: number,
 ): boolean {
   switch (key) {
     case "priority":
@@ -427,8 +400,6 @@ function isOptionalPropSet(
       return !!issue.start_date;
     case "due_date":
       return !!issue.due_date;
-    case "labels":
-      return attachedLabelsCount > 0;
   }
 }
 
@@ -710,7 +681,7 @@ function SubIssueRow({
   const selected = useIssueSelectionStore((s) => s.selectedIds.has(child.id));
   const toggleSelected = useIssueSelectionStore((s) => s.toggle);
   // Category, not key: a custom status in the done/cancelled categories is
-  // finished work and has to strike through like any other. (MUL-6243)
+
   const isDone = issueBehavesAsAny(child, ["done", "cancelled"]);
   const labels = rowProps.labels ? (child.labels ?? []) : [];
   const customPropsWithValue = customProperties.filter(
@@ -718,21 +689,18 @@ function SubIssueRow({
   );
 
   const handleUpdate = useCallback(
-    (updates: Partial<UpdateIssueRequest>) => {
-      updateIssue.mutate(
-        {
-          id: child.id,
-          ...updates,
-        },
-        {
-          onError: (err) =>
-            toast.error(
-              err instanceof Error && err.message
-                ? err.message
-                : t(($) => $.detail.update_failed),
-            ),
-        },
-      );
+    async (updates: Partial<UpdateIssueRequest>): Promise<boolean> => {
+      try {
+        await updateIssue.mutateAsync({ id: child.id, ...updates });
+        return true;
+      } catch (err) {
+        toast.error(
+          err instanceof Error && err.message
+            ? err.message
+            : t(($) => $.detail.update_failed),
+        );
+        return false;
+      }
     },
     [child.id, updateIssue, t],
   );
@@ -783,6 +751,7 @@ function SubIssueRow({
         <StatusPicker
           status={child.status}
           onUpdate={handleUpdate}
+          onReviewSubmit={handleUpdate}
           align="start"
           trigger={
             <StatusIcon
@@ -1021,6 +990,8 @@ interface IssueDetailProps {
   leadingAction?: ReactNode;
   /** Keep navigation within a host pane such as the inbox. */
   inlineHeader?: boolean;
+  /** Compact property row used by the Inbox embedded detail. */
+  layout?: "default" | "inbox";
 }
 
 // ---------------------------------------------------------------------------
@@ -1142,7 +1113,7 @@ export function IssueDetailSkeleton({ leading }: { leading?: ReactNode } = {}) {
 // IssueDetail
 // ---------------------------------------------------------------------------
 
-export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "orvilo_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction, inlineHeader = false }: IssueDetailProps) {
+export function IssueDetail({ issueId, onDelete, onDone, highlightCommentId, highlightRequestToken, leadingAction, inlineHeader = false, layout = "default" }: IssueDetailProps) {
   const { t } = useT("issues");
   const locale = useLocale();
   const timeAgo = useTimeAgo();
@@ -1165,7 +1136,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const { data: allIssues = [] } = useQuery(issueListOptions(wsId));
   const { getActorName } = useActorName();
   const resolveStatusLabel = useStatusLabel(wsId);
-  // The glyph set is per CATEGORY (MUL-6243), so a status-change entry for a
+
   // custom status drew the same icon as the built-in it sits beside — an
   // "In Review → Awaiting Response" line looked like nothing had moved. Colour
   // is what carries a custom status's own identity, as the inbox row and the
@@ -1178,34 +1149,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // later save). It still needs the failure toast, or a failed upload just
   // erases its own placeholder and the file disappears unexplained.
   const { uploadWithToast } = useEditorUpload();
-  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: layoutId,
-  });
-  const sidebarRef = usePanelRef();
   const isMobile = useIsMobile();
-  const desktopSidebarInitialOpen = getAnimatedRightSidebarInitialOpen(
-    defaultSidebarOpen,
-    defaultLayout,
-  );
-  const {
-    open: desktopSidebarOpen,
-    visualOpen: desktopSidebarVisualOpen,
-    motionEnabled: desktopSidebarMotionEnabled,
-    beginToggle: beginDesktopSidebarToggle,
-    handleResize: handleDesktopSidebarResize,
-  } = useAnimatedRightSidebarState(desktopSidebarInitialOpen);
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
-
-  useEffect(() => {
-    if (isMobile) {
-      setMobileSidebarOpen(false);
-    }
-  }, [isMobile]);
-  const sidebarOpen = isMobile ? mobileSidebarOpen : desktopSidebarOpen;
   const [propertiesOpen, setPropertiesOpen] = useState(true);
-  const [detailsOpen, setDetailsOpen] = useState(true);
   const [parentIssueOpen, setParentIssueOpen] = useState(true);
-  const [metadataOpen, setMetadataOpen] = useState(false);
 
   // Per-issue, per-session set of optional properties currently visible in
   // the sidebar Properties section. Seeded on issue switch with whichever
@@ -1236,7 +1182,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // Bottom comment composer. Measured when scrolling a freshly posted comment
   // into view so its bottom lands above the composer rather than behind it.
   const composerRef = useRef<HTMLDivElement | null>(null);
-  // Pull-based scroll restoration (MUL-4741): the platform serves the offset
+
   // captured when this route was last left. The ref-attach assignment covers
   // the flat render modes (real heights at commit); the virtualized browsing
   // mode feeds the offset into Virtuoso's initialScrollTop below so the
@@ -1266,10 +1212,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   const consumedHighlightRef = useRef(consumedHighlightId);
   consumedHighlightRef.current = consumedHighlightId;
   const writeViewState = useViewStateWriter();
-  const rightSidebarShortcutTargetRef = useRef<HTMLDivElement | null>(null);
   const attachScrollContainer = useCallback(
     (el: HTMLDivElement | null) => {
-      rightSidebarShortcutTargetRef.current = el;
       setScrollContainerEl(el);
       restoreScrollRef(el);
     },
@@ -1614,34 +1558,20 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // `resolved-bar` kind: that kind only covers root resolutions that are
   // currently folded, so it would miss reply resolutions and would flip off
   // as soon as the user expanded a resolved thread.
-  const minimapThreads = useMemo<ThreadNavThread[]>(
+  const minimapThreads = useMemo<ThreadMinimapThread[]>(
     () =>
       items.flatMap((it) => {
         if (it.kind !== "comment" && it.kind !== "resolved-bar") return [];
         const replies = timelineView.threadReplies.get(it.id) ?? EMPTY_REPLIES;
-        const currentUserId = user?.id ?? "";
-        // "@me" means the thread concerns this reader: they started it,
-        // answered in it, or were @mentioned anywhere in it. Authorship counts
-        // because a thread you spoke in is one you are expected to follow —
-        // narrowing to literal mentions would drop most of them.
-        const involvesMe =
-          currentUserId !== "" &&
-          ([it.entry, ...replies].some(
-            (entry) =>
-              (entry.actor_type === "member" && entry.actor_id === currentUserId) ||
-              mentionsUser(entry.content, currentUserId),
-          ));
         return [
           {
             id: it.id,
             entry: it.entry,
             resolved: deriveThreadResolution(it.entry, replies).kind !== "none",
-            replyCount: replies.length,
-            involvesMe,
           },
         ];
       }),
-    [items, timelineView.threadReplies, user?.id],
+    [items, timelineView.threadReplies],
   );
 
   // When the timeline renders flat (deep-link or in-page find), there is no
@@ -1751,47 +1681,28 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     [isFlatTimeline, items, scrollContainerEl],
   );
 
-  // Header thread navigator. `open` and `pinned` live here rather than inside
-  // the panel because the global shortcut has to be able to open it already
-  // pinned, and because the rail needs `threadNavHoverId` to light the tick
-  // the panel's pointer is resting on — the two navigators share one
-  // coordinate system (MUL-5755).
+  // The former discussion navigator now owns the issue's Agent conversation
+  // index. It remains anchored to the header instead of opening a sidebar.
   const [threadNavOpen, setThreadNavOpen] = useState(false);
-  const [threadNavPinned, setThreadNavPinned] = useState(false);
-  const [threadNavHoverId, setThreadNavHoverId] = useState<string | null>(null);
-  const handleThreadNavOpenChange = useCallback((open: boolean, pinned: boolean) => {
-    setThreadNavOpen(open);
-    setThreadNavPinned(pinned);
-    if (!open) setThreadNavHoverId(null);
-  }, []);
+  const handleThreadNavOpenChange = useCallback((open: boolean) => setThreadNavOpen(open), []);
 
   // Global Mod+Shift+O. Scoped to the mounted issue detail and gated on
   // visibility the same way Cmd+F is, so on desktop only the visible tab
   // intercepts the key.
   useEffect(() => {
-    if (minimapThreads.length === 0) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.defaultPrevented || e.repeat || isImeComposing(e)) return;
       if (!shortcutMatchesEvent(getShortcut("openThreadNav"), e)) return;
       if (!scrollContainerEl || scrollContainerEl.getClientRects().length === 0) return;
       e.preventDefault();
-      // The shortcut is a deliberate act, so it opens the pinned state
-      // directly. Pressing it again over a hover preview pins that preview
-      // rather than closing it, matching what pressing the button does.
-      if (threadNavOpen && threadNavPinned) {
-        handleThreadNavOpenChange(false, false);
-      } else {
-        handleThreadNavOpenChange(true, true);
-      }
+      handleThreadNavOpenChange(!threadNavOpen);
     };
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [
     handleThreadNavOpenChange,
-    minimapThreads.length,
     scrollContainerEl,
     threadNavOpen,
-    threadNavPinned,
   ]);
 
   const {
@@ -1840,7 +1751,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // re-fetched on every mount and isSuccess alone still describes the previous
   // visit. The unsubscribe control below picks a different server write from
   // this answer, so a defaulted or stale empty array must not count as "no
-  // sub-issues" (MUL-5714).
+
   const childCountKnown = childIssuesLoaded && !childIssuesFetching;
   // Parent's children — used to render the "x/y" progress next to the
   // "Sub-issue of …" breadcrumb under the title.
@@ -2068,7 +1979,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
   // Every image in this issue, in the order the page renders them: the
   // description first, then each timeline comment with its thread replies
-  // nested under it (MUL-5752). Built from `items` rather than the flat
+
   // timeline so a reply sits next to the root it renders under, and from data
   // rather than the DOM because Virtuoso only mounts the visible window.
   //
@@ -2117,6 +2028,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
   // Called before the `if (!issue)` early return so hook order stays stable.
   const actions = useIssueActions(issue);
   const handleUpdateField = actions.updateField;
+  const handleReviewSubmit = actions.updateFieldAsync;
 
   // Labels live in their own query (not on the issue body) — fetch the count
   // here so seeding can decide whether the "Labels" optional row should be
@@ -2157,7 +2069,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
       setAutoOpenCustomProp(null);
       const seed = new Set<OptionalPropKey>();
       for (const k of OPTIONAL_PROP_KEYS) {
-        if (isOptionalPropSet(issue, k, attachedLabelsCount)) seed.add(k);
+        if (isOptionalPropSet(issue, k)) seed.add(k);
       }
       setVisibleOptionalProps(seed);
       setVisibleCustomProps(new Set(Object.keys(issue.properties ?? {})));
@@ -2166,7 +2078,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     setVisibleOptionalProps((prev) => {
       let next = prev;
       for (const k of OPTIONAL_PROP_KEYS) {
-        if (isOptionalPropSet(issue, k, attachedLabelsCount) && !next.has(k)) {
+        if (isOptionalPropSet(issue, k) && !next.has(k)) {
           if (next === prev) next = new Set(prev);
           next.add(k);
         }
@@ -2225,23 +2137,6 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     setAutoOpenCustomProp(null);
   }, [autoOpenCustomProp]);
 
-  const handleToggleSidebar = useCallback(() => {
-    if (isMobile) {
-      setMobileSidebarOpen((open) => !open);
-      return;
-    }
-
-    const panel = sidebarRef.current;
-    if (!panel) return;
-    const nextOpen = panel.isCollapsed();
-    beginDesktopSidebarToggle(nextOpen);
-    window.requestAnimationFrame(() => {
-      if (nextOpen) panel.expand();
-      else panel.collapse();
-    });
-  }, [beginDesktopSidebarToggle, isMobile, sidebarRef]);
-
-  useRightSidebarShortcut(rightSidebarShortcutTargetRef, handleToggleSidebar);
 
   useIssueDetailScrollRestore({
     restoreKey: `${wsId}:${id}`,
@@ -2333,6 +2228,90 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     persistDescriptionSave(draft);
   };
 
+  const reviewWasSubmitted = !!issue.review_submission || timeline.some((entry) => {
+    const from = (entry.details as Record<string, unknown> | null)?.from;
+    return entry.type === "activity" && entry.action === "status_changed" && typeof from === "string" && resolveStatusCategory(from) === "in_review";
+  });
+  const inboxLayout = layout === "inbox";
+  const inlinePropertyRow = inboxLayout ? (
+    <div
+      data-testid="issue-inline-properties"
+      className="mt-3 flex flex-wrap items-center gap-1.5"
+      aria-label={t(($) => $.detail.section_properties)}
+    >
+      <StatusPicker
+        status={issue.status}
+        onUpdate={handleUpdateField}
+        onReviewSubmit={handleReviewSubmit}
+        triggerRender={<PillButton data-testid="issue-inline-status" />}
+        align="start"
+      />
+      <PriorityPicker
+        priority={issue.priority}
+        onUpdate={handleUpdateField}
+        triggerRender={<PillButton data-testid="issue-inline-priority" />}
+        align="start"
+      />
+      <ExecutorHandoffRow
+        issue={issue}
+        timeline={timeline}
+        onUpdate={handleUpdateField}
+        triggerRender={<PillButton data-testid="issue-inline-executor" />}
+      />
+      <OwnerPicker
+        ownerType={issue.owner_type}
+        ownerId={issue.owner_id}
+        onUpdate={handleUpdateField}
+        triggerRender={<PillButton data-testid="issue-inline-owner" />}
+        align="start"
+      />
+      {(issueBehavesAs(issue, "in_review") || (issueBehavesAs(issue, "in_progress") && reviewWasSubmitted)) && (
+        <ReviewerPicker
+          reviewerType={issue.reviewer_type ?? null}
+          reviewerId={issue.reviewer_id ?? null}
+          onUpdate={handleUpdateField}
+          triggerRender={<PillButton data-testid="issue-inline-reviewer" />}
+          align="start"
+        />
+      )}
+      <ProjectPicker
+        projectId={issue.project_id}
+        onUpdate={handleUpdateField}
+        triggerRender={<PillButton data-testid="issue-inline-project" />}
+        align="start"
+      />
+      <LabelPicker
+        issueId={issue.id}
+        triggerRender={<PillButton data-testid="issue-inline-labels" />}
+        align="start"
+      />
+      {issue.parent_issue_id != null && (
+        <StagePicker
+          stage={issue.stage}
+          onUpdate={handleUpdateField}
+          maxStage={maxSiblingStage(parentChildIssues)}
+          triggerRender={<PillButton data-testid="issue-inline-stage" />}
+          align="start"
+        />
+      )}
+      {issue.start_date && (
+        <StartDatePicker
+          startDate={issue.start_date}
+          onUpdate={handleUpdateField}
+          triggerRender={<PillButton data-testid="issue-inline-start-date" />}
+          align="start"
+        />
+      )}
+      {issue.due_date && (
+        <DueDatePicker
+          dueDate={issue.due_date}
+          onUpdate={handleUpdateField}
+          triggerRender={<PillButton data-testid="issue-inline-due-date" />}
+          align="start"
+        />
+      )}
+    </div>
+  ) : null;
   const sidebarContent = (
     <div className="space-y-5">
       {/* Properties */}
@@ -2348,7 +2327,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         {propertiesOpen && <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
           {/* Core props — always rendered. */}
           <PropRow label={t(($) => $.detail.prop_status)}>
-            <StatusPicker status={issue.status} onUpdate={handleUpdateField} align="start" />
+            <StatusPicker
+              status={issue.status}
+              onUpdate={handleUpdateField}
+              onReviewSubmit={handleReviewSubmit}
+              align="start"
+            />
           </PropRow>
           <PropRow label={t(($) => $.detail.prop_executor)}>
             <ExecutorHandoffRow issue={issue} timeline={timeline} onUpdate={handleUpdateField} />
@@ -2356,15 +2340,9 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           <PropRow label={t(($) => $.detail.prop_owner)}>
             <OwnerPicker ownerType={issue.owner_type} ownerId={issue.owner_id} onUpdate={handleUpdateField} align="start" />
           </PropRow>
-          <PropRow label={t(($) => $.detail.prop_reviewer)}>
+          {(issueBehavesAs(issue, "in_review") || (issueBehavesAs(issue, "in_progress") && reviewWasSubmitted)) && <PropRow label={t(($) => $.detail.prop_reviewer)}>
             <ReviewerPicker reviewerType={issue.reviewer_type ?? null} reviewerId={issue.reviewer_id ?? null} onUpdate={handleUpdateField} align="start" />
-          </PropRow>
-          <PropRow label={t(($) => $.detail.prop_project)}>
-            <ProjectPicker
-              projectId={issue.project_id}
-              onUpdate={handleUpdateField}
-            />
-          </PropRow>
+          </PropRow>}
 
           {/* Optional props — rendered only when set on the issue OR added
               via "+ Add property" in this session. Row order follows the
@@ -2408,15 +2386,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               />
             </PropRow>
           )}
-          {visibleOptionalProps.has("labels") && (
-            <PropRow label={t(($) => $.detail.prop_labels)}>
-              <LabelPicker
-                issueId={issue.id}
-                align="start"
-                defaultOpen={autoOpenProp === "labels"}
-              />
-            </PropRow>
-          )}
+
 
           {/* Custom properties — same progressive disclosure as the
               built-in optional props: a row renders when the issue has a
@@ -2484,15 +2454,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                       {k === "due_date" && (
                         <CalendarDays className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       )}
-                      {k === "labels" && (
-                        <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      )}
                       <span className="truncate">
                         {k === "priority" && t(($) => $.detail.prop_priority)}
                         {k === "stage" && t(($) => $.detail.prop_stage)}
                         {k === "start_date" && t(($) => $.detail.prop_start_date)}
                         {k === "due_date" && t(($) => $.detail.prop_due_date)}
-                        {k === "labels" && t(($) => $.detail.prop_labels)}
                       </span>
                     </button>
                   ))}
@@ -2532,136 +2498,17 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         </div>}
       </div>
 
-      {/* Quick actions — the sidebar's only "do something" block, so it sits
-          directly under Properties and above every read-only section. Renders
-          nothing when the workspace has no active action visible to this
-          member. It is NOT filtered by invoke permission: a member can see and
-          click an action they cannot run, and the refusal is explained at run
-          time rather than by a silently shorter list. */}
-      <QuickActionsSection issueId={issue.id} />
-      <PluginPanelSection issueId={issue.id} />
-
-      {/* Parent issue — standalone section, only when the issue has a
-          parent. Setting a parent is reachable via the issue actions menu;
-          this card surfaces an existing parent without occupying sidebar
-          space for issues that don't have one. */}
-      {parentIssue && (
-        <div>
-          <button
-            type="button"
-            className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-caption font-medium transition-colors mb-2 hover:bg-accent/70 ${parentIssueOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-            onClick={() => setParentIssueOpen(!parentIssueOpen)}
-          >
-            {t(($) => $.detail.section_parent_issue)}
-            <ChevronRight className={`size-4 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${parentIssueOpen ? "rotate-90" : ""}`} />
-          </button>
-          {parentIssueOpen && <div className="pl-2">
-            <div className="flex items-center gap-0.5 rounded-md px-2 -mx-2 hover:bg-accent/50 transition-colors group">
-              <AppLink
-                href={paths.issueDetail(parentIssue.id)}
-                className="flex flex-1 min-w-0 items-center gap-1.5 py-1.5 text-caption"
-              >
-                <StatusIcon
-                  status={parentIssue.status}
-                  category={issueStatusCategory(parentIssue) ?? undefined}
-                  className="h-3.5 w-3.5 shrink-0"
-                />
-                <span className="text-muted-foreground shrink-0">{parentIssue.identifier}</span>
-                <span className="truncate group-hover:text-foreground">{parentIssue.title}</span>
-              </AppLink>
-              <button
-                type="button"
-                title={t(($) => $.actions.remove_parent_issue)}
-                aria-label={t(($) => $.actions.remove_parent_issue)}
-                onClick={() => actions.removeParent()}
-                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-              >
-                <Unlink className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>}
-        </div>
-      )}
-
       <DependencyPrerequisites issueId={issue.id} />
 
-      {/* Execution log — active runs + collapsed past runs, each carrying its
-          own token spend, with the issue total on the section header.
-          Self-contained; owns its own collapse state and WS subscriptions.
-          Hides itself when there are no runs to show. */}
-      <ExecutionLogSection issueId={id} identifier={issue.identifier} />
+      <section className="space-y-2" aria-label={t(($) => $.detail.prop_labels)}>
+        <h3 className="text-caption font-medium text-muted-foreground">{t(($) => $.detail.prop_labels)}</h3>
+        <LabelPicker issueId={issue.id} align="start" />
+      </section>
+      <section className="space-y-2" aria-label={t(($) => $.detail.prop_project)}>
+        <h3 className="text-caption font-medium text-muted-foreground">{t(($) => $.detail.prop_project)}</h3>
+        <ProjectPicker projectId={issue.project_id} onUpdate={handleUpdateField} />
+      </section>
 
-      {/* The issue's delivery list: pull requests, plus everything else a run
-          produced. Reads server-owned relations and sends only the selected
-          product + close intent when a member links one. Not gated on the
-          GitHub PR-sidebar setting — that switch hid a GitHub-only section,
-          and this one is not GitHub-only. */}
-      <WorkProductRelationsSection issueId={id} />
-
-      {/* Details — creator and timestamps. Sits below the execution log
-          because it is the least-read block in the sidebar: the values
-          never change once the issue exists, while the log above it is
-          what people actually come here to check. */}
-      <div>
-        <button
-          type="button"
-          className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-caption font-medium transition-colors mb-2 hover:bg-accent/70 ${detailsOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
-          onClick={() => setDetailsOpen(!detailsOpen)}
-        >
-          {t(($) => $.detail.section_details)}
-          <ChevronRight className={`size-4 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${detailsOpen ? "rotate-90" : ""}`} />
-        </button>
-        {detailsOpen && <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 pl-2">
-          <PropRow label={t(($) => $.detail.prop_created_by)}>
-            <ActorAvatar actorType={issue.creator_type} actorId={issue.creator_id} size="sm" enableHoverCard />
-            <span className="cursor-pointer truncate">{getActorName(issue.creator_type, issue.creator_id)}</span>
-          </PropRow>
-          <PropRow label={t(($) => $.detail.prop_created)}>
-            <span className="text-muted-foreground">{shortDate(issue.created_at, locale)}</span>
-          </PropRow>
-          <PropRow label={t(($) => $.detail.prop_updated)}>
-            <span className="text-muted-foreground">{shortDate(issue.updated_at, locale)}</span>
-          </PropRow>
-        </div>}
-      </div>
-
-      {/* The standalone "Token usage" section that used to sit here is gone:
-          it showed the same issue totals the execution-log header now carries,
-          minus the cost and minus any way to tell which run spent them. Its
-          every field (input / output / cache / run count) lives in the usage
-          dialog that header opens. The `/api/issues/:id/usage` endpoint it
-          read stays — the CLI's `issue usage` command still uses it. */}
-
-      {/* Metadata — agent-facing free-form KV bag. The values almost
-          never mean anything to humans, so the trigger row matches the
-          sibling section headers (Pull requests / Details / Parent issue)
-          but clicking opens a dialog with the raw JSON instead of expanding
-          inline — the payload can be large and pushing the rest of the
-          sidebar down was noisy. */}
-      {Object.keys(issue.metadata ?? {}).length > 0 && (
-        <>
-          <button
-            type="button"
-            className="flex w-full items-center gap-1 rounded-md px-2 py-1 text-caption font-medium text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
-            onClick={() => setMetadataOpen(true)}
-          >
-            {t(($) => $.detail.section_metadata)}
-            <span className="tabular-nums">
-              · {Object.keys(issue.metadata ?? {}).length}
-            </span>
-          </button>
-          <Dialog open={metadataOpen} onOpenChange={setMetadataOpen}>
-            <DialogContent className="max-w-2xl">
-              <DialogHeader>
-                <DialogTitle>{t(($) => $.detail.section_metadata)}</DialogTitle>
-              </DialogHeader>
-              <pre className="max-h-[60vh] overflow-auto rounded-md bg-muted p-3 font-mono text-caption">
-                {JSON.stringify(issue.metadata ?? {}, null, 2)}
-              </pre>
-            </DialogContent>
-          </Dialog>
-        </>
-      )}
     </div>
   );
 
@@ -2762,15 +2609,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     <CurrentIssueRenderContextProvider value={currentIssueRenderContext}>
     <ImageSequenceProvider items={imageSequence}>
     <div className="relative flex h-full min-w-0 flex-1 flex-col">
-        {/* In-page find bar — floats over the top-right of the content column
-            (below the breadcrumb header), outside the scroll container so it
-            stays put while the timeline scrolls and its own text isn't walked.
-            z-30: must beat every sticky affordance pinned at the timeline's
-            top-0 (comment headers z-10, resolve collapse bars z-20) — at equal
-            z the later-in-DOM sticky bar paints over the find bar and orphans
-            its close button (MUL-4414). On desktop it also steps inside the
-            thread rail's right-edge strip, so an open find bar can't cover
-            the topmost ticks. */}
+        {}
         {find.open && (
           <FindBar
             find={find}
@@ -2797,18 +2636,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 it never overlaps the title (which truncates to make room).
                 It self-hides when no agent is active. */}
             <IssueAgentHeaderChip issueId={id} />
-            {/* Thread navigator. Leftmost of the action buttons because it
-                navigates the document, while everything to its right acts on
-                the issue. Hidden on mobile with the rail: the panel would work
-                there, but it needs a sheet rather than a popover to be usable
-                one-handed, which is its own change. */}
+            {/* One issue-scoped entry for every Agent execution conversation. */}
             {!isMobile && (
-              <ThreadNavPanel
-                threads={minimapThreads}
-                onJump={jumpToThread}
-                onHoverThread={setThreadNavHoverId}
+              <IssueAgentConversationsPopover
+                issueId={id}
                 open={threadNavOpen}
-                pinned={threadNavPinned}
                 onOpenChange={handleThreadNavOpenChange}
               />
             )}
@@ -2874,31 +2706,11 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 </Button>
               }
             />
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant={sidebarOpen ? "secondary" : "ghost"}
-                    size="icon-sm"
-                    className={sidebarOpen ? "" : "text-muted-foreground"}
-                    onClick={handleToggleSidebar}
-                  >
-                    <PanelRight />
-                  </Button>
-                }
-              />
-              <TooltipContent side="bottom">{t(($) => $.detail.sidebar_tooltip)}</TooltipContent>
-            </Tooltip>
             </>
           }
         />
 
-        {/* scrollbar-gutter both-edges: with classic (space-taking) scrollbars —
-            macOS with a mouse or "always show", Windows, Linux — the global
-            `scrollbar-width: thin` carves ~11px off the right side only, so the
-            centered column reads 32px left vs 43px right (MUL-4404). Mirroring
-            the gutter restores symmetry; overlay-scrollbar platforms reserve
-            nothing and render unchanged. */}
+        {}
         <div
           ref={attachScrollContainer}
           data-tab-scroll-root={scrollContainerKey}
@@ -3015,6 +2827,8 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
             />
           ) : null}
 
+          {inlinePropertyRow}
+
           {parentIssue && !issue.source_context && (
             <AppLink
               href={paths.issueDetail(parentIssue.id)}
@@ -3097,7 +2911,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 // whose origin isn't the API host (Desktop/Electron, mobile
                 // webview) — while still working on web via the cookie/proxy.
                 // This mirrors the comment/reply/chat composers, which already
-                // bind via `contentReferencesAttachment` (MUL-3130 / MUL-3192).
+
                 const ids = descPendingAttachmentsRef.current
                   .filter((a) => contentReferencesAttachment(md, a))
                   .map((a) => a.id);
@@ -3111,7 +2925,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               debounceMs={1500}
               // Closing the issue modal must save what the user last saw —
               // without the flush, a paste followed by a quick close loses
-              // the image markdown and its attachment_ids bind (MUL-3254).
+
               flushPendingOnUnmount
               currentIssueId={id}
               attachments={descEditorAttachments}
@@ -3317,16 +3131,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                 <h2 className="text-title-sm font-semibold">{t(($) => $.detail.activity_section)}</h2>
               </div>
               <div className="flex items-center gap-2">
-                {/* A delegated subscription is one the user never opted into
-                    by hand — their agent created this issue for them. Saying
-                    so is what keeps it from reading as the product quietly
-                    adding them to things (MUL-5483). */}
+                {}
                 {isSubscribed && subscriptionReason === "delegated" && (
                   <Tooltip>
-                    {/* Quiet surface, not plain body text: this is metadata
-                        explaining a state, and must not read as a second
-                        action sitting next to Unsubscribe. Uses the shared
-                        caption role rather than an ad-hoc size (MUL-5451). */}
+                    {}
                     <TooltipTrigger className="cursor-default rounded-full bg-muted px-2 py-0.5 text-caption text-muted-foreground">
                       {t(($) => $.detail.delegated_subscription_badge)}
                     </TooltipTrigger>
@@ -3335,13 +3143,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                     </TooltipContent>
                   </Tooltip>
                 )}
-                {/* Nothing until the subscribers query resolves: the default
-                    empty list reads as "not subscribed" for everyone, so
-                    rendering it flashes Subscribe at someone who is already
-                    subscribed, and a click landing in that window sends a
-                    subscribe instead of the unsubscribe they meant. An
-                    unresolved state is better shown as no control than as the
-                    wrong one (MUL-5714). */}
+                {}
                 {subscriptionKnown &&
                   (!isSubscribed || (childCountKnown && childIssues.length === 0) ? (
                     /* One button, no menu, when there is nothing for the
@@ -3373,12 +3175,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
                       >
                         {t(($) => $.detail.unsubscribe)}
                       </DropdownMenuTrigger>
-                      {/* onClick, not onSelect: Base UI's Menu.Item exposes no
-                          onSelect (that is the Radix spelling), and because its
-                          props extend the full div attribute set, an onSelect
-                          typechecks and silently lands on the DOM node as the
-                          native text-selection event — the handler never runs
-                          (MUL-5710). */}
+                      {}
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem
                           onClick={handleToggleSubscribe}
@@ -3432,13 +3229,93 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
               </div>
             </div>
 
+            <div className="space-y-4">      {/* Quick actions — the sidebar's only "do something" block, so it sits
+          directly under Properties and above every read-only section. Renders
+          nothing when the workspace has no active action visible to this
+          member. It is NOT filtered by invoke permission: a member can see and
+          click an action they cannot run, and the refusal is explained at run
+          time rather than by a silently shorter list. */}
+      <QuickActionsSection issueId={issue.id} />
+      <PluginPanelSection issueId={issue.id} />
+
+      {/* Parent issue — standalone section, only when the issue has a
+          parent. Setting a parent is reachable via the issue actions menu;
+          this card surfaces an existing parent without occupying sidebar
+          space for issues that don't have one. */}
+      {parentIssue && (
+        <div>
+          <button
+            type="button"
+            className={`flex w-full items-center gap-1 rounded-md px-2 py-1 text-caption font-medium transition-colors mb-2 hover:bg-accent/70 ${parentIssueOpen ? "" : "text-muted-foreground hover:text-foreground"}`}
+            onClick={() => setParentIssueOpen(!parentIssueOpen)}
+          >
+            {t(($) => $.detail.section_parent_issue)}
+            <ChevronRight className={`size-4 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${parentIssueOpen ? "rotate-90" : ""}`} />
+          </button>
+          {parentIssueOpen && <div className="pl-2">
+            <div className="flex items-center gap-0.5 rounded-md px-2 -mx-2 hover:bg-accent/50 transition-colors group">
+              <AppLink
+                href={paths.issueDetail(parentIssue.id)}
+                className="flex flex-1 min-w-0 items-center gap-1.5 py-1.5 text-caption"
+              >
+                <StatusIcon
+                  status={parentIssue.status}
+                  category={issueStatusCategory(parentIssue) ?? undefined}
+                  className="h-3.5 w-3.5 shrink-0"
+                />
+                <span className="text-muted-foreground shrink-0">{parentIssue.identifier}</span>
+                <span className="truncate group-hover:text-foreground">{parentIssue.title}</span>
+              </AppLink>
+              <button
+                type="button"
+                title={t(($) => $.actions.remove_parent_issue)}
+                aria-label={t(($) => $.actions.remove_parent_issue)}
+                onClick={() => actions.removeParent()}
+                className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
+              >
+                <Unlink className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>}
+        </div>
+      )}
+
+      {/* The issue's delivery list: pull requests, plus everything else a run
+          produced. Reads server-owned relations and sends only the selected
+          product + close intent when a member links one. Not gated on the
+          GitHub PR-sidebar setting — that switch hid a GitHub-only section,
+          and this one is not GitHub-only. */}
+      <WorkProductRelationsSection issueId={id} pullRequestsOnly submittedPullRequests={issue.review_submission?.pull_requests} />
+      {issue.review_submission && <details className="rounded-md bg-muted/30 px-3 py-2 text-caption">
+        <summary className="cursor-pointer text-muted-foreground">{t(($) => $.review_submission.title)} · {issue.review_submission.branch} · {issue.review_submission.commit.slice(0, 8)}</summary>
+        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+          <dt>{t(($) => $.review_submission.worktree)}</dt><dd className="break-all">{issue.review_submission.worktree}</dd>
+          <dt>{t(($) => $.review_submission.branch)}</dt><dd className="break-all">{issue.review_submission.branch}</dd>
+          <dt>{t(($) => $.review_submission.commit)}</dt><dd className="break-all font-mono">{issue.review_submission.commit}</dd>
+        </dl>
+      </details>}
+
+            </div>
+            {!timeline.some((entry) => entry.type === "activity" && entry.action === "created") && (
+              <div className="flex items-center gap-2 py-2 text-caption text-muted-foreground">
+                <ActorAvatar actorType={issue.creator_type} actorId={issue.creator_id} size="sm" />
+                <span>{getActorName(issue.creator_type, issue.creator_id)} {t(($) => $.activity.created)}</span>
+                <time dateTime={issue.created_at} title={new Date(issue.created_at).toLocaleString(locale)}>· {timeAgo(issue.created_at)}</time>
+              </div>
+            )}
+            {issue.updated_at !== issue.created_at && (
+              <div className="flex items-center gap-2 py-1 text-caption text-muted-foreground">
+                <span>{t(($) => $.detail.prop_updated)}</span>
+                <time dateTime={issue.updated_at} title={new Date(issue.updated_at).toLocaleString(locale)}>· {timeAgo(issue.updated_at)}</time>
+              </div>
+            )}
             <LocalDirectoryHint projectId={issue?.project_id} />
 
             {/* The "agent is working" live signal now lives in the header
                 (IssueAgentHeaderChip) so it stays in one fixed place and
                 doesn't compete with sticky banners in this content column.
-                The per-task timeline + past runs live in the right panel
-                via ExecutionLogSection. */}
+                The full Agent conversation remains available from the
+                executor entry; this page no longer mounts the execution log. */}
 
             {/* Timeline entries — virtualized via react-virtuoso to keep
                 first-paint cost O(viewport) instead of O(N). On a 500-comment
@@ -3546,22 +3423,12 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
         </div>
         </div>
 
-        {/* Thread quick-jump rail — rides the scroll container's right edge,
-            next to the scrollbar, where the pointer already is while
-            scrolling (MUL-4522). right-3 is the inset that works in both
-            scrollbar modes: it clears a classic scrollbar's ~11px gutter,
-            and the rail's own 20px width lands it exactly on the content
-            column's px-8 padding when the gutter is 0 (overlay scrollbars),
-            so it covers neither the scrollbar nor body text. It also clears
-            the resize handle's 4px drag strip at the panel edge. Hover
-            previews a thread, click jumps to it. Hidden on mobile: no
-            hover, and the gutter is too tight. */}
+        {}
         {!isMobile && (
           <ThreadMinimap
             threads={minimapThreads}
             scrollContainerEl={scrollContainerEl}
             onJump={jumpToThread}
-            highlightedThreadId={threadNavHoverId}
             className="absolute bottom-0 right-3 top-12"
           />
         )}
@@ -3570,41 +3437,14 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     </CurrentIssueRenderContextProvider>
   );
 
-  if (isMobile) {
-    return (
-      <div className="flex flex-1 min-h-0">
-        {detailContent}
-        <Sheet open={mobileSidebarOpen} onOpenChange={setMobileSidebarOpen}>
-          <SheetContent side="right" showCloseButton={false} className="w-[320px] overflow-y-auto p-4">
-            {sidebarContent}
-          </SheetContent>
-        </Sheet>
-      </div>
-    );
-  }
-
   return (
-    <ResizablePanelGroup orientation="horizontal" className="flex-1 min-h-0" defaultLayout={defaultLayout} onLayoutChanged={onLayoutChanged}>
-      <ResizablePanel id="content" minSize="50%">
-        {detailContent}
-      </ResizablePanel>
-      <ResizableHandle />
-      <ResizablePanel
-        id="sidebar"
-        {...rightSidebarPanelMotionProps}
-        data-right-sidebar-motion={desktopSidebarMotionEnabled ? "enabled" : undefined}
-        defaultSize={desktopSidebarOpen ? 320 : 0}
-        minSize={260}
-        maxSize={420}
-        collapsible
-        groupResizeBehavior="preserve-pixel-size"
-        panelRef={sidebarRef}
-        onResize={handleDesktopSidebarResize}
-      >
-        <AnimatedRightSidebar open={desktopSidebarVisualOpen} motionEnabled={desktopSidebarMotionEnabled}>
+    <div className="flex min-h-0 flex-1 flex-col gap-6 md:flex-row md:gap-5">
+      <div className="flex min-h-0 min-w-0 flex-1">{detailContent}</div>
+      {!inboxLayout && (
+        <aside aria-label={t(($) => $.detail.section_properties)} className="w-full shrink-0 overflow-y-auto px-6 py-8 md:mr-8 md:w-[320px] md:px-0 md:pt-12 xl:mr-12 xl:w-[340px]">
           {sidebarContent}
-        </AnimatedRightSidebar>
-      </ResizablePanel>
-    </ResizablePanelGroup>
+        </aside>
+      )}
+    </div>
   );
 }

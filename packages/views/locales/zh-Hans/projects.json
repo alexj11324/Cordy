@@ -25,7 +25,9 @@
     "progress": "进度",
     "lead": "负责人",
     "created": "创建时间",
-    "issues": "任务数"
+    "issues": "任务数",
+    "health": "健康度",
+    "target_date": "目标日期"
   },
   "status": {
     "planned": "计划中",
@@ -79,10 +81,11 @@
     "no_issues_yet": "目前还没有任务",
     "toast_link_copied": "已复制链接",
     "toast_project_deleted": "已删除项目",
-    "toast_move_issue_failed": "移动任务失败"
+    "toast_move_issue_failed": "移动任务失败",
+    "summary_placeholder": "添加简短摘要…"
   },
   "resources": {
-    "section_header": "资源",
+    "section_header": "仓库",
     "empty": "还没有关联资源。",
     "add_button": "添加资源",
     "popover_title": "关联 GitHub 仓库",
@@ -173,5 +176,27 @@
     "direction_desc": "降序",
     "section_columns": "列",
     "view": "视图"
+  },
+  "health": {
+    "on_track": "进展正常",
+    "at_risk": "存在风险",
+    "off_track": "进展偏离",
+    "no_update": "暂无更新"
+  },
+  "metadata": {
+    "members": "成员",
+    "labels": "标签",
+    "dependencies": "项目依赖",
+    "milestones": "里程碑",
+    "depends_on": "此项目依赖于",
+    "no_projects": "还没有其他项目",
+    "new_label": "新建项目标签",
+    "add": "添加",
+    "save_failed": "保存失败",
+    "milestone_title": "里程碑名称",
+    "milestone_date": "目标日期",
+    "complete_milestone": "完成 {{title}}",
+    "remove_milestone": "移除 {{title}}",
+    "milestone_description": "描述（可选）"
   }
 }

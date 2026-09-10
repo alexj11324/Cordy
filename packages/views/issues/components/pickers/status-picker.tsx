@@ -10,6 +10,7 @@ import { PropertyPicker, PickerItem } from "./property-picker";
 import { useT } from "../../../i18n";
 import { useStatusLabel } from "../../utils/status-label";
 import { useStatusOptions } from "../../utils/status-options";
+import { ReviewSubmissionDialog } from "../review-submission-dialog";
 
 /** Above this many options the flat list stops being scannable. */
 const SEARCH_THRESHOLD = 9;
@@ -17,6 +18,7 @@ const SEARCH_THRESHOLD = 9;
 export function StatusPicker({
   status,
   onUpdate,
+  onReviewSubmit,
   trigger: customTrigger,
   triggerRender,
   open: controlledOpen,
@@ -31,6 +33,9 @@ export function StatusPicker({
    */
   status: IssueStatus | null;
   onUpdate: (updates: Partial<UpdateIssueRequest>) => void;
+  onReviewSubmit: (
+    updates: Partial<UpdateIssueRequest>,
+  ) => Promise<boolean>;
   trigger?: React.ReactNode;
   triggerRender?: React.ReactElement;
   open?: boolean;
@@ -41,6 +46,7 @@ export function StatusPicker({
   const open = controlledOpen ?? internalOpen;
   const setOpen = controlledOnOpenChange ?? setInternalOpen;
   const [query, setQuery] = useState("");
+  const [reviewStatus, setReviewStatus] = useState<IssueStatus | null>(null);
   const { t } = useT("issues");
   // Every StatusPicker call site lives inside the workspace shell (issue
   // detail, table, board batch toolbar, create-issue modal), so the provider
@@ -49,14 +55,7 @@ export function StatusPicker({
   const { categoryOf, colorOf } = useIssueStatuses(wsId);
   const labelOf = useStatusLabel(wsId);
 
-  /**
-   * Offerable statuses as one flat list, in canonical category order.
-   *
-   * Archived statuses are excluded: archiving retires a status from future
-   * assignment while leaving the issues already on it untouched. Falls back to
-   * the 7 built-ins until the catalog lands, so a cold render offers exactly
-   * what it always did instead of an empty popover. (MUL-6243)
-   */
+
   const allOptions = useStatusOptions(wsId);
 
   const options = useMemo(() => {
@@ -68,7 +67,7 @@ export function StatusPicker({
   const searchable = allOptions.length > SEARCH_THRESHOLD;
 
   return (
-    <PropertyPicker
+    <><PropertyPicker
       open={open}
       onOpenChange={(v) => {
         if (!v) setQuery("");
@@ -101,7 +100,11 @@ export function StatusPicker({
           selected={option.key === status}
           hoverClassName={STATUS_CONFIG[option.category].hoverBg}
           onClick={() => {
-            onUpdate({ status: option.key });
+            if (option.category === "in_review" && (status == null || categoryOf(status) !== "in_review")) {
+              setReviewStatus(option.key);
+            } else {
+              onUpdate({ status: option.key });
+            }
             setOpen(false);
             setQuery("");
           }}
@@ -116,5 +119,13 @@ export function StatusPicker({
         </PickerItem>
       ))}
     </PropertyPicker>
+    {reviewStatus && (
+      <ReviewSubmissionDialog
+        status={reviewStatus}
+        onClose={() => setReviewStatus(null)}
+        onSubmit={onReviewSubmit}
+      />
+    )}
+    </>
   );
 }

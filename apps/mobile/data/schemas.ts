@@ -266,6 +266,28 @@ export const ChatSessionListSchema = z.array(ChatSessionSchema).default([]);
 
 export const EMPTY_CHAT_SESSION_LIST: ChatSession[] = [];
 
+const MessageSourceSchema = z.object({
+  id: z.string(),
+  url: z.string(),
+  title: z.string().optional(),
+}).loose();
+
+const MessageCitationSchema = z.object({
+  source_id: z.string(),
+  start: z.number().int().nonnegative(),
+  end: z.number().int().positive(),
+}).loose();
+
+const TaskUsageSchema = z.object({
+  provider: z.string().optional(),
+  model: z.string().default(""),
+  input_tokens: z.number().default(0),
+  output_tokens: z.number().default(0),
+  cache_read_tokens: z.number().default(0),
+  cache_write_tokens: z.number().default(0),
+  cost_usd_ticks: z.number().optional(),
+}).loose();
+
 // `attachments` carried for parity rendering only — v1 doesn't author them on
 // mobile. AttachmentSchema is reused as-is.
 export const ChatMessageSchema: z.ZodType<ChatMessage> = z.object({
@@ -276,11 +298,14 @@ export const ChatMessageSchema: z.ZodType<ChatMessage> = z.object({
   // list. Matches Enum drift defense.
   role: z.enum(["user", "assistant"]).catch("assistant"),
   content: z.string().default(""),
+  sources: z.array(MessageSourceSchema).catch([]).optional().default([]),
+  citations: z.array(MessageCitationSchema).catch([]).optional().default([]),
   task_id: z.string().nullable().default(null),
   created_at: z.string().default(""),
   attachments: z.array(AttachmentSchema).optional(),
   failure_reason: z.string().nullable().optional(),
   elapsed_ms: z.number().nullable().optional(),
+  usage: z.array(TaskUsageSchema).optional().catch(undefined),
   message_kind: z.enum(["message", "no_response"]).catch("message").optional(),
   // One malformed optional suggestion must not erase an otherwise valid
   // conversation. The server validates these too; this is mixed-version and
@@ -347,8 +372,23 @@ export const TaskMessagePayloadSchema: z.ZodType<TaskMessagePayload> = z.object(
   type: z
     .enum(["text", "thinking", "tool_use", "tool_result", "error"])
     .catch("text"),
+  call_id: z.string().optional(),
+  state: z
+    .enum([
+      "approval-requested",
+      "approval-responded",
+      "input-available",
+      "input-streaming",
+      "output-available",
+      "output-denied",
+      "output-error",
+    ])
+    .optional()
+    .catch(undefined),
   tool: z.string().optional(),
   content: z.string().optional(),
+  sources: z.array(MessageSourceSchema).catch([]).optional().default([]),
+  citations: z.array(MessageCitationSchema).catch([]).optional().default([]),
   input: z.record(z.string(), z.unknown()).optional(),
   output: z.string().optional(),
   created_at: z.string().optional(),
@@ -545,6 +585,7 @@ export const WorkspaceSchema: z.ZodType<Workspace> = z.object({
   settings: z.record(z.string(), z.unknown()).default({}),
   repos: z.array(z.object({ url: z.string() }).loose()).default([]),
   issue_prefix: z.string().default(""),
+  lead_agent_id: z.string().nullable().default(null),
   avatar_url: z.string().nullable().default(null),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
@@ -662,7 +703,7 @@ export const AgentSchema: z.ZodType<Agent> = z.object({
   >,
   runtime_config: z.record(z.string(), z.unknown()).default({}),
   custom_args: z.array(z.string()).default([]),
-  // MUL-2600: agent resource shape no longer carries custom_env or
+
   // custom_env_redacted. Mobile keeps only the coarse metadata that
   // mirrors web's expectations. Real env values are reachable via the
   // dedicated /env endpoint and we don't expose env editing on mobile.

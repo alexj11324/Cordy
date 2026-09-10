@@ -12,6 +12,12 @@ import {
 import type { ChatQueuedTask } from "@orvilo/core/types";
 import { Button } from "@orvilo/ui/components/ui/button";
 import {
+  Queue,
+  QueueItem,
+  QueueItemActions,
+  QueueItemContent,
+} from "@orvilo/ui/components/ai-elements/queue";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -26,9 +32,7 @@ interface ChatQueueProps {
   tasks: ChatQueuedTask[];
   headStatus: string | undefined;
   onSendNow?: (taskId: string) => Promise<void> | void;
-  /** Blocks "send now" independently of the head task's status — used when the
-   *  caller may no longer invoke the agent, since steering a queued task
-   *  dispatches a run the server would refuse (MUL-6380). */
+
   sendNowDisabled?: boolean;
   /** Render queued work without mutation controls for read-only thread surfaces. */
   readOnly?: boolean;
@@ -57,7 +61,7 @@ export function ChatQueue({
   const hasActions = !!onSendNow || !!onEdit || !!onRemove || !!onClear;
   // The two blocked states need different copy: "wait for the reply to start"
   // is actionable, "you cannot run this agent" is not — telling a user to wait
-  // for something waiting cannot fix is the bug (MUL-6380).
+
   const sendNowLabel = t(($) =>
     canSendNow
       ? $.queue.steer
@@ -90,8 +94,9 @@ export function ChatQueue({
       aria-busy={busyAction !== null}
     >
       <div className={CHAT_COLUMN}>
-        <section
+        <Queue
           data-slot="chat-queue"
+          role="region"
           aria-label={t(($) => $.queue.title, { count: tasks.length })}
           className={cn(
             // Quiet secondary surface: border only, no shadow, so the composer
@@ -113,20 +118,22 @@ export function ChatQueue({
               const removeKey = `remove:${task.task_id}`;
               const clearKey = `clear:${task.task_id}`;
               return (
-                <div
+                <QueueItem
                   key={task.task_id}
                   data-slot="chat-queue-row"
-                  className="flex min-h-7 min-w-0 items-center gap-2 rounded-md px-1.5 py-0.5 text-caption animate-in fade-in duration-200"
+                  className="flex-row min-h-7 min-w-0 items-center gap-2 rounded-md px-1.5 py-0.5 text-caption animate-in fade-in duration-200"
                 >
                   <ListEnd
                     data-slot="chat-queue-item-icon"
                     className="size-3.5 shrink-0 text-faint-foreground"
                     aria-hidden="true"
                   />
-                  <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                  <QueueItemContent
+                    className="min-w-0 flex-1 truncate text-muted-foreground"
+                  >
                     {task.content?.trim() || t(($) => $.queue.fallback)}
-                  </span>
-                  {!readOnly && hasActions ? <div className="flex shrink-0 items-center gap-0.5">
+                  </QueueItemContent>
+                  {!readOnly && hasActions ? <QueueItemActions className="gap-0.5">
                     {onSendNow ? (
                     <span
                       className="shrink-0"
@@ -212,12 +219,12 @@ export function ChatQueue({
                       </DropdownMenuContent>
                     </DropdownMenu>
                     ) : null}
-                  </div> : null}
-                </div>
+                  </QueueItemActions> : null}
+                </QueueItem>
               );
             })}
           </div>
-        </section>
+        </Queue>
       </div>
     </div>
   );

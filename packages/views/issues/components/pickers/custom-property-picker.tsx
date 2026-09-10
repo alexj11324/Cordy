@@ -23,7 +23,7 @@ import {
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Input } from "@orvilo/ui/components/ui/input";
 import { useLocale, useT } from "../../../i18n";
-import { PropertyPicker, PickerItem } from "./property-picker";
+import { PICKER_TRIGGER_CLASS, PropertyPicker, PickerItem } from "./property-picker";
 import { ActorPropertyPicker, ActorPropertyDisplay } from "./actor-property-picker";
 
 const EDITABLE_PROPERTY_TYPES = [
@@ -38,18 +38,7 @@ const EDITABLE_PROPERTY_TYPES = [
   "multi_actor",
 ];
 
-/**
- * Whether the editor must degrade to read-only (Clear is still offered, so a
- * stale value can always be cleaned up). Three reasons:
- *
- *   1. The definition is archived.
- *   2. The definition's type is newer than this build.
- *   3. A single `actor` value references a kind this build cannot parse. It
- *      would otherwise render as empty and the user, believing the field is
- *      unset, would overwrite a value they were never shown. `multi_actor` is
- *      exempt: its toggle round-trips unknown entries instead of replacing the
- *      whole value (MUL-6286 review).
- */
+
 export function isCustomPropertyReadOnly(
   property: IssueProperty,
   value: IssuePropertyValue | undefined,
@@ -279,7 +268,7 @@ export function CustomPropertyValueInput({
       return (
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
-            className={triggerRender ? undefined : "flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors overflow-hidden"}
+            className={triggerRender ? undefined : PICKER_TRIGGER_CLASS}
             render={triggerRender}
           >
             {valueTrigger}
@@ -415,7 +404,7 @@ function TextishPropertyEditor({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger
-        className={triggerRender ? undefined : "flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors overflow-hidden"}
+        className={triggerRender ? undefined : PICKER_TRIGGER_CLASS}
         render={triggerRender}
       >
         {trigger ?? (value === undefined ? (

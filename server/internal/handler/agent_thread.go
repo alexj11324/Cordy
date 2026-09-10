@@ -36,7 +36,8 @@ type agentThreadResponse struct {
 }
 
 type continueAgentThreadRequest struct {
-	Content string `json:"content"`
+	Content       string   `json:"content"`
+	AttachmentIDs []string `json:"attachment_ids"`
 }
 
 type agentThreadAccess struct {
@@ -199,9 +200,19 @@ func (h *Handler) GetAgentThread(w http.ResponseWriter, r *http.Request) {
 	for _, task := range access.tasks {
 		threadTasks = append(threadTasks, taskToResponse(task, workspaceID))
 	}
+	if usageRows, usageErr := h.Queries.ListTaskUsageForTasks(r.Context(), ids); usageErr == nil {
+		usageByTask := make(map[string][]TaskUsageData, len(ids))
+		for _, row := range usageRows {
+			key := uuidToString(row.TaskID)
+			usageByTask[key] = append(usageByTask[key], taskUsageData(row))
+		}
+		for index := range threadTasks {
+			threadTasks[index].Usage = usageByTask[threadTasks[index].ID]
+		}
+	}
 	avatarURL := textToPtr(access.agent.AvatarUrl)
 	writeJSON(w, http.StatusOK, agentThreadResponse{
-		Task: taskToResponse(current, workspaceID), ThreadTasks: threadTasks,
+		Task: threadTasks[len(threadTasks)-1], ThreadTasks: threadTasks,
 		CurrentTaskID: uuidToString(current.ID),
 		Agent:         agentThreadAgentResponse{ID: uuidToString(access.agent.ID), Name: access.agent.Name, AvatarURL: avatarURL},
 		Events:        events, Availability: availability, CanContinue: canContinue,
@@ -222,9 +233,13 @@ func (h *Handler) ContinueAgentThread(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+	attachmentIDs, ok := parseUUIDSliceOrBadRequest(w, request.AttachmentIDs, "attachment_ids")
+	if !ok {
+		return
+	}
 	idempotencyKey := r.Header.Get("Idempotency-Key")
 	parent := access.tasks[len(access.tasks)-1]
-	receipt, err := h.TaskService.ContinueAgentThread(r.Context(), parent.ID, request.Content, idempotencyKey, access.requester)
+	receipt, err := h.TaskService.ContinueAgentThread(r.Context(), parent.ID, request.Content, idempotencyKey, access.requester, attachmentIDs)
 	if err == nil {
 		status := "queued"
 		if receipt.Coalesced {
@@ -243,6 +258,8 @@ func (h *Handler) ContinueAgentThread(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": "agent_thread_depth_limit", "reason_code": "agent_thread_depth_limit", "reason": err.Error()})
 	case errors.Is(err, service.ErrAgentThreadInvokeForbidden):
 		writeError(w, http.StatusForbidden, err.Error())
+	case errors.Is(err, service.ErrAgentThreadAttachmentInvalid):
+		writeError(w, http.StatusBadRequest, "one or more attachments are unavailable")
 	default:
 		writeError(w, http.StatusBadRequest, err.Error())
 	}

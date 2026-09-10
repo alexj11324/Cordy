@@ -77,7 +77,7 @@ function renderDropdown(
 
 function openDropdown(container: HTMLElement) {
   const trigger = container.querySelector<HTMLButtonElement>(
-    '[data-slot="popover-trigger"]',
+    '[data-slot="dialog-trigger"]',
   );
   if (!trigger) throw new Error("model dropdown trigger not rendered");
   fireEvent.click(trigger);
@@ -101,7 +101,7 @@ describe("ModelDropdown", () => {
     expect(trigger.textContent).toContain("Low");
     expect(trigger.textContent).toContain("Fast");
     expect(
-      container.querySelector('[data-slot="popover-trigger"]'),
+      container.querySelector('[data-slot="dialog-trigger"]'),
     ).toBeTruthy();
     fireEvent.click(trigger);
     expect(trigger.getAttribute("aria-expanded")).toBe("true");
@@ -139,7 +139,7 @@ describe("ModelDropdown", () => {
     expect(onChange).toHaveBeenCalledWith("gpt-5.6-terra");
   });
 
-  // MUL-6606: a runtime that could not enumerate its models used to report an
+
   // empty catalog with no error, which rendered as an authoritative empty
   // dropdown. The reason has to reach the user, because for hermes it names the
   // exact command that fixes the problem.

@@ -77,6 +77,76 @@ func TestAgentThreadContinuationIsTaskScopedAndIdempotent(t *testing.T) {
 	}
 }
 
+func TestAgentThreadContinuationBindsOwnedAttachmentsAndRejectsForeignRows(t *testing.T) {
+	agentID := createHandlerTestAgent(t, "Agent thread attachment fixture", nil)
+	issueID := dbfx.Issue(t, "Agent thread attachment issue")
+	parentID := dbfx.Task(t, agentID, testutil.Cols{
+		"runtime_id":   handlerTestRuntimeID(t),
+		"issue_id":     issueID,
+		"status":       "completed",
+		"session_id":   "agent-thread-attachment-provider",
+		"completed_at": testutil.Raw("now()"),
+	})
+	ownedID := dbfx.Insert(t, "attachment", testutil.Cols{
+		"workspace_id":  testWorkspaceID,
+		"uploader_type": "member",
+		"uploader_id":   testUserID,
+		"filename":      "follow-up.png",
+		"url":           "https://cdn.example/follow-up.png",
+		"content_type":  "image/png",
+		"size_bytes":    128,
+	})
+	foreignOwnerID := createPlainMember(t, "agent-thread-attachment-foreign@example.com")
+	foreignOwnerAttachmentID := dbfx.Insert(t, "attachment", testutil.Cols{
+		"workspace_id":  testWorkspaceID,
+		"uploader_type": "member",
+		"uploader_id":   foreignOwnerID,
+		"filename":      "private.png",
+		"url":           "https://cdn.example/private.png",
+		"content_type":  "image/png",
+		"size_bytes":    64,
+	})
+
+	continueTask := func(content, key string, attachmentIDs []string) (int, map[string]string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		req := withURLParam(newRequest("POST", "/api/tasks/"+parentID+"/agent-thread/continue", map[string]any{
+			"content":        content,
+			"attachment_ids": attachmentIDs,
+		}), "taskId", parentID)
+		req.Header.Set("Idempotency-Key", key)
+		testHandler.ContinueAgentThread(w, withChatTestWorkspaceCtx(t, req))
+		body := map[string]string{}
+		_ = json.NewDecoder(w.Body).Decode(&body)
+		return w.Code, body
+	}
+
+	status, receipt := continueTask("", "agent-thread-attachment-owned", []string{ownedID})
+	if status != http.StatusOK || receipt["continuation_task_id"] == "" {
+		t.Fatalf("owned attachment continuation: status=%d body=%#v", status, receipt)
+	}
+	childID := receipt["continuation_task_id"]
+	var boundTaskID *string
+	if err := testPool.QueryRow(t.Context(), `SELECT task_id::text FROM attachment WHERE id = $1`, ownedID).Scan(&boundTaskID); err != nil {
+		t.Fatalf("load bound attachment: %v", err)
+	}
+	if boundTaskID == nil || *boundTaskID != childID {
+		t.Fatalf("owned attachment task_id = %v, want %s", boundTaskID, childID)
+	}
+
+	status, rejected := continueTask("read this private image", "agent-thread-attachment-foreign", []string{foreignOwnerAttachmentID})
+	if status != http.StatusBadRequest || rejected["error"] == "" {
+		t.Fatalf("foreign attachment continuation: status=%d body=%#v", status, rejected)
+	}
+	var foreignTaskID *string
+	if err := testPool.QueryRow(t.Context(), `SELECT task_id::text FROM attachment WHERE id = $1`, foreignOwnerAttachmentID).Scan(&foreignTaskID); err != nil {
+		t.Fatalf("load rejected attachment: %v", err)
+	}
+	if foreignTaskID != nil {
+		t.Fatalf("foreign attachment was bound to %v", foreignTaskID)
+	}
+}
+
 func TestAgentThreadSupportsRunOnlyAutomationTasks(t *testing.T) {
 	agentID := createHandlerTestAgent(t, "Automation Agent thread fixture", nil)
 	parentID := createAutomationRunOnlyTask(t, agentID)
@@ -537,9 +607,24 @@ func TestQuickCreateAgentThreadContinuationClaimWithoutIssueKeepsProjectAndWorkd
 			"source_context_id": "00000000-0000-0000-0000-000000000456",
 		},
 	})
+	attachmentID := dbfx.Insert(t, "attachment", testutil.Cols{
+		"workspace_id":  testWorkspaceID,
+		"uploader_type": "member",
+		"uploader_id":   testUserID,
+		"filename":      "quick-create-follow-up.png",
+		"url":           "https://cdn.example/quick-create-follow-up.png",
+		"content_type":  "image/png",
+		"size_bytes":    128,
+	})
+	t.Cleanup(func() {
+		testPool.Exec(context.Background(), `DELETE FROM attachment WHERE id = $1`, attachmentID)
+	})
 
 	continued := httptest.NewRecorder()
-	continueRequest := withURLParam(newRequest("POST", "/api/tasks/"+parentID+"/agent-thread/continue", map[string]any{"content": "discuss the result instead"}), "taskId", parentID)
+	continueRequest := withURLParam(newRequest("POST", "/api/tasks/"+parentID+"/agent-thread/continue", map[string]any{
+		"content":        "discuss the result instead",
+		"attachment_ids": []string{attachmentID},
+	}), "taskId", parentID)
 	continueRequest.Header.Set("Idempotency-Key", "quick-create-claim-thread-1")
 	testHandler.ContinueAgentThread(continued, withChatTestWorkspaceCtx(t, continueRequest))
 	if continued.Code != http.StatusOK {
@@ -574,12 +659,17 @@ func TestQuickCreateAgentThreadContinuationClaimWithoutIssueKeepsProjectAndWorkd
 	}
 	var response struct {
 		Task *struct {
-			WorkspaceID        string `json:"workspace_id"`
-			ProjectID          string `json:"project_id"`
-			PriorSessionID     string `json:"prior_session_id"`
-			PriorWorkDir       string `json:"prior_work_dir"`
-			AgentThreadMessage string `json:"agent_thread_message"`
-			QuickCreatePrompt  string `json:"quick_create_prompt"`
+			WorkspaceID            string `json:"workspace_id"`
+			ProjectID              string `json:"project_id"`
+			PriorSessionID         string `json:"prior_session_id"`
+			PriorWorkDir           string `json:"prior_work_dir"`
+			AgentThreadMessage     string `json:"agent_thread_message"`
+			QuickCreatePrompt      string `json:"quick_create_prompt"`
+			AgentThreadAttachments []struct {
+				ID          string `json:"id"`
+				Filename    string `json:"filename"`
+				ContentType string `json:"content_type"`
+			} `json:"agent_thread_attachments"`
 		} `json:"task"`
 	}
 	if err := json.NewDecoder(claim.Body).Decode(&response); err != nil || response.Task == nil {
@@ -593,6 +683,10 @@ func TestQuickCreateAgentThreadContinuationClaimWithoutIssueKeepsProjectAndWorkd
 	}
 	if response.Task.AgentThreadMessage != "discuss the result instead" || response.Task.QuickCreatePrompt != "" {
 		t.Fatalf("quick-create continuation prompt precedence wrong: %#v", response.Task)
+	}
+	if len(response.Task.AgentThreadAttachments) != 1 || response.Task.AgentThreadAttachments[0].ID != attachmentID ||
+		response.Task.AgentThreadAttachments[0].Filename != "quick-create-follow-up.png" {
+		t.Fatalf("quick-create continuation attachment context missing: %#v", response.Task.AgentThreadAttachments)
 	}
 }
 

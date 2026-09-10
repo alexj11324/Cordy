@@ -26,7 +26,9 @@
     "progress": "Progress",
     "lead": "Lead",
     "created": "Created",
-    "issues": "Issues"
+    "issues": "Issues",
+    "health": "Health",
+    "target_date": "Target date"
   },
   "status": {
     "planned": "Planned",
@@ -80,10 +82,11 @@
     "no_issues_yet": "No issues yet",
     "toast_link_copied": "Link copied",
     "toast_project_deleted": "Project deleted",
-    "toast_move_issue_failed": "Failed to move issue"
+    "toast_move_issue_failed": "Failed to move issue",
+    "summary_placeholder": "Add a short summary…"
   },
   "resources": {
-    "section_header": "Resources",
+    "section_header": "Repositories",
     "empty": "No resources attached.",
     "add_button": "Add resource",
     "popover_title": "Attach a GitHub repo",
@@ -175,5 +178,27 @@
     "direction_desc": "Descending",
     "section_columns": "Columns",
     "view": "View"
+  },
+  "health": {
+    "on_track": "On track",
+    "at_risk": "At risk",
+    "off_track": "Off track",
+    "no_update": "No update"
+  },
+  "metadata": {
+    "members": "Members",
+    "labels": "Labels",
+    "dependencies": "Dependencies",
+    "milestones": "Milestones",
+    "depends_on": "This project depends on",
+    "no_projects": "No other projects yet",
+    "new_label": "New project label",
+    "add": "Add",
+    "save_failed": "Could not save changes",
+    "milestone_title": "Milestone name",
+    "milestone_date": "Target date",
+    "complete_milestone": "Complete {{title}}",
+    "remove_milestone": "Remove {{title}}",
+    "milestone_description": "Description (optional)"
   }
 }

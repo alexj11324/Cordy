@@ -24,6 +24,7 @@ export type AgentThreadResponse = {
 export type ContinueAgentThreadRequest = {
   content: string;
   idempotency_key: string;
+  attachment_ids?: string[];
 };
 
 export type ContinueAgentThreadResponse = {

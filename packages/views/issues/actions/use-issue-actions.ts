@@ -25,6 +25,7 @@ export interface UseIssueActionsResult {
     updates: Partial<UpdateIssueRequest>,
     options?: IssueSurfaceMutationOptions,
   ) => void;
+  updateFieldAsync: (updates: Partial<UpdateIssueRequest>) => Promise<boolean>;
   openInNewTab: () => void;
   togglePin: () => void;
   copyLink: () => Promise<void>;
@@ -87,7 +88,7 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       // Not wired into drag-and-drop or the batch toolbar, which keep applying
       // directly. That is the existing split, not a new one: a drop is direct
       // manipulation whose card has already moved, and batch status was made
-      // deliberately dialog-free in MUL-4155.
+
       const intent = issue && runConfirmIntent(issue, updates, { entryOf });
       if (intent) {
         openModal("issue-run-confirm", intent);
@@ -119,6 +120,39 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       }
     },
     [issue, issueId, entryOf, surfaceActions, updateIssue, openModal, t],
+  );
+
+  const updateFieldAsync = useCallback(
+    async (updates: Partial<UpdateIssueRequest>): Promise<boolean> => {
+      if (!issueId) return false;
+      const intent = issue && runConfirmIntent(issue, updates, { entryOf });
+      if (intent && !updates.review_submission) {
+        openModal("issue-run-confirm", intent);
+        return false;
+      }
+      try {
+        if (surfaceActions) {
+          await surfaceActions.updateIssueAsync(issueId, updates, {
+            errorMessage: t(($) => $.detail.update_failed),
+          });
+        } else {
+          await updateIssue.mutateAsync({ id: issueId, ...updates });
+        }
+        return true;
+      } catch (err) {
+        if (!surfaceActions) {
+          toast.error(
+            errorCode(err) === "revision_conflict"
+              ? t(($) => $.revision.conflict)
+              : err instanceof Error && err.message
+                ? err.message
+                : t(($) => $.detail.update_failed),
+          );
+        }
+        return false;
+      }
+    },
+    [entryOf, issue, issueId, openModal, surfaceActions, t, updateIssue],
   );
 
   // Explicit "open it somewhere else" CTA, so the new tab takes focus
@@ -159,7 +193,7 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
 
   const copyLink = useCallback(async () => {
     if (!issueId) return;
-    // Share the identifier form (`/{ws}/issues/MUL-123`): a pasted link should
+
     // say which issue it points at. The UUID form stays valid, so links copied
     // before this still resolve.
     const url = navigation.getShareableUrl(paths.issueDetail(issueIdentifier || issueId));
@@ -266,6 +300,7 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
   return {
     isPinned,
     updateField,
+    updateFieldAsync,
     openInNewTab,
     togglePin,
     copyLink,

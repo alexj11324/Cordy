@@ -12,20 +12,26 @@ import (
 )
 
 const createTaskMessage = `-- name: CreateTaskMessage :one
-INSERT INTO task_message (id, task_id, seq, type, tool, content, input, output)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-RETURNING id, task_id, seq, type, tool, content, input, output, created_at
+INSERT INTO task_message (id, task_id, seq, type, tool, content, input, output, call_id, state, sources, citations)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+        COALESCE($11::jsonb, '[]'::jsonb),
+        COALESCE($12::jsonb, '[]'::jsonb))
+RETURNING id, task_id, seq, type, tool, content, input, output, created_at, call_id, state, sources, citations
 `
 
 type CreateTaskMessageParams struct {
-	ID      pgtype.UUID `json:"id"`
-	TaskID  pgtype.UUID `json:"task_id"`
-	Seq     int32       `json:"seq"`
-	Type    string      `json:"type"`
-	Tool    pgtype.Text `json:"tool"`
-	Content pgtype.Text `json:"content"`
-	Input   []byte      `json:"input"`
-	Output  pgtype.Text `json:"output"`
+	ID        pgtype.UUID `json:"id"`
+	TaskID    pgtype.UUID `json:"task_id"`
+	Seq       int32       `json:"seq"`
+	Type      string      `json:"type"`
+	Tool      pgtype.Text `json:"tool"`
+	Content   pgtype.Text `json:"content"`
+	Input     []byte      `json:"input"`
+	Output    pgtype.Text `json:"output"`
+	CallID    pgtype.Text `json:"call_id"`
+	State     pgtype.Text `json:"state"`
+	Sources   []byte      `json:"sources"`
+	Citations []byte      `json:"citations"`
 }
 
 func (q *Queries) CreateTaskMessage(ctx context.Context, arg CreateTaskMessageParams) (TaskMessage, error) {
@@ -38,6 +44,10 @@ func (q *Queries) CreateTaskMessage(ctx context.Context, arg CreateTaskMessagePa
 		arg.Content,
 		arg.Input,
 		arg.Output,
+		arg.CallID,
+		arg.State,
+		arg.Sources,
+		arg.Citations,
 	)
 	var i TaskMessage
 	err := row.Scan(
@@ -50,6 +60,10 @@ func (q *Queries) CreateTaskMessage(ctx context.Context, arg CreateTaskMessagePa
 		&i.Input,
 		&i.Output,
 		&i.CreatedAt,
+		&i.CallID,
+		&i.State,
+		&i.Sources,
+		&i.Citations,
 	)
 	return i, err
 }
@@ -68,33 +82,45 @@ WITH incoming AS (
         unnest($4::text[]) AS tool,
         unnest($5::text[]) AS content,
         unnest($6::text[]) AS input,
-        unnest($7::text[]) AS output
+        unnest($7::text[]) AS output,
+        unnest($8::text[]) AS call_id,
+        unnest($9::text[]) AS state,
+        unnest($10::text[]) AS sources,
+        unnest($11::text[]) AS citations
 ), inserted AS (
-    INSERT INTO task_message (id, task_id, seq, type, tool, content, input, output)
+    INSERT INTO task_message (id, task_id, seq, type, tool, content, input, output, call_id, state, sources, citations)
     SELECT
         m.id,
-        $8::uuid,
+        $12::uuid,
         m.seq,
         m.type,
         NULLIF(m.tool, ''),
         NULLIF(m.content, ''),
         NULLIF(m.input, '')::jsonb,
-        NULLIF(m.output, '')
+        NULLIF(m.output, ''),
+        NULLIF(m.call_id, ''),
+        NULLIF(m.state, ''),
+        COALESCE(NULLIF(m.sources, '')::jsonb, '[]'::jsonb),
+        COALESCE(NULLIF(m.citations, '')::jsonb, '[]'::jsonb)
     FROM incoming AS m
-    RETURNING id, task_id, seq, type, tool, content, input, output, created_at
+    RETURNING id, task_id, seq, type, tool, content, input, output, created_at, call_id, state, sources, citations
 )
-SELECT id, task_id, seq, type, tool, content, input, output, created_at FROM inserted ORDER BY seq ASC
+SELECT id, task_id, seq, type, tool, content, input, output, created_at, call_id, state, sources, citations FROM inserted ORDER BY seq ASC
 `
 
 type CreateTaskMessagesParams struct {
-	Ids      []pgtype.UUID `json:"ids"`
-	Seqs     []int32       `json:"seqs"`
-	Types    []string      `json:"types"`
-	Tools    []string      `json:"tools"`
-	Contents []string      `json:"contents"`
-	Inputs   []string      `json:"inputs"`
-	Outputs  []string      `json:"outputs"`
-	TaskID   pgtype.UUID   `json:"task_id"`
+	Ids       []pgtype.UUID `json:"ids"`
+	Seqs      []int32       `json:"seqs"`
+	Types     []string      `json:"types"`
+	Tools     []string      `json:"tools"`
+	Contents  []string      `json:"contents"`
+	Inputs    []string      `json:"inputs"`
+	Outputs   []string      `json:"outputs"`
+	CallIds   []string      `json:"call_ids"`
+	States    []string      `json:"states"`
+	Sources   []string      `json:"sources"`
+	Citations []string      `json:"citations"`
+	TaskID    pgtype.UUID   `json:"task_id"`
 }
 
 type CreateTaskMessagesRow struct {
@@ -107,6 +133,10 @@ type CreateTaskMessagesRow struct {
 	Input     []byte             `json:"input"`
 	Output    pgtype.Text        `json:"output"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	CallID    pgtype.Text        `json:"call_id"`
+	State     pgtype.Text        `json:"state"`
+	Sources   []byte             `json:"sources"`
+	Citations []byte             `json:"citations"`
 }
 
 // Batch variant of CreateTaskMessage: persists a whole daemon-reported batch in
@@ -157,6 +187,10 @@ func (q *Queries) CreateTaskMessages(ctx context.Context, arg CreateTaskMessages
 		arg.Contents,
 		arg.Inputs,
 		arg.Outputs,
+		arg.CallIds,
+		arg.States,
+		arg.Sources,
+		arg.Citations,
 		arg.TaskID,
 	)
 	if err != nil {
@@ -176,6 +210,10 @@ func (q *Queries) CreateTaskMessages(ctx context.Context, arg CreateTaskMessages
 			&i.Input,
 			&i.Output,
 			&i.CreatedAt,
+			&i.CallID,
+			&i.State,
+			&i.Sources,
+			&i.Citations,
 		); err != nil {
 			return nil, err
 		}
@@ -198,7 +236,7 @@ func (q *Queries) DeleteTaskMessages(ctx context.Context, taskID pgtype.UUID) er
 }
 
 const listTaskMessages = `-- name: ListTaskMessages :many
-SELECT id, task_id, seq, type, tool, content, input, output, created_at FROM task_message
+SELECT id, task_id, seq, type, tool, content, input, output, created_at, call_id, state, sources, citations FROM task_message
 WHERE task_id = $1
 ORDER BY seq ASC
 `
@@ -222,6 +260,10 @@ func (q *Queries) ListTaskMessages(ctx context.Context, taskID pgtype.UUID) ([]T
 			&i.Input,
 			&i.Output,
 			&i.CreatedAt,
+			&i.CallID,
+			&i.State,
+			&i.Sources,
+			&i.Citations,
 		); err != nil {
 			return nil, err
 		}
@@ -234,7 +276,7 @@ func (q *Queries) ListTaskMessages(ctx context.Context, taskID pgtype.UUID) ([]T
 }
 
 const listTaskMessagesForTasks = `-- name: ListTaskMessagesForTasks :many
-SELECT id, task_id, seq, type, tool, content, input, output, created_at FROM task_message
+SELECT id, task_id, seq, type, tool, content, input, output, created_at, call_id, state, sources, citations FROM task_message
 WHERE task_id = ANY($1::uuid[])
 ORDER BY created_at ASC, task_id ASC, seq ASC
 `
@@ -258,6 +300,10 @@ func (q *Queries) ListTaskMessagesForTasks(ctx context.Context, taskIds []pgtype
 			&i.Input,
 			&i.Output,
 			&i.CreatedAt,
+			&i.CallID,
+			&i.State,
+			&i.Sources,
+			&i.Citations,
 		); err != nil {
 			return nil, err
 		}
@@ -270,7 +316,7 @@ func (q *Queries) ListTaskMessagesForTasks(ctx context.Context, taskIds []pgtype
 }
 
 const listTaskMessagesSince = `-- name: ListTaskMessagesSince :many
-SELECT id, task_id, seq, type, tool, content, input, output, created_at FROM task_message
+SELECT id, task_id, seq, type, tool, content, input, output, created_at, call_id, state, sources, citations FROM task_message
 WHERE task_id = $1 AND seq > $2
 ORDER BY seq ASC
 `
@@ -299,6 +345,10 @@ func (q *Queries) ListTaskMessagesSince(ctx context.Context, arg ListTaskMessage
 			&i.Input,
 			&i.Output,
 			&i.CreatedAt,
+			&i.CallID,
+			&i.State,
+			&i.Sources,
+			&i.Citations,
 		); err != nil {
 			return nil, err
 		}

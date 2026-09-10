@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, type ComponentProps, type ReactNode } from "react";
-import { PanelRightClose } from "lucide-react";
+import { ArrowLeft, PanelRightClose } from "lucide-react";
 import type { AgentAvailability } from "@orvilo/core/agents";
 import type {
   ChatMessage,
@@ -9,6 +9,10 @@ import type {
   ChatQueuedTask,
 } from "@orvilo/core/types";
 import { Button } from "@orvilo/ui/components/ui/button";
+import {
+  Checkpoint,
+  CheckpointIcon,
+} from "@orvilo/ui/components/ai-elements/checkpoint";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ChatInput } from "../../chat/components/chat-input";
 import { ChatQueue } from "../../chat/components/chat-queue";
@@ -41,6 +45,7 @@ export interface AgentThreadSurfaceProps {
   unavailableReason?: ReactNode;
   quickActionsDisabled?: boolean;
   allowSubmitWhileRunning?: boolean;
+  uploadEnabled?: boolean;
   onSend?: AgentThreadSubmit;
   onStop?: () => void;
   queueTasks?: ChatQueuedTask[];
@@ -51,6 +56,10 @@ export interface AgentThreadSurfaceProps {
   leftAdornment?: ReactNode;
   draftKey?: string;
   editorKey?: string;
+  closeIcon?: "panel" | "back";
+  compact?: boolean;
+  /** Durable branch emitted by a completed worktree task. */
+  checkpointLabel?: string;
 }
 
 /**
@@ -74,6 +83,7 @@ export function AgentThreadSurface({
   unavailableReason,
   quickActionsDisabled = true,
   allowSubmitWhileRunning = false,
+  uploadEnabled = false,
   onSend,
   onStop,
   queueTasks = [],
@@ -84,6 +94,9 @@ export function AgentThreadSurface({
   leftAdornment,
   draftKey,
   editorKey,
+  closeIcon = "panel",
+  compact = false,
+  checkpointLabel,
 }: AgentThreadSurfaceProps) {
   const titleId = useId();
   const canSend = !unavailableReason && !!onSend;
@@ -98,17 +111,17 @@ export function AgentThreadSurface({
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-page-canvas"
       data-slot="agent-thread-panel"
     >
-        <header className="shrink-0 border-b px-4 py-3 text-left">
+        <header className={compact ? "shrink-0 border-b px-3 py-2 text-left" : "shrink-0 border-b px-4 py-3 text-left"}>
           <div className="flex min-w-0 items-start gap-3">
             <ActorAvatar
               actorType="agent"
               actorId={agentId}
-              size="md"
+              size={compact ? "sm" : "md"}
               enableHoverCard
             />
             <div className="min-w-0 flex-1">
               <h2 id={titleId} className="truncate text-body font-medium">{title}</h2>
-              {(description || descriptionHint) && (
+              {!compact && (description || descriptionHint) && (
                 <div className="mt-0.5 min-w-0 text-caption text-muted-foreground">
                   {description && <span className="block">{description}</span>}
                   {descriptionHint && (
@@ -126,7 +139,11 @@ export function AgentThreadSurface({
               title={collapseLabel}
               onClick={onClose}
             >
-              <PanelRightClose aria-hidden="true" />
+              {closeIcon === "back" ? (
+                <ArrowLeft aria-hidden="true" />
+              ) : (
+                <PanelRightClose aria-hidden="true" />
+              )}
             </Button>
           </div>
         </header>
@@ -140,8 +157,20 @@ export function AgentThreadSurface({
               pendingTask={pendingTask}
               availability={availability}
               quickActionsDisabled={quickActionsDisabled || !canSend}
+              showProcessSteps={!compact}
             />
           )}
+
+          {checkpointLabel ? (
+            <Checkpoint
+              className="mx-4 mb-2 text-caption"
+              data-slot="agent-thread-checkpoint"
+              title={checkpointLabel}
+            >
+              <CheckpointIcon className="size-3.5" />
+              <span className="max-w-64 truncate">{checkpointLabel}</span>
+            </Checkpoint>
+          ) : null}
 
           {unavailableReason ? (
             <div
@@ -167,22 +196,13 @@ export function AgentThreadSurface({
               ) : null}
               <ChatInput
                 onSend={onSend ?? blockedAgentThreadSubmit}
+                uploadEnabled={uploadEnabled && canSend}
                 onStop={onStop}
                 isRunning={!!pendingTask?.task_id}
                 allowSubmitWhileRunning={allowSubmitWhileRunning && canSend}
                 disabled={!canSend}
                 agentName={agentName}
-                leftAdornment={
-                  leftAdornment ?? (
-                    <ActorAvatar
-                      actorType="agent"
-                      actorId={agentId}
-                      size="lg"
-                      profileLink={false}
-                      enableHoverCard
-                    />
-                  )
-                }
+                leftAdornment={leftAdornment}
                 draftKeyOverride={draftKey}
                 editorKeyOverride={editorKey ?? draftKey}
               />

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from "react";
-import { Check, CircleAlert, LoaderCircle, LockKeyhole } from "lucide-react";
+import { Check, CircleAlert, LoaderCircle } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   dependencyGraphKeys,
@@ -14,6 +14,7 @@ import { useWorkspacePaths } from "@orvilo/core/paths";
 import { useWSReconnect, useWSEvent } from "@orvilo/core/realtime";
 import type { DependencyGraphResponse } from "@orvilo/core/types";
 import { Button } from "@orvilo/ui/components/ui/button";
+import { DependencyIcon } from "@orvilo/ui/components/common/dependency-icon";
 import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";
@@ -175,10 +176,12 @@ export function DependencyPrerequisites({ issueId }: { issueId: string }) {
   useWSEvent("issue:updated", refreshForIssueUpdate);
   useWSEvent("issue:deleted", refreshForIssueDeletion);
 
+  if (!query.isError && (!state || state.total === 0)) return null;
+
   return (
     <section aria-labelledby="dependency-prerequisites-heading" className="space-y-2">
       <h2 id="dependency-prerequisites-heading" className="flex items-center gap-1.5 px-2 text-caption font-medium">
-        <LockKeyhole aria-hidden="true" className="size-3.5 text-muted-foreground" />
+        <DependencyIcon className="size-3.5 text-muted-foreground" />
         {t(($) => $.detail.section_dependencies)}
       </h2>
       {query.isPending ? (

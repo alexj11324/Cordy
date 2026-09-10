@@ -44,14 +44,18 @@ vi.mock("@orvilo/core/pins", () => ({
 }));
 
 const mockUpdateMutate = vi.fn();
+const mockUpdateMutateAsync = vi.fn();
 vi.mock("@orvilo/core/issues/mutations", () => ({
-  useUpdateIssue: () => ({ mutate: mockUpdateMutate }),
+  useUpdateIssue: () => ({
+    mutate: mockUpdateMutate,
+    mutateAsync: mockUpdateMutateAsync,
+  }),
 }));
 
 // The status catalog is server state; this suite only needs it to answer which
 // CATEGORY a key belongs to, so the entries are fed in directly. `later` parks
 // like Backlog and `rework` starts work like Todo — the two cases a raw
-// `status === "backlog"` / `=== "todo"` comparison gets wrong (MUL-6463).
+
 const catalogEntries: IssueStatusEntry[] = [
   ...(["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"] as const).map(
     (key, i) => statusEntry({ id: key, key, name: key, category: key, is_system: true, position: i }),
@@ -146,6 +150,7 @@ function wrapper({ children }: { children: React.ReactNode }) {
 beforeEach(() => {
   mockOpenModal.mockReset();
   mockUpdateMutate.mockReset();
+  mockUpdateMutateAsync.mockReset();
   mockCreatePinMutate.mockReset();
   mockDeletePinMutate.mockReset();
   vi.mocked(toast.success).mockReset();
@@ -170,6 +175,73 @@ describe("useIssueActions", () => {
       { id: "issue-1", status: "done" },
       expect.any(Object),
     );
+  });
+
+  it("reports the actual async update result to the review dialog", async () => {
+    mockUpdateMutateAsync
+      .mockRejectedValueOnce(new Error("review rejected"))
+      .mockResolvedValueOnce(mockIssue);
+    const { result } = renderHook(() => useIssueActions(mockIssue), { wrapper });
+    const update = {
+      status: "in_review" as const,
+      reviewer_type: "member" as const,
+      reviewer_id: "reviewer-1",
+      review_submission: {
+        worktree: "/work/project",
+        branch: "codex/review",
+        commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        pull_requests: ["https://github.com/example/project/pull/42"],
+      },
+    };
+
+    let accepted = true;
+    await act(async () => {
+      accepted = await result.current.updateFieldAsync(update);
+    });
+    expect(accepted).toBe(false);
+    expect(toast.error).toHaveBeenCalledWith("review rejected");
+
+    await act(async () => {
+      accepted = await result.current.updateFieldAsync(update);
+    });
+    expect(accepted).toBe(true);
+    expect(mockUpdateMutateAsync).toHaveBeenLastCalledWith({
+      id: "issue-1",
+      status: "in_review",
+      reviewer_type: "member",
+      reviewer_id: "reviewer-1",
+      review_submission: update.review_submission,
+    });
+  });
+
+  it("lets the server reject an invalid review packet without opening the legacy review modal", async () => {
+    const executingIssue = {
+      ...mockIssue,
+      executor_type: "agent",
+      executor_id: "agent-1",
+    } as Issue;
+    mockUpdateMutateAsync.mockRejectedValue(new Error("reviewer must differ"));
+    const { result } = renderHook(() => useIssueActions(executingIssue), {
+      wrapper,
+    });
+
+    await act(async () => {
+      await result.current.updateFieldAsync({
+        status: "in_review",
+        reviewer_type: "agent",
+        reviewer_id: "agent-1",
+        review_submission: {
+          worktree: "/work/project",
+          branch: "codex/review",
+          commit: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          pull_requests: ["https://github.com/example/project/pull/42"],
+        },
+      });
+    });
+
+    expect(mockOpenModal).not.toHaveBeenCalled();
+    expect(mockUpdateMutateAsync).toHaveBeenCalledTimes(1);
+    expect(toast.error).toHaveBeenCalledWith("reviewer must differ");
   });
 
   it("assigning an agent routes through the run-confirm modal instead of mutating directly", () => {

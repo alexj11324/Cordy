@@ -25,7 +25,14 @@
  *             settled-but-malformed fence still renders as source.
  */
 
-import { createContext, isValidElement, memo, useContext, useMemo, useRef } from "react";
+import {
+  createContext,
+  isValidElement,
+  memo,
+  useContext,
+  useMemo,
+  useRef,
+} from "react";
 import ReactMarkdown, {
   type Components,
   type ExtraProps,
@@ -94,7 +101,12 @@ export type RichContentPhase = "streaming" | "settled";
 // every highlighted <code>'s innerHTML and collapses an active text selection
 // inside a code block (MUL-3621).
 
-const ClosedFenceContext = createContext<ReadonlySet<number>>(new Set<number>());
+const ClosedFenceContext = createContext<ReadonlySet<number>>(
+  new Set<number>(),
+);
+const InlineMarkerContext = createContext<
+  ((marker: string) => ReactNode) | null
+>(null);
 
 function useIsFenceClosed(offset: number | undefined): boolean {
   const closed = useContext(ClosedFenceContext);
@@ -113,7 +125,13 @@ function useIsFenceClosed(offset: number | undefined): boolean {
  * IssueMentionCard; the wrapper only shields surrounding click handlers
  * (e.g. collapsed-comment expanders) from mention clicks.
  */
-function IssueMentionLink({ issueId, label }: { issueId: string; label?: string }) {
+function IssueMentionLink({
+  issueId,
+  label,
+}: {
+  issueId: string;
+  label?: string;
+}) {
   return (
     <span className="inline align-middle" onClick={(e) => e.stopPropagation()}>
       <IssueMentionCard issueId={issueId} fallbackLabel={label} />
@@ -155,7 +173,13 @@ function IdentifierIssueMentionLink({
  * handlers (e.g. collapsed-comment expanders) from mention clicks — the same
  * shape as IssueMentionLink above.
  */
-function ProjectMentionLink({ projectId, label }: { projectId: string; label?: string }) {
+function ProjectMentionLink({
+  projectId,
+  label,
+}: {
+  projectId: string;
+  label?: string;
+}) {
   return (
     <span className="inline align-middle" onClick={(e) => e.stopPropagation()}>
       <ProjectMentionCard projectId={projectId} fallbackLabel={label} />
@@ -203,21 +227,51 @@ function unfurlableEntityLink(
   return entity;
 }
 
-function RichLink({ href, children }: { href?: string; children?: ReactNode }) {
+function RichLink({
+  href,
+  children,
+  node,
+}: {
+  href?: string;
+  children?: ReactNode;
+  node?: ExtraProps["node"];
+}) {
   const slug = useWorkspaceSlug();
   const appOrigin = useAppOrigin();
+  const renderInlineMarker = useContext(InlineMarkerContext);
   // Platform probe only: `openInNewTab` present means desktop, where native
   // anchor behavior is a dead end and every click must be intercepted. Absent
   // (web), modified clicks are left to the browser — the only way to get a
   // real background tab.
   const desktopTabs = !!useOptionalNavigation()?.openInNewTab;
 
+  const inlineMarker = stringProperty(node, "dataInlineMarker");
+  if (inlineMarker && renderInlineMarker) {
+    return <>{renderInlineMarker(inlineMarker)}</>;
+  }
+  const markerPrefix = "#orvilo-inline-marker-";
+  if (renderInlineMarker && href?.startsWith(markerPrefix)) {
+    try {
+      return (
+        <>
+          {renderInlineMarker(
+            decodeURIComponent(href.slice(markerPrefix.length)),
+          )}
+        </>
+      );
+    } catch {
+      return null;
+    }
+  }
+
   if (href?.startsWith("slash://skill/")) {
     return <span className="slash-command">{children}</span>;
   }
 
   if (isMentionHref(href)) {
-    const match = href.match(/^mention:\/\/(member|agent|issue|project|all)\/(.+)$/);
+    const match = href.match(
+      /^mention:\/\/(member|agent|issue|project|all)\/(.+)$/,
+    );
     if (match?.[1] === "issue" && match[2]) {
       // A bare identifier (from the autolink preprocessor) is carried as the id
       // segment; a real mention carries a UUID. Dispatch on the id shape.
@@ -229,10 +283,20 @@ function RichLink({ href, children }: { href?: string; children?: ReactNode }) {
           />
         );
       }
-      return <IssueMentionLink issueId={match[2]} label={childrenToLabel(children)} />;
+      return (
+        <IssueMentionLink
+          issueId={match[2]}
+          label={childrenToLabel(children)}
+        />
+      );
     }
     if (match?.[1] === "project" && match[2]) {
-      return <ProjectMentionLink projectId={match[2]} label={childrenToLabel(children)} />;
+      return (
+        <ProjectMentionLink
+          projectId={match[2]}
+          label={childrenToLabel(children)}
+        />
+      );
     }
     // Member / agent / all mentions
     return <span className="mention">{children}</span>;
@@ -349,7 +413,12 @@ function RichCode({ className, children, node, ...props }: RichCodeProps) {
     // isRichFenceLanguage is re-checked for the type narrow; shouldUpgradeFence
     // already required it.
     if (isRichFenceLanguage(language)) {
-      return <RichFenceBlock language={language} body={String(children).replace(/\n$/, "")} />;
+      return (
+        <RichFenceBlock
+          language={language}
+          body={String(children).replace(/\n$/, "")}
+        />
+      );
     }
   }
 
@@ -374,7 +443,9 @@ function readFencedCodeChild(children: ReactNode): {
   if (!isValidElement<{ className?: string } & ExtraProps>(child)) return {};
   return {
     // Whole class token only: `language-htmlbars` must not read as `html`.
-    language: /(?:^|\s)language-(\w+)(?:\s|$)/.exec(child.props.className ?? "")?.[1],
+    language: /(?:^|\s)language-(\w+)(?:\s|$)/.exec(
+      child.props.className ?? "",
+    )?.[1],
     offset: nodeStartOffset(child.props.node),
   };
 }
@@ -476,6 +547,79 @@ const REHYPE_PLUGINS = [
   rehypeKatex,
 ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
 
+type InlineMarker = { offset: number; id: string; label: string };
+type MarkdownNode = {
+  type: string;
+  value?: string;
+  url?: string;
+  children?: MarkdownNode[];
+  position?: { start?: { offset?: number }; end?: { offset?: number } };
+  data?: { hProperties?: Record<string, unknown> };
+};
+
+function inlineMarkerNode(marker: InlineMarker): MarkdownNode {
+  return {
+    type: "link",
+    url: `#orvilo-inline-marker-${encodeURIComponent(marker.id)}`,
+    children: [{ type: "text", value: marker.label }],
+    data: { hProperties: { dataInlineMarker: marker.id } },
+  };
+}
+
+function insertInlineMarker(
+  children: MarkdownNode[],
+  marker: InlineMarker,
+): boolean {
+  for (let index = 0; index < children.length; index += 1) {
+    const child = children[index]!;
+    const start = child.position?.start?.offset;
+    const end = child.position?.end?.offset;
+    if (
+      start == null ||
+      end == null ||
+      marker.offset < start ||
+      marker.offset > end
+    ) {
+      continue;
+    }
+    if (child.type === "text" && child.value != null) {
+      const splitAt = Math.max(
+        0,
+        Math.min(child.value.length, marker.offset - start),
+      );
+      const replacement: MarkdownNode[] = [];
+      const before = child.value.slice(0, splitAt);
+      const after = child.value.slice(splitAt);
+      if (before) replacement.push({ ...child, value: before });
+      replacement.push(inlineMarkerNode(marker));
+      if (after) replacement.push({ ...child, value: after });
+      children.splice(index, 1, ...replacement);
+      return true;
+    }
+    if (
+      child.children &&
+      child.type !== "link" &&
+      child.type !== "inlineCode"
+    ) {
+      if (insertInlineMarker(child.children, marker)) return true;
+    }
+    children.splice(index + 1, 0, inlineMarkerNode(marker));
+    return true;
+  }
+  return false;
+}
+
+function remarkInlineMarkers(markers: InlineMarker[]) {
+  return () => (tree: MarkdownNode) => {
+    for (const marker of [...markers].sort(
+      (left, right) =>
+        right.offset - left.offset || right.label.localeCompare(left.label),
+    )) {
+      if (tree.children) insertInlineMarker(tree.children, marker);
+    }
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -500,6 +644,10 @@ export interface RichContentProps {
    */
   phase?: RichContentPhase;
   className?: string;
+  /** Renders trusted inline markers inserted by the caller into Markdown. */
+  inlineMarkerRenderer?: (marker: string) => ReactNode;
+  /** Trusted source offsets for markers. They are never parsed from Markdown. */
+  inlineMarkers?: InlineMarker[];
 }
 
 export const RichContent = memo(function RichContent({
@@ -508,6 +656,8 @@ export const RichContent = memo(function RichContent({
   density = "document",
   phase = "settled",
   className,
+  inlineMarkerRenderer,
+  inlineMarkers = [],
 }: RichContentProps) {
   // Subscribed, not read once. The CDN config is fetched asynchronously after
   // auth, so content that renders first would otherwise keep its legacy CDN
@@ -520,7 +670,10 @@ export const RichContent = memo(function RichContent({
   const processed = useMemo(
     () =>
       highlightToHtml(
-        preprocessMarkdown(content, { cdnDomain, autolinkIssueIdentifiers: true }),
+        preprocessMarkdown(content, {
+          cdnDomain,
+          autolinkIssueIdentifiers: true,
+        }),
       ),
     [content, cdnDomain],
   );
@@ -528,7 +681,17 @@ export const RichContent = memo(function RichContent({
   // Derived from the SAME string handed to ReactMarkdown, so offsets line up
   // with the hast node positions the `code`/`pre` renderers observe. Computing
   // it from the raw pre-preprocess text would mis-match every rewritten node.
-  const closedFences = useMemo(() => computeClosedFenceOffsets(processed), [processed]);
+  const closedFences = useMemo(
+    () => computeClosedFenceOffsets(processed),
+    [processed],
+  );
+  const remarkPlugins = useMemo(
+    () =>
+      (inlineMarkers.length
+        ? [...REMARK_PLUGINS, remarkInlineMarkers(inlineMarkers)]
+        : REMARK_PLUGINS) as NonNullable<ReactMarkdownOptions["remarkPlugins"]>,
+    [inlineMarkers],
+  );
 
   const wrapperRef = useRef<HTMLDivElement>(null);
   const hover = useLinkHover(wrapperRef);
@@ -542,18 +705,20 @@ export const RichContent = memo(function RichContent({
   // code block (MUL-3621). A stable element reference lets React bail out.
   const markdown = useMemo(
     () => (
-      <ClosedFenceContext.Provider value={closedFences}>
-        <ReactMarkdown
-          remarkPlugins={REMARK_PLUGINS}
-          rehypePlugins={REHYPE_PLUGINS}
-          urlTransform={markdownUrlTransform}
-          components={COMPONENTS}
-        >
-          {processed}
-        </ReactMarkdown>
-      </ClosedFenceContext.Provider>
+      <InlineMarkerContext.Provider value={inlineMarkerRenderer ?? null}>
+        <ClosedFenceContext.Provider value={closedFences}>
+          <ReactMarkdown
+            remarkPlugins={remarkPlugins}
+            rehypePlugins={REHYPE_PLUGINS}
+            urlTransform={markdownUrlTransform}
+            components={COMPONENTS}
+          >
+            {processed}
+          </ReactMarkdown>
+        </ClosedFenceContext.Provider>
+      </InlineMarkerContext.Provider>
     ),
-    [processed, closedFences],
+    [processed, closedFences, inlineMarkerRenderer, remarkPlugins],
   );
 
   return (

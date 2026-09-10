@@ -185,8 +185,8 @@
         "description": "搜索当前打开的任务详情。"
       },
       "openThreadNav": {
-        "label": "打开讨论导航",
-        "description": "列出、搜索并跳转当前任务的评论讨论。"
+        "label": "打开 Agent 对话",
+        "description": "列出并打开当前任务中的 Agent 对话。"
       },
       "archiveInboxItem": {
         "label": "归档通知",
@@ -471,7 +471,7 @@
       "issue": "任务",
       "chat": "聊天",
       "notifications": "通知",
-      "tokens": "API Token",
+      "tokens": "已授权客户端",
       "general": "通用",
       "repositories": "代码仓库",
       "github": "GitHub",
@@ -794,10 +794,10 @@
     }
   },
   "tokens": {
-    "title": "API Token",
-    "description": "个人访问 token 让 CLI 和外部集成可以代表你的账号进行身份验证。可通过 orvilo login --token 使用，或在调用 API 时作为 Bearer token 发送。",
+    "title": "已授权客户端",
+    "description": "管理可以访问你账号的客户端。撤销授权后，该客户端将退出登录。",
     "security_note": "Token 拥有你账号的完整访问权限，请像密码一样妥善保管。",
-    "empty": "还没有 API token。在上方创建一个即可开始使用。",
+    "empty": "还没有已授权的客户端。",
     "load_failed": "无法加载 API token，请刷新页面重试。",
     "name_placeholder": "Token 名称（例如：我的 CLI）",
     "expiry": {
@@ -834,7 +834,11 @@
       "cli_hint": "使用以下命令登录 CLI：",
       "copy_command_tooltip": "复制命令",
       "done": "完成"
-    }
+    },
+    "install_instructions": "请先安装 Orvilo CLI：",
+    "install_command": "curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash",
+    "login_instructions": "然后在电脑或服务器上运行以下命令。它会打印网址和一次性验证码；在浏览器中打开网址并确认授权。",
+    "login_command": "orvilo login"
   },
   "workspace": {
     "page_description": "更新这个工作区的名称、标志和默认设置。",
@@ -902,7 +906,7 @@
     "connection_description_prefix": "自动把任务关联到 Pull Request。当 PR 的分支、标题或正文中包含",
     "connection_description_suffix": "并被合并时，对应的任务会自动转为",
     "connection_description_done": "已完成",
-    "connection_identifier_example": "MUL-123",
+    "connection_identifier_example": "{{identifier}}",
     "connected_to": "已连接到 {{login}}",
     "connect_github": "连接 GitHub",
     "connect_opening": "正在打开…",
@@ -929,7 +933,7 @@
     "feature_co_author_description_prefix": "在智能体提交的 commit 中追加",
     "feature_co_author_description_suffix": "。",
     "feature_auto_link_label": "任务 ↔ PR 自动关联",
-    "feature_auto_link_description": "PR 有两种关联方式：开启此项后，在 PR 标题或分支名中写入任务编号（如 MUL-123），或在正文中写入 Fixes MUL-123，即可自动关联。也可以在任务详情的工作成果中手动关联 PR，或由智能体直接绑定，无需在 PR 中写入任务编号，也不受此开关影响。",
+    "feature_auto_link_description": "在 PR 标题或分支中加入 {{identifier}}，或在正文中写入 Fixes {{identifier}}，自动关联该任务。手动关联不受此开关影响。",
     "section_repositories": "代码仓库",
     "repositories_shortcut_label": "仓库 URL 仍在\"代码仓库\"标签页中管理",
     "repositories_shortcut_link": "前往管理 →",

@@ -24,18 +24,26 @@ export function TaskAgentThreadPanel({
   onClose,
   title,
   unavailableReason,
+  closeIcon,
+  compact = false,
 }: {
   workspaceId: string;
   taskId: string | null | undefined;
   onClose: () => void;
   title?: ReactNode;
   unavailableReason?: ReactNode;
+  closeIcon?: "panel" | "back";
+  compact?: boolean;
 }) {
   const { t } = useT("issues");
   const queryClient = useQueryClient();
   const continuation = useContinueAgentThread(workspaceId);
   const steer = useSteerAgentThread(workspaceId, taskId ?? "");
-  const pendingSendRef = useRef<{ content: string; idempotencyKey: string } | null>(null);
+  const pendingSendRef = useRef<{
+    content: string;
+    attachmentIds: string[];
+    idempotencyKey: string;
+  } | null>(null);
   const query = useQuery({
     ...agentThreadOptions(workspaceId, taskId ?? ""),
     enabled: !!taskId && !!workspaceId,
@@ -85,21 +93,34 @@ export function TaskAgentThreadPanel({
 
   const handleSend = useCallback(async (
     content: string,
-    _attachmentIds: string[] | undefined,
+    attachmentIds: string[] | undefined,
     commitInput: () => void,
   ) => {
     const normalized = content.trim();
+    const normalizedAttachmentIds = [...new Set(attachmentIds ?? [])].sort();
     const parentTaskId = query.data?.current_task_id ?? taskId;
-    if (!normalized || !parentTaskId) return false;
+    if ((!normalized && normalizedAttachmentIds.length === 0) || !parentTaskId) return false;
     const previous = pendingSendRef.current;
-    const idempotencyKey = previous?.content === normalized
+    const sameAttachments = previous?.attachmentIds.length === normalizedAttachmentIds.length &&
+      previous.attachmentIds.every((id, index) => id === normalizedAttachmentIds[index]);
+    const idempotencyKey = previous?.content === normalized && sameAttachments
       ? previous.idempotencyKey
       : createSafeId();
-    pendingSendRef.current = { content: normalized, idempotencyKey };
+    pendingSendRef.current = {
+      content: normalized,
+      attachmentIds: normalizedAttachmentIds,
+      idempotencyKey,
+    };
     try {
       await continuation.mutateAsync({
         taskId: parentTaskId,
-        request: { content: normalized, idempotency_key: idempotencyKey },
+        request: {
+          content: normalized,
+          attachment_ids: normalizedAttachmentIds.length > 0
+            ? normalizedAttachmentIds
+            : undefined,
+          idempotency_key: idempotencyKey,
+        },
       });
       pendingSendRef.current = null;
       commitInput();
@@ -184,6 +205,10 @@ export function TaskAgentThreadPanel({
       onSendQueuedTaskNow={handleSteer}
       draftKey={taskId ? `agent-thread:${taskId}` : undefined}
       editorKey={taskId ? `agent-thread:${taskId}` : undefined}
+      closeIcon={closeIcon}
+      compact={compact}
+      uploadEnabled={!reason && !!query.data?.can_continue}
+      checkpointLabel={[...tasks].reverse().find((task) => task.branch_name)?.branch_name}
     />
   );
 }
