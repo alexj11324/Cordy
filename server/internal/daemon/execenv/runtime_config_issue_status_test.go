@@ -33,6 +33,29 @@ func TestBriefStatusCatalogAbsentKeepsLegacyLine(t *testing.T) {
 	}
 }
 
+func TestBriefReviewStatusCommandIncludesHandoff(t *testing.T) {
+	t.Parallel()
+	for _, statuses := range [][]IssueStatusForEnv{
+		nil,
+		{{Key: "human_review", Name: "Human Review", Category: "in_review"}},
+	} {
+		out := buildMetaSkillContent("claude", TaskContextForEnv{
+			IssueID: "issue-1", AgentID: "a-1", IssueStatuses: statuses,
+		})
+		for _, want := range []string{
+			"orvilo issue status <id> <review-status-key> --review-worktree <path> --review-branch <branch> --review-commit <full-sha> --review-pr <pr-url>",
+			"reviewer different from the executor",
+			"Repeat `--review-pr` for multiple PRs",
+			"If that handoff is not ready, keep `in_progress` or record the blocker",
+			"Return to `in_progress` before replacing an active review handoff",
+		} {
+			if !strings.Contains(out, want) {
+				t.Errorf("review instructions missing %q", want)
+			}
+		}
+	}
+}
+
 func TestBriefStatusCatalogRendered(t *testing.T) {
 	t.Parallel()
 	ctx := TaskContextForEnv{

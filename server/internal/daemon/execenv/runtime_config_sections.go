@@ -268,6 +268,7 @@ func writeAvailableCommands(b *strings.Builder, ctx TaskContextForEnv) {
 	// executor-only --no-start path if the command is hidden behind --help.
 	b.WriteString("- `orvilo issue assign <id> (--to X | --to-id <uuid> | --unassign) [--no-start]` — set or clear the executor (agent/team only). On assign/update/status, `--no-start` records the change without starting another run — use it when the work is already underway.\n")
 	writeIssueStatusCommand(b, ctx)
+	b.WriteString("- To enter review, use `orvilo issue status <id> <review-status-key> --review-worktree <path> --review-branch <branch> --review-commit <full-sha> --review-pr <pr-url>` with a reviewer different from the executor. Repeat `--review-pr` for multiple PRs; add `--no-start` when the work is already underway. The same review flags work with `issue create` and `issue update`.\n")
 	b.WriteString("- `orvilo issue children <id> [--output json]` — list a parent's sub-issues grouped by stage.\n")
 	b.WriteString("- `orvilo issue comment add <issue-id> [--content \"...\" | --content-file <path> | --content-stdin] [--parent <comment-id>] [--attachment <path>]` — post a comment. Agent-authored bodies MUST use `--content-file`; see `## Comment Formatting` for why. `orvilo issue comment add --help` for full flags.\n")
 	b.WriteString("- `orvilo issue metadata list <issue-id> [--output json]` — list KV metadata.\n")
@@ -708,6 +709,7 @@ func writeWorkflowIssue(b *strings.Builder, ctx TaskContextForEnv) {
 	b.WriteString("**Issue status — write the state the issue is in, whenever it changes** (skip any status call your Agent Identity forbids)\n\n")
 	b.WriteString("Status reflects the state the ISSUE is in, not your run's lifecycle — keep it true at every point in the turn, not only at checkpoints: write the new value the moment your work changes it, mid-turn included. Write only when the new value differs from the current one, regardless of who triggered or is executing this turn:\n\n")
 	b.WriteString("- You delivered what the issue itself asks for and it awaits acceptance → `in_review`. Delivering an issue for which you are the executor — including a sub-issue in a chain or stage — always lands here; stage barriers and parent notifications depend on that signal. `done` stays human.\n")
+	b.WriteString("  Enter review with a reviewer different from the executor and the complete worktree, branch, full commit SHA, and PR URLs in the same status command (see `## Available Commands`). If that handoff is not ready, keep `in_progress` or record the blocker. Return to `in_progress` before replacing an active review handoff.\n")
 	b.WriteString("- The issue's work continues beyond this turn — you dispatched sub-issues, or delivered one part with more underway → `in_progress`.\n")
 	b.WriteString("- You cannot proceed without something you are missing → `blocked`, and post a comment explaining the blocker unless your Agent Identity forbids issue comments.\n")
 	if ctx.IsTeamLeader {

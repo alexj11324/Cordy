@@ -223,7 +223,13 @@ var issueStatusCmd = &cobra.Command{
 	Long: "Change an issue's status. The argument is a status KEY, not its display name.\n" +
 		"Built-in keys: backlog, todo, in_progress, in_review, done, blocked, cancelled.\n" +
 		"A workspace may define custom statuses on top of these; their keys are shown in\n" +
-		"Workspace Settings > Issue Statuses, and an unknown value errors with the full list.",
+		"Workspace Settings > Issue Statuses, and an unknown value errors with the full list.\n\n" +
+		"Entering review requires a reviewer different from the executor and a complete\n" +
+		"handoff: --review-worktree, --review-branch, --review-commit, and --review-pr.\n" +
+		"Repeat --review-pr for multiple PRs.",
+	Example: "  orvilo issue status MUL-42 in_review \\\n" +
+		"    --review-worktree /work/project --review-branch codex/fix \\\n" +
+		"    --review-commit <full-commit-sha> --review-pr https://github.com/example/project/pull/1",
 	Args: exactArgs(2),
 	RunE: runIssueStatus,
 }
@@ -549,6 +555,7 @@ func init() {
 	issueUpdateCmd.Flags().String("output", "json", "Output format: table or json")
 
 	// issue status
+	addIssueReviewSubmissionFlags(issueStatusCmd)
 	issueStatusCmd.Flags().Bool("no-start", false, "Change status without starting an agent run")
 	issueStatusCmd.Flags().String("output", "table", "Output format: table or json")
 
@@ -1531,6 +1538,10 @@ func runIssueStatus(cmd *cobra.Command, args []string) error {
 	if err := validateIssueStatus(status); err != nil {
 		return err
 	}
+	body := map[string]any{"status": status}
+	if err := applyIssueReviewSubmissionFlags(cmd, body); err != nil {
+		return err
+	}
 
 	client, err := newAPIClient(cmd)
 	if err != nil {
@@ -1545,7 +1556,6 @@ func runIssueStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("resolve issue: %w", err)
 	}
 
-	body := map[string]any{"status": status}
 	if noStart {
 		body["suppress_run"] = true
 	}

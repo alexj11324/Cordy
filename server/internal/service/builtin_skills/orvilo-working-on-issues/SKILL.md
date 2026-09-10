@@ -1,6 +1,6 @@
 ---
 name: orvilo-working-on-issues
-description: "Use when acting on an Orvilo issue beyond what the brief covers: PR linking vs close intent, reading a linked PR's real state, metadata keys, status-change side effects, sub-issue todo vs backlog."
+description: "Use when acting on an Orvilo issue beyond what the brief covers: review handoff evidence, PR linking vs close intent, reading a linked PR's real state, metadata keys, status-change side effects, sub-issue todo vs backlog."
 user-invocable: false
 allowed-tools: Bash(orvilo *), Bash(git *), Bash(gh *)
 ---
@@ -216,7 +216,9 @@ close intent writes the literal `done` key.
   leaves the parent `in_progress`, and it moves to `in_review` only when a
   later re-trigger confirms the overall goal is met.
 - **`in_review`** is an accepted issue status. Some workflows use it while a PR
-  is open and awaiting review; moving to it is an explicit mutation.
+  is open and awaiting review; entering this category requires a reviewer
+  different from the executor and a new complete review handoff in the same
+  mutation (see below).
 - **`done`** on a child issue posts a system comment on its parent. If a PR
   carries close intent (`Closes MUL-XXXX`), it advances the issue to `done`
   itself on merge — you do not also need to flip it manually.
@@ -227,6 +229,26 @@ close intent writes the literal `done` key.
 - **Failed issue-triggered tasks** may roll an issue from `in_progress` back to
   `todo` when no active task / retry remains — that is the main server-owned
   status write on the agent-run path.
+
+## Submit a complete review handoff
+
+Before entering `in_review` (or a custom status in that category), select a
+reviewer different from the executor. Submit the worktree path, branch, full
+commit SHA, and every PR URL together with the status change:
+
+```bash
+orvilo issue status <issue-id> in_review \
+  --review-worktree /work/project --review-branch codex/change \
+  --review-commit <full-commit-sha> \
+  --review-pr https://github.com/example/project/pull/1
+```
+
+Repeat `--review-pr` for multiple PRs. `issue create` and `issue update` accept
+the same four flags; use `issue update --status in_review` when also setting
+the reviewer in that request. A partial handoff is rejected. A handoff already
+under review cannot be replaced until the issue returns to `in_progress`;
+each later entry into review requires a fresh complete handoff. If the evidence
+or reviewer is missing, keep the issue in progress or record the blocker.
 
 ## Claim ownership without duplicating a run
 
