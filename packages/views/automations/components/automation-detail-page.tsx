@@ -940,7 +940,11 @@ export function AutomationDetailPage({
 
         <InstructionsSection automation={automation} canWrite={canWrite} />
 
-        <AutomationToolsSection automation={automation} canWrite={canWrite} />
+        <AutomationToolsSection
+          automation={automation}
+          assignee={{ type: automation.executor_type, id: automation.executor_id }}
+          canWrite={canWrite}
+        />
 
         <WebhookDeliveriesSection
           automationId={automationId}

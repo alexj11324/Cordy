@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Brain, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { Brain, Plus, Trash2 } from "lucide-react";
 import { parseAutomationTools, type AutomationToolsConfig } from "@orvilo/core/automations";
 import { useUpdateAutomation } from "@orvilo/core/automations/mutations";
 import { slackAutomationCatalogOptions, slackInstallationsOptions } from "@orvilo/core/slack/queries";
@@ -20,19 +20,22 @@ import {
   PopoverTrigger,
 } from "@orvilo/ui/components/ui/popover";
 import { toast } from "sonner";
-import { AppLink } from "../../navigation";
 import { SlackMark } from "../../settings/components/slack-mark";
 import { useT } from "../../i18n";
 import { AutomationMemoryDialog } from "./automation-memory-dialog";
 import { AutomationSlackToolRow } from "./automation-slack-tool-row";
+import { AutomationInheritedMcp } from "./automation-inherited-mcp";
+import type { AssigneeSelection } from "./pickers/agent-picker";
 
 export function AutomationToolsSection({
   automation,
+  assignee = null,
   canWrite,
   onToolsChange,
   saving = false,
 }: {
   automation: Pick<Automation, "id" | "tools">;
+  assignee?: AssigneeSelection | null;
   onToolsChange?: (tools: AutomationToolsConfig) => void;
   saving?: boolean;
   canWrite: boolean;
@@ -176,7 +179,7 @@ export function AutomationToolsSection({
                 </Button>
               }
             />
-            <PopoverContent align="start" className="w-72 p-3 space-y-2">
+            <PopoverContent align="start" className="max-h-96 w-80 max-w-[calc(100vw-2rem)] space-y-2 overflow-y-auto p-3">
               {!tools.memories && (
                 <Button
                   size="sm"
@@ -201,9 +204,14 @@ export function AutomationToolsSection({
                   {t(($) => $.settings.tools_slack)}
                 </Button>
               )}
-              <p className="text-caption text-muted-foreground">
-                {t(($) => $.settings.tools_mcp_hint)}
-              </p>
+              {mcpOpen && (
+                <AutomationInheritedMcp
+                  assignee={assignee}
+                  overriddenNames={servers
+                    .filter((server) => !tools.mcp_server_ids || tools.mcp_server_ids.includes(server.id))
+                    .map((server) => server.name)}
+                />
+              )}
               {mcpQuery.isPending ? (
                 <p role="status" className="text-caption text-muted-foreground">{t(($) => $.settings.tools_loading)}</p>
               ) : mcpQuery.isError ? (
@@ -211,38 +219,34 @@ export function AutomationToolsSection({
                   <p role="status" className="text-caption text-destructive">{t(($) => $.settings.tools_load_failed)}</p>
                   <Button size="sm" variant="outline" onClick={() => void mcpQuery.refetch()}>{t(($) => $.page.retry)}</Button>
                 </div>
-              ) : servers.length === 0 ? (
-                <p className="text-caption text-muted-foreground">
-                  {t(($) => $.settings.tools_mcp_empty)}
-                </p>
-              ) : (
-                <ul className="space-y-1.5">
-                  {servers.map((server) => {
-                    const selected = tools.mcp_server_ids?.includes(server.id) === true;
-                    return (
-                      <li key={server.id} className="flex items-center gap-2">
-                        <Checkbox
-                          aria-label={server.name}
-                          disabled={busy}
-                          checked={selected}
-                          onCheckedChange={(checked) => {
-                            const current = new Set(tools.mcp_server_ids ?? []);
-                            if (checked === true) current.add(server.id);
-                            else current.delete(server.id);
-                            persist({ ...tools, mcp_server_ids: [...current] });
-                          }}
-                        />
-                        <span className="text-body">{server.name}</span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-              <Button size="sm" variant="outline" nativeButton={false}
-                render={<AppLink href={`${wsPaths.settings()}?tab=mcp`} />}>
-                {t(($) => $.settings.tools_mcp_manage)}
-                <ExternalLink className="size-3.5" />
-              </Button>
+              ) : servers.length > 0 ? (
+                <div className="space-y-2">
+                  <p className="text-caption font-medium">
+                    {t(($) => $.settings.tools_mcp_hint)}
+                  </p>
+                  <ul className="space-y-1.5">
+                    {servers.map((server) => {
+                      const selected = tools.mcp_server_ids?.includes(server.id) === true;
+                      return (
+                        <li key={server.id} className="flex items-center gap-2">
+                          <Checkbox
+                            aria-label={server.name}
+                            disabled={busy}
+                            checked={selected}
+                            onCheckedChange={(checked) => {
+                              const current = new Set(tools.mcp_server_ids ?? []);
+                              if (checked === true) current.add(server.id);
+                              else current.delete(server.id);
+                              persist({ ...tools, mcp_server_ids: [...current] });
+                            }}
+                          />
+                          <span className="text-body">{server.name}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
             </PopoverContent>
           </Popover>
         )}

@@ -260,7 +260,7 @@ export function IntegrationsTab({
 
   const content = (
     <>
-      <section className="space-y-4">
+      <section className="@container space-y-4">
         {messaging?.mode === "managed" ? (
           <div className="space-y-1 text-caption text-muted-foreground" data-testid="messaging-quota">
             <div>
@@ -318,20 +318,19 @@ export function IntegrationsTab({
             ) : null}
           </div>
         ) : null}
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 [@container(min-width:34rem)]:grid-cols-2">
           {([
-            ["lark", t(($) => $.lark.section_title), t(($) => $.lark.page_description), "bg-[#3370FF]/10"],
-            ["slack", t(($) => $.slack.section_title), t(($) => $.slack.page_description), "bg-[#611f69]/10"],
-            ["dingtalk", t(($) => $.dingtalk.section_title), t(($) => $.dingtalk.page_description), "bg-[#1677FF]/10"],
-            ["wecom", t(($) => $.wecom.section_title), t(($) => $.wecom.page_description), "bg-[#07C160]/10"],
-            ["telegram", t(($) => $.telegram.section_title), t(($) => $.telegram.page_description), "bg-[#2AABEE]/10"],
-            ["weixin", t(($) => $.weixin.section_title), t(($) => $.weixin.page_description), "bg-[#07C160]/10"],
-          ] as const).map(([channel, title, description, iconClassName]) => (
+            ["lark", t(($) => $.lark.section_title), "bg-[#3370FF]/10"],
+            ["slack", t(($) => $.slack.section_title), "bg-[#611f69]/10"],
+            ["dingtalk", t(($) => $.dingtalk.section_title), "bg-[#1677FF]/10"],
+            ["wecom", t(($) => $.wecom.section_title), "bg-[#07C160]/10"],
+            ["telegram", t(($) => $.telegram.section_title), "bg-[#2AABEE]/10"],
+            ["weixin", t(($) => $.weixin.section_title), "bg-[#07C160]/10"],
+          ] as const).map(([channel, title, iconClassName]) => (
             <IntegrationCard
               key={channel}
               channel={channel}
               title={title}
-              description={description}
               iconClassName={iconClassName}
               status={<ChannelStatus query={listings[channel]} />}
               action={
@@ -374,7 +373,6 @@ export function IntegrationsTab({
         <div className="mx-auto w-full max-w-6xl space-y-8 p-4 sm:p-6 lg:p-8">
           <SettingsTab
             title={t(($) => $.page.integrations_title)}
-            description={t(($) => $.page.integrations_description)}
           >
             {content}
           </SettingsTab>
@@ -382,7 +380,6 @@ export function IntegrationsTab({
       ) : (
         <SettingsTab
           title={t(($) => $.page.tabs.integrations)}
-          description={t(($) => $.page.integrations_description)}
         >
           {content}
         </SettingsTab>

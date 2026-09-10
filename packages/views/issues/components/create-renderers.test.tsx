@@ -2,6 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ALL_STATUSES } from "@orvilo/core/issues/config";
 import { BoardColumn } from "./board-column";
+
+vi.mock("@orvilo/ui/components/reui/kanban", () => ({
+  KanbanColumn: ({ children, value, ...props }: any) => (
+    <div data-slot="kanban-column" data-value={value} {...props}>{children}</div>
+  ),
+  KanbanColumnHandle: ({ children, render, ...props }: any) => typeof render === "function" ? render(props) : <div {...props}>{children}</div>,
+  KanbanColumnContent: ({ children, value, ...props }: any) => (
+    <div data-slot="kanban-column-content" data-value={value} {...props}>{children}</div>
+  ),
+  KanbanItem: ({ children, value, ...props }: any) => (
+    <div data-slot="kanban-item" data-value={value} {...props}>{children}</div>
+  ),
+  KanbanItemHandle: ({ children }: any) => <div>{children}</div>,
+}));
 import { ListView } from "./list-view";
 import type { IssueStatusPagination } from "../surface/use-issue-status-branches";
 
@@ -71,6 +85,7 @@ vi.mock("../surface/selection-context", () => ({
 }));
 
 vi.mock("../../i18n", () => ({
+  useLocale: () => "en",
   useT: () => ({ t: () => "translated" }),
 }));
 
@@ -80,12 +95,14 @@ vi.mock("@dnd-kit/core", () => ({
   PointerSensor: class {},
   useSensor: () => ({}),
   useSensors: () => [],
+  useDndContext: () => ({ over: null }),
   useDroppable: () => ({ setNodeRef: vi.fn(), isOver: false }),
 }));
 
 vi.mock("@dnd-kit/sortable", () => ({
   SortableContext: ({ children }: { children: React.ReactNode }) => children,
   verticalListSortingStrategy: {},
+  horizontalListSortingStrategy: {},
   arrayMove: <T,>(items: T[]) => items,
 }));
 

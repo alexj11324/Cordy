@@ -37,6 +37,7 @@ function ActorAvatar({
   className,
 }: ActorAvatarProps) {
   const px = AVATAR_SIZE_PX[size];
+  const iconPx = Math.round(px * 0.75);
   const emoji = parseAvatarEmoji(avatarUrl);
   const avatarSize = px >= 40 ? "lg" : px <= 24 ? "sm" : "default";
 
@@ -66,11 +67,11 @@ function ActorAvatar({
             {emoji}
           </span>
         ) : isSystem ? (
-          <OrviloIcon noSpin style={{ width: px * 0.55, height: px * 0.55 }} />
+          <OrviloIcon noSpin style={{ width: iconPx, height: iconPx }} />
         ) : isAgent ? (
-          <Bot aria-hidden="true" style={{ width: px * 0.55, height: px * 0.55 }} />
+          <Bot aria-hidden="true" style={{ width: iconPx, height: iconPx }} />
         ) : isTeam ? (
-          <Users aria-hidden="true" style={{ width: px * 0.55, height: px * 0.55 }} />
+          <Users aria-hidden="true" style={{ width: iconPx, height: iconPx }} />
         ) : (
           initials
         )}

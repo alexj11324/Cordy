@@ -79,6 +79,12 @@ type SidebarContextProps = {
   hideHoverSidebar: () => void
   /** Keep a temporary hover reveal open while an owned portalled menu is open. */
   setHoverRevealSuspended: (suspended: boolean) => void
+  /**
+   * After an in-sidebar collapse (the pin), ignore hover-reveal until the
+   * pointer actually leaves the rail. Distinct from `setHoverRevealSuspended`,
+   * which must stay set for the whole time a portalled menu is open.
+   */
+  guardCollapsedHoverReveal: () => void
 }
 
 type SidebarResizeContextProps = {
@@ -167,6 +173,7 @@ function SidebarProvider({
   const [hoverRevealed, setHoverRevealed] = React.useState(false)
   const hoverCloseTimeoutRef = React.useRef<number | null>(null)
   const hoverRevealSuspendedRef = React.useRef(false)
+  const collapsedHoverGuardRef = React.useRef(false)
 
   const clearHoverClose = React.useCallback(() => {
     if (hoverCloseTimeoutRef.current === null) return
@@ -176,13 +183,16 @@ function SidebarProvider({
 
   const revealHoverSidebar = React.useCallback(() => {
     clearHoverClose()
+    if (hoverRevealSuspendedRef.current || collapsedHoverGuardRef.current) return
     if (hoverReveal && !isCompact && !open) {
       setHoverRevealed(true)
     }
   }, [clearHoverClose, hoverReveal, isCompact, open])
 
   const hideHoverSidebar = React.useCallback(() => {
-    if (!hoverReveal || isCompact || open || hoverRevealSuspendedRef.current) return
+    if (hoverRevealSuspendedRef.current) return
+    collapsedHoverGuardRef.current = false
+    if (!hoverReveal || isCompact || open) return
     clearHoverClose()
     hoverCloseTimeoutRef.current = window.setTimeout(() => {
       hoverCloseTimeoutRef.current = null
@@ -204,9 +214,15 @@ function SidebarProvider({
     [clearHoverClose, hideHoverSidebar]
   )
 
+  const guardCollapsedHoverReveal = React.useCallback(() => {
+    collapsedHoverGuardRef.current = true
+    clearHoverClose()
+  }, [clearHoverClose])
+
   React.useEffect(() => {
     if (hoverReveal && !isCompact && !open) return
     hoverRevealSuspendedRef.current = false
+    collapsedHoverGuardRef.current = false
     clearHoverClose()
     setHoverRevealed(false)
   }, [clearHoverClose, hoverReveal, isCompact, open])
@@ -289,6 +305,7 @@ function SidebarProvider({
       revealHoverSidebar,
       hideHoverSidebar,
       setHoverRevealSuspended,
+      guardCollapsedHoverReveal,
     }),
     [
       state,
@@ -304,6 +321,7 @@ function SidebarProvider({
       revealHoverSidebar,
       hideHoverSidebar,
       setHoverRevealSuspended,
+      guardCollapsedHoverReveal,
     ]
   )
   const resizeContextValue = React.useMemo<SidebarResizeContextProps>(
@@ -493,6 +511,7 @@ function SidebarTrigger({
 
   return (
     <Button
+      {...props}
       data-sidebar="trigger"
       data-slot="sidebar-trigger"
       data-sidebar-state={triggerState}
@@ -506,9 +525,9 @@ function SidebarTrigger({
       )}
       onClick={(event) => {
         onClick?.(event)
+        if (event.defaultPrevented) return
         toggleSidebar()
       }}
-      {...props}
     >
       <PanelLeftIcon />
       <span className="sr-only">{t(($) => $.toggle_sidebar)}</span>
@@ -724,7 +743,7 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-header"
       data-sidebar="header"
-      className={cn("flex flex-col gap-2 p-1", className)}
+      className={cn("flex flex-col gap-2 p-2", className)}
       {...props}
     />
   )
@@ -735,7 +754,7 @@ function SidebarFooter({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-footer"
       data-sidebar="footer"
-      className={cn("flex flex-col gap-2 p-1", className)}
+      className={cn("flex flex-col gap-2 p-2", className)}
       {...props}
     />
   )
@@ -774,7 +793,7 @@ function SidebarGroup({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="sidebar-group"
       data-sidebar="group"
-      className={cn("relative flex w-full min-w-0 flex-col px-1 py-1", className)}
+      className={cn("relative flex w-full min-w-0 flex-col p-2 group-data-[collapsible=icon]:px-1", className)}
       {...props}
     />
   )
@@ -847,7 +866,10 @@ function SidebarMenu({ className, ...props }: React.ComponentProps<"ul">) {
     <ul
       data-slot="sidebar-menu"
       data-sidebar="menu"
-      className={cn("flex w-full min-w-0 flex-col gap-0", className)}
+      className={cn(
+        "flex w-full min-w-0 flex-col gap-0 group-data-[collapsible=icon]:items-center",
+        className
+      )}
       {...props}
     />
   )
@@ -865,7 +887,7 @@ function SidebarMenuItem({ className, ...props }: React.ComponentProps<"li">) {
 }
 
 const sidebarMenuButtonVariants = cva(
-  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-1 text-left text-body text-sidebar-text-primary ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:size-9! group-data-[collapsible=icon]:p-1! hover:bg-sidebar-item-hover hover:text-sidebar-item-active-foreground focus-visible:ring-2 active:bg-sidebar-item-active active:text-sidebar-item-active-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-item-hover data-open:hover:text-sidebar-item-active-foreground data-active:bg-sidebar-item-active data-active:font-medium data-active:text-sidebar-item-active-foreground data-active:hover:bg-sidebar-item-active [&_svg]:size-[18px] [&_svg]:shrink-0 [&>span:last-child]:truncate",
+  "peer/menu-button group/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left text-body text-sidebar-text-primary ring-sidebar-ring outline-hidden transition-[width,height,padding] group-has-data-[sidebar=menu-action]/menu-item:pr-8 group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-9! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0 group-data-[collapsible=icon]:p-1! hover:bg-sidebar-item-hover hover:text-sidebar-item-active-foreground focus-visible:ring-2 active:bg-sidebar-item-active active:text-sidebar-item-active-foreground disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-open:hover:bg-sidebar-item-hover data-open:hover:text-sidebar-item-active-foreground data-active:bg-sidebar-item-active data-active:text-sidebar-item-active-foreground data-active:hover:bg-sidebar-item-active [&_svg]:size-[18px] [&_svg]:shrink-0 [&>span:last-child]:truncate",
   {
     variants: {
       variant: {

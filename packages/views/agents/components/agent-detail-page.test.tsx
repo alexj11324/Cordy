@@ -29,12 +29,15 @@ vi.mock("./agent-overview-pane", () => ({
     agent: Agent;
     onUpdate: (id: string, data: Record<string, unknown>) => Promise<void>;
   }) => (
+    <>
+    <span>{agent.model}</span>
     <button
       type="button"
       onClick={() => void onUpdate(agent.id, { model: "new-model" })}
     >
       update model
     </button>
+    </>
   ),
 }));
 vi.mock("../../common/actor-avatar", () => ({

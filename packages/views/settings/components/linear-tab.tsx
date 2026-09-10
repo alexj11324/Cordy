@@ -1026,7 +1026,6 @@ export function LinearIntegrationCard({
           </div>
         }
         channel="linear"
-        description={t(($) => $.page.linear.description)}
         iconClassName="bg-[#5E6AD2]/10"
         status={
           <div className="flex flex-wrap items-center gap-2">

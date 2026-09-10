@@ -57,6 +57,13 @@ interface RuntimeSeed {
 
 const IMMEDIATE_RUNTIME_SEED: RuntimeSeed = { ready: true, runtimeId: "" };
 
+function conversationStarterIsValid(item: AgentDraft["conversationStarters"][number]): boolean {
+  return item.label.trim().length > 0 &&
+    item.prompt.trim().length > 0 &&
+    [...item.label].length <= AGENT_CONVERSATION_STARTER_LABEL_MAX_LENGTH &&
+    [...item.prompt].length <= AGENT_CONVERSATION_STARTER_MAX_LENGTH;
+}
+
 /**
  * The state every agent-creation route shares: one draft plus the workspace
  * catalogs the form renders from.
@@ -74,6 +81,8 @@ export function useCreateAgentForm(options?: {
    * MUL-5163 presented runtime A while every message ran on B.
    */
   runtimeSeed?: RuntimeSeed;
+  /** Drop invalid restored entries when this route has no starter editor. */
+  omitInvalidConversationStarters?: boolean;
 }): CreateAgentForm {
   const wsId = useWorkspaceId();
   const currentUser = useAuthStore((state) => state.user);
@@ -88,7 +97,15 @@ export function useCreateAgentForm(options?: {
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: workspaceSkills = [] } = useQuery(skillListOptions(wsId));
 
-  const [draft, setDraft] = useState<AgentDraft>(EMPTY_AGENT_DRAFT);
+  const [rawDraft, setDraft] = useState<AgentDraft>(EMPTY_AGENT_DRAFT);
+  const omitInvalidConversationStarters = options?.omitInvalidConversationStarters ?? false;
+  const draft = useMemo(() => {
+    if (!omitInvalidConversationStarters) return rawDraft;
+    const conversationStarters = rawDraft.conversationStarters.filter(conversationStarterIsValid);
+    return conversationStarters.length === rawDraft.conversationStarters.length
+      ? rawDraft
+      : { ...rawDraft, conversationStarters };
+  }, [omitInvalidConversationStarters, rawDraft]);
 
   const usableRuntimes = useMemo(
     () =>
@@ -126,11 +143,7 @@ export function useCreateAgentForm(options?: {
     draft.teamIds.size === 0;
 
   const conversationStartersInvalid = draft.conversationStarters.some(
-    (item) =>
-      item.label.trim().length === 0 ||
-      item.prompt.trim().length === 0 ||
-      [...item.label].length > AGENT_CONVERSATION_STARTER_LABEL_MAX_LENGTH ||
-      [...item.prompt].length > AGENT_CONVERSATION_STARTER_MAX_LENGTH,
+    (item) => !conversationStarterIsValid(item),
   );
 
   return {

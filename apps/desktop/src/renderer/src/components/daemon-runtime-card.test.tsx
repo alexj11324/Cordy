@@ -6,11 +6,9 @@ import type { DaemonStatus } from "../../../shared/daemon-types";
 const translations = {
   desktop: {
     daemon: {
-      view_logs: "查看日志",
-      managed_externally: "由应用外部管理",
       start: "启动",
-      restart: "重启",
-      stop: "停止",
+      restart: "重启守护进程",
+      stop: "终止守护进程",
     },
   },
 };
@@ -35,7 +33,6 @@ vi.mock("@orvilo/views/i18n", () => ({
       selector(translations),
   }),
 }));
-vi.mock("./daemon-panel", () => ({ DaemonPanel: () => null }));
 vi.mock("../platform/daemon-reauth", () => ({
   reauthenticateDaemon: vi.fn(),
 }));
@@ -56,16 +53,14 @@ function stubDaemonAPI(status: DaemonStatus) {
 }
 
 describe("DaemonRuntimeActions — externally managed daemon (#3916)", () => {
-  it("hides Stop/Restart and shows the managed-outside hint for a daemon the app can't control", async () => {
+  it("hides controls for a daemon the app can't control", async () => {
     stubDaemonAPI({ state: "running", daemonId: "d1", externallyManaged: true });
     render(<DaemonRuntimeActions />);
 
-    // The translated view-logs label still renders, confirming the running
-    // branch mounted and uses the selected locale.
-    expect(await screen.findByText("查看日志")).toBeInTheDocument();
-    expect(screen.getByText("由应用外部管理")).toBeInTheDocument();
-    expect(screen.queryByText("重启")).not.toBeInTheDocument();
-    expect(screen.queryByText("停止")).not.toBeInTheDocument();
+    expect(screen.queryByText("由应用外部管理")).not.toBeInTheDocument();
+    expect(screen.queryByText("重启守护进程")).not.toBeInTheDocument();
+    expect(screen.queryByText("终止守护进程")).not.toBeInTheDocument();
+    expect(screen.queryByText("查看日志")).not.toBeInTheDocument();
   });
 
   it("shows Stop/Restart for a normally-managed running daemon (no 误伤)", async () => {
@@ -76,8 +71,8 @@ describe("DaemonRuntimeActions — externally managed daemon (#3916)", () => {
     });
     render(<DaemonRuntimeActions />);
 
-    expect(await screen.findByText("重启")).toBeInTheDocument();
-    expect(screen.getByText("停止")).toBeInTheDocument();
+    expect(await screen.findByText("重启守护进程")).toBeInTheDocument();
+    expect(screen.getByText("终止守护进程")).toBeInTheDocument();
     expect(
       screen.queryByText("由应用外部管理"),
     ).not.toBeInTheDocument();

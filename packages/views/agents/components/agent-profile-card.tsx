@@ -10,10 +10,9 @@ import {
   type RuntimeHealth,
 } from "@orvilo/core/runtimes";
 import { agentListOptions, memberListOptions } from "@orvilo/core/workspace/queries";
-import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 import { runtimeListOptions } from "@orvilo/core/runtimes/queries";
 import { useWorkspacePaths } from "@orvilo/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
+import { AgentIdentityAvatar } from "../../common/agent-identity-avatar";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { AppLink } from "../../navigation";
 import { HealthIcon } from "../../runtimes/components/shared";
@@ -58,12 +57,6 @@ export function AgentProfileCard({ agentId }: AgentProfileCardProps) {
     : null;
   const runtime = runtimes.find((r) => r.id === agent.runtime_id) ?? null;
   const isArchived = !!agent.archived_at;
-  const initials = agent.name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
 
   return (
     // `group` enables the hover-only Detail link on the top-right —
@@ -78,13 +71,7 @@ export function AgentProfileCard({ agentId }: AgentProfileCardProps) {
         {/* Base avatar rather than the ActorAvatar wrapper: this card IS a
             hover-card payload, so it must not nest another hover card or
             profile link inside itself. */}
-        <ActorAvatarBase
-          name={agent.name}
-          initials={initials}
-          avatarUrl={resolvePublicFileUrl(agent.avatar_url)}
-          isAgent
-          size="xl"
-        />
+        <AgentIdentityAvatar agentId={agent.id} name={agent.name} size="xl" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <p className="truncate text-body font-semibold">{agent.name}</p>

@@ -78,6 +78,9 @@ vi.mock("@orvilo/views/layout", () => ({
   AppSidebar: () => <div data-testid="app-sidebar" />,
   GlobalShortcuts: () => <div data-testid="global-shortcuts" />,
   NavigationProgress: () => <div data-testid="navigation-progress" />,
+  ShellBreadcrumb: () => <div data-testid="shell-breadcrumb" />,
+  ShellHeaderProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  ShellHeaderActionsSlot: () => <div data-slot="shell-header-actions" />,
 }));
 
 vi.mock("@orvilo/views/modals/registry", () => ({
@@ -101,7 +104,8 @@ vi.mock("@orvilo/views/search", () => ({
 }));
 
 vi.mock("@orvilo/views/chat", () => ({
-  FloatingChat: () => <div data-testid="floating-chat" />,
+  GlobalRightSidebar: () => <div data-testid="global-right-sidebar" />,
+  GlobalRightSidebarToggle: () => <button aria-label="Open right sidebar" />,
 }));
 vi.mock("@orvilo/views/agent-thread", () => ({
   AgentThreadPanelLayout: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -143,6 +147,12 @@ beforeEach(() => {
 });
 
 describe("DesktopShell workspace gating", () => {
+  it("keeps the sidebar toggle available while workspace chrome is resolving", () => {
+    state.currentSlug = null;
+    const { getByRole, queryByTestId } = renderShell();
+    expect(queryByTestId("app-sidebar")).toBeNull();
+    expect(getByRole("button", { name: "Toggle sidebar" })).toBeInTheDocument();
+  });
   it("mounts workspace-scoped chrome while the slug resolves", () => {
     const { queryByTestId } = renderShell();
 
@@ -150,7 +160,7 @@ describe("DesktopShell workspace gating", () => {
     expect(queryByTestId("search-command")).not.toBeNull();
     expect(queryByTestId("global-shortcuts")).not.toBeNull();
     expect(queryByTestId("modal-registry")).not.toBeNull();
-    expect(queryByTestId("floating-chat")).not.toBeNull();
+    expect(queryByTestId("global-right-sidebar")).not.toBeNull();
   });
 
   it("drops workspace-scoped chrome when the singleton still points at a deleted workspace", () => {
@@ -164,7 +174,7 @@ describe("DesktopShell workspace gating", () => {
     expect(queryByTestId("search-command")).toBeNull();
     expect(queryByTestId("global-shortcuts")).toBeNull();
     expect(queryByTestId("modal-registry")).toBeNull();
-    expect(queryByTestId("floating-chat")).toBeNull();
+    expect(queryByTestId("global-right-sidebar")).toBeNull();
   });
 
   it("keeps TabContent mounted with no workspace so the tab router can still resolve one", () => {

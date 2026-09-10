@@ -10,6 +10,7 @@ vi.mock("@orvilo/views/settings", () => ({
   SettingsPage: (props: {
     navigationHeader?: ReactNode;
     variant?: "embedded" | "standalone";
+    onDismiss?: () => void;
     extraAccountTabs?: Array<{
       value: string;
       label: string;
@@ -19,7 +20,6 @@ vi.mock("@orvilo/views/settings", () => ({
     settingsPageProps(props);
     return (
       <div data-testid="settings-page-mock">
-        {props.navigationHeader}
         {props.extraAccountTabs?.map((tab) => (
           <div key={tab.value} data-testid={`settings-extra-${tab.value}`}>
             {tab.label}
@@ -107,23 +107,19 @@ describe("DesktopSettingsPage window title", () => {
     );
   });
 
-  it("renders a back button only when onBack is provided", () => {
-    const { unmount } = render(<DesktopSettingsPage onBack={() => {}} />);
+  it("hands dismiss to the dialog when onBack is provided", () => {
+    const onBack = vi.fn();
+    const { unmount } = render(<DesktopSettingsPage onBack={onBack} />);
     expect(
-      screen.getByRole("button", { name: "Back to app" }),
-    ).toBeInTheDocument();
+      (settingsPageProps.mock.calls.at(-1)?.[0] as { onDismiss?: () => void })
+        .onDismiss,
+    ).toBe(onBack);
     unmount();
 
     render(<DesktopSettingsPage />);
     expect(
-      screen.queryByRole("button", { name: "Back to app" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("makes the back control span the full nav column", () => {
-    render(<DesktopSettingsPage onBack={() => {}} />);
-    expect(screen.getByRole("button", { name: "Back to app" })).toHaveClass(
-      "w-full",
-    );
+      (settingsPageProps.mock.calls.at(-1)?.[0] as { onDismiss?: () => void })
+        .onDismiss,
+    ).toBeUndefined();
   });
 });

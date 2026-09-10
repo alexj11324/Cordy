@@ -2,7 +2,6 @@ import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   RuntimeDetailPage as SharedRuntimeDetailPage,
-  RuntimeSettingsPage as SharedRuntimeSettingsPage,
 } from "@orvilo/views/runtimes";
 import { useWorkspaceId } from "@orvilo/core/hooks";
 import { runtimeDisplayLabel } from "@orvilo/core/runtimes";
@@ -18,7 +17,7 @@ export function RuntimeDetailPage() {
   const runtime = runtimes?.find((candidate) => candidate.id === id);
   const context = useDesktopRuntimeContext();
 
-  useDocumentTitle(runtime ? runtimeDisplayLabel(runtime) : "Runtimes");
+  useDocumentTitle(runtime ? runtimeDisplayLabel(runtime) : "Devices");
 
   if (!id) return null;
   return (
@@ -31,19 +30,4 @@ export function RuntimeDetailPage() {
       bootstrapping={context.bootstrapping}
     />
   );
-}
-
-export function RuntimeSettingsPage() {
-  const { id, runtimeId } = useParams<{
-    id: string;
-    runtimeId: string;
-  }>();
-  const wsId = useWorkspaceId();
-  const { data: runtimes } = useQuery(runtimeListOptions(wsId));
-  const runtime = runtimes?.find((candidate) => candidate.id === runtimeId);
-
-  useDocumentTitle(runtime ? runtimeDisplayLabel(runtime) : "Runtime");
-
-  if (!id || !runtimeId) return null;
-  return <SharedRuntimeSettingsPage machineId={id} runtimeId={runtimeId} />;
 }

@@ -29,6 +29,12 @@ vi.mock("@orvilo/core/workspace/hooks", () => ({
   }),
 }));
 
+vi.mock("../../agents/components/agent-avatar-stack", () => ({
+  AgentAvatarStack: ({ agentIds }: { agentIds: string[] }) => (
+    <span data-slot="avatar" data-agent-ids={agentIds.join(",")} />
+  ),
+}));
+
 vi.mock("@orvilo/ui/components/ui/popover", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
   return {

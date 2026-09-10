@@ -92,12 +92,12 @@ describe("resolveTabPresentation — direct resources", () => {
       visual: { kind: "icon", icon: "BookOpenText" },
       title: { kind: "text", text: "Deploy" },
     });
-    expect(present("/acme/runtimes/m1", { machine: { name: "Mac Studio" } })).toEqual({
+    expect(present("/acme/devices/m1", { machine: { name: "Mac Studio" } })).toEqual({
       visual: { kind: "icon", icon: "Monitor" },
       title: { kind: "text", text: "Mac Studio" },
     });
     expect(
-      present("/acme/runtimes/m1/runtime/r1", { runtime: { name: "cloud-1" } }),
+      present("/acme/devices/m1/harness/r1", { runtime: { name: "cloud-1" } }),
     ).toEqual({
       visual: { kind: "icon", icon: "Server" },
       title: { kind: "text", text: "cloud-1" },

@@ -2,9 +2,9 @@
 
 import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import { Virtuoso } from "react-virtuoso";
-import { EyeOff, FolderMinus, MoreHorizontal, Plus, UserMinus } from "lucide-react";
-import { useDroppable } from "@dnd-kit/core";
-import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { ChevronLeft, FolderMinus, GripVertical, Plus, UserMinus } from "lucide-react";
+import { useDndContext } from "@dnd-kit/core";
+import { KanbanColumn, KanbanColumnContent, KanbanColumnHandle } from "@orvilo/ui/components/reui/kanban";
 import type {
   Issue,
   IssueExecutorType,
@@ -12,23 +12,17 @@ import type {
   Project,
 } from "@orvilo/core/types";
 import { Button } from "@orvilo/ui/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-} from "@orvilo/ui/components/ui/dropdown-menu";
+import { Card, CardContent, CardHeader } from "@orvilo/ui/components/ui/card";
 import { useViewStoreApi } from "@orvilo/core/issues/stores/view-store-context";
-import { STATUS_CONFIG } from "@orvilo/core/issues/config";
 import { useViewBaseline } from "../surface/view-baseline-context";
 import { StatusHeading } from "./status-heading";
-import { DraggableBoardCard } from "./board-card";
+import { StatusIcon } from "./status-icon";
+import { KanbanBoardCard, BOARD_CARD_CONTENT_WIDTH } from "./board-card";
 import type { ChildProgress } from "./list-row";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useRestoredScrollOffset, useRestoredScrollRef } from "../../platform";
-import { DeferredPopup } from "../../common/deferred-popup";
 import { DeferredTooltip } from "../../common/deferred-tooltip";
 import { VirtuosoSeed } from "../../common/virtuoso-seed";
 import type { IssueCreateDefaults } from "../surface/types";
@@ -38,11 +32,11 @@ import type { IssueCreateDefaults } from "../surface/types";
 // cannot be faithfully replicated in JavaScript (ICU/V8). Showing an
 // inaccurate indicator is worse than showing none.
 
-export const BOARD_COL_WIDTH = 280;
-export const BOARD_CARD_WIDTH = BOARD_COL_WIDTH - 8; // col(280) - droppable p-1(8)
+export const BOARD_COL_WIDTH = 320;
+export const BOARD_CARD_WIDTH = BOARD_CARD_CONTENT_WIDTH;
 
-// Board cards are ~60-90px tall after the compact Linear-style layout, so
-// ~10 still fill a column viewport — unlike the generic VIRTUOSO_SEED_COUNT
+// Board cards reserve identifier, two title lines, properties, and owner/date rows, so
+// the initial seed covers a column viewport — unlike the generic VIRTUOSO_SEED_COUNT
 // (30, sized for 36px list rows). The seed mounts synchronously per column
 // on every surface remount, so oversizing it multiplies straight into
 // tab-switch cost (columns × seed × per-card mount).
@@ -53,7 +47,7 @@ const BOARD_SEED_COUNT = 10;
 // share it so total scroll height — and the scrollbar thumb — stays steady
 // across the seed → Virtuoso handoff instead of jumping when the unseeded
 // rows suddenly get spaced out. Real measurements refine it afterwards.
-const BOARD_CARD_ESTIMATED_HEIGHT = 72;
+const BOARD_CARD_ESTIMATED_HEIGHT = 148;
 
 const COLUMN_HEADER_ACTIONS_CLASS =
   "flex items-center gap-0.5 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover/col:opacity-100 [@media(hover:hover)]:group-focus-within/col:opacity-100 [@media(hover:hover)]:has-[[data-popup-open]]:opacity-100 [@media(hover:hover)]:has-[[data-open]]:opacity-100";
@@ -111,6 +105,9 @@ export const BoardColumn = memo(function BoardColumn({
   projectId,
   onCreateIssue,
   sortLabel,
+  isOverlay = false,
+  collapsed = false,
+  onExpand,
 }: {
   group: BoardColumnGroup;
   issueIds: string[];
@@ -123,15 +120,22 @@ export const BoardColumn = memo(function BoardColumn({
   projectId?: string;
   onCreateIssue?: (defaults: IssueCreateDefaults) => void;
   sortLabel?: string | null;
+  isOverlay?: boolean;
+  collapsed?: boolean;
+  onExpand?: () => void;
 }) {
   const status = group.status;
-  const { setNodeRef, isOver } = useDroppable({ id: group.id });
+  const { over } = useDndContext();
+  const isOver = over?.id === group.id;
   const viewStoreApi = useViewStoreApi();
   // A status fixed by the open saved view cannot be hidden from the board —
   // that would silently strip one of the view's own conditions.
   const viewBaseline = useViewBaseline();
   const statusFixedByView = !!status && viewBaseline?.status.has(status) === true;
   const { t } = useT("issues");
+  const locale = useLocale();
+  const upright = /^(zh|ja|ko)/.test(locale);
+  const displayTitle = status ? t(($) => $.status[status]) : group.title;
 
   // Resolve IDs to Issue objects, preserving parent-provided order
   const resolvedIssues = useMemo(
@@ -159,11 +163,10 @@ export const BoardColumn = memo(function BoardColumn({
   const restoreScrollRef = useRestoredScrollRef(scrollMementoKey);
   const mergedRef = useCallback(
     (el: HTMLDivElement | null) => {
-      setNodeRef(el);
       setScrollEl(el);
       restoreScrollRef(el);
     },
-    [setNodeRef, restoreScrollRef],
+    [restoreScrollRef],
   );
   // Infinite-scroll sentinel rides Virtuoso's Footer slot so it sits at the
   // real end of the virtualized list and its IntersectionObserver still fires
@@ -179,65 +182,82 @@ export const BoardColumn = memo(function BoardColumn({
     // padding (not margin) is inside Virtuoso's measured item box so its
     // height math stays correct.
     <div className={index === 0 ? undefined : "pt-1.5"}>
-      <DraggableBoardCard
+      <KanbanBoardCard
         issue={issue}
         childProgress={childProgressMap?.get(issue.id)}
         project={
           issue.project_id ? projectMap?.get(issue.project_id) : undefined
         }
-        disableSorting={!!sortLabel}
       />
     </div>
   );
 
+  if (collapsed) {
+    return (
+      <KanbanColumn
+        value={group.id}
+        tabIndex={-1}
+        data-board-collapsed-column={group.id}
+        data-hidden-column-drop-target={status}
+        className="h-full min-h-full shrink-0 self-stretch"
+      >
+        <Card size="sm" className="bg-muted h-full min-h-full w-10 gap-0 p-0">
+          <Button
+            type="button"
+            variant="ghost"
+            aria-label={t(($) => $.board.expand_column, { name: displayTitle })}
+            aria-expanded={false}
+            onClick={onExpand}
+            className="h-full w-full cursor-pointer flex-col justify-start gap-2 rounded-lg px-0 py-2.5"
+          >
+            {status && <span className="flex size-5 shrink-0 items-center justify-center"><StatusIcon status={status} className="size-4" /></span>}
+            <span className="flex min-h-0 items-start justify-center pt-1">
+              <span className={`text-foreground truncate text-caption font-medium [writing-mode:vertical-rl] ${upright ? "[text-orientation:upright]" : "rotate-180"}`}>{displayTitle}</span>
+            </span>
+            <span className="text-foreground text-caption tabular-nums">{totalCount ?? issueIds.length}</span>
+          </Button>
+        </Card>
+      </KanbanColumn>
+    );
+  }
+
   return (
-    <div
+    <KanbanColumn
+      value={group.id}
+      tabIndex={-1}
       data-board-column={group.id}
       style={{ width: BOARD_COL_WIDTH }}
-      className={`group/col flex shrink-0 flex-col rounded-xl ${status ? STATUS_CONFIG[status].columnBg : "bg-muted/40"}`}
+      className="group/col flex h-full min-h-0 shrink-0 flex-col"
     >
-      <div className="mb-1.5 flex items-center justify-between px-1">
+      <Card size="sm" className="h-full min-h-0 w-full gap-0 p-0">
+      <CardHeader className="flex min-h-10 flex-row items-center justify-between gap-2 px-3 py-2.5">
         <BoardGroupHeading group={group} count={totalCount ?? issueIds.length} />
 
         {/* Right: add + menu. Hidden until hover/focus on pointer devices
             (Linear); always visible on coarse pointers so touch users can
             still reach them. */}
-        <div className={COLUMN_HEADER_ACTIONS_CLASS}>
-          {/* Column-header popups mount lazily: a board/swimlane renders one
-              header per column and almost none of these menus/tooltips are
-              ever opened — eagerly mounting them dominated surface mount
-              cost (DeferredPopup / DeferredTooltip). */}
+        <div className={isOverlay ? "hidden" : COLUMN_HEADER_ACTIONS_CLASS}>
+          <KanbanColumnHandle
+            className="opacity-100!"
+            render={({ className, ...handleProps }) => (
+              <Button {...handleProps} type="button" variant="ghost" size="icon-sm" className={className} aria-label={t(($) => $.board.move_column, { name: group.title })}>
+                <GripVertical aria-hidden="true" />
+              </Button>
+            )}
+          />
           {status && (
-            <DeferredPopup
-              ariaHasPopup="menu"
-              triggerRender={
-                <Button variant="ghost" size="icon-sm" className={COLUMN_ICON_BUTTON_CLASS}>
-                  <MoreHorizontal className="size-3.5" />
-                </Button>
-              }
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className={COLUMN_ICON_BUTTON_CLASS}
+              disabled={statusFixedByView}
+              aria-label={t(($) => $.board.collapse_column, { name: displayTitle })}
+              title={statusFixedByView ? t(($) => $.filters.in_view) : undefined}
+              onClick={() => viewStoreApi.getState().hideStatus(status)}
             >
-              {(open, onOpenChange) => (
-                <DropdownMenu open={open} onOpenChange={onOpenChange}>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button variant="ghost" size="icon-sm" className={COLUMN_ICON_BUTTON_CLASS}>
-                        <MoreHorizontal className="size-3.5" />
-                      </Button>
-                    }
-                  />
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      disabled={statusFixedByView}
-                      title={statusFixedByView ? t(($) => $.filters.in_view) : undefined}
-                      onClick={() => viewStoreApi.getState().hideStatus(status)}
-                    >
-                      <EyeOff className="size-3.5" />
-                      {t(($) => $.board.hide_column)}
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </DeferredPopup>
+              <ChevronLeft aria-hidden="true" />
+            </Button>
           )}
           {onCreateIssue && (
             <DeferredTooltip
@@ -261,8 +281,8 @@ export const BoardColumn = memo(function BoardColumn({
             />
           )}
         </div>
-      </div>
-      <div className="relative min-h-[200px] flex-1">
+      </CardHeader>
+      <CardContent className="relative min-h-[200px] flex-1 p-0">
         {isOver && sortLabel && (
           <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-background/40">
             <span className="rounded-md bg-popover px-2.5 py-1 text-caption font-medium text-popover-foreground shadow-sm border border-border">
@@ -276,7 +296,7 @@ export const BoardColumn = memo(function BoardColumn({
           // (MUL-4741): the group id is the stable memento key, so every
           // column's offset survives tab switches/reloads independently.
           data-tab-scroll-root={scrollMementoKey}
-          className={`absolute inset-0 overflow-y-auto p-1 transition-colors ${
+          className={`absolute inset-0 overflow-y-auto px-2 py-1 transition-colors ${
             isOver && sortLabel
               ? "ring-2 ring-brand/25 bg-accent/15"
               : isOver
@@ -285,7 +305,7 @@ export const BoardColumn = memo(function BoardColumn({
           }`}
         >
           {resolvedIssues.length > 0 ? (
-            <SortableContext items={issueIds} strategy={verticalListSortingStrategy}>
+            <KanbanColumnContent value={group.id} className="gap-0">
               {resolvedIssues.length <= BOARD_VIRTUALIZE_THRESHOLD ? (
                 /* Small column: plain full render (reusing the same
                    itemContent, so it is byte-identical to the virtualized
@@ -329,13 +349,14 @@ export const BoardColumn = memo(function BoardColumn({
                   estimatedItemHeight={BOARD_CARD_ESTIMATED_HEIGHT}
                 />
               )}
-            </SortableContext>
+            </KanbanColumnContent>
           ) : (
             footer
           )}
         </div>
-      </div>
-    </div>
+      </CardContent>
+      </Card>
+    </KanbanColumn>
   );
 });
 

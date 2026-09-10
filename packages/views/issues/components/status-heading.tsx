@@ -14,7 +14,7 @@ export function StatusHeading({
   return (
     <div className="flex items-center gap-2">
       <span className="inline-flex items-center gap-1.5 text-caption font-medium">
-        <StatusIcon status={status} className="h-3 w-3" />
+        <StatusIcon status={status} className="h-4 w-4" />
         {t(($) => $.status[statusCategoryOfKey(status)])}
       </span>
       <span className="text-caption text-muted-foreground">{count}</span>

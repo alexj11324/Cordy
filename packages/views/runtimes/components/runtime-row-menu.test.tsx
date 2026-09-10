@@ -14,9 +14,8 @@ const TEST_RESOURCES = {
   en: { common: enCommon, runtimes: enRuntimes, agents: enAgents },
 };
 
-// Stub the workspace queries the columns reach into. None of them feed the
-// row menu directly, but `createRuntimeColumns` wires CliCell + CostCell
-// against the same query client, so we still need useQuery to resolve.
+// Stub the workspace queries the row menu reaches into. None of them feed the
+// menu directly, but its child dialogs still mount their hooks.
 vi.mock("@tanstack/react-query", async () => {
   const actual =
     await vi.importActual<typeof import("@tanstack/react-query")>(
@@ -39,7 +38,6 @@ vi.mock("@orvilo/core/runtimes/mutations", () => ({
 
 vi.mock("@orvilo/core/runtimes", () => ({
   deriveRuntimeHealth: () => "online",
-  runtimeUsageOptions: () => ({ kind: "usage" }),
   runtimeProfileListOptions: () => ({ kind: "runtime-profiles" }),
   parseRuntimeProfileBoundConflict: () => null,
   useDeleteRuntimeProfile: () => ({
@@ -80,10 +78,6 @@ vi.mock("@orvilo/core/api", () => ({
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
-}));
-
-vi.mock("../../common/use-viewing-timezone", () => ({
-  useViewingTimezone: () => "UTC",
 }));
 
 vi.mock("./provider-logo", () => ({ ProviderLogo: () => null }));
@@ -141,7 +135,6 @@ function makeRow(
   return {
     runtime,
     profile,
-    ownerMember: null,
     workload: { agentIds: [], runningCount: 0, queuedCount: 0 },
     canDelete,
   };
@@ -166,7 +159,7 @@ function makeAdapter(
 // list — render it directly with the row fields it reads.
 function renderActionsCell(
   row: RuntimeRow,
-  options: { detailHref?: string; adapter?: NavigationAdapter } = {},
+  options: { adapter?: NavigationAdapter } = {},
 ) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
@@ -179,7 +172,6 @@ function renderActionsCell(
             profile={row.profile}
             wsId="ws-1"
             canDelete={row.canDelete}
-            detailHref={options.detailHref}
           />
         </QueryClientProvider>
       </NavigationProvider>
@@ -214,7 +206,7 @@ describe("runtime list row menu", () => {
     expect(screen.getByLabelText("Row actions")).toBeInTheDocument();
   });
 
-  it("renders the kebab menu for a custom runtime when the profile is available", () => {
+  it("renders the kebab menu for a custom Harness when the profile is available", () => {
     const profile = makeProfile();
     renderActionsCell(
       makeRow(
@@ -226,7 +218,7 @@ describe("runtime list row menu", () => {
     expect(screen.getByLabelText("Row actions")).toBeInTheDocument();
   });
 
-  it("opens custom runtime editing from the unified row menu", () => {
+  it("opens custom Harness editing from the unified row menu", () => {
     const profile = makeProfile();
     renderActionsCell(
       makeRow(
@@ -237,31 +229,15 @@ describe("runtime list row menu", () => {
     );
 
     fireEvent.click(screen.getByLabelText("Row actions"));
-    fireEvent.click(screen.getByText("Edit custom runtime"));
+    fireEvent.click(screen.getByText("Edit custom Harness"));
 
     expect(
-      screen.getByRole("heading", { name: "Edit custom runtime" }),
+      screen.getByRole("heading", { name: "Edit custom Harness" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Display name")).toHaveValue("Custom Codex");
   });
 
-  it("opens the row's detail in a foreground tab from the menu", () => {
-    const openInNewTab = vi.fn();
-    renderActionsCell(makeRow(makeRuntime({ runtime_mode: "local" })), {
-      detailHref: "/ws-1/runtimes/rt-1",
-      adapter: makeAdapter({ openInNewTab }),
-    });
-
-    fireEvent.click(screen.getByLabelText("Row actions"));
-    fireEvent.click(screen.getByText("Open in new tab"));
-
-    expect(openInNewTab).toHaveBeenCalledWith("/ws-1/runtimes/rt-1", undefined, {
-      activate: true,
-    });
-  });
-
-  it("omits the new-tab entry for rows with no detail destination", () => {
-    // Pending custom runtimes are not navigable, so the list passes no href.
+  it("does not offer a removed Harness detail destination", () => {
     renderActionsCell(makeRow(makeRuntime({ runtime_mode: "local" })));
 
     fireEvent.click(screen.getByLabelText("Row actions"));

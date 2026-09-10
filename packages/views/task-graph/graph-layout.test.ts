@@ -59,6 +59,15 @@ const graph = makeGraph(
 );
 
 describe("dependency graph layout", () => {
+  it("uses rendered card heights for spacing and edge anchors", () => {
+    const layout = layoutGraph(graph, "all", { n1: 140, n2: 240, n3: 160 });
+    const second = layout.nodes.find((node) => node.id === "n2")!;
+    const third = layout.nodes.find((node) => node.id === "n3")!;
+    expect(second.height).toBe(240);
+    expect(third.y).toBe(second.y + second.height + ROW_GAP);
+    expect(layout.edges[0]!.path).toContain(`${second.x} ${second.y + 120}`);
+    expect(layout.height).toBe(third.y + 160 + CANVAS_PADDING);
+  });
   it("puts each wave in its own column, in execution order", () => {
     const layout = layoutGraph(graph, "all");
     expect(layout.columns).toEqual([

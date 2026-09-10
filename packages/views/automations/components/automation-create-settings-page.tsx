@@ -42,6 +42,7 @@ import { describeSchedule } from "./schedule-editor/describe";
 import { toCron } from "./schedule-editor/cron-mapping";
 import { useScheduleSubmitGate } from "./schedule-editor/validate";
 import { formatSchedulePartialFailureToast } from "./automation-dialog-toast";
+import { DraftTriggerConnection } from "./draft-trigger-connection";
 
 type DraftTrigger =
   | { kind: "schedule"; schedule: ScheduleConfig }
@@ -204,7 +205,7 @@ export function AutomationCreateSettingsPage() {
           }
         >
           {triggers.map((trigger, index) => (
-            <div key={index} className="flex items-center gap-3 px-4 py-3">
+            <div key={index} className="flex flex-wrap items-center gap-3 px-4 py-3">
               <AutomationTriggerSourceGlyph
                 source={
                   trigger.kind === "schedule"
@@ -241,9 +242,16 @@ export function AutomationCreateSettingsPage() {
                   </>
                 )}
               </div>
+              {trigger.kind === "webhook" && (
+                <DraftTriggerConnection
+                  provider={trigger.preset.provider}
+                  disabled={saving}
+                />
+              )}
               <Button
                 variant="ghost"
                 size="icon-sm"
+                className="shrink-0"
                 disabled={saving}
                 aria-label={t(($) => $.create_settings.remove_trigger)}
                 onClick={() =>
@@ -276,6 +284,7 @@ export function AutomationCreateSettingsPage() {
         </div>
         <AutomationToolsSection
           automation={{ id: "", tools: { ...tools } }}
+          assignee={assignee}
           canWrite={!saving}
           saving={saving}
           onToolsChange={setTools}

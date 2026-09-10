@@ -163,11 +163,13 @@ export function NewChatButton({
   userId,
   onStart,
   side = "bottom",
+  showLabel = false,
 }: {
   agents: Agent[];
   userId: string | undefined;
   onStart: (agent: Agent | null) => void;
   side?: "top" | "bottom";
+  showLabel?: boolean;
 }) {
   const { t } = useT("chat");
   const label = t(($) => $.window.new_chat_tooltip);
@@ -179,9 +181,9 @@ export function NewChatButton({
         <TooltipTrigger
           render={
             <Button
-              variant="ghost"
-              size="icon-sm"
-              className="rounded-full text-muted-foreground"
+              variant={showLabel ? "outline" : "ghost"}
+              size={showLabel ? "sm" : "icon-sm"}
+              className={showLabel ? "gap-1.5" : "rounded-full text-muted-foreground"}
               aria-label={label}
               onClick={() => {
                 if (only && !isAgentRuntimeBound(only)) {
@@ -194,6 +196,7 @@ export function NewChatButton({
           }
         >
           <Plus />
+          {showLabel && <span>{label}</span>}
         </TooltipTrigger>
         <TooltipContent side={side === "top" ? "top" : "bottom"}>{label}</TooltipContent>
       </Tooltip>
@@ -209,13 +212,13 @@ export function NewChatButton({
       align="start"
       triggerRender={
         <Button
-          variant="ghost"
-          size="icon-sm"
-          className="rounded-full text-muted-foreground"
+          variant={showLabel ? "outline" : "ghost"}
+          size={showLabel ? "sm" : "icon-sm"}
+          className={showLabel ? "gap-1.5" : "rounded-full text-muted-foreground"}
           aria-label={label}
         />
       }
-      trigger={<Plus />}
+      trigger={<><Plus />{showLabel && <span>{label}</span>}</>}
     />
   );
 }

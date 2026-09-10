@@ -413,11 +413,11 @@
     "speed_label": "速度",
     "access": {
       "private": {
-        "title": "仅自己",
+        "title": "个人",
         "description": "只有你可以运行此智能体。"
       },
       "workspace": {
-        "title": "整个工作区",
+        "title": "工作区",
         "description": "工作区中的所有成员都可以运行。"
       },
       "members": {
@@ -477,7 +477,7 @@
     "description_create": "为工作区创建一个新的 AI 智能体。",
     "description_duplicate": "基于 \"{{name}}\" 创建一个新智能体。Harness、模型和访问权限会一并复制。",
     "name_label": "名称",
-    "name_placeholder": "例如：深度研究智能体",
+    "name_placeholder": "Codex",
     "description_label": "描述",
     "description_placeholder": "这个智能体做什么？",
     "visibility_label": "可见性",
@@ -606,7 +606,7 @@
       "update_action": "更新",
       "cancel_action": "取消",
       "command_preview_label": "命令预览",
-      "input_placeholder": "--profile",
+      "input_placeholder": "输入参数或参数值",
       "input_aria": "参数 {{index}}",
       "new_argument_aria": "新参数",
       "empty_title": "还没有参数",

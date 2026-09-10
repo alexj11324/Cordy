@@ -1,4 +1,4 @@
-import type { ComponentType, CSSProperties, ReactNode } from "react";
+import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render } from "@testing-library/react";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
@@ -6,35 +6,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@orvilo/core/i18n/react";
 import { useSidebar } from "@orvilo/ui/components/ui/sidebar";
 import { RESOURCES } from "@orvilo/views/locales";
-
-// Layout ownership is the contract under test. Apply Motion targets
-// synchronously so the test asserts the intended endpoint rather than waiting
-// on requestAnimationFrame-driven spring timing in jsdom.
-vi.mock("motion/react", async () => {
-  const React = await import("react");
-  const components = new Map<PropertyKey, ComponentType<Record<string, unknown>>>();
-
-  return {
-    motion: new Proxy({}, {
-      get: (_target, tag: PropertyKey) => {
-        const cached = components.get(tag);
-        if (cached) return cached;
-
-        const Component = React.forwardRef<HTMLElement, Record<string, unknown>>(
-          ({ animate, initial: _initial, transition: _transition, style, ...props }, ref) =>
-            React.createElement(tag as string, {
-              ...props,
-              ref,
-              style: { ...(style as CSSProperties), ...(animate as CSSProperties) },
-            }),
-        );
-        Component.displayName = `motion.${String(tag)}`;
-        components.set(tag, Component);
-        return Component;
-      },
-    }),
-  };
-});
+import {
+  TRAFFIC_LIGHT_CLUSTER_END,
+  TRAFFIC_LIGHT_CONTENT_GAP,
+  TRAFFIC_LIGHT_CONTENT_INSET,
+} from "../../../shared/window-chrome";
 
 // The shell resolves the mocked `getCurrentSlug()` against the workspace list
 // before mounting workspace-scoped chrome, so the list has to contain it or
@@ -44,8 +20,8 @@ const WORKSPACES = [{ id: "ws-1", slug: "acme" }];
 
 // The shell is the only thing under test here, so everything it mounts around
 // the sidebar is stubbed out. What survives is the pair that has to agree:
-// `WindowToolbar`'s own trigger, and the `hasExternalTrigger` the provider
-// publishes to every page header inside the canvas.
+// the title-row pin, and the `hasExternalTrigger` the provider publishes to
+// every page header inside the canvas.
 vi.mock("@/hooks/use-tab-history", () => ({
   useTabHistory: () => ({
     canGoBack: false,
@@ -92,9 +68,15 @@ vi.mock("@orvilo/views/platform", () => ({
 }));
 
 vi.mock("@orvilo/views/layout", () => ({
-  AppSidebar: () => null,
+  AppSidebar: ({ topSlot }: { topSlot?: ReactNode }) => {
+    const { open } = useSidebar();
+    return <div data-slot="sidebar">{open ? topSlot : null}</div>;
+  },
   GlobalShortcuts: () => null,
   NavigationProgress: () => null,
+  ShellBreadcrumb: () => <nav aria-label="breadcrumb" data-testid="shell-breadcrumb" />,
+  ShellHeaderProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  ShellHeaderActionsSlot: () => <div data-slot="shell-header-actions" />,
 }));
 
 vi.mock("@orvilo/views/modals/registry", () => ({ ModalRegistry: () => null }));
@@ -102,7 +84,7 @@ vi.mock("@orvilo/views/search", () => ({
   SearchCommand: () => null,
   SearchTrigger: () => null,
 }));
-vi.mock("@orvilo/views/chat", () => ({ FloatingChat: () => null }));
+vi.mock("@orvilo/views/chat", () => ({ GlobalRightSidebar: () => null, GlobalRightSidebarToggle: () => <button aria-label="Open right sidebar" /> }));
 vi.mock("@orvilo/views/agent-thread", () => ({
   AgentThreadPanelLayout: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -179,33 +161,111 @@ describe("DesktopShell sidebar trigger", () => {
     );
   });
 
-  it("keeps the desktop tab strip reachable", () => {
-    const { container } = renderShell();
+  it("toggles from pointerdown when the titlebar swallows the click", () => {
+    const { container, getByTestId } = renderShell("macos");
+    const trigger = container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-trigger']",
+    )!;
 
-    expect(container.querySelector("[data-testid='tab-bar']")).not.toBeNull();
+    fireEvent.pointerDown(trigger, { button: 0 });
+    expect(getByTestId("page-content")).toHaveAttribute("data-sidebar-open", "false");
+
+    fireEvent.click(trigger, { detail: 1 });
+    expect(getByTestId("page-content")).toHaveAttribute("data-sidebar-open", "false");
   });
 
-  it("keeps the native toolbar clearance while a collapsed sidebar is hover-revealed", () => {
+  it("accepts keyboard activation after a swallowed pointer click", () => {
+    const { container, getByTestId } = renderShell("macos");
+    const trigger = container.querySelector<HTMLElement>("[data-slot='sidebar-trigger']")!;
+    fireEvent.pointerDown(trigger, { button: 0 });
+    expect(getByTestId("page-content")).toHaveAttribute("data-sidebar-open", "false");
+    // Closing moves the trigger from the sidebar title row into MainTopBar;
+    // reacquire the mounted element before simulating keyboard activation.
+    const headerTrigger = container.querySelector<HTMLElement>(
+      "header [data-slot='sidebar-trigger']",
+    )!;
+    fireEvent.click(headerTrigger, { detail: 0 });
+    expect(getByTestId("page-content")).toHaveAttribute("data-sidebar-open", "true");
+  });
+
+  it("keeps the pin in the window toolbar while the sidebar is closed", () => {
     const { container, getByTestId } = renderShell("macos");
     const header = container.querySelector("header")!;
+    const toolbar = container.querySelector<HTMLElement>(
+      "[data-slot='window-toolbar']",
+    )!;
     const trigger = container.querySelector<HTMLElement>(
       "[data-slot='sidebar-trigger']",
     )!;
     const content = getByTestId("page-content");
 
     expect(content).toHaveAttribute("data-sidebar-open", "true");
-    expect(header).toHaveStyle({ paddingLeft: "0px" });
+    expect(toolbar).toContainElement(trigger);
+    expect(header.querySelector("[data-slot='sidebar-trigger']")).toBeNull();
 
     fireEvent.click(trigger);
     expect(content).toHaveAttribute("data-sidebar-open", "false");
-    expect(header).toHaveStyle({ paddingLeft: "184px" });
+    expect(header).not.toHaveStyle({ WebkitAppRegion: "drag" });
+    expect(header.firstElementChild).toHaveClass("flex", "h-full", "shrink-0", "items-center");
+    expect(header.firstElementChild).not.toHaveClass("pointer-events-none");
+    expect(header).toContainElement(
+      container.querySelector("[data-slot='sidebar-trigger']")!,
+    );
+    expect(header.querySelector("[data-slot='sidebar-trigger']")).not.toBeNull();
     expect(container.querySelectorAll("[data-slot='sidebar-trigger']")).toHaveLength(1);
 
+    // Hover reveal is disabled for this shell; the header trigger remains the
+    // only way to reopen the off-canvas sidebar.
     fireEvent.pointerEnter(content);
-    expect(content).toHaveAttribute("data-sidebar-state", "expanded");
-    expect(header).toHaveStyle({ paddingLeft: "184px" });
-
+    expect(content).toHaveAttribute("data-sidebar-state", "collapsed");
+    expect(header.querySelector("[data-slot='sidebar-trigger']")).not.toBeNull();
+    expect(header).toContainElement(
+      container.querySelector("[data-slot='sidebar-trigger']")!,
+    );
     expect(container.querySelectorAll("[data-slot='sidebar-trigger']")).toHaveLength(1);
+  });
+
+  it("derives the pin offset from traffic-light geometry and keeps the canvas flush", () => {
+    const { container, getByTestId } = renderShell("macos");
+    const toolbar = container.querySelector<HTMLElement>(
+      "[data-slot='window-toolbar']",
+    )!;
+    const trigger = container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-trigger']",
+    )!;
+    const inset = container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-inset']",
+    )!;
+    const wrapper = container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-wrapper']",
+    )!;
+    const header = container.querySelector("header")!;
+
+    expect(toolbar.firstElementChild).toHaveStyle({
+      width: `${TRAFFIC_LIGHT_CONTENT_INSET}px`,
+    });
+    expect(toolbar.className.split(/\s+/)).not.toContain("pointer-events-none");
+    expect(trigger.className).not.toMatch(/rotate-0/);
+    expect(trigger.className).not.toMatch(/transition-none/);
+    expect(wrapper.style.getPropertyValue("--desktop-traffic-light-end")).toBe(
+      `${TRAFFIC_LIGHT_CLUSTER_END}px`,
+    );
+    expect(wrapper.style.getPropertyValue("--desktop-content-gutter")).toBe(
+      `${TRAFFIC_LIGHT_CONTENT_GAP}px`,
+    );
+    expect(inset.className.split(/\s+/)).toEqual(
+      expect.arrayContaining(["rounded-none!", "ring-0!"]),
+    );
+    expect(inset.className.split(/\s+/)).not.toContain("m-0!");
+    expect(inset.className.split(/\s+/)).not.toContain("ml-2!");
+    expect(inset.className.split(/\s+/)).not.toContain("rounded-xl");
+    expect(header.querySelector("nav")?.parentElement).toHaveClass("w-fit", "max-w-full");
+
+    fireEvent.click(trigger);
+    expect(getByTestId("page-content")).toHaveAttribute("data-sidebar-open", "false");
+    expect(header.firstElementChild?.firstElementChild).toHaveStyle({
+      width: `${TRAFFIC_LIGHT_CONTENT_INSET}px`,
+    });
   });
 
   it("uses the collapsible column policy instead of a compact Sheet at 963px", () => {
@@ -245,7 +305,7 @@ describe("DesktopShell sidebar trigger", () => {
   });
 });
 
-it("hides the mounted dashboard while glass Settings owns the window", () => {
+it("keeps the mounted dashboard visible under the settings dialog", () => {
   const { container, getByTestId } = renderShell();
   const dashboard = container.querySelector('[data-slot="desktop-dashboard"]')!;
   const content = getByTestId("page-content");
@@ -255,11 +315,10 @@ it("hides the mounted dashboard while glass Settings owns the window", () => {
     path: "/acme/settings",
   }));
   expect(dashboard).toHaveAttribute("inert");
-  expect(dashboard).toHaveClass("invisible");
+  expect(dashboard).not.toHaveClass("invisible");
   expect(content).toBeInTheDocument();
 
   act(() => useWindowOverlayStore.getState().close());
   expect(dashboard).not.toHaveAttribute("inert");
-  expect(dashboard).not.toHaveClass("invisible");
   expect(getByTestId("page-content")).toBe(content);
 });

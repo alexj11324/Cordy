@@ -5,6 +5,11 @@ import { ChevronRight } from "lucide-react";
 import { cn } from "@orvilo/ui/lib/utils";
 import { PageHeader } from "./page-header";
 import { AppLink } from "../navigation";
+import {
+  ShellHeaderActions,
+  ShellHeaderBreadcrumb,
+  useShellHeaderBreadcrumbSlot,
+} from "./shell-header";
 
 /**
  * One ancestor crumb. Always a clickable link to the segment's container — the
@@ -26,13 +31,15 @@ export interface BreadcrumbSegment {
 interface BreadcrumbHeaderProps {
   /** Ancestor links, rendered left-to-right with chevron separators. */
   segments: BreadcrumbSegment[];
-  /** The current page — non-clickable leaf. Caller controls styling/adornments. */
+  /** The current page — non-clickable leaf. The header owns its type size. */
   leaf: ReactNode;
   /** Right-side actions. Wrapped in a `shrink-0` flex row; omit for none. */
   actions?: ReactNode;
   /** Far-left slot; replaces the mobile sidebar trigger. See `PageHeader`. */
   leading?: ReactNode;
   className?: string;
+  /** Embedded detail panes keep their own navigation beneath the page header. */
+  inline?: boolean;
 }
 
 /**
@@ -43,29 +50,52 @@ interface BreadcrumbHeaderProps {
  * The mental model is identical everywhere: the leading crumbs are the thing's
  * real containers and clicking one navigates up to it.
  */
-export function BreadcrumbHeader({ segments, leaf, actions, leading, className }: BreadcrumbHeaderProps) {
-  return (
-    <PageHeader leading={leading} className={cn("bg-background text-body", className)}>
-      <div className="flex flex-1 items-center gap-1.5 min-w-0">
-        {segments.map((segment) => (
-          <Fragment key={segment.href}>
-            <AppLink
-              href={segment.href}
-              newTabTitle={
-                typeof segment.label === "string" ? segment.label : undefined
-              }
-              className={cn(
-                "text-muted-foreground hover:text-foreground transition-colors",
-                segment.className ?? "shrink-0",
-              )}
-            >
-              {segment.label}
-            </AppLink>
-            <ChevronRight className="h-3 w-3 text-faint-foreground shrink-0" />
-          </Fragment>
-        ))}
+export function BreadcrumbHeader({
+  segments,
+  leaf,
+  actions,
+  leading,
+  className,
+  inline = false,
+}: BreadcrumbHeaderProps) {
+  const shellSlot = useShellHeaderBreadcrumbSlot();
+  const trail = (
+    <div className="flex flex-1 items-center gap-1.5 min-w-0 text-body [&_*]:text-body">
+      {segments.map((segment) => (
+        <Fragment key={segment.href}>
+          <AppLink
+            href={segment.href}
+            newTabTitle={
+              typeof segment.label === "string" ? segment.label : undefined
+            }
+            className={cn(
+              "text-muted-foreground hover:text-foreground transition-colors",
+              segment.className ?? "shrink-0",
+            )}
+          >
+            {segment.label}
+          </AppLink>
+          <ChevronRight className="h-3 w-3 text-faint-foreground shrink-0" />
+        </Fragment>
+      ))}
+      <div className="flex min-w-0 items-center gap-1.5" aria-current="page">
         {leaf}
       </div>
+    </div>
+  );
+
+  if (shellSlot && !inline && leading == null) {
+    return (
+      <>
+        <ShellHeaderBreadcrumb>{trail}</ShellHeaderBreadcrumb>
+        <ShellHeaderActions>{actions}</ShellHeaderActions>
+      </>
+    );
+  }
+
+  return (
+    <PageHeader leading={leading} className={cn("bg-background text-body", className)}>
+      {trail}
       {actions ? <div className="flex items-center gap-1 shrink-0">{actions}</div> : null}
     </PageHeader>
   );

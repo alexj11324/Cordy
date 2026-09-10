@@ -3,9 +3,7 @@ import { render } from "@testing-library/react";
 import { configureShortcutPlatform } from "@orvilo/core/shortcuts";
 import { GlobalShortcuts } from "./global-shortcuts";
 
-// The floating chat overlay is reachable from the keyboard (MUL-5522). What
-// matters is not just "the chord calls toggle", but that it stays a no-op —
-// without swallowing the keypress — everywhere the overlay cannot exist.
+// The persistent shell sidebar remains keyboard-accessible on every route.
 const h = vi.hoisted(() => ({
   chat: { floatingChatEnabled: true, toggle: vi.fn() },
   navigation: { pathname: "/acme/issues", push: vi.fn() },
@@ -75,7 +73,7 @@ afterEach(() => {
 });
 
 describe("chat toggle shortcut", () => {
-  it("toggles the floating window and consumes the chord", () => {
+  it("toggles the global right sidebar and consumes the chord", () => {
     render(<GlobalShortcuts />);
 
     expect(pressToggleChat()).toBe(true);
@@ -94,30 +92,18 @@ describe("chat toggle shortcut", () => {
     input.remove();
   });
 
-  it("leaves the chord alone on the Chat tab, where the overlay is suppressed", () => {
+  it("toggles the right sidebar on the Chat tab", () => {
     h.navigation.pathname = "/acme/chat";
     render(<GlobalShortcuts />);
 
-    // Not prevented: an action that cannot run must not swallow the keypress.
-    expect(pressToggleChat()).toBe(false);
-    expect(h.chat.toggle).not.toHaveBeenCalled();
+    expect(pressToggleChat()).toBe(true);
+    expect(h.chat.toggle).toHaveBeenCalledTimes(1);
   });
 
-  it("leaves the chord alone when the floating window is turned off", () => {
+  it("ignores the retired floating window preference", () => {
     h.chat.floatingChatEnabled = false;
     render(<GlobalShortcuts />);
 
-    expect(pressToggleChat()).toBe(false);
-    expect(h.chat.toggle).not.toHaveBeenCalled();
-  });
-
-  it("reads the preference at press time, not at mount", () => {
-    render(<GlobalShortcuts />);
-
-    h.chat.floatingChatEnabled = false;
-    expect(pressToggleChat()).toBe(false);
-
-    h.chat.floatingChatEnabled = true;
     expect(pressToggleChat()).toBe(true);
     expect(h.chat.toggle).toHaveBeenCalledTimes(1);
   });

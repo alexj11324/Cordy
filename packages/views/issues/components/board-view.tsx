@@ -2,17 +2,8 @@
 
 import { useState, useCallback, useMemo, useEffect, useRef, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragStartEvent,
-  type DragEndEvent,
-  type DragOverEvent,
-} from "@dnd-kit/core";
-import { arrayMove } from "@dnd-kit/sortable";
+import { closestCenter, type CollisionDetection, type DragStartEvent, type DragEndEvent, type DragOverEvent } from "@dnd-kit/core";
+import { arrayMove, horizontalListSortingStrategy, SortableContext } from "@dnd-kit/sortable";
 import { toast } from "sonner";
 import type {
   Issue,
@@ -32,7 +23,7 @@ import type { IssueGrouping } from "@orvilo/core/issues/stores/view-store";
 import { useActorName } from "@orvilo/core/workspace/hooks";
 import { BoardColumn, BOARD_CARD_WIDTH, type BoardColumnGroup } from "./board-column";
 import { BoardCardContent } from "./board-card";
-import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";
+import { BoardScrollArea } from "./board-scroll-area";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";
 import { ListLoadMoreFooter } from "./list-load-more-footer";
 import type { ChildProgress } from "./list-row";
@@ -49,6 +40,11 @@ import type {
 import { useDragSettle } from "./use-drag-settle";
 import { useBoardDragPan } from "./use-board-drag-pan";
 import { useT } from "../../i18n";
+import {
+  Kanban,
+  KanbanOverlay,
+  type KanbanMoveEvent,
+} from "@orvilo/ui/components/reui/kanban";
 import {
   type DragMoveUpdates,
   makeKanbanCollision,
@@ -256,6 +252,15 @@ function buildGroups(
 
 const EMPTY_PROGRESS_MAP = new Map<string, ChildProgress>();
 const EMPTY_IDS: string[] = [];
+const issueId = (id: string) => id;
+
+function preserveColumnOrder(previous: Record<string, string[]>, refreshed: Record<string, string[]>) {
+  return Object.fromEntries(
+    [...new Set([...Object.keys(previous), ...Object.keys(refreshed)])]
+      .filter((key) => key in refreshed)
+      .map((key) => [key, refreshed[key]!]),
+  );
+}
 
 function BoardViewImpl({
   issues,
@@ -529,6 +534,17 @@ function BoardViewImpl({
     () => new Set(droppableHiddenStatuses ?? hiddenStatuses),
     [droppableHiddenStatuses, hiddenStatuses],
   );
+  const railStatuses = useMemo(() => grouping === "status" ? hiddenBoardStatuses.filter((status) =>
+    hiddenDropStatusSet.has(status) || emptyStatusIds.has(statusGroupId(status)),
+  ) : [], [grouping, hiddenBoardStatuses, hiddenDropStatusSet, emptyStatusIds]);
+  const boardGroups = useMemo(() => {
+    const byID = new Map(renderedGroups.map((group) => [group.id, group]));
+    for (const status of railStatuses) {
+      const group = makeStatusGroup(status);
+      if (!byID.has(group.id)) byID.set(group.id, { ...group, totalCount: statusPagination?.[status]?.total ?? 0 });
+    }
+    return [...byID.values()];
+  }, [renderedGroups, railStatuses, statusPagination]);
   const hiddenDropStatuses = useMemo(() => {
     const statuses = hiddenStatuses.filter((status) =>
       hiddenDropStatusSet.has(status),
@@ -571,14 +587,14 @@ function BoardViewImpl({
     () => new Map(dropGroups.map((group) => [group.id, group])),
     [dropGroups],
   );
-  const collisionDetection = useMemo(
-    () => makeKanbanCollision(groupIds),
-    [groupIds],
-  );
+  const collisionDetection = useMemo<CollisionDetection>(() => {
+    const itemCollision = makeKanbanCollision(groupIds);
+    return (args) => groupIds.has(String(args.active.id))
+      ? closestCenter({ ...args, droppableContainers: args.droppableContainers.filter((column) => groupIds.has(String(column.id))) })
+      : itemCollision(args);
+  }, [groupIds]);
 
   // --- Drag state ---
-  const [activeIssue, setActiveIssue] = useState<Issue | null>(null);
-
   useEffect(() => {
     setRevealedEmptyStatuses((previous) => {
       let changed = false;
@@ -623,12 +639,22 @@ function BoardViewImpl({
   } = useDragSettle(() =>
     buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
   );
+  const displayedColumns = useMemo(() => {
+    let next = columns;
+    for (const group of boardGroups) {
+      if (next[group.id]) continue;
+      if (next === columns) next = { ...columns };
+      next[group.id] = [];
+    }
+    return next;
+  }, [boardGroups, columns]);
 
   useEffect(() => {
     if (!isDraggingRef.current && !isSettlingRef.current) {
-      setColumns(
-        buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
-      );
+      setColumns((previous) => {
+        const refreshed = buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds);
+        return preserveColumnOrder(previous, refreshed);
+      });
     }
   }, [
     groupedIssues,
@@ -640,6 +666,14 @@ function BoardViewImpl({
     isDraggingRef,
     isSettlingRef,
   ]);
+
+  const orderedBoardGroups = useMemo(() => {
+    const byID = new Map(boardGroups.map((group) => [group.id, group]));
+    return Object.keys(displayedColumns).flatMap((id) => {
+      const group = byID.get(id);
+      return group ? [group] : [];
+    });
+  }, [boardGroups, displayedColumns]);
 
   // --- Issue map ---
   // Frozen during drag so BoardColumn/DraggableBoardCard props stay
@@ -655,21 +689,13 @@ function BoardViewImpl({
     issueMapRef.current = issueMap;
   }
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
-    })
-  );
-
   // #6700: drag empty board background with the left button to pan horizontally
   // (Trello/Linear). Card drags start on `[data-board-card]` and are ignored.
   const pan = useBoardDragPan<HTMLDivElement>();
 
   const handleDragStart = useCallback(
-    (event: DragStartEvent) => {
+    (_event: DragStartEvent) => {
       isDraggingRef.current = true;
-      const issue = issueMapRef.current.get(event.active.id as string) ?? null;
-      setActiveIssue(issue);
     },
     [isDraggingRef],
   );
@@ -677,7 +703,7 @@ function BoardViewImpl({
   const handleDragOver = useCallback(
     (event: DragOverEvent) => {
       const { active, over } = event;
-      if (!over || recentlyMovedRef.current) return;
+      if (!over || groupIds.has(String(active.id)) || recentlyMovedRef.current) return;
 
       const activeId = active.id as string;
       const overId = over.id as string;
@@ -705,12 +731,11 @@ function BoardViewImpl({
     (event: DragEndEvent) => {
       const { active, over } = event;
       isDraggingRef.current = false;
-      setActiveIssue(null);
 
       const resetColumns = () =>
-        setColumns(
-          buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
-        );
+        setColumns((previous) => preserveColumnOrder(
+          previous, buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
+        ));
 
       if (!over) {
         resetColumns();
@@ -858,31 +883,57 @@ function BoardViewImpl({
   // list-view for the touch path that makes this routine (MUL-6240).
   const handleDragCancel = useCallback(() => {
     isDraggingRef.current = false;
-    setActiveIssue(null);
-    setColumns(
-      buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
-    );
+    setColumns((previous) => preserveColumnOrder(
+      previous, buildColumns(groupedIssues, dropGroups, grouping, groupingOptionIds),
+    ));
   }, [groupedIssues, dropGroups, grouping, groupingOptionIds, setColumns, isDraggingRef]);
 
+  const handleMove = useCallback(
+    ({ event }: KanbanMoveEvent) => handleDragEnd(event),
+    [handleDragEnd],
+  );
+
+  // ReUI invokes `onDragEnd` before `onMove`, but it never invokes `onMove`
+  // when the pointer is released outside every droppable. Release the shared
+  // drag lock on that path here; successful drops continue through handleMove
+  // exactly once.
+  const handleKanbanDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      if (groupIds.has(String(event.active.id))) {
+        isDraggingRef.current = false;
+        return;
+      }
+      if (!event.over) handleDragEnd(event);
+    },
+    [handleDragEnd, groupIds, isDraggingRef],
+  );
+
+
   return (
-    <DndContext
-      sensors={sensors}
+    <div className="bg-muted flex min-h-0 min-w-0 w-full flex-1 items-stretch overflow-hidden px-3 py-2">
+    <Kanban
+      value={displayedColumns}
+      onValueChange={setColumns}
+      getItemValue={issueId}
+      onMove={handleMove}
       collisionDetection={collisionDetection}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
-      onDragEnd={handleDragEnd}
+      onDragEnd={handleKanbanDragEnd}
       onDragCancel={handleDragCancel}
+      className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden"
     >
-      <div
+      <BoardScrollArea
         ref={pan.ref}
         onPointerDown={pan.onPointerDown}
         onPointerMove={pan.onPointerMove}
         onPointerUp={pan.onPointerUp}
         onPointerCancel={pan.onPointerCancel}
         onLostPointerCapture={pan.onLostPointerCapture}
-        className="flex flex-1 min-h-0 gap-2 overflow-x-auto px-3 py-2"
       >
-        {groups.length === 0 ? (
+        <SortableContext items={Object.keys(displayedColumns)} strategy={horizontalListSortingStrategy}>
+        <div data-slot="kanban-board" className="flex h-full min-h-full min-w-full items-stretch gap-3 p-1">
+        {boardGroups.length === 0 ? (
           groupBranches?.isError ? (
             <button
               type="button"
@@ -897,16 +948,18 @@ function BoardViewImpl({
             </div>
           )
         ) : (
-          renderedGroups.map((group) =>
+          orderedBoardGroups.map((group) =>
             isStatusGroup(group) ? (
               <ServerPaginatedBoardColumn
                 key={group.id}
                 group={group}
-                issueIds={columns[group.id] ?? EMPTY_IDS}
+                issueIds={displayedColumns[group.id] ?? EMPTY_IDS}
                 issueMap={issueMapRef.current}
                 childProgressMap={childProgressMap}
                 projectMap={projectMap}
                 page={statusPagination?.[group.status]}
+                collapsed={railStatuses.includes(group.status)}
+                onExpand={() => showHiddenStatus(group.status)}
                 projectId={projectId}
                 onCreateIssue={onCreateIssue}
                 sortLabel={sortLabel}
@@ -916,7 +969,7 @@ function BoardViewImpl({
                 <ServerPaginatedBoardColumn
                   key={group.id}
                   group={group}
-                  issueIds={columns[group.id] ?? EMPTY_IDS}
+                  issueIds={displayedColumns[group.id] ?? EMPTY_IDS}
                   issueMap={issueMapRef.current}
                   childProgressMap={childProgressMap}
                   projectMap={projectMap}
@@ -929,7 +982,7 @@ function BoardViewImpl({
                 <BoardColumn
                   key={group.id}
                   group={group}
-                  issueIds={columns[group.id] ?? EMPTY_IDS}
+                  issueIds={displayedColumns[group.id] ?? EMPTY_IDS}
                   issueMap={issueMapRef.current}
                   childProgressMap={childProgressMap}
                   projectMap={projectMap}
@@ -950,34 +1003,45 @@ function BoardViewImpl({
             />
           </div>
         )}
+        </div>
+        </SortableContext>
+      </BoardScrollArea>
 
-
-        {grouping === "status" && hiddenBoardStatuses.length > 0 && (
-          <BoardHiddenColumnsPanel
-            hiddenStatuses={hiddenBoardStatuses}
-            droppableStatuses={hiddenDropStatuses}
-            statusPagination={statusPagination}
-            onShowStatus={showHiddenStatus}
-          />
-        )}
-      </div>
-
-      <DragOverlay dropAnimation={null}>
-        {activeIssue ? (
-          <div style={{ width: BOARD_CARD_WIDTH }} className="rotate-1 cursor-grabbing opacity-90 shadow-lg shadow-black/10">
-            <BoardCardContent
-              issue={activeIssue}
-              childProgress={childProgressMap.get(activeIssue.id)}
-              project={
-                activeIssue.project_id
-                  ? projectMap?.get(activeIssue.project_id)
-                  : undefined
-              }
-            />
-          </div>
-        ) : null}
-      </DragOverlay>
-    </DndContext>
+      <KanbanOverlay>
+        {({ value, variant }) => {
+          if (variant === "column") {
+            const group = orderedBoardGroups.find((column) => column.id === String(value));
+            if (!group) return null;
+            return (
+              <BoardColumn
+                group={group}
+                issueIds={displayedColumns[group.id] ?? EMPTY_IDS}
+                issueMap={issueMapRef.current}
+                childProgressMap={childProgressMap}
+                projectMap={projectMap}
+                isOverlay
+              />
+            );
+          }
+          const activeIssue = issueMapRef.current.get(String(value));
+          if (!activeIssue) return null;
+          return (
+            <div style={{ width: BOARD_CARD_WIDTH }} className="shadow-lg">
+              <BoardCardContent
+                issue={activeIssue}
+                childProgress={childProgressMap.get(activeIssue.id)}
+                project={
+                  activeIssue.project_id
+                    ? projectMap?.get(activeIssue.project_id)
+                    : undefined
+                }
+              />
+            </div>
+          );
+        }}
+      </KanbanOverlay>
+    </Kanban>
+    </div>
   );
 }
 
@@ -992,6 +1056,8 @@ const ServerPaginatedBoardColumn = memo(function ServerPaginatedBoardColumn({
   projectId,
   onCreateIssue,
   sortLabel,
+  collapsed,
+  onExpand,
 }: {
   group: BoardColumnGroup;
   issueIds: string[];
@@ -1002,6 +1068,8 @@ const ServerPaginatedBoardColumn = memo(function ServerPaginatedBoardColumn({
   projectId?: string;
   onCreateIssue?: (defaults: IssueCreateDefaults) => void;
   sortLabel?: string | null;
+  collapsed?: boolean;
+  onExpand?: () => void;
 }) {
   const footer = page ? (
     <ListLoadMoreFooter
@@ -1024,38 +1092,13 @@ const ServerPaginatedBoardColumn = memo(function ServerPaginatedBoardColumn({
       projectId={projectId}
       onCreateIssue={onCreateIssue}
       sortLabel={sortLabel}
+      collapsed={collapsed}
+      onExpand={onExpand}
       footer={footer}
     />
   );
 });
 
-
-function BoardHiddenColumnsPanel({
-  hiddenStatuses,
-  droppableStatuses,
-  statusPagination,
-  onShowStatus,
-}: {
-  hiddenStatuses: IssueStatusCategory[];
-  droppableStatuses: IssueStatusCategory[];
-  statusPagination?: IssueStatusPagination;
-  onShowStatus: (status: IssueStatusCategory) => void;
-}) {
-  return (
-    <HiddenColumnsPanel
-      hiddenStatuses={hiddenStatuses}
-      renderRow={(status) => (
-        <HiddenColumnRow
-          key={status}
-          status={status}
-          total={statusPagination?.[status]?.total}
-          droppable={droppableStatuses.includes(status)}
-          onShow={() => onShowStatus(status)}
-        />
-      )}
-    />
-  );
-}
 
 /**
  * Memoized: the surface controller re-renders on loading-flag flips (e.g. a

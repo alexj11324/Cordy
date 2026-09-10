@@ -21,7 +21,9 @@ const workspaceRef = vi.hoisted(() => ({
   },
 }));
 const membersRef = vi.hoisted(() => ({
-  current: [{ user_id: "user-1", role: "owner" as "owner" | "admin" | "member" }],
+  current: [
+    { user_id: "user-1", role: "owner" as "owner" | "admin" | "member" },
+  ],
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -34,6 +36,9 @@ vi.mock("@tanstack/react-query", () => ({
 }));
 
 vi.mock("@orvilo/core/paths", () => ({
+  paths: {
+    workspace: (slug: string) => ({ issues: () => `/${slug}/issues` }),
+  },
   useCurrentWorkspace: () => workspaceRef.current,
   useHasOnboarded: () => true,
   resolvePostAuthDestination: () => "/",
@@ -68,14 +73,19 @@ vi.mock("@orvilo/core/api", () => ({
 vi.mock("@orvilo/core/auth", () => {
   const useAuthStore = Object.assign(
     (selector?: (state: { user: { id: string } }) => unknown) =>
-      selector ? selector({ user: { id: "user-1" } }) : { user: { id: "user-1" } },
+      selector
+        ? selector({ user: { id: "user-1" } })
+        : { user: { id: "user-1" } },
     { getState: () => ({ user: { id: "user-1" } }) },
   );
   return { useAuthStore };
 });
 
 vi.mock("../../navigation", () => ({
-  useNavigation: () => ({ push: vi.fn() }),
+  useNavigation: () => ({
+    push: vi.fn(),
+    getShareableUrl: (path: string) => `https://app.example${path}`,
+  }),
 }));
 
 vi.mock("./delete-workspace-dialog", () => ({
@@ -119,7 +129,8 @@ describe("WorkspaceTab — automatic updates", () => {
         ...workspaceRef.current,
         ...payload,
         issue_prefix:
-          (payload.issue_prefix as string | undefined) ?? workspaceRef.current.issue_prefix,
+          (payload.issue_prefix as string | undefined) ??
+          workspaceRef.current.issue_prefix,
       }),
     );
   });
@@ -136,15 +147,29 @@ describe("WorkspaceTab — automatic updates", () => {
     render(<WorkspaceTab />, { wrapper: I18nWrapper });
     const input = screen.getByPlaceholderText("TES") as HTMLInputElement;
     expect(input.value).toBe("TES");
-    expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
   });
 
-  it("renders the workspace slug in the shared read-only input control", () => {
+  it("renders the real workspace URL in a shared read-only input control", () => {
     render(<WorkspaceTab />, { wrapper: I18nWrapper });
 
-    const input = screen.getByRole("textbox", { name: "Slug" }) as HTMLInputElement;
-    expect(input.value).toBe("test-workspace");
+    const input = screen.getByRole("textbox", { name: "URL" }) as HTMLInputElement;
+    expect(input.value).toBe("https://app.example/test-workspace/issues");
     expect(input.readOnly).toBe(true);
+  });
+
+  it("keeps only the supported workspace settings controls", () => {
+    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+
+    expect(screen.getByLabelText("Name")).toHaveAttribute("id", "workspace-name");
+    expect(screen.getByLabelText("URL")).toHaveAttribute("id", "workspace-url");
+    expect(screen.getByLabelText("Issue prefix")).toHaveAttribute(
+      "id",
+      "workspace-issue-prefix",
+    );
+    expect(screen.queryByRole("textbox", { name: "Description" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Context" })).toBeNull();
+    expect(screen.queryByRole("textbox", { name: "Slug" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Leave workspace" })).toBeNull();
   });
 
   it("uppercases and strips non-alphanumeric prefix input", async () => {
@@ -170,8 +195,6 @@ describe("WorkspaceTab — automatic updates", () => {
     await waitFor(() => {
       expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
         name: "Renamed Workspace",
-        description: "",
-        context: "",
       });
       expect(mockToastSuccess).toHaveBeenCalledWith(
         "Workspace settings saved",
@@ -205,10 +228,9 @@ describe("WorkspaceTab — automatic updates", () => {
     expect(mockInvalidateQueries).toHaveBeenCalledWith({
       queryKey: ["issues", "workspace-1"],
     });
-    expect(mockToastSuccess).toHaveBeenCalledWith(
-      "Workspace settings saved",
-      { id: "settings-auto-save" },
-    );
+    expect(mockToastSuccess).toHaveBeenCalledWith("Workspace settings saved", {
+      id: "settings-auto-save",
+    });
   });
 
   it("does not persist a prefix when the confirmation is cancelled", async () => {
@@ -244,5 +266,8 @@ describe("WorkspaceTab — automatic updates", () => {
 
     expect(screen.getByPlaceholderText("TES")).toBeDisabled();
     expect(screen.getByDisplayValue("Test Workspace")).toBeDisabled();
+    expect(
+      screen.getByDisplayValue("Test Workspace").closest('[data-slot="field"]'),
+    ).toHaveAttribute("data-disabled", "true");
   });
 });

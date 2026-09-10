@@ -205,11 +205,11 @@ describe("DeleteRuntimeDialog", () => {
   it("renders the light-mode prompt when no agents are bound", () => {
     renderDialog({ cachedAgents: [] });
 
-    expect(screen.getByText("Delete Runtime?")).toBeInTheDocument();
-    expect(screen.getByText("Delete runtime")).toBeInTheDocument();
+    expect(screen.getByText("Delete Harness?")).toBeInTheDocument();
+    expect(screen.getByText("Delete Harness")).toBeInTheDocument();
     // No checkbox, no agent table in light mode.
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Unbind .* and delete this Runtime/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Unbind .* and delete this Harness/)).not.toBeInTheDocument();
   });
 
   it("opens directly in cascade mode when local cache shows bound agents, with the destructive button gated by the checkbox", async () => {
@@ -221,11 +221,11 @@ describe("DeleteRuntimeDialog", () => {
     });
 
     expect(
-      screen.getByText(/Unbind 2 agents and delete this Runtime/),
+      screen.getByText(/Unbind 2 agents and delete this Harness/),
     ).toBeInTheDocument();
     // Destructive confirm starts disabled until the user ticks the checkbox.
     const confirm = screen.getByRole("button", {
-      name: /Unbind 2 agents and delete runtime/,
+      name: /Unbind 2 agents and delete Harness/,
     }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
 
@@ -260,12 +260,12 @@ describe("DeleteRuntimeDialog", () => {
 
     // We open in light mode, hit Delete, and expect the dialog to pivot to
     // cascade mode using the server-supplied agent list.
-    const lightConfirm = screen.getByRole("button", { name: "Delete runtime" });
+    const lightConfirm = screen.getByRole("button", { name: "Delete Harness" });
     fireEvent.click(lightConfirm);
 
     await waitFor(() =>
       expect(
-        screen.getByText(/Unbind 1 agent and delete this Runtime/),
+        screen.getByText(/Unbind 1 agent and delete this Harness/),
       ).toBeInTheDocument(),
     );
     expect(screen.getByText("FreshAgent")).toBeInTheDocument();
@@ -298,13 +298,13 @@ describe("DeleteRuntimeDialog", () => {
     fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.click(
       screen.getByRole("button", {
-        name: /Unbind 2 agents and delete runtime/,
+        name: /Unbind 2 agents and delete Harness/,
       }),
     );
 
     await waitFor(() =>
       expect(
-        screen.getByText(/Unbind 3 agents and delete this Runtime/),
+        screen.getByText(/Unbind 3 agents and delete this Harness/),
       ).toBeInTheDocument(),
     );
     // The new third agent shows in the plan.
@@ -347,10 +347,10 @@ describe("DeleteRuntimeDialog", () => {
     });
 
     expect(
-      screen.getByText(/registered from a custom runtime profile/i),
+      screen.getByText(/registered from a custom Harness profile/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/delete the custom runtime profile/i),
+      screen.getByText(/delete the custom Harness profile/i),
     ).toBeInTheDocument();
     expect(
       screen.queryByText(/managed by a running local daemon/i),
@@ -364,10 +364,10 @@ describe("DeleteRuntimeDialog", () => {
     });
 
     expect(
-      screen.getByText(/registered from a custom runtime profile/i),
+      screen.getByText(/registered from a custom Harness profile/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Unbind 1 agent and delete this Runtime/),
+      screen.getByText(/Unbind 1 agent and delete this Harness/),
     ).toBeInTheDocument();
   });
 
@@ -383,7 +383,7 @@ describe("DeleteRuntimeDialog", () => {
       screen.getByText(/managed by a running local daemon/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Unbind 1 agent and delete this Runtime/),
+      screen.getByText(/Unbind 1 agent and delete this Harness/),
     ).toBeInTheDocument();
   });
 
@@ -421,7 +421,7 @@ describe("DeleteRuntimeDialog", () => {
       onDeleted,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete runtime" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete Harness" }));
     await waitFor(() =>
       expect(apiDeleteRuntime).toHaveBeenCalledWith("rt-1"),
     );

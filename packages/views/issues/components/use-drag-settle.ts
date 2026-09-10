@@ -9,8 +9,8 @@ import {
 
 /**
  * Content equality for the column map (`columnId -> ordered issue ids`). Two
- * maps are equal when they have the same column keys and each column's id list
- * matches element-for-element. Used to skip no-op `setColumns` writes.
+ * maps are equal when their ordered column keys and each column's id list
+ * match element-for-element. ReUI column dragging preserves key order.
  */
 function columnsEqual(
   a: Record<string, string[]>,
@@ -20,6 +20,7 @@ function columnsEqual(
   const aKeys = Object.keys(a);
   const bKeys = Object.keys(b);
   if (aKeys.length !== bKeys.length) return false;
+  if (aKeys.some((key, index) => key !== bKeys[index])) return false;
   for (const key of aKeys) {
     const av = a[key];
     const bv = b[key];

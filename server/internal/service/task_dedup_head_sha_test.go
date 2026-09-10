@@ -108,10 +108,10 @@ func createHeadShaDedupFixture(t *testing.T, ctx context.Context, pool *pgxpool.
 
 	var issueID string
 	if err := pool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position)
-		VALUES ($1, $2, 'in_review', 'none', $3, 'member', $4, 0)
+		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position, executor_type, executor_id)
+		VALUES ($1, $2, 'in_review', 'none', $3, 'member', $4, 0, 'agent', $5)
 		RETURNING id
-	`, workspaceID, "head sha dedup issue", userID, 970000+int(suffix%1000)).Scan(&issueID); err != nil {
+	`, workspaceID, "head sha dedup issue", userID, 970000+int(suffix%1000), agentID).Scan(&issueID); err != nil {
 		t.Fatalf("create issue: %v", err)
 	}
 

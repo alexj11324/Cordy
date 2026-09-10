@@ -10,6 +10,8 @@ const mockState = vi.hoisted(() => ({
   buttonVariant: undefined as string | undefined,
 }));
 
+vi.mock("../../common/agent-identity-avatar", () => ({AgentIdentityAvatar: ({name}: {name:string}) => <span aria-label={name} />}));
+
 vi.mock("@orvilo/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (_type: string, id: string) => `Agent ${id}`,

@@ -10,6 +10,12 @@ export {
   ResourceLeadingVisual,
 } from "./tab-presentation";
 export type { TabPresentationResult } from "./tab-presentation";
+export { ShellBreadcrumb } from "./shell-breadcrumb";
+export {
+  ShellHeaderActions,
+  ShellHeaderActionsSlot,
+  ShellHeaderProvider,
+} from "./shell-header";
 export { DashboardGuard } from "./dashboard-guard";
 export { DashboardLayout } from "./dashboard-layout";
 export { useDashboardGuard } from "./use-dashboard-guard";

@@ -275,15 +275,18 @@ describe("AgentOverviewPane Settings navigation", () => {
   it("only renders General and Access tabs", () => {
     renderPane([makeRuntime("claude")]);
     expect(screen.getAllByRole("tab")).toHaveLength(2);
-    expect(screen.getByText("env-tab")).toBeInTheDocument();
+    expect(screen.queryByText("env-tab")).not.toBeInTheDocument();
     expect(screen.getByText("custom-args-tab")).toBeInTheDocument();
   });
 });
 
 describe("AgentOverviewPane Environment visibility", () => {
-  it("shows Environment inside General to someone who can manage the agent", () => {
+  it("keeps execution settings and custom arguments without Environment for managers", () => {
     renderPane([makeRuntime("claude")]);
-    expect(screen.getByText("env-tab")).toBeInTheDocument();
+    expect(screen.queryByText("env-tab")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "agent-detail-inspector" })).toBeInTheDocument();
+    expect(screen.getByText("custom-args-tab")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /^Access$/i })).toBeInTheDocument();
   });
 
   it("hides Environment from users who cannot manage the agent", () => {

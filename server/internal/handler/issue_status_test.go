@@ -472,9 +472,13 @@ func TestCustomTerminalStatusCountsAsTerminalInSQL(t *testing.T) {
 	t.Run("open issue listing excludes it", func(t *testing.T) {
 		customDoneID := mkIssue("sql open-list custom done", "gate_approved_s")
 		openID := mkIssue("sql open-list active", "todo")
+		// Model legacy data whose catalog entry was removed, without bypassing
+		// the insert guard or weakening the shared fixture helper.
+		createTestCustomStatus(t, "legacy_unknown", issuestatus.Todo)
 		unknownID := parseUUID(dbfx.Issue(t, "sql open-list unknown legacy status", testutil.Cols{
 			"status": "legacy_unknown",
 		}))
+		dbfx.Exec(t, `DELETE FROM issue_status WHERE workspace_id=$1 AND key=$2`, testWorkspaceID, "legacy_unknown")
 		rows, err := testHandler.Queries.ListOpenIssues(ctx, db.ListOpenIssuesParams{
 			WorkspaceID:        parseUUID(testWorkspaceID),
 			TerminalStatusKeys: terminalStatusKeys,

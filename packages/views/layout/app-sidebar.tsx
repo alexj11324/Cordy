@@ -5,7 +5,6 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@orvilo/ui/lib/utils";
 import { useScrollFade } from "@orvilo/ui/hooks/use-scroll-fade";
 import { AppLink, useNavigation } from "../navigation";
-import { HelpLauncher } from "./help-launcher";
 import {
   DndContext,
   PointerSensor,
@@ -42,7 +41,6 @@ import {
   SidebarRail,
   useSidebar,
 } from "@orvilo/ui/components/ui/sidebar";
-import { Separator } from "@orvilo/ui/components/ui/separator";
 import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -347,7 +345,7 @@ function PinRow({
         pathname={pathname}
         onUnpin={onUnpin}
         label={view.name}
-        iconNode={<Layers className="!size-3.5 shrink-0 opacity-60" />}
+        iconNode={<Layers className="shrink-0" />}
         // Active only when this exact view is open on its surface — the
         // path alone also matches the plain tab.
         isActiveOverride={
@@ -364,11 +362,10 @@ function PinRow({
     const issue = issueQuery.data;
     const label = issue.title;
     const iconNode = (
-      /* Override parent [&_svg]:size-4 — pinned items need smaller icons to match sm size */
       <StatusIcon
         status={issue.status}
         category={issueStatusCategory(issue) ?? undefined}
-        className="!size-3.5 shrink-0"
+        className="shrink-0"
       />
     );
     return (
@@ -417,13 +414,6 @@ type ReuiRouteItem = {
   Icon: React.ComponentType<{ className?: string }>;
   badge?: React.ReactNode;
 };
-
-const WORKSPACE_AVATAR_CLASSES = [
-  "border-indigo-200 bg-indigo-100 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950 dark:text-indigo-300",
-  "border-cyan-200 bg-cyan-100 text-cyan-700 dark:border-cyan-800 dark:bg-cyan-950 dark:text-cyan-300",
-  "border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-300",
-  "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
-] as const;
 
 function ReuiNavGroup({
   label,
@@ -498,7 +488,7 @@ export function AppSidebar({
   // pinned items, the workspace switcher's programmatic push, and anything
   // added later. `setOpenMobile` is a no-op on desktop, where the sheet is not
   // the sidebar's rendering at all.
-  const { state: sidebarState, setOpenMobile, setHoverRevealSuspended } = useSidebar();
+  const { open: sidebarOpen, setOpenMobile, setHoverRevealSuspended } = useSidebar();
   useEffect(() => {
     setOpenMobile(false);
   }, [pathname, search, setOpenMobile]);
@@ -681,11 +671,9 @@ export function AppSidebar({
     .map((part) => part.charAt(0))
     .join("")
     .toUpperCase() || "U";
-  const workspaceEntries = workspaces.map((ws, index) => ({
+  const workspaceEntries = workspaces.map((ws) => ({
     id: ws.id,
     name: ws.name,
-    imageUrl: resolvePublicFileUrl(ws.avatar_url) ?? undefined,
-    avatarClassName: WORKSPACE_AVATAR_CLASSES[index % WORKSPACE_AVATAR_CLASSES.length],
     hasUnread: ws.id !== workspace?.id && unreadWsIds.has(ws.id),
   }));
   const activeWorkspaceEntry = workspaceEntries.find((entry) => entry.id === workspace?.id);
@@ -698,9 +686,6 @@ export function AppSidebar({
         const invitationName = invitation.workspace_name ?? t(($) => $.sidebar.invitation_workspace_fallback);
         return (
           <div key={invitation.id} className="flex items-center gap-2 px-2 py-1.5">
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10 text-micro font-semibold text-primary">
-              {invitationName.charAt(0).toUpperCase()}
-            </span>
             <span className="min-w-0 flex-1 truncate text-body">{invitationName}</span>
             <button
               type="button"
@@ -731,11 +716,13 @@ export function AppSidebar({
   ) : null;
 
   return (
-    <Sidebar collapsible="icon" variant="floating">
-      {topSlot}
+    <Sidebar collapsible="offcanvas" variant="inset">
+      {sidebarOpen && topSlot}
 
       <SidebarContent ref={sidebarScrollRef} style={sidebarFadeStyle}>
-        <div className="py-2 pt-2">{searchSlot}</div>
+        <div className="p-2 in-data-[state=collapsed]:flex in-data-[state=collapsed]:justify-center in-data-[state=collapsed]:px-1">
+          {searchSlot}
+        </div>
 
         <SidebarGroup className="py-0">
           <SidebarGroupContent>
@@ -829,12 +816,9 @@ export function AppSidebar({
         </div>
       </SidebarContent>
 
-      <SidebarFooter className="px-1! in-data-[state=collapsed]:px-1!">
-        <div className="px-2">
-          <Separator />
-        </div>
-
+      <SidebarFooter className="pb-2 in-data-[state=collapsed]:px-1">
         <NavWorkspace
+          showWorkspaceIcons={false}
           user={{
             name: userName,
             initials: userInitials,
@@ -893,15 +877,9 @@ export function AppSidebar({
           onPreferences={() => push(`${p.settings()}?tab=preferences`)}
           onSignOut={logout}
         />
-
-        {sidebarState !== "collapsed" ? (
-          <div className="px-1">
-            <HelpLauncher onOpenChange={setHoverRevealSuspended} />
-          </div>
-        ) : null}
       </SidebarFooter>
 
-      <SidebarRail />
+      {sidebarOpen && <SidebarRail />}
     </Sidebar>
   );
 

@@ -4,13 +4,12 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "@orvilo/core/hooks";
 import { useWorkspacePaths } from "@orvilo/core/paths";
-import { runtimeDisplayLabel } from "@orvilo/core/runtimes";
 import { agentListOptions } from "@orvilo/core/workspace/queries";
-import { useBackOrReplace, useNavigation } from "../../navigation";
+import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { AgentConfigurationPanel } from "./agent-configuration-panel";
 import { CreateAgentFooter } from "./create-agent-footer";
-import { AgentCreateChip, AgentCreateShell } from "./create-shell";
+import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { useCreateAgentForm } from "./use-create-agent-form";
 import { useCreateAgentSubmit } from "./use-create-agent-submit";
 import { useDuplicateDraftSeed } from "./use-duplicate-draft-seed";
@@ -31,11 +30,10 @@ export function ManualCreateAgentPage() {
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
   const navigation = useNavigation();
-  const backOrReplace = useBackOrReplace();
   const duplicateId = navigation.searchParams.get("duplicate");
   const teamId = navigation.searchParams.get("team");
 
-  const form = useCreateAgentForm();
+  const form = useCreateAgentForm({ omitInvalidConversationStarters: true });
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   const duplicateAgent = duplicateId
     ? agents.find((agent) => agent.id === duplicateId) ?? null
@@ -93,35 +91,21 @@ export function ManualCreateAgentPage() {
     form.draft.name.trim().length > 0 && form.draftReady && !submit.creating;
 
   return (
-    <AgentCreateShell
-      title={
-        duplicateAgent
-          ? t(($) => $.creation_studio.duplicate_title, {
-              name: duplicateAgent.name,
-            })
-          : teamId
-            ? t(($) => $.creation_studio.team_title)
-            : t(($) => $.creation_studio.title)
-      }
-      step={t(($) => $.creation_studio.step_configure)}
-      // A duplicate arrives from the agents list, not from the chooser, so it
-      // returns to where it came from instead of offering a method to pick.
-      onBack={() =>
-        backOrReplace(duplicateId ? paths.agents() : paths.newAgent())
-      }
-      chips={
-        <>
-          <AgentCreateChip>
-            {t(($) => $.creation_studio.modes.blank.title)}
-          </AgentCreateChip>
-          {form.selectedRuntime && (
-            <AgentCreateChip>
-              {runtimeDisplayLabel(form.selectedRuntime)}
-            </AgentCreateChip>
-          )}
-        </>
-      }
-    >
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
+      <BreadcrumbHeader
+        segments={[{ href: paths.agents(), label: t(($) => $.page.title) }]}
+        leaf={
+          <span className="truncate font-medium text-foreground">
+            {duplicateAgent
+              ? t(($) => $.creation_studio.duplicate_title, {
+                  name: duplicateAgent.name,
+                })
+              : teamId
+                ? t(($) => $.creation_studio.team_title)
+                : t(($) => $.creation_studio.title)}
+          </span>
+        }
+      />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-4xl px-5 py-8 sm:px-8">
           {duplicateAgent && (
@@ -135,6 +119,7 @@ export function ManualCreateAgentPage() {
             </div>
           )}
           <AgentConfigurationPanel
+            showConversationStarters={false}
             draft={form.draft}
             onChange={form.setDraft}
             runtimes={form.runtimes}
@@ -156,6 +141,6 @@ export function ManualCreateAgentPage() {
           onCreate={() => void submit.create()}
         />
       </div>
-    </AgentCreateShell>
+    </div>
   );
 }

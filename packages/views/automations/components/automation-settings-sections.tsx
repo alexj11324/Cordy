@@ -28,9 +28,6 @@ export function AutomationTriggersSection({
       <h2 className="text-caption font-medium uppercase tracking-wider text-muted-foreground">
         {t(($) => $.detail.section_triggers)}
       </h2>
-      <p className="text-caption text-muted-foreground">
-        {t(($) => $.settings.trigger_help)}
-      </p>
       <div
         data-testid="automation-triggers-card"
         className="divide-y rounded-lg border bg-background"

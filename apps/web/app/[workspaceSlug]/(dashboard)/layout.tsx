@@ -4,7 +4,6 @@ import { Suspense } from "react";
 import { DashboardLayout } from "@orvilo/views/layout";
 import { OrviloIcon } from "@orvilo/ui/components/common/orvilo-icon";
 import { SearchCommand, SearchTrigger } from "@orvilo/views/search";
-import { FloatingChat } from "@orvilo/views/chat";
 import { WebNotificationBridge } from "@/components/web-notification-bridge";
 import { WorkspaceDocumentTitle } from "@/platform/workspace-document-title";
 
@@ -24,7 +23,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <>
             <SearchCommand />
             <WebNotificationBridge />
-            <FloatingChat />
           </>
         }
       >

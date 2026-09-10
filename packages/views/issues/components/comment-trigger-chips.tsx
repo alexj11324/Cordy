@@ -6,7 +6,7 @@ import type { CommentTriggerPreviewAgent, CommentTriggerOutcome } from "@orvilo/
 import { useAgentPresenceDetail } from "@orvilo/core/agents";
 import { mentionLabelsByTarget } from "@orvilo/core/issues/comment-trigger-outcomes";
 import { useCurrentWorkspace } from "@orvilo/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
+import { AgentIdentityAvatar } from "../../common/agent-identity-avatar";
 import { AVATAR_SIZE_PX } from "@orvilo/ui/lib/avatar-size";
 import {
   Popover,
@@ -311,7 +311,7 @@ function MultiTriggerChip({
           <span
             key={agent.id}
             style={{ marginLeft: i === 0 ? 0 : -overlap }}
-            className="inline-flex rounded-full ring-2 ring-background"
+            className="inline-flex"
           >
             <TriggerAgentAvatar
               agent={agent}
@@ -410,13 +410,7 @@ function TriggerAgentAvatar({
         suppressed && "opacity-40 grayscale",
       )}
     >
-      <ActorAvatarBase
-        name={agent.name}
-        initials=""
-        avatarUrl={agent.avatar_url}
-        isAgent
-        size="xs"
-      />
+      <AgentIdentityAvatar agentId={agent.id} name={agent.name} size="xs" />
       {showDot && !suppressed && <AgentStatusDot agentId={agent.id} size="xs" />}
     </span>
   );

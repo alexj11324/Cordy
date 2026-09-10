@@ -9,7 +9,6 @@ import {
 import {
   deviceDisplayName,
   deviceKind,
-  runtimeDisplayLabel,
 } from "@orvilo/core/runtimes";
 import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 import {
@@ -200,7 +199,6 @@ function toAtlasDealCard(
     owner: {
       id: owner?.user_id || agent.owner_id || "",
       name: ownerName,
-      title: runtime ? runtimeDisplayLabel(runtime) : deviceLabel,
       avatar: ownerAvatarSrc,
     },
   };

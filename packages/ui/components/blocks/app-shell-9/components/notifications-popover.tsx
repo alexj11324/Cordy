@@ -128,7 +128,7 @@ function NotifAvatarGroup({
       {members.map((m) => (
         <Avatar key={m.src} className="size-5">
           <AvatarImage src={m.src} alt={m.fallback} />
-          <AvatarFallback className="text-[9px]">{m.fallback}</AvatarFallback>
+          <AvatarFallback className="text-[10px]">{m.fallback}</AvatarFallback>
         </Avatar>
       ))}
       {count && count > 0 ? (

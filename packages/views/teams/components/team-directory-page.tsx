@@ -13,7 +13,6 @@ import {
   CheckIcon,
   Loader2Icon,
   MailPlusIcon,
-  PlusIcon,
   SearchIcon,
   Settings2Icon,
   XIcon,
@@ -59,14 +58,6 @@ import {
   AlertDialogTitle,
 } from "@orvilo/ui/components/ui/alert-dialog";
 import { Button } from "@orvilo/ui/components/ui/button";
-import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@orvilo/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -171,24 +162,25 @@ function TabCount({ active, count }: { active: boolean; count: number }) {
 
 function DirectorySkeleton() {
   return (
-    <Card className="mx-auto w-full max-w-[1440px] py-0">
-      <CardHeader className="border-b px-5 py-5 md:px-6">
-        <Skeleton className="h-6 w-32" />
-        <Skeleton className="h-4 w-56" />
-      </CardHeader>
-      <div className="space-y-3 p-5 md:p-6">
+    <div className="min-w-0 w-full">
+      <div className="flex flex-wrap items-center gap-3 border-b px-4 py-3">
+        <CollapsedNavTrigger />
+        <Skeleton className="h-7 w-36 max-w-full" />
+        <Skeleton className="ml-auto h-8 w-56 max-w-full" />
+      </div>
+      <div className="space-y-3 px-4 py-3">
         {Array.from({ length: 5 }, (_, index) => (
           <div
             key={index}
             className="flex items-center gap-4 border-b py-3 last:border-0"
           >
             <Skeleton className="size-8 rounded-full" />
-            <Skeleton className="h-4 w-36" />
-            <Skeleton className="ml-auto h-4 w-40" />
+            <Skeleton className="h-4 w-36 min-w-0" />
+            <Skeleton className="ml-auto h-4 w-40 min-w-0" />
           </div>
         ))}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -1080,9 +1072,6 @@ export function TeamDirectoryPage() {
     activeTab === "members" ? memberVisibility : invitationVisibility;
   const toggleColumns =
     activeTab === "members" ? memberToggleColumns : invitationToggleColumns;
-  const pendingCount = invitations.filter(
-    (invitation) => invitation.status === "pending",
-  ).length;
 
   const handleToggleColumn = useCallback(
     (id: string) => {
@@ -1100,60 +1089,97 @@ export function TeamDirectoryPage() {
   const loading = membersLoading || invitationsLoading;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 md:gap-5 md:p-6 lg:p-8">
-      <div className="mx-auto flex w-full max-w-[1440px] items-center gap-2 text-body text-muted-foreground">
-        <CollapsedNavTrigger />
-        <div className="flex min-w-0 items-center gap-2 truncate">
-          <span className="truncate">{workspace.name}</span>
-          <span aria-hidden="true">›</span>
-          <span className="truncate text-foreground">
-            {t(($) => $.directory.title)}
-          </span>
-        </div>
-        <AppLink
-          href={workspacePaths.agentTeams()}
-          className="ml-auto shrink-0 rounded-md px-2 py-1 text-caption text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {t(($) => $.directory.agent_teams_link)}
-        </AppLink>
-      </div>
-
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
       {loading ? (
         <DirectorySkeleton />
       ) : (
-        <Card className="mx-auto w-full max-w-[1440px] gap-0 pb-0">
-          <CardHeader className="items-center border-b px-5 py-5 md:px-6">
-            <div>
-              <CardTitle className="text-balance">
-                {t(($) => $.directory.title)}
-              </CardTitle>
-              <CardDescription className="mt-1 flex flex-wrap items-center gap-1.5 text-caption">
-                <span>
-                  {t(($) => $.directory.member_count, {
-                    count: members.length,
-                  })}
-                </span>
-                <span
-                  className="size-1 shrink-0 rounded-full bg-muted-foreground/40"
-                  aria-hidden="true"
-                />
-                <span>
-                  {t(($) => $.directory.pending_invitation_count, {
-                    count: pendingCount,
-                  })}
-                </span>
-              </CardDescription>
-            </div>
-            <CardAction className="flex items-center gap-2 self-center">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!canManage}
-                onClick={() => setInviteOpen(true)}
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as DirectoryTab)}
+          className="min-w-0 gap-0"
+        >
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b px-4 py-2">
+            <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">
+              <CollapsedNavTrigger />
+              <TabsList
+                variant="line"
+                className="h-9 w-auto max-w-full justify-start gap-4 p-0!"
               >
-                <PlusIcon aria-hidden="true" />
-                {t(($) => $.directory.add_member)}
-              </Button>
+                <TabsTrigger
+                  value="members"
+                  className="h-full! flex-none! gap-2 px-0 text-body"
+                >
+                  <span>{t(($) => $.directory.members_tab)}</span>
+                  <TabCount
+                    active={activeTab === "members"}
+                    count={members.length}
+                  />
+                </TabsTrigger>
+                <TabsTrigger
+                  value="invitations"
+                  className="h-full! flex-none! gap-2 px-0 text-body"
+                >
+                  <span>{t(($) => $.directory.invitations_tab)}</span>
+                  <TabCount
+                    active={activeTab === "invitations"}
+                    count={invitations.length}
+                  />
+                </TabsTrigger>
+              </TabsList>
+              <AppLink
+                href={workspacePaths.agentTeams()}
+                className="shrink-0 rounded-md px-2 py-1 text-caption text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {t(($) => $.directory.agent_teams_link)}
+              </AppLink>
+            </div>
+            <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2">
+              <InputGroup className="w-full min-w-0 sm:w-56">
+                <InputGroupAddon align="inline-start">
+                  <SearchIcon aria-hidden="true" />
+                </InputGroupAddon>
+                <InputGroupInput
+                  name="team-directory-search"
+                  autoComplete="off"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  placeholder={
+                    activeTab === "members"
+                      ? t(($) => $.directory.search_members)
+                      : t(($) => $.directory.search_invitations)
+                  }
+                  aria-label={
+                    activeTab === "members"
+                      ? t(($) => $.directory.search_members)
+                      : t(($) => $.directory.search_invitations)
+                  }
+                />
+                {searchQuery.length > 0 ? (
+                  <InputGroupAddon align="inline-end">
+                    <InputGroupButton
+                      size="icon-xs"
+                      aria-label={t(($) => $.directory.clear_search)}
+                      onClick={() => setSearchQuery("")}
+                    >
+                      <XIcon aria-hidden="true" />
+                    </InputGroupButton>
+                  </InputGroupAddon>
+                ) : null}
+              </InputGroup>
+              <ViewSettingsMenu
+                density={density}
+                onDensityChange={setDensity}
+                toggleColumns={toggleColumns}
+                columnVisibility={activeVisibility}
+                onToggleColumn={handleToggleColumn}
+                labels={{
+                  table: t(($) => $.directory.view_settings),
+                  density: t(($) => $.directory.density),
+                  columns: t(($) => $.directory.columns),
+                  comfortable: t(($) => $.directory.density_comfortable),
+                  compact: t(($) => $.directory.density_compact),
+                }}
+              />
               <Button
                 type="button"
                 disabled={!canManage}
@@ -1162,131 +1188,46 @@ export function TeamDirectoryPage() {
                 <MailPlusIcon aria-hidden="true" />
                 {t(($) => $.directory.invite_people)}
               </Button>
-            </CardAction>
-          </CardHeader>
-
-          <CardContent className="p-0">
-            <Tabs
-              value={activeTab}
-              onValueChange={(value) => setActiveTab(value as DirectoryTab)}
-            >
-              <div className="px-4 pt-3">
-                <TabsList
-                  variant="line"
-                  className="h-10 w-auto justify-start gap-5 p-0!"
-                >
-                  <TabsTrigger
-                    value="members"
-                    className="h-full! flex-none! gap-2 px-0 pb-3 text-body after:z-10 group-data-horizontal/tabs:after:-bottom-px!"
-                  >
-                    <span>{t(($) => $.directory.members_tab)}</span>
-                    <TabCount
-                      active={activeTab === "members"}
-                      count={members.length}
-                    />
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="invitations"
-                    className="h-full! flex-none! gap-2 px-0 pb-3 text-body after:z-10 group-data-horizontal/tabs:after:-bottom-px!"
-                  >
-                    <span>{t(($) => $.directory.invitations_tab)}</span>
-                    <TabCount
-                      active={activeTab === "invitations"}
-                      count={invitations.length}
-                    />
-                  </TabsTrigger>
-                </TabsList>
-              </div>
-              <Separator />
-              <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
-                <InputGroup className="w-full min-w-52 sm:w-[280px]">
-                  <InputGroupAddon align="inline-start">
-                    <SearchIcon aria-hidden="true" />
-                  </InputGroupAddon>
-                  <InputGroupInput
-                    name="team-directory-search"
-                    autoComplete="off"
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder={
-                      activeTab === "members"
-                        ? t(($) => $.directory.search_members)
-                        : t(($) => $.directory.search_invitations)
-                    }
-                    aria-label={
-                      activeTab === "members"
-                        ? t(($) => $.directory.search_members)
-                        : t(($) => $.directory.search_invitations)
-                    }
-                  />
-                  {searchQuery.length > 0 ? (
-                    <InputGroupAddon align="inline-end">
-                      <InputGroupButton
-                        size="icon-xs"
-                        aria-label={t(($) => $.directory.clear_search)}
-                        onClick={() => setSearchQuery("")}
-                      >
-                        <XIcon aria-hidden="true" />
-                      </InputGroupButton>
-                    </InputGroupAddon>
-                  ) : null}
-                </InputGroup>
-                <ViewSettingsMenu
-                  density={density}
-                  onDensityChange={setDensity}
-                  toggleColumns={toggleColumns}
-                  columnVisibility={activeVisibility}
-                  onToggleColumn={handleToggleColumn}
-                  labels={{
-                    table: t(($) => $.directory.view_settings),
-                    density: t(($) => $.directory.density),
-                    columns: t(($) => $.directory.columns),
-                    comfortable: t(($) => $.directory.density_comfortable),
-                    compact: t(($) => $.directory.density_compact),
-                  }}
-                />
-              </div>
-              <Separator />
-              {activeTab === "members" ? (
-                <DirectoryGrid
-                  columns={memberColumns}
-                  data={filteredMembers}
-                  recordCount={filteredMembers.length}
-                  density={density}
-                  columnVisibility={memberVisibility}
-                  onColumnVisibilityChange={setMemberVisibility}
-                  sorting={memberSorting}
-                  onSortingChange={setMemberSorting}
-                  emptyMessage={t(($) => $.directory.no_members)}
-                  pageLabel={t(($) => $.directory.range_members)}
-                  paginationLabels={{
-                    rowsPerPage: t(($) => $.directory.rows_per_page),
-                    previous: t(($) => $.directory.previous_page),
-                    next: t(($) => $.directory.next_page),
-                  }}
-                />
-              ) : (
-                <DirectoryGrid
-                  columns={invitationColumns}
-                  data={filteredInvitations}
-                  recordCount={filteredInvitations.length}
-                  density={density}
-                  columnVisibility={invitationVisibility}
-                  onColumnVisibilityChange={setInvitationVisibility}
-                  sorting={invitationSorting}
-                  onSortingChange={setInvitationSorting}
-                  emptyMessage={t(($) => $.directory.no_invitations)}
-                  pageLabel={t(($) => $.directory.range_invitations)}
-                  paginationLabels={{
-                    rowsPerPage: t(($) => $.directory.rows_per_page),
-                    previous: t(($) => $.directory.previous_page),
-                    next: t(($) => $.directory.next_page),
-                  }}
-                />
-              )}
-            </Tabs>
-          </CardContent>
-        </Card>
+            </div>
+          </div>
+          {activeTab === "members" ? (
+            <DirectoryGrid
+              columns={memberColumns}
+              data={filteredMembers}
+              recordCount={filteredMembers.length}
+              density={density}
+              columnVisibility={memberVisibility}
+              onColumnVisibilityChange={setMemberVisibility}
+              sorting={memberSorting}
+              onSortingChange={setMemberSorting}
+              emptyMessage={t(($) => $.directory.no_members)}
+              pageLabel={t(($) => $.directory.range_members)}
+              paginationLabels={{
+                rowsPerPage: t(($) => $.directory.rows_per_page),
+                previous: t(($) => $.directory.previous_page),
+                next: t(($) => $.directory.next_page),
+              }}
+            />
+          ) : (
+            <DirectoryGrid
+              columns={invitationColumns}
+              data={filteredInvitations}
+              recordCount={filteredInvitations.length}
+              density={density}
+              columnVisibility={invitationVisibility}
+              onColumnVisibilityChange={setInvitationVisibility}
+              sorting={invitationSorting}
+              onSortingChange={setInvitationSorting}
+              emptyMessage={t(($) => $.directory.no_invitations)}
+              pageLabel={t(($) => $.directory.range_invitations)}
+              paginationLabels={{
+                rowsPerPage: t(($) => $.directory.rows_per_page),
+                previous: t(($) => $.directory.previous_page),
+                next: t(($) => $.directory.next_page),
+              }}
+            />
+          )}
+        </Tabs>
       )}
 
       <InviteDialog

@@ -36,7 +36,7 @@ import { cn } from "@orvilo/ui/lib/utils";
 export type DealPerson = {
   id: string;
   name: string;
-  title: string;
+  title?: string;
   avatar: string;
 };
 
@@ -182,9 +182,11 @@ function DealOwner({ opportunity }: { opportunity: AtlasDealCardOpportunity }) {
         <div className="truncate text-sm font-medium">
           {opportunity.owner.name}
         </div>
-        <div className="truncate text-xs text-muted-foreground">
-          {opportunity.owner.title}
-        </div>
+        {opportunity.owner.title && (
+          <div className="truncate text-xs text-muted-foreground">
+            {opportunity.owner.title}
+          </div>
+        )}
       </div>
     </div>
   );

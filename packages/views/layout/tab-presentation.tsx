@@ -307,7 +307,8 @@ export function ResourceLeadingVisual({
   return (
     <span
       className={cn(
-        "flex size-4 shrink-0 items-center justify-center",
+        "flex shrink-0 items-center justify-center",
+        visual.kind === "actor" ? "size-6" : "size-4",
         className,
       )}
     >

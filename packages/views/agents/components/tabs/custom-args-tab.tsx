@@ -5,11 +5,10 @@ import {
   Loader2,
   Pencil,
   Plus,
-  Save,
   Terminal,
   Trash2,
 } from "lucide-react";
-import type { Agent, RuntimeDevice } from "@orvilo/core/types";
+import type { Agent } from "@orvilo/core/types";
 import { createSafeId } from "@orvilo/core/utils";
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Input } from "@orvilo/ui/components/ui/input";
@@ -17,7 +16,6 @@ import { toast } from "sonner";
 import { useT } from "../../../i18n";
 import {
   SettingsCard,
-  SettingsSection,
 } from "../../../settings/components/settings-layout";
 
 interface ArgEntry {
@@ -38,33 +36,32 @@ function entriesToArgs(entries: ArgEntry[]): string[] {
   return entries.map((entry) => entry.value.trim()).filter(Boolean);
 }
 
-function formatArgForPreview(value: string): string {
-  return /\s/.test(value) ? JSON.stringify(value) : value;
-}
-
 export function CustomArgsTab({
   agent,
-  runtimeDevice,
   onSave,
   onDirtyChange,
+  compact = false,
 }: {
   agent: Agent;
-  runtimeDevice?: RuntimeDevice;
   onSave: (updates: Partial<Agent>) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
+  /** Embedded settings pages already provide their own section heading. */
+  compact?: boolean;
 }) {
   const { t } = useT("agents");
-  const [entries, setEntries] = useState<ArgEntry[]>(
+  const [entries, setEntries] = useState<ArgEntry[]>(() =>
     argsToEntries(agent.custom_args ?? []),
   );
   const [editor, setEditor] = useState<EditorState>(null);
   const [editorValue, setEditorValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const editorInputRef = useRef<HTMLInputElement>(null);
 
-  const currentArgs = entriesToArgs(entries);
-  const originalArgs = agent.custom_args ?? [];
-  const dirty = JSON.stringify(currentArgs) !== JSON.stringify(originalArgs);
+  const originalEditorValue = editor?.kind === "edit"
+    ? entries.find((entry) => entry.id === editor.entryId)?.value ?? ""
+    : "";
+  const dirty = saving || (editor !== null && editorValue.trim() !== originalEditorValue);
 
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -85,43 +82,45 @@ export function CustomArgsTab({
   };
 
   const closeEditor = () => {
+    if (savingRef.current) return;
     setEditor(null);
     setEditorValue("");
   };
 
-  const commitEditor = () => {
+  const commitEditor = async () => {
     const value = editorValue.trim();
-    if (!editor || !value) return;
+    if (!editor || !value || savingRef.current) return;
 
-    if (editor.kind === "add") {
-      setEntries((current) => [...current, { id: createSafeId(), value }]);
-    } else {
-      setEntries((current) =>
-        current.map((entry) =>
+    const nextEntries = editor.kind === "add"
+      ? [...entries, { id: createSafeId(), value }]
+      : entries.map((entry) =>
           entry.id === editor.entryId ? { ...entry, value } : entry,
-        ),
-      );
-    }
-    closeEditor();
+        );
+    if (await persistEntries(nextEntries)) closeEditor();
   };
 
   const removeEntry = (entryId: string) => {
-    setEntries((current) => current.filter((entry) => entry.id !== entryId));
-    if (editor?.kind === "edit" && editor.entryId === entryId) closeEditor();
+    void persistEntries(entries.filter((entry) => entry.id !== entryId));
   };
 
-  const handleSave = async () => {
+  const persistEntries = async (nextEntries: ArgEntry[]) => {
+    if (savingRef.current) return false;
+    savingRef.current = true;
     setSaving(true);
     try {
-      await onSave({ custom_args: currentArgs });
+      await onSave({ custom_args: entriesToArgs(nextEntries) });
+      setEntries(nextEntries);
       toast.success(t(($) => $.tab_body.custom_args.saved_toast));
+      return true;
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
           ? err.message
           : t(($) => $.tab_body.custom_args.save_failed_toast),
       );
+      return false;
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
@@ -131,7 +130,7 @@ export function CustomArgsTab({
       className="rounded-lg border border-input bg-background p-2.5 shadow-xs"
       onSubmit={(event) => {
         event.preventDefault();
-        commitEditor();
+        void commitEditor();
       }}
       onKeyDown={(event) => {
         if (event.key === "Escape") closeEditor();
@@ -143,6 +142,7 @@ export function CustomArgsTab({
         autoComplete="off"
         spellCheck={false}
         value={editorValue}
+        disabled={saving}
         onChange={(event) => setEditorValue(event.target.value)}
         placeholder={t(($) => $.tab_body.custom_args.input_placeholder)}
         aria-label={
@@ -153,10 +153,11 @@ export function CustomArgsTab({
         className="font-mono text-caption"
       />
       <div className="mt-2 flex justify-end gap-2">
-        <Button type="button" variant="ghost" size="sm" onClick={closeEditor}>
+        <Button type="button" variant="ghost" size="sm" onClick={closeEditor} disabled={saving}>
           {t(($) => $.tab_body.custom_args.cancel_action)}
         </Button>
-        <Button type="submit" size="sm" disabled={!editorValue.trim()}>
+        <Button type="submit" size="sm" disabled={saving || !editorValue.trim()}>
+          {saving && <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" />}
           {editor?.kind === "add"
             ? t(($) => $.tab_body.custom_args.add_action)
             : t(($) => $.tab_body.custom_args.update_action)}
@@ -165,13 +166,8 @@ export function CustomArgsTab({
     </form>
   );
 
-  const launchHeader = runtimeDevice?.launch_header;
-  const launchCommand = launchHeader
-    ? [launchHeader, ...currentArgs.map(formatArgForPreview)].join(" ")
-    : null;
-
   return (
-    <div className="space-y-6">
+    <div className={compact ? "space-y-3" : "space-y-6"}>
       <div className="space-y-3">
         <div className="flex justify-end">
           <Button
@@ -179,23 +175,23 @@ export function CustomArgsTab({
             variant="outline"
             size="sm"
             onClick={startAdding}
-            disabled={editor !== null}
+            disabled={saving || editor !== null}
           >
             <Plus className="size-3.5" aria-hidden="true" />
             {t(($) => $.tab_body.custom_args.add_argument_action)}
           </Button>
         </div>
-        <SettingsCard>
-          <div className="space-y-2 p-3">
+        <SettingsCard className={compact ? "rounded-none border-0 bg-transparent" : undefined}>
+          <div className={compact ? "space-y-2" : "space-y-2 p-3"}>
             {entries.length === 0 && editor?.kind !== "add" ? (
-              <div className="flex min-h-28 flex-col items-center justify-center px-4 py-6 text-center">
-                <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+              <div className={compact ? "space-y-1 py-1" : "flex min-h-28 flex-col items-center justify-center px-4 py-6 text-center"}>
+                {!compact && <span className="flex size-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                   <Terminal className="size-4" aria-hidden="true" />
-                </span>
-                <p className="mt-3 text-body font-medium">
+                </span>}
+                <p className={compact ? "text-caption text-muted-foreground" : "mt-3 text-body font-medium"}>
                   {t(($) => $.tab_body.custom_args.empty_title)}
                 </p>
-                <p className="mt-1 max-w-sm text-caption leading-5 text-muted-foreground">
+                <p className={compact ? "text-caption leading-5 text-muted-foreground" : "mt-1 max-w-sm text-caption leading-5 text-muted-foreground"}>
                   {t(($) => $.tab_body.custom_args.empty_hint)}
                 </p>
               </div>
@@ -223,7 +219,7 @@ export function CustomArgsTab({
                           variant="ghost"
                           size="icon-sm"
                           onClick={() => startEditing(entry)}
-                          disabled={editor !== null}
+                          disabled={saving || editor !== null}
                           aria-label={t(($) => $.tab_body.custom_args.edit_aria, {
                             index: index + 1,
                           })}
@@ -235,7 +231,7 @@ export function CustomArgsTab({
                           variant="ghost"
                           size="icon-sm"
                           onClick={() => removeEntry(entry.id)}
-                          disabled={editor !== null}
+                          disabled={saving || editor !== null}
                           className="text-muted-foreground hover:text-destructive"
                           aria-label={t(($) => $.tab_body.custom_args.remove_aria, {
                             index: index + 1,
@@ -255,46 +251,6 @@ export function CustomArgsTab({
         </SettingsCard>
       </div>
 
-      {launchCommand ? (
-        <SettingsSection title={t(($) => $.tab_body.custom_args.command_preview_label)}>
-          <SettingsCard>
-            <div className="flex min-w-0 items-start gap-3 p-4">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                <Terminal className="size-3.5" aria-hidden="true" />
-              </span>
-              <code
-                className="min-w-0 break-all pt-1.5 font-mono text-caption leading-5"
-                translate="no"
-              >
-                {launchCommand}
-              </code>
-            </div>
-          </SettingsCard>
-        </SettingsSection>
-      ) : null}
-
-      <div className="flex items-center justify-end gap-3 pt-1">
-        {dirty ? (
-          <span role="status" className="text-caption text-muted-foreground">
-            {t(($) => $.tab_body.common.unsaved_changes)}
-          </span>
-        ) : null}
-        <Button
-          onClick={handleSave}
-          disabled={!dirty || saving || editor !== null}
-          size="sm"
-        >
-          {saving ? (
-            <Loader2
-              className="size-3.5 animate-spin motion-reduce:animate-none"
-              aria-hidden="true"
-            />
-          ) : (
-            <Save className="size-3.5" aria-hidden="true" />
-          )}
-          {t(($) => $.tab_body.common.save)}
-        </Button>
-      </div>
     </div>
   );
 }

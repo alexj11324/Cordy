@@ -460,7 +460,8 @@ vi.mock("@dnd-kit/core", () => {
     PointerSensor: class {},
     useSensor: () => ({}),
     useSensors: () => [],
-    useDroppable: () => ({ setNodeRef: stableSetNodeRef, isOver: false }),
+    useDndContext: () => ({ over: null }),
+  useDroppable: () => ({ setNodeRef: stableSetNodeRef, isOver: false }),
     pointerWithin: vi.fn(),
     closestCenter: vi.fn(),
   };
@@ -486,6 +487,29 @@ vi.mock("@dnd-kit/utilities", () => ({
     Transform: { toString: () => undefined },
     Translate: { toString: () => undefined },
   },
+}));
+
+vi.mock("@orvilo/ui/components/reui/kanban", () => ({
+  Kanban: ({ children }: any) => <div data-slot="kanban">{children}</div>,
+  KanbanBoard: ({ children, ...props }: any) => (
+    <div data-slot="kanban-board" {...props}>{children}</div>
+  ),
+  KanbanColumn: ({ children, value, ...props }: any) => (
+    <div data-slot="kanban-column" data-value={value} {...props}>{children}</div>
+  ),
+  KanbanColumnHandle: ({ children, render, ...props }: any) => typeof render === "function" ? render({ ...props, "data-slot": "kanban-column-handle" }) : <div data-slot="kanban-column-handle" {...props}>{children}</div>,
+  KanbanColumnContent: ({ children, value, ...props }: any) => (
+    <div data-slot="kanban-column-content" data-value={value} {...props}>{children}</div>
+  ),
+  KanbanItem: ({ children, value, ...props }: any) => (
+    <div data-slot="kanban-item" data-value={value} {...props}>{children}</div>
+  ),
+  KanbanItemHandle: ({ children }: any) => <div>{children}</div>,
+  KanbanOverlay: () => null,
+}));
+
+vi.mock("./board-scroll-area", () => ({
+  BoardScrollArea: ({ children }: any) => <div>{children}</div>,
 }));
 
 // Mock @base-ui/react/accordion (used by ListView)
@@ -752,6 +776,26 @@ describe("IssuesPage (shared)", () => {
     expect(screen.getAllByText("In Progress").length).toBeGreaterThanOrEqual(1);
   });
 
+  it("uses the ReUI drag shell with compact task cards", async () => {
+    mockListIssues.mockImplementation((params: any) =>
+      Promise.resolve({
+        issues: mockIssues.filter((i) => i.status === params?.status),
+        total: mockIssues.filter((i) => i.status === params?.status).length,
+      }),
+    );
+
+    const { container } = renderWithQuery(<IssuesPage />);
+
+    await screen.findByText("Design landing page");
+    expect(container.querySelector('[data-slot="kanban"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-slot="kanban-column"]')).toBeInTheDocument();
+    expect(container.querySelector('.running-task-card')).toBeInTheDocument();
+    expect(container.querySelector('[data-board-card]')).toBeInTheDocument();
+    // ReUI drag handles hide until hover; a column title must never live inside one.
+    expect(screen.getByText("Backlog").closest('[data-slot="kanban-column-handle"]')).toBeNull();
+
+  });
+
   it("groups board columns by executor", async () => {
     mockViewState.grouping = "executor";
     mockListGroupedIssues.mockResolvedValue(mockExecutorGroups(mockIssues));
@@ -786,7 +830,7 @@ describe("IssuesPage (shared)", () => {
     expect(mockListIssues).not.toHaveBeenCalled();
   });
 
-  it("shows the 'Issues' section header without a workspace prefix", async () => {
+  it("does not repeat the page title under the shell breadcrumb", async () => {
     mockListIssues.mockImplementation((params: any) =>
       Promise.resolve({
         issues: mockIssues.filter((i) => i.status === params?.status),
@@ -796,9 +840,8 @@ describe("IssuesPage (shared)", () => {
 
     renderWithQuery(<IssuesPage />);
 
-    await screen.findByText("Issues");
-    // The list header is now `icon + title`, matching the other list pages.
-    // The workspace/org name is no longer rendered as a breadcrumb prefix.
+    expect(await screen.findAllByText("All")).not.toHaveLength(0);
+    expect(screen.queryByRole("heading", { name: "Issues" })).not.toBeInTheDocument();
     expect(screen.queryByText("Test WS")).not.toBeInTheDocument();
   });
 

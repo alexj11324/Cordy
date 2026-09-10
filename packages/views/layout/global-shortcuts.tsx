@@ -1,6 +1,5 @@
 "use client";
 
-import { useAgentThreadPanelStore } from "@orvilo/core/agent-thread";
 
 import { useEffect } from "react";
 import { useSidebar } from "@orvilo/ui/components/ui/sidebar";
@@ -17,7 +16,6 @@ import { openCreateIssueWithPreference } from "@orvilo/core/issues/stores";
 import { useModalStore } from "@orvilo/core/modals";
 import { useWorkspacePaths } from "@orvilo/core/paths";
 import { isImeComposing } from "@orvilo/core/utils";
-import { isFloatingChatRouteSuppressed } from "../chat/floating-chat-visibility";
 import { useNavigation } from "../navigation";
 import { useSearchStore } from "../search/search-store";
 
@@ -73,21 +71,6 @@ export function GlobalShortcuts() {
       goSettings: workspacePaths.settings(),
     };
 
-    // Read at press time rather than subscribing: the preference only matters
-    // the instant the chord fires, and the overlay is gone from the Chat tab.
-    // An unavailable overlay must not claim the chord either — returning false
-    // from the finder leaves the keypress its outside-the-app meaning instead of
-    // swallowing it for an action that would visibly do nothing.
-    const canToggleFloatingChat = () =>
-      useChatStore.getState().floatingChatEnabled &&
-      !isFloatingChatRouteSuppressed(
-        navigation.pathname,
-        chatPath,
-        useAgentThreadPanelStore.getState().panel?.routePath,
-        workspacePaths.agents(),
-        useChatStore.getState().agentDetailDmAvailable,
-      );
-
     const handleKeyDown = (event: KeyboardEvent) => {
       // Component/editor handlers run before this document-level listener.
       // Respect their preventDefault instead of double-triggering a product
@@ -99,7 +82,6 @@ export function GlobalShortcuts() {
         if (!action.allowInEditable && isEditableShortcutTarget(event.target)) {
           return false;
         }
-        if (candidate === "toggleChat" && !canToggleFloatingChat()) return false;
         return shortcutMatchesEvent(getShortcut(candidate), event);
       });
       if (!actionId) return;

@@ -424,15 +424,15 @@
     "speed_label": "Speed",
     "access": {
       "private": {
-        "title": "Only me",
+        "title": "Personal",
         "description": "Only you can run this agent."
       },
       "workspace": {
-        "title": "Entire workspace",
+        "title": "Workspace",
         "description": "Every workspace member can run it."
       },
       "members": {
-        "title": "Specific people",
+        "title": "Selected members",
         "description": "Only selected members can run it.",
         "required": "Select at least one member."
       }
@@ -488,7 +488,7 @@
     "description_create": "Create a new AI agent for your workspace.",
     "description_duplicate": "Create a new agent based on \"{{name}}\". Device, model, and access settings are copied for you.",
     "name_label": "Name",
-    "name_placeholder": "e.g. Deep Research Agent",
+    "name_placeholder": "Codex",
     "description_label": "Description",
     "description_placeholder": "What does this agent do?",
     "visibility_label": "Visibility",
@@ -619,7 +619,7 @@
       "update_action": "Update",
       "cancel_action": "Cancel",
       "command_preview_label": "Command preview",
-      "input_placeholder": "--profile",
+      "input_placeholder": "Enter an argument or value",
       "input_aria": "Argument {{index}}",
       "new_argument_aria": "New argument",
       "empty_title": "No arguments yet",

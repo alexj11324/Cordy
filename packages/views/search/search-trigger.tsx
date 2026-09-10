@@ -11,18 +11,18 @@ export function SearchTrigger() {
   const { t } = useT("search");
   const shortcut = useShortcut("openSearch");
   return (
-    <div className="relative">
+    <div className="relative in-data-[state=collapsed]:flex in-data-[state=collapsed]:justify-center">
       <Button
         type="button"
         variant="outline"
-        className="hover:bg-background h-8 w-full justify-start pl-7 font-normal transition-[width] duration-200 ease-linear in-data-[state=collapsed]:w-8! in-data-[state=collapsed]:pl-4! in-data-[state=collapsed]:text-transparent"
+        className="hover:bg-background h-8 w-full justify-start pl-7 font-normal transition-[width] duration-200 ease-linear in-data-[state=collapsed]:w-8! in-data-[state=collapsed]:justify-center in-data-[state=collapsed]:px-0 in-data-[state=collapsed]:text-transparent"
         onClick={() => useSearchStore.getState().setOpen(true)}
       >
         {t(($) => $.trigger.label)}
       </Button>
       <SearchIcon
         aria-hidden="true"
-        className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 opacity-50 select-none"
+        className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 opacity-50 select-none in-data-[state=collapsed]:left-1/2 in-data-[state=collapsed]:-translate-x-1/2"
       />
       {shortcut ? (
         <Kbd className="absolute top-1/2 right-2 -translate-y-1/2 in-data-[state=collapsed]:hidden">

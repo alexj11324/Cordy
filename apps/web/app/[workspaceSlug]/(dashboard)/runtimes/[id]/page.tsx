@@ -1,13 +1,10 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { use } from "react";
-import { RuntimeDetailPage } from "@orvilo/views/runtimes";
-
-export default function RuntimeDetailRoute({
+export default async function LegacyRuntimeDetailRedirect({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ workspaceSlug: string; id: string }>;
 }) {
-  const { id } = use(params);
-  return <RuntimeDetailPage runtimeId={id} />;
+  const { workspaceSlug, id } = await params;
+  redirect(`/${encodeURIComponent(workspaceSlug)}/devices/${encodeURIComponent(id)}`);
 }

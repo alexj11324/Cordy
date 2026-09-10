@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { LegacyRuntimesRedirect } from "./pages/legacy-runtimes-redirect";
 import { createMemoryRouter, Outlet, useMatches, useParams } from "react-router-dom";
 import type { RouteObject } from "react-router-dom";
 import { IssueDetailPage } from "./pages/issue-detail-page";
@@ -10,7 +11,6 @@ import { AiBuilderSessionPage } from "./pages/ai-builder-session-page";
 import { MemberDetailPage } from "./pages/member-detail-page";
 import {
   RuntimeDetailPage,
-  RuntimeSettingsPage,
 } from "./pages/runtime-detail-page";
 import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
 import { IssuesPage } from "@orvilo/views/issues/components";
@@ -24,8 +24,6 @@ import { SkillsPage } from "@orvilo/views/skills";
 import { DesktopRuntimesPage } from "./components/desktop-runtimes-page";
 import { DesktopAgentsPage } from "./components/desktop-agents-page";
 import {
-  AiCreateAgentPage,
-  ChooseCreateMethodPage,
   ManualCreateAgentPage,
 } from "@orvilo/views/agents";
 import {
@@ -186,20 +184,25 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "My Issues" },
           },
           {
-            path: "runtimes",
+            path: "devices",
             element: <DesktopRuntimesPage />,
-            handle: { title: "Runtimes" },
+            handle: { title: "Devices" },
           },
           {
-            path: "runtimes/:id",
+            path: "devices/:id",
             element: <RuntimeDetailPage />,
-            handle: { title: "Machine" },
+            handle: { title: "Device" },
           },
           {
-            path: "runtimes/:id/runtime/:runtimeId",
-            element: <RuntimeSettingsPage />,
-            handle: { title: "Runtime" },
+            // Preserve already-open Harness tabs while removing the
+            // per-Harness details surface. The redirect stays inside the
+            // workspace route and lands on the device inventory.
+            path: "devices/:id/harness/:harnessId",
+            element: <LegacyRuntimesRedirect />,
+            handle: { title: "Device" },
           },
+          { path: "runtimes", element: <LegacyRuntimesRedirect /> },
+          { path: "runtimes/*", element: <LegacyRuntimesRedirect /> },
           { path: "skills", element: <SkillsPage />, handle: { title: "Skills" } },
           {
             path: "skills/:id",
@@ -209,7 +212,7 @@ export const appRoutes: RouteObject[] = [
           { path: "agents", element: <DesktopAgentsPage />, handle: { title: "Agents" } },
           {
             path: "agents/new",
-            element: <ChooseCreateMethodPage />,
+            element: <ManualCreateAgentPage />,
             handle: { title: "Create Agent" },
           },
           {
@@ -219,7 +222,7 @@ export const appRoutes: RouteObject[] = [
           },
           {
             path: "agents/new/ai",
-            element: <AiCreateAgentPage />,
+            element: <ManualCreateAgentPage />,
             handle: { title: "Create Agent" },
           },
           {

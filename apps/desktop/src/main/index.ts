@@ -27,6 +27,7 @@ import {
   protocolClientLaunchArgs,
   resolveDesktopAppIdentity,
 } from "../shared/desktop-app-identity";
+import { NATIVE_WINDOW_CHROME } from "../shared/window-chrome";
 import type { RuntimeConfigResult } from "../shared/runtime-config";
 import {
   RENDERER_ROUTE_CONTEXT_CHANNEL,
@@ -413,8 +414,7 @@ function createWindow(): BrowserWindow {
       : {}),
     minWidth: 900,
     minHeight: 600,
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 16, y: 17 },
+    ...NATIVE_WINDOW_CHROME,
     show: false,
     autoHideMenuBar: true,
     // Windows/Linux pick up the window/taskbar icon from this option.
@@ -574,8 +574,7 @@ function createIssueWindow(context: IssueWindowContext): void {
     minWidth: 720,
     minHeight: 520,
     title: context.title,
-    titleBarStyle: "hiddenInset",
-    trafficLightPosition: { x: 16, y: 17 },
+    ...NATIVE_WINDOW_CHROME,
     show: false,
     autoHideMenuBar: true,
     ...(is.dev || process.platform === "linux"

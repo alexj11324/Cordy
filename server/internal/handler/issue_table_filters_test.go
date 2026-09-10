@@ -66,6 +66,10 @@ func TestListIssues_TableFacetsAreServerSide(t *testing.T) {
 
 	insertIssue := func(title, status, priority string, ownedByMember bool, projectID, parentID *string) string {
 		var ownerType, ownerID, executorType, executorID *string
+		if status == "in_progress" || status == "in_review" || status == "blocked" {
+			agentType, agentID := "agent", handlerSeededAgentID(t)
+			executorType, executorID = &agentType, &agentID
+		}
 		if ownedByMember {
 			member := "member"
 			ownerType = &member

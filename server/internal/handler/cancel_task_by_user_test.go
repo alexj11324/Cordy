@@ -579,7 +579,7 @@ func TestCancelTaskByUser_DelegatedFailureRecoveryAcknowledgesSignal(t *testing.
 
 	agentID := createHandlerTestAgent(t, "CancelRecoveryTaskAgent", []byte("[]"))
 	issueID := dbfx.Issue(t, "cancel-recovery-task", testutil.Cols{
-		"status":   "in_progress",
+		"status": "in_progress", "executor_type": "agent", "executor_id": agentID,
 		"priority": "medium",
 		"number":   92004,
 	})

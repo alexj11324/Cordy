@@ -11,6 +11,8 @@ import { renderWithI18n } from "../../test/i18n";
 // the card lists three task rows). An agent-worded header here would print
 // "3 agents working" for those two agents, contradicting the chip. MUL-3872.
 
+vi.mock("../../common/agent-identity-avatar", () => ({AgentIdentityAvatar: ({name}: {name:string}) => <span data-testid="actor-avatar">{name}</span>}));
+
 vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));

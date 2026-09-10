@@ -3,7 +3,6 @@ import {
   MessageSquare,
   CircleUser,
   ListTodo,
-  Network,
   FolderKanban,
   AlarmClock,
   Bot,
@@ -24,6 +23,7 @@ import {
   FileQuestion,
   type LucideIcon,
 } from "lucide-react";
+import { DependencyIcon } from "@orvilo/ui/components/common/dependency-icon";
 import { resolveRouteIconName, type RouteIconName } from "@orvilo/core/paths";
 
 /**
@@ -38,7 +38,7 @@ export const ROUTE_ICON_COMPONENTS: Record<RouteIconName, LucideIcon> = {
   MessageSquare,
   CircleUser,
   ListTodo,
-  Network,
+  Network: DependencyIcon,
   FolderKanban,
   AlarmClock,
   Bot,

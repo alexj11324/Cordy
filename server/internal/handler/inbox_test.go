@@ -27,10 +27,13 @@ func inboxWorkspaceHandler(handler http.HandlerFunc) http.HandlerFunc {
 func TestListInboxProjectsCurrentIssueStatusAndPriority(t *testing.T) {
 	workspaceID := dbfx.Workspace(t, "Inbox filter projections", "inbox-filter-"+uuid.NewString())
 	dbfx.Member(t, workspaceID, testUserID, "owner")
+	runtimeID := dbfx.Runtime(t, "Inbox runtime", testutil.Cols{"workspace_id": workspaceID})
+	agentID := dbfx.Agent(t, "Inbox executor", runtimeID, testutil.Cols{"workspace_id": workspaceID})
 	issueID := dbfx.Issue(t, "Filtered issue", testutil.Cols{
-		"workspace_id": workspaceID,
-		"status":       "in_review",
-		"priority":     "high",
+		"workspace_id":  workspaceID,
+		"status":        "in_review",
+		"executor_type": "agent", "executor_id": agentID,
+		"priority": "high",
 	})
 	dbfx.Insert(t, "inbox_item", testutil.Cols{
 		"workspace_id":   workspaceID,

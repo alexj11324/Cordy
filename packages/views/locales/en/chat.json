@@ -246,5 +246,11 @@
     "archive": "Archive chat",
     "unarchive": "Unarchive chat",
     "delete": "Delete chat"
+  },
+  "sidebar": {
+    "title": "Agent chat",
+    "open": "Open right sidebar",
+    "close": "Close right sidebar",
+    "chat_page_notice": "Your conversation is open in the Chat page."
   }
 }

@@ -15,7 +15,9 @@ import {
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@orvilo/core/auth";
-import { useLeaveWorkspace, useDeleteWorkspace } from "@orvilo/core/workspace/mutations";
+import {
+  useDeleteWorkspace,
+} from "@orvilo/core/workspace/mutations";
 import {
   memberListOptions,
   workspaceKeys,
@@ -24,6 +26,7 @@ import {
 import { issueKeys } from "@orvilo/core/issues/queries";
 import { api } from "@orvilo/core/api";
 import {
+  paths,
   resolvePostAuthDestination,
   useCurrentWorkspace,
   useHasOnboarded,
@@ -35,33 +38,36 @@ import { useNavigation } from "../../navigation";
 import { DeleteWorkspaceDialog } from "./delete-workspace-dialog";
 import { useT } from "../../i18n";
 import {
-  SettingsCard,
-  SettingsField,
-  SettingsPillButton,
-  SettingsRow,
   SettingsSaveState,
-  SettingsSection,
   SettingsTab,
-  SettingsTextarea,
   type SettingsSaveStatus,
 } from "./settings-layout";
 import { useAutoSave } from "./use-auto-save";
+import {
+  Frame,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from "@orvilo/ui/components/reui/frame";
+import {
+  Field,
+  FieldContent,
+  FieldGroup,
+  FieldLabel,
+} from "@orvilo/ui/components/ui/field";
+import { Input } from "@orvilo/ui/components/ui/input";
+import { Separator } from "@orvilo/ui/components/ui/separator";
+import { Button } from "@orvilo/ui/components/ui/button";
 
 interface WorkspaceDetailsDraft {
   name: string;
-  description: string;
-  context: string;
 }
 
 function workspaceDetailsEqual(
   left: WorkspaceDetailsDraft,
   right: WorkspaceDetailsDraft,
 ) {
-  return (
-    left.name === right.name &&
-    left.description === right.description &&
-    left.context === right.context
-  );
+  return left.name === right.name;
 }
 
 export function WorkspaceTab() {
@@ -80,7 +86,6 @@ export function WorkspaceTab() {
     enabled: !!wsId,
   });
   const qc = useQueryClient();
-  const leaveWorkspace = useLeaveWorkspace();
   const deleteWorkspace = useDeleteWorkspace();
   const navigation = useNavigation();
   const hasOnboarded = useHasOnboarded();
@@ -89,19 +94,9 @@ export function WorkspaceTab() {
    * Send the user to a safe URL, computed from the current cached workspace
    * list minus the workspace that's going away.
    *
-   * Call ordering differs per flow:
-   *   - Delete calls this AFTER the mutation succeeds. The realtime
-   *     `workspace:deleted` handler skips self-initiated deletes (see
-   *     pending-delete.ts), so nothing races this navigation.
-   *   - Leave still calls this BEFORE the mutation fires: `member:removed`
-   *     has no self-initiated marker yet, so if the user were still on the
-   *     workspace's URL when that event arrives, the realtime handler in
-   *     `use-realtime-sync.ts` would trigger a parallel full-page relocate
-   *     that races the mutation's `invalidateQueries` refetch — the loser's
-   *     in-flight fetch gets cancelled, surfacing as an unhandled
-   *     `CancelledError`. Navigating first makes the handler's
-   *     "current === lost workspace" check fail and its relocate no-op.
-   *     Known debt: give leave the same await-then-navigate shape as delete.
+   * Delete calls this AFTER the mutation succeeds. The realtime
+   * `workspace:deleted` handler skips self-initiated deletes (see
+   * `pending-delete.ts`), so nothing races this navigation.
    */
   const navigateAwayFromCurrentWorkspace = () => {
     const cachedList =
@@ -109,11 +104,10 @@ export function WorkspaceTab() {
     const remaining = cachedList.filter((w) => w.id !== workspace?.id);
     // Clear the workspace-context singleton BEFORE navigating. Three
     // downstream consumers read it:
-    //  1. Realtime relocate handlers' "current === lost workspace" check
-    //     (`member:removed` for leave; also a second line of defense for
-    //     delete) — if the singleton still points at the lost workspace
-    //     when the WS event arrives, they fire a parallel full-page
-    //     relocate that races this navigation.
+    //  1. Realtime relocate handlers' "current === lost workspace" check —
+    //     if the singleton still points at the lost workspace when the WS
+    //     event arrives, they fire a parallel full-page relocate that races
+    //     this navigation.
     //  2. Chrome gating (`{slug && <AppSidebar />}` on desktop) — if the
     //     singleton lingers, the sidebar stays mounted while the deleted
     //     workspace is no longer in the list, and `useWorkspaceId` throws.
@@ -128,8 +122,6 @@ export function WorkspaceTab() {
   };
 
   const [name, setName] = useState(workspace?.name ?? "");
-  const [description, setDescription] = useState(workspace?.description ?? "");
-  const [context, setContext] = useState(workspace?.context ?? "");
   const [issuePrefix, setIssuePrefix] = useState(workspace?.issue_prefix ?? "");
   const [prefixSaveStatus, setPrefixSaveStatus] =
     useState<SettingsSaveStatus>("idle");
@@ -143,15 +135,9 @@ export function WorkspaceTab() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const currentMember = members.find((m) => m.user_id === user?.id) ?? null;
-  const canManageWorkspace = currentMember?.role === "owner" || currentMember?.role === "admin";
+  const canManageWorkspace =
+    currentMember?.role === "owner" || currentMember?.role === "admin";
   const isOwner = currentMember?.role === "owner";
-  // Mirror the backend invariant (server/internal/handler/workspace.go:569):
-  // a workspace must always have at least one owner, so the sole owner can't
-  // leave. Pre-flight here instead of letting the 400 round-trip become a
-  // confusing toast — disable Leave and tell the user what they need to do.
-  const ownerCount = members.filter((m) => m.role === "owner").length;
-  const isSoleOwner = isOwner && ownerCount <= 1;
-  const isSoleMember = members.length <= 1;
 
   // Reset form state only when the user switches to a different workspace.
   // Keying on workspace?.id (not the object ref) avoids wiping unsaved edits
@@ -159,8 +145,6 @@ export function WorkspaceTab() {
   // cached Workspace object via setQueryData.
   useEffect(() => {
     setName(workspace?.name ?? "");
-    setDescription(workspace?.description ?? "");
-    setContext(workspace?.context ?? "");
     setIssuePrefix(workspace?.issue_prefix ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on id only; see comment above
   }, [workspace?.id]);
@@ -169,7 +153,10 @@ export function WorkspaceTab() {
   // uppercases and trims on its side too — this is purely a UX guardrail
   // so the value the user sees in the input matches what gets persisted.
   const normalizePrefix = (raw: string) =>
-    raw.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10);
+    raw
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, "")
+      .slice(0, 10);
 
   const normalizedPrefix = normalizePrefix(issuePrefix);
   const prefixChanged =
@@ -177,21 +164,19 @@ export function WorkspaceTab() {
   const prefixInvalid = normalizedPrefix.length === 0;
 
   const detailsDraft = useMemo(
-    () => ({ name, description, context }),
-    [context, description, name],
+    () => ({ name }),
+    [name],
   );
   const savedDetails = useMemo(
-    () => ({
-      name: workspace?.name ?? "",
-      description: workspace?.description ?? "",
-      context: workspace?.context ?? "",
-    }),
-    [workspace?.context, workspace?.description, workspace?.name],
+    () => ({ name: workspace?.name ?? "" }),
+    [workspace?.name],
   );
   const saveDetails = useCallback(
     async (next: WorkspaceDetailsDraft) => {
       if (!workspace) return;
-      const updated = await api.updateWorkspace(workspace.id, next);
+      const updated = await api.updateWorkspace(workspace.id, {
+        name: next.name,
+      });
       qc.setQueryData(workspaceKeys.list(), (old: Workspace[] | undefined) =>
         old?.map((ws) => (ws.id === updated.id ? updated : ws)),
       );
@@ -203,9 +188,12 @@ export function WorkspaceTab() {
     savedValue: savedDetails,
     onSave: saveDetails,
     onSuccess: () =>
-      toast.success(t(($) => $.workspace.toast_saved), {
-        id: "settings-auto-save",
-      }),
+      toast.success(
+        t(($) => $.workspace.toast_saved),
+        {
+          id: "settings-auto-save",
+        },
+      ),
     onError: (error) =>
       toast.error(
         error instanceof Error
@@ -230,9 +218,12 @@ export function WorkspaceTab() {
       // so every cached issue key is stale after this confirmed change.
       await qc.invalidateQueries({ queryKey: issueKeys.all(updated.id) });
       setPrefixSaveStatus("saved");
-      toast.success(t(($) => $.workspace.toast_saved), {
-        id: "settings-auto-save",
-      });
+      toast.success(
+        t(($) => $.workspace.toast_saved),
+        {
+          id: "settings-auto-save",
+        },
+      );
     } catch (error) {
       setPrefixSaveStatus("error");
       toast.error(
@@ -257,26 +248,6 @@ export function WorkspaceTab() {
     });
   };
 
-  const handleLeaveWorkspace = () => {
-    if (!workspace) return;
-    setConfirmAction({
-      title: t(($) => $.workspace.leave_confirm_title),
-      description: t(($) => $.workspace.leave_confirm_description, { name: workspace.name }),
-      variant: "destructive",
-      onConfirm: async () => {
-        setActionId("leave");
-        navigateAwayFromCurrentWorkspace();
-        try {
-          await leaveWorkspace.mutateAsync(workspace.id);
-        } catch (e) {
-          toast.error(e instanceof Error ? e.message : t(($) => $.workspace.toast_leave_failed));
-        } finally {
-          setActionId(null);
-        }
-      },
-    });
-  };
-
   const handleConfirmDelete = async () => {
     if (!workspace) return;
     setActionId("delete-workspace");
@@ -292,7 +263,11 @@ export function WorkspaceTab() {
       setDeleteDialogOpen(false);
       navigateAwayFromCurrentWorkspace();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t(($) => $.workspace.toast_delete_failed));
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : t(($) => $.workspace.toast_delete_failed),
+      );
     } finally {
       setActionId(null);
     }
@@ -300,236 +275,238 @@ export function WorkspaceTab() {
 
   if (!workspace) return null;
 
+  const workspaceUrl = navigation.getShareableUrl(
+    paths.workspace(workspace.slug).issues(),
+  );
+
   return (
     <SettingsTab
       title={t(($) => $.page.tabs.general)}
-      description={t(($) => $.workspace.page_description)}
     >
-      <SettingsSection
-        title={t(($) => $.workspace.section_general)}
-        action={
-          <SettingsSaveState
-            status={
-              prefixSaveStatus === "saving" || prefixSaveStatus === "error"
-                ? prefixSaveStatus
-                : detailsAutoSave.status === "idle"
-                  ? prefixSaveStatus
-                  : detailsAutoSave.status
-            }
-            savingLabel={t(($) => $.auto_save.saving)}
-            savedLabel={t(($) => $.auto_save.saved)}
-            errorLabel={t(($) => $.auto_save.failed)}
-          />
-        }
-      >
-        <SettingsCard>
-          <SettingsRow
-            label={t(($) => $.workspace.logo_label)}
-            description={t(($) => $.workspace.click_logo_hint)}
-            size="none"
-          >
-            <div className="flex justify-start sm:justify-end">
-              <AvatarUploadControl
-                variant="workspace"
-                value={workspace.avatar_url ?? null}
-                name={workspace.name}
-                size={64}
-                disabled={!canManageWorkspace}
-                ariaLabel={t(($) => $.workspace.change_logo_aria)}
-                onUploaded={async (url) => {
-                  try {
-                    const updated = await api.updateWorkspace(workspace.id, {
-                      avatar_url: url,
-                    });
-                    qc.setQueryData(
-                      workspaceKeys.list(),
-                      (old: Workspace[] | undefined) =>
-                        old?.map((ws) => (ws.id === updated.id ? updated : ws)),
-                    );
-                    toast.success(t(($) => $.workspace.toast_logo_updated), {
-                      id: "settings-auto-save",
-                    });
-                  } catch (error) {
-                    toast.error(
-                      error instanceof Error
-                        ? error.message
-                        : t(($) => $.workspace.toast_logo_failed),
-                    );
-                  }
-                }}
-              />
-            </div>
-          </SettingsRow>
-
-          <SettingsRow
-            label={t(($) => $.workspace.name_label)}
-            size="text"
-          >
-            <SettingsField
-              type="text"
-              name="workspace-name"
-              autoComplete="organization"
-              aria-label={t(($) => $.workspace.name_label)}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              onBlur={detailsAutoSave.flush}
-              disabled={!canManageWorkspace}
-            />
-          </SettingsRow>
-
-          <SettingsRow
-            label={t(($) => $.workspace.description_label)}
-            size="text"
-            align="start"
-          >
-            <SettingsTextarea
-              name="workspace-description"
-              autoComplete="off"
-              aria-label={t(($) => $.workspace.description_label)}
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              onBlur={detailsAutoSave.flush}
-              rows={3}
-              disabled={!canManageWorkspace}
-              className="resize-none"
-              placeholder={t(($) => $.workspace.description_placeholder)}
-            />
-          </SettingsRow>
-
-          <SettingsRow
-            label={t(($) => $.workspace.context_label)}
-            size="text"
-            align="start"
-          >
-            <SettingsTextarea
-              name="workspace-context"
-              autoComplete="off"
-              aria-label={t(($) => $.workspace.context_label)}
-              value={context}
-              onChange={(event) => setContext(event.target.value)}
-              onBlur={detailsAutoSave.flush}
-              rows={4}
-              disabled={!canManageWorkspace}
-              className="resize-none"
-              placeholder={t(($) => $.workspace.context_placeholder)}
-            />
-          </SettingsRow>
-
-          <SettingsRow
-            label={t(($) => $.workspace.slug_label)}
-            size="text"
-          >
-            <SettingsField
-              type="text"
-              name="workspace-slug"
-              autoComplete="off"
-              spellCheck={false}
-              aria-label={t(($) => $.workspace.slug_label)}
-              value={workspace.slug}
-              readOnly
-              className="font-mono text-muted-foreground"
-            />
-          </SettingsRow>
-
-          <SettingsRow
-            label={t(($) => $.workspace.issue_prefix_label)}
-            description={t(($) => $.workspace.issue_prefix_hint, {
-              example: `${normalizedPrefix || workspace.issue_prefix}-123`,
-            })}
-            size="code"
-          >
-              <SettingsField
-                type="text"
-                name="workspace-issue-prefix"
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                aria-label={t(($) => $.workspace.issue_prefix_label)}
-                value={issuePrefix}
-                onChange={(event) => {
-                  setPrefixSaveStatus("idle");
-                  setIssuePrefix(normalizePrefix(event.target.value));
-                }}
-                onBlur={handlePrefixBlur}
-                disabled={!canManageWorkspace}
-                maxLength={10}
-                aria-invalid={prefixInvalid}
-                className="font-mono uppercase"
-                placeholder={workspace.issue_prefix}
-              />
-          </SettingsRow>
-
-            {!canManageWorkspace && (
-              <div className="px-4 py-3 text-caption text-muted-foreground">
-                {t(($) => $.workspace.manage_hint)}
-              </div>
-            )}
-        </SettingsCard>
-      </SettingsSection>
-
-      {/* Danger Zone — gated on the member query settling so the owner-only
-          Delete button and the sole-owner Leave guidance don't flash in
-          after mount. */}
-      {membersFetched && (
-        <SettingsSection
-          title={
-            <span className="inline-flex items-center gap-2">
-              <LogOut className="h-4 w-4 text-muted-foreground" />
-              {t(($) => $.workspace.danger_zone)}
-            </span>
-          }
-        >
-          <SettingsCard>
-            <SettingsRow
-              label={t(($) => $.workspace.leave_title)}
-              description={
-                isSoleOwner
-                  ? isSoleMember
-                    ? t(($) => $.workspace.leave_sole_member)
-                    : t(($) => $.workspace.leave_sole_owner)
-                  : t(($) => $.workspace.leave_default)
-              }
-            >
-              <SettingsPillButton
-                onClick={handleLeaveWorkspace}
-                disabled={actionId === "leave" || isSoleOwner}
-              >
-                {actionId === "leave" ? t(($) => $.workspace.leaving) : t(($) => $.workspace.leave_button)}
-              </SettingsPillButton>
-            </SettingsRow>
-
-            {isOwner && (
-              <SettingsRow
-                label={
-                  <span className="text-destructive">
-                    {t(($) => $.workspace.delete_title)}
-                  </span>
+      <div className="flex flex-col gap-8">
+        <Frame variant="ghost" spacing="sm" className="bg-transparent p-0">
+          <FramePanel className="rounded-lg bg-muted/30 p-0 shadow-none">
+            <FrameHeader className="flex-row justify-end px-4 py-3">
+              <SettingsSaveState
+                status={
+                  prefixSaveStatus === "saving" || prefixSaveStatus === "error"
+                    ? prefixSaveStatus
+                    : detailsAutoSave.status === "idle"
+                      ? prefixSaveStatus
+                      : detailsAutoSave.status
                 }
-                description={t(($) => $.workspace.delete_description)}
+                savingLabel={t(($) => $.auto_save.saving)}
+                savedLabel={t(($) => $.auto_save.saved)}
+                errorLabel={t(($) => $.auto_save.failed)}
+              />
+            </FrameHeader>
+            <Separator />
+            <FieldGroup className="gap-0 px-4 py-1">
+              <Field
+                orientation="responsive"
+                data-disabled={!canManageWorkspace || undefined}
+                className="py-3 @md/field-group:gap-6"
               >
-                <SettingsPillButton
-                  tone="destructive"
-                  onClick={() => setDeleteDialogOpen(true)}
-                  disabled={actionId === "delete-workspace"}
-                >
-                  {actionId === "delete-workspace" ? t(($) => $.workspace.deleting) : t(($) => $.workspace.delete_button)}
-                </SettingsPillButton>
-              </SettingsRow>
-            )}
-          </SettingsCard>
-        </SettingsSection>
-      )}
+                <FieldContent className="@md/field-group:w-32 @md/field-group:flex-none">
+                  <FieldLabel>{t(($) => $.workspace.logo_label)}</FieldLabel>
+                </FieldContent>
+                <FieldContent className="min-w-0 @md/field-group:flex-1">
+                  <div className="flex justify-start @md/field-group:justify-end">
+                    <AvatarUploadControl
+                      variant="workspace"
+                      value={workspace.avatar_url ?? null}
+                      name={workspace.name}
+                      size={64}
+                      disabled={!canManageWorkspace}
+                      ariaLabel={t(($) => $.workspace.change_logo_aria)}
+                      onUploaded={async (url) => {
+                        try {
+                          const updated = await api.updateWorkspace(
+                            workspace.id,
+                            {
+                              avatar_url: url,
+                            },
+                          );
+                          qc.setQueryData(
+                            workspaceKeys.list(),
+                            (old: Workspace[] | undefined) =>
+                              old?.map((ws) =>
+                                ws.id === updated.id ? updated : ws,
+                              ),
+                          );
+                          toast.success(
+                            t(($) => $.workspace.toast_logo_updated),
+                            {
+                              id: "settings-auto-save",
+                            },
+                          );
+                        } catch (error) {
+                          toast.error(
+                            error instanceof Error
+                              ? error.message
+                              : t(($) => $.workspace.toast_logo_failed),
+                          );
+                        }
+                      }}
+                    />
+                  </div>
+                </FieldContent>
+              </Field>
+              <Separator />
 
-      <AlertDialog open={!!confirmAction} onOpenChange={(v) => { if (!v) setConfirmAction(null); }}>
+              <Field
+                orientation="responsive"
+                data-disabled={!canManageWorkspace || undefined}
+                className="py-3 @md/field-group:gap-6"
+              >
+                <FieldContent className="@md/field-group:w-32 @md/field-group:flex-none">
+                  <FieldLabel htmlFor="workspace-name">
+                    {t(($) => $.workspace.name_label)}
+                  </FieldLabel>
+                </FieldContent>
+                <FieldContent className="min-w-0 @md/field-group:flex-1">
+                  <Input
+                    id="workspace-name"
+                    type="text"
+                    name="workspace-name"
+                    autoComplete="organization"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    onBlur={detailsAutoSave.flush}
+                    disabled={!canManageWorkspace}
+                  />
+                </FieldContent>
+              </Field>
+              <Separator />
+
+              <Field
+                orientation="responsive"
+                className="py-3 @md/field-group:gap-6"
+              >
+                <FieldContent className="@md/field-group:w-32 @md/field-group:flex-none">
+                  <FieldLabel htmlFor="workspace-url">
+                    {t(($) => $.workspace.url_label)}
+                  </FieldLabel>
+                </FieldContent>
+                <FieldContent className="min-w-0 @md/field-group:flex-1">
+                  <Input
+                    id="workspace-url"
+                    type="url"
+                    name="workspace-url"
+                    value={workspaceUrl}
+                    readOnly
+                  />
+                </FieldContent>
+              </Field>
+              <Separator />
+
+              <Field
+                orientation="responsive"
+                data-disabled={!canManageWorkspace || undefined}
+                className="py-3 @md/field-group:gap-6"
+              >
+                <FieldContent className="@md/field-group:w-32 @md/field-group:flex-none">
+                  <FieldLabel htmlFor="workspace-issue-prefix">
+                    {t(($) => $.workspace.issue_prefix_label)}
+                  </FieldLabel>
+                </FieldContent>
+                <FieldContent className="min-w-0 @md/field-group:flex-1">
+                  <Input
+                    id="workspace-issue-prefix"
+                    type="text"
+                    name="workspace-issue-prefix"
+                    autoComplete="off"
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    value={issuePrefix}
+                    onChange={(event) => {
+                      setPrefixSaveStatus("idle");
+                      setIssuePrefix(normalizePrefix(event.target.value));
+                    }}
+                    onBlur={handlePrefixBlur}
+                    disabled={!canManageWorkspace}
+                    maxLength={10}
+                    aria-invalid={prefixInvalid}
+                    placeholder={workspace.issue_prefix}
+                  />
+                </FieldContent>
+              </Field>
+            </FieldGroup>
+          </FramePanel>
+        </Frame>
+
+        {/* Gate the owner-only Delete button on the member query settling. */}
+        {membersFetched && isOwner && (
+          <Frame variant="ghost" spacing="sm" className="bg-transparent p-0">
+            <FramePanel className="rounded-lg bg-muted/30 p-0 shadow-none">
+              <FrameHeader className="px-4 py-3">
+                <FrameTitle className="flex items-center gap-2">
+                  <LogOut
+                    aria-hidden="true"
+                    className="size-4 text-muted-foreground"
+                  />
+                  {t(($) => $.workspace.danger_zone)}
+                </FrameTitle>
+              </FrameHeader>
+              <Separator />
+              <FieldGroup className="gap-0 px-4 py-1">
+                <Field
+                  orientation="responsive"
+                  data-disabled={actionId === "delete-workspace" || undefined}
+                  className="py-3 @md/field-group:gap-6"
+                >
+                  <FieldContent className="@md/field-group:w-32 @md/field-group:flex-none">
+                    <FieldLabel
+                      htmlFor="workspace-delete"
+                      className="text-destructive"
+                    >
+                      {t(($) => $.workspace.delete_title)}
+                    </FieldLabel>
+                  </FieldContent>
+                  <FieldContent className="min-w-0 @md/field-group:flex-1 @md/field-group:items-start">
+                    <Button
+                      id="workspace-delete"
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setDeleteDialogOpen(true)}
+                      disabled={actionId === "delete-workspace"}
+                    >
+                      {actionId === "delete-workspace"
+                        ? t(($) => $.workspace.deleting)
+                        : t(($) => $.workspace.delete_button)}
+                    </Button>
+                  </FieldContent>
+                </Field>
+              </FieldGroup>
+            </FramePanel>
+          </Frame>
+        )}
+      </div>
+
+      <AlertDialog
+        open={!!confirmAction}
+        onOpenChange={(v) => {
+          if (!v) setConfirmAction(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>{confirmAction?.title}</AlertDialogTitle>
-            <AlertDialogDescription>{confirmAction?.description}</AlertDialogDescription>
+            <AlertDialogDescription>
+              {confirmAction?.description}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t(($) => $.workspace.confirm_cancel)}</AlertDialogCancel>
+            <AlertDialogCancel>
+              {t(($) => $.workspace.confirm_cancel)}
+            </AlertDialogCancel>
             <AlertDialogAction
-              variant={confirmAction?.variant === "destructive" ? "destructive" : "default"}
+              variant={
+                confirmAction?.variant === "destructive"
+                  ? "destructive"
+                  : "default"
+              }
               onClick={async () => {
                 await confirmAction?.onConfirm();
                 setConfirmAction(null);

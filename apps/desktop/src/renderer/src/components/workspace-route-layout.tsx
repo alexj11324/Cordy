@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useState } from "react";
 import { Outlet, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { WorkspaceSlugProvider } from "@orvilo/core/paths";
@@ -160,14 +160,21 @@ export function WorkspaceRouteLayout() {
   // shares this slug, and the slug check covers this same instance being
   // re-run for a new slug (the effect's own dependency change), where the
   // singleton has already moved on and must not be clobbered.
-  useEffect(() => {
+  const resolvedWorkspaceId = workspace?.id;
+  useLayoutEffect(() => {
+    if (!resolvedWorkspaceId || !workspaceSlug || isWorkspaceDeletePending(resolvedWorkspaceId)) return;
+    // Effect replay (including Fast Refresh) releases this mounted owner and
+    // then sets it up again without another render. Reclaim before child
+    // request effects run, just as the initial render does above.
+    singletonOwner = instanceId;
+    setCurrentWorkspace(workspaceSlug, resolvedWorkspaceId);
     return () => {
       if (singletonOwner !== instanceId) return;
       if (getCurrentSlug() !== workspaceSlug) return;
       singletonOwner = null;
       setCurrentWorkspace(null, null);
     };
-  }, [workspaceSlug, instanceId]);
+  }, [workspaceSlug, resolvedWorkspaceId, instanceId]);
 
   if (isAuthLoading) return null;
   if (!user) return null;

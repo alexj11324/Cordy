@@ -4,59 +4,34 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ChevronRight,
   Cloud,
-  Loader2,
   Monitor,
   Plus,
   Server,
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
 import { useAuthStore } from "@orvilo/core/auth";
 import { useWorkspaceId } from "@orvilo/core/hooks";
-import { memberNeedsPatrickSetup, useBootstrapPatrick } from "@orvilo/core/onboarding";
-import { PATRICK_PLACEHOLDER_EMOJI } from "../../onboarding/components/patrick-intro";
-import { useRequiredWorkspaceSlug, useWorkspacePaths } from "@orvilo/core/paths";
+import { useWorkspacePaths } from "@orvilo/core/paths";
 import { agentTaskSnapshotOptions } from "@orvilo/core/agents";
-import { chatSessionsOptions } from "@orvilo/core/chat/queries";
 import { runtimeProfileListOptions } from "@orvilo/core/runtimes";
 import { runtimeListOptions, runtimeKeys } from "@orvilo/core/runtimes/queries";
 import { useWSEvent } from "@orvilo/core/realtime";
 import { agentListOptions } from "@orvilo/core/workspace/queries";
-import type { AgentRuntime } from "@orvilo/core/types";
 import { Button } from "@orvilo/ui/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@orvilo/ui/components/ui/dialog";
-import {
-  PatrickRuntimeChoice,
-  type PatrickRuntimeSelection,
-} from "./patrick-runtime-choice";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import {
-  CollectionPageHeader,
   CollectionPageHeaderAction,
   CollectionPageState,
 } from "../../layout/collection-page";
-import { PageHeader } from "../../layout/page-header";
-import { AppLink, useNavigation } from "../../navigation";
-import {
-  getPatrickOnboarding,
-  pickContentLang,
-} from "../../onboarding/templates";
+import { ShellHeaderActions } from "../../layout/shell-header";
+import { AppLink } from "../../navigation";
 import { ConnectRemoteDialog } from "./connect-remote-dialog";
 import { CloudRuntimeDialog } from "./cloud-runtime-dialog";
-import { ProviderLogo } from "./provider-logo";
 import { buildWorkloadIndex, RuntimeList } from "./runtime-list";
 import { pendingRuntimeFromProfile } from "./pending-runtime";
 import { buildRuntimeMachines, type RuntimeMachine } from "./runtime-machines";
-import { HealthDot, HealthIcon, useHealthLabel } from "./shared";
-import { useT, useTimeAgo } from "../../i18n";
-import { daemonRuntimesDocsHref } from "./runtime-docs";
+import { HealthDot, useHealthLabel } from "./shared";
+import { useT } from "../../i18n";
 
 export interface RuntimesPageProps {
   /** Desktop-only daemon id used to identify this device. */
@@ -100,17 +75,10 @@ export function RuntimesPage({
   const { data: runtimeProfiles = [], isLoading: profilesLoading } = useQuery(
     runtimeProfileListOptions(wsId),
   );
-  const { data: agents = [], isLoading: agentsLoading } = useQuery(
+  const { data: agents = [] } = useQuery(
     agentListOptions(wsId),
   );
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
-  // The Patrick entrypoint is per member, not per workspace: the agent alone does
-  // not say whether *this* member's conversation was ever opened and kicked
-  // off. See memberNeedsPatrickSetup.
-  const { data: chatSessions = [], isLoading: chatSessionsLoading } = useQuery(
-    chatSessionsOptions(wsId),
-  );
-
   const handleDaemonEvent = useCallback(() => {
     qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
   }, [qc, wsId]);
@@ -165,8 +133,7 @@ export function RuntimesPage({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeaderBar
-        totalCount={machines.length}
+      <RuntimesHeaderActions
         onConnectRemote={() => setShowConnectDialog(true)}
         cloudRuntimeEnabled={cloudRuntimeEnabled}
         onOpenCloudRuntime={() => setShowCloudRuntimeDialog(true)}
@@ -178,18 +145,7 @@ export function RuntimesPage({
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-[1440px] flex-col p-4 sm:p-6">
-            {!agentsLoading &&
-              !chatSessionsLoading &&
-              memberNeedsPatrickSetup(agents, chatSessions) &&
-              runtimes.length > 0 && (
-              <PatrickSetupCard
-                workspaceId={wsId}
-                runtimes={runtimes}
-                runtimesLoading={runtimesLoading}
-                currentUserId={currentUserId ?? null}
-              />
-            )}
+          <div className="mx-auto flex w-full max-w-3xl flex-col p-4 sm:p-6">
             {(machines.length > 0 || bootstrapping) && (
               <MachineList
                 machines={machines}
@@ -217,134 +173,6 @@ export function RuntimesPage({
   );
 }
 
-/**
- * Entry point for creating Patrick once a runtime exists.
- *
- * The action opens a picker rather than provisioning straight away. It used to
- * take `runtimes.find(online) ?? runtimes[0]` and create Patrick on it silently —
- * but one machine commonly exposes every agent CLI it has installed (nine, on
- * the box this was reported from), so "the first online one" is arbitrary and
- * could well be a CLI the member never intended to run their Chief of Staff
- * on. Onboarding already makes this an explicit choice; this is the same
- * decision reached from a different entry point, so it asks the same way and
- * reuses the same two controls.
- */
-function PatrickSetupCard({
-  workspaceId,
-  runtimes,
-  runtimesLoading,
-  currentUserId,
-}: {
-  workspaceId: string;
-  runtimes: AgentRuntime[];
-  runtimesLoading?: boolean;
-  currentUserId: string | null;
-}) {
-  const { t, i18n } = useT("runtimes");
-  const navigation = useNavigation();
-  const paths = useWorkspacePaths();
-  const wsSlug = useRequiredWorkspaceSlug();
-  const bootstrapPatrick = useBootstrapPatrick(workspaceId);
-
-  const [open, setOpen] = useState(false);
-  // Seeded with the old heuristic so the dialog opens on a sensible default;
-  // the point is that it is now visible and changeable, not that it is unset.
-  const defaultRuntimeId =
-    runtimes.find((runtime) => runtime.status === "online")?.id ??
-    runtimes[0]?.id ??
-    "";
-  const [choice, setChoice] = useState<PatrickRuntimeSelection | null>(null);
-
-  const value: PatrickRuntimeSelection = choice ?? {
-    runtimeId: defaultRuntimeId,
-    model: "",
-  };
-  const runtimeId = value.runtimeId;
-
-  const handleStart = async () => {
-    if (!runtimeId || bootstrapPatrick.isPending) return;
-    const lang = pickContentLang(i18n.language);
-    try {
-      const result = await bootstrapPatrick.mutateAsync({
-        workspaceSlug: wsSlug,
-        runtimeId,
-        model: value.model || undefined,
-        ...getPatrickOnboarding(lang),
-      });
-      setOpen(false);
-      navigation.push(paths.chatSession(result.chatSession.id));
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : t(($) => $.patrick_setup.failed),
-      );
-    }
-  };
-
-  return (
-    <>
-      <div className="mb-6 flex flex-col gap-4 rounded-xl border bg-card p-5 sm:flex-row sm:items-center">
-        <span
-          role="img"
-          aria-label={t(($) => $.patrick_setup.title)}
-          className="flex size-10 shrink-0 select-none items-center justify-center rounded-full bg-muted text-title-lg leading-none"
-        >
-          {PATRICK_PLACEHOLDER_EMOJI}
-        </span>
-        <div className="min-w-0 flex-1">
-          <h2 className="text-body font-semibold">
-            {t(($) => $.patrick_setup.title)}
-          </h2>
-          <p className="mt-1 text-body leading-relaxed text-muted-foreground">
-            {t(($) => $.patrick_setup.description)}
-          </p>
-        </div>
-        <Button className="shrink-0" onClick={() => setOpen(true)}>
-          {t(($) => $.patrick_setup.action)}
-        </Button>
-      </div>
-
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-[480px]">
-          <DialogHeader>
-            <DialogTitle>{t(($) => $.patrick_setup.dialog_title)}</DialogTitle>
-            <DialogDescription>
-              {t(($) => $.patrick_setup.dialog_description)}
-            </DialogDescription>
-          </DialogHeader>
-
-          <PatrickRuntimeChoice
-            runtimes={runtimes}
-            runtimesLoading={runtimesLoading}
-            currentUserId={currentUserId}
-            value={value}
-            onChange={setChoice}
-            disabled={bootstrapPatrick.isPending}
-          />
-
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => setOpen(false)}
-              disabled={bootstrapPatrick.isPending}
-            >
-              {t(($) => $.patrick_setup.cancel)}
-            </Button>
-            <Button
-              onClick={handleStart}
-              disabled={!runtimeId || bootstrapPatrick.isPending}
-            >
-              {bootstrapPatrick.isPending && (
-                <Loader2 aria-hidden className="size-4 animate-spin" />
-              )}
-              {t(($) => $.patrick_setup.action)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  );
-}
-
 function OrphanRuntimeProfiles({
   runtimes,
   now,
@@ -365,52 +193,36 @@ function OrphanRuntimeProfiles({
           {t(($) => $.profiles.unassigned_description)}
         </p>
       </div>
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <RuntimeList runtimes={runtimes} now={now} />
-      </div>
+      <RuntimeList runtimes={runtimes} now={now} />
     </section>
   );
 }
 
-function PageHeaderBar({
-  totalCount,
+function RuntimesHeaderActions({
   onConnectRemote,
   cloudRuntimeEnabled,
   onOpenCloudRuntime,
 }: {
-  totalCount: number;
   onConnectRemote: () => void;
   cloudRuntimeEnabled: boolean;
   onOpenCloudRuntime: () => void;
 }) {
-  const { t, i18n } = useT("runtimes");
+  const { t } = useT("runtimes");
   return (
-    <CollectionPageHeader
-      icon={Server}
-      title={t(($) => $.page.title)}
-      count={totalCount}
-      description={t(($) => $.page.tagline)}
-      learnMore={{
-        href: daemonRuntimesDocsHref(i18n.language),
-        label: t(($) => $.page.learn_more),
-      }}
-      actions={
-        <>
-          {cloudRuntimeEnabled && (
-            <CollectionPageHeaderAction
-              icon={Cloud}
-              label={t(($) => $.cloud_runtime.action)}
-              onClick={onOpenCloudRuntime}
-            />
-          )}
-          <CollectionPageHeaderAction
-            icon={Plus}
-            label={t(($) => $.page.connect_remote)}
-            onClick={onConnectRemote}
-          />
-        </>
-      }
-    />
+    <ShellHeaderActions>
+      {cloudRuntimeEnabled && (
+        <CollectionPageHeaderAction
+          icon={Cloud}
+          label={t(($) => $.cloud_runtime.action)}
+          onClick={onOpenCloudRuntime}
+        />
+      )}
+      <CollectionPageHeaderAction
+        icon={Plus}
+        label={t(($) => $.page.connect_remote)}
+        onClick={onConnectRemote}
+      />
+    </ShellHeaderActions>
   );
 }
 
@@ -441,7 +253,7 @@ function MachineList({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card">
+    <div className="overflow-hidden rounded-xl border bg-card px-4">
       <div className="divide-y">
         {machines.map((machine) => (
           <MachineRow key={machine.id} machine={machine} />
@@ -452,103 +264,31 @@ function MachineList({
 }
 
 function MachineRow({ machine }: { machine: RuntimeMachine }) {
-  const { t } = useT("runtimes");
   const healthLabel = useHealthLabel();
-  const timeAgo = useTimeAgo();
   const paths = useWorkspacePaths();
   const Icon = machine.section === "cloud" ? Cloud : Monitor;
-  const locator = machine.id;
-  const busyCount = machine.runningCount + machine.queuedCount;
-  const body = (
-    <>
-      <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-background">
-        <Icon aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
-        <HealthDot
-          health={machine.health}
-          className="absolute -bottom-0.5 -right-0.5 ring-2 ring-background"
-        />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-body font-medium">
-          {machine.title}
-        </span>
-        <span className="mt-1 flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span className="truncate">
-            {machine.subtitle ??
-              (machine.section === "cloud"
-                ? t(($) => $.machine.metrics.cloud_worker)
-                : t(($) => $.machine.metrics.local_daemon))}
-          </span>
-          {machine.isCurrent && (
-            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-micro font-medium text-muted-foreground">
-              {t(($) => $.machine.this_machine)}
-            </span>
-          )}
-        </span>
-      </span>
-
-      <span className="hidden w-36 shrink-0 items-center gap-1.5 text-caption md:flex">
-        <HealthIcon health={machine.health} />
-        <span>{healthLabel(machine.health)}</span>
-      </span>
-      <span className="hidden w-40 shrink-0 flex-col gap-1 lg:flex">
-        <span className="text-caption text-muted-foreground">
-          {t(($) => $.machine.runtime_count, {
-            count: machine.runtimes.length,
-          })}
-        </span>
-        <ProviderIconStack providers={machine.providerNames} />
-      </span>
-      <span className="hidden w-36 shrink-0 text-caption text-muted-foreground xl:block">
-        {busyCount > 0
-          ? t(($) => $.machine.metrics.workload_hint, {
-              running: machine.runningCount,
-              queued: machine.queuedCount,
-            })
-          : t(($) => $.machine.metrics.workload_idle)}
-      </span>
-      <span className="hidden w-28 shrink-0 text-right text-caption text-muted-foreground lg:block">
-        {machine.lastSeenAt ? timeAgo(machine.lastSeenAt) : "—"}
-      </span>
-      {locator && (
-        <ChevronRight
-          aria-hidden="true"
-          className="h-4 w-4 shrink-0 text-faint-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground"
-        />
-      )}
-    </>
-  );
+  const health = machine.health === "online" ? "online" : "offline";
 
   return (
     <AppLink
-      href={paths.runtimeDetail(locator)}
-      className="group flex min-w-0 items-center gap-3 px-4 py-3.5 transition-colors hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      href={paths.runtimeDetail(machine.id)}
+      className="group flex min-w-0 items-center gap-4 py-5 transition-colors hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
-      {body}
+      <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted/50">
+        <Icon aria-hidden="true" className="size-5 text-muted-foreground" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-title-sm font-medium">{machine.title}</span>
+        <span className="mt-1 flex items-center gap-2 text-body text-muted-foreground">
+          <HealthDot health={health} />
+          {healthLabel(health)}
+        </span>
+      </span>
+      <ChevronRight
+        aria-hidden="true"
+        className="size-4 shrink-0 text-faint-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground"
+      />
     </AppLink>
-  );
-}
-
-function ProviderIconStack({ providers }: { providers: string[] }) {
-  const visible = providers.slice(0, 4);
-  const extra = providers.length - visible.length;
-  if (visible.length === 0) return null;
-  return (
-    <span className="flex min-w-0 items-center -space-x-1">
-      {visible.map((provider) => (
-        <span
-          key={provider}
-          className="inline-flex h-5 w-5 items-center justify-center rounded bg-background ring-1 ring-border"
-        >
-          <ProviderLogo provider={provider} className="h-3.5 w-3.5" />
-        </span>
-      ))}
-      {extra > 0 && (
-        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded bg-muted px-1 text-micro font-medium text-muted-foreground ring-1 ring-border">
-          +{extra}
-        </span>
-      )}
-    </span>
   );
 }
 
@@ -572,20 +312,15 @@ function EmptyState({ onConnectRemote }: { onConnectRemote: () => void }) {
 function RuntimesPageSkeleton() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PageHeader>
-        <Skeleton className="h-4 w-24" />
-      </PageHeader>
-      <div className="mx-auto w-full max-w-[1440px] p-6">
+      <div className="mx-auto w-full max-w-3xl p-6">
         <div className="overflow-hidden rounded-lg border">
           {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="flex h-[76px] items-center gap-3 border-b px-4 last:border-b-0">
-              <Skeleton className="h-10 w-10 rounded-lg" />
+            <div key={index} className="flex h-[88px] items-center gap-4 border-b px-4 last:border-b-0">
+              <Skeleton className="size-12 rounded-lg" />
               <div className="flex-1">
                 <Skeleton className="h-4 w-44" />
                 <Skeleton className="mt-2 h-3 w-28" />
               </div>
-              <Skeleton className="hidden h-4 w-24 md:block" />
-              <Skeleton className="hidden h-4 w-28 lg:block" />
             </div>
           ))}
         </div>

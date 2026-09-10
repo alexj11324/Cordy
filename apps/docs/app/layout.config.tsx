@@ -37,8 +37,7 @@ function GitHubMark() {
 
 // External links shown at the top of the sidebar (and in the top nav on
 // desktop). Leading icon = brand identity (GitHub mark / Orvilo routing mark);
-// trailing ArrowUpRight = "opens externally" glyph, same pattern as
-// `packages/views/layout/help-launcher.tsx` from PR #1560.
+// trailing ArrowUpRight = "opens externally".
 const externalLinkText = (label: string) => (
   <span className="inline-flex items-center gap-1">
     {label}

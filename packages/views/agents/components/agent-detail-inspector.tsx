@@ -13,13 +13,6 @@ import {
 } from "@orvilo/core/runtimes";
 import { isImeComposing } from "@orvilo/core/utils";
 import { Input } from "@orvilo/ui/components/ui/input";
-import {
-  Frame,
-  FrameDescription,
-  FrameHeader,
-  FramePanel,
-  FrameTitle,
-} from "@orvilo/ui/components/reui/frame";
 import { FieldGroup } from "@orvilo/ui/components/ui/field";
 import { useT } from "../../i18n";
 import { ModelPicker } from "./inspector/model-picker";
@@ -100,10 +93,10 @@ export function AgentDetailInspector({
   );
 
   return (
-    <Frame variant="ghost" spacing="sm" className="w-full">
-      <FrameHeader>
-        <FrameTitle>{t(($) => $.inspector.section_execution)}</FrameTitle>
-        <FrameDescription className="flex items-center gap-2">
+    <section className="w-full space-y-3 border-b pb-6">
+      <header className="space-y-1">
+        <h3 className="text-body font-medium">{t(($) => $.inspector.section_execution)}</h3>
+        <p className="flex flex-wrap items-center gap-2 text-caption text-muted-foreground">
           <span>
             {runtime?.name ?? t(($) => $.inspector.runtime_unassigned)}
           </span>
@@ -112,11 +105,10 @@ export function AgentDetailInspector({
             className="size-1 rounded-full bg-muted-foreground/50"
           />
           <span>{t(($) => $.inspector.section_execution_hint)}</span>
-        </FrameDescription>
-      </FrameHeader>
+        </p>
+      </header>
 
-      <FramePanel className="p-0">
-        <FieldGroup className="gap-0 p-4">
+        <FieldGroup className="gap-0">
         <SettingField
           title={t(($) => $.inspector.prop_model)}
           description={t(($) => $.inspector.prop_model_hint)}
@@ -215,8 +207,7 @@ export function AgentDetailInspector({
           </div>
         </SettingField>
         </FieldGroup>
-      </FramePanel>
-    </Frame>
+    </section>
   );
 }
 

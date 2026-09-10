@@ -421,7 +421,7 @@ export function ProjectResourcesSection({
       >
         {t(($) => $.resources.section_header)}
         <ChevronRight
-          className={`!size-3 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
+          className={`size-4 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${open ? "rotate-90" : ""}`}
         />
       </button>
       {open && (

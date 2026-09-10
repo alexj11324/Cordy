@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { AgentIdentityAvatar } from "./agent-identity-avatar";
 import { ActorAvatar as ActorAvatarBase } from "@orvilo/ui/components/common/actor-avatar";
 import { AVATAR_SIZE_PX, type AvatarSize } from "@orvilo/ui/lib/avatar-size";
 import {
@@ -86,7 +87,9 @@ export function ActorAvatar({
 }: ActorAvatarProps) {
   const { getActorName, getActorInitials, getActorAvatarUrl } = useActorName();
   const paths = useWorkspacePaths();
-  const avatar = (
+  const avatar = actorType === "agent" ? (
+    <AgentIdentityAvatar agentId={actorId} name={getActorName(actorType, actorId)} size={size} className={className} />
+  ) : (
     <ActorAvatarBase
       name={getActorName(actorType, actorId)}
       initials={getActorInitials(actorType, actorId)}
@@ -125,7 +128,7 @@ export function ActorAvatar({
           : null
     : null;
   const content = profileHref ? (
-    <ActorAvatarProfileLink href={profileHref}>{dotted}</ActorAvatarProfileLink>
+    <ActorAvatarProfileLink href={profileHref} circular={actorType !== "agent"}>{dotted}</ActorAvatarProfileLink>
   ) : (
     dotted
   );
@@ -156,10 +159,12 @@ export function ActorAvatar({
  * implemented here with the same intent semantics as AppLink.
  */
 function ActorAvatarProfileLink({
+  circular,
   href,
   children,
 }: {
   href: string;
+  circular: boolean;
   children: React.ReactNode;
 }) {
   // Web note: the trigger is a `<span role="link">`, not an anchor, so there
@@ -188,7 +193,7 @@ function ActorAvatarProfileLink({
     <span
       role="link"
       tabIndex={-1}
-      className="inline-flex cursor-pointer rounded-full"
+      className={`inline-flex cursor-pointer ${circular ? "rounded-full" : ""}`}
       onClick={navigate}
       onAuxClick={(event) => {
         if (event.defaultPrevented || event.button !== 1) return;
@@ -261,7 +266,7 @@ function AgentAvatarHoverCard({
       <AgentProfileCard agentId={agentId} />
     );
   return (
-    <ActorAvatarHoverCardShell content={content}>
+    <ActorAvatarHoverCardShell content={content} circular={false}>
       {children}
     </ActorAvatarHoverCardShell>
   );
@@ -311,10 +316,12 @@ function TeamAvatarHoverCard({
 // costs ~0.15ms of JS per avatar and adds zero DOM while closed (the popup
 // subtree, and its queries, stay unmounted until open).
 function ActorAvatarHoverCardShell({
+  circular = true,
   content,
   children,
 }: {
   content: React.ReactNode;
+  circular?: boolean;
   children: React.ReactNode;
 }) {
   const triggerRef = useRef<HTMLSpanElement>(null);
@@ -329,7 +336,7 @@ function ActorAvatarHoverCardShell({
 
   const tabIndex = standalone ? 0 : -1;
   const className = standalone
-    ? "inline-flex cursor-pointer rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    ? `inline-flex cursor-pointer ${circular ? "rounded-full" : ""} focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring`
     : "inline-flex cursor-pointer";
 
   return (

@@ -6,6 +6,7 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectTrigger,
   SelectValue,
 } from "@orvilo/ui/components/ui/select";
 import { Switch } from "@orvilo/ui/components/ui/switch";
@@ -20,14 +21,10 @@ import { useAuthStore } from "@orvilo/core/auth";
 import { useCommentComposerStore } from "@orvilo/core/issues/stores";
 import { api } from "@orvilo/core/api";
 import { browserTimezone, timezoneOptions } from "../../common/timezone-select";
+import { FieldGroup } from "@orvilo/ui/components/ui/field";
 import { useT } from "../../i18n";
-import {
-  SettingsCard,
-  SettingsRow,
-  SettingsSection,
-  SettingsSelectTrigger,
-  SettingsTab,
-} from "./settings-layout";
+import { SettingsTab } from "./settings-layout";
+import { SETTINGS_FIELD_GROUP_CLASS, SettingRow } from "./settings-template";
 
 export function PreferencesTab() {
   const { theme, setTheme } = useTheme();
@@ -95,73 +92,77 @@ export function PreferencesTab() {
       title={t(($) => $.page.tabs.preferences)}
       description={t(($) => $.preferences.page_description)}
     >
-      <SettingsSection title={t(($) => $.preferences.general_title)}>
-        <SettingsCard>
-          <SettingsRow
-            label={t(($) => $.preferences.theme.title)}
-            size="select"
+      <FieldGroup className={SETTINGS_FIELD_GROUP_CLASS}>
+        <SettingRow
+          title={t(($) => $.preferences.theme.title)}
+          description={t(($) => $.preferences.theme.description)}
+          labelFor="profile-theme"
+        >
+          <Select
+            items={themeOptions}
+            value={theme}
+            onValueChange={(next) => {
+              if (!next || next === theme) return;
+              setTheme(next as (typeof themeOptions)[number]["value"]);
+              toast.success(t(($) => $.auto_save.toast_saved), {
+                id: "settings-auto-save",
+              });
+            }}
           >
-            <Select
-              items={themeOptions}
-              value={theme}
-              onValueChange={(next) => {
-                if (!next || next === theme) return;
-                setTheme(next as (typeof themeOptions)[number]["value"]);
-                toast.success(t(($) => $.auto_save.toast_saved), {
-                  id: "settings-auto-save",
-                });
-              }}
+            <SelectTrigger
+              id="profile-theme"
+              aria-label={t(($) => $.preferences.theme.title)}
+              className="border-input text-foreground w-full gap-2 border px-4 py-2 text-body font-normal shadow-none"
             >
-              <SettingsSelectTrigger
-                aria-label={t(($) => $.preferences.theme.title)}
-              >
-                <SelectValue>
-                  {themeOptions.find((option) => option.value === theme)?.label}
-                </SelectValue>
-              </SettingsSelectTrigger>
-              <SelectContent align="end">
-                {themeOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </SettingsRow>
+              <SelectValue>
+                {themeOptions.find((option) => option.value === theme)?.label}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start">
+              {themeOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
 
-          <SettingsRow
-            label={t(($) => $.preferences.language.title)}
-            size="select"
+        <SettingRow
+          title={t(($) => $.preferences.language.title)}
+          description={t(($) => $.preferences.language.description)}
+          labelFor="profile-language"
+        >
+          <Select
+            items={languageOptions}
+            value={currentLocale}
+            onValueChange={(next) => {
+              if (next) void handleLanguageChange(next as SupportedLocale);
+            }}
           >
-            <Select
-              items={languageOptions}
-              value={currentLocale}
-              onValueChange={(next) => {
-                if (next) void handleLanguageChange(next as SupportedLocale);
-              }}
+            <SelectTrigger
+              id="profile-language"
+              aria-label={t(($) => $.preferences.language.title)}
+              className="border-input text-foreground w-full gap-2 border px-4 py-2 text-body font-normal shadow-none"
             >
-              <SettingsSelectTrigger
-                aria-label={t(($) => $.preferences.language.title)}
-              >
-                <SelectValue>
-                  {languageOptions.find((option) => option.value === currentLocale)?.label}
-                </SelectValue>
-              </SettingsSelectTrigger>
-              <SelectContent align="end">
-                {languageOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </SettingsRow>
+              <SelectValue>
+                {languageOptions.find((option) => option.value === currentLocale)?.label}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start">
+              {languageOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
 
-          <TimezoneRow />
+        <TimezoneRow />
 
-          <StickyCommentBarRow />
-        </SettingsCard>
-      </SettingsSection>
+        <StickyCommentBarRow />
+      </FieldGroup>
     </SettingsTab>
   );
 }
@@ -172,11 +173,14 @@ function StickyCommentBarRow() {
   const toggleSticky = useCommentComposerStore((s) => s.toggleSticky);
 
   return (
-    <SettingsRow
-      label={t(($) => $.preferences.sticky_comment_bar.title)}
+    <SettingRow
+      title={t(($) => $.preferences.sticky_comment_bar.title)}
       description={t(($) => $.preferences.sticky_comment_bar.hint)}
+      labelFor="profile-sticky-comment-bar"
     >
       <Switch
+        id="profile-sticky-comment-bar"
+        size="sm"
         checked={sticky}
         onCheckedChange={() => {
           toggleSticky();
@@ -186,7 +190,7 @@ function StickyCommentBarRow() {
         }}
         aria-label={t(($) => $.preferences.sticky_comment_bar.title)}
       />
-    </SettingsRow>
+    </SettingRow>
   );
 }
 
@@ -236,10 +240,10 @@ function TimezoneRow() {
   };
 
   return (
-    <SettingsRow
-      label={t(($) => $.preferences.timezone.title)}
+    <SettingRow
+      title={t(($) => $.preferences.timezone.title)}
       description={t(($) => $.preferences.timezone.hint)}
-      size="select-wide"
+      labelFor="preferences-timezone"
     >
       <Select
         items={[
@@ -254,13 +258,14 @@ function TimezoneRow() {
           if (next) void handleChange(next);
         }}
       >
-        <SettingsSelectTrigger
-          className="font-mono text-caption"
+        <SelectTrigger
+          id="preferences-timezone"
+          className="border-input text-foreground w-full gap-2 border px-4 py-2 font-mono text-caption font-normal shadow-none"
           aria-label={t(($) => $.preferences.timezone.title)}
         >
           <SelectValue>{formatTZLabel(value)}</SelectValue>
-        </SettingsSelectTrigger>
-        <SelectContent align="end" className="max-h-72">
+        </SelectTrigger>
+        <SelectContent align="start" className="max-h-72">
           <SelectItem value={BROWSER_TZ_VALUE} className="font-mono text-caption">
             {formatTZLabel(BROWSER_TZ_VALUE)}
           </SelectItem>
@@ -271,6 +276,6 @@ function TimezoneRow() {
           ))}
         </SelectContent>
       </Select>
-    </SettingsRow>
+    </SettingRow>
   );
 }

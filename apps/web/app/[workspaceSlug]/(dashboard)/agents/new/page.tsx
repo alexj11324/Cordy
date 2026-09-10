@@ -1,5 +1,5 @@
-import { ChooseCreateMethodPage } from "@orvilo/views/agents";
+import { ManualCreateAgentPage } from "@orvilo/views/agents";
 
 export default function NewAgentRoute() {
-  return <ChooseCreateMethodPage />;
+  return <ManualCreateAgentPage />;
 }

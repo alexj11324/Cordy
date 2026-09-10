@@ -1,4 +1,5 @@
 "use client";
+import { AgentIdentityAvatar } from "../../common/agent-identity-avatar";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -41,12 +42,10 @@ import {
   skillDetailOptions,
   workspaceKeys,
 } from "@orvilo/core/workspace/queries";
-import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 import {
   runtimeDisplayLabel,
   runtimeListOptions,
 } from "@orvilo/core/runtimes";
-import { ActorAvatar } from "@orvilo/ui/components/common/actor-avatar";
 import { Button, buttonVariants } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
@@ -417,13 +416,7 @@ function UsedByList({ agents }: { agents: Agent[] }) {
     <ul className="divide-y overflow-hidden rounded-lg border bg-card">
       {agents.map((a) => (
         <li key={a.id} className="flex items-center gap-2.5 px-3 py-2.5">
-          <ActorAvatar
-            name={a.name}
-            initials={a.name.slice(0, 2).toUpperCase()}
-            avatarUrl={resolvePublicFileUrl(a.avatar_url)}
-            isAgent
-            size="md"
-          />
+          <AgentIdentityAvatar agentId={a.id} name={a.name} size="md" />
           <div className="min-w-0 flex-1">
             <div className="truncate text-body font-medium">{a.name}</div>
             {a.description && (

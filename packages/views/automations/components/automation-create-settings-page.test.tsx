@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   replace: vi.fn(),
   accepted: vi.fn(),
   error: vi.fn(),
+  github: vi.fn(),
   template: "",
 }));
 vi.mock("@orvilo/core/auth", () => ({
@@ -23,9 +24,15 @@ vi.mock("@orvilo/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Acme" }),
   useWorkspacePaths: () => ({
     automations: () => "/acme/automations",
+    settings: () => "/acme/settings",
     automationDetail: (id: string) => `/acme/automations/${id}`,
   }),
 }));
+vi.mock("@orvilo/core/api", () => ({ api: {
+  listGitHubInstallations: mocks.github,
+  listSlackInstallations: vi.fn(),
+  getLinearConnection: vi.fn(),
+} }));
 vi.mock("../../navigation", () => ({
   AppLink: ({ children, ...props }: ComponentProps<"a">) => (
     <a {...props}>{children}</a>
@@ -144,6 +151,7 @@ describe("Settings-based automation creation", () => {
     mocks.replace.mockReset();
     mocks.accepted.mockReset().mockResolvedValue(true);
     mocks.error.mockReset();
+    mocks.github.mockReset().mockResolvedValue({ installations: [] });
     mocks.template = "";
   });
   it("opens directly on Settings with the shared sections and no old creation form", () => {
@@ -171,6 +179,23 @@ describe("Settings-based automation creation", () => {
       ),
     ).toBeInTheDocument();
     expect(mocks.create).not.toHaveBeenCalled();
+  });
+  it("shows a draft trigger connection beside its removal action and preserves draft values", async () => {
+    mocks.template = "assign_pr_reviewers";
+    renderPage();
+    fireEvent.change(screen.getByRole("textbox", { name: "Name" }), { target: { value: "Keep my PR draft" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Instructions editor" }), { target: { value: "Review carefully" } });
+    const connect = await screen.findByRole("button", { name: "Connect" });
+    expect(connect).toHaveAttribute("href", "/acme/settings?tab=github");
+    expect(connect).toHaveAttribute("target", "_blank");
+    fireEvent.click(connect);
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Keep my PR draft");
+    expect(screen.getByRole("textbox", { name: "Instructions editor" })).toHaveValue("Review carefully");
+    expect(screen.getByRole("button", { name: "Remove trigger" })).toBeInTheDocument();
+    expect(screen.getByText("Configure event conditions here after creation.")).toBeInTheDocument();
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.trigger).not.toHaveBeenCalled();
+    expect(mocks.replace).not.toHaveBeenCalled();
   });
   it("saves the current Settings values and replaces the draft route with the real detail", async () => {
     const user = userEvent.setup();

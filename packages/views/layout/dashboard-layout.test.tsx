@@ -11,11 +11,18 @@ vi.mock("@orvilo/ui/components/ui/sidebar", () => ({
     children: ReactNode;
     className?: string;
   }) => <main className={className}>{children}</main>,
+  SidebarTrigger: () => <button type="button" data-slot="sidebar-trigger" />,
+}));
+
+vi.mock("../chat/global-right-sidebar", () => ({
+  GlobalRightSidebar: () => <aside data-testid="global-right-sidebar" />,
+  GlobalRightSidebarToggle: () => <button aria-label="Open right sidebar" />,
 }));
 
 vi.mock("../modals/registry", () => ({ ModalRegistry: () => null }));
 vi.mock("../onboarding", () => ({ SourceBackfillModal: () => null }));
 vi.mock("./app-sidebar", () => ({ AppSidebar: () => null }));
+vi.mock("./shell-breadcrumb", () => ({ ShellBreadcrumb: () => null }));
 vi.mock("./dashboard-guard", () => ({
   DashboardGuard: ({ children }: { children: ReactNode }) => <>{children}</>,
 }));
@@ -43,6 +50,11 @@ describe("DashboardLayout route viewport", () => {
     );
 
     const viewport = screen.getByTestId("web-route-scroll-viewport");
+    const mainColumn = viewport.closest("[data-slot=shell-main-column]");
+    const sidebar = screen.getByTestId("global-right-sidebar");
+    expect(mainColumn?.parentElement).toBe(sidebar.parentElement);
+    expect(mainColumn?.querySelector("header")).not.toBeNull();
+    expect(mainColumn).not.toContainElement(sidebar);
     expect(viewport).toHaveClass(
       "flex",
       "min-h-0",
@@ -54,5 +66,8 @@ describe("DashboardLayout route viewport", () => {
     expect(viewport).toContainElement(screen.getByTestId("route-content"));
     expect(screen.getByTestId("agent-thread-layout")).toContainElement(viewport);
     expect(viewport).not.toContainElement(screen.getByTestId("overlay"));
+    expect(
+      document.querySelector("[data-slot='shell-header-actions']"),
+    ).not.toBeNull();
   });
 });

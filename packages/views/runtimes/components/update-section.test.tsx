@@ -94,7 +94,7 @@ describe("UpdateSection read-only status", () => {
     expect(screen.getByText("Read-only")).toBeInTheDocument();
     expect(
       screen.getByTitle(
-        "Only runtime owners and workspace admins can update the CLI.",
+        "Only Harness owners and workspace admins can update the CLI.",
       ),
     ).toBeInTheDocument();
     expect(

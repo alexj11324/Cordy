@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 import {
-  AlarmClock,
   AlertCircle,
   Brain,
   History,
@@ -42,10 +41,10 @@ import { AppLink, useNavigation, useRowLink } from "../../navigation";
 import { SlackMark } from "../../settings/components/slack-mark";
 import { ActorAvatar } from "../../common/actor-avatar";
 import {
-  CollectionPageHeader,
   CollectionPageHeaderAction,
   CollectionPageState,
 } from "../../layout/collection-page";
+import { ShellHeaderActions } from "../../layout/shell-header";
 import {
   AutomationBatchToolbar,
   AutomationRowActions,
@@ -147,18 +146,13 @@ export function AutomationsPage() {
     navigation.push(wsPaths.newAutomation(template?.id));
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
-      <CollectionPageHeader
-        icon={AlarmClock}
-        title={t(($) => $.page.title)}
-        count={automations.length}
-        actions={
-          <CollectionPageHeaderAction
-            icon={Plus}
-            label={t(($) => $.page.new_automation)}
-            onClick={() => openCreate()}
-          />
-        }
-      />
+      <ShellHeaderActions>
+        <CollectionPageHeaderAction
+          icon={Plus}
+          label={t(($) => $.page.new_automation)}
+          onClick={() => openCreate()}
+        />
+      </ShellHeaderActions>
       {listError ? (
         <CollectionPageState
           role="alert"

@@ -72,6 +72,7 @@ export type NavWorkspaceProps = {
   activeWorkspace?: Workspace
   labels?: Partial<NavWorkspaceLabels>
   workspaceMenuContent?: ReactNode
+  showWorkspaceIcons?: boolean
   onSelectWorkspace?: (workspaceId: string, event: MouseEvent<HTMLElement>) => void
   onCreateWorkspace?: () => void
   onProfile?: () => void
@@ -172,10 +173,12 @@ function WorkspaceAvatar({
 function WorkspaceItem({
   workspace,
   isActive,
+  showIcon,
   onSelect,
 }: {
   workspace: Workspace
   isActive: boolean
+  showIcon: boolean
   onSelect: (id: string, event: MouseEvent<HTMLElement>) => void
 }) {
   return (
@@ -185,7 +188,7 @@ function WorkspaceItem({
         if (event.button === 1) onSelect(workspace.id, event)
       }}
     >
-      <WorkspaceAvatar workspace={workspace} className="size-5!" />
+      {showIcon ? <WorkspaceAvatar workspace={workspace} className="size-5!" /> : null}
       <span className="flex-1 truncate text-sm font-medium">{workspace.name}</span>
       {workspace.hasUnread && !isActive ? (
         <span
@@ -206,6 +209,7 @@ export function NavWorkspace({
   activeWorkspace: activeWorkspaceProp,
   labels,
   workspaceMenuContent,
+  showWorkspaceIcons = true,
   onSelectWorkspace,
   onCreateWorkspace,
   onProfile,
@@ -237,7 +241,7 @@ export function NavWorkspace({
       <SidebarMenuItem>
         <DropdownMenu onOpenChange={onOpenChange}>
           <DropdownMenuTrigger
-            className="-ml-1 bg-transparent pr-0! group-data-[collapsible=icon]:-ml-1!"
+            className="h-auto bg-transparent p-2 group-data-[collapsible=icon]:justify-center"
             render={<SidebarMenuButton aria-label={copy.menuAriaLabel} />}
           >
             <div className="relative flex min-w-0 flex-1 items-center gap-2">
@@ -258,7 +262,9 @@ export function NavWorkspace({
                   {resolvedUser.name}
                 </span>
                 <span className="inline-flex items-center gap-1">
-                  <WorkspaceAvatar workspace={activeWorkspace} className="size-3!" />
+                  {showWorkspaceIcons ? (
+                    <WorkspaceAvatar workspace={activeWorkspace} className="size-3!" />
+                  ) : null}
                   <span className="truncate text-[10px] text-sidebar-text-secondary">
                     {activeWorkspace.name}
                   </span>
@@ -292,6 +298,7 @@ export function NavWorkspace({
                   key={workspace.id}
                   workspace={workspace}
                   isActive={activeWorkspace.id === workspace.id}
+                  showIcon={showWorkspaceIcons}
                   onSelect={selectWorkspace}
                 />
               ))}

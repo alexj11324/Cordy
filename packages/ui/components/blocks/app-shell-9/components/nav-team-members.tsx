@@ -103,7 +103,7 @@ function TeamMemberItem({ member }: { member: TeamMember }) {
         <div className="relative shrink-0">
           <Avatar className="size-5">
             <AvatarImage src={member.avatar} alt={member.name} />
-            <AvatarFallback className="bg-primary/10 text-primary text-[8px] font-semibold">
+            <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">
               {member.initials}
             </AvatarFallback>
           </Avatar>

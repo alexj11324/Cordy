@@ -2,7 +2,7 @@
 
 import React from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { renderWithI18n } from "../test/i18n";
 
@@ -17,6 +17,7 @@ let runtimeWorktreeMetadata: "advertised" | "daemon_cannot" | "server_recorded_n
   "advertised";
 // What the desktop validator reports for the picked folder.
 let pickedIsGitRepo: boolean | undefined = true;
+let pickedRemotes: Array<{ name: string; url: string }> = [];
 
 const createProjectMock = vi.fn().mockResolvedValue({ id: "p1", slug: "p1" });
 
@@ -110,8 +111,11 @@ vi.mock("@orvilo/core/workspace/hooks", () => ({
 }));
 vi.mock("../navigation", () => ({ useNavigation: () => ({ push: vi.fn() }) }));
 vi.mock("../editor", () => {
-  const ContentEditor = React.forwardRef<HTMLTextAreaElement, { placeholder?: string }>(
-    ({ placeholder }, ref) => <textarea ref={ref} placeholder={placeholder} />,
+  const ContentEditor = React.forwardRef<{ getMarkdown: () => string }, { placeholder?: string }>(
+    ({ placeholder }, ref) => {
+      React.useImperativeHandle(ref, () => ({ getMarkdown: () => "" }));
+      return <textarea placeholder={placeholder} />;
+    },
   );
   ContentEditor.displayName = "ContentEditor";
   return {
@@ -134,12 +138,12 @@ vi.mock("../projects/components/project-due-date-picker", () => ({
   ProjectDueDatePicker: () => <button type="button">Due date</button>,
 }));
 
-// Desktop-only surface: without these the Local directory tab never renders.
+// Desktop folder selection discovers the repository from its actual remotes.
 vi.mock("../platform/local-directory", () => ({
   isDesktopShell: () => true,
   pickDirectory: () =>
     Promise.resolve({ ok: true, path: "/Users/dev/work/game-client", basename: "game-client" }),
-  validateLocalDirectory: () => Promise.resolve({ ok: true, is_git_repo: pickedIsGitRepo }),
+  validateLocalDirectory: () => Promise.resolve({ ok: true, is_git_repo: pickedIsGitRepo, remotes: pickedRemotes }),
 }));
 vi.mock("../platform/use-local-daemon-status", () => ({
   useLocalDaemonStatus: () => ({ daemonId: "daemon-1", deviceName: "MacBook", running: true }),
@@ -171,8 +175,8 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import { CreateProjectModal, buildLocalDirectoryResourceRef } from "./create-project";
 
 async function pickLocalDirectory(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole("button", { name: /Choose directory/i }));
-  await waitFor(() => expect(screen.getByText("/Users/dev/work/game-client")).toBeInTheDocument());
+  await user.click(screen.getByRole("button", { name: /Add folder/i }));
+  await waitFor(() => expect(screen.getAllByText("game-client").length).toBeGreaterThan(0));
 }
 
 describe("CreateProjectModal — local directory execution mode", () => {
@@ -183,134 +187,83 @@ describe("CreateProjectModal — local directory execution mode", () => {
     serverValidatesWorktree = true;
     serverSupportsCommittedBase = true;
     pickedIsGitRepo = true;
+    pickedRemotes = [];
   });
 
-  // Preselection, not a silent default change: a git repo the runtime can
-  // actually run worktree mode on starts on parallel, because that is the mode
-  // that fits — and the user sees it selected in a control they can flip before
-  // creating anything.
-  it("preselects parallel for a git repository", async () => {
+
+  it("creates the project with the selected folder and its detected origin", async () => {
+    pickedRemotes = [
+      { name: "upstream", url: "https://github.com/upstream/game-client.git" },
+      { name: "origin", url: "https://github.com/dev/game-client.git" },
+    ];
     const user = userEvent.setup();
     renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
 
+    expect(screen.queryByRole("button", { name: "GitHub repos" })).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/github.com\/owner/)).not.toBeInTheDocument();
     await pickLocalDirectory(user);
-
-    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
-    expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).toHaveAttribute(
-      "aria-checked",
-      "true",
-    );
+    expect(screen.getByText("dev/game-client")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Create project/i }));
+    await waitFor(() => expect(createProjectMock).toHaveBeenCalledWith(expect.objectContaining({
+      resources: [
+        { resource_type: "github_repo", resource_ref: { url: "https://github.com/dev/game-client.git" } },
+        { resource_type: "local_directory", resource_ref: expect.objectContaining({ local_path: "/Users/dev/work/game-client", daemon_id: "daemon-1" }) },
+      ],
+    })));
   });
 
-  it("requires an explicit direct choice for a plain folder", async () => {
+  it("does not submit when Enter accepts an IME candidate", () => {
+    renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
+    const input = screen.getByRole("textbox", { name: /Project title/i });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(createProjectMock).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(createProjectMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses worktree without exposing a redundant mode or path", async () => {
+    const user = userEvent.setup();
+    renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
+    await pickLocalDirectory(user);
+    expect(screen.queryByText("/Users/dev/work/game-client")).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Change directory/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Create project/i }));
+    expect(createProjectMock).toHaveBeenCalledWith(expect.objectContaining({ resources: [expect.objectContaining({resource_ref: expect.objectContaining({ execution_mode: "worktree" })})] }));
+  });
+
+  it("requires explicit direct editing for a plain folder", async () => {
     pickedIsGitRepo = false;
     const user = userEvent.setup();
     renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
-
     await pickLocalDirectory(user);
-
-    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
-  });
-
-  // A machine that has not advertised the capability must not be preselected
-  // into parallel: the server gates this create, and a rejection would fail the
-  // whole project creation over a mode the user never chose. It stays
-  // SELECTABLE — an un-advertised machine may still be able to run it, and only
-  // the server can say (#7113).
-  it("preselects worktree when the machine has not advertised the capability", async () => {
-    runtimeWorktreeMetadata = "daemon_cannot";
-    const user = userEvent.setup();
-    renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
-
-    await pickLocalDirectory(user);
-
-    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
-  });
-
-  // Older desktop builds do not report is_git_repo. The option stays available
-  // (the daemon has the final say), but we do not guess parallel on the user's
-  // behalf without evidence.
-  it("preselects worktree when the desktop build cannot report git-ness", async () => {
-    pickedIsGitRepo = undefined;
-    const user = userEvent.setup();
-    renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
-
-    await pickLocalDirectory(user);
-
-    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
-    // Still selectable — unknown is permissive about what the user MAY choose.
-    expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).not.toBeDisabled();
-  });
-
-  // The preselection is a starting point, not a correction: once the user says
-  // what they want, a later folder change must not silently undo it.
-  it("keeps an explicit choice when the folder changes to another git repository", async () => {
-    const user = userEvent.setup();
-    renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
-
-    await pickLocalDirectory(user);
+    expect(screen.getByRole("button", { name: /Create project/i })).toBeDisabled();
     await user.click(screen.getByRole("radio", { name: /Edit this folder directly/i }));
-    expect(screen.getByRole("button", { name: /^Direct$/i })).toBeInTheDocument();
-
-    // Re-pick (the mocked picker returns the same git repo).
-    await user.click(screen.getByRole("button", { name: /Change directory/i }));
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /^Direct$/i })).toBeInTheDocument(),
-    );
+    await user.click(screen.getByRole("button", { name: /Create project/i }));
+    expect(createProjectMock).toHaveBeenCalledWith(expect.objectContaining({ resources: [expect.objectContaining({resource_ref: expect.objectContaining({ execution_mode: "in_place" })})] }));
   });
 
-  // The whole point of this entry point: the mode is part of setting the
-  // folder up, not something to go and change afterwards.
-  it("offers the mode next to the change-directory action once a folder is picked", async () => {
+  it("removing a folder also clears its discovered remote", async () => {
+    pickedRemotes = [{name: "origin", url: "https://github.com/dev/game-client.git"}];
     const user = userEvent.setup();
     renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
-
     await pickLocalDirectory(user);
-
-    // The compact button uses the short label; the picker carries the full
-    // title. A git repo preselects parallel, so that is the label here.
-    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Change directory/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /^Clear$/i }));
+    expect(screen.queryByText("dev/game-client")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Add folder/i })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Create project/i }));
+    expect(createProjectMock).toHaveBeenCalledWith(expect.objectContaining({ resources: undefined }));
   });
 
-  it("still offers parallel mode when the machine has not advertised", async () => {
-    runtimeWorktreeMetadata = "server_recorded_nothing";
-    const user = userEvent.setup();
-    renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
-
-    await pickLocalDirectory(user);
-
-    expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).not.toBeDisabled();
-  });
-
-  // The version skew this whole issue is about: newest Desktop, newest daemon,
-  // a self-hosted backend from before v0.4.25. That server accepts the save and
-  // silently strips execution_mode, so trusting it to reject would hand the
-  // agent the user's working copy while promising isolation.
-  it("blocks parallel mode against a server that cannot honour it", async () => {
+  it("blocks worktree when the server cannot honour it", async () => {
     serverValidatesWorktree = false;
     const user = userEvent.setup();
     renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
-
     await pickLocalDirectory(user);
-
     expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).toBeDisabled();
-    expect(screen.getAllByText(/Orvilo server is too old/i).length).toBeGreaterThan(0);
-    // And it must not have been preselected either — that would submit a mode
-    // the server would silently downgrade.
-    expect(screen.getByRole("button", { name: /^Parallel$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Create project/i })).toBeDisabled();
   });
 
-  it("blocks parallel mode for a folder that is not a git repository", async () => {
-    pickedIsGitRepo = false;
-    const user = userEvent.setup();
-    renderWithI18n(<CreateProjectModal onClose={vi.fn()} />);
-
-    await pickLocalDirectory(user);
-
-    expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).toBeDisabled();
-    expect(screen.getAllByText(/not a git repository/i).length).toBeGreaterThan(0);
-  });
 });
 
 // The payload is what the server stores and the daemon later reads; a missing

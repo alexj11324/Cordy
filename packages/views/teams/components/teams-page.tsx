@@ -85,10 +85,10 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import { useIntentNavigate, useRowLink } from "../../navigation";
 import {
-  CollectionPageHeader,
   CollectionPageHeaderAction,
   CollectionPageState,
 } from "../../layout/collection-page";
+import { ShellHeaderActions } from "../../layout/shell-header";
 import { useLocale, useT } from "../../i18n";
 import { PAGE_TOOLBAR } from "../../layout/page-header";
 
@@ -911,18 +911,13 @@ export function TeamsPage() {
 
   return (
     <div className="flex flex-1 min-h-0 flex-col">
-      <CollectionPageHeader
-        icon={Users}
-        title={t(($) => $.page.title)}
-        count={teams.length}
-        actions={
-          <CollectionPageHeaderAction
-            icon={Plus}
-            label={t(($) => $.page.new_button)}
-            onClick={() => useModalStore.getState().open("create-team")}
-          />
-        }
-      />
+      <ShellHeaderActions>
+        <CollectionPageHeaderAction
+          icon={Plus}
+          label={t(($) => $.page.new_button)}
+          onClick={() => useModalStore.getState().open("create-team")}
+        />
+      </ShellHeaderActions>
 
       {isLoading ? (
         <LoadingSkeleton />

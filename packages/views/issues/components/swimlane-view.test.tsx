@@ -200,13 +200,18 @@ let lastOnDragEnd: any = null;
 let lastOnDragOver: any = null;
 
 vi.mock("@dnd-kit/core", () => ({
+  defaultDropAnimationSideEffects: () => () => {},
   DndContext: ({ children, onDragEnd, onDragOver }: any) => {
     lastOnDragEnd = onDragEnd;
     lastOnDragOver = onDragOver;
     return children;
   },
   DragOverlay: () => null,
+  KeyboardSensor: class {},
+  MeasuringStrategy: { Always: "always" },
+  MouseSensor: class {},
   PointerSensor: class {},
+  TouchSensor: class {},
   useSensor: () => ({}),
   useSensors: () => [],
   useDroppable: () => ({ setNodeRef: vi.fn(), isOver: false }),
@@ -216,6 +221,9 @@ vi.mock("@dnd-kit/core", () => ({
 
 vi.mock("@dnd-kit/sortable", () => ({
   SortableContext: ({ children }: any) => children,
+  defaultAnimateLayoutChanges: () => false,
+  rectSortingStrategy: {},
+  sortableKeyboardCoordinates: vi.fn(),
   verticalListSortingStrategy: {},
   // Real arrayMove implementation — the production code uses this both for
   // card reordering and lane reordering, so returning undefined would break

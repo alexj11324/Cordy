@@ -27,7 +27,7 @@ import {
 import { useCustomPricingStore } from "@orvilo/core/runtimes/custom-pricing-store";
 import { useViewingTimezone } from "../../common/use-viewing-timezone";
 import { PAGE_GUTTER } from "../../layout/page-header";
-import { CollectionPageHeader } from "../../layout/collection-page";
+import { ShellHeaderActions } from "../../layout/shell-header";
 import { KpiCard } from "../../runtimes/components/shared";
 import { useNavigation } from "../../navigation";
 import {
@@ -462,13 +462,10 @@ export function DashboardPage() {
       onValueChange={handleTabChange}
       className="flex h-full min-h-0 flex-col gap-0"
     >
-      <CollectionPageHeader
-        icon={BarChart3}
-        title={t(($) => $.title)}
-        actions={
-          /* Data freshness cluster: the timestamp and the action that advances
+      <ShellHeaderActions>
+          {/* Data freshness cluster: the timestamp and the action that advances
              it stay together. Refresh re-pulls the same scope, so it lives here
-             with the page metadata rather than among the scope controls. */
+             with the page metadata rather than among the scope controls. */}
           <div className="flex items-center gap-1">
             {tzLabel ? (
               <span className="hidden text-caption text-muted-foreground lg:inline">
@@ -490,8 +487,7 @@ export function DashboardPage() {
               <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
             </Button>
           </div>
-        }
-      />
+      </ShellHeaderActions>
 
       {/* View toolbar, same grammar as the issues surface header: view
           switching on the left, page-scoped filters on the right. Both tabs

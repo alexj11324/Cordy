@@ -1,4 +1,5 @@
 "use client";
+import { AgentIdentityAvatar } from "../../common/agent-identity-avatar";
 
 import { useEffect, useMemo } from "react";
 import { CircleDot, Filter, Mail, RotateCcw, SignalHigh, UserRound } from "lucide-react";
@@ -241,7 +242,7 @@ export function InboxFilterMenu({
                     checked={checked}
                     onCheckedChange={() => toggleActor(wsId, option.key)}
                   >
-                    <ActorAvatar
+                    {option.type === "agent" ? <AgentIdentityAvatar agentId={option.id} name={option.name} size="xs" /> : (<ActorAvatar
                       size="xs"
                       name={option.name}
                       initials={getActorInitials(option.type, option.id)}
@@ -249,7 +250,7 @@ export function InboxFilterMenu({
                       isAgent={option.type === "agent"}
                       isTeam={option.type === "team"}
                       isSystem={option.type === "system"}
-                    />
+                    />)}
                     <span className="flex-1">{option.name}</span>
                     {count > 0 && (
                       <span className="text-caption text-muted-foreground">

@@ -10,6 +10,7 @@ import { Button } from "@orvilo/ui/components/ui/button";
 import { Input } from "@orvilo/ui/components/ui/input";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AppLink } from "../../navigation";
+import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { useT } from "../../i18n";
 import { AgentProviderAvatar } from "./agent-provider-avatar";
 import { VisibilityBadge } from "./visibility-badge";
@@ -20,6 +21,8 @@ import {
 } from "./model-selector-options";
 
 export interface AgentIdentityCardProps {
+  /** Render the page identity in the shared shell header instead of a summary card. */
+  breadcrumbHref?: string;
   agent: Agent;
   runtime: AgentRuntime | null;
   owner: MemberWithUser | null;
@@ -32,6 +35,7 @@ export interface AgentIdentityCardProps {
 }
 
 export function AgentIdentityCard({
+  breadcrumbHref,
   agent,
   runtime,
   owner,
@@ -50,7 +54,7 @@ export function AgentIdentityCard({
   const [saving, setSaving] = useState(false);
   const previousAgentIdRef = useRef(agent.id);
   const modelsQuery = useQuery(
-    runtimeModelsOptions(runtimeOnline ? runtime?.id : null, runtime?.workspace_id),
+    runtimeModelsOptions(!breadcrumbHref && runtimeOnline ? runtime?.id : null, runtime?.workspace_id),
   );
   const catalogEntry = findModelCapabilityEntry(
     modelsQuery.data?.models ?? [],
@@ -106,6 +110,96 @@ export function AgentIdentityCard({
     }
   };
 
+  const nameField = editing ? (
+    <Input
+      id="agent-display-name"
+      name="agent-name"
+      autoComplete="off"
+      autoFocus
+      aria-label={t(($) => $.inspector.name_label)}
+      value={name}
+      onChange={(event) => setName(event.target.value)}
+      disabled={saving}
+      aria-invalid={nameInvalid || undefined}
+      className="h-8 min-w-0 flex-1 text-caption"
+    />
+  ) : (
+    <h2
+      className="min-w-0 truncate text-body font-medium"
+      data-testid="agent-name-value"
+      title={agent.name}
+    >
+      {agent.name}
+    </h2>
+  );
+  const editAction = canEdit ? (
+    <button
+      type="button"
+      disabled={saving || (editing && nameInvalid)}
+      onClick={() => void handleEditToggle()}
+      aria-label={
+        editing
+          ? t(($) => $.detail.done_aria)
+          : t(($) => $.detail.edit_aria)
+      }
+      className="shrink-0 text-caption font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+    >
+      {editing ? t(($) => $.detail.done) : t(($) => $.detail.edit)}
+    </button>
+  ) : null;
+  const messageAction = !isArchived ? (
+    <Button
+      variant="outline"
+      size="sm"
+      disabled={dmPending}
+      className={`${breadcrumbHref ? "" : "mt-4 "}h-7 px-2 text-caption data-disabled:pointer-events-none data-disabled:opacity-50`}
+      render={<AppLink href={dmHref} onClick={onDm} />}
+      nativeButton={false}
+    >
+      <MessageSquare className="size-3.5" aria-hidden="true" />
+      {t(($) => $.detail.dm)}
+    </Button>
+  ) : null;
+
+  if (breadcrumbHref) {
+    return (
+      <>
+        <BreadcrumbHeader
+          segments={[{ href: breadcrumbHref, label: t(($) => $.page.title) }]}
+          leaf={
+            <>
+              <AgentProviderAvatar
+                provider={runtime?.provider}
+                name={agent.name}
+                size="sm"
+                online={presence?.availability === "online"}
+                onlineLabel={t(($) => $.availability.online)}
+              />
+              {nameField}
+            </>
+          }
+          actions={<>{editAction}{messageAction}</>}
+        />
+        <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b px-4 py-2 text-caption">
+          {owner ? (
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="text-muted-foreground">{t(($) => $.inspector.prop_owner)}</span>
+              <ActorAvatar actorType="member" actorId={owner.user_id} size="xs" />
+              <span className="truncate">{owner.name}</span>
+            </span>
+          ) : null}
+          <span className="flex items-center gap-2">
+            <span className="text-muted-foreground">{t(($) => $.overview.access)}</span>
+            <VisibilityBadge value={agent.visibility} />
+          </span>
+          {editing && nameInvalid ? (
+            <span className="text-destructive">{t(($) => $.inspector.rename_required)}</span>
+          ) : null}
+        </div>
+      </>
+    );
+  }
+
   return (
     <aside className="w-[320px] self-start rounded-xl border border-surface-border bg-surface p-5 shadow-[var(--surface-shadow)] xl:sticky xl:top-6">
       <div className="flex items-start gap-3">
@@ -118,43 +212,8 @@ export function AgentIdentityCard({
         />
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
-            {editing ? (
-              <Input
-                id="agent-display-name"
-                name="agent-name"
-                autoComplete="off"
-                autoFocus
-                aria-label={t(($) => $.inspector.name_label)}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                disabled={saving}
-                aria-invalid={nameInvalid || undefined}
-                className="h-8 min-w-0 flex-1 text-caption"
-              />
-            ) : (
-              <h2
-                className="min-w-0 truncate text-body font-medium"
-                data-testid="agent-name-value"
-                title={agent.name}
-              >
-                {agent.name}
-              </h2>
-            )}
-            {canEdit ? (
-              <button
-                type="button"
-                disabled={saving || (editing && nameInvalid)}
-                onClick={() => void handleEditToggle()}
-                aria-label={
-                  editing
-                    ? t(($) => $.detail.done_aria)
-                    : t(($) => $.detail.edit_aria)
-                }
-                className="shrink-0 text-caption font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-              >
-                {editing ? t(($) => $.detail.done) : t(($) => $.detail.edit)}
-              </button>
-            ) : null}
+            {nameField}
+            {editAction}
           </div>
           {editing && nameInvalid ? (
             <p className="mt-1 text-caption text-destructive">
@@ -164,19 +223,7 @@ export function AgentIdentityCard({
         </div>
       </div>
 
-      {!isArchived ? (
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={dmPending}
-          className="mt-4 h-7 px-2 text-caption data-disabled:pointer-events-none data-disabled:opacity-50"
-          render={<AppLink href={dmHref} onClick={onDm} />}
-          nativeButton={false}
-        >
-          <MessageSquare className="size-3.5" aria-hidden="true" />
-          {t(($) => $.detail.dm)}
-        </Button>
-      ) : null}
+      {messageAction}
 
       <dl className="mt-5 space-y-3 text-caption">
         {owner ? (
