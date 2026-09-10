@@ -2096,6 +2096,32 @@ func (q *Queries) ClearAgentThinkingLevel(ctx context.Context, id pgtype.UUID) (
 	return i, err
 }
 
+const clearWorkspaceLeadAgent = `-- name: ClearWorkspaceLeadAgent :exec
+UPDATE workspace
+SET lead_agent_id = NULL, updated_at = now()
+WHERE lead_agent_id = $1
+`
+
+// Agent ids are globally unique, so this narrow cleanup is safe to call after
+// any archive path that already validated and changed the agent row. Callers
+// run it in the same transaction as the archive when atomicity matters.
+func (q *Queries) ClearWorkspaceLeadAgent(ctx context.Context, leadAgentID pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearWorkspaceLeadAgent, leadAgentID)
+	return err
+}
+
+const clearWorkspaceLeadsForAgents = `-- name: ClearWorkspaceLeadsForAgents :exec
+UPDATE workspace
+SET lead_agent_id = NULL, updated_at = now()
+WHERE lead_agent_id = ANY($1::uuid[])
+`
+
+// Bulk archive/revocation paths use this once for their returned agent set.
+func (q *Queries) ClearWorkspaceLeadsForAgents(ctx context.Context, agentIds []pgtype.UUID) error {
+	_, err := q.db.Exec(ctx, clearWorkspaceLeadsForAgents, agentIds)
+	return err
+}
+
 const completeAgentTask = `-- name: CompleteAgentTask :one
 UPDATE agent_task_queue
 SET status = 'completed', completed_at = now(), result = $2,
