@@ -186,7 +186,7 @@ export const InlineCitationCarouselIndex = ({
   return (
     <div
       className={cn(
-        "flex flex-1 items-center justify-end px-3 py-1 text-muted-foreground text-xs",
+        "flex flex-1 items-center justify-end px-3 py-1 text-muted-foreground text-caption",
         className,
       )}
       {...props}
@@ -266,13 +266,13 @@ export const InlineCitationSource = ({
 }: InlineCitationSourceProps) => (
   <div className={cn("space-y-1", className)} {...props}>
     {title && (
-      <h4 className="truncate font-medium text-sm leading-tight">{title}</h4>
+      <h4 className="truncate font-medium text-body leading-tight">{title}</h4>
     )}
     {url && (
-      <p className="truncate break-all text-muted-foreground text-xs">{url}</p>
+      <p className="truncate break-all text-muted-foreground text-caption">{url}</p>
     )}
     {description && (
-      <p className="line-clamp-3 text-muted-foreground text-sm leading-relaxed">
+      <p className="line-clamp-3 text-muted-foreground text-body leading-relaxed">
         {description}
       </p>
     )}
@@ -289,7 +289,7 @@ export const InlineCitationQuote = ({
 }: InlineCitationQuoteProps) => (
   <blockquote
     className={cn(
-      "border-muted border-l-2 pl-3 text-muted-foreground text-sm italic",
+      "border-muted border-l-2 pl-3 text-muted-foreground text-body italic",
       className,
     )}
     {...props}

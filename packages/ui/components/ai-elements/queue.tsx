@@ -36,7 +36,7 @@ export type QueueItemProps = ComponentProps<"li">;
 export const QueueItem = ({ className, ...props }: QueueItemProps) => (
   <li
     className={cn(
-      "group flex flex-col gap-1 rounded-md px-3 py-1 text-sm transition-colors hover:bg-muted",
+      "group flex flex-col gap-1 rounded-md px-3 py-1 text-body transition-colors hover:bg-muted",
       className
     )}
     {...props}
@@ -77,7 +77,7 @@ export const QueueItemContent = ({
     className={cn(
       "line-clamp-1 grow break-words",
       completed
-        ? "text-muted-foreground/50 line-through"
+        ? "text-faint-foreground line-through"
         : "text-muted-foreground",
       className
     )}
@@ -96,9 +96,9 @@ export const QueueItemDescription = ({
 }: QueueItemDescriptionProps) => (
   <div
     className={cn(
-      "ml-6 text-xs",
+      "ml-6 text-caption",
       completed
-        ? "text-muted-foreground/40 line-through"
+        ? "text-faint-foreground line-through"
         : "text-muted-foreground",
       className
     )}
@@ -169,7 +169,7 @@ export const QueueItemFile = ({
 }: QueueItemFileProps) => (
   <span
     className={cn(
-      "flex items-center gap-1 rounded border bg-muted px-2 py-1 text-xs",
+      "flex items-center gap-1 rounded border bg-muted px-2 py-1 text-caption",
       className
     )}
     {...props}
@@ -216,7 +216,7 @@ export const QueueSectionTrigger = ({
     render={
       <button
         className={cn(
-          "group flex w-full items-center justify-between rounded-md bg-muted/40 px-3 py-2 text-left font-medium text-muted-foreground text-sm transition-colors hover:bg-muted",
+          "group flex w-full items-center justify-between rounded-md bg-muted/40 px-3 py-2 text-left font-medium text-muted-foreground text-body transition-colors hover:bg-muted",
           className
         )}
         type="button"

@@ -22,7 +22,6 @@ const AGENT_THREAD_ENTRYPOINTS = [
   "agents/components/tabs/activity-tab.tsx",
   "automations/components/automation-detail-page.tsx",
   "issues/components/execution-log-section.tsx",
-  "issues/components/issue-agent-header-chip.tsx",
 ];
 
 function walk(dir: string, out: string[] = []): string[] {
@@ -55,6 +54,16 @@ describe("Agent thread entrypoint boundary", () => {
     );
 
     expect(missing).toEqual([]);
+  });
+
+  it("keeps the issue live-status chip free of a duplicate conversation entry", () => {
+    const source = readFileSync(
+      join(VIEWS_ROOT, "issues/components/issue-agent-header-chip.tsx"),
+      "utf8",
+    );
+
+    expect(source).not.toContain("AgentThreadButton");
+    expect(source).toContain("showConversationAction={false}");
   });
 
   it("does not reference the deleted transcript components from product code", () => {

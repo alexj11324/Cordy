@@ -49,6 +49,7 @@ import rehypeSanitize from "rehype-sanitize";
 import { cn } from "@orvilo/ui/lib/utils";
 import { useWorkspaceSlug } from "@orvilo/core/paths";
 import { useConfigStore } from "@orvilo/core/config";
+import { insertMarkdownInlineMarkers } from "@orvilo/core/markdown";
 import type { Attachment } from "@orvilo/core/types";
 import {
   isAllowedFileCardHref,
@@ -548,77 +549,6 @@ const REHYPE_PLUGINS = [
 ] satisfies NonNullable<ReactMarkdownOptions["rehypePlugins"]>;
 
 type InlineMarker = { offset: number; id: string; label: string };
-type MarkdownNode = {
-  type: string;
-  value?: string;
-  url?: string;
-  children?: MarkdownNode[];
-  position?: { start?: { offset?: number }; end?: { offset?: number } };
-  data?: { hProperties?: Record<string, unknown> };
-};
-
-function inlineMarkerNode(marker: InlineMarker): MarkdownNode {
-  return {
-    type: "link",
-    url: `#orvilo-inline-marker-${encodeURIComponent(marker.id)}`,
-    children: [{ type: "text", value: marker.label }],
-    data: { hProperties: { dataInlineMarker: marker.id } },
-  };
-}
-
-function insertInlineMarker(
-  children: MarkdownNode[],
-  marker: InlineMarker,
-): boolean {
-  for (let index = 0; index < children.length; index += 1) {
-    const child = children[index]!;
-    const start = child.position?.start?.offset;
-    const end = child.position?.end?.offset;
-    if (
-      start == null ||
-      end == null ||
-      marker.offset < start ||
-      marker.offset > end
-    ) {
-      continue;
-    }
-    if (child.type === "text" && child.value != null) {
-      const splitAt = Math.max(
-        0,
-        Math.min(child.value.length, marker.offset - start),
-      );
-      const replacement: MarkdownNode[] = [];
-      const before = child.value.slice(0, splitAt);
-      const after = child.value.slice(splitAt);
-      if (before) replacement.push({ ...child, value: before });
-      replacement.push(inlineMarkerNode(marker));
-      if (after) replacement.push({ ...child, value: after });
-      children.splice(index, 1, ...replacement);
-      return true;
-    }
-    if (
-      child.children &&
-      child.type !== "link" &&
-      child.type !== "inlineCode"
-    ) {
-      if (insertInlineMarker(child.children, marker)) return true;
-    }
-    children.splice(index + 1, 0, inlineMarkerNode(marker));
-    return true;
-  }
-  return false;
-}
-
-function remarkInlineMarkers(markers: InlineMarker[]) {
-  return () => (tree: MarkdownNode) => {
-    for (const marker of [...markers].sort(
-      (left, right) =>
-        right.offset - left.offset || right.label.localeCompare(left.label),
-    )) {
-      if (tree.children) insertInlineMarker(tree.children, marker);
-    }
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -667,15 +597,27 @@ export const RichContent = memo(function RichContent({
   // late config arrival reprocesses exactly once.
   const cdnDomain = useConfigStore((s) => s.cdnDomain);
 
+  const markedContent = useMemo(
+    () =>
+      insertMarkdownInlineMarkers(
+        content,
+        inlineMarkers.map((marker) => ({
+          offset: marker.offset,
+          markdown: ` [${marker.label}](<#orvilo-inline-marker-${encodeURIComponent(marker.id)}>)`,
+        })),
+      ),
+    [content, inlineMarkers],
+  );
+
   const processed = useMemo(
     () =>
       highlightToHtml(
-        preprocessMarkdown(content, {
+        preprocessMarkdown(markedContent, {
           cdnDomain,
           autolinkIssueIdentifiers: true,
         }),
       ),
-    [content, cdnDomain],
+    [markedContent, cdnDomain],
   );
 
   // Derived from the SAME string handed to ReactMarkdown, so offsets line up
@@ -684,13 +626,6 @@ export const RichContent = memo(function RichContent({
   const closedFences = useMemo(
     () => computeClosedFenceOffsets(processed),
     [processed],
-  );
-  const remarkPlugins = useMemo(
-    () =>
-      (inlineMarkers.length
-        ? [...REMARK_PLUGINS, remarkInlineMarkers(inlineMarkers)]
-        : REMARK_PLUGINS) as NonNullable<ReactMarkdownOptions["remarkPlugins"]>,
-    [inlineMarkers],
   );
 
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -708,7 +643,7 @@ export const RichContent = memo(function RichContent({
       <InlineMarkerContext.Provider value={inlineMarkerRenderer ?? null}>
         <ClosedFenceContext.Provider value={closedFences}>
           <ReactMarkdown
-            remarkPlugins={remarkPlugins}
+            remarkPlugins={REMARK_PLUGINS}
             rehypePlugins={REHYPE_PLUGINS}
             urlTransform={markdownUrlTransform}
             components={COMPONENTS}
@@ -718,7 +653,7 @@ export const RichContent = memo(function RichContent({
         </ClosedFenceContext.Provider>
       </InlineMarkerContext.Provider>
     ),
-    [processed, closedFences, inlineMarkerRenderer, remarkPlugins],
+    [processed, closedFences, inlineMarkerRenderer],
   );
 
   return (

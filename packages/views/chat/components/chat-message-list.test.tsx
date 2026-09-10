@@ -204,6 +204,65 @@ describe("ChatMessageList AI attribution", () => {
       "https://example.org",
     );
   });
+
+  it.each([
+    ["MUL-123 claim", "MUL-123"],
+    ["https://target.example claim", "https://target.example"],
+    ["!file[doc.md](/uploads/x.md) claim", "doc.md"],
+  ])(
+    "keeps the source marker aligned while preprocessing %s",
+    async (content, citedText) => {
+      const end = new TextEncoder().encode(
+        content.slice(0, content.indexOf(citedText) + citedText.length),
+      ).length;
+      const { container } = render(
+        <I18nProvider locale="en" resources={TEST_RESOURCES}>
+          <QueryClientProvider client={new QueryClient()}>
+            <ChatMessageList
+              messages={[
+                {
+                  id: "message-preprocess",
+                  chat_session_id: "session-1",
+                  role: "assistant",
+                  content,
+                  task_id: null,
+                  created_at: new Date(1).toISOString(),
+                  sources: [{ id: "source-1", url: "https://source.example" }],
+                  citations: [{ source_id: "source-1", start: 0, end }],
+                },
+              ]}
+              pendingTask={null}
+              availability={undefined}
+            />
+          </QueryClientProvider>
+        </I18nProvider>,
+      );
+
+      const marker = await screen.findByText("1", {
+        selector: '[data-slot="inline-citation"] > span:first-child',
+      });
+      const markerRoot = marker.closest('[data-slot="inline-citation"]');
+      const paragraph = markerRoot?.parentElement;
+      expect(markerRoot).not.toBeNull();
+      expect(paragraph?.tagName).toBe("P");
+      const markerIndex = [...(paragraph?.childNodes ?? [])].indexOf(
+        markerRoot!,
+      );
+      const before = [...(paragraph?.childNodes ?? [])]
+        .slice(0, markerIndex)
+        .map((node) => node.textContent ?? "")
+        .join("");
+      const after = [...(paragraph?.childNodes ?? [])]
+        .slice(markerIndex + 1)
+        .map((node) => node.textContent ?? "")
+        .join("");
+      expect(before).toContain(citedText);
+      expect(after).toContain("claim");
+      expect(
+        container.querySelectorAll('[data-slot="inline-citation"]'),
+      ).toHaveLength(1);
+    },
+  );
 });
 
 describe("ChatMessageList live timeline (ISSUE-3960 regression)", () => {

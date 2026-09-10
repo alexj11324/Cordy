@@ -19,7 +19,7 @@ export const TaskItemFile = ({
 }: TaskItemFileProps) => (
   <div
     className={cn(
-      "inline-flex items-center gap-1 rounded-md border bg-secondary px-1.5 py-0.5 text-foreground text-xs",
+      "inline-flex items-center gap-1 rounded-md border bg-secondary px-1.5 py-0.5 text-foreground text-caption",
       className
     )}
     {...props}
@@ -31,7 +31,7 @@ export const TaskItemFile = ({
 export type TaskItemProps = ComponentProps<"div">;
 
 export const TaskItem = ({ children, className, ...props }: TaskItemProps) => (
-  <div className={cn("text-muted-foreground text-sm", className)} {...props}>
+  <div className={cn("text-muted-foreground text-body", className)} {...props}>
     {children}
   </div>
 );
@@ -65,9 +65,9 @@ export const TaskTrigger = ({
     {...props}
     render={
       isValidElement(children) ? children : (
-        <button type="button" className="flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
+        <button type="button" className="flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-body transition-colors hover:text-foreground">
           <SearchIcon className="size-4" />
-          <span className="text-sm">{title}</span>
+          <span className="text-body">{title}</span>
           <ChevronDownIcon className="size-4 transition-transform group-data-[state=open]:rotate-180" />
         </button>
       )

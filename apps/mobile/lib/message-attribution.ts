@@ -1,4 +1,5 @@
 import type { ChatMessage, MessageSource } from "@orvilo/core/types";
+import { insertMarkdownInlineMarkers } from "@orvilo/core/markdown";
 
 export interface ResolvedMobileCitation {
   source: MessageSource;
@@ -44,20 +45,12 @@ export function contentWithInlineCitations(message: ChatMessage): string {
   }
   if (citations.length === 0) return message.content;
 
-  const byEnd = new Map<number, ResolvedMobileCitation[]>();
-  for (const citation of citations) {
-    byEnd.set(citation.end, [...(byEnd.get(citation.end) ?? []), citation]);
-  }
   const decoder = new TextDecoder("utf-8", { fatal: false });
-  let cursor = 0;
-  let result = "";
-  for (const [end, endingCitations] of [...byEnd].sort(([a], [b]) => a - b)) {
-    if (end <= cursor) continue;
-    result += decoder.decode(bytes.slice(cursor, end));
-    result += endingCitations
-      .map(({ source, sourceNumber }) => ` [${sourceNumber}](<${source.url}>)`)
-      .join("");
-    cursor = end;
-  }
-  return result + decoder.decode(bytes.slice(cursor));
+  return insertMarkdownInlineMarkers(
+    message.content,
+    citations.map(({ source, sourceNumber, end }) => ({
+      offset: decoder.decode(bytes.slice(0, end)).length,
+      markdown: ` [${sourceNumber}](<${source.url}>)`,
+    })),
+  );
 }

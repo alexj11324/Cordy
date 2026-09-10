@@ -695,6 +695,9 @@ importers:
       i18next:
         specifier: 'catalog:'
         version: 26.0.8(typescript@5.9.3)
+      mdast-util-from-markdown:
+        specifier: ^2.0.3
+        version: 2.0.3
       posthog-js:
         specifier: 'catalog:'
         version: 1.369.3

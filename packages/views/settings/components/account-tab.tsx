@@ -256,7 +256,7 @@ function FieldLabelWithHint({
             <InfoIcon aria-hidden="true" className="size-4" />
           </TooltipTrigger>
           <TooltipContent side="top" className="max-w-xs p-3">
-            <p className="text-sm leading-5">{hint}</p>
+            <p className="text-body leading-5">{hint}</p>
           </TooltipContent>
         </Tooltip>
       ) : null}
@@ -518,8 +518,8 @@ export function AccountTab() {
     <TooltipProvider delay={200}>
       <div className="w-full max-w-4xl space-y-6">
         <header className="space-y-1 px-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
-          <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
+          <h1 className="text-display-sm font-semibold tracking-tight">Profile</h1>
+          <p className="text-muted-foreground max-w-2xl text-body leading-relaxed">
             Manage the identity and regional details shared across your
             workspace memberships.
           </p>
@@ -560,10 +560,10 @@ export function AccountTab() {
                   />
                   <div className="flex min-w-0 flex-1 flex-col gap-2.5">
                     <div className="min-w-0 space-y-px">
-                      <h2 className="text-base font-semibold tracking-tight">
+                      <h2 className="text-title-sm font-semibold tracking-tight">
                         {t(($) => $.account.avatar_label)}
                       </h2>
-                      <p className="text-muted-foreground text-sm">
+                      <p className="text-muted-foreground text-body">
                         {t(($) => $.account.click_avatar_hint)}
                       </p>
                     </div>
@@ -794,7 +794,7 @@ export function AccountTab() {
           <CardFooter className="border-t px-6 py-4 sm:px-8">
             <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex min-w-0 flex-1 items-center gap-3">
-                <p className="text-muted-foreground text-sm">
+                <p className="text-muted-foreground text-body">
                   Save once to update your shared profile across every
                   workspace.
                 </p>
@@ -914,8 +914,8 @@ function SectionHeading({
 }) {
   return (
     <div className="space-y-1">
-      <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-      <p className="text-muted-foreground text-sm leading-relaxed">
+      <h2 className="text-title-sm font-semibold tracking-tight">{title}</h2>
+      <p className="text-muted-foreground text-body leading-relaxed">
         {description}
       </p>
     </div>

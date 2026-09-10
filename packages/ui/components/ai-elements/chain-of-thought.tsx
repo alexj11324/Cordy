@@ -80,7 +80,7 @@ export const ChainOfThoughtHeader = memo(
       <Collapsible onOpenChange={setIsOpen} open={isOpen}>
         <CollapsibleTrigger
           className={cn(
-            "flex w-full items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground",
+            "flex w-full items-center gap-2 text-muted-foreground text-body transition-colors hover:text-foreground",
             className
           )}
           {...props}
@@ -111,7 +111,7 @@ export type ChainOfThoughtStepProps = ComponentProps<"div"> & {
 const stepStatusStyles = {
   active: "text-foreground",
   complete: "text-muted-foreground",
-  pending: "text-muted-foreground/50",
+  pending: "text-faint-foreground",
 };
 
 export const ChainOfThoughtStep = memo(
@@ -126,7 +126,7 @@ export const ChainOfThoughtStep = memo(
   }: ChainOfThoughtStepProps) => (
     <div
       className={cn(
-        "flex gap-2 text-sm",
+        "flex gap-2 text-body",
         stepStatusStyles[status],
         "fade-in-0 slide-in-from-top-2 animate-in",
         className
@@ -140,7 +140,7 @@ export const ChainOfThoughtStep = memo(
       <div className="flex-1 space-y-2 overflow-hidden">
         <div>{label}</div>
         {description && (
-          <div className="text-muted-foreground text-xs">{description}</div>
+          <div className="text-muted-foreground text-caption">{description}</div>
         )}
         {children}
       </div>
@@ -164,7 +164,7 @@ export type ChainOfThoughtSearchResultProps = ComponentProps<typeof Badge>;
 export const ChainOfThoughtSearchResult = memo(
   ({ className, children, ...props }: ChainOfThoughtSearchResultProps) => (
     <Badge
-      className={cn("gap-1 px-2 py-0.5 font-normal text-xs", className)}
+      className={cn("gap-1 px-2 py-0.5 font-normal text-caption", className)}
       variant="secondary"
       {...props}
     >
@@ -208,7 +208,7 @@ export const ChainOfThoughtImage = memo(
       <div className="relative flex max-h-[22rem] items-center justify-center overflow-hidden rounded-lg bg-muted p-3">
         {children}
       </div>
-      {caption && <p className="text-muted-foreground text-xs">{caption}</p>}
+      {caption && <p className="text-muted-foreground text-caption">{caption}</p>}
     </div>
   )
 );

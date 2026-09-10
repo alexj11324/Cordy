@@ -202,7 +202,7 @@ describe("useIssueSurfaceController", () => {
     updateIssueMutate.mockClear();
     updateIssueMutate.mockResolvedValue(undefined);
     openModal.mockClear();
-    batchUpdateMutateAsync.mockResolvedValue(undefined);
+    batchUpdateMutateAsync.mockResolvedValue({ updated: 1 });
     batchDeleteMutateAsync.mockResolvedValue(undefined);
   });
 

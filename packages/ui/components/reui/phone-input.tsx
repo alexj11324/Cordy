@@ -190,7 +190,7 @@ function CountrySelect({
                         countryName={item.label}
                       />
                       <span className="flex-1 text-sm">{item.label}</span>
-                      <span className="text-foreground/50 text-sm">
+                      <span className="text-muted-foreground text-sm">
                         {`+${BasePhoneInput.getCountryCallingCode(item.value)}`}
                       </span>
                     </ComboboxItem>

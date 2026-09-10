@@ -48,4 +48,29 @@ describe("mobile message attribution", () => {
       "first [2](<https://a.example>) second [2](<https://a.example>)",
     );
   });
+
+  it("places a citation after a complete inline-code node", () => {
+    expect(
+      contentWithInlineCitations(
+        message({
+          content: "use `claim` now",
+          citations: [{ source_id: "source-1", start: 5, end: 8 }],
+        }),
+      ),
+    ).toBe("use `claim` [1](<https://example.com>) now");
+  });
+
+  it("places a citation after a complete authored link", () => {
+    const content = "read [claim](https://target.example) now";
+    expect(
+      contentWithInlineCitations(
+        message({
+          content,
+          citations: [{ source_id: "source-1", start: 6, end: 10 }],
+        }),
+      ),
+    ).toBe(
+      "read [claim](https://target.example) [1](<https://example.com>) now",
+    );
+  });
 });

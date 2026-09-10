@@ -686,7 +686,7 @@ function AssistantMessage({
         {isNoResponse ? (
           <NoResponseNotice />
         ) : message && timeline.length === 0 ? (
-          <CitedRichContent message={message} />
+          <AssistantRichContent content={message.content} message={message} />
         ) : null}
         {message && (
           <>
@@ -800,17 +800,30 @@ function CitationMarker({ citation }: { citation: ResolvedCitation }) {
   );
 }
 
-function CitedRichContent({ message }: { message: ChatMessage }) {
+function AssistantRichContent({
+  content,
+  message,
+  attachments,
+  phase = "settled",
+}: {
+  content: string;
+  message?: ChatMessage;
+  attachments?: import("@orvilo/core/types").Attachment[];
+  phase?: "streaming" | "settled";
+}) {
   const markerScope = useId();
-  const citations = useMemo(() => resolvedMessageCitations(message), [message]);
+  const citations = useMemo(
+    () => (message ? resolvedMessageCitations(message) : []),
+    [message],
+  );
   const inlineMarkers = useMemo(
     () =>
       citations.map((citation, index) => ({
-        offset: utf8OffsetToStringIndex(message.content, citation.end),
+        offset: utf8OffsetToStringIndex(content, citation.end),
         id: `${markerScope}/${index}`,
         label: String(citation.sourceNumber),
       })),
-    [citations, markerScope, message.content],
+    [citations, markerScope, content],
   );
   const renderMarker = useCallback(
     (marker: string) => {
@@ -824,10 +837,10 @@ function CitedRichContent({ message }: { message: ChatMessage }) {
   );
   return (
     <RichContent
-      content={message.content}
-      attachments={message.attachments}
+      content={content}
+      attachments={message?.attachments ?? attachments}
       density="compact"
-      phase="settled"
+      phase={phase}
       className="leading-relaxed"
       inlineMarkerRenderer={renderMarker}
       inlineMarkers={inlineMarkers}
@@ -1087,6 +1100,7 @@ function MessageFooter({
 }
 
 function MessageUsage({ usage }: { usage: NonNullable<ChatMessage["usage"]> }) {
+  const { t } = useT("chat");
   const input = usage.reduce((sum, item) => sum + item.input_tokens, 0);
   const output = usage.reduce((sum, item) => sum + item.output_tokens, 0);
   const cacheRead = usage.reduce(
@@ -1106,30 +1120,30 @@ function MessageUsage({ usage }: { usage: NonNullable<ChatMessage["usage"]> }) {
       <ContextTrigger
         size="xs"
         className="h-6 gap-1 px-1.5 text-caption text-faint-foreground"
-        aria-label={`Token usage: ${total}`}
+        aria-label={t(($) => $.message_list.token_usage_aria, { count: total })}
       >
-        {formatter.format(total)} tokens
+        {t(($) => $.message_list.tokens, { count: formatter.format(total) })}
       </ContextTrigger>
       <ContextContent align="start">
         <ContextContentHeader />
         <ContextContentBody className="space-y-1 text-caption">
           <div className="flex justify-between gap-4">
-            <span>Input</span>
+            <span>{t(($) => $.message_list.input_tokens)}</span>
             <span>{input.toLocaleString()}</span>
           </div>
           <div className="flex justify-between gap-4">
-            <span>Output</span>
+            <span>{t(($) => $.message_list.output_tokens)}</span>
             <span>{output.toLocaleString()}</span>
           </div>
           {cacheRead > 0 ? (
             <div className="flex justify-between gap-4">
-              <span>Cache read</span>
+              <span>{t(($) => $.message_list.cache_read_tokens)}</span>
               <span>{cacheRead.toLocaleString()}</span>
             </div>
           ) : null}
           {cacheWrite > 0 ? (
             <div className="flex justify-between gap-4">
-              <span>Cache write</span>
+              <span>{t(($) => $.message_list.cache_write_tokens)}</span>
               <span>{cacheWrite.toLocaleString()}</span>
             </div>
           ) : null}
@@ -1354,6 +1368,9 @@ function TimelineView({
   showProcessSteps?: boolean;
 }) {
   const { preface, middle, final } = splitTimeline(items);
+  const finalContent = message
+    ? message.content
+    : final.map((item) => item.content ?? "").join("");
 
   return (
     <>
@@ -1374,15 +1391,12 @@ function TimelineView({
           phase={phase}
         />
       )}
-      {message ? (
-        <CitedRichContent message={message} />
-      ) : final.length > 0 ? (
-        <RichContent
-          content={final.map((t) => t.content ?? "").join("")}
+      {finalContent.length > 0 ? (
+        <AssistantRichContent
+          content={finalContent}
+          message={message}
           attachments={attachments}
-          density="compact"
           phase={phase}
-          className="leading-relaxed"
         />
       ) : null}
     </>

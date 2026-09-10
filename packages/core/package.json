@@ -181,6 +181,7 @@
     "@formatjs/intl-localematcher": "catalog:",
     "@tanstack/react-query": "catalog:",
     "i18next": "catalog:",
+    "mdast-util-from-markdown": "^2.0.3",
     "posthog-js": "catalog:",
     "react-i18next": "catalog:",
     "yaml": "catalog:",
