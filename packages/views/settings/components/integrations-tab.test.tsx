@@ -290,6 +290,7 @@ describe("Settings IntegrationsTab", () => {
     renderTab();
     const card = screen.getByTestId("integration-channel-card-dingtalk");
     fireEvent.click(within(card).getByRole("button", { name: "Configure" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Configure" }));
 
     expect(screen.getByTestId("integration-setup-guide-dingtalk")).toBeInTheDocument();
     expect(screen.getByTestId("dingtalk-hub-install")).toBeInTheDocument();
@@ -336,16 +337,14 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.getByTestId("integration-channel-card-linear")).toBeInTheDocument();
   });
 
-  it("shows channel icons and titles without description text", () => {
+  it("shows each channel description beside its title", () => {
     renderTab();
 
     for (const channel of ["lark", "slack", "dingtalk", "wecom", "weixin", "telegram"]) {
       const card = screen.getByTestId(`integration-channel-card-${channel}`);
       const icon = screen.getByTestId(`integration-channel-icon-${channel}`);
-      const title = card.querySelector("h3");
-      const description = title?.nextElementSibling;
-      expect(title).not.toBeNull();
-      expect(description).toBeNull();
+      expect(card.querySelector("[data-slot=item-title]")).not.toBeNull();
+      expect(card.querySelector("[data-slot=item-description]")).not.toBeNull();
       expect(icon).not.toHaveClass("border");
       expect(icon).not.toHaveClass("bg-muted/40");
     }
