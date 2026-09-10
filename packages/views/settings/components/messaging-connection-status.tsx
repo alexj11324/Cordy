@@ -53,7 +53,7 @@ export function MessagingConnectionStatus({
       className="inline-flex min-w-0 flex-wrap items-center gap-2"
     >
       {!compact && (
-        <span className="text-sm text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           {t(($) => $.page.connection_status.label)}
         </span>
       )}

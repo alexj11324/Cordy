@@ -166,16 +166,16 @@ function ChannelAction({
 }) {
   const { t } = useT("settings");
   if (isGuest) {
-    return <span className="text-sm text-muted-foreground">{t(($) => $.page.integrations_login_required)}</span>;
+    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_login_required)}</span>;
   }
   if (!setupWritable) {
-    return <span className="text-sm text-muted-foreground">{t(($) => $.page.integrations_server_managed)}</span>;
+    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_server_managed)}</span>;
   }
   if (!canManage) {
-    return <span className="text-sm text-muted-foreground">{t(($) => $.page.integrations_admin_only)}</span>;
+    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_admin_only)}</span>;
   }
   if (query.isLoading || query.isError || !query.data) {
-    return <span className="text-sm text-muted-foreground">{t(($) => $.page.integrations_unavailable)}</span>;
+    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_unavailable)}</span>;
   }
   const connected = Boolean(installedRecord(query.data));
   const actionLabel = connected
@@ -382,8 +382,8 @@ export function IntegrationsTab({
         <Frame className="w-full">
           <FramePanel className="space-y-2">
             <div>
-              <h2 className="text-sm font-semibold">{t(($) => $.page.integrations_group_communication)}</h2>
-              <p className="text-sm text-muted-foreground">
+              <h2 className="text-body font-semibold">{t(($) => $.page.integrations_group_communication)}</h2>
+              <p className="text-body text-muted-foreground">
                 {t(($) => $.page.integrations_group_communication_description)}
               </p>
             </div>
@@ -418,8 +418,8 @@ export function IntegrationsTab({
           {linearEnabled ? (
             <FramePanel className="space-y-2">
               <div>
-                <h2 className="text-sm font-semibold">{t(($) => $.page.integrations_group_collaboration)}</h2>
-                <p className="text-sm text-muted-foreground">
+                <h2 className="text-body font-semibold">{t(($) => $.page.integrations_group_collaboration)}</h2>
+                <p className="text-body text-muted-foreground">
                   {t(($) => $.page.integrations_group_collaboration_description)}
                 </p>
               </div>
