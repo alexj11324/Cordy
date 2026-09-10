@@ -11,6 +11,9 @@ Each Bot maps to exactly one agent. To use several agents in Feishu, connect a B
 
 ## Connect a Bot
 
+The app installation and disconnect steps below apply to Orvilo Cloud. For a
+self-hosted deployment, use the [Feishu server setup](/self-host-messaging#feishu).
+
 The agent's owner and workspace owners and admins can start a connection:
 
 1. Open **Agents** and select the agent to connect to Feishu.
@@ -64,25 +67,17 @@ After disconnecting, the Bot stops receiving new messages. Existing conversation
 
 ## Self-hosting setup
 
-Orvilo Cloud needs no extra configuration. A self-hosted deployment must first set a key used to encrypt Bot credentials:
-
-```dotenv
-ORVILO_LARK_SECRET_KEY=<base64-encoded 32-byte key>
-```
-
-Generate one like this:
-
-```bash
-openssl rand -base64 32
-```
-
-Restart the API server, then connect the Bot from the agent's **Integrations** page. Keep this key long-term: if it is rotated or lost, existing credentials can no longer be decrypted and the Bot must be reconnected.
+Follow the [Feishu operator steps](/self-host-messaging#feishu) to create the
+provider app, configure its credentials and `ORVILO_LARK_SECRET_KEY`, and
+import the installation on the server. Keep the encryption key long-term.
+In `server_configured` mode, the app displays status and account-binding
+flows; provider authorization and disconnects are server-owned.
 
 `ORVILO_LARK_HTTP_BASE_URL` and `ORVILO_LARK_CALLBACK_BASE_URL` exist only for special deployments such as proxies and testing; leave them unset in normal operation.
 
 ## Troubleshooting
 
-- **No bind button**: confirm the current account is the agent's owner or a workspace owner or admin, and check that the self-hosting key is configured.
+- **No bind button**: on Orvilo Cloud, check that the current account owns the agent or is a workspace owner/admin. Self-hosted deployments use the operator steps above.
 - **QR code expired**: close the dialog and start the connection again.
 - **The Bot asks for account binding**: open the binding link and sign in with the Orvilo account for that workspace.
 - **The Bot doesn't run**: check whether the agent is archived and whether the [runtime](/daemon-runtimes) it uses is online.

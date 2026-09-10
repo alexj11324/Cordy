@@ -11,6 +11,9 @@ Orvilo 使用你自己的 Slack app。连接后，团队成员可以私聊 Bot�
 
 ## 开始前
 
+下文的 App 安装和断开步骤适用于 Orvilo Cloud。自托管部署请使用
+[Slack 服务器配置步骤](/self-host-messaging#slack)。
+
 连接需要工作区 owner 或 admin 完成，最终把两个凭据填入 Orvilo：
 
 - Bot User OAuth Token，以 `xoxb-` 开头；
@@ -169,19 +172,10 @@ Bot 只会响应明确 @ 它的频道消息。执行时，它会在权限允许�
 
 ## 自托管配置
 
-Orvilo Cloud 无需额外配置。自托管部署需要先设置一个用于加密 Slack token 的密钥：
-
-```dotenv
-ORVILO_SLACK_SECRET_KEY=<base64 编码的 32 字节密钥>
-```
-
-可以这样生成：
-
-```bash
-openssl rand -base64 32
-```
-
-重启 API 服务后，再连接 Slack app。该密钥需要长期保存：更换或丢失后，已有 token 无法解密，需要重新连接。
+按[Slack 服务器配置步骤](/self-host-messaging#slack)准备 Socket Mode manifest、
+token、平台标识和 `ORVILO_SLACK_SECRET_KEY`，再由服务器启动导入。
+加密密钥需长期保留。在 `server_configured` 模式下，App 展示状态和身份绑定流程；
+安装和断开 Bot 由服务器端管理。
 
 账号绑定链接使用 `ORVILO_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`；它需要指向成员可以访问的 Orvilo 地址。
 

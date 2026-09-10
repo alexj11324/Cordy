@@ -17,6 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/weixin"
 	"github.com/orvilo-ai/orvilo/server/internal/util"
 	"github.com/orvilo-ai/orvilo/server/internal/util/secretbox"
 	db "github.com/orvilo-ai/orvilo/server/pkg/db/generated"
@@ -77,15 +78,19 @@ func ProvisionFromEnvironment(ctx context.Context, pool *pgxpool.Pool, mode stri
 }
 
 func scopeFromEnvironment() (scope, error) {
-	workspaceID, err := requiredUUID(workspaceIDEnv)
+	return scopeFromValues(os.Getenv(workspaceIDEnv), os.Getenv(installerUserEnv), os.Getenv(agentIDEnv))
+}
+
+func scopeFromValues(workspaceValue, installerValue, agentValue string) (scope, error) {
+	workspaceID, err := scopeUUID(workspaceIDEnv, workspaceValue, true)
 	if err != nil {
 		return scope{}, err
 	}
-	installerUserID, err := requiredUUID(installerUserEnv)
+	installerUserID, err := scopeUUID(installerUserEnv, installerValue, true)
 	if err != nil {
 		return scope{}, err
 	}
-	agentID, err := optionalUUID(agentIDEnv)
+	agentID, err := scopeUUID(agentIDEnv, agentValue, false)
 	if err != nil {
 		return scope{}, err
 	}
@@ -93,7 +98,7 @@ func scopeFromEnvironment() (scope, error) {
 }
 
 func installationSpecs() ([]installationSpec, error) {
-	builders := []func() (*installationSpec, error){slackSpec, telegramSpec, larkSpec, dingtalkSpec, wecomSpec}
+	builders := []func() (*installationSpec, error){slackSpec, telegramSpec, larkSpec, dingtalkSpec, wecomSpec, weixinSpec}
 	specs := make([]installationSpec, 0, len(builders))
 	for _, build := range builders {
 		spec, err := build()
@@ -247,6 +252,30 @@ func wecomSpec() (*installationSpec, error) {
 	})
 }
 
+func weixinSpec() (*installationSpec, error) {
+	botID, botOK := envValue("WEIXIN_BOT_ID")
+	userID, userOK := envValue("WEIXIN_ILINK_USER_ID")
+	botToken, tokenOK := envValue("WEIXIN_BOT_TOKEN")
+	baseURL, baseOK := envValue("WEIXIN_BASE_URL")
+	if !botOK && !userOK && !tokenOK && !baseOK {
+		return nil, nil
+	}
+	if !botOK || !userOK || !tokenOK {
+		return nil, errors.New("WEIXIN_BOT_ID, WEIXIN_ILINK_USER_ID, and WEIXIN_BOT_TOKEN must be configured together")
+	}
+	baseURL, err := weixin.ValidateProviderBaseURL(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("WEIXIN_BASE_URL: %w", err)
+	}
+	encrypted, err := sealBase64("ORVILO_WEIXIN_SECRET_KEY", botToken)
+	if err != nil {
+		return nil, err
+	}
+	return marshalSpec("weixin", "weixin", botID, map[string]any{
+		"app_id": botID, "ilink_user_id": userID, "base_url": baseURL, "bot_token_encrypted": encrypted,
+	})
+}
+
 func marshalSpec(provider, channelType, appID string, config map[string]any) (*installationSpec, error) {
 	raw, err := json.Marshal(config)
 	if err != nil {
@@ -337,21 +366,12 @@ func requiredValue(name string) (string, error) {
 	return value, nil
 }
 
-func requiredUUID(name string) (pgtype.UUID, error) {
-	value, err := requiredValue(name)
-	if err != nil {
-		return pgtype.UUID{}, err
-	}
-	parsed, err := util.ParseUUID(value)
-	if err != nil {
-		return pgtype.UUID{}, fmt.Errorf("%s must be a UUID", name)
-	}
-	return parsed, nil
-}
-
-func optionalUUID(name string) (pgtype.UUID, error) {
-	value, ok := envValue(name)
-	if !ok {
+func scopeUUID(name, value string, required bool) (pgtype.UUID, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		if required {
+			return pgtype.UUID{}, fmt.Errorf("%s must be configured", name)
+		}
 		return pgtype.UUID{}, nil
 	}
 	parsed, err := util.ParseUUID(value)

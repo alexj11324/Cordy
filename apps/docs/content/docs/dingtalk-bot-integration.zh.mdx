@@ -14,6 +14,9 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 连接 Bot
 
+下文的 App 安装和断开步骤适用于 Orvilo Cloud。自托管部署请使用
+[钉钉服务器配置步骤](/self-host-messaging#钉钉)。
+
 智能体创建者或工作区 owner/admin 可以将智能体接入钉钉，智能体跟钉钉 Bot 是 1:1 的连接关系。
 
 ## 1. 创建 Stream 模式机器人
@@ -74,19 +77,10 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 自部署配置
 
-Orvilo Cloud 用户可跳过本节。自托管部署需要先设置一个用于加密钉钉 `AppSecret` 的密钥：
-
-```dotenv
-ORVILO_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
-```
-
-可以这样生成：
-
-```bash
-openssl rand -base64 32
-```
-
-重启 API 服务后，再连接钉钉。该密钥需要长期保存：更换或丢失后，已有 token 无法解密，需要重新连接。
+按[钉钉服务器配置步骤](/self-host-messaging#钉钉)配置 Stream 模式机器人凭据和
+`ORVILO_DINGTALK_SECRET_KEY`，再由服务器启动导入。加密密钥需长期保留。
+在 `server_configured` 模式下，App 保留状态、当前用户有权使用的路由和身份绑定；
+凭据配置和断开连接由服务器端管理。
 
 账号绑定链接使用 `ORVILO_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`；它需要指向成员可以访问的 Orvilo 地址。
 

@@ -54,6 +54,11 @@ sed 's/^FRONTEND_PORT=.*/FRONTEND_PORT=3100/' .env.example >"$tmp_env"
 printf '\nPOSTGRES_PASSWORD=%s\n' "$(openssl rand -hex 24)" >>"$tmp_env"
 printf '\nBACKEND_PORT=9100\nSMTP_FROM_EMAIL=orvilo@example.com\n' >>"$tmp_env"
 printf 'ORVILO_LLM_API_KEY=llm-key-from-env\nORVILO_LLM_BASE_URL=http://gateway.example/v1\nORVILO_LLM_DEFAULT_MODEL=model-from-env\nORVILO_LLM_MAX_RETRIES=3\n' >>"$tmp_env"
+for name in TELEGRAM_BOT_TOKEN ORVILO_TELEGRAM_SECRET_KEY LARK_APP_ID LARK_APP_SECRET \
+  DINGTALK_CLIENT_ID DINGTALK_CLIENT_SECRET ORVILO_DINGTALK_SECRET_KEY WECOM_BOT_ID WECOM_SECRET \
+  ORVILO_WEIXIN_SECRET_KEY WEIXIN_BOT_ID WEIXIN_ILINK_USER_ID WEIXIN_BOT_TOKEN WEIXIN_BASE_URL; do
+  printf '%s=%s\n' "$name" "messaging-test-$name" >>"$tmp_env"
+done
 
 config="$(
   docker compose \
@@ -83,6 +88,11 @@ require_config "$config" 'ORVILO_LLM_DEFAULT_MODEL: model-from-env'
 require_config "$config" 'ORVILO_LLM_MAX_RETRIES: "3"'
 require_config "$config" 'image: ghcr.io/alexj11324/orvilo-backend:latest'
 require_config "$config" 'image: ghcr.io/alexj11324/orvilo-web:latest'
+for name in TELEGRAM_BOT_TOKEN ORVILO_TELEGRAM_SECRET_KEY LARK_APP_ID LARK_APP_SECRET \
+  DINGTALK_CLIENT_ID DINGTALK_CLIENT_SECRET ORVILO_DINGTALK_SECRET_KEY WECOM_BOT_ID WECOM_SECRET \
+  ORVILO_WEIXIN_SECRET_KEY WEIXIN_BOT_ID WEIXIN_ILINK_USER_ID WEIXIN_BOT_TOKEN WEIXIN_BASE_URL; do
+  require_config "$config" "$name: messaging-test-$name"
+done
 
 # Keep the self-host deployment surfaces on the same Go mainline image
 # namespace and the same safe sender/callback defaults. The Helm chart uses

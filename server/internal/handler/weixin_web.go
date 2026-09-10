@@ -69,6 +69,10 @@ func (h *Handler) newWeixinInstallationService() (*weixin.InstallationService, e
 }
 
 func (h *Handler) ListWeixinInstallations(w http.ResponseWriter, r *http.Request) {
+	if ResolvedMessagingModeFromEnv() == "disabled" {
+		writeJSON(w, http.StatusOK, map[string]any{"installations": []WeixinInstallationResponse{}, "configured": false, "install_supported": false})
+		return
+	}
 	service, err := h.newWeixinInstallationService()
 	if err != nil {
 		if strings.Contains(err.Error(), "ORVILO_WEIXIN_SECRET_KEY is not set") {
@@ -159,7 +163,7 @@ func (h *Handler) BeginWeixinInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"session_id": result.SessionID, "qr_code_url": result.QRCode,
+		"session_id": result.SessionID, "qr_code_url": result.QRCodeImageData,
 		"expires_in_seconds":    weixin.InstallSessionTTLSeconds,
 		"poll_interval_seconds": result.PollIntervalSeconds,
 	})

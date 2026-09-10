@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "@orvilo/core/i18n/react";
+import { configStore } from "@orvilo/core/config";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -113,7 +114,34 @@ function renderUI(children: ReactNode) {
   );
 }
 
+describe("Wecom deployment setup policy", () => {
+  beforeEach(resetFixtures);
+
+  it.each(["server_configured", "disabled"] as const)("keeps %s credential lifecycle read-only", (mode) => {
+    configStore.getState().setMessagingConfig({ mode, setupWritable: true, platforms: [] });
+    const entry = renderUI(<WecomAgentBindButton agentId="agent-1" />);
+    expect(screen.queryByTestId("wecom-agent-connect")).toBeNull();
+    expect(mockRegisterBYO).not.toHaveBeenCalled();
+    entry.unmount();
+
+    installationsRef.current = {
+      configured: false,
+      install_supported: true,
+      installations: [{
+        id: "existing-installation", agent_id: "agent-1", status: "installed",
+        installed_at: "2026-09-10T00:00:00Z", region: "feishu",
+        app_id: "app-1", team_id: "team-1", bot_id: "bot-1",
+      }],
+    };
+    renderUI(<><WecomAgentBindButton agentId="agent-1" /><WecomTab /></>);
+    expect(screen.getAllByRole("status", { name: "Connection status" })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /disconnect/i })).toBeNull();
+    expect(mockDeleteInstallation).not.toHaveBeenCalled();
+  });
+});
+
 function resetFixtures() {
+  configStore.getState().setMessagingConfig({ mode: "managed", setupWritable: true, platforms: [] });
   vi.clearAllMocks();
   membersRef.current = [{ user_id: "user-1", role: "owner" }];
   installationsRef.current = { installations: [], configured: true, install_supported: true };
@@ -121,6 +149,21 @@ function resetFixtures() {
 
 describe("WecomAgentBindButton", () => {
   beforeEach(resetFixtures);
+
+  it("keeps the form open when a malformed response cannot confirm installation", async () => {
+    mockRegisterBYO.mockResolvedValue({ id: "", status: "revoked" });
+    renderUI(<WecomAgentBindButton />);
+    await userEvent.click(screen.getByTestId("wecom-agent-connect"));
+    await userEvent.type(await screen.findByTestId("wecom-byo-bot-id"), "aibot-test");
+    await userEvent.type(screen.getByTestId("wecom-byo-secret"), "test-secret");
+    await userEvent.click(screen.getByTestId("wecom-byo-submit"));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(enSettings.wecom.byo_failed_toast));
+    expect(mockRegisterBYO).toHaveBeenCalledTimes(1);
+    expect(toast.success).not.toHaveBeenCalled();
+    expect(mockInvalidate).not.toHaveBeenCalled();
+    expect(screen.getByTestId("wecom-byo-dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("wecom-byo-bot-id")).toHaveValue("aibot-test");
+  });
 
   it("opens the BYO dialog and submits the trimmed bot id + secret", async () => {
     mockRegisterBYO.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "installed" });

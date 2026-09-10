@@ -14,6 +14,9 @@ The DingTalk integration is [community-maintained](/community-maintained) and ha
 
 ## Connect the Bot
 
+The app installation and disconnect steps below apply to Orvilo Cloud. For a
+self-hosted deployment, use the [DingTalk server setup](/self-host-messaging#dingtalk).
+
 The agent's creator or a workspace owner/admin can connect the agent to DingTalk. Agents and DingTalk Bots have a one-to-one connection.
 
 ## 1. Create a Stream-mode robot
@@ -74,19 +77,11 @@ Send `/clear` to keep the current Orvilo Chat while applying a fresh agent-visib
 
 ## Self-hosting setup
 
-Orvilo Cloud users can skip this section. A self-hosted deployment must first set a key for encrypting the DingTalk `AppSecret`:
-
-```dotenv
-ORVILO_DINGTALK_SECRET_KEY=<base64-encoded 32-byte key>
-```
-
-Generate one with:
-
-```bash
-openssl rand -base64 32
-```
-
-Restart the API service, then connect DingTalk. Keep this key permanently: if it is changed or lost, existing tokens cannot be decrypted and the connection must be set up again.
+Follow the [DingTalk operator steps](/self-host-messaging#dingtalk) to
+configure the Stream-mode robot credentials and `ORVILO_DINGTALK_SECRET_KEY`,
+then import the connection at server startup. Keep the encryption key
+long-term. In `server_configured` mode, the app retains status, permitted
+routing, and account binding; credential setup and disconnects are server-owned.
 
 Account-linking URLs use `ORVILO_APP_URL`, falling back to `FRONTEND_ORIGIN` when it is unset. The URL must point to an Orvilo address that members can access.
 

@@ -47,3 +47,7 @@ providers:
   weixin:
     transport: polling
     secret_key_env: ORVILO_WEIXIN_SECRET_KEY
+    bot_id_env: WEIXIN_BOT_ID
+    ilink_user_id_env: WEIXIN_ILINK_USER_ID
+    bot_token_env: WEIXIN_BOT_TOKEN
+    base_url_env: WEIXIN_BASE_URL

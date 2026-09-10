@@ -1,6 +1,7 @@
 "use client";
 
 import { MessagingConnectionStatus } from "./messaging-connection-status";
+import { MessagingSetupNotice, useMessagingSetupWritable } from "./messaging-setup-policy";
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -50,6 +51,7 @@ import { useT } from "../../i18n";
 // (workspace_id, agent_id, channel_type) UNIQUE in channel_installation), so
 // asking the user to pick an agent here would re-create that page's picker.
 export function WecomTab() {
+  const setupWritable = useMessagingSetupWritable();
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -74,7 +76,7 @@ export function WecomTab() {
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function handleDisconnect() {
-    if (!disconnectTarget || disconnecting) return;
+    if (!setupWritable || !disconnectTarget || disconnecting) return;
     setDisconnecting(true);
     try {
       await api.deleteWecomInstallation(wsId, disconnectTarget);
@@ -105,7 +107,8 @@ export function WecomTab() {
 
   return (
     <div className="space-y-8">
-      {!configured ? (
+      {!setupWritable && <MessagingSetupNotice />}
+      {!configured && installations.length === 0 ? (
         <Card>
           <CardContent className="space-y-2">
             <p className="text-body font-medium">{t(($) => $.wecom.not_enabled_title)}</p>
@@ -155,7 +158,7 @@ export function WecomTab() {
                   <InstallationRow
                     key={inst.id}
                     installation={inst}
-                    canManage={canManage}
+                    canManage={canManage && setupWritable}
                     onDisconnect={() => setDisconnectTarget(inst.id)}
                   />
                 ))}
@@ -166,7 +169,7 @@ export function WecomTab() {
       )}
 
       <AlertDialog
-        open={!!disconnectTarget}
+        open={setupWritable && !!disconnectTarget}
         onOpenChange={(v) => {
           if (!v && !disconnecting) setDisconnectTarget(null);
         }}
@@ -208,17 +211,19 @@ function InstallationRow({
   const { t } = useT("settings");
   const { getAgentName } = useActorName();
   const isInstalled = installation.status === "installed";
-  const agentName = getAgentName(installation.agent_id);
+  const agentName = installation.agent_id
+    ? getAgentName(installation.agent_id)
+    : t(($) => $.page.integrations_workspace_connection);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        <ActorAvatar
+        {installation.agent_id && <ActorAvatar
           actorType="agent"
           actorId={installation.agent_id}
           size="lg"
           enableHoverCard
           profileLink
-        />
+        />}
         <div className="space-y-1">
           <MessagingConnectionStatus installation={installation} />
           <p className="text-body font-medium">
@@ -280,6 +285,7 @@ export function WecomAgentBindButton({
     enabled: !!wsId,
   });
   const installSupported = listing?.install_supported === true;
+  const setupWritable = useMessagingSetupWritable();
 
   const { data: members = [] } = useQuery({
     ...memberListOptions(wsId),
@@ -289,7 +295,7 @@ export function WecomAgentBindButton({
   const canManage =
     currentMember?.role === "owner" || currentMember?.role === "admin";
 
-  if (!canManage) return null;
+  if (!canManage || user?.is_guest === true) return null;
 
   const recordedInstallation = listing?.installations.find(
     (inst) =>
@@ -311,6 +317,7 @@ export function WecomAgentBindButton({
     );
   }
 
+  if (!setupWritable) return <MessagingSetupNotice />;
   if (!installSupported) return null;
 
   function closeDialog() {
@@ -327,11 +334,14 @@ export function WecomAgentBindButton({
     if (submitting || !wsId || !bot_id || !secretTrimmed) return;
     setSubmitting(true);
     try {
-      await api.registerWecomBYO(wsId, agentId, {
+      const installation = await api.registerWecomBYO(wsId, agentId, {
         bot_id,
         secret: secretTrimmed,
         bot_name: botName.trim() || undefined,
       });
+      if (!installation.id || installation.status !== "installed") {
+        throw new Error(t(($) => $.wecom.byo_failed_toast));
+      }
       await qc.invalidateQueries({ queryKey: wecomKeys.installations(wsId) });
       toast.success(t(($) => $.wecom.byo_success_toast));
       setDialogOpen(false);
@@ -531,10 +541,11 @@ function WecomAgentBotInstalledControls({
   const qc = useQueryClient();
 
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const setupWritable = useMessagingSetupWritable();
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function handleDisconnect() {
-    if (disconnecting) return;
+    if (!setupWritable || disconnecting) return;
     setDisconnecting(true);
     try {
       await api.deleteWecomInstallation(wsId, installation.id);
@@ -562,7 +573,7 @@ function WecomAgentBotInstalledControls({
             <span className="ml-2">{installation.bot_id}</span>
           </span>
         </span>
-        <Button
+        {setupWritable && <Button
           variant="destructive"
           size="sm"
           onClick={() => setConfirmOpen(true)}
@@ -575,11 +586,11 @@ function WecomAgentBotInstalledControls({
           {disconnecting
             ? t(($) => $.wecom.disconnecting)
             : t(($) => $.wecom.disconnect)}
-        </Button>
+        </Button>}
       </div>
 
       <AlertDialog
-        open={confirmOpen}
+        open={setupWritable && confirmOpen}
         onOpenChange={(v) => {
           if (!v && !disconnecting) setConfirmOpen(false);
         }}

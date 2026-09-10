@@ -1,12 +1,90 @@
 package weixin
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
+
+	"github.com/go-redis/redismock/v9"
+	"github.com/redis/go-redis/v9"
 )
+
+func TestConfigureSessionStoreNilRedisSupportsPutGet(t *testing.T) {
+	var optionalRedis *redis.Client
+	ConfigureSessionStore(optionalRedis)
+	t.Cleanup(func() { ConfigureSessionStore(nil) })
+	store := DefaultInstallSessionStore()
+	session := InstallSession{ID: "no-redis-session", QRCode: "poll-token", ExpiresAt: time.Now().Add(time.Minute)}
+	if err := store.Put(t.Context(), session); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Get(t.Context(), session.ID)
+	if err != nil || got.QRCode != session.QRCode {
+		t.Fatalf("configured memory store lookup = %#v, %v", got, err)
+	}
+}
+
+func TestConfigureSessionStoreReadsRedisAcrossReconfiguration(t *testing.T) {
+	client, mock := redismock.NewClientMock()
+	t.Cleanup(func() { _ = client.Close() })
+	t.Cleanup(func() { ConfigureSessionStore(nil) })
+	session := InstallSession{ID: "shared-session", QRCode: "poll-token", ExpiresAt: time.Now().Add(time.Minute)}
+	payload, err := json.Marshal(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := installSessionKey + session.ID
+	mock.CustomMatch(func(_ []interface{}, actual []interface{}) error {
+		if len(actual) != 5 || actual[0] != "set" || actual[1] != key || actual[3] != "px" {
+			return fmt.Errorf("unexpected Redis SET shape: %v", actual)
+		}
+		value, ok := actual[2].([]byte)
+		if !ok || !bytes.Equal(value, payload) {
+			return errors.New("Redis SET did not preserve the install session")
+		}
+		ttl, ok := actual[4].(int64)
+		if !ok || ttl <= 0 || ttl > time.Minute.Milliseconds() {
+			return errors.New("Redis SET did not retain the bounded install TTL")
+		}
+		return nil
+	}).ExpectSet(key, payload, time.Minute).SetVal("OK")
+	mock.ExpectGet(key).SetVal(string(payload))
+	ConfigureSessionStore(client)
+	if err := DefaultInstallSessionStore().Put(t.Context(), session); err != nil {
+		t.Fatal(err)
+	}
+	ConfigureSessionStore(client)
+	got, err := DefaultInstallSessionStore().Get(t.Context(), session.ID)
+	if err != nil || got.QRCode != session.QRCode {
+		t.Fatalf("configured Redis store lookup = %#v, %v", got, err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConfigureSessionStoreClosedRedisFallsBackToMemory(t *testing.T) {
+	client := redis.NewClient(&redis.Options{Addr: "127.0.0.1:1"})
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ConfigureSessionStore(client)
+	t.Cleanup(func() { ConfigureSessionStore(nil) })
+	session := InstallSession{ID: "closed-redis-session", QRCode: "poll-token", ExpiresAt: time.Now().Add(time.Minute)}
+	store := DefaultInstallSessionStore()
+	if err := store.Put(t.Context(), session); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Get(t.Context(), session.ID)
+	if err != nil || got.QRCode != session.QRCode {
+		t.Fatalf("configured fallback lookup = %#v, %v", got, err)
+	}
+}
 
 func TestMemoryInstallSessionStoreTrimsIDsExpiresAndEnforcesCap(t *testing.T) {
 	store, ok := NewMemorySessionStore().(*memorySessionStore)

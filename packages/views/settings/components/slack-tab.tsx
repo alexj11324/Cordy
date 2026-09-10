@@ -1,6 +1,7 @@
 "use client";
 
 import { MessagingConnectionStatus } from "./messaging-connection-status";
+import { MessagingSetupNotice, useMessagingSetupWritable } from "./messaging-setup-policy";
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -49,6 +50,7 @@ import { useLocale, useT } from "../../i18n";
 // (workspace_id, agent_id, channel_type) UNIQUE in channel_installation), so
 // asking the user to pick an agent here would re-create that page's picker.
 export function SlackTab() {
+  const setupWritable = useMessagingSetupWritable();
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -85,7 +87,7 @@ export function SlackTab() {
   const [managedConnecting, setManagedConnecting] = useState(false);
 
   async function handleManagedConnect() {
-    if (managedConnecting) return;
+    if (!setupWritable || managedConnecting || !canManage || user?.is_guest === true) return;
     setManagedConnecting(true);
     try {
       // Land back on this settings tab after the callback 302s: the install
@@ -104,7 +106,7 @@ export function SlackTab() {
   }
 
   async function handleDisconnect() {
-    if (!disconnectTarget || disconnecting) return;
+    if (!setupWritable || !disconnectTarget || disconnecting) return;
     setDisconnecting(true);
     try {
       await api.deleteSlackInstallation(wsId, disconnectTarget);
@@ -135,7 +137,8 @@ export function SlackTab() {
 
   return (
     <div className="space-y-8">
-      {!configured ? (
+      {!setupWritable && <MessagingSetupNotice />}
+      {!configured && installations.length === 0 ? (
         <Card>
           <CardContent className="space-y-2">
             <p className="text-body font-medium">{t(($) => $.slack.not_enabled_title)}</p>
@@ -160,7 +163,7 @@ export function SlackTab() {
         </Card>
       ) : (
         <>
-          {canManage && managedSupported && !installedManagedBot ? (
+          {canManage && setupWritable && user?.is_guest !== true && managedSupported && !installedManagedBot ? (
             <Card>
               <CardContent className="flex flex-wrap items-center justify-between gap-3">
                 <div className="space-y-1">
@@ -212,7 +215,7 @@ export function SlackTab() {
                   <InstallationRow
                     key={inst.id}
                     installation={inst}
-                    canManage={canManage}
+                    canManage={canManage && setupWritable}
                     onDisconnect={() => setDisconnectTarget(inst.id)}
                   />
                 ))}
@@ -224,7 +227,7 @@ export function SlackTab() {
       )}
 
       <AlertDialog
-        open={!!disconnectTarget}
+        open={setupWritable && !!disconnectTarget}
         onOpenChange={(v) => {
           if (!v && !disconnecting) setDisconnectTarget(null);
         }}
@@ -383,6 +386,7 @@ export function SlackAgentBindButton({
     enabled: !!wsId,
   });
   const installSupported = listing?.install_supported === true;
+  const setupWritable = useMessagingSetupWritable();
 
   const { data: members = [] } = useQuery({
     ...memberListOptions(wsId),
@@ -392,7 +396,7 @@ export function SlackAgentBindButton({
   const canManage =
     currentMember?.role === "owner" || currentMember?.role === "admin";
 
-  if (!canManage) return null;
+  if (!canManage || user?.is_guest === true) return null;
 
   const recordedInstallation = listing?.installations.find(
     (inst) =>
@@ -414,6 +418,7 @@ export function SlackAgentBindButton({
     );
   }
 
+  if (!setupWritable) return <MessagingSetupNotice />;
   if (!installSupported) return null;
 
   function closeDialog() {
@@ -508,6 +513,7 @@ export function SlackAgentBindButton({
               <Input
                 id="slack-byo-bot-token"
                 data-testid="slack-byo-bot-token"
+                type="password"
                 value={botToken}
                 onChange={(e) => setBotToken(e.target.value)}
                 // Slack token prefix: a format hint, not copy.
@@ -526,6 +532,7 @@ export function SlackAgentBindButton({
               <Input
                 id="slack-byo-app-token"
                 data-testid="slack-byo-app-token"
+                type="password"
                 value={appToken}
                 onChange={(e) => setAppToken(e.target.value)}
                 // Slack token prefix: a format hint, not copy.
@@ -610,10 +617,11 @@ function SlackAgentBotInstalledControls({
   const qc = useQueryClient();
 
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const setupWritable = useMessagingSetupWritable();
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function handleDisconnect() {
-    if (disconnecting) return;
+    if (!setupWritable || disconnecting) return;
     setDisconnecting(true);
     try {
       await api.deleteSlackInstallation(wsId, installation.id);
@@ -638,7 +646,7 @@ function SlackAgentBotInstalledControls({
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
           <MessagingConnectionStatus installation={installation} compact />
         </span>
-        <Button
+        {setupWritable && <Button
           variant="destructive"
           size="sm"
           onClick={() => setConfirmOpen(true)}
@@ -651,7 +659,7 @@ function SlackAgentBotInstalledControls({
           {disconnecting
             ? t(($) => $.slack.disconnecting)
             : t(($) => $.slack.disconnect)}
-        </Button>
+        </Button>}
       </div>
 
       {installation.team_id && (
@@ -669,7 +677,7 @@ function SlackAgentBotInstalledControls({
       )}
 
       <AlertDialog
-        open={confirmOpen}
+        open={setupWritable && confirmOpen}
         onOpenChange={(v) => {
           if (!v && !disconnecting) setConfirmOpen(false);
         }}

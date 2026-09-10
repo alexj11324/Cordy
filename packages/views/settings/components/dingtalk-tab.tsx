@@ -39,6 +39,7 @@ import {
 } from "@orvilo/core/workspace/queries";
 import { DingTalkMark } from "./dingtalk-mark";
 import { MessagingConnectionStatus } from "./messaging-connection-status";
+import { MessagingSetupNotice, useMessagingSetupWritable } from "./messaging-setup-policy";
 import { DingTalkGroupRoutes } from "./dingtalk-group-routes";
 import { useActorName } from "@orvilo/core/workspace/hooks";
 import {
@@ -509,6 +510,7 @@ export function DingTalkBotGroups({
 // (workspace_id, agent_id, channel_type) UNIQUE in channel_installation), so
 // asking the user to pick an agent here would re-create that page's picker.
 export function DingTalkTab() {
+  const setupWritable = useMessagingSetupWritable();
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -537,8 +539,10 @@ export function DingTalkTab() {
     ? installations
     : installations.filter(
         (installation) =>
-          installation.agent_available !== false &&
-          visibleAgentIDs.has(installation.agent_id),
+          !installation.agent_id || (
+            installation.agent_available !== false &&
+            visibleAgentIDs.has(installation.agent_id)
+          ),
       );
   const configured = data?.configured === true;
   const {
@@ -563,7 +567,7 @@ export function DingTalkTab() {
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function handleDisconnect() {
-    if (!disconnectTarget || disconnecting) return;
+    if (!setupWritable || !disconnectTarget || disconnecting) return;
     setDisconnecting(true);
     try {
       await api.deleteDingTalkInstallation(wsId, disconnectTarget);
@@ -594,7 +598,8 @@ export function DingTalkTab() {
 
   return (
     <div className="space-y-8">
-      {!configured ? (
+      {!setupWritable && <MessagingSetupNotice />}
+      {!configured && displayedInstallations.length === 0 ? (
         <Card>
           <CardContent className="space-y-2">
             <p className="text-body font-medium">{t(($) => $.dingtalk.not_enabled_title)}</p>
@@ -648,6 +653,7 @@ export function DingTalkTab() {
                     workspaceId={wsId}
                     installation={inst}
                     canManage={canManage}
+                    canDisconnect={canManage && setupWritable}
                     onDisconnect={() => setDisconnectTarget(inst.id)}
                     groups={groupsData?.groups ?? []}
                     botIdentity={groupsData?.bot_identities?.[inst.id]}
@@ -671,7 +677,7 @@ export function DingTalkTab() {
       )}
 
       <AlertDialog
-        open={!!disconnectTarget}
+        open={setupWritable && !!disconnectTarget}
         onOpenChange={(v) => {
           if (!v && !disconnecting) setDisconnectTarget(null);
         }}
@@ -705,6 +711,7 @@ function InstallationRow({
   workspaceId,
   installation,
   canManage,
+  canDisconnect,
   onDisconnect,
   groups,
   botIdentity: suppliedBotIdentity,
@@ -718,6 +725,7 @@ function InstallationRow({
   workspaceId: string;
   installation: DingTalkInstallation;
   canManage: boolean;
+  canDisconnect: boolean;
   onDisconnect: () => void;
   groups: DingTalkGroup[];
   botIdentity?: DingTalkGroupBot;
@@ -732,9 +740,11 @@ function InstallationRow({
   const { getAgentName } = useActorName();
   const isInstalled = installation.status === "installed";
   const agentAvailable = installation.agent_available !== false;
-  const agentName = agentAvailable
-    ? getAgentName(installation.agent_id)
-    : t(($) => $.dingtalk.deleted_agent);
+  const agentName = !installation.agent_id
+    ? t(($) => $.page.integrations_workspace_connection)
+    : agentAvailable
+      ? getAgentName(installation.agent_id)
+      : t(($) => $.dingtalk.deleted_agent);
   const linkedIdentityIDs = canManage
     ? (installation.bound_dingtalk_user_ids ?? [])
     : [];
@@ -746,13 +756,13 @@ function InstallationRow({
     >
       <div className="flex items-start justify-between gap-6">
         <div className="flex min-w-0 items-start gap-3">
-          <ActorAvatar
+          {installation.agent_id && <ActorAvatar
             actorType="agent"
             actorId={installation.agent_id}
             size="lg"
             enableHoverCard={agentAvailable}
             profileLink={agentAvailable}
-          />
+          />}
           <div className="min-w-0 space-y-1.5">
             <h3 className="truncate text-title-sm font-medium text-pretty">
               {agentName}
@@ -794,7 +804,7 @@ function InstallationRow({
             </div>
           </div>
         </div>
-        {canManage && isInstalled && (
+        {canDisconnect && isInstalled && (
           <Button variant="outline" size="sm" onClick={onDisconnect}>
             <Trash2 className="h-3 w-3" aria-hidden="true" />
             {t(($) => $.dingtalk.disconnect)}
@@ -875,6 +885,7 @@ export function DingTalkAgentBindButton({
     ...dingtalkInstallationsOptions(wsId),
   });
   const installSupported = listing?.install_supported === true;
+  const setupWritable = useMessagingSetupWritable();
 
   const { data: members = [] } = useQuery({
     ...memberListOptions(wsId),
@@ -890,7 +901,7 @@ export function DingTalkAgentBindButton({
     agentOwnerId === user.id;
   const canManage = isWorkspaceAdmin || isAgentOwner;
 
-  if (!canManage) return null;
+  if (!canManage || user?.is_guest === true) return null;
 
   const recordedInstallation = listing?.installations?.find(
     (inst) =>
@@ -917,6 +928,7 @@ export function DingTalkAgentBindButton({
     );
   }
 
+  if (!setupWritable) return <MessagingSetupNotice />;
   if (!installSupported) return null;
 
   function closeDialog() {
@@ -932,7 +944,10 @@ export function DingTalkAgentBindButton({
     if (submitting || !wsId || !client_id || !client_secret) return;
     setSubmitting(true);
     try {
-      await api.registerDingTalkBYO(wsId, agentId, { client_id, client_secret });
+      const installation = await api.registerDingTalkBYO(wsId, agentId, { client_id, client_secret });
+      if (!installation.id || installation.status !== "installed") {
+        throw new Error(t(($) => $.dingtalk.byo_failed_toast));
+      }
       // The dingtalk_installation realtime event also refreshes this list, but
       // invalidate explicitly so the installed controls appear immediately.
       await qc.invalidateQueries({ queryKey: dingtalkKeys.installations(wsId) });
@@ -1110,10 +1125,11 @@ function DingTalkAgentBotInstalledControls({
   const qc = useQueryClient();
 
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const setupWritable = useMessagingSetupWritable();
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function handleDisconnect() {
-    if (disconnecting) return;
+    if (!setupWritable || disconnecting) return;
     setDisconnecting(true);
     try {
       await api.deleteDingTalkInstallation(wsId, installation.id);
@@ -1141,7 +1157,7 @@ function DingTalkAgentBotInstalledControls({
           botIdentityIssue={botIdentityIssue}
           showBotIdentity={botName !== undefined || botIdentityIssue !== undefined}
         />
-        <Button
+        {setupWritable && <Button
           variant="destructive"
           size="sm"
           onClick={() => setConfirmOpen(true)}
@@ -1154,11 +1170,11 @@ function DingTalkAgentBotInstalledControls({
           {disconnecting
             ? t(($) => $.dingtalk.disconnecting)
             : t(($) => $.dingtalk.disconnect)}
-        </Button>
+        </Button>}
       </div>
 
       <AlertDialog
-        open={confirmOpen}
+        open={setupWritable && confirmOpen}
         onOpenChange={(v) => {
           if (!v && !disconnecting) setConfirmOpen(false);
         }}

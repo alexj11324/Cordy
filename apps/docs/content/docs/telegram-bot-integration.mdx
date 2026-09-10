@@ -11,6 +11,9 @@ Telegram support is [community-maintained](/community-maintained): it ships in e
 
 ## Before you start
 
+The app installation and disconnect steps below apply to Orvilo Cloud. For a
+self-hosted deployment, use the [Telegram server setup](/self-host-messaging#telegram).
+
 - An Orvilo workspace owner or admin must connect the Bot.
 - The API server must be able to reach `https://api.telegram.org`.
 - You need the Bot token issued by @BotFather. Treat it as a password.
@@ -71,13 +74,11 @@ Open **Settings → Integrations → Telegram** to view connected Bots. Owners a
 
 ## Self-hosting setup
 
-Set a stable 32-byte encryption key before starting the API server:
-
-```dotenv
-ORVILO_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
-```
-
-Generate one with `openssl rand -base64 32`. Keep it long-term: losing or rotating it makes existing Bot tokens unreadable and requires reconnecting each Bot.
+Follow the [Telegram operator steps](/self-host-messaging#telegram) to
+obtain a Bot token, remove any existing webhook, configure
+`ORVILO_TELEGRAM_SECRET_KEY`, and import the installation on the server.
+Keep the encryption key long-term. In `server_configured` mode, the app
+retains status and account binding; installation and disconnects are server-owned.
 
 Binding links use `ORVILO_APP_URL`, falling back to `FRONTEND_ORIGIN`. The resulting address must be reachable by members. The server's network or proxy must allow HTTPS access to `api.telegram.org`; Go honors standard `HTTPS_PROXY` and `NO_PROXY` environment variables.
 

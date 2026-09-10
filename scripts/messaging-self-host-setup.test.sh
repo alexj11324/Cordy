@@ -27,6 +27,9 @@ grep -Fq 'ORVILO_MESSAGING_BOOTSTRAP=false' "$env_file"
 grep -Fq 'ORVILO_MESSAGING_WORKSPACE_ID=' "$env_file"
 grep -Fq 'SLACK_APP_TOKEN=' "$env_file"
 grep -Fq 'TELEGRAM_BOT_TOKEN=' "$env_file"
+grep -Fq 'set -a' "$tmp_dir/init.out"
+grep -Fq 'set +a' "$tmp_dir/init.out"
+grep -Fq '/app/orvilo-messaging weixin-auth' "$tmp_dir/init.out"
 
 if "$setup" init --app-url https://localhost:3000 --api-url https://api.example.com \
   --env-file "$tmp_dir/rejected.env" >"$tmp_dir/rejected.out" 2>&1; then

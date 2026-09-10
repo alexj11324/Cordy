@@ -11,6 +11,9 @@ Telegram 集成[由社区维护](/community-maintained)：每个版本都会随�
 
 ## 开始前
 
+下文的 App 安装和断开步骤适用于 Orvilo Cloud。自托管部署请使用
+[Telegram 服务器配置步骤](/self-host-messaging#telegram)。
+
 - 连接操作需要工作区 owner 或 admin 权限。
 - API 服务器必须能够访问 `https://api.telegram.org`。
 - 你需要 @BotFather 签发的 Bot token；它等同于密码。
@@ -71,13 +74,10 @@ Bot 通过发送并编辑 Telegram 消息来流式展示文字回复，引用触
 
 ## 自托管配置
 
-启动 API 服务器前配置一个长期稳定的 32 字节加密密钥：
-
-```dotenv
-ORVILO_TELEGRAM_SECRET_KEY=<base64 编码的 32 字节密钥>
-```
-
-可用 `openssl rand -base64 32` 生成。丢失或轮换此密钥后，已有 Bot token 无法解密，需要逐个重新连接。
+按[Telegram 服务器配置步骤](/self-host-messaging#telegram)取得 Bot token、移除已有
+webhook、设置 `ORVILO_TELEGRAM_SECRET_KEY`，再由服务器导入连接。
+加密密钥需长期保留。在 `server_configured` 模式下，App 保留状态和身份绑定；
+安装和断开连接由服务器端管理。
 
 绑定链接使用 `ORVILO_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`；生成的地址必须能被成员访问。服务器网络或代理还必须允许 HTTPS 访问 `api.telegram.org`；Go 会读取标准的 `HTTPS_PROXY` 和 `NO_PROXY` 环境变量。
 

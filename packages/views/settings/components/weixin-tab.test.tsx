@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "@orvilo/core/i18n/react";
+import { configStore } from "@orvilo/core/config";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -108,7 +109,7 @@ vi.mock("sonner", () => ({
   toast: { success: mockToastSuccess, error: mockToastError, message: vi.fn() },
 }));
 
-import { WeixinTab } from "./weixin-tab";
+import { WeixinAgentBindButton, WeixinTab } from "./weixin-tab";
 
 const TEST_RESOURCES = { en: { common: enCommon, settings: enSettings } };
 
@@ -122,7 +123,34 @@ function renderUI(children: ReactNode) {
   );
 }
 
+describe("Weixin deployment setup policy", () => {
+  beforeEach(resetFixtures);
+
+  it.each(["server_configured", "disabled"] as const)("keeps %s credential lifecycle read-only", (mode) => {
+    configStore.getState().setMessagingConfig({ mode, setupWritable: true, platforms: [] });
+    const entry = renderUI(<WeixinAgentBindButton agentId="agent-1" />);
+    expect(screen.queryByRole("button", { name: "Connect Weixin" })).toBeNull();
+    expect(mockBegin).not.toHaveBeenCalled();
+    entry.unmount();
+
+    installationsRef.current = {
+      configured: false,
+      install_supported: true,
+      installations: [{
+        id: "existing-installation", agent_id: "agent-1", status: "installed",
+        installed_at: "2026-09-10T00:00:00Z", region: "feishu",
+        app_id: "app-1", team_id: "team-1", bot_id: "bot-1",
+      }],
+    };
+    renderUI(<><WeixinAgentBindButton agentId="agent-1" /><WeixinTab /></>);
+    expect(screen.getAllByRole("status", { name: "Connection status" })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /disconnect/i })).toBeNull();
+    expect(mockDelete).not.toHaveBeenCalled();
+  });
+});
+
 function resetFixtures() {
+  configStore.getState().setMessagingConfig({ mode: "managed", setupWritable: true, platforms: [] });
   vi.clearAllMocks();
   membersRef.current = [{ user_id: "user-1", role: "owner" }];
   agentsRef.current = [
@@ -137,6 +165,26 @@ function resetFixtures() {
 
 describe("WeixinTab", () => {
   beforeEach(resetFixtures);
+
+  it("starts workspace QR setup from the shared App connect entry", async () => {
+    mockBegin.mockResolvedValue({
+      session_id: "workspace-session",
+      qr_code_url: "weixin://qr/workspace-1",
+      expires_in_seconds: 300,
+      poll_interval_seconds: 2,
+    });
+    renderUI(<WeixinAgentBindButton />);
+    await userEvent.click(screen.getByRole("button", { name: "Connect Weixin" }));
+    await waitFor(() => expect(mockBegin).toHaveBeenCalledWith("workspace-1", undefined));
+  });
+
+  it("does not expose direct setup to a member who does not own the Agent", () => {
+    membersRef.current = [{ user_id: "user-1", role: "member" }];
+    agentsRef.current = [{ id: "agent-1", name: "Planner", owner_id: "user-2", archived_at: null }];
+    renderUI(<WeixinAgentBindButton agentId="agent-1" />);
+    expect(screen.queryByRole("button", { name: "Connect Weixin" })).toBeNull();
+    expect(mockBegin).not.toHaveBeenCalled();
+  });
 
   it("starts a Personal Weixin session and renders its QR code", async () => {
     mockBegin.mockResolvedValue({
