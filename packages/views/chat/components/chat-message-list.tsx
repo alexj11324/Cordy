@@ -1112,7 +1112,6 @@ function MessageUsage({ usage }: { usage: NonNullable<ChatMessage["usage"]> }) {
     0,
   );
   const total = input + output + cacheRead + cacheWrite;
-  const formatter = new Intl.NumberFormat(undefined, { notation: "compact" });
   const model = usage.length === 1 ? usage[0]?.model : undefined;
 
   return (
@@ -1122,7 +1121,7 @@ function MessageUsage({ usage }: { usage: NonNullable<ChatMessage["usage"]> }) {
         className="h-6 gap-1 px-1.5 text-caption text-faint-foreground"
         aria-label={t(($) => $.message_list.token_usage_aria, { count: total })}
       >
-        {t(($) => $.message_list.tokens, { count: formatter.format(total) })}
+        {t(($) => $.message_list.tokens, { count: total })}
       </ContextTrigger>
       <ContextContent align="start">
         <ContextContentHeader />

@@ -350,8 +350,10 @@ export interface AgentTask {
    * or deleted.
    */
   trigger_summary?: string;
-	/** Full member-authored turn for a task-level provider-session continuation. */
+  /** Full member-authored turn for a task-level provider-session continuation. */
 	agent_thread_message?: string;
+  /** Immutable server-validated root for a task-level Agent conversation. */
+  agent_thread_root_task_id?: string;
   /**
    * Handoff instruction the assigner attached when starting this run (MUL-3375).
    * Present only on assignment-triggered runs that carried a note; the execution

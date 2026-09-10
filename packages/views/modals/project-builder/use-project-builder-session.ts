@@ -54,6 +54,22 @@ export function useProjectBuilderSession(options: {
   const [error, setError] = useState<string | null>(null);
   const [localRestore, setLocalRestore] = useState<RestoreDraftRequest | null>(null);
 
+  const deleteOrphanedSession = useCallback(
+    async (id: string) => {
+      try {
+        await api.deleteChatSession(id);
+        queryClient.removeQueries({ queryKey: chatKeys.messages(id) });
+        queryClient.removeQueries({ queryKey: chatKeys.messagesPage(id) });
+        queryClient.removeQueries({ queryKey: chatKeys.pendingTask(id) });
+      } catch {
+        // The request is already detached from a mounted UI. There is no
+        // actionable surface for an error; the server remains the authority
+        // for any later cleanup sweep.
+      }
+    },
+    [queryClient],
+  );
+
   const messagesQuery = useQuery(chatMessagesOptions(sessionId));
   const pendingQuery = useQuery(pendingChatTaskOptions(sessionId));
   const messages = messagesQuery.data ?? EMPTY_CHAT_MESSAGES;
@@ -89,6 +105,10 @@ export function useProjectBuilderSession(options: {
         if (!session.id) {
           throw new Error("The chat session response did not include an id");
         }
+        if (!mountedRef.current) {
+          void deleteOrphanedSession(session.id);
+          return null;
+        }
         sessionIdRef.current = session.id;
         return session.id;
       })
@@ -106,7 +126,7 @@ export function useProjectBuilderSession(options: {
       });
     createSessionRequestRef.current = request;
     return request;
-  }, [agent, t]);
+  }, [agent, deleteOrphanedSession, t]);
 
   const send = useCallback(
     async (

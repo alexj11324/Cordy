@@ -3094,6 +3094,7 @@ export const AgentTaskSchema = z
     delivered_comment_ids: OptionalStringArraySchema,
     trigger_summary: z.string().optional(),
     agent_thread_message: z.string().optional(),
+    agent_thread_root_task_id: z.string().optional(),
     handoff_note: z.string().optional(),
     kind: z.string().optional(),
     work_dir: z.string().optional().catch(undefined),

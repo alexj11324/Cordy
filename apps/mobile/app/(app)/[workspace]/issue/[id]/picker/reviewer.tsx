@@ -13,16 +13,14 @@ import { getIssueRoleCopy } from "@/lib/issue-role-copy";
 import { reviewerPatch } from "@/lib/issue-role-patch";
 import { issueActorForRole } from "@/lib/issue-scope";
 import { issueStatusCategory } from "@/lib/issue-status";
-import {
-  isReviewHandoff,
-  reviewHandoffPatch,
-} from "@/lib/issue-review-workflow";
+import { isReviewHandoff } from "@/lib/issue-review-workflow";
 import { useNativeSearchBar } from "@/lib/use-native-search-bar";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 
 export default function IssueReviewerPickerRoute() {
-  const { id, handoffStatus } = useLocalSearchParams<{
+  const { id, workspace, handoffStatus } = useLocalSearchParams<{
     id: string;
+    workspace: string;
     handoffStatus?: string;
   }>();
   const wsId = useWorkspaceStore((state) => state.currentWorkspaceId);
@@ -93,23 +91,31 @@ export default function IssueReviewerPickerRoute() {
         }
         onChange={(next) => {
           if (writingRef.current || (isHandoff && !next)) return;
-          writingRef.current = true;
-          updateIssue.mutate(
-            isHandoff && handoffStatus && next
-              ? reviewHandoffPatch(handoffStatus, next)
-              : reviewerPatch(next),
-            {
-              onSuccess: () => router.back(),
-              onError: (error) =>
-                Alert.alert(
-                  copy.updateFailed,
-                  error instanceof Error ? error.message : copy.updateFailed,
-                ),
-              onSettled: () => {
-                writingRef.current = false;
+          if (isHandoff && handoffStatus && next) {
+            router.replace({
+              pathname: "/[workspace]/issue/[id]/picker/review-submission",
+              params: {
+                workspace,
+                id,
+                handoffStatus,
+                reviewerType: next.type,
+                reviewerId: next.id,
               },
+            });
+            return;
+          }
+          writingRef.current = true;
+          updateIssue.mutate(reviewerPatch(next), {
+            onSuccess: () => router.back(),
+            onError: (error) =>
+              Alert.alert(
+                copy.updateFailed,
+                error instanceof Error ? error.message : copy.updateFailed,
+              ),
+            onSettled: () => {
+              writingRef.current = false;
             },
-          );
+          });
         }}
       />
     </>

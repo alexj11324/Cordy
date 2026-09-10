@@ -155,6 +155,8 @@
     "source_folders": "Source folder",
     "add_repository": "Add repository",
     "confirm_repository": "Confirm",
+    "choose_method": "Choose how you want to start this project.",
+    "create_manually": "Create manually",
     "create_with_agent": "Create with Agent",
     "loading_assistant": "Loading assistant…",
     "builder_choose_runtime": "Choose a device and model",

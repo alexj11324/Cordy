@@ -149,6 +149,7 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
   const clearDraft = useProjectDraftStore((s) => s.clearDraft);
 
   const [title, setTitle] = useState(draft.title);
+  const [summary, setSummary] = useState(draft.summary ?? "");
   const descEditorRef = useRef<ContentEditorRef>(null);
   const [status, setStatus] = useState<ProjectStatus>(draft.status);
   const [priority, setPriority] = useState<ProjectPriority>(draft.priority);
@@ -258,6 +259,7 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
 
   // Sync field changes to draft store
   const updateTitle = (v: string) => { setTitle(v); setDraft({ title: v }); };
+  const updateSummary = (v: string) => { setSummary(v); setDraft({ summary: v }); };
   const updateStatus = (v: ProjectStatus) => { setStatus(v); setDraft({ status: v }); };
   const updatePriority = (v: ProjectPriority) => { setPriority(v); setDraft({ priority: v }); };
   const updateLead = (type?: "member" | "agent", id?: string) => {
@@ -318,6 +320,7 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
     try {
       const project = await createProject.mutateAsync({
         title: title.trim(),
+        summary: summary.trim() || undefined,
         description: descEditorRef.current?.getMarkdown()?.trim() || undefined,
         icon,
         status,
@@ -406,6 +409,14 @@ export function CreateProjectModal({ onClose }: { onClose: () => void }) {
         <details>
           <summary className="cursor-pointer text-caption text-muted-foreground">{t(($) => $.create_project.more_options_aria)}</summary>
         <div className="flex-1 min-h-0 overflow-y-auto px-5">
+          <input
+            value={summary}
+            aria-label={t(($) => $.create_project.summary_placeholder)}
+            placeholder={t(($) => $.create_project.summary_placeholder)}
+            className="mb-3 w-full rounded-md border border-border bg-transparent px-3 py-2 text-body outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            maxLength={500}
+            onChange={(event) => updateSummary(event.target.value)}
+          />
           <ContentEditor
             ref={descEditorRef}
             defaultValue={draft.description}

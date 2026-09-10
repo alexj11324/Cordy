@@ -3,6 +3,7 @@ import { createDraftStore } from "../drafts/create-draft-store";
 
 interface ProjectDraft {
   title: string;
+  summary: string;
   description: string;
   status: ProjectStatus;
   priority: ProjectPriority;
@@ -16,6 +17,7 @@ interface ProjectDraft {
 
 const EMPTY_DRAFT: ProjectDraft = {
   title: "",
+  summary: "",
   description: "",
   status: "planned",
   priority: "none",
@@ -29,5 +31,5 @@ const EMPTY_DRAFT: ProjectDraft = {
 export const useProjectDraftStore = createDraftStore<ProjectDraft>({
   storageKey: "orvilo_project_draft",
   emptyData: EMPTY_DRAFT,
-  hasMeaningful: (d) => !!(d.title || d.description),
+  hasMeaningful: (d) => !!(d.title || d.summary || d.description),
 });

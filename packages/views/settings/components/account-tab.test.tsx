@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@orvilo/core/i18n/react";
+import { I18nProvider, LocaleAdapterProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -83,9 +83,17 @@ const TEST_RESOURCES = {
 
 function I18nWrapper({ children }: { children: ReactNode }) {
   return (
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      {children}
-    </I18nProvider>
+    <LocaleAdapterProvider
+      adapter={{
+        getUserChoice: () => "en",
+        getSystemPreferences: () => ["en"],
+        persist: vi.fn(),
+      }}
+    >
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        {children}
+      </I18nProvider>
+    </LocaleAdapterProvider>
   );
 }
 
@@ -135,6 +143,7 @@ describe("AccountTab", () => {
       "ada@example.com",
     );
     expect(screen.getByLabelText("Preferred Name")).toHaveValue("Ada");
+    expect(screen.getByLabelText("About You")).toHaveValue("Builds compilers");
     expect(screen.getByLabelText("Username")).toHaveValue("ada");
     expect(screen.getByLabelText("Phone Number")).toHaveValue(
       "+1 206 555 1243",
@@ -201,8 +210,8 @@ describe("AccountTab", () => {
 
     await waitFor(() => {
       expect(mockUpdateMe).toHaveBeenCalledWith({
-        language: "en",
         timezone: "America/New_York",
+        profile_description: "Builds compilers",
         profile_details: {
           first_name: "Augusta",
           last_name: "Lovelace",

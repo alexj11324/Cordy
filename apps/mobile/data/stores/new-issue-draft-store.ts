@@ -24,6 +24,7 @@ import { useEffect, useRef } from "react";
 import { create } from "zustand";
 import type {
   IssuePriority,
+  IssueReviewSubmission,
   IssueStatus,
   Project,
 } from "@orvilo/core/types";
@@ -36,6 +37,7 @@ type NewIssueDraftState = {
   owner: RoleValue;
   executor: ExecutorValue;
   reviewer: RoleValue;
+  reviewSubmission: IssueReviewSubmission | null;
   dueDate: string | null;
   project: Project | null;
   setStatus: (next: IssueStatus) => void;
@@ -43,7 +45,11 @@ type NewIssueDraftState = {
   setOwner: (next: RoleValue) => void;
   setExecutor: (next: ExecutorValue) => void;
   setReviewer: (next: RoleValue) => void;
-  setReviewHandoff: (status: IssueStatus, reviewer: NonNullable<RoleValue>) => void;
+  setReviewHandoff: (
+    status: IssueStatus,
+    reviewer: NonNullable<RoleValue>,
+    reviewSubmission: IssueReviewSubmission,
+  ) => void;
   setDueDate: (next: string | null) => void;
   setProject: (next: Project | null) => void;
   reset: () => void;
@@ -56,6 +62,7 @@ const INITIAL: Pick<
   | "owner"
   | "executor"
   | "reviewer"
+  | "reviewSubmission"
   | "dueDate"
   | "project"
 > = {
@@ -64,18 +71,20 @@ const INITIAL: Pick<
   owner: null,
   executor: null,
   reviewer: null,
+  reviewSubmission: null,
   dueDate: null,
   project: null,
 };
 
 export const useNewIssueDraftStore = create<NewIssueDraftState>((set) => ({
   ...INITIAL,
-  setStatus: (next) => set({ status: next }),
+  setStatus: (next) => set({ status: next, reviewSubmission: null }),
   setPriority: (next) => set({ priority: next }),
   setOwner: (next) => set({ owner: next }),
-  setExecutor: (next) => set({ executor: next }),
-  setReviewer: (next) => set({ reviewer: next }),
-  setReviewHandoff: (status, reviewer) => set({ status, reviewer }),
+  setExecutor: (next) => set({ executor: next, reviewSubmission: null }),
+  setReviewer: (next) => set({ reviewer: next, reviewSubmission: null }),
+  setReviewHandoff: (status, reviewer, reviewSubmission) =>
+    set({ status, reviewer, reviewSubmission }),
   setDueDate: (next) => set({ dueDate: next }),
   setProject: (next) => set({ project: next }),
   reset: () => set({ ...INITIAL }),

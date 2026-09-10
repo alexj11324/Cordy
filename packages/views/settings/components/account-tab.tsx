@@ -38,6 +38,7 @@ import {
   FieldLabel,
 } from "@orvilo/ui/components/ui/field";
 import { Input } from "@orvilo/ui/components/ui/input";
+import { Textarea } from "@orvilo/ui/components/ui/textarea";
 import {
   InputOTP,
   InputOTPGroup,
@@ -79,6 +80,8 @@ import { InfoIcon, ShieldCheckIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@orvilo/core/auth";
 import { api } from "@orvilo/core/api";
+import type { SupportedLocale } from "@orvilo/core/i18n";
+import { useLocaleAdapter } from "@orvilo/core/i18n/react";
 import type { User, UserProfileDetails } from "@orvilo/core/types";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useT } from "../../i18n";
@@ -91,6 +94,7 @@ interface ProfileFormState {
   preferredName: string;
   username: string;
   role: string;
+  profileDescription: string;
   phone: string;
   website: string;
   timezone: string;
@@ -189,6 +193,7 @@ function profileFormFromUser(user: User | null | undefined): ProfileFormState {
     preferredName: details.preferred_name ?? user?.name ?? "",
     username: details.username ?? "",
     role: details.role ?? "",
+    profileDescription: user?.profile_description ?? "",
     phone: details.phone ?? "",
     website: websiteForForm(details.website ?? ""),
     timezone:
@@ -219,6 +224,7 @@ function profileFormsEqual(left: ProfileFormState, right: ProfileFormState) {
     left.preferredName === right.preferredName &&
     left.username === right.username &&
     left.role === right.role &&
+    left.profileDescription === right.profileDescription &&
     left.phone === right.phone &&
     left.website === right.website &&
     left.timezone === right.timezone &&
@@ -388,6 +394,7 @@ function ProfileSyncAlert() {
 export function AccountTab() {
   const { t } = useT("settings");
   const user = useAuthStore((s) => s.user);
+  const localeAdapter = useLocaleAdapter();
   const setUser = useAuthStore((s) => s.setUser);
   const confirmEmailChange = useAuthStore((s) => s.confirmEmailChange);
   const [form, setForm] = useState<ProfileFormState>(() =>
@@ -411,8 +418,8 @@ export function AccountTab() {
   const saveProfile = useCallback(
     async (next: ProfileFormState) => {
       const payload = {
-        language: next.language,
         timezone: next.timezone,
+        profile_description: next.profileDescription,
         profile_details: {
           first_name: next.firstName,
           last_name: next.lastName,
@@ -457,6 +464,31 @@ export function AccountTab() {
   ) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
+
+  const handleLanguageChange = useCallback(
+    async (language: string) => {
+      if (language === form.language) return;
+      localeAdapter.persist(language as SupportedLocale);
+      try {
+        const updated = await api.updateMe({ language });
+        setUser(updated);
+        setForm((current) => ({ ...current, language }));
+        toast.success(t(($) => $.auto_save.toast_saved), {
+          id: "settings-auto-save",
+        });
+        // Match PreferencesTab: let the confirmation remain visible before
+        // the App Router reloads with the persisted locale cookie.
+        setTimeout(() => window.location.reload(), 900);
+      } catch (error) {
+        toast.error(
+          error instanceof Error
+            ? error.message
+            : t(($) => $.account.toast_profile_failed),
+        );
+      }
+    },
+    [form.language, localeAdapter, setUser, t],
+  );
 
   const handleReset = () => {
     setForm(profileFormFromUser(user));
@@ -691,6 +723,25 @@ export function AccountTab() {
                     />
                   </Field>
 
+                  <Field className="gap-2.5 md:col-span-2">
+                    <FieldLabel htmlFor="profile-3-description">
+                      About You
+                    </FieldLabel>
+                    <Textarea
+                      id="profile-3-description"
+                      value={form.profileDescription}
+                      maxLength={2000}
+                      placeholder="Tell agents and teammates how you work."
+                      onChange={(event) =>
+                        updateField("profileDescription", event.target.value)
+                      }
+                      onBlur={() => void autoSave.flush()}
+                    />
+                    <FieldDescription>
+                      Shared with agents as durable requester context.
+                    </FieldDescription>
+                  </Field>
+
                   <Field className="gap-2.5">
                     <FieldLabel htmlFor="profile-3-phone">
                       Phone Number
@@ -769,7 +820,7 @@ export function AccountTab() {
                       id="profile-3-language"
                       options={LANGUAGE_OPTIONS}
                       value={form.language}
-                      onValueChange={(value) => updateField("language", value)}
+                      onValueChange={(value) => void handleLanguageChange(value)}
                     />
                   </Field>
 

@@ -426,7 +426,7 @@ export const EMPTY_SEARCH_ISSUES_RESPONSE: SearchIssuesResponse = {
 };
 
 const SearchProjectResultSchema = ProjectSchema.safeExtend({
-  match_source: z.enum(["title", "description"]).catch("title"),
+  match_source: z.enum(["title", "summary", "description"]).catch("title"),
   matched_snippet: z.string().optional(),
 });
 

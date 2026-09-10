@@ -61,18 +61,20 @@ Earlier branch evidence remains valid for the unchanged paths:
 - Electron runtime checks for the DEV-14 Agent popover, full property values, Projects grid, Profile form, and Change email entry;
 - screenshots at `~/.cache/codex-tmp-10g/cordy-agent-popover.png`, `cordy-projects-reui.png`, and `cordy-profile3.png`.
 
+## Resumed delivery update (2026-09-10)
+
+The user has resumed delivery. The current worktree adds the review fixes that were pending at the pause:
+
+- Mobile existing-issue and new-issue review transitions collect and submit worktree, branch, full commit SHA, and PR evidence atomically with status and reviewer.
+- Agent thread events preserve structured sources and UTF-8 citation ranges, and the selected Agent thread renders in the global right sidebar.
+- Same-Agent independent conversation roots remain selectable, non-PR work products stay visible, and summary-only project search results include the matching snippet.
+- Profile description and locale persistence, builder modal reachability, and lazy builder-session cleanup are covered by focused tests.
+
+Current local evidence after these additions: Mobile Vitest 45 files / 231 tests plus iOS script assertions, Core Vitest 175 files / 1,968 tests, focused Views tests 8 files / 51 tests, Core / Views / Mobile typechecks, Mobile and Views lint with zero errors, Go project-summary handler tests, and `git diff --check`.
+
 ## Remaining work
 
-The user paused work while the exact CI build command was running, so it was stopped. The previous remote head `ee5fdbc6` had red frontend jobs; their reported failures are fixed in the pause commit, but a new CI run has not yet verified them.
-
-Resume in this order:
-
-1. Inspect PR #809 and confirm the remote head matches this pause commit.
-2. Wait for the new exact-head CI run. Use the current head SHA when judging checks; ignore the superseded `ee5fdbc6` run.
-3. Fix only reproducible failures on the current head. Local whole-suite runs under Node 26 produced missing-`localStorage` failures; use Node `22.23.2`, which is the repository and CI runtime.
-4. Read all unresolved GitHub review threads, fix valid findings, reply, and resolve them.
-5. Re-run the affected real Electron paths if a UI fix changes behavior.
-6. Mark the pull request ready only after exact-head CI and review are clean. Merge only after the user resumes and authorizes continued delivery.
+Commit and push the verified worktree changes, wait for a new exact-head CI run, fix only reproducible failures on that head, reply to and resolve every valid GitHub review thread, mark the PR ready, and merge after all required checks pass.
 
 Useful commands:
 
@@ -86,5 +88,3 @@ pnpm exec turbo test --filter='!@orvilo/docs' --filter='!@orvilo/mobile' --filte
 pnpm --filter @orvilo/views test --shard=1/2
 pnpm --filter @orvilo/views test --shard=2/2
 ```
-
-Do not continue polling, fixing, replying, pushing, marking ready, or merging while this pause remains in effect.

@@ -570,7 +570,7 @@ export interface SearchIssuesResponse {
 }
 
 export interface SearchProjectResult extends Project {
-  match_source: "title" | "description";
+  match_source: "title" | "summary" | "description";
   matched_snippet?: string;
 }
 

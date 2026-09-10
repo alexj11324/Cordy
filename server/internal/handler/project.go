@@ -1187,22 +1187,29 @@ func buildProjectSearchQuery(phrase string, terms []string, includeClosed bool) 
 	)
 
 	// --- match_source expression ---
+	// Keep summary distinct from description so the response can build a
+	// snippet from the field that actually matched.
 	matchSourceExpr := fmt.Sprintf(`CASE
 		WHEN LOWER(p.title) LIKE %s THEN 'title'
+		WHEN LOWER(COALESCE(p.summary, '')) LIKE %s THEN 'summary'
 		ELSE 'description'
-	END`, phraseContains)
+	END`, phraseContains, phraseContains)
 
 	if len(termParams) > 1 {
 		var titleTerms []string
+		var summaryTerms []string
 		for _, tp := range termParams {
 			titleTerms = append(titleTerms, fmt.Sprintf("LOWER(p.title) LIKE '%s' || %s || '%s'", "%", tp, "%"))
+			summaryTerms = append(summaryTerms, fmt.Sprintf("LOWER(COALESCE(p.summary, '')) LIKE '%s' || %s || '%s'", "%", tp, "%"))
 		}
 		matchSourceExpr = fmt.Sprintf(`CASE
 			WHEN LOWER(p.title) LIKE %s THEN 'title'
 			WHEN (%s) THEN 'title'
+			WHEN (%s) THEN 'summary'
+			WHEN LOWER(COALESCE(p.summary, '')) LIKE %s THEN 'summary'
 			ELSE 'description'
 		END`,
-			phraseContains, strings.Join(titleTerms, " AND "),
+			phraseContains, strings.Join(titleTerms, " AND "), strings.Join(summaryTerms, " AND "), phraseContains,
 		)
 	}
 
@@ -1369,13 +1376,15 @@ func (h *Handler) SearchProjects(w http.ResponseWriter, r *http.Request) {
 			ProjectResponse: pr,
 			MatchSource:     row.matchSource,
 		}
-		if row.matchSource == "description" {
-			desc := ""
-			if row.project.Description.Valid {
-				desc = row.project.Description.String
+		if row.matchSource == "summary" || row.matchSource == "description" {
+			matchedText := ""
+			if row.matchSource == "summary" && row.project.Summary.Valid {
+				matchedText = row.project.Summary.String
+			} else if row.project.Description.Valid {
+				matchedText = row.project.Description.String
 			}
-			if desc != "" {
-				snippet := extractSnippet(desc, q)
+			if matchedText != "" {
+				snippet := extractSnippet(matchedText, q)
 				spr.MatchedSnippet = &snippet
 			}
 		}

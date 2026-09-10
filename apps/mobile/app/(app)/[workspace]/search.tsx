@@ -224,7 +224,8 @@ interface SearchProjectRowProps {
 
 function SearchProjectRow({ item, query, slug }: SearchProjectRowProps) {
   const showSnippet =
-    item.match_source === "description" && !!item.matched_snippet;
+    (item.match_source === "summary" || item.match_source === "description") &&
+    !!item.matched_snippet;
   return (
     <Pressable
       onPress={() => navigateOnTap(slug, `/${slug}/project/${item.id}`)}

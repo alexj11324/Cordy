@@ -54,10 +54,21 @@ export function TaskAgentThreadPanel({
       : query.data?.task ? [query.data.task] : [],
     [query.data],
   );
+  const eventsByTask = useMemo(() => {
+    const grouped = new Map<string, TaskMessagePayload[]>();
+    for (const event of query.data?.events ?? []) {
+      grouped.set(event.task_id, [...(grouped.get(event.task_id) ?? []), event]);
+    }
+    return grouped;
+  }, [query.data?.events]);
   const messages = useMemo<ChatMessage[]>(
     () => tasks.flatMap((task) =>
-      buildTaskAgentThreadMessages(task, t(($) => $.agent_thread.task_initial_prompt))),
-    [tasks, t],
+      buildTaskAgentThreadMessages(
+        task,
+        t(($) => $.agent_thread.task_initial_prompt),
+        eventsByTask.get(task.id),
+      )),
+    [eventsByTask, tasks, t],
   );
   const state = useMemo(() => deriveAgentThreadTaskState(tasks), [tasks]);
 

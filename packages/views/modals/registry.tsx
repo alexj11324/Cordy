@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { useModalStore } from "@orvilo/core/modals";
 import { CreateIssueDialog } from "./create-issue-dialog";
-import { CreateProjectModal } from "./create-project";
+import { CreateProjectFlowModal } from "./project-builder/create-project-flow";
 import { CreateTeamModal } from "./create-team";
 import { FeedbackModal } from "./feedback";
 import { SetParentIssueModal } from "./set-parent-issue";
@@ -40,7 +40,7 @@ export function ModalRegistry() {
       );
       break;
     case "create-project":
-      activeModal = <CreateProjectModal onClose={close} />;
+      activeModal = <CreateProjectFlowModal onClose={close} />;
       break;
     case "create-team":
       activeModal = <CreateTeamModal onClose={close} />;

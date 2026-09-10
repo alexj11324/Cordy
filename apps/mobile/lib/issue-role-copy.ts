@@ -9,6 +9,19 @@ export type IssueRoleCopy = {
   executor: string;
   reviewer: string;
   reviewHandoff: string;
+  reviewSubmissionDescription: string;
+  reviewWorktree: string;
+  reviewWorktreePlaceholder: string;
+  reviewBranch: string;
+  reviewBranchPlaceholder: string;
+  reviewCommit: string;
+  reviewCommitPlaceholder: string;
+  reviewPullRequests: string;
+  reviewPullRequestsPlaceholder: string;
+  reviewPullRequestsHint: string;
+  submitReview: string;
+  submittingReview: string;
+  invalidReviewEvidence: string;
   unknown: string;
   unknownOwner: string;
   unknownExecutor: string;
@@ -44,6 +57,21 @@ const COPY: Record<ProductLocale, IssueRoleCopy> = {
     executor: "Executor",
     reviewer: "Reviewer",
     reviewHandoff: "Review handoff",
+    reviewSubmissionDescription:
+      "Attach the exact worktree, branch, full commit SHA, and pull request used for this review.",
+    reviewWorktree: "Worktree",
+    reviewWorktreePlaceholder: "/path/to/worktree",
+    reviewBranch: "Branch",
+    reviewBranchPlaceholder: "codex/issue-42",
+    reviewCommit: "Commit",
+    reviewCommitPlaceholder: "Full 40 or 64 character SHA",
+    reviewPullRequests: "Pull requests",
+    reviewPullRequestsPlaceholder: "https://github.com/org/repo/pull/42",
+    reviewPullRequestsHint: "Enter one pull request URL per line.",
+    submitReview: "Submit for review",
+    submittingReview: "Submitting…",
+    invalidReviewEvidence:
+      "Enter a worktree, branch, full commit SHA, and at least one valid pull request URL.",
     unknown: "Unknown",
     unknownOwner: "Unknown owner",
     unknownExecutor: "Unknown executor",
@@ -78,6 +106,21 @@ const COPY: Record<ProductLocale, IssueRoleCopy> = {
     executor: "执行者",
     reviewer: "审核者",
     reviewHandoff: "移交审核",
+    reviewSubmissionDescription:
+      "填写本次审核对应的 worktree、分支、完整 commit SHA 和 Pull Request。",
+    reviewWorktree: "Worktree",
+    reviewWorktreePlaceholder: "/path/to/worktree",
+    reviewBranch: "分支",
+    reviewBranchPlaceholder: "codex/issue-42",
+    reviewCommit: "Commit",
+    reviewCommitPlaceholder: "完整的 40 或 64 位 SHA",
+    reviewPullRequests: "Pull Request",
+    reviewPullRequestsPlaceholder: "https://github.com/org/repo/pull/42",
+    reviewPullRequestsHint: "每行填写一个 Pull Request URL。",
+    submitReview: "提交审核",
+    submittingReview: "正在提交…",
+    invalidReviewEvidence:
+      "请填写 worktree、分支、完整 commit SHA，以及至少一个有效的 Pull Request URL。",
     unknown: "未知",
     unknownOwner: "未知负责人",
     unknownExecutor: "未知执行者",

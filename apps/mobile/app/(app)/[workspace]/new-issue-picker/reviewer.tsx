@@ -8,12 +8,12 @@ import { useNativeSearchBar } from "@/lib/use-native-search-bar";
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 
 export default function NewIssueReviewerPickerRoute() {
-  const { handoffStatus } = useLocalSearchParams<{ handoffStatus?: string }>();
+  const { workspace, handoffStatus } = useLocalSearchParams<{
+    workspace: string;
+    handoffStatus?: string;
+  }>();
   const reviewer = useNewIssueDraftStore((state) => state.reviewer);
   const setReviewer = useNewIssueDraftStore((state) => state.setReviewer);
-  const setReviewHandoff = useNewIssueDraftStore(
-    (state) => state.setReviewHandoff,
-  );
   const executor = useNewIssueDraftStore((state) => state.executor);
   const status = useNewIssueDraftStore((state) => state.status);
   const language = useAuthStore((state) => state.user?.language);
@@ -40,10 +40,18 @@ export default function NewIssueReviewerPickerRoute() {
         }
         onChange={(next) => {
           if (isHandoff && handoffStatus && next) {
-            setReviewHandoff(handoffStatus, next);
-          } else {
-            setReviewer(next);
+            router.replace({
+              pathname: "/[workspace]/new-issue-picker/review-submission",
+              params: {
+                workspace,
+                handoffStatus,
+                reviewerType: next.type,
+                reviewerId: next.id,
+              },
+            });
+            return;
           }
+          setReviewer(next);
           router.back();
         }}
       />

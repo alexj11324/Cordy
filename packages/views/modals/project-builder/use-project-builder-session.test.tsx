@@ -175,6 +175,27 @@ describe("useProjectBuilderSession lifecycle", () => {
     );
   });
 
+  it("deletes a session whose lazy creation resolves after unmount", async () => {
+    let resolveCreate!: (value: { id: string }) => void;
+    h.createChatSession.mockReturnValueOnce(
+      new Promise<{ id: string }>((resolve) => {
+        resolveCreate = resolve;
+      }),
+    );
+    const hook = harness();
+    let sendPromise: Promise<boolean>;
+    act(() => {
+      sendPromise = hook.result.current.send("Create a plan");
+    });
+
+    hook.unmount();
+    resolveCreate({ id: "orphan-session" });
+    await expect(sendPromise!).resolves.toBe(false);
+    await waitFor(() =>
+      expect(h.deleteChatSession).toHaveBeenCalledWith("orphan-session"),
+    );
+  });
+
   it("does not create a session when no agent is selected", async () => {
     const hook = harness(null);
 

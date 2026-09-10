@@ -31,6 +31,7 @@ import { MOBILE_PLACEHOLDER_COLOR } from "@/components/ui/input-tokens";
 import { useCreateIssue } from "@/data/mutations/issues";
 import { useNewIssueDraftStore } from "@/data/stores/new-issue-draft-store";
 import { useAuthStore } from "@/data/auth-store";
+import { useWorkspaceStore } from "@/data/workspace-store";
 import { getIssueRoleCopy } from "@/lib/issue-role-copy";
 import { issueRoleCreateFields } from "@/lib/issue-role-patch";
 import { reviewWorkflowViolation } from "@/lib/issue-review-workflow";
@@ -51,6 +52,7 @@ export default function NewIssueModal() {
   const setOwner = useNewIssueDraftStore((s) => s.setOwner);
   const executor = useNewIssueDraftStore((s) => s.executor);
   const reviewer = useNewIssueDraftStore((s) => s.reviewer);
+  const reviewSubmission = useNewIssueDraftStore((s) => s.reviewSubmission);
   const dueDate = useNewIssueDraftStore((s) => s.dueDate);
   const project = useNewIssueDraftStore((s) => s.project);
   const resetDraft = useNewIssueDraftStore((s) => s.reset);
@@ -58,6 +60,8 @@ export default function NewIssueModal() {
   const language = useAuthStore((s) => s.user?.language);
   const roleCopy = getIssueRoleCopy(language);
   const { categoryOf } = useIssueStatuses();
+  const reviewStatusRequiresSubmission = categoryOf(status) === "in_review";
+  const workspaceSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
 
   useEffect(() => {
     resetDraft();
@@ -94,6 +98,22 @@ export default function NewIssueModal() {
       );
       return;
     }
+    if (reviewStatusRequiresSubmission && !reviewSubmission) {
+      if (reviewer && workspaceSlug) {
+        router.push({
+          pathname: "/[workspace]/new-issue-picker/review-submission",
+          params: {
+            workspace: workspaceSlug,
+            handoffStatus: status,
+            reviewerType: reviewer.type,
+            reviewerId: reviewer.id,
+          },
+        });
+      } else {
+        Alert.alert(roleCopy.reviewHandoff, roleCopy.invalidReviewEvidence);
+      }
+      return;
+    }
     const finalDescription = description.serialize().trim();
     try {
       await createIssue.mutateAsync({
@@ -102,6 +122,9 @@ export default function NewIssueModal() {
         status,
         priority,
         ...issueRoleCreateFields(owner, executor, reviewer),
+        ...(reviewStatusRequiresSubmission
+          ? { review_submission: reviewSubmission ?? undefined }
+          : {}),
         ...(dueDate ? { due_date: dueDate } : {}),
         ...(project ? { project_id: project.id } : {}),
       });
@@ -120,11 +143,14 @@ export default function NewIssueModal() {
     owner,
     executor,
     reviewer,
+    reviewSubmission,
     dueDate,
     project,
     createIssue,
     categoryOf,
     roleCopy,
+    reviewStatusRequiresSubmission,
+    workspaceSlug,
   ]);
 
   const headerRight = useCallback(

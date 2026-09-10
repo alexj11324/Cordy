@@ -3285,7 +3285,7 @@ export function IssueDetail({ issueId, onDelete, onDone, highlightCommentId, hig
           product + close intent when a member links one. Not gated on the
           GitHub PR-sidebar setting — that switch hid a GitHub-only section,
           and this one is not GitHub-only. */}
-      <WorkProductRelationsSection issueId={id} pullRequestsOnly submittedPullRequests={issue.review_submission?.pull_requests} />
+      <WorkProductRelationsSection issueId={id} submittedPullRequests={issue.review_submission?.pull_requests} />
       {issue.review_submission && <details className="rounded-md bg-muted/30 px-3 py-2 text-caption">
         <summary className="cursor-pointer text-muted-foreground">{t(($) => $.review_submission.title)} · {issue.review_submission.branch} · {issue.review_submission.commit.slice(0, 8)}</summary>
         <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">

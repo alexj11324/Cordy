@@ -72,3 +72,30 @@ func TestProjectSummaryLifecycle(t *testing.T) {
 		t.Fatalf("cleared summary = %v", cleared.Summary)
 	}
 }
+
+func TestSearchProjectSummaryMatchIncludesSummarySnippet(t *testing.T) {
+	created := testutil.Decode[ProjectResponse](t, testHandler.CreateProject,
+		newRequest(http.MethodPost, "/api/projects?workspace_id="+testWorkspaceID, map[string]any{
+			"title":   "Untitled delivery board",
+			"summary": "Unique summary signal for project search.",
+		}), http.StatusCreated)
+	dbfx.Cleanup(t, `DELETE FROM project WHERE id = $1`, created.ID)
+
+	searched := testutil.Decode[struct {
+		Projects []SearchProjectResponse `json:"projects"`
+	}](t, testHandler.SearchProjects,
+		newRequest(http.MethodGet, "/api/projects/search?q=Unique+summary+signal", nil), http.StatusOK)
+	for _, project := range searched.Projects {
+		if project.ID != created.ID {
+			continue
+		}
+		if project.MatchSource != "summary" {
+			t.Fatalf("match source = %q, want summary", project.MatchSource)
+		}
+		if project.MatchedSnippet == nil || *project.MatchedSnippet == "" {
+			t.Fatalf("summary match snippet = %v, want non-empty", project.MatchedSnippet)
+		}
+		return
+	}
+	t.Fatalf("summary-only project %q missing from search results", created.ID)
+}

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDown, Loader2, MessageSquare } from "lucide-react";
+import { ArrowLeft, ChevronDown, Loader2, MessageSquare, X } from "lucide-react";
 import {
   Plan,
   PlanAction,
@@ -33,6 +33,7 @@ import {
 import { labelListOptions } from "@orvilo/core/labels/queries";
 import { projectListOptions } from "@orvilo/core/projects/queries";
 import type { Agent, MemberWithUser, Project } from "@orvilo/core/types";
+import { Button } from "@orvilo/ui/components/ui/button";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AgentPicker } from "../../chat/components/new-chat-button";
 import {
@@ -57,6 +58,10 @@ export interface ProjectBuilderPanelProps {
   currentDraft: ProjectBuilderDraft;
   /** Called once when the user explicitly applies the assistant proposal. */
   onApply: (draft: ProjectBuilderDraft) => void;
+  /** Returns to the existing manual project form without changing its draft. */
+  onSwitchToManual: () => void;
+  /** Closes the registered create-project flow. */
+  onClose: () => void;
 }
 
 type WorkspaceWithLeadAgent = { lead_agent_id?: string | null };
@@ -92,6 +97,8 @@ function workspaceLeadAgentId(
 export function ProjectBuilderPanel({
   currentDraft,
   onApply,
+  onSwitchToManual,
+  onClose,
 }: ProjectBuilderPanelProps) {
   const { t } = useT("modals");
   const wsId = useWorkspaceId();
@@ -276,6 +283,10 @@ export function ProjectBuilderPanel({
           </div>
         </div>
         <div className="flex min-w-0 shrink-0 items-center gap-1">
+          <Button variant="ghost" size="sm" onClick={onSwitchToManual}>
+            <ArrowLeft className="size-3.5" aria-hidden="true" />
+            {t(($) => $.create_project.create_manually)}
+          </Button>
           {sessionId ? (
             <div className="flex min-w-0 max-w-52 items-center gap-1.5 px-1.5 py-1 text-caption text-muted-foreground">
               {selectedAgent ? (
@@ -298,6 +309,14 @@ export function ProjectBuilderPanel({
               <ChevronDown className="pointer-events-none -ml-5 size-3 text-muted-foreground" aria-hidden="true" />
             </div>
           )}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label={t(($) => $.common.close)}
+          >
+            <X className="size-4" aria-hidden="true" />
+          </Button>
         </div>
       </header>
 

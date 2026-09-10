@@ -216,6 +216,10 @@ export default function WorkspaceLayout() {
           options={{ ...SHEET_OPTIONS, headerShown: true }}
         />
         <Stack.Screen
+          name="issue/[id]/picker/review-submission"
+          options={SHEET_OPTIONS}
+        />
+        <Stack.Screen
           name="issue/[id]/picker/label"
           options={SHEET_OPTIONS}
         />
@@ -290,6 +294,10 @@ export default function WorkspaceLayout() {
         <Stack.Screen
           name="new-issue-picker/reviewer"
           options={{ ...SHEET_OPTIONS, headerShown: true }}
+        />
+        <Stack.Screen
+          name="new-issue-picker/review-submission"
+          options={SHEET_OPTIONS}
         />
         <Stack.Screen
           name="new-issue-picker/project"

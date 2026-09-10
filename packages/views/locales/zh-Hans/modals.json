@@ -153,6 +153,8 @@
     "source_folders": "源文件夹",
     "add_repository": "添加仓库",
     "confirm_repository": "确认",
+    "choose_method": "选择如何开始创建这个项目。",
+    "create_manually": "手动创建",
     "create_with_agent": "通过 Agent 创建",
     "loading_assistant": "正在加载助手…",
     "builder_choose_runtime": "选择设备和模型",

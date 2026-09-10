@@ -49,9 +49,11 @@ export interface IssueAgentConversation {
 }
 
 /**
- * One row per Agent. Prefer that Agent's active continuation, otherwise its
- * newest task. Passing a continuation task to the thread endpoint loads its
- * complete chain, so one Agent never appears several times for its own turns.
+ * One row per server-validated Agent conversation root. Prefer that root's
+ * active continuation, otherwise its newest task. A single Agent can own
+ * several independent roots on one issue, so grouping by agent identity would
+ * hide older transcripts. Passing a continuation task to the thread endpoint
+ * loads its complete chain.
  */
 export function selectIssueAgentConversations(
   tasks: AgentTask[],
@@ -59,20 +61,23 @@ export function selectIssueAgentConversations(
   issueId: string,
 ): IssueAgentConversation[] {
   const agentById = new Map(agents.map((agent) => [agent.id, agent]));
-  const selectedByAgent = new Map<string, AgentTask>();
+  const selectedByRoot = new Map<string, AgentTask>();
   for (const task of tasks) {
     if (task.issue_id !== issueId) continue;
-    const current = selectedByAgent.get(task.agent_id);
+    // The backend assigns the same immutable root to every continuation. A
+    // task without that field is an older/non-thread task and is its own root.
+    const rootKey = task.agent_thread_root_task_id || task.id;
+    const current = selectedByRoot.get(rootKey);
     if (
       !current ||
       ACTIVE_STATUS_RANK[task.status] < ACTIVE_STATUS_RANK[current.status] ||
       (ACTIVE_STATUS_RANK[task.status] === ACTIVE_STATUS_RANK[current.status] &&
         Date.parse(task.created_at) > Date.parse(current.created_at))
     ) {
-      selectedByAgent.set(task.agent_id, task);
+      selectedByRoot.set(rootKey, task);
     }
   }
-  return [...selectedByAgent.values()]
+  return [...selectedByRoot.values()]
     .map((task) => ({ task, agent: agentById.get(task.agent_id) }))
     .sort(
       (left, right) =>

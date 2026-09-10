@@ -7,16 +7,30 @@ const useStore = create<{ isOpen: boolean; toggle: () => void }>((set) => ({
   isOpen: false,
   toggle: () => set((current) => ({ isOpen: !current.isOpen })),
 }));
+const agentStore = create<{
+  panel: { workspaceId: string; taskId: string; routePath: string } | null;
+  closePanel: () => void;
+}>((set) => ({
+  panel: null,
+  closePanel: () => set({ panel: null }),
+}));
 vi.mock("@orvilo/core/chat", () => ({ useChatStore: (selector: Parameters<typeof useStore>[0]) => useStore(selector) }));
-vi.mock("@orvilo/core/paths", () => ({ useWorkspacePaths: () => ({ chat: () => "/acme/chat" }) }));
+vi.mock("@orvilo/core/agent-thread", () => ({ useAgentThreadPanelStore: (selector: Parameters<typeof agentStore>[0]) => agentStore(selector) }));
+vi.mock("@orvilo/core/paths", () => ({
+  useWorkspacePaths: () => ({ chat: () => "/acme/chat" }),
+  useCurrentWorkspace: () => ({ id: "workspace-1" }),
+}));
 vi.mock("../navigation", () => ({ useNavigation: () => state }));
 vi.mock("../i18n", () => ({ useT: () => ({ t: (selector: (keys: unknown) => string) => selector({ sidebar: { title: "Agent chat", open: "Open right sidebar", close: "Close right sidebar", chat_page_notice: "Conversation is open in Chat" } }) }) }));
 vi.mock("./components/chat-window", () => ({ ChatWindow: ({ docked }: { docked: boolean }) => <div data-testid="chat-content" data-docked={String(docked)} /> }));
+vi.mock("../agent-thread/components/task-agent-thread-panel", () => ({
+  TaskAgentThreadPanel: ({ taskId }: { taskId: string }) => <div data-testid="agent-thread-content">{taskId}</div>,
+}));
 
 const { GlobalRightSidebar, GlobalRightSidebarToggle } = await import("./global-right-sidebar");
 function Shell() { return <><GlobalRightSidebarToggle /><GlobalRightSidebar /></>; }
 
-beforeEach(() => { useStore.setState({ isOpen: false }); state.pathname = "/acme/issues"; });
+beforeEach(() => { useStore.setState({ isOpen: false }); agentStore.setState({ panel: null }); state.pathname = "/acme/issues"; });
 describe("global right sidebar", () => {
   it("keeps the header control mounted while opening and closing an in-flow chat column", () => {
     render(<Shell />);
@@ -44,5 +58,15 @@ describe("global right sidebar", () => {
     state.pathname = "/acme/projects"; view.rerender(<Shell />);
     expect(screen.getByTestId("chat-content")).toBeInTheDocument();
     expect(useStore.getState().isOpen).toBe(true);
+  });
+  it("renders the selected Agent thread in the same global column", () => {
+    const view = render(<Shell />);
+    agentStore.setState({
+      panel: { workspaceId: "workspace-1", taskId: "task-1", routePath: "/acme/issues" },
+    });
+    view.rerender(<Shell />);
+    expect(screen.getByTestId("agent-thread-content")).toHaveTextContent("task-1");
+    expect(screen.queryByTestId("chat-content")).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Agent chat" })).not.toHaveAttribute("hidden");
   });
 });
