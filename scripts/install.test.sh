@@ -130,7 +130,7 @@ STUB
   _run_installer "$tmp"
 }
 
-test_remote_ssh_install_prints_token_login_hint() {
+test_remote_ssh_install_prints_device_login_hint() {
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -162,22 +162,27 @@ STUB
   )
 
   if ! grep -q "Looks like a remote/SSH session" "$tmp/install.out"; then
-    echo "expected remote/SSH token-login hint in installer output" >&2
+    echo "expected remote/SSH device-login hint in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if ! grep -q "https://orvilo.aspectlylabs.com/settings?tab=tokens" "$tmp/install.out"; then
-    echo "expected direct API Tokens settings URL in installer output" >&2
+  if ! grep -q "orvilo login" "$tmp/install.out"; then
+    echo "expected device login command in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if ! grep -q "Settings > API Tokens" "$tmp/install.out"; then
-    echo "expected API Tokens tab name in installer output" >&2
+  if ! grep -q "printed verification URL on another computer" "$tmp/install.out"; then
+    echo "expected cross-device authorization instructions" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if ! grep -q "orvilo login --token <YOUR_TOKEN>" "$tmp/install.out"; then
-    echo "expected token login command in installer output" >&2
+  if ! grep -q "one-time code" "$tmp/install.out"; then
+    echo "expected one-time-code instruction" >&2
+    cat "$tmp/install.out" >&2 || true
+    return 1
+  fi
+  if grep -q "settings?tab=tokens\|Settings > API Tokens\|--token <YOUR_TOKEN>" "$tmp/install.out"; then
+    echo "did not expect the retired manual-token workaround" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
@@ -193,7 +198,7 @@ STUB
   fi
 }
 
-test_local_install_does_not_print_token_login_hint() {
+test_local_install_does_not_print_remote_login_hint() {
   local tmp
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' RETURN
@@ -511,8 +516,8 @@ STUB
 
 test_brew_install_failure_falls_back_to_release_binary
 test_brew_tap_failure_falls_back_to_release_binary
-test_remote_ssh_install_prints_token_login_hint
-test_local_install_does_not_print_token_login_hint
+test_remote_ssh_install_prints_device_login_hint
+test_local_install_does_not_print_remote_login_hint
 test_with_server_uses_compose_published_ports
 test_with_server_fails_when_compose_port_is_unavailable
 echo "install.sh tests passed"

@@ -19,13 +19,13 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 个人访问令牌（PAT）以 `ovy_` 开头，代表你的账号。它可以访问你有权访问的全部工作区和 API，需要像密码一样保管。
 
-在 **设置 → API Token** 中创建令牌时，需要填写名称，并选择 30 天、90 天、1 年或永不过期，默认选中 90 天。完整令牌只显示一次；关闭窗口后，Orvilo 只保留：
+CLI 登录时，设备授权流程会使用 CLI 客户端名称创建一个有效期为 90 天的 PAT。**已授权客户端**页面会列出每个客户端并支持吊销令牌。完整令牌只返回给 CLI 并保存到它的 profile；Web 端只保留：
 
 - 令牌的哈希值；
 - 用于辨认它的开头几位；
 - 名称、创建时间、过期时间和最近使用时间。
 
-完整值无法找回，丢失时吊销旧令牌并创建新的。
+完整值无法找回。CLI 令牌丢失时重新运行 `orvilo login` 获取新的令牌；如有需要，可以在**已授权客户端**中吊销旧客户端。
 
 <Callout type="warning">
 不要把 PAT 写入仓库、任务、评论、截图或日志，也不要直接放进会被保存的 shell 命令中。
@@ -33,7 +33,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## CLI 与 PAT
 
-运行 `orvilo login` 时，CLI 会通过浏览器完成登录，再创建一个有效期为 90 天的 PAT，保存到当前 profile 的配置文件：
+运行 `orvilo login` 时，CLI 会发起设备授权请求，打印验证网址和一次性验证码；你在浏览器中批准后，服务器会创建一个有效期为 90 天的 PAT，CLI 再把它保存到当前 profile 的配置文件：
 
 ```text
 ~/.orvilo/config.json
@@ -42,7 +42,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 守护进程使用同一个 PAT 连接 Orvilo。带过期时间的 `ovy_` PAT 在剩余有效期不足 7 天时自动续期，延长到当时起 90 天后。续期失败不会改变令牌本身；令牌已经过期或被吊销时，需要重新运行 `orvilo login`。
 
-无浏览器环境可以先在 Web 中创建 PAT，再让 CLI 安全地提示输入：
+CLI 运行在没有浏览器的服务器上时，可以在另一台电脑打开终端打印的网址并输入一次性验证码。已有 PAT 时仍可使用 `--token`：
 
 ```bash
 orvilo login --token
@@ -73,7 +73,7 @@ curl https://api.aspectlylabs.com/api/issues \
 
 `orvilo auth logout` 只删除当前 CLI profile 中保存的 PAT；Web 退出登录只删除当前浏览器的 cookie。它们不会吊销服务器上的个人访问令牌。
 
-如果令牌可能泄露，到 **设置 → API Token** 中立即吊销。吊销后，这个 PAT 无法再次使用，已经保存它的其他电脑和脚本也会失去访问权限。
+如果令牌可能泄露，到 **设置 → 已授权客户端** 中立即吊销。吊销后，这个 PAT 无法再次使用，已经保存它的其他电脑和脚本也会失去访问权限。
 
 ## 智能体执行的临时令牌
 

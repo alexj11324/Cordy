@@ -19,13 +19,13 @@ Browser cookies are not meant to be copied into scripts or the CLI; use a person
 
 A personal access token (PAT) starts with `ovy_` and represents your account. It can access every workspace and API you have access to, so guard it like a password.
 
-When creating a token under **Settings → API Token**, you provide a name and pick an expiry of 30 days, 90 days, 1 year, or never; 90 days is preselected. The full token is shown exactly once; after the dialog closes, Orvilo keeps only:
+For CLI access, device login creates a 90-day PAT using the CLI client name. The **Authorized clients** page lists each client and lets you revoke its token. The full token is returned only to the CLI and saved in its profile; the web UI keeps only:
 
 - the token's hash;
 - the first few characters, for identification;
 - the name, creation time, expiry, and last-used time.
 
-The full value cannot be recovered. If you lose it, revoke the old token and create a new one.
+The full value cannot be recovered. If you lose a CLI token, run `orvilo login` again to issue a new one; revoke the old client from **Authorized clients** if needed.
 
 <Callout type="warning">
 Don't put a PAT in repositories, issues, comments, screenshots, or logs, and don't pass it directly in shell commands that get saved.
@@ -33,7 +33,7 @@ Don't put a PAT in repositories, issues, comments, screenshots, or logs, and don
 
 ## The CLI and PATs
 
-When you run `orvilo login`, the CLI completes sign-in through the browser, then creates a PAT valid for 90 days and saves it to the current profile's config file:
+When you run `orvilo login`, the CLI starts a device authorization request, prints a verification URL and one-time code, and waits while you approve it in a browser. The server then creates a PAT valid for 90 days and the CLI saves it to the current profile's config file:
 
 ```text
 ~/.orvilo/config.json
@@ -42,7 +42,7 @@ When you run `orvilo login`, the CLI completes sign-in through the browser, then
 
 The daemon connects to Orvilo with the same PAT. A `ovy_` PAT with an expiry renews automatically when less than 7 days remain, extending it to 90 days from that moment. A failed renewal leaves the token unchanged; once a token has expired or been revoked, run `orvilo login` again.
 
-On a machine without a browser, create a PAT on the web first and let the CLI prompt for it safely:
+The same flow works on a machine without a browser: open the printed URL on another computer and enter the one-time code. If you already have a PAT, `--token` remains available:
 
 ```bash
 orvilo login --token
@@ -73,7 +73,7 @@ In scripts, take the token from a secret manager or a protected environment vari
 
 `orvilo auth logout` only deletes the PAT saved in the current CLI profile; logging out on the web only deletes the current browser's cookies. Neither revokes the personal access token on the server.
 
-If a token may have leaked, revoke it immediately under **Settings → API Token**. Once revoked, the PAT can never be used again, and any other machines and scripts that saved it lose access too.
+If a token may have leaked, revoke it immediately under **Settings → Authorized clients**. Once revoked, the PAT can never be used again, and any other machines and scripts that saved it lose access too.
 
 ## Temporary tokens for agent runs
 

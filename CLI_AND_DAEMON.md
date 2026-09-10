@@ -46,7 +46,7 @@ orvilo setup self-host
 Or step by step:
 
 ```bash
-# 1. Authenticate (opens browser for login)
+# 1. Authenticate with device authorization
 orvilo login
 
 # 2. Start the agent daemon
@@ -81,21 +81,21 @@ plan rather than creating duplicate child issues. Graph mutations publish
 
 ## Authentication
 
-### Browser Login
+### Device Login
 
 ```bash
 orvilo login
 ```
 
-Opens your browser for OAuth authentication, creates a 90-day personal access token, and auto-configures your workspaces.
+Prints a verification URL and one-time code. Open the URL on any computer where you are signed in to Orvilo, enter the code, and approve access. The server then creates a 90-day personal access token, and the CLI auto-configures your workspaces.
 
-### Token Login
+### Existing Token Login
 
 ```bash
 orvilo login --token <ovy_...>
 ```
 
-Authenticate using a personal access token directly. Useful for headless environments. Pass `--token=` with an empty value to be prompted interactively (so the token never lands in shell history).
+Authenticate using an existing personal access token directly. Pass `--token=` with an empty value to be prompted interactively (so the token never lands in shell history). Device login also works on headless machines: open the URL printed by `orvilo login` on another signed-in computer and enter the one-time code.
 
 ### Check Status
 
@@ -823,7 +823,7 @@ orvilo setup self-host --port 9090 --frontend-port 4000
 orvilo setup self-host --server-url https://api.example.com --app-url https://app.example.com
 ```
 
-`orvilo setup` configures the CLI, opens your browser for authentication, and starts the daemon — all in one step. Use `orvilo setup self-host` to connect to a self-hosted server instead of Orvilo Cloud.
+`orvilo setup` configures the CLI, prints a device authorization URL and one-time code, and starts the daemon after browser approval — all in one step. Use `orvilo setup self-host` to connect to a self-hosted server instead of Orvilo Cloud.
 
 ## Configuration
 
