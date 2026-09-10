@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,11 +14,68 @@ import (
 	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
-// TestPersistSelfHostConfigIfReachable verifies the fix for the
-// setup-wipes-token bug: a failed reachability probe must leave the existing
-// config (and its auth token) untouched, instead of overwriting it before the
-// probe and bailing — which left the user logged out with no recovery.
-func TestPersistSelfHostConfigIfReachable(t *testing.T) {
+func TestSetupSelfHostAuthFailurePreservesExistingConfig(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	if err := cli.SaveCLIConfig(cli.CLIConfig{
+		AppURL:      "https://app.old.example",
+		WorkspaceID: "workspace-old",
+		Token:       "ovy_old_token",
+	}); err != nil {
+		t.Fatalf("seed config: %v", err)
+	}
+	configPath, err := cli.CLIConfigPath()
+	if err != nil {
+		t.Fatalf("config path: %v", err)
+	}
+	before, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read seeded config: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/health":
+			w.WriteHeader(http.StatusOK)
+		case "/api/auth/device/code":
+			_, _ = w.Write([]byte(`{"device_code":"odc_setup_test","user_code":"ABCD-EFGH","verification_uri":"https://app.new.example/device","expires_in":60,"interval":1}`))
+		case "/api/auth/device/token":
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":"access_denied"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	cmd := &cobra.Command{}
+	cmd.Flags().String("server-url", "", "")
+	cmd.Flags().String("app-url", "", "")
+	cmd.Flags().Int("port", 8080, "")
+	cmd.Flags().Int("frontend-port", 3000, "")
+	if err := cmd.Flags().Set("server-url", srv.URL); err != nil {
+		t.Fatalf("set server-url: %v", err)
+	}
+	if err := cmd.Flags().Set("app-url", "https://app.new.example"); err != nil {
+		t.Fatalf("set app-url: %v", err)
+	}
+
+	if err := runSetupSelfHost(cmd, nil); err == nil || !strings.Contains(err.Error(), "denied") {
+		t.Fatalf("runSetupSelfHost error = %v, want device authorization denial", err)
+	}
+
+	after, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read config after failed setup: %v", err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatalf("failed setup changed existing config:\nbefore: %safter:  %s", before, after)
+	}
+}
+
+// TestSelfHostServerReachable verifies that setup's reachability
+// probe does not write a profile before authentication succeeds.
+func TestSelfHostServerReachable(t *testing.T) {
 	t.Run("unreachable server preserves existing config and token", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
 		existing := cli.CLIConfig{
@@ -29,14 +88,7 @@ func TestPersistSelfHostConfigIfReachable(t *testing.T) {
 			t.Fatalf("seed config: %v", err)
 		}
 
-		proceed, err := persistSelfHostConfigIfReachable(
-			"https://api.new.example", "https://new.example", "",
-			func(string) bool { return false },
-		)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if proceed {
+		if selfHostServerReachable("https://api.new.example", func(string) bool { return false }) {
 			t.Fatalf("proceed: want false for unreachable server")
 		}
 
@@ -52,26 +104,19 @@ func TestPersistSelfHostConfigIfReachable(t *testing.T) {
 		}
 	})
 
-	t.Run("reachable server writes new self-host config", func(t *testing.T) {
+	t.Run("reachable server still leaves persistence to successful auth", func(t *testing.T) {
 		t.Setenv("HOME", t.TempDir())
 
-		proceed, err := persistSelfHostConfigIfReachable(
-			"https://api.new.example", "https://new.example", "",
-			func(string) bool { return true },
-		)
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-		if !proceed {
+		if !selfHostServerReachable("https://api.new.example", func(string) bool { return true }) {
 			t.Fatalf("proceed: want true for reachable server")
 		}
 
-		got, err := cli.LoadCLIConfig()
+		configPath, err := cli.CLIConfigPath()
 		if err != nil {
-			t.Fatalf("load config: %v", err)
+			t.Fatalf("config path: %v", err)
 		}
-		if got.ServerURL != "https://api.new.example" || got.AppURL != "https://new.example" {
-			t.Fatalf("config not written: %+v", got)
+		if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+			t.Fatalf("config exists after reachability probe: stat error = %v", err)
 		}
 	})
 }

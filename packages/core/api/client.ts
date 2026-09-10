@@ -301,6 +301,7 @@ import { parseWithFallback } from "./schema";
 import { readCsrfTokenFromCookieHeader } from "./csrf-cookie";
 import {
   DesktopSessionResponseSchema,
+  DeviceAuthorizationInspectSchema,
   DesktopHandoffResponseSchema,
   AgentTaskListSchema,
   AgentThreadResponseSchema,
@@ -3466,6 +3467,39 @@ export class ApiClient {
 	}
 
   // Personal Access Tokens
+  async inspectDeviceAuthorization(
+    userCode: string,
+  ): Promise<{ client_name: string; expires_at: string }> {
+    const raw = await this.fetch<unknown>("/api/auth/device/inspect", {
+      method: "POST",
+      body: JSON.stringify({ user_code: userCode }),
+    });
+    const request = parseWithFallback(
+      raw,
+      DeviceAuthorizationInspectSchema,
+      { client_name: "", expires_at: "" },
+      { endpoint: "POST /api/auth/device/inspect" },
+    );
+    if (!request.client_name || !request.expires_at) {
+      throw new ApiError(
+        "Invalid device authorization response",
+        502,
+        "Bad Gateway",
+      );
+    }
+    return request;
+  }
+
+  async decideDeviceAuthorization(
+    userCode: string,
+    approve: boolean,
+  ): Promise<void> {
+    await this.fetch("/api/auth/device/decision", {
+      method: "POST",
+      body: JSON.stringify({ user_code: userCode, approve }),
+    });
+  }
+
   async listPersonalAccessTokens(): Promise<PersonalAccessToken[]> {
     return this.fetch("/api/tokens");
   }

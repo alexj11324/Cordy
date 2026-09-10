@@ -2,15 +2,17 @@ package main
 
 import (
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
 func TestMain(m *testing.M) {
@@ -34,154 +36,6 @@ func testCmd() *cobra.Command {
 	cmd := &cobra.Command{}
 	cmd.PersistentFlags().String("profile", "", "")
 	return cmd
-}
-
-func TestResolveAppURL(t *testing.T) {
-	cmd := testCmd()
-
-	t.Run("prefers ORVILO_APP_URL", func(t *testing.T) {
-		t.Setenv("ORVILO_APP_URL", "http://localhost:14000")
-		t.Setenv("FRONTEND_ORIGIN", "http://localhost:13000")
-
-		if got := resolveAppURL(cmd); got != "http://localhost:14000" {
-			t.Fatalf("resolveAppURL() = %q, want %q", got, "http://localhost:14000")
-		}
-	})
-
-	t.Run("falls back to FRONTEND_ORIGIN", func(t *testing.T) {
-		t.Setenv("ORVILO_APP_URL", "")
-		t.Setenv("FRONTEND_ORIGIN", "http://localhost:13026")
-
-		if got := resolveAppURL(cmd); got != "http://localhost:13026" {
-			t.Fatalf("resolveAppURL() = %q, want %q", got, "http://localhost:13026")
-		}
-	})
-}
-
-func TestResolveCallbackBinding(t *testing.T) {
-	// Fake outbound detector: pretends the CLI has a fixed LAN IP regardless
-	// of which server it dials.
-	fixed := func(ip string) func(string) net.IP {
-		return func(string) net.IP { return net.ParseIP(ip).To4() }
-	}
-	failing := func(string) net.IP { return nil }
-
-	cases := []struct {
-		name         string
-		flagHost     string
-		serverURL    string
-		appURL       string
-		detect       func(string) net.IP
-		wantCallback string
-		wantBind     string
-	}{
-		{
-			name:         "public app URL stays on loopback",
-			appURL:       "https://orvilo.aspectlylabs.com",
-			serverURL:    "https://api.aspectlylabs.com",
-			detect:       failing,
-			wantCallback: "localhost",
-			wantBind:     "127.0.0.1",
-		},
-		{
-			name:         "localhost app URL stays on loopback",
-			appURL:       "http://localhost:3000",
-			serverURL:    "http://localhost:8080",
-			detect:       failing,
-			wantCallback: "localhost",
-			wantBind:     "127.0.0.1",
-		},
-		{
-			name:         "same-machine self-host uses loopback (CLI IP matches app IP)",
-			appURL:       "http://192.168.0.28:3000",
-			serverURL:    "http://192.168.0.28:8080",
-			detect:       fixed("192.168.0.28"),
-			wantCallback: "localhost",
-			wantBind:     "127.0.0.1",
-		},
-		{
-			name:         "cross-machine self-host points callback at CLI's LAN IP",
-			appURL:       "http://192.168.0.28:3000",
-			serverURL:    "http://192.168.0.28:8080",
-			detect:       fixed("192.168.0.47"),
-			wantCallback: "192.168.0.47",
-			wantBind:     "0.0.0.0",
-		},
-		{
-			name:         "outbound detection failure falls back to app IP",
-			appURL:       "http://192.168.0.28:3000",
-			serverURL:    "http://192.168.0.28:8080",
-			detect:       failing,
-			wantCallback: "192.168.0.28",
-			wantBind:     "0.0.0.0",
-		},
-		{
-			name:         "--callback-host flag overrides everything",
-			flagHost:     "cli.internal.example",
-			appURL:       "https://orvilo.aspectlylabs.com",
-			serverURL:    "https://api.aspectlylabs.com",
-			detect:       fixed("10.0.0.5"),
-			wantCallback: "cli.internal.example",
-			wantBind:     "0.0.0.0",
-		},
-	}
-
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			gotCallback, gotBind := resolveCallbackBinding(tc.flagHost, tc.serverURL, tc.appURL, tc.detect)
-			if gotCallback != tc.wantCallback {
-				t.Errorf("callback host = %q, want %q", gotCallback, tc.wantCallback)
-			}
-			if gotBind != tc.wantBind {
-				t.Errorf("bind addr = %q, want %q", gotBind, tc.wantBind)
-			}
-		})
-	}
-}
-
-func TestBrowserLoginInstructionsSSHRemoteHint(t *testing.T) {
-	const loginURL = "https://orvilo.aspectlylabs.com/login?cli_callback=http%3A%2F%2Flocalhost%3A43689%2Fcallback"
-
-	got := browserLoginInstructions(loginURL, "localhost", 43689, true)
-	if !strings.Contains(got, "ssh -L 43689:127.0.0.1:43689 <user>@<remote-host>") {
-		t.Fatalf("remote SSH instructions missing tunnel command:\n%s", got)
-	}
-	if !strings.Contains(got, loginURL) {
-		t.Fatalf("instructions missing login URL:\n%s", got)
-	}
-
-	got = browserLoginInstructions(loginURL, "localhost", 43689, false)
-	if strings.Contains(got, "ssh -L") {
-		t.Fatalf("local instructions should not include SSH tunnel command:\n%s", got)
-	}
-
-	got = browserLoginInstructions(loginURL, "192.168.1.25", 43689, true)
-	if strings.Contains(got, "ssh -L") {
-		t.Fatalf("non-loopback callback should not include SSH tunnel command:\n%s", got)
-	}
-}
-
-func TestCallbackHostFlagValueReadsParentSetupFlag(t *testing.T) {
-	var got string
-	setup := &cobra.Command{Use: "setup"}
-	setup.Flags().String(callbackHostFlag, "", "")
-	cloud := &cobra.Command{
-		Use: "cloud",
-		Run: func(cmd *cobra.Command, args []string) {
-			got = callbackHostFlagValue(cmd)
-		},
-	}
-	cloud.Flags().String(callbackHostFlag, "", "")
-	setup.AddCommand(cloud)
-	setup.SetArgs([]string{"--callback-host", "10.0.0.5", "cloud"})
-
-	if err := setup.Execute(); err != nil {
-		t.Fatalf("execute setup cloud: %v", err)
-	}
-	if got != "10.0.0.5" {
-		t.Fatalf("callback host = %q, want parent flag value", got)
-	}
 }
 
 // TestLoginTokenFlagWiring asserts the production loginCmd flag is registered
@@ -250,7 +104,7 @@ func TestLoginTokenHelpOutputRendersCleanly(t *testing.T) {
 // right downstream branch is taken: `--token ovy_xxx` and `--token=ovy_xxx`
 // both consume the value (the bug from #1994), `--token` alone falls
 // through to the prompt sentinel (preserves the legacy headless form), and
-// no flag at all leaves the browser flow untouched.
+// no flag at all starts the device authorization flow.
 func TestLoginTokenFlagParsing(t *testing.T) {
 	type want struct {
 		changed         bool
@@ -284,7 +138,7 @@ func TestLoginTokenFlagParsing(t *testing.T) {
 			want: want{changed: true, expectsPrompted: true},
 		},
 		{
-			name: "no flag at all → browser flow",
+			name: "no flag at all → device authorization flow",
 			argv: []string{},
 			want: want{changed: false},
 		},
@@ -328,6 +182,104 @@ func TestLoginTokenFlagParsing(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDeviceAuthorizationPollDelay(t *testing.T) {
+	pending := &cli.HTTPError{StatusCode: 400, Body: `{"error":"authorization_pending"}`}
+	if got, ok := deviceAuthorizationPollDelay(pending, 5*time.Second); !ok || got != 5*time.Second {
+		t.Fatalf("pending delay = (%s, %v), want (5s, true)", got, ok)
+	}
+	slowDown := &cli.HTTPError{StatusCode: 400, Body: `{"error":"slow_down"}`}
+	if got, ok := deviceAuthorizationPollDelay(slowDown, 5*time.Second); !ok || got != 10*time.Second {
+		t.Fatalf("slow_down delay = (%s, %v), want (10s, true)", got, ok)
+	}
+	denied := &cli.HTTPError{StatusCode: 400, Body: `{"error":"access_denied"}`}
+	if got, ok := deviceAuthorizationPollDelay(denied, 5*time.Second); ok || got != 0 {
+		t.Fatalf("denied delay = (%s, %v), want (0, false)", got, ok)
+	}
+}
+
+func TestRunAuthLoginDeviceUsesServerPollingAndSavesPAT(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("ORVILO_TOKEN", "")
+	t.Setenv("ORVILO_AGENT_ID", "")
+	t.Setenv("ORVILO_TASK_ID", "")
+	t.Setenv("ORVILO_DAEMON_PORT", "")
+	t.Setenv("ORVILO_TASK_CONFIG_ROOT", "")
+
+	const rawPAT = "ovy_device_test_token"
+	var paths []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if got := r.Header.Get("Authorization"); got != "" && r.URL.Path != "/api/me" {
+			t.Fatalf("device request carried unexpected authorization header %q", got)
+		}
+		switch r.URL.Path {
+		case "/api/auth/device/code":
+			if r.Method != http.MethodPost {
+				t.Fatalf("device code method = %s, want POST", r.Method)
+			}
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode device code body: %v", err)
+			}
+			if !strings.HasPrefix(body["client_name"], "CLI (") {
+				t.Fatalf("client_name = %q, want CLI label", body["client_name"])
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"device_code":      "odc_test_device_code",
+				"user_code":        "ABCD-EFGH",
+				"verification_uri": "https://orvilo.example/device",
+				"expires_in":       600,
+				"interval":         1,
+			})
+		case "/api/auth/device/token":
+			if r.Method != http.MethodPost {
+				t.Fatalf("device token method = %s, want POST", r.Method)
+			}
+			var body map[string]string
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode device token body: %v", err)
+			}
+			if body["device_code"] != "odc_test_device_code" {
+				t.Fatalf("device_code = %q", body["device_code"])
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"access_token": rawPAT, "token_type": "Bearer"})
+		case "/api/me":
+			if got := r.Header.Get("Authorization"); got != "Bearer "+rawPAT {
+				t.Fatalf("me authorization = %q, want PAT", got)
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"name": "Ada", "email": "ada@example.test"})
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	t.Setenv("ORVILO_SERVER_URL", srv.URL)
+
+	stderr := captureStderr(t)
+	err := runAuthLoginDevice(testCmd())
+	out := stderr.read()
+	if err != nil {
+		t.Fatalf("runAuthLoginDevice: %v", err)
+	}
+	if !strings.Contains(out, "https://orvilo.example/device") || !strings.Contains(out, "ABCD-EFGH") {
+		t.Fatalf("device instructions missing from stderr: %q", out)
+	}
+	if strings.Contains(out, "callback") || strings.Contains(out, "Opening browser") {
+		t.Fatalf("device login still advertised callback/browser flow: %q", out)
+	}
+	if !strings.Contains(strings.Join(paths, ","), "/api/auth/device/code") || !strings.Contains(strings.Join(paths, ","), "/api/auth/device/token") {
+		t.Fatalf("device endpoints were not called: %v", paths)
+	}
+	cfg, err := cli.LoadCLIConfigForProfile("")
+	if err != nil {
+		t.Fatalf("LoadCLIConfig: %v", err)
+	}
+	if cfg.Token != rawPAT || cfg.ServerURL != srv.URL {
+		t.Fatalf("config = %#v, want saved device PAT and server", cfg)
 	}
 }
 

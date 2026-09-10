@@ -50,18 +50,15 @@ running_in_ssh_session() {
   [ -n "${SSH_CONNECTION:-}" ] || [ -n "${SSH_CLIENT:-}" ] || [ -n "${SSH_TTY:-}" ]
 }
 
-print_remote_server_token_hint() {
+print_remote_server_login_hint() {
   if ! running_in_ssh_session; then
     return
   fi
 
-  printf "  ${BOLD}Looks like a remote/SSH session.${RESET} Browser login may not be able to call back to this machine's localhost.\n"
-  printf "  Token login is usually simpler here:\n"
-  printf "     1. On your local computer, open ${CYAN}https://orvilo.aspectlylabs.com/settings?tab=tokens${RESET}\n"
-  printf "        and create a token under ${BOLD}Settings > API Tokens${RESET}.\n"
-  printf "     2. On this server, run:\n"
-  printf "        ${CYAN}orvilo login --token <YOUR_TOKEN>${RESET}\n"
-  printf "        ${CYAN}orvilo daemon start${RESET}\n"
+  printf "  ${BOLD}Looks like a remote/SSH session.${RESET} Orvilo device login works without a browser on this machine.\n"
+  printf "     1. Run ${CYAN}orvilo login${RESET} on this server.\n"
+  printf "     2. Open the printed verification URL on another computer, enter the one-time code, and approve access.\n"
+  printf "     3. Return here and run ${CYAN}orvilo daemon start${RESET}.\n"
   printf "\n"
 }
 
@@ -441,7 +438,7 @@ run_default() {
   printf "     ${CYAN}orvilo setup${RESET}                # Connect to Orvilo Cloud\n"
   printf "     ${CYAN}orvilo setup self-host${RESET}       # Connect to a self-hosted server\n"
   printf "\n"
-  print_remote_server_token_hint
+  print_remote_server_login_hint
   printf "  ${BOLD}Self-hosting?${RESET} Install the server first:\n"
   printf "     curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server\n"
   printf "\n"

@@ -4626,6 +4626,11 @@ export const EMPTY_JOIN_SHARE_LINK_RESPONSE: {
 
 export const DesktopSessionResponseSchema = z.object({ token: z.string().min(1) });
 
+export const DeviceAuthorizationInspectSchema = z.object({
+  client_name: z.string().trim().min(1),
+  expires_at: z.string().refine((value) => Number.isFinite(Date.parse(value))),
+});
+
 export const DesktopHandoffResponseSchema = z.object({
   callback_protocol: z.string().refine(isDesktopCallbackProtocol),
   code: z.string().regex(/^ovd_[A-Za-z0-9_-]{43}$/),

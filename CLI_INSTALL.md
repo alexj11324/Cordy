@@ -125,11 +125,11 @@ Run:
 orvilo login
 ```
 
-**Important:** This command opens a browser window for OAuth authentication. Tell the user:
+This command uses device authorization and does not need a browser on the CLI machine. Tell the user:
 
-> "A browser window will open for Orvilo login. Please complete the authentication in your browser, then come back here."
+> "Orvilo will print a verification URL and one-time code. Open the URL on a computer where you are signed in, enter the code, and approve access."
 
-Wait for the command to complete. It will automatically discover and watch all workspaces the user belongs to.
+Wait for the command to complete after approval. It will automatically discover and watch all workspaces the user belongs to.
 
 Verify:
 
@@ -140,7 +140,8 @@ orvilo auth status
 Expected output should show the authenticated user and server URL.
 
 **If login fails:**
-- If no browser is available (headless environment), the user can generate a Personal Access Token at `https://orvilo.aspectlylabs.com/settings?tab=tokens` and run: `orvilo login --token <ovy_...>` (use `--token=` with an empty value to be prompted interactively).
+- On a headless machine, open the printed verification URL on another signed-in computer and enter the one-time code there. No browser or callback listener is required on the CLI machine.
+- If the user already has a personal access token, run `orvilo login --token=` and paste it when prompted. Do not put the token in shell history or documentation.
 - If the server URL needs to be customized: `orvilo config set server_url <url>` before logging in.
 
 ---

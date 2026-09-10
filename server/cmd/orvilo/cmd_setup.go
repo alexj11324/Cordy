@@ -20,16 +20,14 @@ var setupCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "Configure the CLI, authenticate, and start the daemon",
 	Long: `Configures the CLI to connect to Orvilo Cloud (orvilo.aspectlylabs.com), then
-authenticates via browser and starts the agent daemon.
+authenticates with a browser-entered device code and starts the agent daemon.
 
 If a configuration already exists, you will be prompted before overwriting.
 
 Use 'orvilo setup self-host' to connect to a self-hosted server instead.
 
-If you run this command over SSH on a remote machine, keep the localhost
-callback and follow the SSH tunnel hint printed during browser login. If your
-browser can reach this CLI directly on a private network address, pass
---callback-host <host-or-ip>.
+When the CLI runs on a server without a browser, open the printed verification
+URL on another computer and enter the one-time code shown in the terminal.
 
 Use --profile to create an isolated configuration for a separate environment:
   orvilo setup self-host --profile staging --server-url https://api-staging.co`,
@@ -41,10 +39,8 @@ var setupCloudCmd = &cobra.Command{
 	Short: "Configure the CLI for Orvilo Cloud (orvilo.aspectlylabs.com)",
 	Long: `Explicitly configures the CLI to connect to Orvilo Cloud (orvilo.aspectlylabs.com).
 
-If you run this command over SSH on a remote machine, keep the localhost
-callback and follow the SSH tunnel hint printed during browser login. If your
-browser can reach this CLI directly on a private network address, pass
---callback-host <host-or-ip>.
+When the CLI runs on a server without a browser, open the printed verification
+URL on another computer and enter the one-time code shown in the terminal.
 
 This is equivalent to running 'orvilo setup' without a subcommand.`,
 	RunE: runSetupCloud,
@@ -58,9 +54,8 @@ var setupSelfHostCmd = &cobra.Command{
 By default, connects to http://localhost:8080 (backend) and http://localhost:3000 (frontend).
 Use --server-url and --app-url to specify a custom server (e.g. an on-premise deployment).
 
-If you run this command from a different machine than the server, also pass
---callback-host <host-or-ip-the-browser-can-reach-back-to-this-machine-on> so
-the OAuth login flow can return the token to the CLI.
+When the CLI runs on a server without a browser, open the printed verification
+URL on another computer and enter the one-time code shown in the terminal.
 
 Examples:
   orvilo setup self-host
@@ -157,10 +152,6 @@ func runSetupCloud(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	if err := cli.SaveCLIConfigForProfile(cfg, profile); err != nil {
-		return fmt.Errorf("save config: %w", err)
-	}
-
 	fmt.Fprintln(os.Stderr, "Configured for Orvilo Cloud (https://orvilo.aspectlylabs.com).")
 	fmt.Fprintf(os.Stderr, "  server_url: %s\n", cfg.ServerURL)
 	fmt.Fprintf(os.Stderr, "  app_url:    %s\n", cfg.AppURL)
@@ -168,7 +159,7 @@ func runSetupCloud(cmd *cobra.Command, args []string) error {
 
 	// Authenticate.
 	fmt.Fprintln(os.Stderr, "")
-	if err := runLogin(cmd, args); err != nil {
+	if err := runSetupLogin(cmd, cfg.ServerURL, cfg.AppURL); err != nil {
 		return err
 	}
 
@@ -228,13 +219,9 @@ func runSetupSelfHost(cmd *cobra.Command, args []string) error {
 	}
 
 	// Probe before persisting anything. A failed setup must never overwrite a
-	// working config or wipe the saved token: persistSelfHostConfigIfReachable
-	// writes only when the server answers, so an unreachable host leaves the
-	// existing config untouched and the user stays logged in.
-	reachable, err := persistSelfHostConfigIfReachable(serverURL, appURL, profile, probeServer)
-	if err != nil {
-		return fmt.Errorf("save config: %w", err)
-	}
+	// working config or wipe the saved token: the reachability check only probes;
+	// the setup login persists the target and credential after authentication.
+	reachable := selfHostServerReachable(serverURL, probeServer)
 	if !reachable {
 		fmt.Fprintf(os.Stderr, "\n⚠ Server at %s is not reachable.\n", serverURL)
 		fmt.Fprintln(os.Stderr, "  Your existing configuration was left unchanged.")
@@ -249,7 +236,7 @@ func runSetupSelfHost(cmd *cobra.Command, args []string) error {
 
 	// Authenticate.
 	fmt.Fprintln(os.Stderr, "")
-	if err := runLogin(cmd, args); err != nil {
+	if err := runSetupLogin(cmd, serverURL, appURL); err != nil {
 		return err
 	}
 
@@ -330,25 +317,12 @@ func daemonActiveTaskCount(health map[string]any) int64 {
 	}
 }
 
-// persistSelfHostConfigIfReachable probes serverURL and, only when it answers,
-// overwrites the profile config with the given self-host URLs. When the server
-// is unreachable it leaves any existing config — and its auth token — untouched
-// and returns false, so a failed `setup self-host` never logs the user out or
-// clobbers a working config (the original ordering saved first, then probed,
-// then bailed — wiping the token on every failed probe). The prober is injected
-// so tests can exercise both branches without real network I/O.
-func persistSelfHostConfigIfReachable(serverURL, appURL, profile string, probe func(string) bool) (bool, error) {
-	if !probe(serverURL) {
-		return false, nil
-	}
-	cfg := cli.CLIConfig{
-		ServerURL: serverURL,
-		AppURL:    appURL,
-	}
-	if err := cli.SaveCLIConfigForProfile(cfg, profile); err != nil {
-		return false, err
-	}
-	return true, nil
+// selfHostServerReachable probes serverURL without changing the profile. Setup
+// must wait until device authorization succeeds before writing either the
+// target URLs or the newly issued credential. The prober is injected so tests
+// can exercise both branches without real network I/O.
+func selfHostServerReachable(serverURL string, probe func(string) bool) bool {
+	return probe(serverURL)
 }
 
 // resolveSelfHostServerURL picks the backend URL for `setup self-host`: the

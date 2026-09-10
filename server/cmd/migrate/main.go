@@ -359,6 +359,9 @@ var concurrentIndexCleanups = map[string]string{
 	"595_automation_memory_name_index":                          "idx_automation_memory_name",
 	"599_terminal_report_id_index":                              "terminal_report_receipt_report_id_idx",
 	"600_terminal_report_claim_index":                           "terminal_report_receipt_claim_idx",
+	"606_device_authorization_device_code_index":                "device_authorization_device_code_hash_uidx",
+	"607_device_authorization_user_code_index":                  "device_authorization_user_code_hash_uidx",
+	"608_device_authorization_id_index":                         "device_authorization_pkey",
 }
 
 // concurrentDownIndexCleanups covers every migration whose down direction
