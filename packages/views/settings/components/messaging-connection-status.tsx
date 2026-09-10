@@ -5,8 +5,19 @@ import {
   messagingConnectionState,
   type MessagingConnectionSource,
 } from "@orvilo/core/types";
-import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Badge } from "@orvilo/ui/components/reui/badge";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
+
+function badgeVariant(
+  state: ReturnType<typeof messagingConnectionState>,
+): "success-light" | "warning-light" | "destructive-light" | "info-light" | "secondary" {
+  if (state === "connected") return "success-light";
+  if (state === "connecting") return "info-light";
+  if (state === "error" || state === "degraded") return "destructive-light";
+  if (state === "unavailable") return "secondary";
+  return "warning-light";
+}
 
 export function MessagingConnectionStatus({
   installation,
@@ -42,17 +53,26 @@ export function MessagingConnectionStatus({
       className="inline-flex min-w-0 flex-wrap items-center gap-2"
     >
       {!compact && (
-        <span className="text-micro text-muted-foreground">
+        <span className="text-body text-muted-foreground">
           {t(($) => $.page.connection_status.label)}
         </span>
       )}
+      {compact ? (
+        <Badge variant="outline">
+          <span
+            aria-hidden="true"
+            className={cn(
+              "size-1.5 rounded-full",
+              state === "connected" ? "bg-success" : "bg-warning",
+            )}
+          />
+          {labels[state]}
+        </Badge>
+      ) : (
       <Badge
-        className="h-auto min-h-5 max-w-full whitespace-normal text-left"
-        variant={
-          state === "error" || state === "degraded"
-            ? "destructive"
-            : "secondary"
-        }
+        radius="full"
+        size="sm"
+        variant={badgeVariant(state)}
       >
         <Icon
           aria-hidden="true"
@@ -64,8 +84,9 @@ export function MessagingConnectionStatus({
         />
         {labels[state]}
       </Badge>
+      )}
       {experimental ? (
-        <Badge variant="outline">
+        <Badge radius="full" size="sm" variant="outline">
           {t(($) => $.page.connection_status.experimental)}
         </Badge>
       ) : null}
