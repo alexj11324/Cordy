@@ -201,7 +201,7 @@ export const BoardCardContent = memo(function BoardCardContent({
           {priorityIconNode}
           <CustomStatusChip status={issue.status} />
           {showProject && (
-            <span className="inline-flex items-center gap-1.5 text-label text-foreground/80 max-w-[160px]">
+            <span className="inline-flex items-center gap-1.5 text-label text-foreground max-w-[160px]">
               <ProjectIcon project={project} size="md" />
               <span className="truncate">{project!.title}</span>
             </span>
