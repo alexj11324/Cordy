@@ -247,7 +247,7 @@ export function SettingsPage({
               <div
                 className="flex w-full flex-col gap-1.5 py-4 pr-12"
               >
-                <DialogTitle className="text-lg leading-6">
+                <DialogTitle className="text-title leading-6">
                   {activeTitle}
                 </DialogTitle>
                 {activeDescription ? (

@@ -52,12 +52,12 @@ export function GlobalRightSidebar() {
         : "hidden"}
     >
       <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3" style={{ WebkitAppRegion: "drag" } as CSSProperties}>
-        <span className="truncate text-sm font-medium">{t(($) => $.sidebar.title)}</span>
+        <span className="truncate text-body font-medium">{t(($) => $.sidebar.title)}</span>
         <GlobalRightSidebarToggle inSidebar />
       </header>
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {isChatPage
-        ? <p className="p-4 text-sm text-muted-foreground">{t(($) => $.sidebar.chat_page_notice)}</p>
+        ? <p className="p-4 text-body text-muted-foreground">{t(($) => $.sidebar.chat_page_notice)}</p>
         : <ChatWindow docked />}
       </div>
     </aside>

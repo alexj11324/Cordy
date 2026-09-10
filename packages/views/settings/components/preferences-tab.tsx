@@ -112,7 +112,7 @@ export function PreferencesTab() {
             <SelectTrigger
               id="profile-theme"
               aria-label={t(($) => $.preferences.theme.title)}
-              className="border-input text-foreground w-full gap-2 border px-4 py-2 text-sm font-normal shadow-none"
+              className="border-input text-foreground w-full gap-2 border px-4 py-2 text-body font-normal shadow-none"
             >
               <SelectValue>
                 {themeOptions.find((option) => option.value === theme)?.label}
@@ -143,7 +143,7 @@ export function PreferencesTab() {
             <SelectTrigger
               id="profile-language"
               aria-label={t(($) => $.preferences.language.title)}
-              className="border-input text-foreground w-full gap-2 border px-4 py-2 text-sm font-normal shadow-none"
+              className="border-input text-foreground w-full gap-2 border px-4 py-2 text-body font-normal shadow-none"
             >
               <SelectValue>
                 {languageOptions.find((option) => option.value === currentLocale)?.label}

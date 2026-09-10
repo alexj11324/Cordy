@@ -141,7 +141,7 @@ describe("four-column model selector", () => {
     const codex = screen.getByRole("button", {
       name: "Codex Personal",
     });
-    expect(codex.querySelector("svg")?.getAttribute("class")).toMatch(
+    expect(codex.querySelector("img, svg")?.getAttribute("class")).toMatch(
       /\bsize-5\b/,
     );
   });

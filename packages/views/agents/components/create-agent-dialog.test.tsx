@@ -255,7 +255,7 @@ describe("CreateAgentDialog runtime visibility gate", () => {
     });
     const { onCreate } = renderDialog([sharedOnline, ownedOnline]);
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+    fireEvent.change(screen.getByPlaceholderText(enAgents.create_dialog.name_placeholder), {
       target: { value: "Preferred Runtime Agent" },
     });
     fireEvent.click(screen.getByText("Create"));
@@ -283,7 +283,7 @@ describe("CreateAgentDialog runtime visibility gate", () => {
     });
     const { onCreate } = renderDialog([sharedOnline, ownedOffline]);
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+    fireEvent.change(screen.getByPlaceholderText(enAgents.create_dialog.name_placeholder), {
       target: { value: "Offline Runtime Agent" },
     });
     fireEvent.click(screen.getByText("Create"));
@@ -407,7 +407,7 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
     // Legacy copy is rendered — matches VISIBILITY_DESCRIPTION.
     expect(screen.getByText(/All members can assign/i)).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+    fireEvent.change(screen.getByPlaceholderText(enAgents.create_dialog.name_placeholder), {
       target: { value: "Legacy Agent" },
     });
     fireEvent.click(screen.getByText("Create"));
@@ -434,7 +434,7 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
     expect(screen.getByText("Entire workspace")).toBeInTheDocument();
     expect(screen.getByText("Specific people")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+    fireEvent.change(screen.getByPlaceholderText(enAgents.create_dialog.name_placeholder), {
       target: { value: "Access Agent" },
     });
     fireEvent.click(screen.getByText("Create"));
@@ -455,7 +455,7 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
     const mine = makeRuntime({ id: "rt-mine", name: "My Runtime", owner_id: ME });
     const { onCreate } = renderDialog([mine]);
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+    fireEvent.change(screen.getByPlaceholderText(enAgents.create_dialog.name_placeholder), {
       target: { value: "Private Agent" },
     });
     // Click the Private card. The Private description doubles as a stable
@@ -475,7 +475,7 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
     const mine = makeRuntime({ id: "rt-mine", name: "My Runtime", owner_id: ME });
     const { onCreate } = renderDialog([mine]);
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+    fireEvent.change(screen.getByPlaceholderText(enAgents.create_dialog.name_placeholder), {
       target: { value: "Empty Public Agent" },
     });
     fireEvent.click(screen.getByRole("radio", { name: /^Specific people/i }));
@@ -490,7 +490,7 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
     const mine = makeRuntime({ id: "rt-mine", name: "My Runtime", owner_id: ME });
     const { onCreate } = renderDialog([mine]);
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+    fireEvent.change(screen.getByPlaceholderText(enAgents.create_dialog.name_placeholder), {
       target: { value: "Shared Agent" },
     });
     fireEvent.click(screen.getByRole("radio", { name: /^Specific people/i }));
@@ -516,7 +516,7 @@ describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () =>
     expect(screen.queryByText("Skills")).toBeNull();
     expect(screen.queryByText("Add skills from workspace")).toBeNull();
 
-    fireEvent.change(screen.getByPlaceholderText("e.g. Deep Research Agent"), {
+    fireEvent.change(screen.getByPlaceholderText(enAgents.create_dialog.name_placeholder), {
       target: { value: "Lean Agent" },
     });
     fireEvent.click(screen.getByText("Create"));

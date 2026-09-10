@@ -22,7 +22,7 @@ export function GraphTaskStatus({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-2 text-sm text-foreground",
+        "inline-flex items-center gap-2 text-body text-foreground",
         className,
       )}
       data-graph-status={resolved}

@@ -212,9 +212,9 @@ export const BoardColumn = memo(function BoardColumn({
           >
             {status && <span className="flex size-5 shrink-0 items-center justify-center"><StatusIcon status={status} className="size-4" /></span>}
             <span className="flex min-h-0 items-start justify-center pt-1">
-              <span className={`text-foreground truncate text-xs font-medium [writing-mode:vertical-rl] ${upright ? "[text-orientation:upright]" : "rotate-180"}`}>{displayTitle}</span>
+              <span className={`text-foreground truncate text-caption font-medium [writing-mode:vertical-rl] ${upright ? "[text-orientation:upright]" : "rotate-180"}`}>{displayTitle}</span>
             </span>
-            <span className="text-foreground text-xs tabular-nums">{totalCount ?? issueIds.length}</span>
+            <span className="text-foreground text-caption tabular-nums">{totalCount ?? issueIds.length}</span>
           </Button>
         </Card>
       </KanbanColumn>

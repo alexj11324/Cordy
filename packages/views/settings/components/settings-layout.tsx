@@ -1,3 +1,5 @@
+"use client";
+
 import {
   createContext,
   useContext,
@@ -25,7 +27,7 @@ export const SETTINGS_INLINE_FIELD_CLASS =
 
 /**
  * Filled pill chrome for settings controls (selects, search, single-line
- * inputs). Replaces Linear/Multica bordered fields so the inner page matches
+ * inputs). Replaces the previous bordered fields so the inner page matches
  * the Buzz shell rather than looking like a second product.
  */
 export const SETTINGS_CONTROL_CLASS =

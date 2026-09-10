@@ -214,7 +214,9 @@ describe("AgentIdentityCard", () => {
     const { onUpdate } = renderCard({ breadcrumbHref });
 
     await user.click(screen.getByRole("button", { name: "Edit agent" }));
-    expect(document.querySelector('[data-slot="avatar"]')).toBeInTheDocument();
+    expect(
+      document.querySelector('[data-agent-identity="assigned"]'),
+    ).toBeInTheDocument();
     const input = screen.getByRole("textbox", { name: "Name" });
     await user.clear(input);
     await user.type(input, "Renamed Agent");

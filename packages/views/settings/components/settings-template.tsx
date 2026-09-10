@@ -72,7 +72,7 @@ export function SettingRow({
         </div>
 
         {description ? (
-          <FieldDescription className="text-sm">{description}</FieldDescription>
+          <FieldDescription className="text-body">{description}</FieldDescription>
         ) : null}
       </div>
 
