@@ -59,6 +59,13 @@ const coordyProviderIcons = {
   traecli: staticAssetSrc(traecliLogo),
 } as const;
 
+// These imported assets contain monochrome ink rather than brand colors.
+// External SVG images cannot inherit currentColor from the surrounding UI.
+const themeAwareProviders = new Set([
+  "codex", "copilot", "grok", "gemini", "dsh", "kimi", "mcode",
+  "qwenpaw", "opencode", "cursor",
+]);
+
 function ZeroClawLogo({ className }: { className: string }) {
   return (
     <svg
@@ -86,7 +93,9 @@ export function ProviderLogo({
   const coordySrc =
     coordyProviderIcons[provider as keyof typeof coordyProviderIcons];
   if (coordySrc) {
-    return <img src={coordySrc} alt="" aria-hidden className={className} />;
+    return <img src={coordySrc} alt="" aria-hidden className={
+      themeAwareProviders.has(provider) ? `${className} dark:invert` : className
+    } />;
   }
 
   if (provider === "codearts") {

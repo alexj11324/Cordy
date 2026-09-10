@@ -31,7 +31,7 @@ export interface BreadcrumbSegment {
 interface BreadcrumbHeaderProps {
   /** Ancestor links, rendered left-to-right with chevron separators. */
   segments: BreadcrumbSegment[];
-  /** The current page — non-clickable leaf. Caller controls styling/adornments. */
+  /** The current page — non-clickable leaf. The header owns its type size. */
   leaf: ReactNode;
   /** Right-side actions. Wrapped in a `shrink-0` flex row; omit for none. */
   actions?: ReactNode;
@@ -60,7 +60,7 @@ export function BreadcrumbHeader({
 }: BreadcrumbHeaderProps) {
   const shellSlot = useShellHeaderBreadcrumbSlot();
   const trail = (
-    <div className="flex flex-1 items-center gap-1.5 min-w-0">
+    <div className="flex flex-1 items-center gap-1.5 min-w-0 text-body [&_*]:text-body">
       {segments.map((segment) => (
         <Fragment key={segment.href}>
           <AppLink

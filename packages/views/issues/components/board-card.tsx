@@ -118,7 +118,7 @@ export const BoardCardContent = memo(function BoardCardContent({
               aria-label={priorityLabel}
               className="inline-flex size-5 shrink-0 items-center justify-center rounded hover:bg-muted/60"
             >
-              <PriorityIcon priority={issue.priority} />
+              <PriorityIcon priority={issue.priority} className="size-4!" />
             </button>
           }
         />
@@ -128,7 +128,7 @@ export const BoardCardContent = memo(function BoardCardContent({
         aria-label={priorityLabel}
         className="inline-flex size-5 shrink-0 items-center justify-center"
       >
-        <PriorityIcon priority={issue.priority} />
+        <PriorityIcon priority={issue.priority} className="size-4!" />
       </span>
     )
   ) : null;
@@ -171,7 +171,7 @@ export const BoardCardContent = memo(function BoardCardContent({
   ) : null;
 
   return (
-    <div className="running-task-card border-beam rounded-lg border-[0.5px] border-surface-border bg-surface py-2 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
+    <div className="running-task-card border-beam rounded-lg border-[0.5px] border-surface-border bg-surface py-2 px-2.5 shadow-[var(--surface-shadow)] transition-colors hover:border-foreground/15 hover:bg-surface-hover focus-within:border-foreground/15 focus-within:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
       {/* Identifier and assigned executor; live activity remains in the footer. */}
       <div data-board-identifier-row="" className="flex min-h-6 items-center justify-between gap-2">
         <p className="min-w-0 truncate text-caption text-muted-foreground">{issue.identifier}</p>
@@ -179,7 +179,7 @@ export const BoardCardContent = memo(function BoardCardContent({
       </div>
 
       {/* Row 2: Title */}
-      <div data-board-title-row="" className="mt-1 flex min-h-10 items-start gap-1.5">
+      <div data-board-title-row="" className="mt-1 flex items-start gap-1.5">
         <span aria-label={issue.status_name ?? t(($) => $.status[issue.status_category ?? statusCategoryOfKey(issue.status)])}>
           <StatusIcon status={issue.status} category={issue.status_category} className="mt-0.5 size-3.5" />
         </span>
@@ -201,8 +201,8 @@ export const BoardCardContent = memo(function BoardCardContent({
           {priorityIconNode}
           <CustomStatusChip status={issue.status} />
           {showProject && (
-            <span className="inline-flex items-center gap-1 text-micro text-muted-foreground max-w-[160px]">
-              <ProjectIcon project={project} size="sm" />
+            <span className="inline-flex items-center gap-1.5 text-label text-foreground/80 max-w-[160px]">
+              <ProjectIcon project={project} size="md" />
               <span className="truncate">{project!.title}</span>
             </span>
           )}

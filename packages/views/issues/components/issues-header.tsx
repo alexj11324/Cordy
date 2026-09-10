@@ -196,7 +196,8 @@ const DATE_FIELD_LABEL_KEY: Record<IssueDateField, "date_field_created" | "date_
 /** Feeding this to useIssueCounts hides every per-option badge (badges only
  *  render at count > 0) without touching the option lists themselves. */
 const NO_COUNT_ISSUES: Issue[] = [];
-const TASKS_SAVE_VIEW_MODES = ["list", "board", "table"] as const;
+const TASKS_SAVE_VIEW_MODES = ["list", "board"] as const;
+const PROJECT_SAVE_VIEW_MODES = ["list", "board", "swimlane"] as const;
 
 function useIssueCounts(
   allIssues: Issue[],
@@ -1374,7 +1375,7 @@ export function IssuesHeader({
         editView={editTarget?.view ?? null}
         seedFromDefinition={editTarget?.fromDefinition ?? false}
         supportedViewModes={
-          allowDependencyGraph ? TASKS_SAVE_VIEW_MODES : undefined
+          allowDependencyGraph ? TASKS_SAVE_VIEW_MODES : PROJECT_SAVE_VIEW_MODES
         }
       />
     )}
@@ -2378,10 +2379,6 @@ export function IssueDisplayControls({
                 <DropdownMenuRadioItem value="list">
                   <List />
                   {t(($) => $.view.list)}
-                </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="table">
-                  <Table2 />
-                  {t(($) => $.view.table)}
                 </DropdownMenuRadioItem>
                 {!allowDependencyGraph && (
                   <DropdownMenuRadioItem value="swimlane">

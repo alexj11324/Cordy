@@ -96,7 +96,7 @@ export function AutomationSettingsPage({
           { href: paths.automations(), label: t(($) => $.page.title) },
         ]}
         leaf={
-          <span className="min-w-0 truncate text-caption text-muted-foreground">
+          <span className="min-w-0 truncate text-body text-muted-foreground">
             {draft ? t(($) => $.page.new_automation) : title}
           </span>
         }
@@ -125,7 +125,7 @@ export function AutomationSettingsPage({
                     titleError ? "automation-settings-name-error" : undefined
                   }
                   placeholder={t(($) => $.page.new_automation)}
-                  className="h-auto rounded-none border-0 bg-transparent px-0 py-0 text-display-sm font-bold leading-snug tracking-tight text-foreground shadow-none placeholder:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring focus-visible:ring-0 md:text-display-sm"
+                  className="h-auto rounded-none border-0 bg-transparent dark:bg-transparent px-0 py-0 text-display-sm font-bold leading-snug tracking-tight text-foreground shadow-none placeholder:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring focus-visible:ring-0 md:text-display-sm"
                 />
               ) : (
                 <h1
