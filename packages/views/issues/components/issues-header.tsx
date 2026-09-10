@@ -13,7 +13,6 @@ import {
   FolderKanban,
   FolderMinus,
   List,
-  Network,
   Rows3,
   SignalHigh,
   SlidersHorizontal,
@@ -118,6 +117,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@orvilo/ui/components/u
 import { cn } from "@orvilo/ui/lib/utils";
 import { PAGE_GUTTER } from "../../layout/page-header";
 import { useT } from "../../i18n";
+import { DependencyIcon } from "@orvilo/ui/components/common/dependency-icon";
 import { AppLink } from "../../navigation";
 import { useStatusOptions } from "../utils/status-options";
 import { NO_PROPERTY_VALUE } from "../utils/filter";
@@ -2401,7 +2401,7 @@ export function IssueDisplayControls({
                   render={<AppLink href={paths.taskGraph()} />}
                   className="pr-8"
                 >
-                  <Network />
+                  <DependencyIcon />
                   {t(($) => $.view.dependency_graph)}
                 </DropdownMenuItem>
               )}

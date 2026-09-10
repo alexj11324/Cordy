@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   CheckCircle2,
   CircleDashed,
-  Network,
   RefreshCw,
   Clock3,
   X,
@@ -25,6 +24,7 @@ import type {
   DependencyGraphResponse,
 } from "@orvilo/core/types";
 import { Button } from "@orvilo/ui/components/ui/button";
+import { DependencyIcon } from "@orvilo/ui/components/common/dependency-icon";
 import { cn } from "@orvilo/ui/lib/utils";
 import {
   CollectionPageHeaderAction,
@@ -139,7 +139,7 @@ function TaskGraphContent() {
           />
         ) : graphs.length === 0 ? (
           <CollectionPageState
-            icon={Network}
+            icon={DependencyIcon}
             title={t(($) => $.empty_title)}
             description={t(($) => $.empty_hint)}
           />
