@@ -1,0 +1,2 @@
+ALTER TABLE project
+    DROP COLUMN IF EXISTS summary;

@@ -11,6 +11,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearProjectMemberReference = `-- name: ClearProjectMemberReference :exec
+UPDATE project
+SET member_ids = member_ids - $1::text,
+    updated_at = now()
+WHERE workspace_id = $2::uuid
+  AND member_ids ? $1::text
+`
+
+type ClearProjectMemberReferenceParams struct {
+	UserID      string      `json:"user_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// project.member_ids is an application-owned workspace relationship. Clear a
+// departing user's IDs in the same transaction as the member-row deletion so
+// a re-invitation cannot inherit stale project membership metadata.
+func (q *Queries) ClearProjectMemberReference(ctx context.Context, arg ClearProjectMemberReferenceParams) error {
+	_, err := q.db.Exec(ctx, clearProjectMemberReference, arg.UserID, arg.WorkspaceID)
+	return err
+}
+
 const createMember = `-- name: CreateMember :one
 INSERT INTO member (workspace_id, user_id, role)
 VALUES ($1, $2, $3)

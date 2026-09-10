@@ -90,10 +90,10 @@ func parseLabelResourceType(raw string) (string, error) {
 		return defaultLabelResourceType, nil
 	}
 	switch value {
-	case "issue", "agent", "skill":
+	case "issue", "agent", "skill", "project":
 		return value, nil
 	default:
-		return "", errors.New("resource_type must be issue, agent, or skill")
+		return "", errors.New("resource_type must be issue, agent, skill, or project")
 	}
 }
 
@@ -328,6 +328,10 @@ func (h *Handler) DeleteLabel(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(r.Context())
 	qtx := h.Queries.WithTx(tx)
+	if _, err := qtx.LockWorkspaceForDelete(r.Context(), wsUUID); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to lock workspace for label deletion")
+		return
+	}
 
 	// Keep every relationship cleanup and the catalog deletion atomic. The
 	// resource-label junctions intentionally use application-level cleanup
@@ -336,6 +340,9 @@ func (h *Handler) DeleteLabel(w http.ResponseWriter, r *http.Request) {
 		func() error { return qtx.DeleteIssueLabelAssignmentsByLabel(r.Context(), idUUID) },
 		func() error { return qtx.DeleteAgentLabelAssignmentsByLabel(r.Context(), idUUID) },
 		func() error { return qtx.DeleteSkillLabelAssignmentsByLabel(r.Context(), idUUID) },
+		func() error {
+			return qtx.ClearProjectLabelReference(r.Context(), db.ClearProjectLabelReferenceParams{LabelID: uuidToString(idUUID), WorkspaceID: wsUUID})
+		},
 	} {
 		if err := cleanup(); err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to remove label assignments")

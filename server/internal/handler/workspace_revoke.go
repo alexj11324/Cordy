@@ -220,6 +220,15 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 			return empty, err
 		}
 	}
+	if _, err := qtx.LockWorkspaceForDelete(ctx, workspaceID); err != nil {
+		return empty, err
+	}
+	if err := qtx.ClearProjectMemberReference(ctx, db.ClearProjectMemberReferenceParams{
+		UserID:      uuidToString(userID),
+		WorkspaceID: workspaceID,
+	}); err != nil {
+		return empty, err
+	}
 	if err := qtx.DeleteMember(ctx, memberID); err != nil {
 		return empty, err
 	}
