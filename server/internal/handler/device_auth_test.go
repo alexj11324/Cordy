@@ -62,6 +62,33 @@ func TestDeviceAuthorizationRejectsGuestActors(t *testing.T) {
 	}
 }
 
+func TestValidDeviceClientNameRejectsControlCharacters(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+	}{
+		{name: "NUL", input: "cli\x00name"},
+		{name: "newline", input: "cli\nname"},
+		{name: "tab", input: "cli\tname"},
+		{name: "unicode NEL", input: "cli\u0085name"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, ok := validDeviceClientName(tc.input); ok || got != "" {
+				t.Fatalf("validDeviceClientName(%q) = (%q, %v), want rejection", tc.input, got, ok)
+			}
+		})
+	}
+
+	for _, raw := range []string{"cli", "CLI 中文"} {
+		t.Run(raw, func(t *testing.T) {
+			got, ok := validDeviceClientName(raw)
+			if !ok || got != raw {
+				t.Fatalf("validDeviceClientName(%q) = (%q, %v), want unchanged valid name", raw, got, ok)
+			}
+		})
+	}
+}
+
 func TestDeviceAuthorizationLifecycle(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("handler database is unavailable")

@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -140,6 +141,11 @@ func validDeviceClientName(raw string) (string, bool) {
 	name := strings.TrimSpace(raw)
 	if name == "" || !utf8.ValidString(name) || utf8.RuneCountInString(name) > deviceAuthorizationMaxClientName {
 		return "", false
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) {
+			return "", false
+		}
 	}
 	return name, true
 }
