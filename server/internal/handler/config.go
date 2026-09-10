@@ -159,9 +159,8 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 
 func messagingCapabilitiesFromEnv() MessagingCapabilities {
 	appURL := FrontendAppURLFromEnv()
-	officialCloud := isOfficialCloudDaemonConfig(appURL)
+	hosted := isOfficialCloudDaemonConfig(appURL) || urlHostEquals(appURL, "staging.aspectlylabs.com")
 	requested := strings.TrimSpace(os.Getenv("ORVILO_MESSAGING_MODE"))
-	configured := false
 	platforms := make([]MessagingPlatformCapability, 0, 6)
 	for _, item := range []struct {
 		channelType string
@@ -176,25 +175,20 @@ func messagingCapabilitiesFromEnv() MessagingCapabilities {
 	} {
 		_, err := secretbox.LoadKey(item.keyEnv)
 		enabled := err == nil
-		configured = configured || enabled
 		platforms = append(platforms, MessagingPlatformCapability{
 			Type: item.channelType, Enabled: enabled, Experimental: true,
 		})
 	}
 
 	mode := "disabled"
-	switch requested {
-	case "managed", "server_configured", "disabled":
-		mode = requested
-	default:
-		if officialCloud {
+	// Deployment ownership decides who may configure integrations; disabled remains
+	// an explicit kill switch on both hosted and self-hosted servers.
+	if requested != "disabled" && isPublicHTTPSURL(appURL) {
+		if hosted {
 			mode = "managed"
-		} else if configured {
+		} else {
 			mode = "server_configured"
 		}
-	}
-	if mode != "disabled" && !officialCloud && !isPublicHTTPSURL(appURL) {
-		mode = "disabled"
 	}
 	for i := range platforms {
 		platforms[i].Enabled = mode != "disabled" && platforms[i].Enabled
@@ -212,8 +206,12 @@ func ResolvedMessagingModeFromEnv() string {
 
 func requireMessagingSetupWritable(w http.ResponseWriter) bool {
 	capabilities := messagingCapabilitiesFromEnv()
-	if capabilities.SetupWritable || capabilities.Mode != "server_configured" {
+	if capabilities.SetupWritable {
 		return true
+	}
+	if capabilities.Mode == "disabled" {
+		writeErrorCode(w, http.StatusServiceUnavailable, "messaging_disabled", "messaging integrations are disabled")
+		return false
 	}
 	writeErrorCode(
 		w,

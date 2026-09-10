@@ -22,6 +22,7 @@ import (
 
 func wireDingTalkInstallService(t *testing.T) {
 	t.Helper()
+	withManagedMessaging(t)
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}

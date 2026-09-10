@@ -67,6 +67,7 @@ func managedTokenServer(t *testing.T) *httptest.Server {
 // cleanupManagedSlackRows.
 func newManagedSlackTestHandler(t *testing.T, clientID string, tokenServer *httptest.Server) *Handler {
 	t.Helper()
+	withManagedMessaging(t)
 	oauthSvc, err := slack.NewManagedOAuthService(slack.ManagedOAuthConfig{
 		Queries:      testHandler.Queries,
 		ClientID:     clientID,
