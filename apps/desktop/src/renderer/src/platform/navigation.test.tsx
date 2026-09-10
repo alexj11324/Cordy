@@ -273,7 +273,8 @@ describe("routeContentLinkPath (links inside content — MUL-5208)", () => {
 describe("legacy device route navigation", () => {
   it.each([
     ["/acme/runtimes", "/acme/devices"],
-    ["/acme/runtimes/local%3Amac/runtime/codex?scope=all#usage", "/acme/devices/local%3Amac/harness/codex?scope=all#usage"],
+    ["/acme/runtimes/local%3Amac/runtime/codex?scope=all#usage", "/acme/devices/local%3Amac?scope=all#usage"],
+    ["/acme/devices/local%3Amac/harness/codex?scope=all#usage", "/acme/devices/local%3Amac?scope=all#usage"],
   ])("replaces the authoritative tab session for %s", (legacy, canonical) => {
     useTabStore.getState().navigateActiveSession(legacy);
     const historyBefore = getActiveTab(useTabStore.getState())!.history;

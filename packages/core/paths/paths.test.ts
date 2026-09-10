@@ -29,9 +29,6 @@ describe("paths.workspace(slug)", () => {
     );
     expect(ws.myIssues()).toBe("/acme/my-issues");
     expect(ws.runtimes()).toBe("/acme/devices");
-    expect(ws.runtimeSettings("machine/runtime", "runtime one")).toBe(
-      "/acme/devices/machine%2Fruntime/harness/runtime%20one",
-    );
     expect(ws.skills()).toBe("/acme/skills");
     expect(ws.skillDetail("skl_123")).toBe("/acme/skills/skl_123");
     expect(ws.teams()).toBe("/acme/teams");

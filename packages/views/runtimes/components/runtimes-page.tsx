@@ -27,12 +27,11 @@ import { ShellHeaderActions } from "../../layout/shell-header";
 import { AppLink } from "../../navigation";
 import { ConnectRemoteDialog } from "./connect-remote-dialog";
 import { CloudRuntimeDialog } from "./cloud-runtime-dialog";
-import { ProviderLogo } from "./provider-logo";
 import { buildWorkloadIndex, RuntimeList } from "./runtime-list";
 import { pendingRuntimeFromProfile } from "./pending-runtime";
 import { buildRuntimeMachines, type RuntimeMachine } from "./runtime-machines";
-import { HealthDot, HealthIcon, useHealthLabel } from "./shared";
-import { useT, useTimeAgo } from "../../i18n";
+import { HealthDot, useHealthLabel } from "./shared";
+import { useT } from "../../i18n";
 
 export interface RuntimesPageProps {
   /** Desktop-only daemon id used to identify this device. */
@@ -146,7 +145,7 @@ export function RuntimesPage({
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-[1440px] flex-col p-4 sm:p-6">
+          <div className="mx-auto flex w-full max-w-3xl flex-col p-4 sm:p-6">
             {(machines.length > 0 || bootstrapping) && (
               <MachineList
                 machines={machines}
@@ -194,9 +193,7 @@ function OrphanRuntimeProfiles({
           {t(($) => $.profiles.unassigned_description)}
         </p>
       </div>
-      <div className="overflow-hidden rounded-lg border bg-card">
-        <RuntimeList runtimes={runtimes} now={now} />
-      </div>
+      <RuntimeList runtimes={runtimes} now={now} />
     </section>
   );
 }
@@ -256,7 +253,7 @@ function MachineList({
   }
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card">
+    <div className="overflow-hidden rounded-xl border bg-card px-4">
       <div className="divide-y">
         {machines.map((machine) => (
           <MachineRow key={machine.id} machine={machine} />
@@ -267,103 +264,31 @@ function MachineList({
 }
 
 function MachineRow({ machine }: { machine: RuntimeMachine }) {
-  const { t } = useT("runtimes");
   const healthLabel = useHealthLabel();
-  const timeAgo = useTimeAgo();
   const paths = useWorkspacePaths();
   const Icon = machine.section === "cloud" ? Cloud : Monitor;
-  const locator = machine.id;
-  const busyCount = machine.runningCount + machine.queuedCount;
-  const body = (
-    <>
-      <span className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-background">
-        <Icon aria-hidden="true" className="h-4 w-4 text-muted-foreground" />
-        <HealthDot
-          health={machine.health}
-          className="absolute -bottom-0.5 -right-0.5 ring-2 ring-background"
-        />
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-body font-medium">
-          {machine.title}
-        </span>
-        <span className="mt-1 flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span className="truncate">
-            {machine.subtitle ??
-              (machine.section === "cloud"
-                ? t(($) => $.machine.metrics.cloud_worker)
-                : t(($) => $.machine.metrics.local_daemon))}
-          </span>
-          {machine.isCurrent && (
-            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-micro font-medium text-muted-foreground">
-              {t(($) => $.machine.this_machine)}
-            </span>
-          )}
-        </span>
-      </span>
-
-      <span className="hidden w-36 shrink-0 items-center gap-1.5 text-caption md:flex">
-        <HealthIcon health={machine.health} />
-        <span>{healthLabel(machine.health)}</span>
-      </span>
-      <span className="hidden w-40 shrink-0 flex-col gap-1 lg:flex">
-        <span className="text-caption text-muted-foreground">
-          {t(($) => $.machine.runtime_count, {
-            count: machine.runtimes.length,
-          })}
-        </span>
-        <ProviderIconStack providers={machine.providerNames} />
-      </span>
-      <span className="hidden w-36 shrink-0 text-caption text-muted-foreground xl:block">
-        {busyCount > 0
-          ? t(($) => $.machine.metrics.workload_hint, {
-              running: machine.runningCount,
-              queued: machine.queuedCount,
-            })
-          : t(($) => $.machine.metrics.workload_idle)}
-      </span>
-      <span className="hidden w-28 shrink-0 text-right text-caption text-muted-foreground lg:block">
-        {machine.lastSeenAt ? timeAgo(machine.lastSeenAt) : "—"}
-      </span>
-      {locator && (
-        <ChevronRight
-          aria-hidden="true"
-          className="h-4 w-4 shrink-0 text-faint-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground"
-        />
-      )}
-    </>
-  );
+  const health = machine.health === "online" ? "online" : "offline";
 
   return (
     <AppLink
-      href={paths.runtimeDetail(locator)}
-      className="group flex min-w-0 items-center gap-3 px-4 py-3.5 transition-colors hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      href={paths.runtimeDetail(machine.id)}
+      className="group flex min-w-0 items-center gap-4 py-5 transition-colors hover:bg-accent/40 focus-visible:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
-      {body}
+      <span className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-muted/50">
+        <Icon aria-hidden="true" className="size-5 text-muted-foreground" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-title-sm font-medium">{machine.title}</span>
+        <span className="mt-1 flex items-center gap-2 text-body text-muted-foreground">
+          <HealthDot health={health} />
+          {healthLabel(health)}
+        </span>
+      </span>
+      <ChevronRight
+        aria-hidden="true"
+        className="size-4 shrink-0 text-faint-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground"
+      />
     </AppLink>
-  );
-}
-
-function ProviderIconStack({ providers }: { providers: string[] }) {
-  const visible = providers.slice(0, 4);
-  const extra = providers.length - visible.length;
-  if (visible.length === 0) return null;
-  return (
-    <span className="flex min-w-0 items-center -space-x-1">
-      {visible.map((provider) => (
-        <span
-          key={provider}
-          className="inline-flex h-5 w-5 items-center justify-center rounded bg-background ring-1 ring-border"
-        >
-          <ProviderLogo provider={provider} className="h-3.5 w-3.5" />
-        </span>
-      ))}
-      {extra > 0 && (
-        <span className="inline-flex h-5 min-w-5 items-center justify-center rounded bg-muted px-1 text-micro font-medium text-muted-foreground ring-1 ring-border">
-          +{extra}
-        </span>
-      )}
-    </span>
   );
 }
 
@@ -387,17 +312,15 @@ function EmptyState({ onConnectRemote }: { onConnectRemote: () => void }) {
 function RuntimesPageSkeleton() {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="mx-auto w-full max-w-[1440px] p-6">
+      <div className="mx-auto w-full max-w-3xl p-6">
         <div className="overflow-hidden rounded-lg border">
           {Array.from({ length: 5 }).map((_, index) => (
-            <div key={index} className="flex h-[76px] items-center gap-3 border-b px-4 last:border-b-0">
-              <Skeleton className="h-10 w-10 rounded-lg" />
+            <div key={index} className="flex h-[88px] items-center gap-4 border-b px-4 last:border-b-0">
+              <Skeleton className="size-12 rounded-lg" />
               <div className="flex-1">
                 <Skeleton className="h-4 w-44" />
                 <Skeleton className="mt-2 h-3 w-28" />
               </div>
-              <Skeleton className="hidden h-4 w-24 md:block" />
-              <Skeleton className="hidden h-4 w-28 lg:block" />
             </div>
           ))}
         </div>

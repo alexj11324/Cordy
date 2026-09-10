@@ -11,7 +11,6 @@ import { AiBuilderSessionPage } from "./pages/ai-builder-session-page";
 import { MemberDetailPage } from "./pages/member-detail-page";
 import {
   RuntimeDetailPage,
-  RuntimeSettingsPage,
 } from "./pages/runtime-detail-page";
 import { AttachmentPreviewRoute } from "./pages/attachment-preview-page";
 import { IssuesPage } from "@orvilo/views/issues/components";
@@ -195,9 +194,12 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Device" },
           },
           {
+            // Preserve already-open Harness tabs while removing the
+            // per-Harness details surface. The redirect stays inside the
+            // workspace route and lands on the device inventory.
             path: "devices/:id/harness/:harnessId",
-            element: <RuntimeSettingsPage />,
-            handle: { title: "Harness" },
+            element: <LegacyRuntimesRedirect />,
+            handle: { title: "Device" },
           },
           { path: "runtimes", element: <LegacyRuntimesRedirect /> },
           { path: "runtimes/*", element: <LegacyRuntimesRedirect /> },

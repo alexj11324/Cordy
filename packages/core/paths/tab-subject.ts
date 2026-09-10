@@ -111,10 +111,13 @@ export function parseTabSubject(url: string): TabSubject {
     case "devices":
     case "runtimes":
       if (!id) return { kind: "page", page: "runtimes" };
-      // `/devices/:machineId/harness/:id` (current) and
-      // `/runtimes/:machineId/runtime/:id` (bookmarks).
+      // `/devices/:machineId/harness/:id` and the legacy
+      // `/runtimes/:machineId/runtime/:id` bookmark route both redirect to the
+      // containing machine, but remain recognizable while the replacement
+      // updates the tab session.
       if (
-        (segments[3] === "harness" || segments[3] === "runtime") &&
+        ((segment === "devices" && segments[3] === "harness") ||
+          (segment === "runtimes" && segments[3] === "runtime")) &&
         segments[4]
       ) {
         return { kind: "runtime", machineId: id, runtimeId: segments[4] };

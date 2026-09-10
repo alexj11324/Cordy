@@ -1,13 +1,16 @@
-"use client";
+import { redirect } from "next/navigation";
 
-import { use } from "react";
-import { RuntimeSettingsPage } from "@orvilo/views/runtimes";
-
-export default function HarnessSettingsRoute({
+/**
+ * The per-Harness details surface was removed. Keep already-open links inside
+ * the workspace and land them on the device inventory instead.
+ */
+export default async function HarnessSettingsRedirect({
   params,
 }: {
-  params: Promise<{ id: string; harnessId: string }>;
+  params: Promise<{ workspaceSlug: string; id: string; harnessId: string }>;
 }) {
-  const { id, harnessId } = use(params);
-  return <RuntimeSettingsPage machineId={id} runtimeId={harnessId} />;
+  const { workspaceSlug, id } = await params;
+  redirect(
+    `/${encodeURIComponent(workspaceSlug)}/devices/${encodeURIComponent(id)}`,
+  );
 }

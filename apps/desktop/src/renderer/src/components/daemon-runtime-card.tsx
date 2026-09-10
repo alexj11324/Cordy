@@ -5,9 +5,7 @@ import {
   Square,
   RotateCw,
   Activity,
-  ScrollText,
   LogIn,
-  Info,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useWorkspaceId } from "@orvilo/core/hooks";
@@ -24,7 +22,6 @@ import {
 } from "@orvilo/ui/components/ui/dialog";
 import { toast } from "sonner";
 import { useT } from "@orvilo/views/i18n";
-import { DaemonPanel } from "./daemon-panel";
 import { reauthenticateDaemon } from "../platform/daemon-reauth";
 import type { DaemonStatus } from "../../../shared/daemon-types";
 import { daemonStateLabel } from "./daemon-i18n";
@@ -36,7 +33,6 @@ import { daemonStateLabel } from "./daemon-i18n";
 export function DaemonRuntimeActions() {
   const { t } = useT("settings");
   const [status, setStatus] = useState<DaemonStatus>({ state: "stopped" });
-  const [panelOpen, setPanelOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
 
@@ -52,8 +48,6 @@ export function DaemonRuntimeActions() {
         .map((r) => r.id),
     );
   }, [runtimes, status.daemonId]);
-
-  const runtimeCount = localRuntimeIds.size;
 
   const affectedTasks = useMemo(
     () =>
@@ -154,16 +148,7 @@ export function DaemonRuntimeActions() {
       <div className="flex flex-wrap items-center justify-end gap-1.5">
         {isRunning && (
           <>
-            <Button size="sm" variant="ghost" onClick={() => setPanelOpen(true)}>
-              <ScrollText className="size-3.5 mr-1.5" />
-              {t(($) => $.desktop.daemon.view_logs)}
-            </Button>
-            {externallyManaged ? (
-              <span className="inline-flex items-center gap-1.5 text-caption text-muted-foreground">
-                <Info className="size-3.5 shrink-0" />
-                {t(($) => $.desktop.daemon.managed_externally)}
-              </span>
-            ) : (
+            {!externallyManaged && (
               <>
                 <Button
                   size="sm"
@@ -235,13 +220,6 @@ export function DaemonRuntimeActions() {
           </Button>
         )}
       </div>
-
-      <DaemonPanel
-        open={panelOpen}
-        onOpenChange={setPanelOpen}
-        status={status}
-        runtimeCount={runtimeCount}
-      />
 
       <StopConfirmDialog
         open={confirmStop}

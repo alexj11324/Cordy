@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import {
   AlertTriangle,
-  ExternalLink,
   Globe,
   Loader2,
   MoreHorizontal,
@@ -12,12 +12,12 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import { CurrencyNumberFlow } from "@orvilo/ui/components/ui/number-flow";
+import { useTable } from "@tanstack/react-table";
+import type { ColumnDef } from "@tanstack/react-table";
 import type {
   Agent,
   AgentRuntime,
   AgentTask,
-  MemberWithUser,
   RuntimeProfile,
 } from "@orvilo/core/types";
 import { useAuthStore } from "@orvilo/core/auth";
@@ -29,42 +29,37 @@ import {
 import { agentTaskSnapshotOptions } from "@orvilo/core/agents";
 import {
   deriveRuntimeHealth,
-  isRuntimeUsableForUser,
   runtimeProfileListOptions,
-  runtimeUsageOptions,
 } from "@orvilo/core/runtimes";
-import { useWorkspacePaths } from "@orvilo/core/paths";
+import {
+  DataGrid,
+  dataGridFeatures,
+  type DataGridFeatures,
+} from "@orvilo/ui/components/reui/data-grid/data-grid";
+import { DataGridScrollArea } from "@orvilo/ui/components/reui/data-grid/data-grid-scroll-area";
+import { DataGridTable } from "@orvilo/ui/components/reui/data-grid/data-grid-table";
+import {
+  Frame,
+  FrameHeader,
+  FramePanel,
+  FrameTitle,
+} from "@orvilo/ui/components/reui/frame";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@orvilo/ui/components/ui/dropdown-menu";
-import {
-  ListGrid,
-  ListGridCell,
-  ListGridHeader,
-  ListGridHeaderCell,
-  ListGridRow,
-} from "@orvilo/ui/components/ui/list-grid";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@orvilo/ui/components/ui/tooltip";
-import { useIntentNavigate, useRowLink } from "../../navigation";
-import { ActorAvatar } from "../../common/actor-avatar";
-import { useViewingTimezone } from "../../common/use-viewing-timezone";
 import { ProviderLogo } from "./provider-logo";
 import { HealthIcon, useHealthLabel } from "./shared";
 import { DeleteRuntimeDialog } from "./delete-runtime-dialog";
 import { DeleteRuntimeProfileDialog } from "./delete-runtime-profile-dialog";
 import { RuntimeProfilesDialog } from "./runtime-profiles-dialog";
-import {
-  computeCostInWindow,
-  pctChange,
-} from "../utils";
 import { runtimeRowLabel } from "./runtime-machines";
 import {
   customRuntimeRegistrationFailure,
@@ -75,56 +70,11 @@ import {
 } from "./pending-runtime";
 import { useT, useTimeAgo } from "../../i18n";
 
-// The machine detail's runtimes table on the shared ListGrid. Paradigm
-// pieces are taken À LA CARTE here: subgrid template + var-width tracks +
-// two-zone responsiveness (the detail pane gets squeezed by the machine
-// list, so the container-driven core-set collapse matters more than on the
-// full-width pages), but NO virtualization / sorting / filters / column
-// toggles / batch selection — a machine hosts 1-5 runtimes, those would all
-// be dead weight, and batch-deleting runtimes (a cascade-confirm heavy
-// operation) is deliberately not offered.
-const GRID_COLS =
-  "grid-cols-[0.75rem_minmax(120px,1fr)_var(--rtc-health)_var(--rtc-kebab)_0.75rem] " +
-  "@2xl:grid-cols-[0.75rem_minmax(140px,1fr)_var(--rtc-health)_var(--rtc-owner)_var(--rtc-cost)_var(--rtc-cli)_var(--rtc-kebab)_0.75rem]";
-
-const COLUMN_WIDTHS = {
-  // Health folds the workload in as a suffix ("Healthy · 2 running") —
-  // same merge as the agents list's status cell.
-  health: 176,
-  owner: 96,
-  cost: 96,
-  cli: 112,
-} as const;
-
-// Fixed tracks (edges 12+12, name min 140) plus the 7 gap-x-3 gaps
-// between the wide template's 8 tracks (zero-width tracks still carry
-// gaps).
-const FIXED_TRACKS_WIDTH = 164 + 7 * 12;
-
-// The kebab track is conditional like the owner column: on a list where
-// no row carries a delete-permission, EVERY row's only action is hidden,
-// and an unconditionally reserved 28px action track would hang a
-// permanent dead zone off the last column.
-function columnTrackVars(
-  showOwner: boolean,
-  showActions: boolean,
-): React.CSSProperties {
-  const minWidth =
-    FIXED_TRACKS_WIDTH +
-    COLUMN_WIDTHS.health +
-    (showOwner ? COLUMN_WIDTHS.owner : 0) +
-    COLUMN_WIDTHS.cost +
-    COLUMN_WIDTHS.cli +
-    (showActions ? 28 : 0);
-  return {
-    "--rtc-health": `${COLUMN_WIDTHS.health}px`,
-    "--rtc-owner": showOwner ? `${COLUMN_WIDTHS.owner}px` : "0px",
-    "--rtc-cost": `${COLUMN_WIDTHS.cost}px`,
-    "--rtc-cli": `${COLUMN_WIDTHS.cli}px`,
-    "--rtc-kebab": showActions ? "1.75rem" : "0px",
-    "--rtc-minw": `${minWidth}px`,
-  } as React.CSSProperties;
-}
+// The machine detail's Harness inventory uses the ReUI settings-14 table
+// composition (Frame + DataGridScrollArea + DataGridTable), while keeping
+// this view's existing query and action behavior. The source block is the
+// settings-14 preview at https://reui.io/preview/base/settings-14?ref=mcp;
+// only its table shell is reused here, without its demo API keys or controls.
 
 interface RuntimeWorkload {
   agentIds: string[];
@@ -141,7 +91,6 @@ const EMPTY_WORKLOAD: RuntimeWorkload = {
 export interface RuntimeRow {
   runtime: AgentRuntime;
   profile: RuntimeProfile | null;
-  ownerMember: MemberWithUser | null;
   workload: RuntimeWorkload;
   canDelete: boolean;
 }
@@ -190,6 +139,7 @@ function RuntimeNameCell({
   machineTitle,
 }: {
   runtime: AgentRuntime;
+
   /**
    * The containing machine's title. Lets a per-runtime alias surface here
    * while a machine-level rename (shared by every runtime on the daemon)
@@ -201,7 +151,7 @@ function RuntimeNameCell({
 }) {
   const label = runtimeRowLabel(runtime, machineTitle ?? "");
   return (
-    <ListGridCell className="gap-2">
+    <div className="flex min-w-0 items-center gap-2">
       <div className="flex h-8 w-8 shrink-0 items-center justify-center">
         <ProviderLogo provider={runtime.provider} className="h-5 w-5" />
       </div>
@@ -209,32 +159,23 @@ function RuntimeNameCell({
         <span className="block min-w-0 shrink truncate text-body font-medium">
           {label}
         </span>
-        <RuntimeKindBadge runtime={runtime} />
+        {runtime.profile_id && <RuntimeKindBadge />}
         <PendingRuntimeBadge runtime={runtime} />
         <VisibilityBadge runtime={runtime} />
       </div>
-    </ListGridCell>
+    </div>
   );
 }
 
-// Distinguishes a built-in protocol-family runtime from one launched off a
-// custom runtime profile. `profile_id` is the discriminator: a non-null /
-// non-empty value means the runtime was started from a custom profile.
-// Older backends omit the field — treated as built-in.
-function RuntimeKindBadge({ runtime }: { runtime: AgentRuntime }) {
+// Custom runtimes keep a small badge so they remain distinguishable from the
+// built-in rows without repeating a built-in badge on every row.
+function RuntimeKindBadge() {
   const { t } = useT("runtimes");
-  const isCustom = !!runtime.profile_id;
   return (
     <span
-      className={
-        isCustom
-          ? "inline-flex shrink-0 items-center rounded bg-info/10 px-1 text-micro font-medium text-info"
-          : "inline-flex shrink-0 items-center rounded bg-muted px-1 text-micro font-medium text-muted-foreground"
-      }
+      className="inline-flex shrink-0 items-center rounded bg-info/10 px-1 text-micro font-medium text-info"
     >
-      {isCustom
-        ? t(($) => $.list.badge_custom)
-        : t(($) => $.list.badge_builtin)}
+      {t(($) => $.list.badge_custom)}
     </span>
   );
 }
@@ -300,17 +241,17 @@ function HealthCell({
   const timeAgo = useTimeAgo();
   if (isDisabledCustomRuntime(runtime)) {
     return (
-      <ListGridCell>
+      <div>
         <span className="text-caption text-muted-foreground">
           {t(($) => $.list.pending_health_disabled)}
         </span>
-      </ListGridCell>
+      </div>
     );
   }
   const registrationFailure = customRuntimeRegistrationFailure(runtime);
   if (registrationFailure) {
     return (
-      <ListGridCell className="gap-1.5">
+      <div className="flex min-w-0 items-center gap-1.5">
         <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-destructive" />
         <span
           className="block min-w-0 truncate text-caption text-destructive"
@@ -318,13 +259,13 @@ function HealthCell({
         >
           {t(($) => $.list.pending_health_error)}
         </span>
-      </ListGridCell>
+      </div>
     );
   }
   if (isPendingCustomRuntime(runtime)) {
     const warning = isPendingCustomRuntimeWarning(runtime, now);
     return (
-      <ListGridCell className="gap-1.5">
+      <div className="flex min-w-0 items-center gap-1.5">
         {warning ? (
           <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />
         ) : (
@@ -335,7 +276,7 @@ function HealthCell({
             ? t(($) => $.list.pending_health_warning)
             : t(($) => $.list.pending_health)}
         </span>
-      </ListGridCell>
+      </div>
     );
   }
 
@@ -345,7 +286,7 @@ function HealthCell({
   const active = workload.runningCount + workload.queuedCount;
 
   return (
-    <ListGridCell className="gap-1.5">
+    <div className="flex min-w-0 items-center gap-1.5">
       <HealthIcon health={health} />
       <span className="block min-w-0 truncate text-caption">
         {labelOf(health)}
@@ -359,83 +300,6 @@ function HealthCell({
           </span>
         )}
       </span>
-    </ListGridCell>
-  );
-}
-
-// Per-row cost — only renders a 7d total + delta vs the prior 7d, so we
-// only need 14 days of usage. Previously this fetched a 180-day window to
-// share the cache key with the runtime-detail page, but that turned the
-// list page into N × 180d in-line aggregations against `task_usage` (one
-// per runtime row) and dominated DB load for this view. Detail still
-// fetches its own 180d window on navigation; the cold-load difference for
-// detail is one extra request, while the steady-state savings on the list
-// page are large.
-const COST_CELL_DAYS = 14;
-
-export function canReadRuntimeUsage(
-  runtime: AgentRuntime,
-  currentUserId: string | null,
-): boolean {
-  return isRuntimeUsableForUser(runtime, currentUserId);
-}
-
-export function CostCell({
-  runtimeId,
-  enabled,
-}: {
-  runtimeId: string;
-  enabled: boolean;
-}) {
-  const { t, i18n } = useT("runtimes");
-  const tz = useViewingTimezone();
-  const locales = i18n.resolvedLanguage ?? i18n.language;
-  const { data: usage = [] } = useQuery({
-    ...runtimeUsageOptions(runtimeId, COST_CELL_DAYS, tz),
-    enabled,
-  });
-  const cost7d = useMemo(() => computeCostInWindow(usage, 7, tz), [usage, tz]);
-  const costPrev7d = useMemo(
-    () => computeCostInWindow(usage, 7, tz, 7),
-    [usage, tz],
-  );
-  const delta = pctChange(cost7d, costPrev7d);
-
-  if (usage.length === 0) {
-    return (
-      <div className="w-full text-right">
-        <span className="text-caption text-faint-foreground">—</span>
-      </div>
-    );
-  }
-  const fmt = cost7d >= 100 ? `$${cost7d.toFixed(0)}` : `$${cost7d.toFixed(2)}`;
-  const deltaTone =
-    delta == null
-      ? "text-muted-foreground"
-      : delta > 0
-        ? "text-warning"
-        : delta < 0
-          ? "text-success"
-          : "text-muted-foreground";
-  const deltaLabel =
-    delta == null
-      ? null
-      : delta === 0
-        ? t(($) => $.list.cost_delta_flat)
-        : `${delta > 0 ? "↑" : "↓"}${Math.abs(delta)}%`;
-  return (
-    <div className="flex w-full flex-col items-end leading-tight">
-      <CurrencyNumberFlow
-        value={cost7d}
-        locales={locales}
-        aria-label={fmt}
-        className="text-body font-medium"
-      />
-      {deltaLabel && (
-        <span className={`text-micro tabular-nums ${deltaTone}`}>
-          {deltaLabel}
-        </span>
-      )}
     </div>
   );
 }
@@ -514,21 +378,13 @@ export function RuntimeRowMenu({
   profile,
   wsId,
   canDelete,
-  detailHref,
 }: {
   runtime: AgentRuntime;
   profile: RuntimeProfile | null;
   wsId: string;
   canDelete: boolean;
-  /**
-   * Detail destination for the row, omitted when the row has none — pending
-   * custom runtimes are not navigable, mirroring the list's own row link.
-   */
-  detailHref?: string;
 }) {
   const { t } = useT("runtimes");
-  const { t: tCommon } = useT("common");
-  const intentNavigate = useIntentNavigate();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const isCustomRuntime = !!runtime.profile_id;
@@ -559,17 +415,6 @@ export function RuntimeRowMenu({
           }
         />
         <DropdownMenuContent align="end" className="w-40">
-          {detailHref && (
-            <>
-              <DropdownMenuItem
-                onClick={() => intentNavigate(detailHref, "foreground-tab")}
-              >
-                <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />
-                {tCommon(($) => $.navigation.open_in_new_tab)}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-            </>
-          )}
           {isCustomRuntime && profile && (
             <DropdownMenuItem onClick={() => setEditOpen(true)}>
               <Pencil aria-hidden="true" className="h-3.5 w-3.5" />
@@ -627,24 +472,21 @@ export function RuntimeRowMenu({
 export function RuntimeList({
   runtimes,
   now,
-  runtimeHref,
   machineTitle,
+  headerAction,
 }: {
   runtimes: AgentRuntime[];
   now: number;
-  /** Machine-detail pages keep runtime settings nested under the machine. */
-  runtimeHref?: (runtimeId: string) => string;
   /**
    * The containing machine's title, when this list renders the runtimes of a
    * single machine. Used so a machine-level alias doesn't repeat on every row
    * while a per-runtime alias still shows (MUL-5248).
    */
   machineTitle?: string;
+  headerAction?: ReactNode;
 }) {
   const { t } = useT("runtimes");
   const wsId = useWorkspaceId();
-  const wsPaths = useWorkspacePaths();
-  const rowLink = useRowLink();
   const user = useAuthStore((s) => s.user);
 
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
@@ -664,28 +506,11 @@ export function RuntimeList({
     [agents, snapshot],
   );
 
-  const memberById = useMemo(() => {
-    const map = new Map<string, MemberWithUser>();
-    for (const m of members) map.set(m.user_id, m);
-    return map;
-  }, [members]);
-
   const profileById = useMemo(() => {
     const map = new Map<string, RuntimeProfile>();
     for (const p of profiles) map.set(p.id, p);
     return map;
   }, [profiles]);
-
-  // Owner column only earns its space when the page actually has multiple
-  // distinct owners — otherwise it would just be a column of identical
-  // avatars.
-  const showOwner = useMemo(() => {
-    const owners = new Set<string>();
-    for (const r of runtimes) {
-      if (r.owner_id) owners.add(r.owner_id);
-    }
-    return owners.size > 1;
-  }, [runtimes]);
 
   const rows = useMemo<RuntimeRow[]>(() => {
     return runtimes.map((runtime) => {
@@ -696,9 +521,6 @@ export function RuntimeList({
       return {
         runtime,
         profile,
-        ownerMember: runtime.owner_id
-          ? memberById.get(runtime.owner_id) ?? null
-          : null,
         workload: workloadIndex.get(runtime.id) ?? EMPTY_WORKLOAD,
         canDelete: isCustomRuntime
           ? isAdmin && !!profile
@@ -706,109 +528,116 @@ export function RuntimeList({
             (isAdmin || (!!user && runtime.owner_id === user.id)),
       };
     });
-  }, [runtimes, profileById, memberById, workloadIndex, isAdmin, user]);
+  }, [runtimes, profileById, workloadIndex, isAdmin, user]);
 
-  // Mirrors RuntimeRowMenu's render guard: the kebab track only earns its
-  // width when at least one row will actually show the menu.
-  const showActions = rows.some((row) => row.canDelete);
+  const columns = useMemo<ColumnDef<DataGridFeatures, RuntimeRow>[]>(
+    () => [
+      {
+        id: "runtime",
+        accessorFn: (row) => runtimeRowLabel(row.runtime, machineTitle ?? ""),
+        header: t(($) => $.list.col_runtime),
+        cell: ({ row }) => (
+          <RuntimeNameCell
+            runtime={row.original.runtime}
+            machineTitle={machineTitle}
+          />
+        ),
+        size: 420,
+        enableSorting: false,
+        enableHiding: false,
+        meta: {
+          headerTitle: t(($) => $.list.col_runtime),
+          fillWidth: true,
+        },
+      },
+      {
+        id: "status",
+        accessorFn: (row) => row.runtime.status,
+        header: t(($) => $.list.col_health),
+        cell: ({ row }) => (
+          <HealthCell
+            runtime={row.original.runtime}
+            workload={row.original.workload}
+            now={now}
+          />
+        ),
+        size: 220,
+        enableSorting: false,
+        enableHiding: false,
+        meta: {
+          headerTitle: t(($) => $.list.col_health),
+        },
+      },
+      {
+        id: "cli",
+        accessorFn: (row) => row.runtime.metadata?.version ?? "",
+        header: t(($) => $.list.col_cli),
+        cell: ({ row }) => <CliCell runtime={row.original.runtime} />,
+        size: 180,
+        enableSorting: false,
+        enableHiding: false,
+        meta: {
+          headerTitle: t(($) => $.list.col_cli),
+        },
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <div
+            className="flex justify-end"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <RuntimeRowMenu
+              runtime={row.original.runtime}
+              profile={row.original.profile}
+              wsId={wsId}
+              canDelete={row.original.canDelete}
+            />
+          </div>
+        ),
+        size: 48,
+        enableSorting: false,
+        enableHiding: false,
+        enableResizing: false,
+        meta: {
+          cellClassName: "px-2!",
+        },
+      },
+    ],
+    [machineTitle, now, t, wsId],
+  );
+
+  const table = useTable({
+    features: dataGridFeatures,
+    data: rows,
+    columns,
+    getRowId: (row) => row.runtime.id,
+  });
 
   return (
-    <div className="overflow-x-auto overflow-y-hidden @container">
-      <ListGrid
-        className={`${GRID_COLS} @2xl:min-w-[var(--rtc-minw)]`}
-        style={columnTrackVars(showOwner, showActions)}
-      >
-        <ListGridHeader>
-          <ListGridHeaderCell>
-            {t(($) => $.list.col_runtime)}
-          </ListGridHeaderCell>
-          <ListGridHeaderCell>{t(($) => $.list.col_health)}</ListGridHeaderCell>
-          {showOwner ? (
-            <ListGridHeaderCell className="hidden @2xl:flex">
-              {t(($) => $.list.col_owner)}
-            </ListGridHeaderCell>
-          ) : (
-            <ListGridHeaderCell className="hidden px-0 @2xl:flex" />
-          )}
-          <ListGridHeaderCell className="hidden @2xl:flex" align="right">
-            {t(($) => $.list.col_cost)}
-          </ListGridHeaderCell>
-          <ListGridHeaderCell className="hidden @2xl:flex">
-            {t(($) => $.list.col_cli)}
-          </ListGridHeaderCell>
-          <span aria-hidden="true" />
-        </ListGridHeader>
-        {rows.map((row) => {
-          const pending = isPendingCustomRuntime(row.runtime);
-          const detailHref = pending
-            ? undefined
-            : runtimeHref?.(row.runtime.id) ??
-              wsPaths.runtimeDetail(row.runtime.id);
-          return (
-            <ListGridRow
-              key={row.runtime.id}
-              className={pending ? "cursor-default" : "cursor-pointer"}
-              {...(detailHref ? rowLink(detailHref) : {})}
-            >
-              <RuntimeNameCell runtime={row.runtime} machineTitle={machineTitle} />
-              <HealthCell
-                runtime={row.runtime}
-                workload={row.workload}
-                now={now}
-              />
-              {showOwner ? (
-                <ListGridCell className="hidden gap-1.5 @2xl:flex">
-                  {row.ownerMember ? (
-                    <>
-                      <ActorAvatar
-                        actorType="member"
-                        actorId={row.ownerMember.user_id}
-                        size="sm"
-                      />
-                      <span className="min-w-0 truncate text-caption text-muted-foreground">
-                        {row.ownerMember.name}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-caption text-faint-foreground">—</span>
-                  )}
-                </ListGridCell>
-              ) : (
-                <ListGridCell className="hidden px-0 @2xl:flex" />
-              )}
-              <ListGridCell className="hidden @2xl:flex">
-                {pending ? (
-                  <div className="w-full text-right">
-                    <span className="text-caption text-faint-foreground">—</span>
-                  </div>
-                ) : (
-                  <CostCell
-                    runtimeId={row.runtime.id}
-                    enabled={canReadRuntimeUsage(row.runtime, user?.id ?? null)}
-                  />
-                )}
-              </ListGridCell>
-              <ListGridCell className="hidden @2xl:flex">
-                <CliCell runtime={row.runtime} />
-              </ListGridCell>
-              <ListGridCell className="justify-end px-0">
-                <span
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex items-center"
-                >
-                  <RuntimeRowMenu
-                    runtime={row.runtime}
-                    profile={row.profile}
-                    wsId={wsId}
-                    canDelete={row.canDelete}
-                    detailHref={detailHref}
-                  />
-                </span>
-              </ListGridCell>
-            </ListGridRow>
-          );
-        })}
-      </ListGrid>
-    </div>
+    <DataGrid
+      table={table}
+      recordCount={rows.length}
+      tableLayout={{
+        dense: true,
+        rowBorder: true,
+        headerBackground: true,
+        width: "fixed",
+      }}
+      tableClassNames={{ bodyRow: "group/row" }}
+    >
+      <Frame className="w-full" dense>
+        <FrameHeader className="flex-row items-center justify-between">
+          <FrameTitle>{t(($) => $.list.col_runtime)}</FrameTitle>
+          {headerAction}
+        </FrameHeader>
+        <FramePanel className="p-0!">
+          <DataGridScrollArea orientation="horizontal">
+            <DataGridTable />
+          </DataGridScrollArea>
+        </FramePanel>
+      </Frame>
+    </DataGrid>
   );
 }

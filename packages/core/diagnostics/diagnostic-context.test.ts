@@ -52,6 +52,9 @@ describe("bucketDiagnosticPath", () => {
     expect(bucketDiagnosticPath("/acme/runtimes/machine-1/runtime/rt-2")).toBe(
       "/:slug/runtimes/:id/runtime/:runtimeId",
     );
+    expect(bucketDiagnosticPath("/acme/devices/device-1/harness/h-1")).toBe(
+      "/:slug/devices/:id/harness/:harnessId",
+    );
   });
 
   // The previous implementation guessed from the shape of a segment, so any id

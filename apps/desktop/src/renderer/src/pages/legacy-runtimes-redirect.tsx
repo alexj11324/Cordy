@@ -7,7 +7,10 @@ export function LegacyRuntimesRedirect() {
   const url = currentPath(navigation);
   const next = url
     .replace(/^(\/[^/]+)\/runtimes(?=\/|[?#]|$)/, "$1/devices")
-    .replace(/^(\/[^/]+\/devices\/[^/]+)\/runtime\//, "$1/harness/");
+    .replace(
+      /^(\/[^/]+\/devices\/[^/]+)\/(?:runtime|harness)\/[^/?#]+/,
+      "$1",
+    );
 
   useEffect(() => {
     if (next !== url) navigation.replace(next);
