@@ -29,6 +29,11 @@ const (
 	workProductDiscoveryLease    = "5 minutes"
 )
 
+type workProductPullRequestLookup interface {
+	Enabled() bool
+	PullRequestsByHead(context.Context, int64, string, string, string) ([]ghsnapshot.PullRequestHeadMatch, error)
+}
+
 // WorkProductDiscoveryRuntime drains the durable execution-provenance queue.
 // The queue is intentionally database-backed: a server restart, a GitHub rate
 // limit, or a daemon disconnect must not lose the association attempt.
@@ -36,7 +41,7 @@ type WorkProductDiscoveryRuntime struct {
 	queries   *db.Queries
 	db        dbExecutor
 	tx        txStarter
-	prRefresh *ghsnapshot.Manager
+	prRefresh workProductPullRequestLookup
 	bus       *events.Bus
 	interval  time.Duration
 	batchSize int32
@@ -639,14 +644,14 @@ WHERE workspace_id = $1 AND repo_identity = $2 AND head_branch = $3
 		return nil
 	}
 	matches := make([]ghsnapshot.PullRequestHeadMatch, 0)
-	lookupErr := false
+	var lookupErr error
 	mismatch := false
 	seenNumbers := make(map[int32]struct{})
 	matchInstallationIDs := make(map[int32]int64)
 	for _, installation := range installations {
 		found, lookupError := r.prRefresh.PullRequestsByHead(ctx, installation.InstallationID, parts[0], parts[1], branch)
 		if lookupError != nil {
-			lookupErr = true
+			lookupErr = errors.Join(lookupErr, lookupError)
 			continue
 		}
 		for _, candidate := range found {
@@ -666,16 +671,9 @@ WHERE workspace_id = $1 AND repo_identity = $2 AND head_branch = $3
 	sort.Slice(matches, func(i, j int) bool {
 		return matches[i].Number < matches[j].Number
 	})
-	if lookupErr {
-		if err := recordWorkProductDiscoveryExec(ctx, tx, item, "ambiguous", int32(len(matches)), "github_lookup_failed", pgtype.UUID{}); err != nil {
-			rollback()
-			return err
-		}
-		if err := tx.Commit(ctx); err != nil {
-			rollback()
-			return err
-		}
-		return nil
+	if lookupErr != nil {
+		rollback()
+		return fmt.Errorf("lookup pull requests for execution discovery: %w", lookupErr)
 	}
 	if len(matches) == 0 && mismatch {
 		if err := recordWorkProductDiscoveryExec(ctx, tx, item, "ambiguous", 0, "pull_request_head_mismatch", pgtype.UUID{}); err != nil {
@@ -708,7 +706,7 @@ WHERE workspace_id = $1 AND repo_identity = $2 AND head_branch = $3
 
 	decision := classifyBranchDiscovery(item.HeadState, int(otherExecutionCount), len(matches))
 	if decision.Status != "associated" {
-		if !lookupErr && decision.Status == "unassociated" && mismatch {
+		if decision.Status == "unassociated" && mismatch {
 			decision.Status = "ambiguous"
 			decision.Reason = "pull_request_head_mismatch"
 		}
