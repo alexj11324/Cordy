@@ -39,8 +39,6 @@ type AppConfig struct {
 	// toggle signup or wire Google OAuth.
 	AllowSignup    bool   `json:"allow_signup"`
 	GoogleClientID string `json:"google_client_id,omitempty"`
-	// Local email changes cannot update a managed provider's authoritative identity.
-	EmailChangeSupported bool `json:"email_change_supported"`
 	// WorkspaceCreationDisabled mirrors the server-side
 	// DISABLE_WORKSPACE_CREATION env var so the UI can hide every
 	// "Create workspace" affordance on self-hosted instances. Omitted
@@ -128,7 +126,6 @@ func (h *Handler) GetConfig(w http.ResponseWriter, r *http.Request) {
 		AgentConversationStartersSupported:  true,
 		AllowSignup:                         os.Getenv("ALLOW_SIGNUP") != "false",
 		GoogleClientID:                      os.Getenv("GOOGLE_CLIENT_ID"),
-		EmailChangeSupported:                h.emailChangeSupported(),
 		WorkspaceCreationDisabled:           os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
 		Messaging:                           messagingCapabilitiesFromEnv(),
 	}
