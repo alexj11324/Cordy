@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -75,15 +76,15 @@ func SeedRuntimeAgents(ctx context.Context, pool *pgxpool.Pool, email string) (i
 	if email == "" {
 		email = DefaultDeveloperEmail
 	}
-	rows, err := pool.Query(ctx, `SELECT r.id::text, r.name FROM agent_runtime r JOIN "user" u ON u.id = r.owner_id WHERE r.workspace_id = $1 AND u.email = $2 AND r.runtime_mode = 'local' AND r.status = 'online' AND r.daemon_id IS NOT NULL ORDER BY r.name`, pgUUID(fixtureID("workspace")), email)
+	rows, err := pool.Query(ctx, `SELECT r.id::text, r.provider, r.name FROM agent_runtime r JOIN "user" u ON u.id = r.owner_id WHERE r.workspace_id = $1 AND u.email = $2 AND r.runtime_mode = 'local' AND r.status = 'online' AND r.daemon_id IS NOT NULL ORDER BY r.name`, pgUUID(fixtureID("workspace")), email)
 	if err != nil {
 		return 0, err
 	}
-	type runtime struct{ id, name string }
+	type runtime struct{ id, provider, name string }
 	var runtimes []runtime
 	for rows.Next() {
 		var r runtime
-		if err := rows.Scan(&r.id, &r.name); err != nil {
+		if err := rows.Scan(&r.id, &r.provider, &r.name); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -95,16 +96,59 @@ func SeedRuntimeAgents(ctx context.Context, pool *pgxpool.Pool, email string) (i
 	}
 	var inserted int64
 	for _, r := range runtimes {
+		name := seedRuntimeAgentName(r.provider)
 		result, err := pool.Exec(ctx, `INSERT INTO agent (id, workspace_id, name, description, runtime_mode, runtime_config, runtime_id, visibility, permission_mode, max_concurrent_tasks, owner_id, status)
-  SELECT $1, r.workspace_id, $2, '开发样例智能体，使用当前设备 Harness 的默认模型。', r.runtime_mode, '{}'::jsonb, r.id, 'private', 'private', 1, r.owner_id, 'idle'
+  SELECT $1, r.workspace_id, $2, '', r.runtime_mode, '{}'::jsonb, r.id, 'private', 'private', 1, r.owner_id, 'idle'
   FROM agent_runtime r WHERE r.id = $3 AND r.workspace_id = $4 AND r.status = 'online'
-  ON CONFLICT DO NOTHING`, pgUUID(fixtureID("agent/runtime/"+r.id)), r.name, pgUUID(r.id), pgUUID(fixtureID("workspace")))
+  ON CONFLICT DO NOTHING`, pgUUID(fixtureID("agent/runtime/"+r.id)), name, pgUUID(r.id), pgUUID(fixtureID("workspace")))
 		if err != nil {
 			return inserted, fmt.Errorf("seed runtime agent: %w", err)
 		}
 		inserted += result.RowsAffected()
+		// Migrate each legacy field independently. A user may have renamed the
+		// fixture agent while leaving the generated description (or edited the
+		// description while keeping the generated name). Matching both fields in
+		// one predicate would strand the other legacy value. The stable fixture ID
+		// is the only row selector, and exact old values preserve user edits.
+		if _, err := pool.Exec(ctx, `UPDATE agent
+SET name = $2
+WHERE id = $1 AND name = $3`, pgUUID(fixtureID("agent/runtime/"+r.id)), name, r.name); err != nil {
+			return inserted, fmt.Errorf("upgrade seeded runtime agent name: %w", err)
+		}
+		if _, err := pool.Exec(ctx, `UPDATE agent
+SET description = ''
+WHERE id = $1 AND description = $2`, pgUUID(fixtureID("agent/runtime/"+r.id)), legacyRuntimeAgentDescription); err != nil {
+			return inserted, fmt.Errorf("upgrade seeded runtime agent description: %w", err)
+		}
 	}
 	return inserted, nil
+}
+
+const legacyRuntimeAgentDescription = "开发样例智能体，使用当前设备 Harness 的默认模型。"
+
+// seedRuntimeAgentName follows the daemon's provider display vocabulary while
+// deliberately omitting its machine suffix. Unknown providers still get a
+// readable title, so adding a runtime does not require a fixture-only edit.
+func seedRuntimeAgentName(provider string) string {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return "Agent"
+	}
+	if display, ok := map[string]string{
+		"codearts":   "CodeArts",
+		"dsh":        "DeepSeek Harness",
+		"grok":       "Grok",
+		"mcode":      "MiniMax Code",
+		"omp":        "Oh-My-Pi",
+		"qoderclicn": "Qoder CN",
+		"qwen":       "Qwen Code",
+		"qwenpaw":    "QwenPaw",
+		"traecli":    "Trae",
+		"zeroclaw":   "ZeroClaw",
+	}[strings.ToLower(provider)]; ok {
+		return display
+	}
+	return strings.ToUpper(provider[:1]) + provider[1:]
 }
 
 // RuntimeIdentity is stable across a daemon's workspace registrations. Custom
