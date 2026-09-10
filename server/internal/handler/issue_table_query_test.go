@@ -1148,13 +1148,13 @@ func TestIssueTableCompoundParentGroupsReturnExactStatusCells(t *testing.T) {
 	if _, err := testPool.Exec(ctx, `
 		INSERT INTO issue (
 			workspace_id, title, status, priority, creator_type, creator_id,
-			parent_issue_id, position, number, project_id, executor_type, executor_id
+			parent_issue_id, position, number, project_id, executor_type, executor_id, reviewer_type, reviewer_id, review_submission
 		)
 		VALUES
-			($1, 'Child todo', 'todo', 'none', 'member', $2, $3, 2, $4, $5, NULL, NULL),
-			($1, 'Child review', 'in_review', 'none', 'member', $2, $3, 3, $4 + 1, $5, 'agent', $6),
-			($1, 'No parent', 'todo', 'none', 'member', $2, NULL, 4, $4 + 2, $5, NULL, NULL)
-	`, testWorkspaceID, testUserID, parentID, finalNumber-2, projectID, handlerSeededAgentID(t)); err != nil {
+			($1, 'Child todo', 'todo', 'none', 'member', $2, $3, 2, $4, $5, NULL, NULL, NULL, NULL, NULL),
+			($1, 'Child review', 'in_review', 'none', 'member', $2, $3, 3, $4 + 1, $5, 'agent', $6, 'member', $7, $8::jsonb),
+			($1, 'No parent', 'todo', 'none', 'member', $2, NULL, 4, $4 + 2, $5, NULL, NULL, NULL, NULL, NULL)
+	`, testWorkspaceID, testUserID, parentID, finalNumber-2, projectID, handlerSeededAgentID(t), testUserID, reviewSubmissionDBFixture()); err != nil {
 		t.Fatalf("seed grouped issues: %v", err)
 	}
 

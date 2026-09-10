@@ -4337,7 +4337,8 @@ func TestIssueGCChecksReportCategoryNotRawCustomStatus(t *testing.T) {
 		"status": gateApproved.Key, "priority": "medium", "number": 92501,
 	})
 	openID := dbfx.Issue(t, "gc-check-custom-open", testutil.Cols{
-		"status": humanReview.Key, "executor_type": "agent", "executor_id": handlerSeededAgentID(t), "priority": "medium", "number": 92502,
+		"status": humanReview.Key, "executor_type": "agent", "executor_id": handlerSeededAgentID(t), "reviewer_type": "member", "reviewer_id": testUserID, "priority": "medium", "number": 92502,
+		"review_submission": reviewSubmissionDBFixture(),
 	})
 
 	t.Run("batch endpoint", func(t *testing.T) {
@@ -4412,8 +4413,8 @@ func TestBatchIssueGCCheckReadsCatalogOnceForManyCustomStatuses(t *testing.T) {
 	ids := []string{
 		dbfx.Issue(t, "gc-batch-custom-1", testutil.Cols{"status": gateApproved.Key, "priority": "medium", "number": 92601}),
 		dbfx.Issue(t, "gc-batch-custom-2", testutil.Cols{"status": gateApproved.Key, "priority": "medium", "number": 92602}),
-		dbfx.Issue(t, "gc-batch-custom-3", testutil.Cols{"status": humanReview.Key, "executor_type": "agent", "executor_id": handlerSeededAgentID(t), "priority": "medium", "number": 92603}),
-		dbfx.Issue(t, "gc-batch-custom-4", testutil.Cols{"status": humanReview.Key, "executor_type": "agent", "executor_id": handlerSeededAgentID(t), "priority": "medium", "number": 92604}),
+		dbfx.Issue(t, "gc-batch-custom-3", testutil.Cols{"status": humanReview.Key, "executor_type": "agent", "executor_id": handlerSeededAgentID(t), "reviewer_type": "member", "reviewer_id": testUserID, "priority": "medium", "number": 92603, "review_submission": reviewSubmissionDBFixture()}),
+		dbfx.Issue(t, "gc-batch-custom-4", testutil.Cols{"status": humanReview.Key, "executor_type": "agent", "executor_id": handlerSeededAgentID(t), "reviewer_type": "member", "reviewer_id": testUserID, "priority": "medium", "number": 92604, "review_submission": reviewSubmissionDBFixture()}),
 		dbfx.Issue(t, "gc-batch-builtin", testutil.Cols{"status": "done", "priority": "medium", "number": 92605}),
 	}
 

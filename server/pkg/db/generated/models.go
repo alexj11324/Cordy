@@ -1022,6 +1022,7 @@ type Issue struct {
 	ReviewerType       pgtype.Text        `json:"reviewer_type"`
 	ReviewerID         pgtype.UUID        `json:"reviewer_id"`
 	ExecutorGeneration int64              `json:"executor_generation"`
+	ReviewSubmission   []byte             `json:"review_submission"`
 }
 
 type IssueDependency struct {

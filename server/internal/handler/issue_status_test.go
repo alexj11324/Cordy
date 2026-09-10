@@ -180,8 +180,9 @@ func TestIssueWriteAcceptsCustomStatusAndRejectsUnknown(t *testing.T) {
 
 	t.Run("custom status is accepted", func(t *testing.T) {
 		req := newRequest(http.MethodPost, "/api/issues", map[string]any{
-			"title":  "custom status write",
-			"status": "human_review_w",
+			"title":             "custom status write",
+			"status":            "human_review_w",
+			"review_submission": reviewSubmissionFixture(),
 		})
 		rec := httptest.NewRecorder()
 		testHandler.CreateIssue(rec, req)
@@ -381,7 +382,7 @@ func TestIssueWriteStoresCanonicalStatusKey(t *testing.T) {
 		t.Run(input, func(t *testing.T) {
 			rec := httptest.NewRecorder()
 			testHandler.CreateIssue(rec, newRequest(http.MethodPost, "/api/issues", map[string]any{
-				"title": "canonical key " + input, "status": input,
+				"title": "canonical key " + input, "status": input, "review_submission": reviewSubmissionFixture(),
 			}))
 			if rec.Code != http.StatusCreated {
 				t.Fatalf("expected 201 for %q, got %d: %s", input, rec.Code, rec.Body.String())
@@ -926,9 +927,11 @@ func TestArchiveCommitsInsideTheWriteRaceWindow(t *testing.T) {
 func mustCreateIssue(t *testing.T, title, status string) pgtype.UUID {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	testHandler.CreateIssue(rec, newRequest(http.MethodPost, "/api/issues", map[string]any{
-		"title": title, "status": status,
-	}))
+	body := map[string]any{"title": title, "status": status}
+	if issuestatus.Effective(context.Background(), testHandler.Queries, parseUUID(testWorkspaceID), status) == issuestatus.InReview {
+		body["review_submission"] = reviewSubmissionFixture()
+	}
+	testHandler.CreateIssue(rec, newRequest(http.MethodPost, "/api/issues", body))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("seed issue %q: %d %s", title, rec.Code, rec.Body.String())
 	}
@@ -1144,7 +1147,7 @@ func TestCreateEventCarriesCustomStatusCategory(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	testHandler.CreateIssue(rec, newRequest(http.MethodPost, "/api/issues", map[string]any{
-		"title": "custom status event", "status": "human_review_ev",
+		"title": "custom status event", "status": "human_review_ev", "review_submission": reviewSubmissionFixture(),
 	}))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
@@ -1558,7 +1561,7 @@ func TestIssueResponseCarriesCustomStatusName(t *testing.T) {
 	var custom IssueResponse
 	testutil.Call(t, testHandler.CreateIssue,
 		newRequest(http.MethodPost, "/api/issues", map[string]any{
-			"title": "custom status name", "status": "in_review_8",
+			"title": "custom status name", "status": "in_review_8", "review_submission": reviewSubmissionFixture(),
 		})).Want(http.StatusCreated).JSON(&custom)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, parseUUID(custom.ID))
@@ -1803,7 +1806,7 @@ func TestCustomStatusPayloadsAgreeAcrossRenderings(t *testing.T) {
 	var fromHTTP IssueResponse
 	testutil.Call(t, testHandler.CreateIssue,
 		newRequest(http.MethodPost, "/api/issues", map[string]any{
-			"title": "payload parity", "status": "in_review_7",
+			"title": "payload parity", "status": "in_review_7", "review_submission": reviewSubmissionFixture(),
 		})).Want(http.StatusCreated).JSON(&fromHTTP)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM issue WHERE id = $1`, parseUUID(fromHTTP.ID))

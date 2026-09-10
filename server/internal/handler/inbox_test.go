@@ -33,7 +33,9 @@ func TestListInboxProjectsCurrentIssueStatusAndPriority(t *testing.T) {
 		"workspace_id":  workspaceID,
 		"status":        "in_review",
 		"executor_type": "agent", "executor_id": agentID,
-		"priority": "high",
+		"reviewer_type": "member", "reviewer_id": testUserID,
+		"review_submission": reviewSubmissionDBFixture(),
+		"priority":          "high",
 	})
 	dbfx.Insert(t, "inbox_item", testutil.Cols{
 		"workspace_id":   workspaceID,

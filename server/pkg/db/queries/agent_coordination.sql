@@ -351,6 +351,63 @@ ORDER BY CASE WHEN EXISTS (
 LIMIT 1
 FOR UPDATE SKIP LOCKED;
 
+-- Review may only be entered from a completed task when the server can prove
+-- the task's exact checkout head produced at least one real pull request. The
+-- relation is task- and issue-scoped, while the provider joins below prevent a
+-- stale or hand-authored Work Product URL from becoming review evidence. The
+-- caller supplies the attested provenance facts; matching branch, repository,
+-- and head SHA are all required before a URL is returned.
+-- name: ListCoordinationReviewPullRequests :many
+SELECT 'github_pull_request'::text AS provider_record_type,
+       github.id AS provider_record_id,
+       lower(github.repo_owner || '/' || github.repo_name) AS repo_identity,
+       github.branch,
+       github.head_sha,
+       github.html_url
+FROM work_product_relation AS relation
+JOIN work_product AS product
+  ON product.id = relation.work_product_id
+ AND product.workspace_id = relation.workspace_id
+JOIN github_pull_request AS github
+  ON github.id = product.provider_record_id
+ AND github.workspace_id = product.workspace_id
+WHERE relation.workspace_id = sqlc.arg('workspace_id')::uuid
+  AND relation.issue_id = sqlc.arg('issue_id')::uuid
+  AND relation.task_id = sqlc.arg('task_id')::uuid
+  AND relation.detached_at IS NULL
+  AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+  AND product.kind = 'pull_request'
+  AND product.provider_record_type = 'github_pull_request'
+  AND lower(github.repo_owner || '/' || github.repo_name) = lower(sqlc.arg('repo_identity')::text)
+  AND github.branch = sqlc.arg('head_branch')::text
+  AND lower(github.head_sha) = lower(sqlc.arg('head_sha')::text)
+
+UNION ALL
+
+SELECT 'vcs_pull_request'::text AS provider_record_type,
+       vcs.id AS provider_record_id,
+       lower(vcs.repo_owner || '/' || vcs.repo_name) AS repo_identity,
+       vcs.branch,
+       vcs.head_sha,
+       vcs.html_url
+FROM work_product_relation AS relation
+JOIN work_product AS product
+  ON product.id = relation.work_product_id
+ AND product.workspace_id = relation.workspace_id
+JOIN vcs_pull_request AS vcs
+  ON vcs.id = product.provider_record_id
+ AND vcs.workspace_id = product.workspace_id
+WHERE relation.workspace_id = sqlc.arg('workspace_id')::uuid
+  AND relation.issue_id = sqlc.arg('issue_id')::uuid
+  AND relation.task_id = sqlc.arg('task_id')::uuid
+  AND relation.detached_at IS NULL
+  AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+  AND product.kind = 'pull_request'
+  AND product.provider_record_type = 'vcs_pull_request'
+  AND lower(vcs.repo_owner || '/' || vcs.repo_name) = lower(sqlc.arg('repo_identity')::text)
+  AND vcs.branch = sqlc.arg('head_branch')::text
+  AND lower(vcs.head_sha) = lower(sqlc.arg('head_sha')::text);
+
 -- The coordinator changes an implementation issue to in_review only after a
 -- reviewer has been selected and locked. The revision fence prevents a user
 -- update committed after the coordinator read from being overwritten.
@@ -359,6 +416,7 @@ UPDATE issue AS target
 SET status = 'in_review',
     reviewer_type = 'agent',
     reviewer_id = sqlc.arg('reviewer_id'),
+    review_submission = sqlc.arg('review_submission')::jsonb,
     revision = target.revision + 1,
     updated_at = now(),
     last_activity_at = GREATEST(COALESCE(target.last_activity_at, target.updated_at), now())

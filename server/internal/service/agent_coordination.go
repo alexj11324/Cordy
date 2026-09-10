@@ -2,14 +2,19 @@ package service
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/orvilo-ai/orvilo/server/internal/attribution"
@@ -55,6 +60,34 @@ const (
 var (
 	ErrCoordinationLeaseLost = errors.New("agent coordination lease lost")
 )
+
+var coordinationReviewPRPathPattern = regexp.MustCompile(`/(pull|pulls|merge_requests)/[0-9]+/?$`)
+
+type coordinationReviewSubmission struct {
+	Worktree     string   `json:"worktree"`
+	Branch       string   `json:"branch"`
+	Commit       string   `json:"commit"`
+	PullRequests []string `json:"pull_requests"`
+	SubmissionID string   `json:"submission_id"`
+}
+
+type coordinationReviewEvidence struct {
+	Submission *coordinationReviewSubmission
+	Pending    bool
+	Reason     string
+}
+
+// coordinationTerminalExecutionFacts is the terminal callback's checkout
+// snapshot as persisted in agent_task_queue.result. The provenance table also
+// receives in-flight snapshots, so its updated_at cannot identify which row
+// was attested by the terminal delivery.
+type coordinationTerminalExecutionFacts struct {
+	RepoIdentity       string `json:"execution_repo_identity"`
+	ExecutionWorkspace string `json:"execution_workspace"`
+	HeadBranch         string `json:"execution_head_branch"`
+	HeadSHA            string `json:"execution_head_sha"`
+	HeadState          string `json:"execution_head_state"`
+}
 
 // coordinationTaskContext is the immutable provenance written into a
 // coordinator-created task. The owner generation and issue revision are
@@ -786,6 +819,23 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 				}, "implementation owner is not an agent or team")
 			}
 
+			reviewEvidence, evidenceErr := coordinationReviewSubmissionEvidence(
+				ctx, qtx, issue.WorkspaceID, issue.ID, event.SourceTaskID,
+			)
+			if evidenceErr != nil {
+				return fmt.Errorf("coordination: load review submission evidence: %w", evidenceErr)
+			}
+			if reviewEvidence.Submission == nil {
+				message := "review_submission_required"
+				if reviewEvidence.Reason != "" {
+					message += ": " + reviewEvidence.Reason
+				}
+				if reviewEvidence.Pending {
+					return s.deferClaim(ctx, qtx, event, assignment, message)
+				}
+				return s.blockClaimedAssignment(ctx, qtx, event, assignment, reviewEvidence.Reason)
+			}
+
 			previousIssue := issue
 			reviewerID := pgtype.UUID{}
 			if assignment.OwnerType.Valid && assignment.OwnerType.String == "agent" && assignment.OwnerID.Valid {
@@ -818,8 +868,13 @@ func (s *AgentCoordinationService) processClaim(ctx context.Context, event db.Ag
 				return s.deferClaim(ctx, qtx, event, assignment, "select reviewer: "+err.Error())
 			}
 
+			reviewSubmission, marshalErr := json.Marshal(*reviewEvidence.Submission)
+			if marshalErr != nil {
+				return fmt.Errorf("coordination: encode review submission: %w", marshalErr)
+			}
 			updated, err := qtx.UpdateIssueForCoordinationReview(ctx, db.UpdateIssueForCoordinationReviewParams{
 				ReviewerID:       candidate.ID,
+				ReviewSubmission: reviewSubmission,
 				IssueID:          issue.ID,
 				WorkspaceID:      issue.WorkspaceID,
 				ExpectedRevision: issue.Revision,
@@ -1468,6 +1523,48 @@ func (s *AgentCoordinationService) completeClaimedAssignment(
 	return s.completeClaimedOutbox(ctx, qtx, event)
 }
 
+// blockClaimedAssignment records a terminal, explicit decision when the
+// completed task cannot prove a review handoff. Keeping the issue in progress
+// preserves the workflow state, while completing the outbox prevents the same
+// missing evidence from producing an endless stream of retry errors.
+func (s *AgentCoordinationService) blockClaimedAssignment(
+	ctx context.Context,
+	qtx *db.Queries,
+	event db.AgentCoordinationOutbox,
+	assignment db.AgentCoordinationAssignment,
+	detail string,
+) error {
+	decision, err := json.Marshal(map[string]any{
+		"outcome": "blocked",
+		"reason":  "review_submission_required",
+		"detail":  detail,
+	})
+	if err != nil {
+		return fmt.Errorf("coordination: encode review evidence block: %w", err)
+	}
+	message := "review_submission_required"
+	if strings.TrimSpace(detail) != "" {
+		message += ": " + strings.TrimSpace(detail)
+	}
+	changed, err := qtx.CompleteAgentCoordinationAssignmentForLease(ctx, db.CompleteAgentCoordinationAssignmentForLeaseParams{
+		AssignmentID: assignment.ID,
+		EventID:      event.ID,
+		WorkspaceID:  event.WorkspaceID,
+		IssueID:      event.IssueID,
+		Status:       "blocked",
+		Decision:     decision,
+		LastError:    pgtype.Text{String: coordinationErrorText(message), Valid: true},
+		LeaseOwner:   event.LeaseOwner,
+	})
+	if err != nil {
+		return fmt.Errorf("coordination: block review assignment: %w", err)
+	}
+	if changed != 1 {
+		return ErrCoordinationLeaseLost
+	}
+	return s.completeClaimedOutbox(ctx, qtx, event)
+}
+
 func (s *AgentCoordinationService) publishCoordinationReviewHandoff(ctx context.Context, publication coordinationReviewPublication) bool {
 	if s == nil || s.Bus == nil {
 		return false
@@ -1780,6 +1877,203 @@ func coordinationPayloadFromSourceTask(ctx context.Context, qtx *db.Queries, wor
 		return coordinationEventPayload{}, errors.New("source task is not bound to the issue")
 	}
 	return coordinationTaskPayload(sourceTask), nil
+}
+
+// coordinationReviewSubmissionEvidence reads only facts that were attested by
+// the completed task and provider records linked to that same task and issue.
+// It deliberately does not fall back to task.branch_name, issue metadata, or a
+// guessed PR URL: those values cannot prove which checkout produced the work.
+// A pending discovery row is retried; a terminal discovery verdict is a
+// durable block so the completion event cannot fail forever on the same missing
+// evidence.
+func coordinationReviewSubmissionEvidence(
+	ctx context.Context,
+	qtx *db.Queries,
+	workspaceID, issueID, sourceTaskID pgtype.UUID,
+) (coordinationReviewEvidence, error) {
+	missing := func(reason string) coordinationReviewEvidence {
+		return coordinationReviewEvidence{Reason: reason}
+	}
+	pending := func(reason string) coordinationReviewEvidence {
+		return coordinationReviewEvidence{Pending: true, Reason: reason}
+	}
+	if !sourceTaskID.Valid {
+		return missing("source task is missing"), nil
+	}
+	sourceTask, err := qtx.GetAgentTaskInWorkspace(ctx, db.GetAgentTaskInWorkspaceParams{
+		ID: sourceTaskID, WorkspaceID: workspaceID,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return missing("source task is unavailable"), nil
+	}
+	if err != nil {
+		return coordinationReviewEvidence{}, fmt.Errorf("load source task: %w", err)
+	}
+	if !sameCoordinationUUID(sourceTask.IssueID, issueID) {
+		return missing("source task is bound to another issue"), nil
+	}
+	if sourceTask.Status != "completed" {
+		return missing("source task did not complete successfully"), nil
+	}
+
+	var terminalFacts coordinationTerminalExecutionFacts
+	if len(sourceTask.Result) == 0 || json.Unmarshal(sourceTask.Result, &terminalFacts) != nil {
+		return missing("terminal execution facts are missing"), nil
+	}
+	terminalRepo := coordinationReviewRepoIdentity(terminalFacts.RepoIdentity)
+	terminalWorkspace := strings.TrimSpace(terminalFacts.ExecutionWorkspace)
+	if terminalRepo == "" || terminalWorkspace == "" {
+		return missing("terminal execution facts do not identify a repository and workspace"), nil
+	}
+
+	provenances, err := qtx.ListExecutionProvenanceByTask(ctx, db.ListExecutionProvenanceByTaskParams{
+		WorkspaceID: workspaceID, TaskID: sourceTaskID,
+	})
+	if err != nil {
+		return coordinationReviewEvidence{}, fmt.Errorf("load execution provenance: %w", err)
+	}
+	var matches []db.AgentTaskExecutionProvenance
+	for _, candidate := range provenances {
+		if coordinationReviewRepoIdentity(candidate.RepoIdentity) != terminalRepo ||
+			strings.TrimSpace(candidate.ExecutionWorkspace) != terminalWorkspace {
+			continue
+		}
+		matches = append(matches, candidate)
+	}
+	if len(matches) == 0 {
+		return missing("terminal execution facts do not match persisted provenance"), nil
+	}
+	if len(matches) != 1 {
+		// The current primary key makes this impossible for an exact repository /
+		// workspace pair. Keep the guard explicit so a future schema change cannot
+		// silently turn an ambiguous terminal delivery into review evidence.
+		return missing("terminal execution facts do not identify a unique provenance row"), nil
+	}
+	provenance := matches[0]
+	terminalState := strings.TrimSpace(terminalFacts.HeadState)
+	if terminalState == "" {
+		terminalState = "unknown"
+	}
+	if terminalState != provenance.HeadState {
+		return missing("terminal execution facts do not match persisted checkout state"), nil
+	}
+	if terminalState == "attached" {
+		terminalBranch := strings.TrimSpace(terminalFacts.HeadBranch)
+		terminalSHA := strings.TrimSpace(terminalFacts.HeadSHA)
+		if terminalBranch == "" || !coordinationFullCommitSHA(terminalSHA) ||
+			!provenance.HeadBranch.Valid || provenance.HeadBranch.String != terminalBranch ||
+			!provenance.HeadSha.Valid || !strings.EqualFold(provenance.HeadSha.String, terminalSHA) {
+			return missing("terminal execution facts do not match persisted checkout head"), nil
+		}
+	}
+	discoveryPending := provenance.DiscoveryStatus == "not_attempted" ||
+		provenance.DiscoveryStatus == "pending" ||
+		provenance.DiscoveryStatus == "in_progress"
+	if !provenance.FinishedAt.Valid {
+		if discoveryPending {
+			return pending("execution provenance is not finalized"), nil
+		}
+		return missing("execution provenance is not finalized"), nil
+	}
+	worktree := strings.TrimSpace(provenance.ExecutionWorkspace)
+	branch := coordinationText(provenance.HeadBranch)
+	commit := coordinationText(provenance.HeadSha)
+	if provenance.HeadState != "attached" || worktree == "" || provenance.RepoIdentity == "" || branch == "" || !coordinationFullCommitSHA(commit) {
+		if discoveryPending {
+			return pending("execution provenance does not yet describe an attached full checkout"), nil
+		}
+		return missing("execution provenance does not describe an attached full checkout"), nil
+	}
+
+	rows, err := qtx.ListCoordinationReviewPullRequests(ctx, db.ListCoordinationReviewPullRequestsParams{
+		WorkspaceID:  workspaceID,
+		IssueID:      issueID,
+		TaskID:       sourceTaskID,
+		RepoIdentity: provenance.RepoIdentity,
+		HeadBranch:   branch,
+		HeadSha:      commit,
+	})
+	if err != nil {
+		return coordinationReviewEvidence{}, fmt.Errorf("load linked pull requests: %w", err)
+	}
+	seen := make(map[string]struct{}, len(rows))
+	pullRequests := make([]string, 0, len(rows))
+	for _, row := range rows {
+		prURL := strings.TrimSpace(row.HtmlUrl)
+		if !coordinationReviewPullRequestURL(prURL) {
+			continue
+		}
+		if _, exists := seen[prURL]; exists {
+			continue
+		}
+		seen[prURL] = struct{}{}
+		pullRequests = append(pullRequests, prURL)
+	}
+	if len(pullRequests) == 0 {
+		if discoveryPending {
+			return pending("linked pull request discovery is not complete"), nil
+		}
+		return missing("no linked pull request matches the completed checkout head"), nil
+	}
+	sort.Strings(pullRequests)
+	return coordinationReviewEvidence{Submission: &coordinationReviewSubmission{
+		Worktree:     worktree,
+		Branch:       branch,
+		Commit:       commit,
+		PullRequests: pullRequests,
+		SubmissionID: uuid.NewString(),
+	}}, nil
+}
+
+func coordinationFullCommitSHA(value string) bool {
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+// coordinationReviewRepoIdentity mirrors the transport normalization applied
+// before terminal provenance is persisted. Keeping the comparison canonical
+// lets the terminal result use the daemon's remote URL while the durable row
+// stores owner/repository form.
+func coordinationReviewRepoIdentity(raw string) string {
+	value := strings.TrimSpace(strings.TrimRight(raw, "/"))
+	for _, prefix := range []string{
+		"https://github.com/",
+		"http://github.com/",
+		"git@github.com:",
+		"ssh://git@github.com/",
+	} {
+		if strings.HasPrefix(value, prefix) {
+			value = strings.TrimPrefix(value, prefix)
+			break
+		}
+	}
+	value = strings.TrimSuffix(strings.TrimRight(value, "/"), ".git")
+	parts := strings.Split(value, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return ""
+	}
+	for _, part := range parts {
+		for i := 0; i < len(part); i++ {
+			value := part[i]
+			if !((value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z') ||
+				(value >= '0' && value <= '9') || value == '.' || value == '-' ||
+				value == '_' || value == '~') {
+				return ""
+			}
+		}
+	}
+	return strings.ToLower(parts[0]) + "/" + strings.ToLower(parts[1])
+}
+
+func coordinationReviewPullRequestURL(value string) bool {
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Hostname() == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	return coordinationReviewPRPathPattern.MatchString(parsed.Path)
 }
 
 func coordinationAssignmentMatchesTask(assignment db.AgentCoordinationAssignment, task db.AgentTaskQueue, taskContext coordinationTaskContext) bool {

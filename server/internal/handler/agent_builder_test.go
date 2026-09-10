@@ -1334,18 +1334,19 @@ func TestWaitForWaiterBlockedByIgnoresUnrelatedWaiters(t *testing.T) {
 	mine := newBuilderSession(t)
 	theirs := newBuilderSession(t)
 
-	// Our holder: locks our own session and blocks nobody.
+	// Advisory locks isolate this PID-attribution probe from concurrent schema DDL.
+	// Our holder blocks nobody; only the unrelated holder has a waiter.
 	holderTx, err := testPool.Begin(ctx)
 	if err != nil {
 		t.Fatalf("begin holder tx: %v", err)
 	}
 	defer holderTx.Rollback(context.Background())
 	holderPID := holderBackendPID(t, ctx, holderTx)
-	if _, err := holderTx.Exec(ctx, `SELECT id FROM chat_session WHERE id = $1 FOR UPDATE`, mine.SessionID); err != nil {
+	if _, err := holderTx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, mine.SessionID); err != nil {
 		t.Fatalf("hold our own session lock: %v", err)
 	}
 
-	// An unrelated holder on a different row, plus a backend parked behind it —
+	// An unrelated holder on a different key, plus a backend parked behind it —
 	// the shape of another package's test running against the same database.
 	otherTx, err := testPool.Begin(ctx)
 	if err != nil {
@@ -1353,7 +1354,7 @@ func TestWaitForWaiterBlockedByIgnoresUnrelatedWaiters(t *testing.T) {
 	}
 	defer otherTx.Rollback(context.Background())
 	otherPID := holderBackendPID(t, ctx, otherTx)
-	if _, err := otherTx.Exec(ctx, `SELECT id FROM chat_session WHERE id = $1 FOR UPDATE`, theirs.SessionID); err != nil {
+	if _, err := otherTx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, theirs.SessionID); err != nil {
 		t.Fatalf("hold unrelated session lock: %v", err)
 	}
 
@@ -1365,7 +1366,7 @@ func TestWaitForWaiterBlockedByIgnoresUnrelatedWaiters(t *testing.T) {
 			return
 		}
 		defer waiterTx.Rollback(context.Background())
-		_, _ = waiterTx.Exec(context.Background(), `SELECT id FROM chat_session WHERE id = $1 FOR UPDATE`, theirs.SessionID)
+		_, _ = waiterTx.Exec(context.Background(), `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, theirs.SessionID)
 	}()
 
 	// The unrelated waiter is genuinely parked, so a database-wide probe would

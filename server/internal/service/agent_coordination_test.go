@@ -71,6 +71,27 @@ func TestCoordinationTaskContextPreservesFences(t *testing.T) {
 	}
 }
 
+func TestCoordinationReviewRepoIdentityCanonicalizesDaemonRemotes(t *testing.T) {
+	tests := []struct {
+		name string
+		input string
+		want string
+	}{
+		{name: "owner repo", input: "Acme/Review", want: "acme/review"},
+		{name: "https remote", input: "https://github.com/Acme/Review.git", want: "acme/review"},
+		{name: "ssh remote", input: "git@github.com:Acme/Review/", want: "acme/review"},
+		{name: "invalid host", input: "https://example.com/Acme/Review", want: ""},
+		{name: "extra path", input: "Acme/Review/subdir", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := coordinationReviewRepoIdentity(tt.input); got != tt.want {
+				t.Fatalf("coordinationReviewRepoIdentity(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCoordinationTaskEligibilityExcludesChatAndSideChat(t *testing.T) {
 	issueTask := db.AgentTaskQueue{IssueID: testCoordinationUUID("00000000-0000-0000-0000-000000000001")}
 	if !coordinationTaskEligible(issueTask) {
