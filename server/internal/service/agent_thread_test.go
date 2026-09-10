@@ -39,10 +39,53 @@ func TestNormalizeAgentThreadInput(t *testing.T) {
 	}
 }
 
+func TestNormalizeAgentThreadInputAllowsAttachmentOnlyTurn(t *testing.T) {
+	content, key, err := normalizeAgentThreadInput(" \n", " attachment-only ", true)
+	if err != nil || content != "" || key != "attachment-only" {
+		t.Fatalf("attachment-only normalize = %q, %q, %v", content, key, err)
+	}
+
+	if _, _, err := normalizeAgentThreadInput(" \n", "text-only"); err == nil {
+		t.Fatal("accepted an empty Agent thread turn without attachments")
+	}
+}
+
+func TestSameUUIDSetIncludesAttachmentIdentity(t *testing.T) {
+	id := func(last byte) pgtype.UUID {
+		var bytes [16]byte
+		bytes[15] = last
+		return pgtype.UUID{Bytes: bytes, Valid: true}
+	}
+	if !sameUUIDSet([]pgtype.UUID{id(1), id(2)}, []pgtype.UUID{id(2), id(1)}) {
+		t.Fatal("same attachment IDs in a different order did not match")
+	}
+	if sameUUIDSet([]pgtype.UUID{id(1)}, []pgtype.UUID{id(2)}) {
+		t.Fatal("different attachment IDs matched")
+	}
+}
+
 func TestAgentThreadMessageExposesOnlyContinuationContent(t *testing.T) {
 	task := db.AgentTaskQueue{Context: []byte(`{"agent_thread_message":"next turn","agent_thread_idempotency_key":"secret-receipt"}`)}
 	if got := AgentThreadMessage(task); got != "next turn" {
 		t.Fatalf("AgentThreadMessage = %q", got)
+	}
+}
+
+func TestAgentThreadContinuationRecognizesAttachmentOnlyTurn(t *testing.T) {
+	var parent pgtype.UUID
+	parent.Bytes[0] = 1
+	parent.Valid = true
+	context, err := json.Marshal(agentThreadContext{ParentTaskID: uuid.UUID(parent.Bytes).String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := db.AgentTaskQueue{
+		Context:              context,
+		TriggerEvidenceKind:  pgtype.Text{String: "agent_thread_continuation", Valid: true},
+		TriggerEvidenceRefID: parent,
+	}
+	if !AgentThreadContinuation(task) {
+		t.Fatal("attachment-only continuation was not recognized")
 	}
 }
 

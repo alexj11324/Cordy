@@ -45,6 +45,7 @@ export interface AuthState {
   loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
   createGuestSession: () => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
+  confirmEmailChange: (email: string, code: string) => Promise<User>;
   /** Clears local auth state and resolves after a cookie/guest session is revoked. */
   logout: (options?: AuthLogoutOptions) => Promise<void>;
   setUser: (user: User) => void;
@@ -128,6 +129,18 @@ export function createAuthStore(options: AuthStoreOptions) {
       onLogin?.();
       identifyAnalytics(user.id, { email: user.email, name: user.name });
       set({ user, isLoading: false, status: "authenticated" });
+      return user;
+    },
+
+    confirmEmailChange: async (email: string, code: string) => {
+      const { token, user } = await api.confirmEmailChange(email, code);
+      if (cookieAuth) {
+        api.setToken(null);
+      } else {
+        storage.setItem("orvilo_token", token);
+        api.setToken(token);
+      }
+      get().setUser(user);
       return user;
     },
 

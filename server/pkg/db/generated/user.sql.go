@@ -14,7 +14,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO "user" (name, email, avatar_url)
 VALUES ($1, $2, $3)
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest, profile_details
 `
 
 type CreateUserParams struct {
@@ -42,12 +42,13 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.IsGuest,
+		&i.ProfileDetails,
 	)
 	return i, err
 }
 
 const getUser = `-- name: GetUser :one
-SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest FROM "user"
+SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest, profile_details FROM "user"
 WHERE id = $1
 `
 
@@ -70,12 +71,13 @@ func (q *Queries) GetUser(ctx context.Context, id pgtype.UUID) (User, error) {
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.IsGuest,
+		&i.ProfileDetails,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest FROM "user"
+SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest, profile_details FROM "user"
 WHERE email = $1
 `
 
@@ -98,6 +100,7 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.IsGuest,
+		&i.ProfileDetails,
 	)
 	return i, err
 }
@@ -116,7 +119,6 @@ type GetUsersByIDsRow struct {
 
 // Batch lookup from the GLOBAL user table (not gated on membership, so departed
 // members still render). Used to enrich attribution initiator / originator refs on
-// task responses without an N+1 (MUL-4302 §9). Returns only the display fields.
 func (q *Queries) GetUsersByIDs(ctx context.Context, ids []pgtype.UUID) ([]GetUsersByIDsRow, error) {
 	rows, err := q.db.Query(ctx, getUsersByIDs, ids)
 	if err != nil {
@@ -148,7 +150,7 @@ UPDATE "user" SET
     cloud_waitlist_reason = $3,
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest, profile_details
 `
 
 type JoinCloudWaitlistParams struct {
@@ -179,6 +181,7 @@ func (q *Queries) JoinCloudWaitlist(ctx context.Context, arg JoinCloudWaitlistPa
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.IsGuest,
+		&i.ProfileDetails,
 	)
 	return i, err
 }
@@ -188,7 +191,7 @@ UPDATE "user" SET
     onboarded_at = COALESCE(onboarded_at, now()),
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest, profile_details
 `
 
 func (q *Queries) MarkUserOnboarded(ctx context.Context, id pgtype.UUID) (User, error) {
@@ -210,6 +213,7 @@ func (q *Queries) MarkUserOnboarded(ctx context.Context, id pgtype.UUID) (User, 
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.IsGuest,
+		&i.ProfileDetails,
 	)
 	return i, err
 }
@@ -219,7 +223,7 @@ UPDATE "user" SET
     onboarding_questionnaire = COALESCE($1, onboarding_questionnaire),
     updated_at = now()
 WHERE id = $2
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest, profile_details
 `
 
 type PatchUserOnboardingParams struct {
@@ -250,6 +254,7 @@ func (q *Queries) PatchUserOnboarding(ctx context.Context, arg PatchUserOnboardi
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.IsGuest,
+		&i.ProfileDetails,
 	)
 	return i, err
 }
@@ -259,7 +264,7 @@ UPDATE "user" SET
     starter_content_state = $2,
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest, profile_details
 `
 
 type SetStarterContentStateParams struct {
@@ -291,24 +296,68 @@ func (q *Queries) SetStarterContentState(ctx context.Context, arg SetStarterCont
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.IsGuest,
+		&i.ProfileDetails,
 	)
 	return i, err
 }
 
 const updateUser = `-- name: UpdateUser :one
 UPDATE "user" SET
-    name = COALESCE($2, name),
+    name = CASE
+        WHEN COALESCE($5::jsonb, '{}'::jsonb)
+            ?| ARRAY['first_name', 'last_name', 'preferred_name']
+        THEN COALESCE(
+            NULLIF(BTRIM(((
+                CASE
+                    WHEN NOT (profile_details ? 'first_name')
+                        AND NOT ($5::jsonb ? 'first_name')
+                    THEN profile_details || jsonb_build_object('first_name', name)
+                    ELSE profile_details
+                END
+            ) || $5::jsonb)->>'preferred_name'), ''),
+            NULLIF(BTRIM(CONCAT_WS(
+                ' ',
+                NULLIF(BTRIM(((
+                    CASE
+                        WHEN NOT (profile_details ? 'first_name')
+                            AND NOT ($5::jsonb ? 'first_name')
+                        THEN profile_details || jsonb_build_object('first_name', name)
+                        ELSE profile_details
+                    END
+                ) || $5::jsonb)->>'first_name'), ''),
+                NULLIF(BTRIM(((
+                    CASE
+                        WHEN NOT (profile_details ? 'first_name')
+                            AND NOT ($5::jsonb ? 'first_name')
+                        THEN profile_details || jsonb_build_object('first_name', name)
+                        ELSE profile_details
+                    END
+                ) || $5::jsonb)->>'last_name'), '')
+            )), '')
+        )
+        ELSE COALESCE($2, name)
+    END,
     avatar_url = COALESCE($3, avatar_url),
     language = COALESCE($4, language),
-    profile_description = COALESCE($5, profile_description),
+    profile_description = COALESCE($6, profile_description),
+    profile_details = (
+        CASE
+            WHEN COALESCE($5::jsonb, '{}'::jsonb)
+                    ?| ARRAY['first_name', 'last_name', 'preferred_name']
+                AND NOT (profile_details ? 'first_name')
+                AND NOT ($5::jsonb ? 'first_name')
+            THEN profile_details || jsonb_build_object('first_name', name)
+            ELSE profile_details
+        END
+    ) || COALESCE($5::jsonb, '{}'::jsonb),
     timezone = CASE
-        WHEN $6::text IS NULL THEN timezone
-        WHEN $6::text = ''    THEN NULL
-        ELSE $6::text
+        WHEN $7::text IS NULL THEN timezone
+        WHEN $7::text = ''    THEN NULL
+        ELSE $7::text
     END,
     updated_at = now()
 WHERE id = $1
-RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone, is_guest, profile_details
 `
 
 type UpdateUserParams struct {
@@ -316,6 +365,7 @@ type UpdateUserParams struct {
 	Name               string      `json:"name"`
 	AvatarUrl          pgtype.Text `json:"avatar_url"`
 	Language           pgtype.Text `json:"language"`
+	ProfileDetails     []byte      `json:"profile_details"`
 	ProfileDescription pgtype.Text `json:"profile_description"`
 	Timezone           pgtype.Text `json:"timezone"`
 }
@@ -338,6 +388,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		arg.Name,
 		arg.AvatarUrl,
 		arg.Language,
+		arg.ProfileDetails,
 		arg.ProfileDescription,
 		arg.Timezone,
 	)
@@ -358,6 +409,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.ProfileDescription,
 		&i.Timezone,
 		&i.IsGuest,
+		&i.ProfileDetails,
 	)
 	return i, err
 }

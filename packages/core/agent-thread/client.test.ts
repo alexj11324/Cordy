@@ -4,7 +4,7 @@ import { ApiClient } from "../api/client";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Agent thread API client", () => {
-  it("sends the continuation receipt only in Idempotency-Key", async () => {
+	it("sends attachment ids in the continuation request body", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       continuation_task_id: "task-2",
       status: "queued",
@@ -15,11 +15,15 @@ describe("Agent thread API client", () => {
     await client.continueAgentThread("task-1", {
       content: "continue the task",
       idempotency_key: "receipt-1",
+      attachment_ids: ["attachment-1"],
     });
 
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect((init.headers as Record<string, string>)["Idempotency-Key"]).toBe("receipt-1");
-    expect(JSON.parse(String(init.body))).toEqual({ content: "continue the task" });
+    expect(JSON.parse(String(init.body))).toEqual({
+      content: "continue the task",
+      attachment_ids: ["attachment-1"],
+    });
   });
 
   it("rejects a malformed continuation response", async () => {

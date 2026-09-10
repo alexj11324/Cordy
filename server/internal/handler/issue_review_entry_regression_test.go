@@ -18,8 +18,9 @@ func TestTeamReviewEntryDispatchesLeader(t *testing.T) {
 	t.Cleanup(func() { disableIssueRoleDefaults = false })
 	for _, mode := range []string{"create", "update", "batch"} {
 		t.Run(mode, func(t *testing.T) {
-			executorID := dbfx.Agent(t, "team entry executor "+mode, testRuntimeID)
-			leaderID := dbfx.Agent(t, "team review leader "+mode, testRuntimeID)
+			runtimeID := freshReviewCoordinationRuntime(t)
+			executorID := dbfx.Agent(t, "team entry executor "+mode, runtimeID)
+			leaderID := dbfx.Agent(t, "team review leader "+mode, runtimeID)
 			teamID := dbfx.Team(t, "review team "+mode, leaderID)
 			w := httptest.NewRecorder()
 			var issueID string
@@ -28,6 +29,7 @@ func TestTeamReviewEntryDispatchesLeader(t *testing.T) {
 					"title": "team review entry", "status": "in_review",
 					"executor_type": "agent", "executor_id": executorID,
 					"reviewer_type": "team", "reviewer_id": teamID,
+					"review_submission": reviewSubmissionFixture(),
 				}))
 				if w.Code != http.StatusCreated {
 					t.Fatalf("create: %d %s", w.Code, w.Body.String())
@@ -41,9 +43,15 @@ func TestTeamReviewEntryDispatchesLeader(t *testing.T) {
 			} else {
 				issueID = dbfx.Issue(t, "team review entry", testutil.Cols{"status": "in_progress", "executor_type": "agent", "executor_id": executorID, "reviewer_type": "team", "reviewer_id": teamID})
 				if mode == "update" {
-					testHandler.UpdateIssue(w, withURLParam(newRequest(http.MethodPut, "/api/issues/"+issueID+"?workspace_id="+testWorkspaceID, map[string]any{"status": "in_review"}), "id", issueID))
+					testHandler.UpdateIssue(w, withURLParam(newRequest(http.MethodPut, "/api/issues/"+issueID+"?workspace_id="+testWorkspaceID, map[string]any{
+						"status": "in_review", "review_submission": reviewSubmissionFixture(),
+					}), "id", issueID))
 				} else {
-					testHandler.BatchUpdateIssues(w, newRequest(http.MethodPost, "/api/issues/batch-update?workspace_id="+testWorkspaceID, map[string]any{"issue_ids": []string{issueID}, "updates": map[string]any{"status": "in_review"}}))
+					testHandler.BatchUpdateIssues(w, newRequest(http.MethodPost, "/api/issues/batch-update?workspace_id="+testWorkspaceID, map[string]any{
+						"issue_ids": []string{issueID}, "updates": map[string]any{
+							"status": "in_review", "review_submission": reviewSubmissionFixture(),
+						},
+					}))
 				}
 				if w.Code != http.StatusOK {
 					t.Fatalf("transition: %d %s", w.Code, w.Body.String())
@@ -116,7 +124,9 @@ func TestReviewEntryConflictsAfterConcurrentSuppressedTransition(t *testing.T) {
 	h := *testHandler
 	h.Queries = db.New(&afterIssueReadDB{DBTX: testPool, afterRead: func() {
 		w := httptest.NewRecorder()
-		testHandler.UpdateIssue(w, withURLParam(newRequest(http.MethodPut, "/api/issues/"+issueID+"?workspace_id="+testWorkspaceID, map[string]any{"status": "in_review", "suppress_run": true}), "id", issueID))
+		testHandler.UpdateIssue(w, withURLParam(newRequest(http.MethodPut, "/api/issues/"+issueID+"?workspace_id="+testWorkspaceID, map[string]any{
+			"status": "in_review", "suppress_run": true, "review_submission": reviewSubmissionFixture(),
+		}), "id", issueID))
 		if w.Code != http.StatusOK {
 			t.Fatalf("suppressed transition: %d %s", w.Code, w.Body.String())
 		}
@@ -140,7 +150,12 @@ func TestMemberReviewCreateWithNilCoordinator(t *testing.T) {
 	h := *testHandler
 	h.IssueService = &issues
 	w := httptest.NewRecorder()
-	h.CreateIssue(w, newRequest(http.MethodPost, "/api/issues?workspace_id="+testWorkspaceID, map[string]any{"title": "human review without coordinator", "status": "in_review", "executor_type": "agent", "executor_id": executorID, "reviewer_type": "member", "reviewer_id": testUserID}))
+	h.CreateIssue(w, newRequest(http.MethodPost, "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+		"title": "human review without coordinator", "status": "in_review",
+		"executor_type": "agent", "executor_id": executorID,
+		"reviewer_type": "member", "reviewer_id": testUserID,
+		"review_submission": reviewSubmissionFixture(),
+	}))
 	if w.Code != http.StatusCreated {
 		t.Fatalf("member review create: %d %s", w.Code, w.Body.String())
 	}

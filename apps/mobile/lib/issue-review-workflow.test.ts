@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildReviewSubmissionPatch,
   planIssueStatusSelection,
   reviewHandoffPatch,
   isReviewHandoff,
@@ -102,7 +103,60 @@ describe("issue review workflow", () => {
         executor,
         reviewer,
       }),
-    ).toEqual({ kind: "apply", status: "quality-review" });
+    ).toEqual({ kind: "collect_review_evidence", status: "quality-review" });
+  });
+
+  it("builds a complete atomic review handoff from trimmed evidence", () => {
+    expect(
+      buildReviewSubmissionPatch("quality-review", reviewer, {
+        worktree: "  /worktrees/issue-42  ",
+        branch: "  codex/issue-42  ",
+        commit: `  ${"a".repeat(40)}  `,
+        pullRequests:
+          " https://github.com/example/repo/pull/42\n\nhttps://gitlab.com/example/repo/merge_requests/7 ",
+      }),
+    ).toEqual({
+      status: "quality-review",
+      reviewer_type: "member",
+      reviewer_id: "member-1",
+      review_submission: {
+        worktree: "/worktrees/issue-42",
+        branch: "codex/issue-42",
+        commit: "a".repeat(40),
+        pull_requests: [
+          "https://github.com/example/repo/pull/42",
+          "https://gitlab.com/example/repo/merge_requests/7",
+        ],
+      },
+    });
+  });
+
+  it("rejects incomplete or malformed review evidence before mutation", () => {
+    const valid = {
+      worktree: "/worktrees/issue-42",
+      branch: "codex/issue-42",
+      commit: "a".repeat(40),
+      pullRequests: "https://github.com/example/repo/pull/42",
+    };
+
+    expect(
+      buildReviewSubmissionPatch("in_review", reviewer, {
+        ...valid,
+        commit: "abc123",
+      }),
+    ).toBeNull();
+    expect(
+      buildReviewSubmissionPatch("in_review", reviewer, {
+        ...valid,
+        pullRequests: "https://github.com/example/repo/issues/42",
+      }),
+    ).toBeNull();
+    expect(
+      buildReviewSubmissionPatch("in_review", reviewer, {
+        ...valid,
+        worktree: "   ",
+      }),
+    ).toBeNull();
   });
 
   it("blocks an active status selection until an executor exists", () => {

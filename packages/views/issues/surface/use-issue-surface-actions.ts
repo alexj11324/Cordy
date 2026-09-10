@@ -119,6 +119,37 @@ export function useIssueSurfaceActions({
     [t, tIssues, updateIssueMutation],
   );
 
+  const updateIssueAsync = useCallback(
+    async (
+      issueId: string,
+      updates: Partial<UpdateIssueRequest>,
+      options?: IssueSurfaceMutationOptions,
+    ) => {
+      try {
+        const issue = await updateIssueMutation.mutateAsync({
+          id: issueId,
+          ...updates,
+        });
+        options?.onSuccess?.(issue);
+        return issue;
+      } catch (err) {
+        toast.error(
+          errorCode(err) === "revision_conflict"
+            ? tIssues(($) => $.revision.conflict)
+            : err instanceof Error && err.message
+              ? err.message
+              : (options?.errorMessage ??
+                t(($) => $.detail.toast_move_issue_failed)),
+        );
+        options?.onError?.(err);
+        throw err;
+      } finally {
+        options?.onSettled?.();
+      }
+    },
+    [t, tIssues, updateIssueMutation],
+  );
+
   const openCreateIssue = useCallback(
     (defaults?: IssueCreateDefaults) => {
       useModalStore
@@ -136,13 +167,20 @@ export function useIssueSurfaceActions({
         batchDeleteMutation.isPending,
       createIssue: openCreateIssue,
       updateIssue,
+      updateIssueAsync,
       moveIssue: (issueId, updates, options) =>
         updateIssue(issueId, updates, {
           errorMessage: t(($) => $.detail.toast_move_issue_failed),
           ...options,
         }),
       batchUpdate: async (issueIds, updates) => {
-        await batchUpdateMutation.mutateAsync({ ids: issueIds, updates });
+        const result = await batchUpdateMutation.mutateAsync({
+          ids: issueIds,
+          updates,
+        });
+        if (result.updated !== issueIds.length) {
+          throw new Error(tIssues(($) => $.batch.update_failed));
+        }
       },
       batchDelete: async (issueIds) => {
         await batchDeleteMutation.mutateAsync(issueIds);
@@ -153,7 +191,9 @@ export function useIssueSurfaceActions({
       batchUpdateMutation,
       openCreateIssue,
       t,
+      tIssues,
       updateIssue,
+      updateIssueAsync,
       updateIssueMutation.isPending,
     ],
   );

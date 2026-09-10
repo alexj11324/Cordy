@@ -20,6 +20,7 @@ const agentThread = {
   task: "任务",
   agent: "Agent",
   continue_prompt: "继续此 Agent 对话",
+  checkpoint: "检查点",
   permission_denied: "你仍可阅读此 Agent 对话，但无权继续。",
   unavailable: "此 Agent 对话已无法继续。",
   could_not_continue: "无法继续此 Agent 对话。",

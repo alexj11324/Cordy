@@ -1,11 +1,25 @@
 // @vitest-environment jsdom
 
-import { cleanup } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildIssueStatusCatalog } from "@orvilo/core/issue-statuses";
 import type { IssueStatusEntry } from "@orvilo/core/types";
 import { renderWithI18n } from "../../../test/i18n";
 import { StatusPicker } from "./status-picker";
+
+vi.mock("../review-submission-dialog", () => ({
+  ReviewSubmissionDialog: ({
+    onSubmit,
+  }: {
+    onSubmit: (updates: { status: "in_review" }) => Promise<boolean>;
+  }) => (
+    <button
+      type="button"
+      data-testid="review-submission-dialog"
+      onClick={() => void onSubmit({ status: "in_review" })}
+    />
+  ),
+}));
 
 // The catalog is server state; this suite is about what the picker PAINTS with
 // it, so the entries are fed in directly. The color matrix behind `colorOf`
@@ -77,11 +91,17 @@ describe("StatusPicker trigger color", () => {
   // The bug: the trigger read the catalog entry's raw color while the list read
   // the resolved one, so a built-in rendered as the server's seeded #22c55e in
   // one and as the `text-violet-500` token in the other — the same status in two
-  // visibly different greens, side by side. (MUL-6440)
+
   it("paints a built-in from the token, exactly like its row in the list", () => {
     catalogEntries = [IN_REVIEW, QA];
     const { container } = renderWithI18n(
-      <StatusPicker status="in_review" onUpdate={() => {}} open onOpenChange={() => {}} />,
+      <StatusPicker
+        status="in_review"
+        onUpdate={() => {}}
+        onReviewSubmit={async () => true}
+        open
+        onOpenChange={() => {}}
+      />,
     );
 
     const trigger = iconOf(container);
@@ -100,7 +120,13 @@ describe("StatusPicker trigger color", () => {
   it("paints a custom status from its own color in both places", () => {
     catalogEntries = [IN_REVIEW, QA];
     const { container } = renderWithI18n(
-      <StatusPicker status="qa" onUpdate={() => {}} open onOpenChange={() => {}} />,
+      <StatusPicker
+        status="qa"
+        onUpdate={() => {}}
+        onReviewSubmit={async () => true}
+        open
+        onOpenChange={() => {}}
+      />,
     );
 
     const trigger = iconOf(container);
@@ -108,5 +134,28 @@ describe("StatusPicker trigger color", () => {
 
     expect(trigger?.style.color).toBe("rgb(236, 122, 45)");
     expect(row?.style.color).toBe(trigger?.style.color);
+  });
+
+  it("routes entry into review through the awaited submission callback", async () => {
+    catalogEntries = [IN_REVIEW];
+    const onUpdate = vi.fn();
+    const onReviewSubmit = vi.fn().mockResolvedValue(true);
+    renderWithI18n(
+      <StatusPicker
+        status="todo"
+        onUpdate={onUpdate}
+        onReviewSubmit={onReviewSubmit}
+        open
+        onOpenChange={() => {}}
+      />,
+    );
+
+    fireEvent.click(optionRow("In Review"));
+    expect(onUpdate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("review-submission-dialog"));
+
+    await waitFor(() =>
+      expect(onReviewSubmit).toHaveBeenCalledWith({ status: "in_review" }),
+    );
   });
 });

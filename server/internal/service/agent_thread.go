@@ -37,6 +37,7 @@ var (
 	ErrAgentThreadIdempotencyConflict = errors.New("agent thread idempotency key was already used with different content")
 	ErrAgentThreadDepthLimit          = errors.New("agent thread reached its maximum continuation depth")
 	ErrAgentThreadInvokeForbidden     = errors.New("agent thread continuation is not permitted for this requester")
+	ErrAgentThreadAttachmentInvalid   = errors.New("agent thread attachment is not available to this requester")
 )
 
 type AgentThreadUnavailableError struct {
@@ -68,6 +69,16 @@ func AgentThreadMessage(task db.AgentTaskQueue) string {
 	return payload.Message
 }
 
+// AgentThreadContinuation identifies a server-authored continuation edge even
+// when the member sends an attachment-only turn and its message is empty.
+func AgentThreadContinuation(task db.AgentTaskQueue) bool {
+	if !task.TriggerEvidenceKind.Valid || task.TriggerEvidenceKind.String != "agent_thread_continuation" || !task.TriggerEvidenceRefID.Valid {
+		return false
+	}
+	var payload agentThreadContext
+	return json.Unmarshal(task.Context, &payload) == nil && payload.ParentTaskID != ""
+}
+
 // AgentThreadRootEligible keeps task conversations on the three product
 // surfaces that expose them: issue work, run-only Automation work, and
 // quick-create work. Ordinary Chat tasks stay in the Chat surface.
@@ -93,7 +104,7 @@ func agentThreadRootTask(tasks []db.AgentTaskQueue) (db.AgentTaskQueue, bool) {
 	root := tasks[0]
 	if !AgentThreadRootEligible(root) ||
 		root.TriggerEvidenceKind.String == "agent_thread_continuation" ||
-		AgentThreadMessage(root) != "" {
+		AgentThreadContinuation(root) {
 		return db.AgentTaskQueue{}, false
 	}
 	seen := map[pgtype.UUID]struct{}{root.ID: {}}
@@ -195,10 +206,10 @@ func AgentThreadBindingAvailability(task db.AgentTaskQueue, agent db.Agent, runt
 	}
 }
 
-func normalizeAgentThreadInput(content, idempotencyKey string) (string, string, error) {
+func normalizeAgentThreadInput(content, idempotencyKey string, allowEmpty ...bool) (string, string, error) {
 	content = strings.TrimSpace(util.SanitizeTextForPostgres(content))
 	idempotencyKey = strings.TrimSpace(util.SanitizeTextForPostgres(idempotencyKey))
-	if content == "" {
+	if content == "" && (len(allowEmpty) == 0 || !allowEmpty[0]) {
 		return "", "", fmt.Errorf("agent thread message is empty")
 	}
 	if idempotencyKey == "" || len([]rune(idempotencyKey)) > 200 {
@@ -245,8 +256,12 @@ func agentThreadInvocationAllowed(ctx context.Context, queries *db.Queries, agen
 	return false
 }
 
-func (s *TaskService) ContinueAgentThread(ctx context.Context, parentTaskID pgtype.UUID, content, idempotencyKey string, requesterUserID pgtype.UUID) (AgentThreadContinuationReceipt, error) {
-	content, idempotencyKey, err := normalizeAgentThreadInput(content, idempotencyKey)
+// ContinueAgentThread queues one member-authored turn. The optional attachment
+// slice keeps the original call shape source-compatible while allowing the
+// HTTP continuation endpoint to bind uploaded rows to the child task.
+func (s *TaskService) ContinueAgentThread(ctx context.Context, parentTaskID pgtype.UUID, content, idempotencyKey string, requesterUserID pgtype.UUID, requestedAttachmentIDs ...[]pgtype.UUID) (AgentThreadContinuationReceipt, error) {
+	attachmentIDs := uniqueValidUUIDs(firstUUIDSlice(requestedAttachmentIDs))
+	content, idempotencyKey, err := normalizeAgentThreadInput(content, idempotencyKey, len(attachmentIDs) > 0)
 	if err != nil {
 		return AgentThreadContinuationReceipt{}, err
 	}
@@ -321,7 +336,11 @@ func (s *TaskService) ContinueAgentThread(ctx context.Context, parentTaskID pgty
 		IdempotencyKey: idempotencyKey,
 	})
 	if err == nil {
-		if AgentThreadMessage(existing) != content {
+		existingAttachmentIDs, listErr := qtx.ListAttachmentIDsByTask(ctx, existing.ID)
+		if listErr != nil {
+			return AgentThreadContinuationReceipt{}, fmt.Errorf("list agent thread continuation attachments: %w", listErr)
+		}
+		if AgentThreadMessage(existing) != content || !sameUUIDSet(existingAttachmentIDs, attachmentIDs) {
 			return AgentThreadContinuationReceipt{}, ErrAgentThreadIdempotencyConflict
 		}
 		if err := tx.Commit(ctx); err != nil {
@@ -336,6 +355,25 @@ func (s *TaskService) ContinueAgentThread(ctx context.Context, parentTaskID pgty
 		return AgentThreadContinuationReceipt{}, ErrAgentThreadDepthLimit
 	}
 
+	// Attachments uploaded by the member composer are initially unclaimed. Lock
+	// and validate every requested row against the current requester and the
+	// Agent's workspace before creating the child task. A partial match would
+	// make the continuation look accepted while silently dropping an input.
+	if len(attachmentIDs) > 0 {
+		lockedAttachments, err := qtx.LockAttachmentsForAgentThread(ctx, db.LockAttachmentsForAgentThreadParams{
+			AttachmentIds: attachmentIDs,
+			WorkspaceID:   lockedAgent.WorkspaceID,
+			UploaderType:  "member",
+			UploaderID:    requesterUserID,
+		})
+		if err != nil {
+			return AgentThreadContinuationReceipt{}, fmt.Errorf("lock agent thread attachments: %w", err)
+		}
+		if len(lockedAttachments) != len(attachmentIDs) {
+			return AgentThreadContinuationReceipt{}, ErrAgentThreadAttachmentInvalid
+		}
+	}
+
 	continuation, err := qtx.CreateAgentThreadContinuation(ctx, db.CreateAgentThreadContinuationParams{
 		ID:                   dbid.NewV7(),
 		Content:              content,
@@ -348,6 +386,21 @@ func (s *TaskService) ContinueAgentThread(ctx context.Context, parentTaskID pgty
 	if err != nil {
 		return AgentThreadContinuationReceipt{}, fmt.Errorf("create agent thread continuation: %w", err)
 	}
+	if len(attachmentIDs) > 0 {
+		linked, err := qtx.LinkAttachmentsToAgentThreadTask(ctx, db.LinkAttachmentsToAgentThreadTaskParams{
+			AttachmentIds: attachmentIDs,
+			TaskID:        continuation.ID,
+			WorkspaceID:   lockedAgent.WorkspaceID,
+			UploaderType:  "member",
+			UploaderID:    requesterUserID,
+		})
+		if err != nil {
+			return AgentThreadContinuationReceipt{}, fmt.Errorf("link agent thread attachments: %w", err)
+		}
+		if len(linked) != len(attachmentIDs) {
+			return AgentThreadContinuationReceipt{}, ErrAgentThreadAttachmentInvalid
+		}
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return AgentThreadContinuationReceipt{}, err
 	}
@@ -355,6 +408,49 @@ func (s *TaskService) ContinueAgentThread(ctx context.Context, parentTaskID pgty
 	s.broadcastTaskEvent(ctx, protocol.EventTaskQueued, continuation)
 	s.NotifyTaskEnqueued(ctx, continuation)
 	return AgentThreadContinuationReceipt{Task: continuation}, nil
+}
+
+func firstUUIDSlice(slices [][]pgtype.UUID) []pgtype.UUID {
+	if len(slices) == 0 {
+		return nil
+	}
+	return slices[0]
+}
+
+func uniqueValidUUIDs(ids []pgtype.UUID) []pgtype.UUID {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(ids))
+	unique := make([]pgtype.UUID, 0, len(ids))
+	for _, id := range ids {
+		if !id.Valid {
+			continue
+		}
+		key := util.UUIDToString(id)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		unique = append(unique, id)
+	}
+	return unique
+}
+
+func sameUUIDSet(left, right []pgtype.UUID) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	want := make(map[pgtype.UUID]struct{}, len(left))
+	for _, id := range left {
+		want[id] = struct{}{}
+	}
+	for _, id := range right {
+		if _, ok := want[id]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // LinkAgentThreadTaskToIssue attaches the issue produced by a quick-create root

@@ -57,13 +57,13 @@ func seedStatusCategoryFixture(t *testing.T) (projectID, customKey string) {
 	}
 	// Two on the custom status, one on the built-in it behaves as, one elsewhere.
 	if _, err := testPool.Exec(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, position, number, project_id, executor_type, executor_id)
+		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, position, number, project_id, executor_type, executor_id, reviewer_type, reviewer_id, review_submission)
 		VALUES
-			($1, 'cat-a', $2,           'none', 'member', $3, 1, $4,     $5, 'agent', $6),
-			($1, 'cat-b', $2,           'none', 'member', $3, 2, $4 + 1, $5, 'agent', $6),
-			($1, 'cat-c', 'in_review',  'none', 'member', $3, 3, $4 + 2, $5, 'agent', $6),
-			($1, 'cat-d', 'todo',       'none', 'member', $3, 4, $4 + 3, $5, NULL, NULL)
-	`, testWorkspaceID, customKey, testUserID, firstNumber, projectID, handlerSeededAgentID(t)); err != nil {
+			($1, 'cat-a', $2,           'none', 'member', $3, 1, $4,     $5, 'agent', $6, 'member', $7, $8::jsonb),
+			($1, 'cat-b', $2,           'none', 'member', $3, 2, $4 + 1, $5, 'agent', $6, 'member', $7, $8::jsonb),
+			($1, 'cat-c', 'in_review',  'none', 'member', $3, 3, $4 + 2, $5, 'agent', $6, 'member', $7, $8::jsonb),
+			($1, 'cat-d', 'todo',       'none', 'member', $3, 4, $4 + 3, $5, NULL, NULL, NULL, NULL, NULL)
+	`, testWorkspaceID, customKey, testUserID, firstNumber, projectID, handlerSeededAgentID(t), testUserID, reviewSubmissionDBFixture()); err != nil {
 		t.Fatalf("seed issues: %v", err)
 	}
 	return projectID, customKey

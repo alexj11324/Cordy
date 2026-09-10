@@ -40,7 +40,7 @@
  * hacks). Cell recycling also keeps scroll-up smooth.
  */
 import { useMemo, useState } from "react";
-import { ActivityIndicator, Pressable, View } from "react-native";
+import { ActivityIndicator, Linking, Pressable, View } from "react-native";
 import { FlashList } from "@shopify/flash-list";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
@@ -48,6 +48,7 @@ import type {
   Agent,
   ChatMessage,
   ChatPendingTask,
+  ChatQueuedTask,
   ChatQuickAction,
   TaskMessagePayload,
 } from "@orvilo/core/types";
@@ -60,10 +61,15 @@ import { failureReasonLabel } from "@/lib/failure-reason-label";
 import { formatElapsedMs } from "@/lib/format-elapsed";
 import { cn } from "@/lib/utils";
 import { useChatCopy } from "@/lib/use-chat-copy";
+import {
+  contentWithInlineCitations,
+  validMessageSources,
+} from "@/lib/message-attribution";
 import { useChatSelectStore } from "@/data/chat-select-store";
 import { useChatMessageLongPress } from "./message-long-press";
 import { ChatEmptyState } from "./chat-empty-state";
 import { ChatTimeline } from "./chat-timeline";
+import { ChatQueue } from "./chat-queue";
 // Reuse the comment thread's standalone attachment list — same design web
 // reuses in chat (AttachmentList). Renders any bound attachment not already
 // referenced inline in the message content, with same-file dedup.
@@ -94,6 +100,8 @@ interface Props {
    *  the message stream, mirroring web's
    *  `packages/views/chat/components/chat-message-list.tsx` placement. */
   pendingTask?: ChatPendingTask | null;
+  /** Ordered follow-up turns waiting behind the active task. */
+  queueTasks?: readonly ChatQueuedTask[];
   /** Live timeline rows for the in-flight task. Already fetched by the
    *  parent so this list doesn't have to manage its own subscription. */
   liveTaskMessages?: TaskMessagePayload[];
@@ -111,6 +119,7 @@ export function ChatMessageList({
   onQuickAction,
   quickActionsDisabled = false,
   pendingTask,
+  queueTasks,
   liveTaskMessages,
   availability,
 }: Props) {
@@ -119,7 +128,6 @@ export function ChatMessageList({
   // passes through to the list cells / bubble long-press wrappers normally.
   const selectingId = useChatSelectStore((s) => s.selectingId);
 
-  // Every image in this session, in message order (MUL-5752), so tapping one
   // opens the lightbox at its position and a swipe walks the rest.
   //
   // Above the loading / empty early returns because hooks must run on every
@@ -165,12 +173,12 @@ export function ChatMessageList({
   const pendingTaskId = pendingTask?.task_id ?? null;
   const pendingAlreadyPersisted =
     !!pendingTaskId &&
-    messages.some(
-      (m) => m.role === "assistant" && m.task_id === pendingTaskId,
-    );
+    messages.some((m) => m.role === "assistant" && m.task_id === pendingTaskId);
   const showLiveSection = !!pendingTaskId && !pendingAlreadyPersisted;
   const showLiveTimeline =
     showLiveSection && (liveTaskMessages?.length ?? 0) > 0;
+  const visibleQueue = queueTasks ?? pendingTask?.queued_tasks ?? [];
+  const showFooter = showLiveSection || visibleQueue.length > 0;
 
   return (
     // Outer Pressable owns the "tap anywhere outside the selected bubble
@@ -183,77 +191,78 @@ export function ChatMessageList({
     // also dismiss, matching iOS Notes / iMessage behaviour. Scroll
     // gestures are unaffected (Pressable only intercepts non-drag taps).
     <ImageSequenceProvider blocks={imageBlocks}>
-    <Pressable
-      onPress={
-        selectingId
-          ? () => useChatSelectStore.getState().clear()
-          : undefined
-      }
-      disabled={!selectingId}
-      style={{ flex: 1 }}
-    >
-    {/* `key` on first message id forces remount on session switch so
+      <Pressable
+        onPress={
+          selectingId ? () => useChatSelectStore.getState().clear() : undefined
+        }
+        disabled={!selectingId}
+        style={{ flex: 1 }}
+      >
+        {/* `key` on first message id forces remount on session switch so
         `startRenderingFromBottom` re-fires and we land at the new
         session's bottom (instead of inheriting the previous session's
         scroll position). Cheap because sessions are switched, not
         re-rendered every keystroke. */}
-    <FlashList
-      key={messages[0]?.id ?? "empty"}
-      data={messages}
-      keyExtractor={(m) => m.id}
-      renderItem={({ item }) => (
-        <MessageRow
-          message={item}
-          onQuickAction={onQuickAction}
-          quickActionsDisabled={quickActionsDisabled}
-        />
-      )}
-      ItemSeparatorComponent={MessageSeparator}
-      ListFooterComponent={
-        showLiveSection ? (
-          <View style={{ paddingTop: 12 }} className="gap-2">
-            {showLiveTimeline ? (
-              <ChatTimeline items={liveTaskMessages ?? []} isStreaming />
-            ) : null}
-            <StatusPill
-              pendingTask={pendingTask}
-              taskMessages={liveTaskMessages}
-              availability={availability}
+        <FlashList
+          key={messages[0]?.id ?? "empty"}
+          data={messages}
+          keyExtractor={(m) => m.id}
+          renderItem={({ item }) => (
+            <MessageRow
+              message={item}
+              onQuickAction={onQuickAction}
+              quickActionsDisabled={quickActionsDisabled}
             />
-          </View>
-        ) : null
-      }
-      // Outer padding mirrors web's max-w-4xl px-5 py-4 container at
-      // mobile scale. Vertical gap between bubbles handled by
-      // ItemSeparatorComponent (FlashList doesn't honour `gap-*` on
-      // contentContainer the way FlatList's gap-via-NativeWind did).
-      contentContainerStyle={{
-        paddingHorizontal: 16,
-        paddingTop: 12,
-        paddingBottom: 16,
-      }}
-      // Chat behavior: initial render at the bottom; when new messages
-      // arrive AND the user is within 20% of the bottom, auto-scroll.
-      // Reading history (further than 20% up) is preserved. This single
-      // prop replaces the entire FlatList-era guard ref dance.
-      maintainVisibleContentPosition={{
-        autoscrollToBottomThreshold: 0.2,
-        startRenderingFromBottom: true,
-      }}
-      // Any user-initiated scroll exits message text-selection mode —
-      // matches iMessage's behavior where scrolling implicitly commits /
-      // dismisses the selection caret. Hooks both drag-start and the
-      // momentum kick after a flick so a fast scroll can't escape.
-      onScrollBeginDrag={() => useChatSelectStore.getState().clear()}
-      onMomentumScrollBegin={() => useChatSelectStore.getState().clear()}
-      // iMessage-style keyboard dismissal: dragging the list pulls the
-      // keyboard down with the finger (iOS); tapping empty space between
-      // bubbles dismisses it. `handled` keeps Pressables inside bubbles
-      // (long-press action sheet etc.) firing normally.
-      keyboardDismissMode="interactive"
-      keyboardShouldPersistTaps="handled"
-    />
-    </Pressable>
+          )}
+          ItemSeparatorComponent={MessageSeparator}
+          ListFooterComponent={
+            showFooter ? (
+              <View style={{ paddingTop: 12 }} className="gap-2">
+                {showLiveTimeline ? (
+                  <ChatTimeline items={liveTaskMessages ?? []} isStreaming />
+                ) : null}
+                <ChatQueue tasks={visibleQueue} />
+                {showLiveSection ? (
+                  <StatusPill
+                    pendingTask={pendingTask}
+                    taskMessages={liveTaskMessages}
+                    availability={availability}
+                  />
+                ) : null}
+              </View>
+            ) : null
+          }
+          // Outer padding mirrors web's max-w-4xl px-5 py-4 container at
+          // mobile scale. Vertical gap between bubbles handled by
+          // ItemSeparatorComponent (FlashList doesn't honour `gap-*` on
+          // contentContainer the way FlatList's gap-via-NativeWind did).
+          contentContainerStyle={{
+            paddingHorizontal: 16,
+            paddingTop: 12,
+            paddingBottom: 16,
+          }}
+          // Chat behavior: initial render at the bottom; when new messages
+          // arrive AND the user is within 20% of the bottom, auto-scroll.
+          // Reading history (further than 20% up) is preserved. This single
+          // prop replaces the entire FlatList-era guard ref dance.
+          maintainVisibleContentPosition={{
+            autoscrollToBottomThreshold: 0.2,
+            startRenderingFromBottom: true,
+          }}
+          // Any user-initiated scroll exits message text-selection mode —
+          // matches iMessage's behavior where scrolling implicitly commits /
+          // dismisses the selection caret. Hooks both drag-start and the
+          // momentum kick after a flick so a fast scroll can't escape.
+          onScrollBeginDrag={() => useChatSelectStore.getState().clear()}
+          onMomentumScrollBegin={() => useChatSelectStore.getState().clear()}
+          // iMessage-style keyboard dismissal: dragging the list pulls the
+          // keyboard down with the finger (iOS); tapping empty space between
+          // bubbles dismisses it. `handled` keeps Pressables inside bubbles
+          // (long-press action sheet etc.) firing normally.
+          keyboardDismissMode="interactive"
+          keyboardShouldPersistTaps="handled"
+        />
+      </Pressable>
     </ImageSequenceProvider>
   );
 }
@@ -274,9 +283,7 @@ function MessageRow({
   const isUser = message.role === "user";
   const isFailure = !!message.failure_reason;
   const copy = useChatCopy();
-  const isSelecting = useChatSelectStore(
-    (s) => s.selectingId === message.id,
-  );
+  const isSelecting = useChatSelectStore((s) => s.selectingId === message.id);
   const longPress = useChatMessageLongPress(message);
 
   if (isFailure) {
@@ -297,7 +304,7 @@ function MessageRow({
 
   if (isUser) {
     // User bubble: same Markdown pipeline as assistant — `@mention`
-    // serialisation `[MUL-1](mention://issue/<id>)`, inline links, and
+
     // inline code resolve identically to web's
     // `packages/views/chat/components/chat-message-list.tsx` user branch.
     // Width is capped at 80% so the bubble keeps the iMessage-style
@@ -327,10 +334,7 @@ function MessageRow({
     );
     if (isSelecting) return body;
     return (
-      <Pressable
-        onLongPress={longPress.onLongPress}
-        delayLongPress={500}
-      >
+      <Pressable onLongPress={longPress.onLongPress} delayLongPress={500}>
         {body}
       </Pressable>
     );
@@ -385,23 +389,23 @@ function AssistantRow({
   const { data: timeline = [] } = useQuery(
     taskMessagesOptions(message.task_id),
   );
-  // no_response (MUL-4351, mirrors packages/views AssistantMessage): the agent
+
   // completed this turn without text. Keep the tool timeline and show a notice
   // instead of an empty Markdown block; caption reads "Finished in" not
   // "Replied in".
   const isNoResponse = message.message_kind === "no_response";
+  const attributedContent = contentWithInlineCitations(message);
+  const sources = validMessageSources(message);
   const body = (
     <View className="gap-1.5">
-      {timeline.length > 0 ? (
-        <ChatTimeline items={timeline} />
-      ) : null}
+      {timeline.length > 0 ? <ChatTimeline items={timeline} /> : null}
       {isNoResponse ? (
         <Text className="text-sm italic text-muted-foreground">
           {copy.noResponse}
         </Text>
       ) : (
         <Markdown
-          content={message.content}
+          content={attributedContent}
           attachments={message.attachments}
           selectable={isSelecting}
         />
@@ -414,6 +418,27 @@ function AssistantRow({
         attachments={message.attachments}
         content={message.content}
       />
+      {message.usage?.length ? <MessageUsage usage={message.usage} /> : null}
+      {sources.length ? (
+        <View className="mt-1 gap-1" accessibilityRole="summary">
+          <Text className="text-xs font-medium text-muted-foreground">
+            Sources
+          </Text>
+          {sources.map((source, index) => (
+            <Pressable
+              key={source.id}
+              accessibilityRole="link"
+              accessibilityLabel={`${index + 1}. ${source.title ?? source.url}`}
+              onPress={() => void Linking.openURL(source.url)}
+              className="active:opacity-70"
+            >
+              <Text className="text-xs text-primary" numberOfLines={1}>
+                {index + 1}. {source.title ?? source.url}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
       {message.elapsed_ms != null ? (
         <ElapsedCaption
           variant={isNoResponse ? "finished" : "replied"}
@@ -422,7 +447,9 @@ function AssistantRow({
       ) : null}
     </View>
   );
-  const messageBody = isSelecting ? body : (
+  const messageBody = isSelecting ? (
+    body
+  ) : (
     <Pressable onLongPress={longPress.onLongPress} delayLongPress={500}>
       {body}
     </Pressable>
@@ -439,6 +466,24 @@ function AssistantRow({
         onSelect={onQuickAction}
       />
     </View>
+  );
+}
+
+function MessageUsage({ usage }: { usage: NonNullable<ChatMessage["usage"]> }) {
+  const total = usage.reduce(
+    (sum, item) =>
+      sum +
+      item.input_tokens +
+      item.output_tokens +
+      item.cache_read_tokens +
+      item.cache_write_tokens,
+    0,
+  );
+  const model = usage.length === 1 ? usage[0]?.model : undefined;
+  return (
+    <Text className="text-xs text-muted-foreground">
+      {total.toLocaleString()} tokens{model ? ` · ${model}` : ""}
+    </Text>
   );
 }
 
@@ -473,6 +518,9 @@ function QuickActions({
       className="flex-row flex-wrap gap-2 pt-0.5"
       accessibilityLabel={copy.suggestedFollowUps}
     >
+      <Text className="basis-full text-xs text-muted-foreground">
+        {copy.suggestedFollowUps}
+      </Text>
       {actions.slice(0, 3).map((action, index) => (
         <Pressable
           key={`${action.label}-${index}`}
@@ -523,9 +571,7 @@ function ElapsedCaption({
       : variant === "finished"
         ? copy.finishedIn(formatElapsedMs(elapsedMs))
         : copy.failedAfter(formatElapsedMs(elapsedMs));
-  return (
-    <Text className="text-xs text-muted-foreground/80 mt-1">{label}</Text>
-  );
+  return <Text className="text-xs text-muted-foreground/80 mt-1">{label}</Text>;
 }
 
 function FailureBubble({
@@ -570,11 +616,7 @@ function FailureBubble({
                 accessibilityLabel={copy.showErrorDetails}
                 className="mt-1 flex-row items-center gap-1 active:opacity-70"
               >
-                <Ionicons
-                  name="chevron-forward"
-                  size={12}
-                  color="#71717a"
-                />
+                <Ionicons name="chevron-forward" size={12} color="#71717a" />
                 <Text className="text-xs text-muted-foreground">
                   {copy.showDetails}
                 </Text>

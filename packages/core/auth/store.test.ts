@@ -52,7 +52,11 @@ describe("authStore", () => {
     const onLogout = vi.fn();
     const store = createAuthStore({ api, storage, onLogout });
 
-    store.setState({ user: fakeUser, status: "authenticated", isLoading: false });
+    store.setState({
+      user: fakeUser,
+      status: "authenticated",
+      isLoading: false,
+    });
     await store.getState().logout();
 
     expect(storage.snapshot().orvilo_token).toBeUndefined();
@@ -102,5 +106,75 @@ describe("authStore", () => {
       .fn()
       .mockResolvedValue({ token: "t", user: fakeUser });
     await expect(store.getState().createGuestSession()).rejects.toThrow();
+  });
+
+  it("confirmEmailChange replaces the native bearer and authenticated user", async () => {
+    const storage = makeStorage({ orvilo_token: "old-token" });
+    const api = makeApi();
+    const updatedUser = { ...fakeUser, email: "alice.new@example.com" };
+    api.confirmEmailChange = vi.fn().mockResolvedValue({
+      token: "new-token",
+      user: updatedUser,
+    });
+    const store = createAuthStore({ api, storage });
+    store.setState({
+      user: fakeUser,
+      status: "authenticated",
+      isLoading: false,
+    });
+
+    await expect(
+      store.getState().confirmEmailChange("alice.new@example.com", "123456"),
+    ).resolves.toEqual(updatedUser);
+
+    expect(api.confirmEmailChange).toHaveBeenCalledWith(
+      "alice.new@example.com",
+      "123456",
+    );
+    expect(storage.snapshot().orvilo_token).toBe("new-token");
+    expect(api.setToken).toHaveBeenCalledWith("new-token");
+    expect(store.getState().user).toEqual(updatedUser);
+  });
+
+  it("confirmEmailChange keeps cookie auth out of token storage", async () => {
+    const storage = makeStorage();
+    const api = makeApi();
+    const updatedUser = { ...fakeUser, email: "alice.cookie@example.com" };
+    api.confirmEmailChange = vi.fn().mockResolvedValue({
+      token: "response-token",
+      user: updatedUser,
+    });
+    const store = createAuthStore({ api, storage, cookieAuth: true });
+
+    await store
+      .getState()
+      .confirmEmailChange("alice.cookie@example.com", "123456");
+
+    expect(storage.snapshot().orvilo_token).toBeUndefined();
+    expect(api.setToken).toHaveBeenCalledWith(null);
+    expect(store.getState().user).toEqual(updatedUser);
+  });
+
+  it("confirmEmailChange preserves the current session when confirmation fails", async () => {
+    const storage = makeStorage({ orvilo_token: "old-token" });
+    const api = makeApi();
+    api.confirmEmailChange = vi
+      .fn()
+      .mockRejectedValue(new Error("invalid or expired code"));
+    const store = createAuthStore({ api, storage });
+    store.setState({
+      user: fakeUser,
+      status: "authenticated",
+      isLoading: false,
+    });
+
+    await expect(
+      store.getState().confirmEmailChange("alice.new@example.com", "000000"),
+    ).rejects.toThrow("invalid or expired code");
+
+    expect(storage.snapshot().orvilo_token).toBe("old-token");
+    expect(api.setToken).not.toHaveBeenCalled();
+    expect(store.getState().user).toEqual(fakeUser);
+    expect(store.getState().status).toBe("authenticated");
   });
 });

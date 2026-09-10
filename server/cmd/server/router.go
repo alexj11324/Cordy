@@ -58,7 +58,6 @@ var corsAllowedHeaders = []string{
 // exactly like the server never sent it.
 //
 // Referencing the handler constant rather than re-typing the string keeps a
-// rename from quietly switching the signal off (MUL-5492).
 var corsExposedHeaders = []string{
 	"ETag",
 	"X-Request-ID",
@@ -152,9 +151,7 @@ func newRouter(app *application) chi.Router {
 	// Realtime subsystem metrics — connection counts, slow-client evictions,
 	// and per-event-type send QPS counters. Exposed as JSON so it can be
 	// scraped by ops or surfaced in the admin UI without adding a Prometheus
-	// dependency. See MUL-1138 (Phase 0).
 	//
-	// Access is restricted (MUL-1342): when REALTIME_METRICS_TOKEN is set,
 	// callers must present it via Authorization: Bearer <token>. When the
 	// env var is unset the handler only serves loopback callers so local
 	// dev keeps working without exposing the metrics on a public listener.
@@ -179,12 +176,10 @@ func newRouter(app *application) chi.Router {
 	// /api/attachments download endpoint; self-hosted split-origin/same-origin
 	// clients can then iframe-preview PDFs/HTML fetched straight from the
 	// static route instead of hitting the global frame-ancestors 'none' CSP.
-	// See MUL-3821 / #4477.
 	if _, ok := store.(*storage.LocalStorage); ok {
 		r.Get("/uploads/*", h.ServeLocalUpload)
 	}
 
-	// Capability-authenticated attachment download (MUL-5292). Public by
 	// necessity: a native download (Electron's webContents.downloadURL, a
 	// cross-site webview <img>) carries neither Authorization nor a session
 	// cookie, so there is nothing here for middleware.Auth to read. The
@@ -200,7 +195,6 @@ func newRouter(app *application) chi.Router {
 	// be a native <img src> from Desktop / mobile webview or a split-origin
 	// self-hosted web app. The HMAC signature in the path is the credential.
 	// It covers the storage key, only image keys resolve, and the object must
-	// be avatar-class — see server/internal/handler/avatar.go (MUL-5393 /
 	// #6024).
 	r.Get("/api/avatars/{sig}/*", h.ServeAvatar)
 
@@ -295,7 +289,6 @@ func newRouter(app *application) chi.Router {
 	// HandleCloudBillingStripeWebhook for the rationale).
 	r.Post("/api/webhooks/stripe", h.HandleCloudBillingStripeWebhook)
 
-	// Composio OAuth callback (MUL-3843). NOT under the Auth group on purpose:
 	// Composio 302-redirects the user's browser here at the end of the OAuth
 	// flow, and the cookie session is frequently absent (expired session,
 	// SameSite=Strict / Safari ITP stripping cross-site cookies, private
@@ -332,7 +325,6 @@ func newRouter(app *application) chi.Router {
 		r.Get("/tasks/{id}/plugin-mcp/{contributionId}/credential", h.ResolvePluginMCPCredential)
 
 		r.Post("/runtimes/{runtimeId}/tasks/claim", h.ClaimTaskByRuntime)
-		// Canonical machine-level batch claim (MUL-4257). `/claim` is a
 		// transitional alias; the daemon coordinator targets the canonical
 		// path.
 		r.Post("/tasks/claim", h.ClaimTasksByRuntime)
@@ -405,6 +397,8 @@ func newRouter(app *application) chi.Router {
 		// --- User-scoped routes (no workspace context required) ---
 		r.Get("/api/me", h.GetMe)
 		r.Patch("/api/me", h.UpdateMe)
+		r.With(handler.RequireHumanActor).Post("/api/me/email-change", h.RequestEmailChange)
+		r.With(handler.RequireHumanActor).Post("/api/me/email-change/confirm", h.ConfirmEmailChange)
 		r.Patch("/api/me/onboarding", h.PatchOnboarding)
 		r.Post("/api/me/onboarding/complete", h.CompleteOnboarding)
 		r.Post("/api/me/onboarding/cloud-waitlist", h.JoinCloudWaitlist)
@@ -441,7 +435,6 @@ func newRouter(app *application) chi.Router {
 			})
 		})
 
-		// Note (MUL-4309): the generic OpenAI-compatible passthrough endpoints
 		// (POST /api/llm/v1/chat/completions[/stream]) were intentionally
 		// removed. Exposing a general LLM proxy backed by the deployment's own
 		// key let any logged-in user run arbitrary completions on our dime.
@@ -455,7 +448,6 @@ func newRouter(app *application) chi.Router {
 		// this route is callable as a native browser <img>/<video>
 		// src that cannot attach X-Workspace-Slug / X-Workspace-ID
 		// headers. Persisting `/api/attachments/<id>/download` into
-		// comment markdown depends on this — see MUL-3130. The
 		// metadata / delete endpoints below stay workspace-scoped
 		// because they are JSON-API consumers that always have
 		// workspace context.
@@ -576,7 +568,6 @@ func newRouter(app *application) chi.Router {
 				// is per-agent and enforced inside each handler via
 				// canManageAgent (agent owner OR workspace owner/admin), so an
 				// agent's owner can bind/manage their own agent's Bot without
-				// being a workspace admin (MUL-4213). The router can't make
 				// that call itself: begin identifies the agent by an
 				// `agent_id` query param and revoke by an installation id,
 				// neither of which is a URL param the role middleware sees.
@@ -600,7 +591,6 @@ func newRouter(app *application) chi.Router {
 					r.Get("/lark/install/{sessionId}/status", h.GetLarkInstallStatus)
 				})
 
-				// Slack integration (MUL-3666). Listing is member-visible;
 				// installs (BYO paste and managed-OAuth begin) + revoke are
 				// admin-only: all three connect or disconnect a workspace-level
 				// bot. The OAuth callback itself is a public route (it is hit
@@ -700,11 +690,9 @@ func newRouter(app *application) chi.Router {
 		// the Orvilo user, while the bearer token carries only the iLink id.
 		r.Post("/api/weixin/binding/redeem", h.RedeemWeixinBindingToken)
 
-		// Composio integration (MUL-3720). User-scoped (no workspace context):
 		// a connection belongs to a user. These four require a logged-in
 		// session; the OAuth callback is the outlier and lives outside the Auth
 		// group (registered above with the other public OAuth/webhook routes —
-		// see MUL-3843). All return 503 when COMPOSIO_API_KEY is unset.
 		r.Route("/api/integrations/composio", func(r chi.Router) {
 			r.Post("/connect/init", h.ComposioConnectInit)
 			r.Get("/toolkits", h.ListComposioToolkits)
@@ -914,7 +902,6 @@ func newRouter(app *application) chi.Router {
 				})
 			})
 
-			// Issue status catalog (MUL-6243). Reads are open to any member —
 			// every client needs the catalog to render a status. Writes are
 			// gated to workspace owner/admin inside the handlers.
 			r.Route("/api/issue-statuses", func(r chi.Router) {
@@ -1011,7 +998,6 @@ func newRouter(app *application) chi.Router {
 				r.Delete("/{itemType}/{itemId}", h.DeletePin)
 			})
 
-			// Saved issue views (MUL-4796).
 			r.Get("/api/issue-view-preferences", h.GetIssueViewPreference)
 			r.Put("/api/issue-view-preferences", h.PutIssueViewPreference)
 			r.Route("/api/issue-views", func(r chi.Router) {
@@ -1029,7 +1015,6 @@ func newRouter(app *application) chi.Router {
 			// /api/attachments/{id}/download is registered in the
 			// outer Auth-only group above so it can be loaded as a
 			// native <img>/<video> src without workspace headers
-			// (MUL-3130). The handler self-resolves the workspace
 			// from the attachment row.
 			r.Get("/api/attachments/{id}/content", h.GetAttachmentContent)
 			r.Delete("/api/attachments/{id}", h.DeleteAttachment)
@@ -1083,7 +1068,6 @@ func newRouter(app *application) chi.Router {
 					// Dedicated env-management endpoint. Admits the agent
 					// owner or a workspace owner/admin; agent actors are
 					// denied. Every reveal / write is audited to
-					// activity_log. See MUL-2600, MUL-5438 and
 					// internal/handler/agent_env.go.
 					r.Get("/env", h.GetAgentEnv)
 					r.Put("/env", h.UpdateAgentEnv)
@@ -1161,7 +1145,6 @@ func newRouter(app *application) chi.Router {
 					// `runtime_has_active_agents` and the user confirmed.
 					r.Post("/unbind-agents-and-delete", h.UnbindAgentsAndDeleteRuntime)
 					// Legacy path for installed clients built against the
-					// archive-and-delete contract (MUL-5559 renamed the
 					// behaviour, not just the route). Same handler.
 					r.Post("/archive-agents-and-delete", h.UnbindAgentsAndDeleteRuntime)
 				})
@@ -1226,7 +1209,6 @@ func newRouter(app *application) chi.Router {
 					r.Post("/messages", h.SendChatMessage)
 					r.Post("/onboarding", h.StartPatrickOnboarding)
 					// Explicit "refresh" of a turn's quick actions: re-runs the
-					// daemon suggestion pass for the latest assistant reply (MUL-5149).
 					r.Post("/quick-actions/regenerate", h.RegenerateChatQuickActions)
 					r.Get("/messages", h.ListChatMessages)
 					r.Get("/messages/page", h.ListChatMessagesPage)
@@ -1248,7 +1230,6 @@ func newRouter(app *application) chi.Router {
 			r.Post("/api/chat/pinned-agents", h.PinChatAgent)
 			r.Delete("/api/chat/pinned-agents/{agentId}", h.UnpinChatAgent)
 
-			// Agent-facing channel reads (MUL-3871). The caller's task-scoped token
 			// resolves to its own chat session; no session/channel id is passed, so
 			// an agent can only read its own conversation. `history` is the channel
 			// overview (top-level messages + thread metadata); `thread` reads one

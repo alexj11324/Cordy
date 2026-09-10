@@ -2,11 +2,10 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Tag, Plus, Settings2 } from "lucide-react";
+import { Tag, Plus } from "lucide-react";
 import { toast } from "sonner";
 import type { Label } from "@orvilo/core/types";
 import { useWorkspaceId } from "@orvilo/core/hooks";
-import { useWorkspacePaths } from "@orvilo/core/paths";
 import {
   labelListOptions,
   issueLabelsOptions,
@@ -15,7 +14,6 @@ import {
   useCreateLabel,
 } from "@orvilo/core/labels";
 import { LabelChip } from "../../../labels/label-chip";
-import { useNavigation } from "../../../navigation";
 import {
   PropertyPicker,
   PickerItem,
@@ -51,8 +49,7 @@ interface LabelPickerProps {
 
 /**
  * Palette of colors used when creating a label inline from the picker.
- * We cycle by hash(name) so the same name always gets the same color,
- * and a color can still be changed afterwards from the Manage dialog.
+ * We cycle by hash(name) so the same name always gets the same color.
  */
 const INLINE_COLORS = [
   "#ef4444", "#f97316", "#eab308", "#22c55e", "#14b8a6",
@@ -82,10 +79,6 @@ function pickInlineColor(name: string): string {
  * new name and pressing Enter (or clicking the "Create X" row) creates the
  * label with a hash-derived color and selects it in one motion. The created
  * label is a real workspace label in both modes; only the attach step differs.
- *
- * A "Manage labels" item at the bottom opens the workspace Labels settings
- * page, which is the single management surface for issue, agent, and skill
- * label catalogs.
  */
 export function LabelPicker({
   issueId,
@@ -102,8 +95,6 @@ export function LabelPicker({
   const open = controlledOpen ?? internalOpen;
   const setOpen = onOpenChange ?? setInternalOpen;
   const [filter, setFilter] = useState("");
-  const navigation = useNavigation();
-  const paths = useWorkspacePaths();
 
   // Synchronous lock to prevent double-submit on rapid Enter / click. React
   // state (create.isPending, filter) isn't visible until the next render, so
@@ -196,11 +187,6 @@ export function LabelPicker({
     );
   };
 
-  const openManage = () => {
-    setOpen(false);
-    navigation.push(`${paths.settings()}?tab=labels`);
-  };
-
   const hasLabels = selectedLabels.length > 0;
 
   // In a custom trigger (PillButton) the trigger is itself a button, so the
@@ -209,11 +195,11 @@ export function LabelPicker({
   const resolvedTriggerRender =
     triggerRender ??
     (hasLabels ? (
-      <div className="flex flex-wrap items-center gap-1 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors" />
+      <div className="inline-flex w-fit max-w-full flex-wrap items-center gap-1 cursor-pointer rounded-md px-1 -mx-1 hover:bg-accent/30 transition-colors" />
     ) : undefined);
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex min-w-0 max-w-full flex-col items-start gap-1.5">
       <PropertyPicker
         open={open}
         onOpenChange={(v: boolean) => {
@@ -243,18 +229,6 @@ export function LabelPicker({
               <span className="text-muted-foreground">{t(($) => $.pickers.label.trigger_label)}</span>
             </>
           )
-        }
-        footer={
-          // Rendered outside the arrow-key listbox so keyboard nav doesn't
-          // treat "Manage labels…" as another label option.
-          <button
-            type="button"
-            onClick={openManage}
-            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-body text-muted-foreground hover:bg-accent transition-colors"
-          >
-            <Settings2 className="h-3.5 w-3.5" />
-            <span>{t(($) => $.pickers.label.manage_action)}</span>
-          </button>
         }
       >
         {filtered.map((label) => {

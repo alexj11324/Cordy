@@ -43,4 +43,28 @@ describe("buildTaskAgentThreadMessages", () => {
     expect(messages).toHaveLength(1);
     expect(messages[0]?.role).toBe("user");
   });
+
+  it("promotes structured sources and UTF-8 citations from task events", () => {
+    const messages = buildTaskAgentThreadMessages(
+      task({ result: { output: "你好 world" } }),
+      "fallback",
+      [
+        {
+          task_id: "task-1",
+          issue_id: "issue-1",
+          seq: 1,
+          type: "text",
+          content: "你好 world",
+          sources: [{ id: "docs", url: "https://example.test/docs" }],
+          citations: [{ source_id: "docs", start: 0, end: 6 }],
+        },
+      ],
+    );
+    expect(messages[1]?.sources).toEqual([
+      { id: "docs", url: "https://example.test/docs" },
+    ]);
+    expect(messages[1]?.citations).toEqual([
+      { source_id: "docs", start: 0, end: 6 },
+    ]);
+  });
 });

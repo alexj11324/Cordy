@@ -147,6 +147,7 @@ func userScanValues(user db.User) []any {
 		user.ProfileDescription,
 		user.Timezone,
 		user.IsGuest,
+		user.ProfileDetails,
 	}
 }
 

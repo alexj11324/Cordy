@@ -468,7 +468,19 @@
     "project_directory_path_copied": "Project directory path copied",
     "project_directory_path_copied_with_branch": "Project directory path copied — work is on {{branch}}",
     "workdir_path_copy_failed": "Failed to copy workdir path",
-    "workdir_path_unavailable": "No local workdir yet — issue has not been run by a local agent"
+    "workdir_path_unavailable": "No local workdir yet — issue has not been run by a local agent",
+    "enter_execution": "Open execution",
+    "execution_not_started": "Not started",
+    "execution_loading": "Loading…",
+    "execution_load_failed": "Unable to load execution",
+    "agent_conversations": {
+      "button_label_one": "{{count}} Agent conversation",
+      "button_label_other": "{{count}} Agent conversations",
+      "search_placeholder": "Search Agents",
+      "empty": "No Agent conversations yet",
+      "loading": "Loading Agent conversations…",
+      "load_failed": "Could not load Agent conversations"
+    }
   },
   "timeline": {
     "loading": "Loading..."
@@ -954,5 +966,16 @@
     "surface_loading": "Loading {{name}}…",
     "surface_unavailable": "{{name}} could not load its interface. The installed version may not include it.",
     "surface_navigated": "{{name}} tried to replace its panel with a page loaded from elsewhere. It has been stopped and disconnected — tell your workspace admin."
+  },
+  "review_submission": {
+    "title": "Submit for review",
+    "description": "Hand off the exact code and pull requests to your reviewer.",
+    "worktree": "Worktree path",
+    "branch": "Branch",
+    "commit": "Full commit SHA",
+    "pull_requests": "PR URLs",
+    "pr_hint": "One pull request URL per line.",
+    "cancel": "Cancel",
+    "submit": "Submit for review"
   }
 }

@@ -1,4 +1,7 @@
-import type { AgentConversationStarter } from "@orvilo/core/types";
+import type {
+  AgentConversationStarter,
+  TaskMessageState,
+} from "@orvilo/core/types";
 import type { DispatchReasonCopy } from "@/lib/dispatch-reason";
 
 export type ChatLocale = "en" | "zh-Hans";
@@ -54,8 +57,11 @@ export type ChatCopy = {
   finishedIn: (elapsed: string) => string;
   failedAfter: (elapsed: string) => string;
   processSteps: (count: number) => string;
+  queueTitle: (count: number) => string;
+  queueFallback: string;
   toolFallback: string;
   toolResultNamed: (tool: string) => string;
+  toolState: Readonly<Record<TaskMessageState, string>>;
   toolResultUnnamed: string;
   truncated: string;
   status: {
@@ -97,6 +103,7 @@ type ChatCopyData = Omit<
   | "finishedIn"
   | "failedAfter"
   | "processSteps"
+  | "queueTitle"
   | "toolResultNamed"
 > & {
   deleteChatDescriptionTemplate: string;
@@ -111,6 +118,7 @@ type ChatCopyData = Omit<
   failedAfterTemplate: string;
   processStepOne: string;
   processStepsOther: string;
+  queueTitleTemplate: string;
   toolResultNamedTemplate: string;
 };
 
@@ -263,10 +271,21 @@ const COPY_DATA = {
     failedAfterTemplate: "Failed after {elapsed}",
     processStepOne: "1 step",
     processStepsOther: "{count} steps",
+    queueTitleTemplate: "{count} queued messages",
+    queueFallback: "Queued message",
     toolFallback: "tool",
     toolResultNamedTemplate: "{tool} result: ",
     toolResultUnnamed: "result: ",
     truncated: "(truncated)",
+    toolState: {
+      "approval-requested": "Awaiting approval",
+      "approval-responded": "Approval answered",
+      "input-available": "Running",
+      "input-streaming": "Pending",
+      "output-available": "Completed",
+      "output-denied": "Denied",
+      "output-error": "Error",
+    },
     status: {
       retrying: "Retrying",
       offline: "Offline",
@@ -346,10 +365,21 @@ const COPY_DATA = {
     failedAfterTemplate: "在 {elapsed} 后失败",
     processStepOne: "1 步",
     processStepsOther: "{count} 步",
+    queueTitleTemplate: "队列中有 {count} 条消息",
+    queueFallback: "队列消息",
     toolFallback: "工具",
     toolResultNamedTemplate: "{tool} 结果：",
     toolResultUnnamed: "结果：",
     truncated: "（已截断）",
+    toolState: {
+      "approval-requested": "等待批准",
+      "approval-responded": "已处理批准",
+      "input-available": "运行中",
+      "input-streaming": "等待输入",
+      "output-available": "已完成",
+      "output-denied": "已拒绝",
+      "output-error": "出错",
+    },
     status: {
       retrying: "重试中",
       offline: "离线",
@@ -403,6 +433,7 @@ function buildChatCopy(data: ChatCopyData): ChatCopy {
       count === 1
         ? data.processStepOne
         : interpolate(data.processStepsOther, { count }),
+    queueTitle: (count) => interpolate(data.queueTitleTemplate, { count }),
     toolResultNamed: (tool) =>
       interpolate(data.toolResultNamedTemplate, { tool }),
   };

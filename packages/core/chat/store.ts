@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { StorageAdapter } from "../types";
 import type { Attachment } from "../types/attachment";
+import type { TaskMessageState } from "../types/events";
 import { getCurrentSlug, registerForWorkspaceRehydration } from "../platform/workspace-storage";
 import { registerDraftCleanup } from "../drafts/cleanup-registry";
 import {
@@ -43,16 +44,10 @@ const APPLIED_RESTORES_KEY = "orvilo:chat:applied-draft-restores";
  * they are refetchable, so dropping one loses nothing.
  */
 const PENDING_SEND_RESTORES_KEY = "orvilo:chat:pending-send-restores";
-/**
- * Draft slot for a chat that hasn't been created yet. There is exactly one per
- * workspace: the new-chat composer's identity is "the chat I have not created",
- * not "the chat I have not created with agent X". `selectedAgentId` is the send
- * target, not draft ownership, so switching agent mid-compose keeps the text
- * (MUL-4864). Created sessions keep their own slot, keyed by session id.
- */
+
 export const DRAFT_NEW_SESSION = "__new__";
 
-/** Pre-MUL-4864 per-agent new-chat slots, shaped `__new__:<agentId>`. */
+
 const LEGACY_NEW_SESSION_PREFIX = `${DRAFT_NEW_SESSION}:`;
 const CHAT_WIDTH_KEY = "orvilo:chat:width";
 const CHAT_HEIGHT_KEY = "orvilo:chat:height";
@@ -118,7 +113,7 @@ function readDraftAttachments(storage: StorageAdapter, key: string): Record<stri
     const out: Record<string, DraftUpload[]> = {};
     for (const [draftKey, value] of Object.entries(parsed)) {
       if (!Array.isArray(value)) continue;
-      // Normalize on every load (MUL-5181 L2): bare Attachment rows persisted
+
       // by pre-L2 builds become `uploaded` placeholders, and an upload still
       // `uploading` at load time is dropped (bytes are gone, and nothing in the
       // body references it).
@@ -280,6 +275,8 @@ export const CHAT_DEFAULT_H = 600;
 export interface ChatTimelineItem {
   seq: number;
   type: "tool_use" | "tool_result" | "thinking" | "text" | "error";
+  call_id?: string;
+  state?: TaskMessageState;
   tool?: string;
   content?: string;
   input?: Record<string, unknown>;
@@ -329,7 +326,7 @@ export interface ChatState {
   setFloatingChatEnabled: (enabled: boolean) => void;
   setAgentDetailDmAvailable: (available: boolean) => void;
   setActiveSession: (id: string | null) => void;
-  setSelectedAgentId: (id: string) => void;
+  setSelectedAgentId: (id: string | null) => void;
   setSelectedProjectId: (id: string | null) => void;
   /** sessionId accepts a real session UUID or DRAFT_NEW_SESSION. */
   setInputDraft: (sessionId: string, draft: string) => void;
@@ -438,7 +435,8 @@ export function createChatStore(options: ChatStoreOptions) {
     },
     setSelectedAgentId: (id) => {
       logger.info("setSelectedAgentId", { from: get().selectedAgentId, to: id });
-      storage.setItem(wsKey(AGENT_STORAGE_KEY), id);
+      if (id) storage.setItem(wsKey(AGENT_STORAGE_KEY), id);
+      else storage.removeItem(wsKey(AGENT_STORAGE_KEY));
       set({ selectedAgentId: id });
     },
     setSelectedProjectId: (id) => {

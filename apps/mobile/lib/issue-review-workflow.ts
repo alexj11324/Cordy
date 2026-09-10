@@ -1,5 +1,6 @@
 import type {
   IssueActorType,
+  IssueReviewSubmission,
   IssueStatus,
   IssueStatusCategory,
 } from "@orvilo/core/types";
@@ -12,6 +13,17 @@ export type ReviewHandoffPatch = {
   reviewer_id: string;
 };
 
+export type ReviewSubmissionDraft = {
+  worktree: string;
+  branch: string;
+  commit: string;
+  pullRequests: string;
+};
+
+export type ReviewSubmissionPatch = ReviewHandoffPatch & {
+  review_submission: IssueReviewSubmission;
+};
+
 export type ReviewWorkflowViolation =
   | "executor_required"
   | "reviewer_required"
@@ -19,6 +31,7 @@ export type ReviewWorkflowViolation =
 
 export type IssueStatusSelectionPlan =
   | { kind: "apply"; status: IssueStatus }
+  | { kind: "collect_review_evidence"; status: IssueStatus }
   | { kind: "choose_reviewer"; status: IssueStatus }
   | { kind: "blocked"; violation: "executor_required" };
 
@@ -43,6 +56,67 @@ export function reviewHandoffPatch(
     status,
     reviewer_type: reviewer.type,
     reviewer_id: reviewer.id,
+  };
+}
+
+const FULL_COMMIT_PATTERN = /^[0-9a-f]{40}([0-9a-f]{24})?$/i;
+const PULL_REQUEST_PATH_PATTERN = /\/(pull|pulls|merge_requests)\/\d+\/?$/;
+
+function normalizePullRequest(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim());
+    if (
+      (url.protocol !== "https:" && url.protocol !== "http:") ||
+      !url.hostname ||
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !PULL_REQUEST_PATH_PATTERN.test(url.pathname)
+    ) {
+      return null;
+    }
+    return url.toString().replace(/\/$/, raw.trim().endsWith("/") ? "/" : "");
+  } catch {
+    return null;
+  }
+}
+
+/** Build the same complete review handoff accepted by the shared API. */
+export function buildReviewSubmissionPatch(
+  status: IssueStatus,
+  reviewer: IssueRoleRef,
+  draft: ReviewSubmissionDraft,
+): ReviewSubmissionPatch | null {
+  const worktree = draft.worktree.trim();
+  const branch = draft.branch.trim();
+  const commit = draft.commit.trim();
+  const pullRequests = draft.pullRequests
+    .split(/\r?\n/)
+    .map(normalizePullRequest)
+    .filter((url): url is string => url !== null);
+  const submittedLineCount = draft.pullRequests
+    .split(/\r?\n/)
+    .filter((line) => line.trim()).length;
+
+  if (
+    !worktree ||
+    !branch ||
+    !FULL_COMMIT_PATTERN.test(commit) ||
+    pullRequests.length === 0 ||
+    pullRequests.length !== submittedLineCount
+  ) {
+    return null;
+  }
+
+  return {
+    ...reviewHandoffPatch(status, reviewer),
+    review_submission: {
+      worktree,
+      branch,
+      commit,
+      pull_requests: pullRequests,
+    },
   };
 }
 
@@ -79,7 +153,7 @@ export function reviewWorkflowViolation({
 }
 
 /**
- * Translate the workflow gate into the three UI outcomes shared by existing
+ * Translate the workflow gate into the UI outcomes shared by existing
  * and draft issue status pickers. Entering review never writes status first:
  * the reviewer picker completes the status + reviewer pair together.
  */
@@ -110,6 +184,9 @@ export function planIssueStatusSelection({
     violation === "reviewer_must_differ"
   ) {
     return { kind: "choose_reviewer", status: nextStatus };
+  }
+  if (isReviewHandoff(previousCategory, nextCategory)) {
+    return { kind: "collect_review_evidence", status: nextStatus };
   }
   return { kind: "apply", status: nextStatus };
 }

@@ -24,6 +24,16 @@ RETURNING *;
 -- name: DeleteMember :exec
 DELETE FROM member WHERE id = $1;
 
+-- name: ClearProjectMemberReference :exec
+-- project.member_ids is an application-owned workspace relationship. Clear a
+-- departing user's IDs in the same transaction as the member-row deletion so
+-- a re-invitation cannot inherit stale project membership metadata.
+UPDATE project
+SET member_ids = member_ids - sqlc.arg('user_id')::text,
+    updated_at = now()
+WHERE workspace_id = sqlc.arg('workspace_id')::uuid
+  AND member_ids ? sqlc.arg('user_id')::text;
+
 -- name: ListMembersWithUser :many
 SELECT m.id, m.workspace_id, m.user_id, m.role, m.created_at,
        u.name as user_name, u.email as user_email, u.avatar_url as user_avatar_url

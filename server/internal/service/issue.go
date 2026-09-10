@@ -60,26 +60,27 @@ func NewIssueService(q *db.Queries, tx TxStarter, bus *events.Bus, ac analytics.
 // to IssueService.Create. The handler owns the parsing step that turns its
 // request payload into this struct; the service stays transport-agnostic.
 type IssueCreateParams struct {
-	WorkspaceID   pgtype.UUID
-	Title         string
-	Description   pgtype.Text
-	Status        string
-	Priority      string
-	ExecutorType  pgtype.Text
-	ExecutorID    pgtype.UUID
-	OwnerType     pgtype.Text
-	OwnerID       pgtype.UUID
-	ReviewerType  pgtype.Text
-	ReviewerID    pgtype.UUID
-	CreatorType   string // "agent" or "member"
-	CreatorID     pgtype.UUID
-	ParentIssueID pgtype.UUID
-	ProjectID     pgtype.UUID
-	StartDate     pgtype.Date
-	DueDate       pgtype.Date
-	OriginType    pgtype.Text
-	OriginID      pgtype.UUID
-	AttachmentIDs []pgtype.UUID
+	WorkspaceID      pgtype.UUID
+	Title            string
+	Description      pgtype.Text
+	Status           string
+	Priority         string
+	ExecutorType     pgtype.Text
+	ExecutorID       pgtype.UUID
+	OwnerType        pgtype.Text
+	OwnerID          pgtype.UUID
+	ReviewerType     pgtype.Text
+	ReviewerID       pgtype.UUID
+	ReviewSubmission []byte
+	CreatorType      string // "agent" or "member"
+	CreatorID        pgtype.UUID
+	ParentIssueID    pgtype.UUID
+	ProjectID        pgtype.UUID
+	StartDate        pgtype.Date
+	DueDate          pgtype.Date
+	OriginType       pgtype.Text
+	OriginID         pgtype.UUID
+	AttachmentIDs    []pgtype.UUID
 	// LabelIDs are the issue-scoped labels to attach to the new issue. They
 	// are validated and written inside the create transaction (see Create),
 	// so the issue is never committed with a partial or wrong label set. An
@@ -375,53 +376,55 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 	var issue db.Issue
 	if p.OriginType.Valid {
 		issue, err = qtx.CreateIssueWithOrigin(ctx, db.CreateIssueWithOriginParams{
-			ID:            issueID,
-			WorkspaceID:   p.WorkspaceID,
-			Title:         p.Title,
-			Description:   p.Description,
-			Status:        p.Status,
-			Priority:      p.Priority,
-			ExecutorType:  p.ExecutorType,
-			ExecutorID:    p.ExecutorID,
-			OwnerType:     p.OwnerType,
-			OwnerID:       p.OwnerID,
-			ReviewerType:  p.ReviewerType,
-			ReviewerID:    p.ReviewerID,
-			CreatorType:   p.CreatorType,
-			CreatorID:     p.CreatorID,
-			ParentIssueID: p.ParentIssueID,
-			Position:      newPosition,
-			StartDate:     p.StartDate,
-			DueDate:       p.DueDate,
-			Number:        issueNumber,
-			ProjectID:     projectID,
-			OriginType:    p.OriginType,
-			OriginID:      p.OriginID,
-			Stage:         p.Stage,
+			ReviewSubmission: p.ReviewSubmission,
+			ID:               issueID,
+			WorkspaceID:      p.WorkspaceID,
+			Title:            p.Title,
+			Description:      p.Description,
+			Status:           p.Status,
+			Priority:         p.Priority,
+			ExecutorType:     p.ExecutorType,
+			ExecutorID:       p.ExecutorID,
+			OwnerType:        p.OwnerType,
+			OwnerID:          p.OwnerID,
+			ReviewerType:     p.ReviewerType,
+			ReviewerID:       p.ReviewerID,
+			CreatorType:      p.CreatorType,
+			CreatorID:        p.CreatorID,
+			ParentIssueID:    p.ParentIssueID,
+			Position:         newPosition,
+			StartDate:        p.StartDate,
+			DueDate:          p.DueDate,
+			Number:           issueNumber,
+			ProjectID:        projectID,
+			OriginType:       p.OriginType,
+			OriginID:         p.OriginID,
+			Stage:            p.Stage,
 		})
 	} else {
 		issue, err = qtx.CreateIssue(ctx, db.CreateIssueParams{
-			ID:            issueID,
-			WorkspaceID:   p.WorkspaceID,
-			Title:         p.Title,
-			Description:   p.Description,
-			Status:        p.Status,
-			Priority:      p.Priority,
-			ExecutorType:  p.ExecutorType,
-			ExecutorID:    p.ExecutorID,
-			OwnerType:     p.OwnerType,
-			OwnerID:       p.OwnerID,
-			ReviewerType:  p.ReviewerType,
-			ReviewerID:    p.ReviewerID,
-			CreatorType:   p.CreatorType,
-			CreatorID:     p.CreatorID,
-			ParentIssueID: p.ParentIssueID,
-			Position:      newPosition,
-			StartDate:     p.StartDate,
-			DueDate:       p.DueDate,
-			Number:        issueNumber,
-			ProjectID:     projectID,
-			Stage:         p.Stage,
+			ReviewSubmission: p.ReviewSubmission,
+			ID:               issueID,
+			WorkspaceID:      p.WorkspaceID,
+			Title:            p.Title,
+			Description:      p.Description,
+			Status:           p.Status,
+			Priority:         p.Priority,
+			ExecutorType:     p.ExecutorType,
+			ExecutorID:       p.ExecutorID,
+			OwnerType:        p.OwnerType,
+			OwnerID:          p.OwnerID,
+			ReviewerType:     p.ReviewerType,
+			ReviewerID:       p.ReviewerID,
+			CreatorType:      p.CreatorType,
+			CreatorID:        p.CreatorID,
+			ParentIssueID:    p.ParentIssueID,
+			Position:         newPosition,
+			StartDate:        p.StartDate,
+			DueDate:          p.DueDate,
+			Number:           issueNumber,
+			ProjectID:        projectID,
+			Stage:            p.Stage,
 		})
 	}
 	if err != nil {

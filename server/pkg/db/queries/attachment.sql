@@ -358,6 +358,56 @@ SELECT * FROM attachment
 WHERE id = ANY(sqlc.arg(attachment_ids)::uuid[]) AND workspace_id = sqlc.arg(workspace_id)
 ORDER BY created_at ASC;
 
+-- name: ListAttachmentIDsByTask :many
+SELECT id FROM attachment
+WHERE task_id = $1
+ORDER BY id ASC;
+
+-- name: LockAttachmentsForAgentThread :many
+-- Continuation uploads start as unclaimed workspace attachments. Lock the
+-- exact rows before creating the continuation so ownership and availability
+-- cannot change between validation and task binding.
+SELECT * FROM attachment
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND uploader_type = sqlc.arg(uploader_type)
+  AND uploader_id = sqlc.arg(uploader_id)
+  AND issue_id IS NULL
+  AND comment_id IS NULL
+  AND chat_session_id IS NULL
+  AND chat_message_id IS NULL
+  AND task_id IS NULL
+  AND source_context_id IS NULL
+  AND id = ANY(sqlc.arg(attachment_ids)::uuid[])
+ORDER BY id
+FOR UPDATE;
+
+-- name: LinkAttachmentsToAgentThreadTask :many
+-- The rows are locked and ownership-checked by LockAttachmentsForAgentThread
+-- in the same transaction. Keep the predicates here as a second write fence
+-- so an attachment can never be stolen if this query is reused incorrectly.
+UPDATE attachment
+SET task_id = sqlc.arg(task_id)
+WHERE workspace_id = sqlc.arg(workspace_id)
+  AND uploader_type = sqlc.arg(uploader_type)
+  AND uploader_id = sqlc.arg(uploader_id)
+  AND issue_id IS NULL
+  AND comment_id IS NULL
+  AND chat_session_id IS NULL
+  AND chat_message_id IS NULL
+  AND task_id IS NULL
+  AND source_context_id IS NULL
+  AND id = ANY(sqlc.arg(attachment_ids)::uuid[])
+RETURNING id;
+
+-- name: ListAttachmentsByTask :many
+-- Task ids are the transient ownership handle for agent-produced and
+-- continuation attachments. Workspace scope remains mandatory because task_id
+-- intentionally has no foreign key.
+SELECT * FROM attachment
+WHERE task_id = sqlc.arg(task_id)
+  AND workspace_id = sqlc.arg(workspace_id)
+ORDER BY created_at ASC, id ASC;
+
 -- name: CreateSourceContextAttachment :one
 INSERT INTO attachment (
   id, workspace_id, source_context_id, uploader_type, uploader_id,

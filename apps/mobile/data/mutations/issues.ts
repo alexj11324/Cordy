@@ -526,6 +526,7 @@ export function useUpdateIssue(issueId: string) {
           description_base: _descriptionBase,
           title_base: _titleBase,
           expected_revision: _expectedRevision,
+          review_submission: _reviewSubmission,
           ...optimisticPatch
         } = patch;
         qc.setQueryData<Issue>(key, {

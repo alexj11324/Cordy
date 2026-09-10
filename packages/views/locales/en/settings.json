@@ -185,8 +185,8 @@
         "description": "Search within the open issue detail."
       },
       "openThreadNav": {
-        "label": "Open thread navigator",
-        "description": "List, search, and jump between the comment threads of the open issue."
+        "label": "Open Agent conversations",
+        "description": "List and open the Agent conversations for the current issue."
       },
       "archiveInboxItem": {
         "label": "Archive notification",
@@ -471,7 +471,7 @@
       "issue": "Issue",
       "chat": "Chat",
       "notifications": "Notifications",
-      "tokens": "API Tokens",
+      "tokens": "Authorized clients",
       "general": "general",
       "repositories": "Repositories",
       "github": "GitHub",
@@ -796,10 +796,10 @@
     }
   },
   "tokens": {
-    "title": "API Tokens",
-    "description": "Personal access tokens allow the CLI and external integrations to authenticate with your account. Use one via orvilo login --token, or as a Bearer token when calling the API.",
+    "title": "Authorized clients",
+    "description": "Manage clients that can access your account. Revoking access signs that client out.",
     "security_note": "A token grants full access to your account — treat it like a password.",
-    "empty": "No API tokens yet. Create one above to get started.",
+    "empty": "No authorized clients yet.",
     "load_failed": "Could not load your API tokens. Reload the page to try again.",
     "name_placeholder": "Token name (e.g. My CLI)",
     "expiry": {
@@ -836,7 +836,11 @@
       "cli_hint": "Sign in to the CLI with:",
       "copy_command_tooltip": "Copy command",
       "done": "Done"
-    }
+    },
+    "install_instructions": "Install the Orvilo CLI first:",
+    "install_command": "curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash",
+    "login_instructions": "Then run this command on the computer or server. It prints a URL and one-time code; approve access in a browser.",
+    "login_command": "orvilo login"
   },
   "workspace": {
     "page_description": "Update this workspace's name, logo, and defaults.",
@@ -904,7 +908,7 @@
     "connection_description_prefix": "Link issues to pull requests automatically. When a PR with",
     "connection_description_suffix": "in its branch, title, or body is merged, the corresponding issue moves to",
     "connection_description_done": "Done",
-    "connection_identifier_example": "MUL-123",
+    "connection_identifier_example": "{{identifier}}",
     "connected_to": "Connected to {{login}}",
     "connect_github": "Connect GitHub",
     "connect_opening": "Opening…",
@@ -931,7 +935,7 @@
     "feature_co_author_description_prefix": "Append",
     "feature_co_author_description_suffix": "to commits authored by agents.",
     "feature_auto_link_label": "Auto-link issues and PRs",
-    "feature_auto_link_description": "Link PRs in two ways: enable this option to match an issue ID in the PR title or branch name (e.g. MUL-123), or Fixes MUL-123 in the description. You can also attach a PR manually from Work products in issue details, or have an agent attach it directly. Direct linking needs no issue ID in the PR and works independently of this toggle.",
+    "feature_auto_link_description": "Add {{identifier}} to a PR title or branch, or Fixes {{identifier}} to its description, to link the issue automatically. Manual links are unaffected by this toggle.",
     "section_repositories": "Repositories",
     "repositories_shortcut_label": "Repository URLs live in the Repositories tab",
     "repositories_shortcut_link": "Manage repositories →",

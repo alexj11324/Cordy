@@ -54,6 +54,8 @@ interface Props {
   allowStop?: boolean;
   /** Keep Send available while the provider executes the current turn. */
   allowSubmitWhileRunning?: boolean;
+  /** Agent-thread continuations may contain only uploaded files. */
+  allowAttachmentOnly?: boolean;
   /** Hard-disable typing + send. Used when there's no usable agent in the
    *  workspace or the session is archived (legacy). */
   disabled?: boolean;
@@ -73,6 +75,7 @@ export function ChatComposer({
   sending,
   allowStop = true,
   allowSubmitWhileRunning = false,
+  allowAttachmentOnly = false,
   disabled = false,
   disabledReason,
   allowAttachments = true,
@@ -125,6 +128,7 @@ export function ChatComposer({
       showAttachments={allowAttachments}
       isSending={sending}
       allowSubmitWhileSending={allowSubmitWhileRunning}
+      allowAttachmentOnly={allowAttachmentOnly}
       renderStop={allowStop ? () => <StopButton onPress={handleStop} /> : undefined}
       manageKeyboard={false}
     />

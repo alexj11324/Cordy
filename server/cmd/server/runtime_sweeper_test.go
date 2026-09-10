@@ -310,7 +310,6 @@ func TestSweepStaleTasksBroadcastsWithWorkspaceID(t *testing.T) {
 	issueID, agentID, taskID := setupSweeperTestFixture(t, "running")
 	t.Cleanup(func() { cleanupSweeperFixture(t, issueID, agentID) })
 	// The running-task sweep now requires the task's runtime to be NOT
-	// heartbeating (MUL-4107). Age the runtime out so this test still
 	// exercises the sweeper wall clock rather than being silently skipped.
 	ageOutAgentRuntime(t, agentID, defaultRuntimeReconnectGrace+time.Hour)
 
@@ -405,7 +404,6 @@ func TestSweepStaleTasksReconcileAgentStatus(t *testing.T) {
 
 	issueID, agentID, _ := setupSweeperTestFixture(t, "running")
 	t.Cleanup(func() { cleanupSweeperFixture(t, issueID, agentID) })
-	// Runtime must be stale for the running-task wall clock to fire (MUL-4107).
 	ageOutAgentRuntime(t, agentID, defaultRuntimeReconnectGrace+time.Hour)
 
 	queries := db.New(testPool)
@@ -579,7 +577,6 @@ func TestSweepDispatchedTaskWaitsThroughReconnectGrace(t *testing.T) {
 	}
 }
 
-// TestSweepRunningTaskSkippedWhenRuntimeFresh is the MUL-4107 regression test:
 // a running task whose wall-clock deadline has already passed MUST NOT be
 // killed by the sweeper as long as its owning runtime is 'online' and its
 // last_seen_at is within the runtime stale window. This preserves healthy
@@ -609,7 +606,7 @@ func TestSweepRunningTaskSkippedWhenRuntimeFresh(t *testing.T) {
 
 	for _, ft := range failedTasks {
 		if ft.ID.Bytes == parseUUIDBytes(taskID) {
-			t.Fatalf("healthy long-running task on live daemon must NOT be swept — that was the MUL-4107 bug")
+			t.Fatalf("healthy long-running task on live daemon must NOT be swept — stale-runtime filtering is required")
 		}
 	}
 
@@ -919,7 +916,6 @@ func TestSweepResetsInProgressIssueToTodo(t *testing.T) {
 	queries := db.New(testPool)
 	bus := events.New()
 
-	// Runtime must be stale for the running-task wall clock to fire (MUL-4107).
 	ageOutAgentRuntime(t, agentID, defaultRuntimeReconnectGrace+time.Hour)
 
 	// Fail the stale task (running timeout of 1 second — our task is 3 hours old).
@@ -983,8 +979,13 @@ func TestSweepDoesNotResetIssueAlreadyInReview(t *testing.T) {
 	// Issue already advanced to in_review by the agent before the task timed out.
 	var issueID string
 	err = testPool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id)
-		SELECT $1, 'Already in_review issue', 'in_review', 'none', 'member', m.user_id, 'agent', $2
+		INSERT INTO issue (
+			workspace_id, title, status, priority, creator_type, creator_id,
+			executor_type, executor_id, reviewer_type, reviewer_id, review_submission
+		)
+		SELECT $1, 'Already in_review issue', 'in_review', 'none', 'member', m.user_id,
+			'agent', $2, 'member', m.user_id,
+			'{"worktree":"/tmp/review","branch":"test/review","commit":"0000000000000000000000000000000000000000","pull_requests":["https://github.com/orvilo-ai/orvilo/pull/1"],"submission_id":"runtime-sweeper-test"}'::jsonb
 		FROM member m WHERE m.workspace_id = $1 LIMIT 1
 		RETURNING id
 	`, testWorkspaceID, agentID).Scan(&issueID)
@@ -1009,7 +1010,6 @@ func TestSweepDoesNotResetIssueAlreadyInReview(t *testing.T) {
 	queries := db.New(testPool)
 	bus := events.New()
 
-	// Runtime must be stale for the running-task wall clock to fire (MUL-4107).
 	ageOutAgentRuntime(t, agentID, defaultRuntimeReconnectGrace+time.Hour)
 
 	failedTasks, err := queries.FailStaleTasks(ctx, db.FailStaleTasksParams{
@@ -1036,7 +1036,6 @@ func TestSweepDoesNotResetIssueAlreadyInReview(t *testing.T) {
 }
 
 // TestExpireStaleQueuedTasks pins the queued sweep to runtime liveness rather
-// than queue age (MUL-6558). The same ancient queued task must survive while
 // its runtime is heartbeating — a busy runtime is not a dead one — and only
 // become expirable once that runtime has been silent past the reconnect grace.
 // A third phase covers the other direction: liveness alone is not enough
@@ -1147,7 +1146,7 @@ func TestExpireStaleQueuedTasks(t *testing.T) {
 	}
 	live := expiredIDs(survivors)
 	if live[parseUUIDBytes(oldTaskID)] {
-		t.Fatal("live runtime: the 5h-old queued task was expired — queue age must not expire work behind a heartbeating runtime (MUL-6558)")
+		t.Fatal("live runtime: the 5h-old queued task was expired — queue age must not expire work behind a heartbeating runtime")
 	}
 	if live[parseUUIDBytes(freshTaskID)] {
 		t.Fatal("live runtime: the fresh queued task was expired")

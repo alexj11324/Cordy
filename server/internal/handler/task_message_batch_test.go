@@ -67,7 +67,11 @@ func TestReportTaskMessagesPersistsWholeBatch(t *testing.T) {
 			"input":  map[string]any{"path": "/etc/hosts", "nested": map[string]any{"depth": 2}},
 			"output": "127.0.0.1 localhost",
 		},
-		map[string]any{"seq": 3, "type": "text", "content": "done"},
+		map[string]any{
+			"seq": 3, "type": "text", "content": "done [plain](https://example.test/plain)",
+			"sources":   []any{map[string]any{"id": "docs", "url": "https://example.test/docs", "title": "Docs"}},
+			"citations": []any{map[string]any{"source_id": "docs", "start": 0, "end": 4}},
+		},
 	})).Want(http.StatusOK)
 
 	stored, err := testHandler.Queries.ListTaskMessages(ctx, util.MustParseUUID(taskID))
@@ -108,8 +112,12 @@ func TestReportTaskMessagesPersistsWholeBatch(t *testing.T) {
 	if inputPath != "/etc/hosts" {
 		t.Fatalf("input->>path = %q, want /etc/hosts", inputPath)
 	}
-	if stored[2].Type != "text" || stored[2].Content.String != "done" {
-		t.Fatalf("text row = %+v, want type=text content=done", stored[2])
+	if stored[2].Type != "text" || stored[2].Content.String != "done [plain](https://example.test/plain)" {
+		t.Fatalf("text row = %+v", stored[2])
+	}
+	payload := taskMessageToPayload(stored[2], taskID, "")
+	if len(payload.Sources) != 1 || payload.Sources[0].ID != "docs" || len(payload.Citations) != 1 || payload.Citations[0].End != 4 {
+		t.Fatalf("structured attribution did not round trip: %+v", payload)
 	}
 }
 
@@ -199,14 +207,18 @@ func TestCreateTaskMessagesBatchIsAtomic(t *testing.T) {
 	})
 
 	_, err := testHandler.Queries.CreateTaskMessages(ctx, db.CreateTaskMessagesParams{
-		TaskID:   util.MustParseUUID(taskID),
-		Ids:      []pgtype.UUID{util.MustParseUUID("018f0000-0000-7000-8000-000000000002"), util.MustParseUUID(dupID)},
-		Seqs:     []int32{2, 3},
-		Types:    []string{"text", "text"},
-		Tools:    []string{"", ""},
-		Contents: []string{"ok", "collides"},
-		Inputs:   []string{"", ""},
-		Outputs:  []string{"", ""},
+		TaskID:    util.MustParseUUID(taskID),
+		Ids:       []pgtype.UUID{util.MustParseUUID("018f0000-0000-7000-8000-000000000002"), util.MustParseUUID(dupID)},
+		Seqs:      []int32{2, 3},
+		Types:     []string{"text", "text"},
+		Tools:     []string{"", ""},
+		Contents:  []string{"ok", "collides"},
+		Inputs:    []string{"", ""},
+		Outputs:   []string{"", ""},
+		CallIds:   []string{"", ""},
+		States:    []string{"", ""},
+		Sources:   []string{"[]", "[]"},
+		Citations: []string{"[]", "[]"},
 	})
 	if err == nil {
 		t.Fatal("CreateTaskMessages accepted a batch with a duplicate primary key")

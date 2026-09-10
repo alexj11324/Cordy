@@ -9,7 +9,7 @@ SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
        i.owner_type, i.owner_id, i.executor_type, i.executor_id,
        i.reviewer_type, i.reviewer_id, i.creator_type, i.creator_id,
        i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.last_activity_at, i.number, i.project_id, i.metadata, i.stage, i.properties,
-       i.revision
+       i.revision, i.review_submission
 FROM issue i
 WHERE i.workspace_id = $1
   AND (sqlc.narg('status')::text IS NULL OR i.status = sqlc.narg('status'))
@@ -149,11 +149,12 @@ INSERT INTO issue (
     executor_type, executor_id, creator_type, creator_id,
     parent_issue_id, position, start_date, due_date, number, project_id,
     stage, last_activity_at, id,
-    owner_type, owner_id, reviewer_type, reviewer_id
+    owner_type, owner_id, reviewer_type, reviewer_id, review_submission
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
     sqlc.narg('stage'), now(), COALESCE(sqlc.narg('id')::uuid, gen_random_uuid()),
-    sqlc.narg('owner_type'), sqlc.narg('owner_id'), sqlc.narg('reviewer_type'), sqlc.narg('reviewer_id')
+    sqlc.narg('owner_type'), sqlc.narg('owner_id'), sqlc.narg('reviewer_type'), sqlc.narg('reviewer_id'),
+    sqlc.narg('review_submission')::jsonb
 ) RETURNING *;
 
 -- name: GetIssueByNumber :one
@@ -206,7 +207,8 @@ WITH candidate AS (
         sqlc.narg('due_date')::date AS next_due_date,
         sqlc.narg('parent_issue_id')::uuid AS next_parent_issue_id,
         sqlc.narg('project_id')::uuid AS next_project_id,
-        sqlc.narg('stage')::integer AS next_stage
+        sqlc.narg('stage')::integer AS next_stage,
+        COALESCE(sqlc.narg('review_submission')::jsonb, i.review_submission) AS next_review_submission
     FROM issue AS i
     WHERE i.id = $1
       AND (sqlc.narg('expected_revision')::bigint IS NULL OR i.revision = sqlc.narg('expected_revision')::bigint)
@@ -216,22 +218,22 @@ WITH candidate AS (
         ROW(
             title, description, status, priority, executor_type, executor_id,
             owner_type, owner_id, reviewer_type, reviewer_id,
-            position, start_date, due_date, parent_issue_id, project_id, stage
+            position, start_date, due_date, parent_issue_id, project_id, stage, review_submission
         ) IS DISTINCT FROM ROW(
             next_title, next_description, next_status, next_priority,
             next_executor_type, next_executor_id, next_owner_type, next_owner_id,
             next_reviewer_type, next_reviewer_id, next_position, next_start_date,
-            next_due_date, next_parent_issue_id, next_project_id, next_stage
+            next_due_date, next_parent_issue_id, next_project_id, next_stage, next_review_submission
         ) AS did_change,
         ROW(
             title, description, status, priority, executor_type, executor_id,
             owner_type, owner_id, reviewer_type, reviewer_id,
-            start_date, due_date, parent_issue_id, project_id, stage
+            start_date, due_date, parent_issue_id, project_id, stage, review_submission
         ) IS DISTINCT FROM ROW(
             next_title, next_description, next_status, next_priority,
             next_executor_type, next_executor_id, next_owner_type, next_owner_id,
             next_reviewer_type, next_reviewer_id, next_start_date, next_due_date,
-            next_parent_issue_id, next_project_id, next_stage
+            next_parent_issue_id, next_project_id, next_stage, next_review_submission
         ) AS did_activity
     FROM candidate
 )
@@ -252,6 +254,7 @@ UPDATE issue AS i SET
     parent_issue_id = changed.next_parent_issue_id,
     project_id = changed.next_project_id,
     stage = changed.next_stage,
+    review_submission = changed.next_review_submission,
     revision = i.revision + changed.did_change::integer,
     last_activity_at = CASE WHEN changed.did_activity
         THEN GREATEST(COALESCE(i.last_activity_at, i.updated_at), now())
@@ -296,11 +299,12 @@ INSERT INTO issue (
     executor_type, executor_id, creator_type, creator_id,
     parent_issue_id, position, start_date, due_date, number, project_id,
     origin_type, origin_id, stage, last_activity_at, id,
-    owner_type, owner_id, reviewer_type, reviewer_id
+    owner_type, owner_id, reviewer_type, reviewer_id, review_submission
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
     sqlc.narg('origin_type'), sqlc.narg('origin_id'), sqlc.narg('stage'), now(), COALESCE(sqlc.narg('id')::uuid, gen_random_uuid()),
-    sqlc.narg('owner_type'), sqlc.narg('owner_id'), sqlc.narg('reviewer_type'), sqlc.narg('reviewer_id')
+    sqlc.narg('owner_type'), sqlc.narg('owner_id'), sqlc.narg('reviewer_type'), sqlc.narg('reviewer_id'),
+    sqlc.narg('review_submission')::jsonb
 ) RETURNING *;
 
 -- name: LockIssueDuplicateKey :exec
@@ -463,7 +467,7 @@ SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority,
        i.owner_type, i.owner_id, i.executor_type, i.executor_id,
        i.reviewer_type, i.reviewer_id, i.creator_type, i.creator_id,
        i.parent_issue_id, i.position, i.start_date, i.due_date, i.created_at, i.updated_at, i.last_activity_at, i.number, i.project_id, i.metadata, i.stage, i.properties,
-       i.revision
+       i.revision, i.review_submission
 FROM issue i
 WHERE i.workspace_id = $1
   -- Negate only known terminal keys so an unknown legacy key remains visible.

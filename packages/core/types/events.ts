@@ -129,7 +129,7 @@ export interface IssueUpdatedPayload {
   // counts when a status change lands on an off-screen (unloaded) issue;
   // project_changed lets it drop a moved issue from the old project's filtered
   // list (the client-side cache diff is unreliable after an optimistic local
-  // move — MUL-3669 / #4548). Other change flags are present on the wire too and
+
   // can be surfaced here when needed.
   owner_changed?: boolean;
   executor_changed?: boolean;
@@ -170,18 +170,7 @@ export interface PropertyChangedPayload {
   property: IssueProperty;
 }
 
-/**
- * The workspace issue status catalog changed (MUL-6243).
- *
- * One event covers all four writes because clients answer them the same way:
- * re-read the catalog. It deliberately carries no entry — merging a row out of
- * an event would have to be reconciled against writes this client never saw,
- * and the catalog is small enough that a refetch is both simpler and safer.
- *
- * `action` is advisory: it makes the frame self-describing in devtools. Nothing
- * routes on it, so a future write verb this client has never heard of still
- * refreshes the catalog correctly.
- */
+
 export interface IssueStatusChangedPayload {
   action?: "created" | "updated" | "archived" | "reordered";
 }
@@ -308,14 +297,27 @@ export interface ActivityCreatedPayload {
   entry: TimelineEntry;
 }
 
+export type TaskMessageState =
+  | "approval-requested"
+  | "approval-responded"
+  | "input-available"
+  | "input-streaming"
+  | "output-available"
+  | "output-denied"
+  | "output-error";
+
 export interface TaskMessagePayload {
   task_id: string;
   issue_id: string;
   chat_session_id?: string;
   seq: number;
   type: "text" | "thinking" | "tool_use" | "tool_result" | "error";
+  call_id?: string;
+  state?: TaskMessageState;
   tool?: string;
   content?: string;
+  sources?: import("./chat").MessageSource[];
+  citations?: import("./chat").MessageCitation[];
   input?: Record<string, unknown>;
   output?: string;
   created_at?: string;
@@ -422,6 +424,8 @@ export interface ChatMessageEventPayload {
   message_id: string;
   role: "user" | "assistant";
   content: string;
+  sources?: import("./chat").MessageSource[];
+  citations?: import("./chat").MessageCitation[];
   task_id?: string;
   created_at: string;
 }
@@ -437,15 +441,11 @@ export interface ChatDonePayload {
    */
   message_id?: string;
   content?: string;
+  sources?: import("./chat").MessageSource[];
+  citations?: import("./chat").MessageCitation[];
   elapsed_ms?: number;
   created_at?: string;
-  /**
-   * "message" (default) or "no_response" — a completed direct-chat turn with
-   * no text reply (MUL-4351). Optional/additive: older servers omit it, so the
-   * consumer defaults to "message". Because direct-chat completion now always
-   * persists exactly one assistant row, message_id/content/created_at are
-   * populated alongside this even for a no_response turn.
-   */
+
   message_kind?: import("./chat").ChatMessageKind;
   /** Server-validated follow-ups attached to the persisted assistant reply. */
   quick_actions?: import("./chat").ChatQuickAction[];

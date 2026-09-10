@@ -22,7 +22,7 @@
  */
 import { View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import type { TaskMessagePayload } from "@orvilo/core/types";
+import type { TaskMessagePayload, TaskMessageState } from "@orvilo/core/types";
 import { Text } from "@/components/ui/text";
 import {
   Collapsible,
@@ -30,6 +30,9 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useChatCopy } from "@/lib/use-chat-copy";
+import { foldToolLifecycles, taskMessageState } from "@/lib/chat-tool-state";
+import { THEME } from "@/lib/theme";
+import { useColorScheme } from "@/lib/use-color-scheme";
 
 interface Props {
   items: TaskMessagePayload[];
@@ -40,7 +43,9 @@ interface Props {
 
 export function ChatTimeline({ items, isStreaming = false }: Props) {
   const copy = useChatCopy();
-  const processSteps = items.filter((i) => i.type !== "text");
+  const processSteps = foldToolLifecycles(
+    items.filter((i) => i.type !== "text"),
+  );
   if (processSteps.length === 0) return null;
 
   return (
@@ -124,13 +129,19 @@ function ThinkingRow({ item }: { item: TaskMessagePayload }) {
 
 function ToolCallRow({ item }: { item: TaskMessagePayload }) {
   const copy = useChatCopy();
+  const state = taskMessageState(item);
   const summary = getToolSummary(item);
   const hasInput = !!item.input && Object.keys(item.input).length > 0;
+  const output = item.output ?? "";
   // If the call has no expandable input, render a non-interactive row —
   // wrapping a static row in Collapsible adds a wasted tap target.
-  if (!hasInput) {
+  if (!hasInput && !output) {
     return (
-      <View className="py-0.5 flex-row items-center gap-1.5">
+      <View
+        accessible
+        accessibilityLabel={`${item.tool ?? copy.toolFallback}, ${copy.toolState[state]}`}
+        className="py-0.5 flex-row items-center gap-1.5"
+      >
         <View style={{ width: 12 }} />
         <Text className="text-xs font-medium text-foreground">
           {item.tool ?? copy.toolFallback}
@@ -143,13 +154,18 @@ function ToolCallRow({ item }: { item: TaskMessagePayload }) {
             {summary}
           </Text>
         ) : null}
+        <ToolStateBadge state={state} />
       </View>
     );
   }
   return (
     <Collapsible>
       <CollapsibleTrigger asChild>
-        <View className="py-0.5 flex-row items-center gap-1.5 active:opacity-70">
+        <View
+          accessible
+          accessibilityLabel={`${item.tool ?? copy.toolFallback}, ${copy.toolState[state]}`}
+          className="py-0.5 flex-row items-center gap-1.5 active:opacity-70"
+        >
           <Ionicons name="chevron-forward" size={12} color="#71717a" />
           <Text className="text-xs font-medium text-foreground">
             {item.tool ?? copy.toolFallback}
@@ -162,14 +178,26 @@ function ToolCallRow({ item }: { item: TaskMessagePayload }) {
               {summary}
             </Text>
           ) : null}
+          <ToolStateBadge state={state} />
         </View>
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <View className="ml-4 mt-1 rounded bg-muted/40 px-2 py-1.5">
-          <Text className="text-xs text-muted-foreground">
-            {JSON.stringify(item.input, null, 2)}
-          </Text>
-        </View>
+        {hasInput ? (
+          <View className="ml-4 mt-1 rounded bg-muted/40 px-2 py-1.5">
+            <Text className="text-xs text-muted-foreground">
+              {JSON.stringify(item.input, null, 2)}
+            </Text>
+          </View>
+        ) : null}
+        {output ? (
+          <View className="ml-4 mt-1 rounded bg-muted/40 px-2 py-1.5">
+            <Text className="text-xs text-muted-foreground">
+              {output.length > 4000
+                ? `${output.slice(0, 4000)}\n…${copy.truncated}`
+                : output}
+            </Text>
+          </View>
+        ) : null}
       </CollapsibleContent>
     </Collapsible>
   );
@@ -177,8 +205,8 @@ function ToolCallRow({ item }: { item: TaskMessagePayload }) {
 
 function ToolResultRow({ item }: { item: TaskMessagePayload }) {
   const copy = useChatCopy();
+  const state = taskMessageState(item);
   const output = item.output ?? "";
-  if (!output) return null;
   const preview = output.length > 80 ? `${output.slice(0, 80)}…` : output;
   const prefix = item.tool
     ? copy.toolResultNamed(item.tool)
@@ -186,7 +214,11 @@ function ToolResultRow({ item }: { item: TaskMessagePayload }) {
   return (
     <Collapsible>
       <CollapsibleTrigger asChild>
-        <View className="py-0.5 flex-row items-start gap-1.5 active:opacity-70">
+        <View
+          accessible
+          accessibilityLabel={`${prefix}${copy.toolState[state]}`}
+          className="py-0.5 flex-row items-start gap-1.5 active:opacity-70"
+        >
           <Ionicons
             name="chevron-forward"
             size={12}
@@ -200,18 +232,58 @@ function ToolResultRow({ item }: { item: TaskMessagePayload }) {
             <Text className="text-xs text-muted-foreground">{prefix}</Text>
             {preview}
           </Text>
+          <ToolStateBadge state={state} />
         </View>
       </CollapsibleTrigger>
-      <CollapsibleContent>
-        <View className="ml-4 mt-1 rounded bg-muted/40 px-2 py-1.5">
-          <Text className="text-xs text-muted-foreground">
-            {output.length > 4000
-              ? `${output.slice(0, 4000)}\n…${copy.truncated}`
-              : output}
-          </Text>
-        </View>
-      </CollapsibleContent>
+      {output ? (
+        <CollapsibleContent>
+          <View className="ml-4 mt-1 rounded bg-muted/40 px-2 py-1.5">
+            <Text className="text-xs text-muted-foreground">
+              {output.length > 4000
+                ? `${output.slice(0, 4000)}\n…${copy.truncated}`
+                : output}
+            </Text>
+          </View>
+        </CollapsibleContent>
+      ) : null}
     </Collapsible>
+  );
+}
+
+const TOOL_STATE_ICONS = {
+  "approval-requested": "help-circle-outline",
+  "approval-responded": "checkmark-circle-outline",
+  "input-available": "time-outline",
+  "input-streaming": "ellipse-outline",
+  "output-available": "checkmark-circle-outline",
+  "output-denied": "close-circle-outline",
+  "output-error": "alert-circle-outline",
+} as const satisfies Record<TaskMessageState, keyof typeof Ionicons.glyphMap>;
+
+function ToolStateBadge({ state }: { state: TaskMessageState }) {
+  const copy = useChatCopy();
+  const { colorScheme } = useColorScheme();
+  const theme = THEME[colorScheme];
+  const color =
+    state === "output-available" || state === "approval-responded"
+      ? theme.success
+      : state === "output-error"
+        ? theme.destructive
+        : state === "approval-requested" || state === "output-denied"
+          ? theme.warning
+          : theme.mutedForeground;
+
+  return (
+    <View
+      accessible
+      accessibilityLabel={copy.toolState[state]}
+      className="ml-auto flex-row items-center gap-1 rounded-full bg-muted/60 px-1.5 py-0.5"
+    >
+      <Ionicons name={TOOL_STATE_ICONS[state]} size={11} color={color} />
+      <Text className="text-[10px] text-muted-foreground">
+        {copy.toolState[state]}
+      </Text>
+    </View>
   );
 }
 

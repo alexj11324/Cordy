@@ -9,7 +9,6 @@ WHERE email = $1;
 -- name: GetUsersByIDs :many
 -- Batch lookup from the GLOBAL user table (not gated on membership, so departed
 -- members still render). Used to enrich attribution initiator / originator refs on
--- task responses without an N+1 (MUL-4302 §9). Returns only the display fields.
 SELECT id, name, email, avatar_url FROM "user"
 WHERE id = ANY(@ids::uuid[]);
 
@@ -32,10 +31,53 @@ RETURNING *;
 -- rather than carrying a dedicated UpdateUserTimezone keeps the
 -- profile-patch shape uniform between Preferences fields.
 UPDATE "user" SET
-    name = COALESCE($2, name),
+    name = CASE
+        WHEN COALESCE(sqlc.narg('profile_details')::jsonb, '{}'::jsonb)
+            ?| ARRAY['first_name', 'last_name', 'preferred_name']
+        THEN COALESCE(
+            NULLIF(BTRIM(((
+                CASE
+                    WHEN NOT (profile_details ? 'first_name')
+                        AND NOT (sqlc.narg('profile_details')::jsonb ? 'first_name')
+                    THEN profile_details || jsonb_build_object('first_name', name)
+                    ELSE profile_details
+                END
+            ) || sqlc.narg('profile_details')::jsonb)->>'preferred_name'), ''),
+            NULLIF(BTRIM(CONCAT_WS(
+                ' ',
+                NULLIF(BTRIM(((
+                    CASE
+                        WHEN NOT (profile_details ? 'first_name')
+                            AND NOT (sqlc.narg('profile_details')::jsonb ? 'first_name')
+                        THEN profile_details || jsonb_build_object('first_name', name)
+                        ELSE profile_details
+                    END
+                ) || sqlc.narg('profile_details')::jsonb)->>'first_name'), ''),
+                NULLIF(BTRIM(((
+                    CASE
+                        WHEN NOT (profile_details ? 'first_name')
+                            AND NOT (sqlc.narg('profile_details')::jsonb ? 'first_name')
+                        THEN profile_details || jsonb_build_object('first_name', name)
+                        ELSE profile_details
+                    END
+                ) || sqlc.narg('profile_details')::jsonb)->>'last_name'), '')
+            )), '')
+        )
+        ELSE COALESCE($2, name)
+    END,
     avatar_url = COALESCE($3, avatar_url),
     language = COALESCE($4, language),
     profile_description = COALESCE(sqlc.narg('profile_description'), profile_description),
+    profile_details = (
+        CASE
+            WHEN COALESCE(sqlc.narg('profile_details')::jsonb, '{}'::jsonb)
+                    ?| ARRAY['first_name', 'last_name', 'preferred_name']
+                AND NOT (profile_details ? 'first_name')
+                AND NOT (sqlc.narg('profile_details')::jsonb ? 'first_name')
+            THEN profile_details || jsonb_build_object('first_name', name)
+            ELSE profile_details
+        END
+    ) || COALESCE(sqlc.narg('profile_details')::jsonb, '{}'::jsonb),
     timezone = CASE
         WHEN sqlc.narg('timezone')::text IS NULL THEN timezone
         WHEN sqlc.narg('timezone')::text = ''    THEN NULL

@@ -22,6 +22,7 @@ var issueMoveFields = map[string]struct{}{
 	"executor_id":       {},
 	"reviewer_type":     {},
 	"reviewer_id":       {},
+	"review_submission": {},
 	"parent_issue_id":   {},
 	"project_id":        {},
 	"before_id":         {},

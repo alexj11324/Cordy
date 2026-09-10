@@ -14,7 +14,7 @@ import (
 const createVerificationCode = `-- name: CreateVerificationCode :one
 INSERT INTO verification_code (email, code, expires_at)
 VALUES ($1, $2, $3)
-RETURNING id, email, code, expires_at, used, created_at, attempts
+RETURNING id, email, code, expires_at, used, created_at, attempts, purpose, requester_user_id
 `
 
 type CreateVerificationCodeParams struct {
@@ -34,6 +34,8 @@ func (q *Queries) CreateVerificationCode(ctx context.Context, arg CreateVerifica
 		&i.Used,
 		&i.CreatedAt,
 		&i.Attempts,
+		&i.Purpose,
+		&i.RequesterUserID,
 	)
 	return i, err
 }
@@ -49,8 +51,8 @@ func (q *Queries) DeleteExpiredVerificationCodes(ctx context.Context) error {
 }
 
 const getLatestCodeByEmail = `-- name: GetLatestCodeByEmail :one
-SELECT id, email, code, expires_at, used, created_at, attempts FROM verification_code
-WHERE email = $1
+SELECT id, email, code, expires_at, used, created_at, attempts, purpose, requester_user_id FROM verification_code
+WHERE email = $1 AND purpose = 'login'
 ORDER BY created_at DESC
 LIMIT 1
 `
@@ -66,13 +68,15 @@ func (q *Queries) GetLatestCodeByEmail(ctx context.Context, email string) (Verif
 		&i.Used,
 		&i.CreatedAt,
 		&i.Attempts,
+		&i.Purpose,
+		&i.RequesterUserID,
 	)
 	return i, err
 }
 
 const getLatestVerificationCode = `-- name: GetLatestVerificationCode :one
-SELECT id, email, code, expires_at, used, created_at, attempts FROM verification_code
-WHERE email = $1
+SELECT id, email, code, expires_at, used, created_at, attempts, purpose, requester_user_id FROM verification_code
+WHERE email = $1 AND purpose = 'login'
   AND used = FALSE
   AND expires_at > now()
   AND attempts < 5
@@ -91,6 +95,8 @@ func (q *Queries) GetLatestVerificationCode(ctx context.Context, email string) (
 		&i.Used,
 		&i.CreatedAt,
 		&i.Attempts,
+		&i.Purpose,
+		&i.RequesterUserID,
 	)
 	return i, err
 }

@@ -4,6 +4,12 @@ SELECT l.*,
         WHEN 'issue' THEN (SELECT COUNT(*) FROM issue_to_label x WHERE x.label_id = l.id)
         WHEN 'agent' THEN (SELECT COUNT(*) FROM agent_to_label x WHERE x.label_id = l.id)
         WHEN 'skill' THEN (SELECT COUNT(*) FROM skill_to_label x WHERE x.label_id = l.id)
+        WHEN 'project' THEN (
+            SELECT COUNT(*)
+            FROM project p
+            WHERE p.workspace_id = l.workspace_id
+              AND p.label_ids ? l.id::text
+        )
         ELSE 0
     END::bigint AS usage_count
 FROM issue_label l

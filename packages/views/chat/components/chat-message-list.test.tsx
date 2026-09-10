@@ -7,7 +7,6 @@ import type { TaskMessagePayload } from "@orvilo/core/types";
 import type { ReactElement } from "react";
 import enChat from "../../locales/en/chat.json";
 
-// The live timeline is a real list row rather than Virtuoso chrome (MUL-4922),
 // so it shares one identity with the persisted assistant row and keeps its
 // Mermaid/HTML blocks mounted across task completion. Real react-virtuoso
 // renders its Footer but NO data rows under jsdom's zero-height viewport, so
@@ -36,7 +35,10 @@ vi.mock("react-virtuoso", () => ({
         data-follow-away-from-bottom={String(followOutput?.(false))}
       >
         {data.map((item, i) => (
-          <div key={computeItemKey(i, item)} data-row-key={computeItemKey(i, item)}>
+          <div
+            key={computeItemKey(i, item)}
+            data-row-key={computeItemKey(i, item)}
+          >
             {itemContent(i, item)}
           </div>
         ))}
@@ -133,7 +135,159 @@ describe("ChatMessageList live follow (#6697)", () => {
   });
 });
 
-describe("ChatMessageList live timeline (MUL-3960 regression)", () => {
+describe("ChatMessageList AI attribution", () => {
+  it("places a citation marker at its UTF-8 range and counts cache writes", async () => {
+    const content =
+      "`code` and [link](https://example.org) plus [9](https://citation.invalid/0)";
+    const codeEnd = new TextEncoder().encode(
+      content.slice(0, content.indexOf("code") + 4),
+    ).length;
+    const linkStart = new TextEncoder().encode(
+      content.slice(0, content.indexOf("link")),
+    ).length;
+    const linkEnd = new TextEncoder().encode(
+      content.slice(0, content.indexOf("link") + 4),
+    ).length;
+    const { container } = render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={new QueryClient()}>
+          <ChatMessageList
+            messages={[
+              {
+                id: "message-1",
+                chat_session_id: "session-1",
+                role: "assistant",
+                content,
+                task_id: null,
+                created_at: new Date(1).toISOString(),
+                sources: [
+                  {
+                    id: "source-1",
+                    url: "https://example.com",
+                    title: "Example",
+                  },
+                ],
+                citations: [
+                  { source_id: "source-1", start: 1, end: codeEnd },
+                  { source_id: "source-1", start: linkStart, end: linkEnd },
+                ],
+                usage: [
+                  {
+                    model: "model-1",
+                    input_tokens: 1,
+                    output_tokens: 2,
+                    cache_read_tokens: 3,
+                    cache_write_tokens: 4,
+                  },
+                ],
+              },
+            ]}
+            pendingTask={null}
+            availability={undefined}
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findAllByText("1")).not.toHaveLength(0);
+    expect(
+      container.querySelectorAll('[data-slot="inline-citation"]'),
+    ).toHaveLength(2);
+    expect(screen.getByRole("link", { name: "9" })).toHaveAttribute(
+      "href",
+      "https://citation.invalid/0",
+    );
+    expect(screen.getByText("10 tokens")).toBeInTheDocument();
+    expect(screen.getByText("code")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "link" })).toHaveAttribute(
+      "href",
+      "https://example.org",
+    );
+  });
+
+  it.each([
+    ["MUL-123 claim", "MUL-123"],
+    ["https://target.example claim", "https://target.example"],
+    ["!file[doc.md](/uploads/x.md) claim", "doc.md"],
+  ])(
+    "keeps the source marker aligned while preprocessing %s",
+    async (content, citedText) => {
+      const end = new TextEncoder().encode(
+        content.slice(0, content.indexOf(citedText) + citedText.length),
+      ).length;
+      const { container } = render(
+        <I18nProvider locale="en" resources={TEST_RESOURCES}>
+          <QueryClientProvider client={new QueryClient()}>
+            <ChatMessageList
+              messages={[
+                {
+                  id: "message-preprocess",
+                  chat_session_id: "session-1",
+                  role: "assistant",
+                  content,
+                  task_id: null,
+                  created_at: new Date(1).toISOString(),
+                  sources: [{ id: "source-1", url: "https://source.example" }],
+                  citations: [{ source_id: "source-1", start: 0, end }],
+                },
+              ]}
+              pendingTask={null}
+              availability={undefined}
+            />
+          </QueryClientProvider>
+        </I18nProvider>,
+      );
+
+      const marker = await screen.findByText("1", {
+        selector: '[data-slot="inline-citation"] > span:first-child',
+      });
+      const markerRoot = marker.closest('[data-slot="inline-citation"]');
+      const paragraph = markerRoot?.parentElement;
+      expect(markerRoot).not.toBeNull();
+      expect(paragraph?.tagName).toBe("P");
+      const markerIndex = [...(paragraph?.childNodes ?? [])].indexOf(
+        markerRoot!,
+      );
+      const before = [...(paragraph?.childNodes ?? [])]
+        .slice(0, markerIndex)
+        .map((node) => node.textContent ?? "")
+        .join("");
+      const after = [...(paragraph?.childNodes ?? [])]
+        .slice(markerIndex + 1)
+        .map((node) => node.textContent ?? "")
+        .join("");
+      expect(before).toContain(citedText);
+      expect(after).toContain("claim");
+      expect(
+        container.querySelectorAll('[data-slot="inline-citation"]'),
+      ).toHaveLength(1);
+    },
+  );
+});
+
+describe("ChatMessageList live timeline (ISSUE-3960 regression)", () => {
+  it("omits provider thinking and tool rows on compact embedded surfaces", async () => {
+    const qc = new QueryClient();
+    qc.setQueryData(chatKeys.taskMessages(TASK_ID), INITIAL_MESSAGES);
+
+    render(
+      <I18nProvider locale="en" resources={TEST_RESOURCES}>
+        <QueryClientProvider client={qc}>
+          <ChatMessageList
+            messages={[]}
+            pendingTask={{ task_id: TASK_ID, status: "running" }}
+            availability="online"
+            showProcessSteps={false}
+          />
+        </QueryClientProvider>
+      </I18nProvider>,
+    );
+
+    expect(await screen.findByText("Looking into it.")).toBeInTheDocument();
+    expect(screen.queryByText("2 steps")).not.toBeInTheDocument();
+    expect(screen.queryByText("Bash")).not.toBeInTheDocument();
+  });
+
   // The live footer is passed to Virtuoso through `components`. If that prop
   // is rebuilt inline on render, every streamed task:message unmounts and
   // remounts the whole footer subtree — re-parsing all Markdown and rebuilding
@@ -184,7 +338,7 @@ describe("ChatMessageList live timeline (MUL-3960 regression)", () => {
     qc.setQueryData(chatKeys.taskMessages(TASK_ID), [
       taskMsg(0, "text", {
         content:
-          "Draft ready.\n<agent_draft>{\"name\":\"Hidden protocol\"}</agent_draft>",
+          'Draft ready.\n<agent_draft>{"name":"Hidden protocol"}</agent_draft>',
       }),
     ]);
 
@@ -196,10 +350,7 @@ describe("ChatMessageList live timeline (MUL-3960 regression)", () => {
             pendingTask={{ task_id: TASK_ID, status: "running" }}
             availability="online"
             transformContent={(content) =>
-              content.replace(
-                /<agent_draft>[\s\S]*?<\/agent_draft>/g,
-                "",
-              )
+              content.replace(/<agent_draft>[\s\S]*?<\/agent_draft>/g, "")
             }
           />
         </QueryClientProvider>
@@ -215,7 +366,7 @@ describe("ChatMessageList live timeline (MUL-3960 regression)", () => {
     qc.setQueryData(chatKeys.taskMessages(TASK_ID), [
       taskMsg(0, "text", {
         content:
-          "Draft ready.\n```quick-actions\n[{\"label\":\"Hidden suggestion\"",
+          'Draft ready.\n```quick-actions\n[{"label":"Hidden suggestion"',
       }),
     ]);
 
@@ -270,24 +421,36 @@ describe("ChatMessageList quick actions", () => {
     const qc = new QueryClient();
     const onQuickAction = vi.fn();
     const quickActions = [
-      { label: "Draft the brief", prompt: "Draft the complete launch brief", primary: true },
-      { label: "Make a checklist", prompt: "Create a two-week launch checklist" },
-      { label: "Define success", prompt: "Define the activation success metric" },
+      {
+        label: "Draft the brief",
+        prompt: "Draft the complete launch brief",
+        primary: true,
+      },
+      {
+        label: "Make a checklist",
+        prompt: "Create a two-week launch checklist",
+      },
+      {
+        label: "Define success",
+        prompt: "Define the activation success metric",
+      },
     ];
 
     render(
       <I18nProvider locale="en" resources={TEST_RESOURCES}>
         <QueryClientProvider client={qc}>
           <ChatMessageList
-            messages={[{
-              id: "assistant-1",
-              chat_session_id: "session-1",
-              role: "assistant",
-              content: "The plan is ready.",
-              task_id: null,
-              created_at: "2026-07-22T00:00:00Z",
-              quick_actions: quickActions,
-            }]}
+            messages={[
+              {
+                id: "assistant-1",
+                chat_session_id: "session-1",
+                role: "assistant",
+                content: "The plan is ready.",
+                task_id: null,
+                created_at: "2026-07-22T00:00:00Z",
+                quick_actions: quickActions,
+              },
+            ]}
             pendingTask={null}
             availability="online"
             onQuickAction={onQuickAction}
@@ -296,9 +459,15 @@ describe("ChatMessageList quick actions", () => {
       </I18nProvider>,
     );
 
-    expect(await screen.findByRole("button", { name: "Draft the brief" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Make a checklist" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Define success" })).toBeEnabled();
+    expect(
+      await screen.findByRole("button", { name: "Draft the brief" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Make a checklist" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Define success" }),
+    ).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Draft the brief" }));
     expect(onQuickAction).toHaveBeenCalledWith(quickActions[0]);
   });
@@ -309,15 +478,17 @@ describe("ChatMessageList quick actions", () => {
       <I18nProvider locale="en" resources={TEST_RESOURCES}>
         <QueryClientProvider client={qc}>
           <ChatMessageList
-            messages={[{
-              id: "assistant-1",
-              chat_session_id: "session-1",
-              role: "assistant",
-              content: "Ready.",
-              task_id: null,
-              created_at: "2026-07-22T00:00:00Z",
-              quick_actions: [{ label: "Continue", prompt: "Continue" }],
-            }]}
+            messages={[
+              {
+                id: "assistant-1",
+                chat_session_id: "session-1",
+                role: "assistant",
+                content: "Ready.",
+                task_id: null,
+                created_at: "2026-07-22T00:00:00Z",
+                quick_actions: [{ label: "Continue", prompt: "Continue" }],
+              },
+            ]}
             pendingTask={null}
             availability="online"
             onQuickAction={vi.fn()}
@@ -327,7 +498,9 @@ describe("ChatMessageList quick actions", () => {
       </I18nProvider>,
     );
 
-    expect(await screen.findByRole("button", { name: "Continue" })).toBeDisabled();
+    expect(
+      await screen.findByRole("button", { name: "Continue" }),
+    ).toBeDisabled();
   });
 });
 
@@ -356,7 +529,11 @@ describe("ChatMessageList quick actions skeleton", () => {
         </QueryClientProvider>
       </I18nProvider>,
     );
-    expect(container.querySelectorAll(".rounded-full[aria-hidden] , [aria-hidden] .rounded-full").length).toBeGreaterThan(0);
+    expect(
+      container.querySelectorAll(
+        ".rounded-full[aria-hidden] , [aria-hidden] .rounded-full",
+      ).length,
+    ).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /suggested/i })).toBeNull();
   });
 
@@ -417,8 +594,7 @@ describe("ChatMessageList onboarding kickoff", () => {
   });
 });
 
-describe("ChatMessageList failure copy (MUL-5370 regression)", () => {
-  // The backend moved to the refined taxonomy (agent_error.*) in MUL-2946 but
+describe("ChatMessageList failure copy (ISSUE-5370 regression)", () => {
   // the copy map stayed on the six coarse values, so an exact-key lookup
   // missed every refined reason and fell through to the generic fallback.
   // A user whose skill bundle download stalled was told only "Something went
@@ -433,7 +609,7 @@ describe("ChatMessageList failure copy (MUL-5370 regression)", () => {
                 id: "m1",
                 chat_session_id: "s1",
                 role: "assistant",
-                content: "skill bundle unavailable: skill \"x\"",
+                content: 'skill bundle unavailable: skill "x"',
                 task_id: null,
                 created_at: new Date(0).toISOString(),
                 failure_reason: reason,
@@ -452,7 +628,9 @@ describe("ChatMessageList failure copy (MUL-5370 regression)", () => {
   it("renders dedicated copy for a stalled skill bundle download", async () => {
     renderFailure("skill_bundle_unavailable");
     expect(
-      await screen.findByText(enChat.message_list.failure.skill_bundle_unavailable),
+      await screen.findByText(
+        enChat.message_list.failure.skill_bundle_unavailable,
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText(FALLBACK)).not.toBeInTheDocument();
   });
@@ -500,7 +678,9 @@ describe("ChatMessageList onboarding starter cards", () => {
     quick_actions: [{ label: "LLM chip", prompt: "llm prompt" }],
   };
 
-  function renderCards(overrides: Partial<Parameters<typeof ChatMessageList>[0]> = {}) {
+  function renderCards(
+    overrides: Partial<Parameters<typeof ChatMessageList>[0]> = {},
+  ) {
     return render(
       <I18nProvider locale="en" resources={TEST_RESOURCES}>
         <QueryClientProvider client={new QueryClient()}>
@@ -521,7 +701,9 @@ describe("ChatMessageList onboarding starter cards", () => {
     expect(
       await screen.findByRole("button", { name: "Get a board up in minutes" }),
     ).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Hand me one thing first" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Hand me one thing first" }),
+    ).toBeEnabled();
     expect(
       screen.getByRole("button", { name: "Let the daily digest write itself" }),
     ).toBeEnabled();
@@ -550,8 +732,12 @@ describe("ChatMessageList onboarding starter cards", () => {
   });
 
   it("renders ordinary chips, not cards, for an unstamped assistant turn", async () => {
-    renderCards({ messages: [{ ...opening, message_kind: "message" as const }] });
-    expect(await screen.findByRole("button", { name: "LLM chip" })).toBeEnabled();
+    renderCards({
+      messages: [{ ...opening, message_kind: "message" as const }],
+    });
+    expect(
+      await screen.findByRole("button", { name: "LLM chip" }),
+    ).toBeEnabled();
     expect(
       screen.queryByRole("button", { name: "Get a board up in minutes" }),
     ).toBeNull();

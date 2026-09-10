@@ -210,7 +210,7 @@ function ProjectResultRow({
           {projectStatusLabels[status] ?? project.status}
         </span>
       </div>
-      {project.match_source === "description" && project.matched_snippet && (
+      {(project.match_source === "summary" || project.match_source === "description") && project.matched_snippet && (
         <div className="flex items-start gap-2 pl-[26px]">
           <span className="text-caption text-muted-foreground truncate">
             <HighlightText text={project.matched_snippet} query={query} />

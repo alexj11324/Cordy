@@ -283,7 +283,8 @@ vi.mock("../../common/actor-avatar", () => ({
 }));
 
 vi.mock("../../projects/components/project-picker", () => ({
-  ProjectPicker: () => <span data-testid="project-picker">Project</span>,
+  ProjectPicker: ({ triggerRender }: { triggerRender?: React.ReactElement }) =>
+    triggerRender ?? <span data-testid="project-picker">Project</span>,
 }));
 
 // Mock api
@@ -626,13 +627,18 @@ function renderIssueDetail(issueId = "issue-1") {
   );
 }
 
-/**
- * Renders with the workspace status catalog already in cache, so custom
- * statuses resolve to their real name, category and color. Seeding the query
- * (rather than stubbing the hook) keeps the shipped resolvers in the path; the
- * generous staleTime on the catalog query means it is never refetched. Every
- * other test runs without it — the cold-catalog case. (MUL-6243)
- */
+function renderInboxIssueDetail(issueId = "issue-1") {
+  const queryClient = createTestQueryClient();
+  return render(
+    <I18nProvider locale="en" resources={TEST_RESOURCES}>
+      <QueryClientProvider client={queryClient}>
+        <IssueDetail issueId={issueId} layout="inbox" />
+      </QueryClientProvider>
+    </I18nProvider>,
+  );
+}
+
+
 function renderIssueDetailWithStatusCatalog(
   entries: IssueStatusEntry[],
   issueId = "issue-1",
@@ -771,7 +777,8 @@ describe("IssueDetail (shared)", () => {
   it("refreshes dependency state from the real issue lifecycle events", async () => {
     renderIssueDetail();
 
-    await screen.findByText("No hard prerequisites. This issue can start immediately.");
+    await screen.findByText("Properties");
+    expect(screen.queryByRole("heading", { name: "Dependencies" })).not.toBeInTheDocument();
 
     expect(mockUseWSEvent).toHaveBeenCalledWith("issue:created", expect.any(Function));
     expect(mockUseWSEvent).toHaveBeenCalledWith("issue:updated", expect.any(Function));
@@ -998,7 +1005,7 @@ describe("IssueDetail (shared)", () => {
     // ContentEditor drops pending debounced updates on unmount by default
     // (so cancelled comment drafts aren't resurrected), and only this
     // explicit opt-in keeps a paste-then-close from losing the image
-    // markdown and its attachment_ids bind (MUL-3254). The flush behavior
+
     // itself is covered in content-editor.test.tsx; this pins the wiring.
     renderIssueDetail();
 
@@ -1105,7 +1112,7 @@ describe("IssueDetail (shared)", () => {
     expect(screen.getByText("Status")).toBeInTheDocument();
     expect(screen.getByText("Owner")).toBeInTheDocument();
     expect(screen.getByText("Executor")).toBeInTheDocument();
-    expect(screen.getByText("Reviewer")).toBeInTheDocument();
+    expect(screen.queryByText("Reviewer")).not.toBeInTheDocument();
     // "Project" appears twice (row label + picker stub), so disambiguate by id.
     expect(screen.getByTestId("project-picker")).toBeInTheDocument();
     // priority="high" + due_date are set in the fixture, so both optional rows show.
@@ -1113,7 +1120,7 @@ describe("IssueDetail (shared)", () => {
     expect(screen.getByText("Due date")).toBeInTheDocument();
     // No labels are attached in the fixture — the Labels optional row
     // must stay hidden by default.
-    expect(screen.queryByText("Labels")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Labels" })).toBeInTheDocument();
     // Parent issue lives in its own section and only renders when the
     // issue actually has a parent — the fixture has none.
     expect(screen.queryByText("Parent issue")).not.toBeInTheDocument();
@@ -1139,7 +1146,7 @@ describe("IssueDetail (shared)", () => {
 
     expect(screen.queryByText("Priority")).not.toBeInTheDocument();
     expect(screen.queryByText("Due date")).not.toBeInTheDocument();
-    expect(screen.queryByText("Labels")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Labels" })).toBeInTheDocument();
     // Project stays as a core row regardless of value.
     expect(screen.getByTestId("project-picker")).toBeInTheDocument();
     // No parent → no standalone Parent issue section either.
@@ -1147,7 +1154,7 @@ describe("IssueDetail (shared)", () => {
     expect(screen.getByText("Add property")).toBeInTheDocument();
   });
 
-  it("uses a non-resizable layout with the sidebar sheet closed by default on mobile", async () => {
+  it("keeps properties visible in the non-resizable mobile layout", async () => {
     mockViewport.isMobile = true;
 
     renderIssueDetail();
@@ -1157,7 +1164,23 @@ describe("IssueDetail (shared)", () => {
     });
 
     expect(screen.queryByTestId("panel-group")).not.toBeInTheDocument();
-    expect(screen.queryByText("Properties")).not.toBeInTheDocument();
+    expect(screen.getByText("Properties")).toBeInTheDocument();
+  });
+
+  it("uses a single inline property row for the Inbox layout", async () => {
+    renderInboxIssueDetail();
+
+    await waitFor(() => {
+      expect(screen.getByTestId("issue-inline-properties")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByRole("complementary", { name: "Properties" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("issue-inline-status")).toBeInTheDocument();
+    expect(screen.getByTestId("issue-inline-priority")).toBeInTheDocument();
+    expect(screen.getByTestId("issue-inline-executor")).toBeInTheDocument();
+    expect(screen.getByTestId("issue-inline-project")).toBeInTheDocument();
+    expect(screen.getByTestId("issue-inline-labels")).toBeInTheDocument();
+    expect(screen.queryByText("Execution log")).not.toBeInTheDocument();
   });
 
   it("pins the comment composer to the scroll viewport on a wide screen", async () => {
@@ -1230,56 +1253,13 @@ describe("IssueDetail (shared)", () => {
     expect(container.querySelector(".max-md\\:pb-chat-launcher")).not.toBeNull();
   });
 
-  it("hides metadata content from the sidebar and shows a button when the bag has keys", async () => {
-    // Metadata is agent-facing; the sidebar only exposes a button that opens
-    // the raw JSON on demand. Keys are NOT rendered inline anywhere.
-    mockApiObj.getIssue.mockResolvedValue({
-      ...mockIssue,
-      metadata: {
-        pr_url: "https://example.com/pr/1",
-        pipeline_status: "running",
-      },
-    });
-
+  it("omits metadata controls and values even when the bag has keys", async () => {
+    mockApiObj.getIssue.mockResolvedValue({ ...mockIssue, metadata: { pr_url: "https://example.com/pr/1", pipeline_status: "running" } });
     renderIssueDetail();
-
-    await waitFor(() => {
-      // Trigger label includes a "· N" count so users can see payload size
-      // before clicking — accept any count via regex.
-      expect(screen.getByRole("button", { name: /^Metadata\b/ })).toBeInTheDocument();
-    });
-
-    // Key names are not rendered in the sidebar prior to opening the dialog.
+    await screen.findByText("Properties");
+    expect(screen.queryByRole("button", { name: /^Metadata\b/ })).not.toBeInTheDocument();
     expect(screen.queryByText("pr_url")).not.toBeInTheDocument();
     expect(screen.queryByText("pipeline_status")).not.toBeInTheDocument();
-  });
-
-  it("opens a dialog with formatted JSON when the Metadata button is clicked", async () => {
-    mockApiObj.getIssue.mockResolvedValue({
-      ...mockIssue,
-      metadata: {
-        pr_url: "https://example.com/pr/1",
-        pipeline_status: "running",
-      },
-    });
-
-    renderIssueDetail();
-
-    const button = await screen.findByRole("button", { name: /^Metadata\b/ });
-    fireEvent.click(button);
-
-    // The dialog renders a <pre> containing the formatted JSON; checking the
-    // exact serialized payload also verifies the indent / structure.
-    const expected = JSON.stringify(
-      { pr_url: "https://example.com/pr/1", pipeline_status: "running" },
-      null,
-      2,
-    );
-    await waitFor(() => {
-      const pre = document.querySelector("pre");
-      expect(pre).not.toBeNull();
-      expect(pre!.textContent).toBe(expected);
-    });
   });
 
   it("hides the Metadata button entirely when the bag is empty", async () => {
@@ -1287,54 +1267,27 @@ describe("IssueDetail (shared)", () => {
     renderIssueDetail();
 
     await waitFor(() => {
-      expect(screen.getByText("Details")).toBeInTheDocument();
+      expect(screen.getByText("Properties")).toBeInTheDocument();
     });
 
     expect(screen.queryByRole("button", { name: /^Metadata\b/ })).not.toBeInTheDocument();
   });
 
-  it("renders Details section with Created by and dates", async () => {
+  it("keeps creation history in Activity and separates Labels and Project", async () => {
     renderIssueDetail();
-
-    await waitFor(() => {
-      expect(screen.getByText("Details")).toBeInTheDocument();
-    });
-
-    expect(screen.getByText("Created by")).toBeInTheDocument();
-    expect(screen.getByText("Created")).toBeInTheDocument();
-    expect(screen.getByText("Updated")).toBeInTheDocument();
+    const sidebar = await screen.findByRole("complementary", { name: "Properties" });
+    expect(within(sidebar).getByRole("heading", { name: "Labels" })).toBeInTheDocument();
+    expect(within(sidebar).getByRole("heading", { name: "Project" })).toBeInTheDocument();
+    expect(within(sidebar).queryByText("Created by")).not.toBeInTheDocument();
+    expect(within(sidebar).queryByText("Updated")).not.toBeInTheDocument();
+    expect(screen.queryByText("Details")).not.toBeInTheDocument();
+    expect(screen.getByText(/created this issue/)).toBeInTheDocument();
   });
 
-  // Details is creator + immutable timestamps, so it ranks below the
-  // execution log, which is what people actually open the sidebar for.
-  it("orders the Details section after the execution log", async () => {
-    mockApiObj.listTasksByIssue.mockResolvedValue([
-      {
-        id: "task-past",
-        agent_id: "agent-1",
-        runtime_id: "runtime-1",
-        issue_id: "issue-1",
-        status: "completed",
-        priority: 0,
-        dispatched_at: null,
-        started_at: "2026-06-08T08:00:00Z",
-        completed_at: "2026-06-08T08:05:00Z",
-        result: null,
-        error: null,
-        created_at: "2026-06-08T08:00:00Z",
-        trigger_summary: "Started from comment",
-      },
-    ]);
-
+  it("shows the reviewer when the issue enters review", async () => {
+    mockApiObj.getIssue.mockResolvedValue({ ...mockIssue, status: "in_review" });
     renderIssueDetail();
-
-    const executionLog = await screen.findByText("Execution log");
-    const details = screen.getByText("Details");
-
-    // DOCUMENT_POSITION_FOLLOWING: Details comes after the execution log.
-    expect(
-      executionLog.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
+    expect(await screen.findByText("Reviewer")).toBeInTheDocument();
   });
 
   it("shows 'not found' message when issue does not exist", async () => {
@@ -1412,7 +1365,7 @@ describe("IssueDetail (shared)", () => {
         id: "comment-child-done",
         actor_type: "system",
         actor_id: "00000000-0000-0000-0000-000000000000",
-        content: "Sub-issue MUL-123 is done.",
+        content: "Sub-issue ISSUE-123 is done.",
         parent_id: null,
         created_at: "2026-01-18T00:00:00Z",
         updated_at: "2026-01-18T00:00:00Z",
@@ -1422,7 +1375,7 @@ describe("IssueDetail (shared)", () => {
 
     renderIssueDetail();
 
-    await screen.findByText("Sub-issue MUL-123 is done.");
+    await screen.findByText("Sub-issue ISSUE-123 is done.");
     expect(screen.queryByRole("button", { name: "Retry task" })).not.toBeInTheDocument();
   });
 
@@ -1559,7 +1512,7 @@ describe("IssueDetail (shared)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // MUL-6413 — the activity glyph is per CATEGORY, so a move into a custom
+
   // status drew the icon of the built-in it sits beside: "In Review → Awaiting
   // Response" repainted identically and read as though nothing had moved.
   // Colour is what carries a custom status's own identity.
@@ -2392,7 +2345,7 @@ describe("IssueDetail (shared)", () => {
   });
 
   // Deliberately drives the real Base UI DropdownMenu rather than a stub: the
-  // bug these tests pin (MUL-5710) was a handler wired to `onSelect`, which
+
   // typechecks because Menu.Item's props extend the whole div attribute set,
   // then lands on the DOM as the native text-selection event and never fires.
   // Only the real menu reproduces that; any hand-rolled mock hides it.
@@ -2411,7 +2364,7 @@ describe("IssueDetail (shared)", () => {
       mockApiObj.listIssueSubscribers.mockResolvedValue(subscribedAsMember);
       // The menu only exists when there is a sub-tree for its second item to
       // act on. A childless issue renders a direct button instead — covered
-      // by the "no sub-issues" tests below (MUL-5714).
+
       mockApiObj.listChildIssues.mockResolvedValue({
         issues: [{ ...mockIssue, id: "child-1", parent_issue_id: "issue-1" }],
       });
@@ -2480,7 +2433,7 @@ describe("IssueDetail (shared)", () => {
 
   // The reported bug: on an issue with no sub-issues the only way to leave was
   // a menu whose second item pointed at a sub-tree that does not exist
-  // (MUL-5714).
+
   describe("unsubscribe without sub-issues", () => {
     const subscribedAsMember = [
       {
@@ -2559,7 +2512,7 @@ describe("IssueDetail (shared)", () => {
       // reaches an enabled button — the in-flight guard is what stops it. Two
       // overlapping toggles is the one case the mutation's whole-list snapshot
       // cannot survive: the second snapshots the first one's optimistic patch
-      // and rolls back to it (MUL-5714).
+
       fireEvent.click(button);
       fireEvent.click(button);
 
@@ -2608,7 +2561,7 @@ describe("IssueDetail (shared)", () => {
   // which reads as "not subscribed" for everyone. Rendering that default
   // showed a Subscribe button to people who were already subscribed, and a
   // click landing in that window sent a subscribe instead of the unsubscribe
-  // they meant (MUL-5714).
+
   describe("subscription state before the query resolves", () => {
     afterEach(() => {
       document.body.innerHTML = "";
@@ -2640,7 +2593,7 @@ describe("IssueDetail (shared)", () => {
   // Clicking one of those rows sends an explicit subscribe, which rewrites the
   // target's reason to 'manual' and clears any opt-out scope
   // (server/pkg/db/queries/subscriber.sql), discarding a delegated
-  // subscription or a deliberate opt-out (MUL-5714).
+
   describe("subscriber picker before the query resolves", () => {
     // The picker sits next to the subscribe control in the Activity header.
     // Anchor on the heading, not on that control — the whole point of these

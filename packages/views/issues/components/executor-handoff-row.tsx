@@ -124,10 +124,12 @@ export function ExecutorHandoffRow({
   issue,
   timeline,
   onUpdate,
+  triggerRender,
 }: {
   issue: Issue;
   timeline: readonly TimelineEntry[];
   onUpdate: (updates: Partial<UpdateIssueRequest>) => void;
+  triggerRender?: React.ReactElement<Record<string, unknown>>;
 }) {
   const { getActorName } = useActorName();
   const { actors, hops } = useMemo(() => {
@@ -147,6 +149,7 @@ export function ExecutorHandoffRow({
       executorId={issue.executor_id}
       onUpdate={onUpdate}
       align="start"
+      triggerRender={triggerRender}
       trigger={
         stacked && issue.executor_type && issue.executor_id ? (
           <span className="truncate">

@@ -738,6 +738,116 @@ func (q *Queries) GetCoordinationAgentForDispatch(ctx context.Context, arg GetCo
 	return i, err
 }
 
+const listCoordinationReviewPullRequests = `-- name: ListCoordinationReviewPullRequests :many
+SELECT 'github_pull_request'::text AS provider_record_type,
+       github.id AS provider_record_id,
+       lower(github.repo_owner || '/' || github.repo_name) AS repo_identity,
+       github.branch,
+       github.head_sha,
+       github.html_url
+FROM work_product_relation AS relation
+JOIN work_product AS product
+  ON product.id = relation.work_product_id
+ AND product.workspace_id = relation.workspace_id
+JOIN github_pull_request AS github
+  ON github.id = product.provider_record_id
+ AND github.workspace_id = product.workspace_id
+WHERE relation.workspace_id = $1::uuid
+  AND relation.issue_id = $2::uuid
+  AND relation.task_id = $3::uuid
+  AND relation.detached_at IS NULL
+  AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+  AND product.kind = 'pull_request'
+  AND product.provider_record_type = 'github_pull_request'
+  AND lower(github.repo_owner || '/' || github.repo_name) = lower($4::text)
+  AND github.branch = $5::text
+  AND lower(github.head_sha) = lower($6::text)
+
+UNION ALL
+
+SELECT 'vcs_pull_request'::text AS provider_record_type,
+       vcs.id AS provider_record_id,
+       lower(vcs.repo_owner || '/' || vcs.repo_name) AS repo_identity,
+       vcs.branch,
+       vcs.head_sha,
+       vcs.html_url
+FROM work_product_relation AS relation
+JOIN work_product AS product
+  ON product.id = relation.work_product_id
+ AND product.workspace_id = relation.workspace_id
+JOIN vcs_pull_request AS vcs
+  ON vcs.id = product.provider_record_id
+ AND vcs.workspace_id = product.workspace_id
+WHERE relation.workspace_id = $1::uuid
+  AND relation.issue_id = $2::uuid
+  AND relation.task_id = $3::uuid
+  AND relation.detached_at IS NULL
+  AND relation.relation_source IN ('manual_explicit', 'task_explicit', 'execution_branch_discovery', 'provider_discovery')
+  AND product.kind = 'pull_request'
+  AND product.provider_record_type = 'vcs_pull_request'
+  AND lower(vcs.repo_owner || '/' || vcs.repo_name) = lower($4::text)
+  AND vcs.branch = $5::text
+  AND lower(vcs.head_sha) = lower($6::text)
+`
+
+type ListCoordinationReviewPullRequestsParams struct {
+	WorkspaceID  pgtype.UUID `json:"workspace_id"`
+	IssueID      pgtype.UUID `json:"issue_id"`
+	TaskID       pgtype.UUID `json:"task_id"`
+	RepoIdentity string      `json:"repo_identity"`
+	HeadBranch   string      `json:"head_branch"`
+	HeadSha      string      `json:"head_sha"`
+}
+
+type ListCoordinationReviewPullRequestsRow struct {
+	ProviderRecordType string      `json:"provider_record_type"`
+	ProviderRecordID   pgtype.UUID `json:"provider_record_id"`
+	RepoIdentity       string      `json:"repo_identity"`
+	Branch             pgtype.Text `json:"branch"`
+	HeadSha            string      `json:"head_sha"`
+	HtmlUrl            string      `json:"html_url"`
+}
+
+// Review may only be entered from a completed task when the server can prove
+// the task's exact checkout head produced at least one real pull request. The
+// relation is task- and issue-scoped, while the provider joins below prevent a
+// stale or hand-authored Work Product URL from becoming review evidence. The
+// caller supplies the attested provenance facts; matching branch, repository,
+// and head SHA are all required before a URL is returned.
+func (q *Queries) ListCoordinationReviewPullRequests(ctx context.Context, arg ListCoordinationReviewPullRequestsParams) ([]ListCoordinationReviewPullRequestsRow, error) {
+	rows, err := q.db.Query(ctx, listCoordinationReviewPullRequests,
+		arg.WorkspaceID,
+		arg.IssueID,
+		arg.TaskID,
+		arg.RepoIdentity,
+		arg.HeadBranch,
+		arg.HeadSha,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCoordinationReviewPullRequestsRow{}
+	for rows.Next() {
+		var i ListCoordinationReviewPullRequestsRow
+		if err := rows.Scan(
+			&i.ProviderRecordType,
+			&i.ProviderRecordID,
+			&i.RepoIdentity,
+			&i.Branch,
+			&i.HeadSha,
+			&i.HtmlUrl,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const lockActiveReviewerTasksForReviewReturn = `-- name: LockActiveReviewerTasksForReviewReturn :many
 SELECT task.id
 FROM agent_task_queue AS task
@@ -781,7 +891,7 @@ func (q *Queries) LockActiveReviewerTasksForReviewReturn(ctx context.Context, is
 }
 
 const lockAgentCoordinationIssue = `-- name: LockAgentCoordinationIssue :one
-SELECT issue.id, issue.workspace_id, issue.title, issue.description, issue.status, issue.priority, issue.executor_type, issue.executor_id, issue.creator_type, issue.creator_id, issue.parent_issue_id, issue.acceptance_criteria, issue.context_refs, issue.position, issue.due_date, issue.created_at, issue.updated_at, issue.number, issue.project_id, issue.origin_type, issue.origin_id, issue.first_executed_at, issue.start_date, issue.metadata, issue.stage, issue.properties, issue.revision, issue.last_activity_at, issue.owner_type, issue.owner_id, issue.reviewer_type, issue.reviewer_id, issue.executor_generation
+SELECT issue.id, issue.workspace_id, issue.title, issue.description, issue.status, issue.priority, issue.executor_type, issue.executor_id, issue.creator_type, issue.creator_id, issue.parent_issue_id, issue.acceptance_criteria, issue.context_refs, issue.position, issue.due_date, issue.created_at, issue.updated_at, issue.number, issue.project_id, issue.origin_type, issue.origin_id, issue.first_executed_at, issue.start_date, issue.metadata, issue.stage, issue.properties, issue.revision, issue.last_activity_at, issue.owner_type, issue.owner_id, issue.reviewer_type, issue.reviewer_id, issue.executor_generation, issue.review_submission
 FROM issue
 WHERE issue.id = $1
   AND issue.workspace_id = $2
@@ -834,12 +944,13 @@ func (q *Queries) LockAgentCoordinationIssue(ctx context.Context, arg LockAgentC
 		&i.ReviewerType,
 		&i.ReviewerID,
 		&i.ExecutorGeneration,
+		&i.ReviewSubmission,
 	)
 	return i, err
 }
 
 const lockAgentCoordinationIssueForUpdate = `-- name: LockAgentCoordinationIssueForUpdate :one
-SELECT issue.id, issue.workspace_id, issue.title, issue.description, issue.status, issue.priority, issue.executor_type, issue.executor_id, issue.creator_type, issue.creator_id, issue.parent_issue_id, issue.acceptance_criteria, issue.context_refs, issue.position, issue.due_date, issue.created_at, issue.updated_at, issue.number, issue.project_id, issue.origin_type, issue.origin_id, issue.first_executed_at, issue.start_date, issue.metadata, issue.stage, issue.properties, issue.revision, issue.last_activity_at, issue.owner_type, issue.owner_id, issue.reviewer_type, issue.reviewer_id, issue.executor_generation
+SELECT issue.id, issue.workspace_id, issue.title, issue.description, issue.status, issue.priority, issue.executor_type, issue.executor_id, issue.creator_type, issue.creator_id, issue.parent_issue_id, issue.acceptance_criteria, issue.context_refs, issue.position, issue.due_date, issue.created_at, issue.updated_at, issue.number, issue.project_id, issue.origin_type, issue.origin_id, issue.first_executed_at, issue.start_date, issue.metadata, issue.stage, issue.properties, issue.revision, issue.last_activity_at, issue.owner_type, issue.owner_id, issue.reviewer_type, issue.reviewer_id, issue.executor_generation, issue.review_submission
 FROM issue
 WHERE issue.id = $1
   AND issue.workspace_id = $2
@@ -893,6 +1004,7 @@ func (q *Queries) LockAgentCoordinationIssueForUpdate(ctx context.Context, arg L
 		&i.ReviewerType,
 		&i.ReviewerID,
 		&i.ExecutorGeneration,
+		&i.ReviewSubmission,
 	)
 	return i, err
 }
@@ -1265,20 +1377,22 @@ UPDATE issue AS target
 SET status = 'in_review',
     reviewer_type = 'agent',
     reviewer_id = $1,
+    review_submission = $2::jsonb,
     revision = target.revision + 1,
     updated_at = now(),
     last_activity_at = GREATEST(COALESCE(target.last_activity_at, target.updated_at), now())
-WHERE target.id = $2
-  AND target.workspace_id = $3
-  AND target.revision = $4
+WHERE target.id = $3
+  AND target.workspace_id = $4
+  AND target.revision = $5
   AND issue_effective_status(target.workspace_id, target.status) = 'in_progress'
   AND target.executor_type IN ('agent', 'team')
   AND target.executor_id IS NOT NULL
-RETURNING target.id, target.workspace_id, target.title, target.description, target.status, target.priority, target.executor_type, target.executor_id, target.creator_type, target.creator_id, target.parent_issue_id, target.acceptance_criteria, target.context_refs, target.position, target.due_date, target.created_at, target.updated_at, target.number, target.project_id, target.origin_type, target.origin_id, target.first_executed_at, target.start_date, target.metadata, target.stage, target.properties, target.revision, target.last_activity_at, target.owner_type, target.owner_id, target.reviewer_type, target.reviewer_id, target.executor_generation
+RETURNING target.id, target.workspace_id, target.title, target.description, target.status, target.priority, target.executor_type, target.executor_id, target.creator_type, target.creator_id, target.parent_issue_id, target.acceptance_criteria, target.context_refs, target.position, target.due_date, target.created_at, target.updated_at, target.number, target.project_id, target.origin_type, target.origin_id, target.first_executed_at, target.start_date, target.metadata, target.stage, target.properties, target.revision, target.last_activity_at, target.owner_type, target.owner_id, target.reviewer_type, target.reviewer_id, target.executor_generation, target.review_submission
 `
 
 type UpdateIssueForCoordinationReviewParams struct {
 	ReviewerID       pgtype.UUID `json:"reviewer_id"`
+	ReviewSubmission []byte      `json:"review_submission"`
 	IssueID          pgtype.UUID `json:"issue_id"`
 	WorkspaceID      pgtype.UUID `json:"workspace_id"`
 	ExpectedRevision int64       `json:"expected_revision"`
@@ -1290,6 +1404,7 @@ type UpdateIssueForCoordinationReviewParams struct {
 func (q *Queries) UpdateIssueForCoordinationReview(ctx context.Context, arg UpdateIssueForCoordinationReviewParams) (Issue, error) {
 	row := q.db.QueryRow(ctx, updateIssueForCoordinationReview,
 		arg.ReviewerID,
+		arg.ReviewSubmission,
 		arg.IssueID,
 		arg.WorkspaceID,
 		arg.ExpectedRevision,
@@ -1329,6 +1444,7 @@ func (q *Queries) UpdateIssueForCoordinationReview(ctx context.Context, arg Upda
 		&i.ReviewerType,
 		&i.ReviewerID,
 		&i.ExecutorGeneration,
+		&i.ReviewSubmission,
 	)
 	return i, err
 }
@@ -1346,7 +1462,7 @@ WHERE target.id = $2
   AND issue_effective_status(target.workspace_id, target.status) = 'in_review'
   AND target.executor_type IN ('agent', 'team')
   AND target.executor_id IS NOT NULL
-RETURNING target.id, target.workspace_id, target.title, target.description, target.status, target.priority, target.executor_type, target.executor_id, target.creator_type, target.creator_id, target.parent_issue_id, target.acceptance_criteria, target.context_refs, target.position, target.due_date, target.created_at, target.updated_at, target.number, target.project_id, target.origin_type, target.origin_id, target.first_executed_at, target.start_date, target.metadata, target.stage, target.properties, target.revision, target.last_activity_at, target.owner_type, target.owner_id, target.reviewer_type, target.reviewer_id, target.executor_generation
+RETURNING target.id, target.workspace_id, target.title, target.description, target.status, target.priority, target.executor_type, target.executor_id, target.creator_type, target.creator_id, target.parent_issue_id, target.acceptance_criteria, target.context_refs, target.position, target.due_date, target.created_at, target.updated_at, target.number, target.project_id, target.origin_type, target.origin_id, target.first_executed_at, target.start_date, target.metadata, target.stage, target.properties, target.revision, target.last_activity_at, target.owner_type, target.owner_id, target.reviewer_type, target.reviewer_id, target.executor_generation, target.review_submission
 `
 
 type UpdateIssueReviewerForCoordinationRecoveryParams struct {
@@ -1401,6 +1517,7 @@ func (q *Queries) UpdateIssueReviewerForCoordinationRecovery(ctx context.Context
 		&i.ReviewerType,
 		&i.ReviewerID,
 		&i.ExecutorGeneration,
+		&i.ReviewSubmission,
 	)
 	return i, err
 }

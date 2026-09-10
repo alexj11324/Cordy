@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { cleanup, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentTask } from "@orvilo/core/types";
 import { renderWithI18n } from "../../test/i18n";
@@ -61,38 +60,18 @@ vi.mock("@orvilo/ui/components/ui/popover", async () => {
 vi.mock("./execution-log-section", () => ({
   ActiveTaskRow: ({
     task,
-    onTranscriptOpenChange,
+    showConversationAction,
   }: {
     task: AgentTask;
-    transcriptOpen?: boolean;
-    onTranscriptOpenChange?: (open: boolean) => void;
+    showConversationAction?: boolean;
   }) => (
-    <div data-testid="active-task-row">
-      <span>{task.id}</span>
-      <button
-        type="button"
-        aria-label={`open conversation ${task.id}`}
-        onClick={() => onTranscriptOpenChange?.(true)}
-      >
-        Open conversation
-      </button>
+    <div
+      data-testid="active-task-row"
+      data-conversation-action={showConversationAction ? "visible" : "hidden"}
+    >
+      {task.id}
     </div>
   ),
-}));
-
-vi.mock("../../agent-thread", () => ({
-  AgentThreadButton: ({
-    open,
-    task,
-  }: {
-    open: boolean;
-    task: AgentTask;
-  }) =>
-    open ? (
-      <div role="dialog" data-task-id={task.id}>
-        {task.status}
-      </div>
-    ) : null,
 }));
 
 vi.mock("@tanstack/react-query", async () => {
@@ -116,20 +95,6 @@ vi.mock("@tanstack/react-query", async () => {
 import { IssueAgentHeaderChip } from "./issue-agent-header-chip";
 
 const LIVE_TASK_ID = "4a2e8d1c-7f9b-4e2a-9c1d-123456789abc";
-
-function newClient() {
-  return new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-}
-
-function renderChip(qc: QueryClient, issueId = "issue-1") {
-  return renderWithI18n(
-    <QueryClientProvider client={qc}>
-      <IssueAgentHeaderChip issueId={issueId} />
-    </QueryClientProvider>,
-  );
-}
 
 function makeTask(overrides: Partial<AgentTask>): AgentTask {
   return {
@@ -179,56 +144,10 @@ describe("IssueAgentHeaderChip", () => {
     expect(screen.getByTestId("active-task-row")).toHaveTextContent(
       "task-running",
     );
-  });
-
-  it("keeps the live conversation open after the clicked task row disappears from the active list", async () => {
-    const qc = newClient();
-    mockState.tasks = [makeTask({ id: LIVE_TASK_ID })];
-
-    const { rerender } = renderChip(qc);
-
-    fireEvent.click(screen.getByRole("button", { name: `open conversation ${LIVE_TASK_ID}` }));
-
-    await waitFor(() => {
-      expect(screen.getByRole("dialog")).toBeInTheDocument();
-    });
-    expect(screen.getByTestId("active-task-row")).toHaveTextContent(LIVE_TASK_ID);
-    expect(screen.getByRole("dialog")).toHaveAttribute("data-task-id", LIVE_TASK_ID);
-
-    mockState.tasks = [];
-    rerender(
-      <QueryClientProvider client={qc}>
-        <IssueAgentHeaderChip issueId="issue-2" />
-      </QueryClientProvider>,
+    expect(screen.getByTestId("active-task-row")).toHaveAttribute(
+      "data-conversation-action",
+      "hidden",
     );
-
-    expect(screen.queryByTestId("active-task-row")).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
-  });
-
-  it("refreshes the conversation entrypoint when the opened task completes", async () => {
-    const qc = newClient();
-    mockState.tasks = [makeTask({ id: LIVE_TASK_ID, status: "running" })];
-
-    const { rerender } = renderChip(qc);
-
-    fireEvent.click(screen.getByRole("button", { name: `open conversation ${LIVE_TASK_ID}` }));
-    expect(await screen.findByRole("dialog")).toHaveTextContent("running");
-
-    mockState.tasks = [
-      makeTask({
-        id: LIVE_TASK_ID,
-        status: "completed",
-        completed_at: "2026-06-08T08:05:00Z",
-      }),
-    ];
-    rerender(
-      <QueryClientProvider client={qc}>
-        <IssueAgentHeaderChip issueId="issue-2" />
-      </QueryClientProvider>,
-    );
-
-    await waitFor(() => expect(screen.getByRole("dialog")).toHaveTextContent("completed"));
   });
 
   it("opens the activity card on hover, not only on click", () => {
@@ -237,7 +156,7 @@ describe("IssueAgentHeaderChip", () => {
     renderWithI18n(<IssueAgentHeaderChip issueId="issue-1" />);
 
     // Base UI gates hover-to-open on `openOnHover` on the trigger. Without it
-    // the chip would be click-only, which is the behavior MUL-3507 replaces.
+
     // The trigger stays a real <button>, so click/keyboard access is retained.
     expect(mockState.triggerProps?.openOnHover).toBe(true);
     expect(

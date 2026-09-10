@@ -593,7 +593,7 @@ func TestDeleteResourceLabelCleansAssignments(t *testing.T) {
 func TestLabelRejectsUnknownResourceType(t *testing.T) {
 	w := httptest.NewRecorder()
 	req := newRequest("POST", "/api/labels", map[string]any{
-		"resource_type": "project",
+		"resource_type": "workspace",
 		"name":          "invalid-scope",
 		"color":         "#3b82f6",
 	})

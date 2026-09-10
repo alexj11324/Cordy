@@ -44,6 +44,19 @@ export default function NewIssueStatusPickerRoute() {
           });
           return;
         }
+        if (plan.kind === "collect_review_evidence") {
+          if (!reviewer) return;
+          router.replace({
+            pathname: "/[workspace]/new-issue-picker/review-submission",
+            params: {
+              workspace,
+              handoffStatus: plan.status,
+              reviewerType: reviewer.type,
+              reviewerId: reviewer.id,
+            },
+          });
+          return;
+        }
         setStatus(plan.status);
         router.back();
       }}

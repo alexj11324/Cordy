@@ -53,6 +53,12 @@
     "failed_after": "Failed after {{elapsed}}",
     "finished_in": "Finished in {{elapsed}}",
     "no_response": "The agent finished this turn without a text reply.",
+    "token_usage_aria": "Token usage: {{count}}",
+    "tokens": "{{count}} tokens",
+    "input_tokens": "Input",
+    "output_tokens": "Output",
+    "cache_read_tokens": "Cache read",
+    "cache_write_tokens": "Cache write",
     "failure": {
       "agent_error": "The agent ran into an error and couldn't finish replying. Please try again.",
       "timeout": "The agent took too long and stopped before finishing. Try again, or break your request into smaller steps.",

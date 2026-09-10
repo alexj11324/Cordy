@@ -210,6 +210,20 @@ UPDATE agent SET archived_at = now(), archived_by = $2, updated_at = now()
 WHERE id = $1
 RETURNING *;
 
+-- name: ClearWorkspaceLeadAgent :exec
+-- Agent ids are globally unique, so this narrow cleanup is safe to call after
+-- any archive path that already validated and changed the agent row. Callers
+-- run it in the same transaction as the archive when atomicity matters.
+UPDATE workspace
+SET lead_agent_id = NULL, updated_at = now()
+WHERE lead_agent_id = $1;
+
+-- name: ClearWorkspaceLeadsForAgents :exec
+-- Bulk archive/revocation paths use this once for their returned agent set.
+UPDATE workspace
+SET lead_agent_id = NULL, updated_at = now()
+WHERE lead_agent_id = ANY(@agent_ids::uuid[]);
+
 -- name: ArchiveAgentsByRuntime :many
 -- Bulk-archives every active agent bound to any runtime in the given set.
 -- Used when revoking a leaving member's runtimes so agents pinned to those

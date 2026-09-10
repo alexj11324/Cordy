@@ -18,6 +18,13 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import {
+  useTable,
+  type ColumnDef,
+  type ColumnVisibilityState,
+  type RowSelectionState,
+  type SortingState,
+} from "@tanstack/react-table";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
@@ -46,7 +53,6 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { Button } from "@orvilo/ui/components/ui/button";
-import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
 import { Input } from "@orvilo/ui/components/ui/input";
 import {
   Dialog,
@@ -72,14 +78,17 @@ import {
   DropdownMenuTrigger,
 } from "@orvilo/ui/components/ui/dropdown-menu";
 import {
-  ListGrid,
-  ListGridCell,
-  ListGridHeader,
-  ListGridHeaderCell,
-  ListGridRow,
-  LIST_GRID_BOTTOM_CLEARANCE,
-  type ListGridSortDirection,
-} from "@orvilo/ui/components/ui/list-grid";
+  DataGrid,
+  dataGridFeatures,
+  type DataGridFeatures,
+} from "@orvilo/ui/components/reui/data-grid/data-grid";
+import { DataGridColumnHeader } from "@orvilo/ui/components/reui/data-grid/data-grid-column-header";
+import { DataGridScrollArea } from "@orvilo/ui/components/reui/data-grid/data-grid-scroll-area";
+import {
+  DataGridTable,
+  DataGridTableRowSelect,
+  DataGridTableRowSelectAll,
+} from "@orvilo/ui/components/reui/data-grid/data-grid-table";
 import {
   Popover,
   PopoverContent,
@@ -104,13 +113,14 @@ import {
 } from "../../layout/collection-page";
 import { ShellHeaderActions } from "../../layout/shell-header";
 import { ProjectIcon } from "./project-icon";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { useFormatRelativeDate } from "./labels";
 import { ProjectStatusBadge, ProjectPriorityBadge } from "./project-badge";
 import { ProjectLeadPicker } from "./project-lead-picker";
 import { PAGE_GUTTER, PAGE_TOOLBAR } from "../../layout/page-header";
 import { cn } from "@orvilo/ui/lib/utils";
+import { formatDateOnly, isPastDateOnly } from "@orvilo/core/issues/date";
 
 // Sort order maps for the enum columns (header sort needs a total order).
 const PRIORITY_ORDER: Record<ProjectPriority, number> = {
@@ -137,86 +147,84 @@ function leadFilterValue(p: Project): string | null {
   return p.lead_type && p.lead_id ? `${p.lead_type}:${p.lead_id}` : null;
 }
 
-// ---------------------------------------------------------------------------
-// Table (compact) view — ListGrid. Name + status are the core columns;
-// priority/progress/lead/issues/created collapse below @2xl, with min-width
-// + the wrapper's overflow as the escape valve. Rows use whole-row mouse
-// navigation; inline controls stop propagation so edit/menu clicks stay local.
-// ---------------------------------------------------------------------------
-
-const COLUMN_WIDTHS: Record<ProjectColumnKey, number> = {
-  priority: 116,
-  progress: 88,
-  lead: 132,
-  issues: 80,
-  created: 104,
-};
-
-// Fixed tracks: edges 12+12, checkbox 16, name min 200, status 116,
-// kebab 28 = 384, plus the 10 gap-x-3 gaps between the wide template's
-// 11 tracks.
-const FIXED_TRACKS_WIDTH = 384 + 10 * 12;
-
-// Render/track order: checkbox, name, status (core, fixed 116px), priority,
-// progress, lead, issues, created, kebab. MUST be a literal string —
-// Tailwind can't see interpolated `grid-cols-[...]` arbitrary values, so an
-// interpolated width silently drops the whole template and the grid
-// collapses to one column.
-const GRID_COLS =
-  "grid-cols-[0.75rem_1rem_minmax(120px,1fr)_116px_1.75rem_0.75rem] " +
-  "@2xl:grid-cols-[0.75rem_1rem_minmax(200px,1fr)_116px_var(--pjc-priority)_var(--pjc-progress)_var(--pjc-lead)_var(--pjc-issues)_var(--pjc-created)_1.75rem_0.75rem]";
-
 const stopRowNavigation = (e: MouseEvent) => e.stopPropagation();
 
-function columnTrackVars(
-  isVisible: (key: ProjectColumnKey) => boolean,
-): React.CSSProperties {
-  const width = (key: ProjectColumnKey) =>
-    isVisible(key) ? `${COLUMN_WIDTHS[key]}px` : "0px";
-  const minWidth =
-    FIXED_TRACKS_WIDTH +
-    (Object.keys(COLUMN_WIDTHS) as ProjectColumnKey[]).reduce(
-      (sum, key) => sum + (isVisible(key) ? COLUMN_WIDTHS[key] : 0),
-      0,
-    );
-  return {
-    "--pjc-priority": width("priority"),
-    "--pjc-progress": width("progress"),
-    "--pjc-lead": width("lead"),
-    "--pjc-issues": width("issues"),
-    "--pjc-created": width("created"),
-    "--pjc-minw": `${minWidth}px`,
-  } as React.CSSProperties;
+const PROJECT_GRID_COLUMN_IDS: Record<ProjectColumnKey, string> = {
+  priority: "priority",
+  progress: "health",
+  lead: "lead",
+  issues: "issues",
+  created: "targetDate",
+};
+
+const PROJECT_GRID_SORT_IDS: Record<ProjectSortField, string> = {
+  name: "name",
+  priority: "priority",
+  status: "status",
+  progress: "health",
+  created: "targetDate",
+};
+
+function projectSortFieldFromGridId(id: string): ProjectSortField | null {
+  for (const [field, columnId] of Object.entries(PROJECT_GRID_SORT_IDS)) {
+    if (columnId === id) return field as ProjectSortField;
+  }
+  return null;
 }
 
-function ProgressRing({ project }: { project: Project }) {
-  if (project.issue_count === 0) {
-    return <span className="text-caption text-faint-foreground">—</span>;
+type ProjectHealth = "on_track" | "at_risk" | "off_track" | "no_update";
+
+const PROJECT_HEALTH_ORDER: Record<ProjectHealth, number> = {
+  no_update: 0,
+  off_track: 1,
+  at_risk: 2,
+  on_track: 3,
+};
+
+function projectHealthOf(project: Project): ProjectHealth {
+  if (project.status === "completed") return "on_track";
+  if (project.status === "cancelled") return "off_track";
+  if (project.status === "paused") return "at_risk";
+  if (project.issue_count === 0) return "no_update";
+  if (project.due_date && isPastDateOnly(project.due_date)) return "off_track";
+
+  const progress = progressOf(project);
+  if (progress >= 0.66) return "on_track";
+  if (progress > 0) return "at_risk";
+  return "no_update";
+}
+
+function compareProjects(
+  a: Project,
+  b: Project,
+  field: ProjectSortField,
+  direction: "asc" | "desc",
+): number {
+  const dir = direction === "asc" ? 1 : -1;
+  if (field === "name") return a.title.localeCompare(b.title) * dir;
+  if (field === "priority") {
+    return (
+      (PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]) * dir ||
+      a.title.localeCompare(b.title)
+    );
   }
-  const pct = Math.round((project.done_count / project.issue_count) * 100);
-  return (
-    <span className="flex items-center gap-1.5">
-      <span className="relative h-3.5 w-3.5">
-        <svg className="h-3.5 w-3.5 -rotate-90" viewBox="0 0 16 16">
-          <circle className="text-muted" strokeWidth="2" stroke="currentColor" fill="none" r="6" cx="8" cy="8" />
-          <circle
-            className="text-emerald-500"
-            strokeWidth="2"
-            stroke="currentColor"
-            fill="none"
-            r="6"
-            cx="8"
-            cy="8"
-            strokeDasharray={`${pct * 0.377} 37.7`}
-            strokeLinecap="round"
-          />
-        </svg>
-      </span>
-      <span className="text-caption tabular-nums text-muted-foreground">
-        {project.done_count}/{project.issue_count}
-      </span>
-    </span>
-  );
+  if (field === "status") {
+    return (
+      (STATUS_ORDER[a.status] - STATUS_ORDER[b.status]) * dir ||
+      a.title.localeCompare(b.title)
+    );
+  }
+  if (field === "progress") {
+    return (
+      (PROJECT_HEALTH_ORDER[projectHealthOf(a)] - PROJECT_HEALTH_ORDER[projectHealthOf(b)]) * dir ||
+      (progressOf(a) - progressOf(b)) * dir ||
+      a.title.localeCompare(b.title)
+    );
+  }
+
+  const aDate = a.due_date ? Date.parse(a.due_date) : Number.POSITIVE_INFINITY;
+  const bDate = b.due_date ? Date.parse(b.due_date) : Number.POSITIVE_INFINITY;
+  return (aDate - bDate) * dir || a.title.localeCompare(b.title);
 }
 
 // Compact rows own whole-row navigation; callers stop propagation around this
@@ -335,240 +343,133 @@ function ProjectRowActions({
   );
 }
 
-function CheckboxCell({
-  checked,
-  onToggle,
-}: {
-  checked: boolean;
-  onToggle: () => void;
-}) {
+function ProjectNameCell({ project }: { project: Project }) {
   return (
-    <ListGridCell className="justify-center px-0">
-      <button
-        type="button"
-        aria-pressed={checked}
-        onClick={(e) => {
-          stopRowNavigation(e);
-          onToggle();
-        }}
-        onAuxClick={stopRowNavigation}
-        className={`-m-1.5 flex items-center p-1.5 ${
-          checked ? "" : "opacity-0 transition-opacity group-hover/row:opacity-100"
-        }`}
-      >
-        <Checkbox checked={checked} tabIndex={-1} className="pointer-events-none" />
-      </button>
-    </ListGridCell>
+    <div className="flex min-w-0 items-center gap-2">
+      <ProjectIcon project={project} size="sm" />
+      <span className="min-w-0 truncate text-body font-medium">{project.title}</span>
+    </div>
   );
 }
 
-function ProjectTableRow({
-  project,
-  pinned,
-  canDelete,
-  isColVisible,
-  selected,
-  onToggleSelect,
-  rowHref,
-  rowLink,
-}: {
-  project: Project;
-  pinned: boolean;
-  canDelete: boolean;
-  isColVisible: (key: ProjectColumnKey) => boolean;
-  selected: boolean;
-  onToggleSelect: () => void;
-  rowHref: string;
-  rowLink: ReturnType<typeof useRowLink>;
-}) {
-  const formatRelativeDate = useFormatRelativeDate();
+function ProjectHealthCell({ project }: { project: Project }) {
+  const { t } = useT("projects");
+  const health = projectHealthOf(project);
+  const progress = project.issue_count > 0
+    ? Math.round((project.done_count / project.issue_count) * 100)
+    : null;
+  const dotClass = {
+    on_track: "bg-success",
+    at_risk: "bg-warning",
+    off_track: "bg-destructive",
+    no_update: "bg-muted-foreground/50",
+  }[health];
+
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <span className={cn("size-2 shrink-0 rounded-full", dotClass)} aria-hidden="true" />
+      <span className="min-w-0 truncate text-body">
+        {t(($) => $.health[health])}
+      </span>
+      {progress !== null && (
+        <span className="ml-auto shrink-0 text-caption tabular-nums text-muted-foreground">
+          {progress}%
+        </span>
+      )}
+    </div>
+  );
+}
+
+function ProjectStatusCell({ project }: { project: Project }) {
   const updateProject = useUpdateProject();
   const handleUpdate = useCallback(
     (data: UpdateProjectRequest) => updateProject.mutate({ id: project.id, ...data }),
     [project.id, updateProject],
   );
-
   return (
-    <ListGridRow
-      className={`h-11 cursor-pointer ${selected ? "bg-accent/30" : ""}`}
-      {...rowLink(rowHref, project.title)}
-    >
-      <CheckboxCell checked={selected} onToggle={onToggleSelect} />
-      <ListGridCell className="gap-2">
-        <ProjectIcon project={project} size="sm" />
-        <span className="min-w-0 truncate text-body font-medium">
-          {project.title}
-        </span>
-      </ListGridCell>
-
-      {/* status — core column, always visible */}
-      <ListGridCell onClick={stopRowNavigation} onAuxClick={stopRowNavigation}>
-        <ProjectStatusBadge project={project} handleUpdate={handleUpdate} align="start" />
-      </ListGridCell>
-
-      {isColVisible("priority") ? (
-        <ListGridCell className="hidden @2xl:flex" onClick={stopRowNavigation} onAuxClick={stopRowNavigation}>
-          <ProjectPriorityBadge project={project} handleUpdate={handleUpdate} align="start" />
-        </ListGridCell>
-      ) : (
-        <ListGridCell className="hidden px-0 @2xl:flex" />
-      )}
-
-      {isColVisible("progress") ? (
-        <ListGridCell className="hidden @2xl:flex">
-          <ProgressRing project={project} />
-        </ListGridCell>
-      ) : (
-        <ListGridCell className="hidden px-0 @2xl:flex" />
-      )}
-
-      {isColVisible("lead") ? (
-        <ListGridCell className="hidden @2xl:flex" onClick={stopRowNavigation} onAuxClick={stopRowNavigation}>
-          <ProjectLeadPicker
-            project={project}
-            handleUpdate={handleUpdate}
-            align="start"
-            renderTrigger={(leadName) => (
-              <button
-                type="button"
-                className="flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-accent/60"
-              >
-                {project.lead_type && project.lead_id ? (
-                  <ActorAvatar actorType={project.lead_type} actorId={project.lead_id} size="sm" enableHoverCard />
-                ) : (
-                  <span className="inline-flex h-[18px] w-[18px] rounded-full border border-dashed border-muted-foreground/30" />
-                )}
-                <span className="min-w-0 truncate text-caption text-muted-foreground">
-                  {leadName ?? "—"}
-                </span>
-              </button>
-            )}
-          />
-        </ListGridCell>
-      ) : (
-        <ListGridCell className="hidden px-0 @2xl:flex" />
-      )}
-
-      {isColVisible("issues") ? (
-        <ListGridCell className="hidden justify-end font-mono text-caption tabular-nums text-muted-foreground @2xl:flex">
-          {project.issue_count}
-        </ListGridCell>
-      ) : (
-        <ListGridCell className="hidden px-0 @2xl:flex" />
-      )}
-
-      {isColVisible("created") ? (
-        <ListGridCell className="hidden whitespace-nowrap text-caption tabular-nums text-muted-foreground @2xl:flex">
-          {formatRelativeDate(project.created_at)}
-        </ListGridCell>
-      ) : (
-        <ListGridCell className="hidden px-0 @2xl:flex" />
-      )}
-
-      <ListGridCell className="justify-end px-0">
-        <span onClick={stopRowNavigation} onAuxClick={stopRowNavigation} className="flex items-center">
-          <ProjectRowActions project={project} pinned={pinned} canDelete={canDelete} />
-        </span>
-      </ListGridCell>
-    </ListGridRow>
+    <div onClick={stopRowNavigation} onAuxClick={stopRowNavigation}>
+      <ProjectStatusBadge project={project} handleUpdate={handleUpdate} align="start" />
+    </div>
   );
 }
 
-function ProjectTableHeader({
-  sortField,
-  sortDirection,
-  onSort,
-  isColVisible,
-  allSelected,
-  someSelected,
-  onToggleAll,
-}: {
-  sortField: ProjectSortField;
-  sortDirection: ListGridSortDirection;
-  onSort: (field: ProjectSortField) => void;
-  isColVisible: (key: ProjectColumnKey) => boolean;
-  allSelected: boolean;
-  someSelected: boolean;
-  onToggleAll: () => void;
-}) {
-  const { t } = useT("projects");
-  const sorted = (field: ProjectSortField) =>
-    sortField === field ? sortDirection : false;
-  const anySelected = allSelected || someSelected;
+function ProjectPriorityCell({ project }: { project: Project }) {
+  const updateProject = useUpdateProject();
+  const handleUpdate = useCallback(
+    (data: UpdateProjectRequest) => updateProject.mutate({ id: project.id, ...data }),
+    [project.id, updateProject],
+  );
   return (
-    <ListGridHeader>
-      <div className="flex items-center justify-center">
-        <button
-          type="button"
-          aria-pressed={allSelected}
-          onClick={onToggleAll}
-          className={`-m-1.5 flex items-center p-1.5 ${
-            anySelected ? "" : "opacity-0 transition-opacity group-hover/header:opacity-100"
-          }`}
-        >
-          <Checkbox
-            checked={allSelected}
-            indeterminate={someSelected && !allSelected}
-            tabIndex={-1}
-            className="pointer-events-none"
-          />
-        </button>
-      </div>
-      <ListGridHeaderCell sorted={sorted("name")} onSort={() => onSort("name")}>
-        {t(($) => $.table.name)}
-      </ListGridHeaderCell>
-      <ListGridHeaderCell sorted={sorted("status")} onSort={() => onSort("status")}>
-        {t(($) => $.table.status)}
-      </ListGridHeaderCell>
-      {isColVisible("priority") ? (
-        <ListGridHeaderCell
-          className="hidden @2xl:flex"
-          sorted={sorted("priority")}
-          onSort={() => onSort("priority")}
-        >
-          {t(($) => $.table.priority)}
-        </ListGridHeaderCell>
-      ) : (
-        <ListGridHeaderCell className="hidden px-0 @2xl:flex" />
+    <div onClick={stopRowNavigation} onAuxClick={stopRowNavigation}>
+      <ProjectPriorityBadge project={project} handleUpdate={handleUpdate} align="start" />
+    </div>
+  );
+}
+
+function ProjectLeadCell({ project }: { project: Project }) {
+  const updateProject = useUpdateProject();
+  const handleUpdate = useCallback(
+    (data: UpdateProjectRequest) => updateProject.mutate({ id: project.id, ...data }),
+    [project.id, updateProject],
+  );
+  return (
+    <div onClick={stopRowNavigation} onAuxClick={stopRowNavigation}>
+      <ProjectLeadPicker
+        project={project}
+        handleUpdate={handleUpdate}
+        align="start"
+        renderTrigger={(leadName) => (
+          <button
+            type="button"
+            className="flex min-w-0 items-center gap-1.5 rounded px-1 py-0.5 transition-colors hover:bg-accent/60"
+          >
+            {project.lead_type && project.lead_id ? (
+              <ActorAvatar actorType={project.lead_type} actorId={project.lead_id} size="sm" enableHoverCard />
+            ) : (
+              <span className="inline-flex size-[18px] rounded-full border border-dashed border-muted-foreground/30" />
+            )}
+            <span className="min-w-0 truncate text-body text-muted-foreground">
+              {leadName ?? "—"}
+            </span>
+          </button>
+        )}
+      />
+    </div>
+  );
+}
+
+function ProjectTargetDateCell({ project, locale }: { project: Project; locale: string }) {
+  const label = formatDateOnly(
+    project.due_date,
+    { year: "numeric", month: "short", day: "numeric" },
+    locale,
+  );
+  const overdue = project.status !== "completed" && isPastDateOnly(project.due_date);
+  return (
+    <span
+      className={cn(
+        "block truncate text-body tabular-nums text-muted-foreground",
+        overdue && "text-destructive",
       )}
-      {isColVisible("progress") ? (
-        <ListGridHeaderCell
-          className="hidden @2xl:flex"
-          sorted={sorted("progress")}
-          onSort={() => onSort("progress")}
-        >
-          {t(($) => $.table.progress)}
-        </ListGridHeaderCell>
-      ) : (
-        <ListGridHeaderCell className="hidden px-0 @2xl:flex" />
-      )}
-      {isColVisible("lead") ? (
-        <ListGridHeaderCell className="hidden @2xl:flex">
-          {t(($) => $.table.lead)}
-        </ListGridHeaderCell>
-      ) : (
-        <ListGridHeaderCell className="hidden px-0 @2xl:flex" />
-      )}
-      {isColVisible("issues") ? (
-        <ListGridHeaderCell className="hidden justify-end @2xl:flex" align="right">
-          {t(($) => $.table.issues)}
-        </ListGridHeaderCell>
-      ) : (
-        <ListGridHeaderCell className="hidden px-0 @2xl:flex" />
-      )}
-      {isColVisible("created") ? (
-        <ListGridHeaderCell
-          className="hidden @2xl:flex"
-          sorted={sorted("created")}
-          onSort={() => onSort("created")}
-        >
-          {t(($) => $.table.created)}
-        </ListGridHeaderCell>
-      ) : (
-        <ListGridHeaderCell className="hidden px-0 @2xl:flex" />
-      )}
-      <span aria-hidden="true" />
-    </ListGridHeader>
+    >
+      {label || "—"}
+    </span>
+  );
+}
+
+function ProjectActionsCell({
+  project,
+  pinned,
+  canDelete,
+}: {
+  project: Project;
+  pinned: boolean;
+  canDelete: boolean;
+}) {
+  return (
+    <div onClick={stopRowNavigation} onAuxClick={stopRowNavigation} className="flex justify-end">
+      <ProjectRowActions project={project} pinned={pinned} canDelete={canDelete} />
+    </div>
   );
 }
 
@@ -796,6 +697,7 @@ function ProjectBatchToolbar({
 
 export function ProjectsPage() {
   const { t } = useT("projects");
+  const locale = useLocale();
   const wsId = useWorkspaceId();
   const wsPaths = useWorkspacePaths();
   const rowLink = useRowLink();
@@ -808,14 +710,12 @@ export function ProjectsPage() {
   const sortDirection = useProjectViewStore((s) => s.sortDirection);
   const hiddenColumns = useProjectViewStore((s) => s.hiddenColumns);
   const filters = useProjectViewStore((s) => s.filters);
-  const toggleSort = useProjectViewStore((s) => s.toggleSort);
   const setSortField = useProjectViewStore((s) => s.setSortField);
   const setSortDirection = useProjectViewStore((s) => s.setSortDirection);
   const toggleColumn = useProjectViewStore((s) => s.toggleColumn);
   const toggleFilter = useProjectViewStore((s) => s.toggleFilter);
   const clearFilters = useProjectViewStore((s) => s.clearFilters);
   const isCompact = viewMode === "compact";
-  const isColVisible = (key: ProjectColumnKey) => !hiddenColumns.includes(key);
 
   const { data: projects = [], isLoading } = useQuery(projectListOptions(wsId));
   const { data: members = [] } = useQuery(memberListOptions(wsId));
@@ -839,13 +739,6 @@ export function ProjectsPage() {
 
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
-  const toggleSelected = (id: string) =>
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
 
   const activeFilterCount = countActiveFilters(filters);
   const hasActiveFilters = activeFilterCount > 0;
@@ -864,9 +757,9 @@ export function ProjectsPage() {
     return m;
   }, [projects]);
 
-  const visible = useMemo(() => {
+  const filteredProjects = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const filtered = projects.filter((p) => {
+    return projects.filter((p) => {
       if (q && !p.title.toLowerCase().includes(q) && !matchesPinyin(p.title, q)) {
         return false;
       }
@@ -880,35 +773,239 @@ export function ProjectsPage() {
       }
       return true;
     });
-    const dir = sortDirection === "asc" ? 1 : -1;
-    const sorted = [...filtered];
-    sorted.sort((a, b) => {
-      if (sortField === "name") return a.title.localeCompare(b.title) * dir;
-      if (sortField === "priority") {
-        return (
-          (PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]) * dir ||
-          a.title.localeCompare(b.title)
-        );
-      }
-      if (sortField === "status") {
-        return (
-          (STATUS_ORDER[a.status] - STATUS_ORDER[b.status]) * dir ||
-          a.title.localeCompare(b.title)
-        );
-      }
-      if (sortField === "progress") {
-        return (progressOf(a) - progressOf(b)) * dir || a.title.localeCompare(b.title);
-      }
-      return (Date.parse(a.created_at) - Date.parse(b.created_at)) * dir;
-    });
-    return sorted;
-  }, [projects, search, filters, sortField, sortDirection]);
+  }, [projects, search, filters]);
+
+  const visible = useMemo(
+    () => [...filteredProjects].sort((a, b) => compareProjects(a, b, sortField, sortDirection)),
+    [filteredProjects, sortField, sortDirection],
+  );
 
   const selectedProjects = visible.filter((p) => selectedIds.has(p.id));
-  const allSelected = visible.length > 0 && selectedProjects.length === visible.length;
-  const someSelected = selectedProjects.length > 0 && !allSelected;
-  const handleToggleAll = () =>
-    setSelectedIds(allSelected ? new Set() : new Set(visible.map((p) => p.id)));
+
+  const rowSelection = useMemo<RowSelectionState>(() => {
+    const selection: RowSelectionState = {};
+    for (const id of selectedIds) selection[id] = true;
+    return selection;
+  }, [selectedIds]);
+
+  const columnVisibility = useMemo<ColumnVisibilityState>(
+    () => Object.fromEntries(hiddenColumns.map((key) => [PROJECT_GRID_COLUMN_IDS[key], false])),
+    [hiddenColumns],
+  );
+
+  const sorting = useMemo<SortingState>(
+    () => [{ id: PROJECT_GRID_SORT_IDS[sortField], desc: sortDirection === "desc" }],
+    [sortField, sortDirection],
+  );
+
+  const projectById = useMemo(
+    () => new Map(projects.map((project) => [project.id, project])),
+    [projects],
+  );
+
+  const columns = useMemo<ColumnDef<DataGridFeatures, Project>[]>(
+    () => [
+      {
+        id: "select",
+        header: () => <DataGridTableRowSelectAll />,
+        cell: ({ row }) => <DataGridTableRowSelect row={row} />,
+        size: 44,
+        enableSorting: false,
+        enableHiding: false,
+        enableResizing: false,
+        meta: { headerClassName: "ps-4!", cellClassName: "ps-4!" },
+      },
+      {
+        accessorKey: "title",
+        id: "name",
+        header: ({ column }) => <DataGridColumnHeader column={column} />,
+        cell: ({ row }) => <ProjectNameCell project={row.original} />,
+        size: 280,
+        minSize: 220,
+        enableSorting: true,
+        enableHiding: false,
+        enableResizing: false,
+        meta: { headerTitle: t(($) => $.table.name) },
+      },
+      {
+        id: "health",
+        accessorFn: (row) => progressOf(row),
+        header: ({ column }) => <DataGridColumnHeader column={column} visibility />,
+        cell: ({ row }) => <ProjectHealthCell project={row.original} />,
+        sortFn: (rowA, rowB) =>
+          PROJECT_HEALTH_ORDER[projectHealthOf(rowA.original)] -
+            PROJECT_HEALTH_ORDER[projectHealthOf(rowB.original)] ||
+          progressOf(rowA.original) - progressOf(rowB.original),
+        size: 150,
+        enableSorting: true,
+        enableHiding: true,
+        enableResizing: false,
+        meta: { headerTitle: t(($) => $.table.health) },
+      },
+      {
+        accessorKey: "priority",
+        id: "priority",
+        header: ({ column }) => <DataGridColumnHeader column={column} visibility />,
+        cell: ({ row }) => <ProjectPriorityCell project={row.original} />,
+        sortFn: (rowA, rowB) => PRIORITY_ORDER[rowA.original.priority] - PRIORITY_ORDER[rowB.original.priority],
+        size: 140,
+        enableSorting: true,
+        enableHiding: true,
+        enableResizing: false,
+        meta: { headerTitle: t(($) => $.table.priority) },
+      },
+      {
+        id: "lead",
+        accessorFn: (row) => row.lead_id ?? "",
+        header: ({ column }) => <DataGridColumnHeader column={column} visibility />,
+        cell: ({ row }) => <ProjectLeadCell project={row.original} />,
+        size: 190,
+        enableSorting: false,
+        enableHiding: true,
+        enableResizing: false,
+        meta: { headerTitle: t(($) => $.table.lead) },
+      },
+      {
+        id: "targetDate",
+        accessorFn: (row) => row.due_date ? Date.parse(row.due_date) : Number.POSITIVE_INFINITY,
+        header: ({ column }) => <DataGridColumnHeader column={column} visibility />,
+        cell: ({ row }) => <ProjectTargetDateCell project={row.original} locale={locale} />,
+        sortFn: (rowA, rowB) => {
+          const aDate = rowA.original.due_date ? Date.parse(rowA.original.due_date) : Number.POSITIVE_INFINITY;
+          const bDate = rowB.original.due_date ? Date.parse(rowB.original.due_date) : Number.POSITIVE_INFINITY;
+          return aDate - bDate;
+        },
+        size: 150,
+        enableSorting: true,
+        enableHiding: true,
+        enableResizing: false,
+        meta: { headerTitle: t(($) => $.table.target_date) },
+      },
+      {
+        accessorKey: "issue_count",
+        id: "issues",
+        header: ({ column }) => <DataGridColumnHeader column={column} visibility />,
+        cell: ({ row }) => (
+          <span className="block text-right font-mono text-body tabular-nums text-muted-foreground">
+            {row.original.issue_count}
+          </span>
+        ),
+        size: 100,
+        enableSorting: false,
+        enableHiding: true,
+        enableResizing: false,
+        meta: { headerTitle: t(($) => $.table.issues) },
+      },
+      {
+        accessorKey: "status",
+        id: "status",
+        header: ({ column }) => <DataGridColumnHeader column={column} />,
+        cell: ({ row }) => <ProjectStatusCell project={row.original} />,
+        sortFn: (rowA, rowB) => STATUS_ORDER[rowA.original.status] - STATUS_ORDER[rowB.original.status],
+        size: 140,
+        enableSorting: true,
+        enableHiding: false,
+        enableResizing: false,
+        meta: { headerTitle: t(($) => $.table.status) },
+      },
+      {
+        id: "actions",
+        header: "",
+        cell: ({ row }) => (
+          <ProjectActionsCell
+            project={row.original}
+            pinned={pinnedProjectIds.has(row.original.id)}
+            canDelete={isWorkspaceAdmin}
+          />
+        ),
+        size: 52,
+        enableSorting: false,
+        enableHiding: false,
+        enableResizing: false,
+      },
+    ],
+    [isWorkspaceAdmin, locale, pinnedProjectIds, t],
+  );
+
+  const handleRowSelectionChange = useCallback(
+    (updater: RowSelectionState | ((old: RowSelectionState) => RowSelectionState)) => {
+      const next = typeof updater === "function" ? updater(rowSelection) : updater;
+      setSelectedIds(new Set(Object.keys(next).filter((id) => next[id])));
+    },
+    [rowSelection],
+  );
+
+  const handleColumnVisibilityChange = useCallback(
+    (updater: ColumnVisibilityState | ((old: ColumnVisibilityState) => ColumnVisibilityState)) => {
+      const next = typeof updater === "function" ? updater(columnVisibility) : updater;
+      for (const key of COLUMN_KEYS) {
+        const columnId = PROJECT_GRID_COLUMN_IDS[key];
+        const wasVisible = columnVisibility[columnId] !== false;
+        const isVisible = next[columnId] !== false;
+        if (wasVisible !== isVisible) toggleColumn(key);
+      }
+    },
+    [columnVisibility, toggleColumn],
+  );
+
+  const handleGridSortingChange = useCallback(
+    (updater: SortingState | ((old: SortingState) => SortingState)) => {
+      const next = typeof updater === "function" ? updater(sorting) : updater;
+      const first = next[0];
+      if (!first) {
+        setSortDirection("asc");
+        return;
+      }
+      const nextField = projectSortFieldFromGridId(first.id);
+      if (!nextField) return;
+      if (nextField !== sortField) setSortField(nextField);
+      setSortDirection(first.desc ? "desc" : "asc");
+    },
+    [setSortDirection, setSortField, sortField, sorting],
+  );
+
+  const handleGridMouseEvent = useCallback(
+    (event: MouseEvent, kind: "click" | "auxclick") => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("button, a, input, select, textarea, [role=checkbox], [data-slot=checkbox]")) {
+        return;
+      }
+      const row = target.closest<HTMLElement>("[data-row-id]");
+      if (!row) return;
+      const project = projectById.get(row.dataset.rowId ?? "");
+      if (!project) return;
+      const handlers = rowLink(wsPaths.projectDetail(project.id), project.title);
+      if (kind === "auxclick") handlers.onAuxClick(event);
+      else handlers.onClick(event);
+    },
+    [projectById, rowLink, wsPaths],
+  );
+
+  const handleGridMouseOver = useCallback(
+    (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const row = target.closest<HTMLElement>("[data-row-id]");
+      if (!row) return;
+      if (event.relatedTarget instanceof Node && row.contains(event.relatedTarget)) return;
+      const project = projectById.get(row.dataset.rowId ?? "");
+      if (project) rowLink(wsPaths.projectDetail(project.id), project.title).onMouseEnter();
+    },
+    [projectById, rowLink, wsPaths],
+  );
+
+  const table = useTable({
+    features: dataGridFeatures,
+    data: filteredProjects,
+    columns,
+    getRowId: (row) => row.id,
+    state: { columnVisibility, rowSelection, sorting },
+    enableRowSelection: true,
+    onColumnVisibilityChange: handleColumnVisibilityChange,
+    onRowSelectionChange: handleRowSelectionChange,
+    onSortingChange: handleGridSortingChange,
+  });
 
   const sortLabel = (f: ProjectSortField) =>
     f === "name"
@@ -918,18 +1015,18 @@ export function ProjectsPage() {
         : f === "status"
           ? t(($) => $.table.status)
           : f === "progress"
-            ? t(($) => $.table.progress)
-            : t(($) => $.table.created);
+            ? t(($) => $.table.health)
+            : t(($) => $.table.target_date);
   const columnLabel = (k: ProjectColumnKey) =>
     k === "priority"
       ? t(($) => $.table.priority)
       : k === "progress"
-        ? t(($) => $.table.progress)
+        ? t(($) => $.table.health)
         : k === "lead"
           ? t(($) => $.table.lead)
           : k === "issues"
             ? t(($) => $.table.issues)
-            : t(($) => $.table.created);
+            : t(($) => $.table.target_date);
 
   const showEmpty = !isLoading && projects.length === 0;
   const countBadge = (n: number) => (
@@ -1220,51 +1317,52 @@ export function ProjectsPage() {
           </div>
 
           {/* Body */}
-          {isLoading ? (
-            <LoadingState isCompact={isCompact} />
-          ) : visible.length === 0 ? (
+          {!isLoading && visible.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center py-24 text-muted-foreground">
               <Search className="mb-3 h-10 w-10 opacity-30" />
               <p className="text-body">{t(($) => $.page.no_matches)}</p>
             </div>
           ) : isCompact ? (
-            <div className="min-h-0 flex-1 overflow-auto @container">
-              <ListGrid
-                className={`${GRID_COLS} @2xl:min-w-[var(--pjc-minw)]`}
-                style={{
-                  ...columnTrackVars(isColVisible),
-                  paddingBottom: LIST_GRID_BOTTOM_CLEARANCE,
+            <div
+              className="min-h-0 flex-1 overflow-hidden border border-transparent @container"
+              onClick={(event) => handleGridMouseEvent(event, "click")}
+              onAuxClick={(event) => handleGridMouseEvent(event, "auxclick")}
+              onMouseOver={handleGridMouseOver}
+            >
+              <DataGrid
+                className="h-full"
+                table={table}
+                recordCount={filteredProjects.length}
+                isLoading={isLoading}
+                emptyMessage={t(($) => $.page.no_matches)}
+                tableLayout={{
+                  dense: true,
+                  width: "fixed",
+                  rowBorder: true,
+                  cellBorder: false,
+                  headerBorder: true,
+                  headerBackground: false,
+                  columnsVisibility: true,
+                }}
+                tableClassNames={{
+                  base: "border-transparent",
+                  headerRow: "[&>th]:border-b-transparent",
+                  bodyRow: "group/row cursor-pointer border-b-transparent [&>td]:border-b-transparent",
+                  edgeCell: "border-transparent",
                 }}
               >
-                <ProjectTableHeader
-                  sortField={sortField}
-                  sortDirection={sortDirection}
-                  onSort={toggleSort}
-                  isColVisible={isColVisible}
-                  allSelected={allSelected}
-                  someSelected={someSelected}
-                  onToggleAll={handleToggleAll}
-                />
-                {visible.map((project) => (
-                  <ProjectTableRow
-                    key={project.id}
-                    project={project}
-                    pinned={pinnedProjectIds.has(project.id)}
-                    canDelete={isWorkspaceAdmin}
-                    isColVisible={isColVisible}
-                    selected={selectedIds.has(project.id)}
-                    onToggleSelect={() => toggleSelected(project.id)}
-                    rowHref={wsPaths.projectDetail(project.id)}
-                    rowLink={rowLink}
-                  />
-                ))}
-              </ListGrid>
+                <DataGridScrollArea className="h-full" orientation="both">
+                  <DataGridTable />
+                </DataGridScrollArea>
+              </DataGrid>
             </div>
+          ) : isLoading ? (
+            <LoadingState isCompact={isCompact} />
           ) : (
             <div className={cn("min-h-0 flex-1 overflow-y-auto pt-4", PAGE_GUTTER)}>
               <div
                 className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
-                style={{ paddingBottom: LIST_GRID_BOTTOM_CLEARANCE }}
+                style={{ paddingBottom: "var(--spacing-6)" }}
               >
                 {visible.map((project) => (
                   <ProjectCard

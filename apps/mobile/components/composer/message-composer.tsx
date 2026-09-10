@@ -117,6 +117,9 @@ interface Props {
   renderStop?: () => ReactNode;
   /** Keep the send affordance visible while a provider lane accepts queued work. */
   allowSubmitWhileSending?: boolean;
+  /** Allow a completed upload to be sent without text. Used by Agent-thread
+   *  continuation, whose server contract accepts attachment-only turns. */
+  allowAttachmentOnly?: boolean;
 
   /** Hard-disable. Used when chat has no usable agent. The pill shows
    *  `disabledReason` instead of `pillLabel`, and the pill is
@@ -173,6 +176,7 @@ export function MessageComposer({
   isSending = false,
   renderStop,
   allowSubmitWhileSending = false,
+  allowAttachmentOnly = false,
   disabled = false,
   disabledReason,
   showAttachments = true,
@@ -230,12 +234,16 @@ export function MessageComposer({
   }
 
   const hasInFlightUpload = attachments.some((a) => a.status === "uploading");
+  const hasCompletedAttachment = attachments.some(
+    (attachment) => attachment.status === "completed" && !!attachment.id,
+  );
   const canSend =
     !disabled &&
     (!isSending || allowSubmitWhileSending) &&
     !submitting &&
     !hasInFlightUpload &&
-    (text.trim().length > 0 || mentions.length > 0);
+    (text.trim().length > 0 || mentions.length > 0 ||
+      (allowAttachmentOnly && hasCompletedAttachment));
 
   const expand = useCallback(() => {
     if (disabled) return;

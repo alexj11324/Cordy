@@ -5,6 +5,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Alert, KeyboardAvoidingView, Platform, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChatMessage, TaskMessagePayload } from "@orvilo/core/types";
 import { createSafeId } from "@orvilo/core/utils";
@@ -85,6 +86,7 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
   const continuation = useContinueAgentThread();
   const pendingSendRef = useRef<{
     content: string;
+    attachmentIds: string[];
     idempotencyKey: string;
   } | null>(null);
   const draft = useChatDraftsStore(
@@ -139,13 +141,14 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
   }, [queryClient, threadQuery.data?.events]);
 
   const handleSend = useCallback(
-    async (content: string, _attachmentIds: string[]) => {
+    async (content: string, attachmentIds: string[]) => {
       const normalizedContent = content.trim();
+      const normalizedAttachmentIds = [...new Set(attachmentIds)].sort();
       if (
         !threadQuery.data?.can_continue ||
         threadQuery.data.availability.state !== "available" ||
         !continuationParentTaskId ||
-        !normalizedContent
+        (!normalizedContent && normalizedAttachmentIds.length === 0)
       ) {
         throw new Error(
           agentThreadAvailabilityMessage(
@@ -157,18 +160,27 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
         );
       }
       const pendingSend = pendingSendRef.current;
+      const sameAttachments =
+        pendingSend?.attachmentIds.length === normalizedAttachmentIds.length &&
+        pendingSend.attachmentIds.every(
+          (id, index) => id === normalizedAttachmentIds[index],
+        );
       const idempotencyKey =
-        pendingSend?.content === normalizedContent
+        pendingSend?.content === normalizedContent && sameAttachments
           ? pendingSend.idempotencyKey
           : createSafeId();
       pendingSendRef.current = {
         content: normalizedContent,
+        attachmentIds: normalizedAttachmentIds,
         idempotencyKey,
       };
       await continuation.mutateAsync({
         taskId: continuationParentTaskId,
         request: {
           content: normalizedContent,
+          ...(normalizedAttachmentIds.length > 0
+            ? { attachment_ids: normalizedAttachmentIds }
+            : {}),
           idempotency_key: idempotencyKey,
         },
       });
@@ -222,6 +234,9 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
     threadQuery.data?.can_continue &&
     threadQuery.data.availability.state === "available",
   );
+  const checkpoint = [...(threadQuery.data?.thread_tasks ?? [])]
+    .reverse()
+    .find((task) => task.branch_name)?.branch_name;
 
   return (
     <View className="flex-1 bg-background">
@@ -236,9 +251,25 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
           agent={null}
           onPickPrompt={(text) => setDraft(`agent-thread:${taskId}`, text)}
           pendingTask={pendingTask}
+          queueTasks={taskState.queuedTasks}
           liveTaskMessages={liveTaskMessages.data ?? []}
           availability={availability}
         />
+        {checkpoint ? (
+          <View
+            accessible
+            accessibilityLabel={`${copy.checkpoint}: ${checkpoint}`}
+            className="mx-3 mb-2 flex-row items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5"
+          >
+            <Ionicons name="git-branch-outline" size={14} color="#71717a" />
+            <Text
+              className="flex-1 text-xs text-muted-foreground"
+              numberOfLines={1}
+            >
+              {checkpoint}
+            </Text>
+          </View>
+        ) : null}
         <ChatComposer
           value={draft}
           onChangeText={(text) => setDraft(`agent-thread:${taskId}`, text)}
@@ -247,7 +278,8 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
           sending={Boolean(pendingTask?.task_id)}
           allowStop={Boolean(taskState.executingTask)}
           allowSubmitWhileRunning
-          allowAttachments={false}
+          allowAttachmentOnly
+          allowAttachments={canContinue}
           disabled={Boolean(unavailableReason) || !canContinue}
           disabledReason={unavailableReason}
         />

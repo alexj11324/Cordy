@@ -145,7 +145,7 @@ describe("SettingsPage flux dialog", () => {
       "Shortcuts",
       "Issue",
       "Notifications",
-      "API Tokens",
+      "Authorized clients",
       "general",
       "Repositories",
       "GitHub",

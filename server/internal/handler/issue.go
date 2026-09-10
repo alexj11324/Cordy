@@ -92,7 +92,8 @@ type IssueResponse struct {
 	// Metadata is the per-issue KV map (see issue_metadata.go). Always emitted
 	// (empty object when unset) so frontend code can `issue.metadata[key]`
 	// without nil-guarding the parent field.
-	Metadata map[string]any `json:"metadata"`
+	Metadata         map[string]any  `json:"metadata"`
+	ReviewSubmission json.RawMessage `json:"review_submission,omitempty"`
 	// Properties is the custom-property value bag keyed by property definition
 	// UUID (see property.go). Always emitted, mirroring Metadata.
 	Properties  map[string]any          `json:"properties"`
@@ -239,6 +240,9 @@ func (h *Handler) runWithIssueStatusGuard(ctx context.Context, workspaceID pgtyp
 // writeIssueStatusRaceError renders errIssueStatusArchivedRace as a 409 and
 // reports whether it handled the error.
 func writeIssueStatusRaceError(w http.ResponseWriter, err error) bool {
+	if writeReviewSubmissionError(w, err) {
+		return true
+	}
 	if errors.Is(err, errIssueStatusArchivedRace) {
 		writeError(w, http.StatusConflict,
 			"the target status was archived while this request was in flight; reload the status list and retry")
@@ -415,35 +419,36 @@ func issueToResponse(i db.Issue, issuePrefix string) IssueResponse {
 		statusCategory = i.Status
 	}
 	return IssueResponse{
-		ID:             uuidToString(i.ID),
-		WorkspaceID:    uuidToString(i.WorkspaceID),
-		Number:         i.Number,
-		Identifier:     identifier,
-		Title:          i.Title,
-		Description:    textToPtr(i.Description),
-		Status:         i.Status,
-		StatusCategory: statusCategory,
-		Priority:       i.Priority,
-		OwnerType:      textToPtr(i.OwnerType),
-		OwnerID:        uuidToPtr(i.OwnerID),
-		ExecutorType:   textToPtr(i.ExecutorType),
-		ExecutorID:     uuidToPtr(i.ExecutorID),
-		ReviewerType:   textToPtr(i.ReviewerType),
-		ReviewerID:     uuidToPtr(i.ReviewerID),
-		CreatorType:    i.CreatorType,
-		CreatorID:      uuidToString(i.CreatorID),
-		ParentIssueID:  uuidToPtr(i.ParentIssueID),
-		ProjectID:      uuidToPtr(i.ProjectID),
-		Position:       i.Position,
-		Stage:          int4ToPtr(i.Stage),
-		StartDate:      dateToPtr(i.StartDate),
-		DueDate:        dateToPtr(i.DueDate),
-		CreatedAt:      timestampToString(i.CreatedAt),
-		UpdatedAt:      timestampToString(i.UpdatedAt),
-		Revision:       i.Revision,
-		LastActivityAt: timestampToNanoPtr(i.LastActivityAt),
-		Metadata:       parseIssueMetadata(i.Metadata),
-		Properties:     parseIssueProperties(i.Properties),
+		ID:               uuidToString(i.ID),
+		WorkspaceID:      uuidToString(i.WorkspaceID),
+		Number:           i.Number,
+		Identifier:       identifier,
+		Title:            i.Title,
+		Description:      textToPtr(i.Description),
+		Status:           i.Status,
+		StatusCategory:   statusCategory,
+		Priority:         i.Priority,
+		OwnerType:        textToPtr(i.OwnerType),
+		OwnerID:          uuidToPtr(i.OwnerID),
+		ExecutorType:     textToPtr(i.ExecutorType),
+		ExecutorID:       uuidToPtr(i.ExecutorID),
+		ReviewerType:     textToPtr(i.ReviewerType),
+		ReviewerID:       uuidToPtr(i.ReviewerID),
+		CreatorType:      i.CreatorType,
+		CreatorID:        uuidToString(i.CreatorID),
+		ParentIssueID:    uuidToPtr(i.ParentIssueID),
+		ProjectID:        uuidToPtr(i.ProjectID),
+		Position:         i.Position,
+		Stage:            int4ToPtr(i.Stage),
+		StartDate:        dateToPtr(i.StartDate),
+		DueDate:          dateToPtr(i.DueDate),
+		CreatedAt:        timestampToString(i.CreatedAt),
+		UpdatedAt:        timestampToString(i.UpdatedAt),
+		Revision:         i.Revision,
+		LastActivityAt:   timestampToNanoPtr(i.LastActivityAt),
+		Metadata:         parseIssueMetadata(i.Metadata),
+		ReviewSubmission: json.RawMessage(i.ReviewSubmission),
+		Properties:       parseIssueProperties(i.Properties),
 	}
 }
 
@@ -469,35 +474,36 @@ func issueListRowToResponse(i db.ListIssuesRow, issuePrefix string) IssueRespons
 	}
 	identifier := issuePrefix + "-" + strconv.Itoa(int(i.Number))
 	return IssueResponse{
-		ID:             uuidToString(i.ID),
-		WorkspaceID:    uuidToString(i.WorkspaceID),
-		Number:         i.Number,
-		Identifier:     identifier,
-		Title:          i.Title,
-		Description:    textToPtr(i.Description),
-		Status:         i.Status,
-		StatusCategory: statusCategory,
-		Priority:       i.Priority,
-		OwnerType:      textToPtr(i.OwnerType),
-		OwnerID:        uuidToPtr(i.OwnerID),
-		ExecutorType:   textToPtr(i.ExecutorType),
-		ExecutorID:     uuidToPtr(i.ExecutorID),
-		ReviewerType:   textToPtr(i.ReviewerType),
-		ReviewerID:     uuidToPtr(i.ReviewerID),
-		CreatorType:    i.CreatorType,
-		CreatorID:      uuidToString(i.CreatorID),
-		ParentIssueID:  uuidToPtr(i.ParentIssueID),
-		ProjectID:      uuidToPtr(i.ProjectID),
-		Position:       i.Position,
-		Stage:          int4ToPtr(i.Stage),
-		StartDate:      dateToPtr(i.StartDate),
-		DueDate:        dateToPtr(i.DueDate),
-		CreatedAt:      timestampToString(i.CreatedAt),
-		UpdatedAt:      timestampToString(i.UpdatedAt),
-		Revision:       i.Revision,
-		LastActivityAt: timestampToNanoPtr(i.LastActivityAt),
-		Metadata:       parseIssueMetadata(i.Metadata),
-		Properties:     parseIssueProperties(i.Properties),
+		ID:               uuidToString(i.ID),
+		WorkspaceID:      uuidToString(i.WorkspaceID),
+		Number:           i.Number,
+		Identifier:       identifier,
+		Title:            i.Title,
+		Description:      textToPtr(i.Description),
+		Status:           i.Status,
+		StatusCategory:   statusCategory,
+		Priority:         i.Priority,
+		OwnerType:        textToPtr(i.OwnerType),
+		OwnerID:          uuidToPtr(i.OwnerID),
+		ExecutorType:     textToPtr(i.ExecutorType),
+		ExecutorID:       uuidToPtr(i.ExecutorID),
+		ReviewerType:     textToPtr(i.ReviewerType),
+		ReviewerID:       uuidToPtr(i.ReviewerID),
+		CreatorType:      i.CreatorType,
+		CreatorID:        uuidToString(i.CreatorID),
+		ParentIssueID:    uuidToPtr(i.ParentIssueID),
+		ProjectID:        uuidToPtr(i.ProjectID),
+		Position:         i.Position,
+		Stage:            int4ToPtr(i.Stage),
+		StartDate:        dateToPtr(i.StartDate),
+		DueDate:          dateToPtr(i.DueDate),
+		CreatedAt:        timestampToString(i.CreatedAt),
+		UpdatedAt:        timestampToString(i.UpdatedAt),
+		Revision:         i.Revision,
+		LastActivityAt:   timestampToNanoPtr(i.LastActivityAt),
+		Metadata:         parseIssueMetadata(i.Metadata),
+		ReviewSubmission: json.RawMessage(i.ReviewSubmission),
+		Properties:       parseIssueProperties(i.Properties),
 	}
 }
 
@@ -542,35 +548,36 @@ func openIssueRowToResponse(i db.ListOpenIssuesRow, issuePrefix string) IssueRes
 	}
 	identifier := issuePrefix + "-" + strconv.Itoa(int(i.Number))
 	return IssueResponse{
-		ID:             uuidToString(i.ID),
-		WorkspaceID:    uuidToString(i.WorkspaceID),
-		Number:         i.Number,
-		Identifier:     identifier,
-		Title:          i.Title,
-		Description:    textToPtr(i.Description),
-		Status:         i.Status,
-		StatusCategory: statusCategory,
-		Priority:       i.Priority,
-		OwnerType:      textToPtr(i.OwnerType),
-		OwnerID:        uuidToPtr(i.OwnerID),
-		ExecutorType:   textToPtr(i.ExecutorType),
-		ExecutorID:     uuidToPtr(i.ExecutorID),
-		ReviewerType:   textToPtr(i.ReviewerType),
-		ReviewerID:     uuidToPtr(i.ReviewerID),
-		CreatorType:    i.CreatorType,
-		CreatorID:      uuidToString(i.CreatorID),
-		ParentIssueID:  uuidToPtr(i.ParentIssueID),
-		ProjectID:      uuidToPtr(i.ProjectID),
-		Position:       i.Position,
-		Stage:          int4ToPtr(i.Stage),
-		StartDate:      dateToPtr(i.StartDate),
-		DueDate:        dateToPtr(i.DueDate),
-		CreatedAt:      timestampToString(i.CreatedAt),
-		UpdatedAt:      timestampToString(i.UpdatedAt),
-		Revision:       i.Revision,
-		LastActivityAt: timestampToNanoPtr(i.LastActivityAt),
-		Metadata:       parseIssueMetadata(i.Metadata),
-		Properties:     parseIssueProperties(i.Properties),
+		ID:               uuidToString(i.ID),
+		WorkspaceID:      uuidToString(i.WorkspaceID),
+		Number:           i.Number,
+		Identifier:       identifier,
+		Title:            i.Title,
+		Description:      textToPtr(i.Description),
+		Status:           i.Status,
+		StatusCategory:   statusCategory,
+		Priority:         i.Priority,
+		OwnerType:        textToPtr(i.OwnerType),
+		OwnerID:          uuidToPtr(i.OwnerID),
+		ExecutorType:     textToPtr(i.ExecutorType),
+		ExecutorID:       uuidToPtr(i.ExecutorID),
+		ReviewerType:     textToPtr(i.ReviewerType),
+		ReviewerID:       uuidToPtr(i.ReviewerID),
+		CreatorType:      i.CreatorType,
+		CreatorID:        uuidToString(i.CreatorID),
+		ParentIssueID:    uuidToPtr(i.ParentIssueID),
+		ProjectID:        uuidToPtr(i.ProjectID),
+		Position:         i.Position,
+		Stage:            int4ToPtr(i.Stage),
+		StartDate:        dateToPtr(i.StartDate),
+		DueDate:          dateToPtr(i.DueDate),
+		CreatedAt:        timestampToString(i.CreatedAt),
+		UpdatedAt:        timestampToString(i.UpdatedAt),
+		Revision:         i.Revision,
+		LastActivityAt:   timestampToNanoPtr(i.LastActivityAt),
+		Metadata:         parseIssueMetadata(i.Metadata),
+		ReviewSubmission: json.RawMessage(i.ReviewSubmission),
+		Properties:       parseIssueProperties(i.Properties),
 	}
 }
 
@@ -3090,22 +3097,23 @@ func readRuntimeCLIVersion(metadata []byte) string {
 }
 
 type CreateIssueRequest struct {
-	Title         string   `json:"title"`
-	Description   *string  `json:"description"`
-	Status        string   `json:"status"`
-	Priority      string   `json:"priority"`
-	OwnerType     *string  `json:"owner_type"`
-	OwnerID       *string  `json:"owner_id"`
-	ExecutorType  *string  `json:"executor_type"`
-	ExecutorID    *string  `json:"executor_id"`
-	ReviewerType  *string  `json:"reviewer_type"`
-	ReviewerID    *string  `json:"reviewer_id"`
-	ParentIssueID *string  `json:"parent_issue_id"`
-	ProjectID     *string  `json:"project_id"`
-	Stage         *int32   `json:"stage,omitempty"`
-	StartDate     *string  `json:"start_date"`
-	DueDate       *string  `json:"due_date"`
-	AttachmentIDs []string `json:"attachment_ids,omitempty"`
+	ReviewSubmission *issueReviewSubmission `json:"review_submission,omitempty"`
+	Title            string                 `json:"title"`
+	Description      *string                `json:"description"`
+	Status           string                 `json:"status"`
+	Priority         string                 `json:"priority"`
+	OwnerType        *string                `json:"owner_type"`
+	OwnerID          *string                `json:"owner_id"`
+	ExecutorType     *string                `json:"executor_type"`
+	ExecutorID       *string                `json:"executor_id"`
+	ReviewerType     *string                `json:"reviewer_type"`
+	ReviewerID       *string                `json:"reviewer_id"`
+	ParentIssueID    *string                `json:"parent_issue_id"`
+	ProjectID        *string                `json:"project_id"`
+	Stage            *int32                 `json:"stage,omitempty"`
+	StartDate        *string                `json:"start_date"`
+	DueDate          *string                `json:"due_date"`
+	AttachmentIDs    []string               `json:"attachment_ids,omitempty"`
 	// LabelIDs are issue-scoped labels to attach to the new issue in the same
 	// transaction as the create. Unknown or non-issue ids are rejected with
 	// 400 (service.ErrIssueLabelNotFound) rather than silently dropped.
@@ -3447,30 +3455,36 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		return out
 	}
 
+	reviewSubmission, err := encodeIssueReviewSubmission(req.ReviewSubmission)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	res, err := h.IssueService.Create(r.Context(), service.IssueCreateParams{
-		WorkspaceID:    wsUUID,
-		Title:          req.Title,
-		Description:    ptrToText(req.Description),
-		Status:         status,
-		Priority:       priority,
-		ExecutorType:   executorType,
-		ExecutorID:     executorID,
-		OwnerType:      ownerType,
-		OwnerID:        ownerID,
-		ReviewerType:   reviewerType,
-		ReviewerID:     reviewerID,
-		CreatorType:    creatorType,
-		CreatorID:      parseUUID(actualCreatorID),
-		ParentIssueID:  parentIssueID,
-		ProjectID:      projectID,
-		StartDate:      startDate,
-		DueDate:        dueDate,
-		OriginType:     originType,
-		OriginID:       originID,
-		Stage:          ptrToInt4(req.Stage),
-		AttachmentIDs:  attachmentIDs,
-		LabelIDs:       labelIDs,
-		AllowDuplicate: req.AllowDuplicate,
+		ReviewSubmission: reviewSubmission,
+		WorkspaceID:      wsUUID,
+		Title:            req.Title,
+		Description:      ptrToText(req.Description),
+		Status:           status,
+		Priority:         priority,
+		ExecutorType:     executorType,
+		ExecutorID:       executorID,
+		OwnerType:        ownerType,
+		OwnerID:          ownerID,
+		ReviewerType:     reviewerType,
+		ReviewerID:       reviewerID,
+		CreatorType:      creatorType,
+		CreatorID:        parseUUID(actualCreatorID),
+		ParentIssueID:    parentIssueID,
+		ProjectID:        projectID,
+		StartDate:        startDate,
+		DueDate:          dueDate,
+		OriginType:       originType,
+		OriginID:         originID,
+		Stage:            ptrToInt4(req.Stage),
+		AttachmentIDs:    attachmentIDs,
+		LabelIDs:         labelIDs,
+		AllowDuplicate:   req.AllowDuplicate,
 	}, service.IssueCreateOpts{
 		ActorID:                actualCreatorID,
 		ConsumeTaskLeaseID:     consumeTaskLeaseID,
@@ -3496,6 +3510,9 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		},
 	})
 
+	if writeReviewSubmissionError(w, err) {
+		return
+	}
 	if errors.Is(err, service.ErrActiveDuplicate) {
 		dup := *res.DuplicateIssue
 		existing := issueToResponse(dup, h.getIssuePrefix(r.Context(), dup.WorkspaceID))
@@ -3552,8 +3569,9 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 type UpdateIssueRequest struct {
-	ExpectedRevision *int64  `json:"expected_revision,omitempty"`
-	Title            *string `json:"title"`
+	ReviewSubmission *issueReviewSubmission `json:"review_submission,omitempty"`
+	ExpectedRevision *int64                 `json:"expected_revision,omitempty"`
+	Title            *string                `json:"title"`
 	// TitleBase is the title adopted by the editor before producing Title. It
 	// protects title edits without coupling them to unrelated issue mutations.
 	TitleBase   *string `json:"title_base,omitempty"`
@@ -4170,6 +4188,11 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 		nextStatus = params.Status.String
 	}
 	if !h.enforceIssueWorkflowGate(r.Context(), w, prevIssue.WorkspaceID, prevIssue.Status, nextStatus, actorRefOrNil(params.ExecutorType, params.ExecutorID), actorRefOrNil(params.ReviewerType, params.ReviewerID)) {
+		return
+	}
+	params.ReviewSubmission, err = encodeIssueReviewSubmission(req.ReviewSubmission)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	prelockNext := prevIssue
@@ -5034,6 +5057,11 @@ func (h *Handler) BatchUpdateIssues(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		batchNextStatus := prevIssue.Status
+		params.ReviewSubmission, err = encodeIssueReviewSubmission(req.Updates.ReviewSubmission)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		if params.Status.Valid {
 			batchNextStatus = params.Status.String
 		}

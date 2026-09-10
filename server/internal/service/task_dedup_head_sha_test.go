@@ -108,10 +108,10 @@ func createHeadShaDedupFixture(t *testing.T, ctx context.Context, pool *pgxpool.
 
 	var issueID string
 	if err := pool.QueryRow(ctx, `
-		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position, executor_type, executor_id)
-		VALUES ($1, $2, 'in_review', 'none', $3, 'member', $4, 0, 'agent', $5)
+		INSERT INTO issue (workspace_id, title, status, priority, creator_id, creator_type, number, position, executor_type, executor_id, reviewer_type, reviewer_id, review_submission)
+		VALUES ($1, $2, 'in_review', 'none', $3, 'member', $4, 0, 'agent', $5, 'member', $6, $7::jsonb)
 		RETURNING id
-	`, workspaceID, "head sha dedup issue", userID, 970000+int(suffix%1000), agentID).Scan(&issueID); err != nil {
+	`, workspaceID, "head sha dedup issue", userID, 970000+int(suffix%1000), agentID, userID, headShaReviewSubmission()).Scan(&issueID); err != nil {
 		t.Fatalf("create issue: %v", err)
 	}
 
@@ -216,6 +216,10 @@ const (
 	shaA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	shaB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 )
+
+func headShaReviewSubmission() []byte {
+	return []byte(`{"worktree":"/work/project","branch":"codex/review","commit":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","pull_requests":["https://github.com/example/project/pull/42"],"submission_id":"head-sha-fixture"}`)
+}
 
 // Behavior 1: a pending task for SHA A does NOT satisfy a request when HEAD has
 // advanced to SHA B — dedup MISSES so a fresh review can enqueue against B.

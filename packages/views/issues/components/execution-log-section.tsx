@@ -142,13 +142,7 @@ export function ExecutionLogSection({ issueId, identifier }: ExecutionLogSection
           }`}
           onClick={() => setOpen(!open)}
         >
-          {/* The section label is the one item here that may shrink, so it
-              carries the nowrap + ellipsis pair. Without it the squeezed
-              button broke "Execution log" across two lines (MUL-5804) — a
-              section heading that reflows is a layout bug, not a narrow
-              column. The tier below keeps the ellipsis from ever showing at
-              the panel's 260px minimum; it is the backstop for a longer
-              translation, not the everyday state. */}
+          {}
           <span className="truncate">{t(($) => $.execution_log.section)}</span>
           <ChevronRight
             className={`size-4 shrink-0 stroke-[2.5] text-muted-foreground transition-transform ${
@@ -310,10 +304,12 @@ export function ActiveTaskRow({
   task,
   issueId,
   onTranscriptOpenChange,
+  showConversationAction = true,
 }: {
   task: AgentTask;
   issueId: string;
   onTranscriptOpenChange?: (open: boolean) => void;
+  showConversationAction?: boolean;
 }) {
   const { t } = useT("issues");
   const [cancelling, setCancelling] = useState(false);
@@ -376,11 +372,13 @@ export function ActiveTaskRow({
         )}
       </RowStatus>
       <RowActions>
-        <AgentThreadButton
-          task={task}
-          title={t(($) => $.execution_log.conversation_tooltip)}
-          onOpenChange={onTranscriptOpenChange}
-        />
+        {showConversationAction ? (
+          <AgentThreadButton
+            task={task}
+            title={t(($) => $.execution_log.conversation_tooltip)}
+            onOpenChange={onTranscriptOpenChange}
+          />
+        ) : null}
         <Tooltip>
           <TooltipTrigger
             render={
@@ -478,7 +476,7 @@ function PastRow({ task, issueId }: { task: AgentTask; issueId: string }) {
     try {
       await api.rerunIssue(issueId, task.id);
     } catch (e) {
-      // A rerun is now re-gated on the operator's invoke permission (MUL-4525):
+
       // a structured 403 means the agent can't be triggered, not a transient
       // failure — localize it instead of echoing the server's generic message.
       toast.error(

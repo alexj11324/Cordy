@@ -41,7 +41,7 @@ import { useT } from "../i18n";
  * the UI explained why. Both now come from `/work-products`, so a product's
  * presence here is the same fact the server's close gate reads.
  */
-export function WorkProductRelationsSection({ issueId }: { issueId: string }) {
+export function WorkProductRelationsSection({ issueId, pullRequestsOnly = false, submittedPullRequests = [] }: { issueId: string; pullRequestsOnly?: boolean; submittedPullRequests?: string[] }) {
   const wsId = useWorkspaceId();
   const { t } = useT("work-products");
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -56,8 +56,8 @@ export function WorkProductRelationsSection({ issueId }: { issueId: string }) {
   const attachPullRequest = useAttachIssuePullRequest();
   const detachProduct = useDetachWorkProduct();
   const products = useMemo(
-    () => productsQuery.data?.pages.flatMap((page) => page.work_products) ?? [],
-    [productsQuery.data],
+    () => (productsQuery.data?.pages.flatMap((page) => page.work_products) ?? []).filter((product) => !pullRequestsOnly || product.kind === "pull_request"),
+    [productsQuery.data, pullRequestsOnly],
   );
   const availableProducts = useMemo(() => {
     const seen = new Set<string>();
@@ -107,13 +107,17 @@ export function WorkProductRelationsSection({ issueId }: { issueId: string }) {
     );
   }
 
+  const submittedLinks = [...new Set(submittedPullRequests)].filter((url) => !products.some((product) => product.external_url === url));
+  const count = products.length + submittedLinks.length;
+  if (pullRequestsOnly && count === 0) return null;
+
   return (
     <section className="space-y-2" aria-labelledby={`work-product-relations-${issueId}`}>
       <div className="flex items-center justify-between gap-2">
         <h3 id={`work-product-relations-${issueId}`} className="text-caption font-medium">
-          {t(($) => $.relations.title)}
-          {products.length > 0 ? (
-            <span className="ml-1 text-muted-foreground">· {products.length}</span>
+          {pullRequestsOnly ? "PR" : t(($) => $.relations.title)}
+          {count > 0 ? (
+            <span className="ml-1 text-muted-foreground">· {count}</span>
           ) : null}
         </h3>
         <Button
@@ -129,10 +133,11 @@ export function WorkProductRelationsSection({ issueId }: { issueId: string }) {
 
       {productsQuery.isPending ? (
         <p className="px-2 text-caption text-muted-foreground">{t(($) => $.relations.loading)}</p>
-      ) : products.length === 0 ? (
+      ) : count === 0 ? (
         <p className="px-2 text-caption text-muted-foreground">{t(($) => $.relations.empty)}</p>
       ) : (
         <div className="space-y-1">
+          {submittedLinks.map((url) => <a key={url} href={url} target="_blank" rel="noreferrer noopener" className="block truncate rounded-md py-1.5 text-caption hover:underline">{url}</a>)}
           {products.map((product) => (
             <WorkProductRow
               key={product.relation.id || product.id}

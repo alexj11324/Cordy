@@ -5,10 +5,10 @@ import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Cpu } from "lucide-react";
 import { runtimeModelsOptions } from "@orvilo/core/runtimes";
 import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@orvilo/ui/components/ui/popover";
+  ModelSelector as AIModelSelector,
+  ModelSelectorContent as AIModelSelectorContent,
+  ModelSelectorTrigger as AIModelSelectorTrigger,
+} from "@orvilo/ui/components/ai-elements/model-selector";
 import { Label } from "@orvilo/ui/components/ui/label";
 import { cn } from "@orvilo/ui/lib/utils";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
@@ -55,7 +55,6 @@ export function ModelDropdown({
   clearUnsupported = true,
   allowEffort,
   allowSpeed,
-  popoverAlign = "start",
 }: ModelDropdownProps) {
   const { t } = useT("agents");
   const [open, setOpen] = useState(false);
@@ -153,8 +152,8 @@ export function ModelDropdown({
           </span>
         </div>
       ) : (
-        <Popover open={open} onOpenChange={setOpen}>
-          <PopoverTrigger
+        <AIModelSelector open={open} onOpenChange={setOpen}>
+          <AIModelSelectorTrigger
             disabled={disabled}
             aria-label={t(($) => $.pickers.model_tooltip, {
               value: triggerLabel,
@@ -162,11 +161,11 @@ export function ModelDropdown({
             className={triggerClassName(variant, showLabel)}
           >
             {trigger}
-          </PopoverTrigger>
-          <PopoverContent
-            align={popoverAlign}
-            sideOffset={6}
-            className="w-[min(35rem,calc(100vw-1rem))] gap-0 overflow-hidden p-0 duration-150 data-open:zoom-in-100 data-closed:zoom-out-100"
+          </AIModelSelectorTrigger>
+          <AIModelSelectorContent
+            command={false}
+            title={t(($) => $.model_dropdown.label)}
+            className="w-[min(35rem,calc(100vw-1rem))] max-w-[min(35rem,calc(100vw-1rem))] gap-0 overflow-hidden p-0"
           >
             {open && (
               <ModelSelectorContent
@@ -185,8 +184,8 @@ export function ModelDropdown({
                 }}
               />
             )}
-          </PopoverContent>
-        </Popover>
+          </AIModelSelectorContent>
+        </AIModelSelector>
       )}
     </div>
   );

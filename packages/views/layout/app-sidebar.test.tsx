@@ -268,10 +268,10 @@ describe("PinRow", () => {
   });
 
   it("renders loaded details", async () => {
-    detail.current = { isPending: false, isError: false, data: { identifier: "MUL-123", title: "Keep this pin", status: "todo" }, error: null };
+    detail.current = { isPending: false, isError: false, data: { identifier: "ISSUE-123", title: "Keep this pin", status: "todo" }, error: null };
     render(<AppSidebar />);
     expect(await screen.findByText("Keep this pin")).toBeInTheDocument();
-    expect(screen.queryByText("MUL-123 Keep this pin")).not.toBeInTheDocument();
+    expect(screen.queryByText("ISSUE-123 Keep this pin")).not.toBeInTheDocument();
   });
 
   it("does not also highlight the parent workspace nav for an active pin", async () => {
@@ -279,7 +279,7 @@ describe("PinRow", () => {
     detail.current = {
       isPending: false,
       isError: false,
-      data: { identifier: "MUL-123", title: "Keep this pin", status: "todo" },
+      data: { identifier: "ISSUE-123", title: "Keep this pin", status: "todo" },
       error: null,
     };
 
@@ -320,6 +320,14 @@ describe("mobile sheet dismissal", () => {
     rerender(<AppSidebar />);
 
     expect(sidebarState.setOpenMobile).not.toHaveBeenCalled();
+  });
+});
+
+describe("workspace navigation", () => {
+  it("does not expose the removed statistics surface", () => {
+    renderWithI18n(<AppSidebar />);
+
+    expect(screen.queryByText("Analytics")).not.toBeInTheDocument();
   });
 });
 
@@ -536,7 +544,7 @@ describe("personal nav — Chat", () => {
 
   it("counts the active session while the floating window is open but the app is backgrounded", () => {
     // A reply landing while the app is not in the foreground is NOT auto
-    // marked-read (MUL-4485), so its unread must still badge — otherwise the
+
     // notification is silently eaten while the user is away.
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/issues" };

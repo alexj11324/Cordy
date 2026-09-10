@@ -513,6 +513,7 @@ func init() {
 	issueCreateCmd.Flags().String("executor-id", "", "Executor agent or team UUID")
 	issueCreateCmd.Flags().String("reviewer", "", "Reviewer name (member, agent, or team; fuzzy match)")
 	issueCreateCmd.Flags().String("reviewer-id", "", "Reviewer UUID")
+	addIssueReviewSubmissionFlags(issueCreateCmd)
 	issueCreateCmd.Flags().String("parent", "", "Parent issue ID")
 	issueCreateCmd.Flags().Int("stage", 0, "Stage ordinal (>=1) grouping this sub-issue into an ordered barrier group under its parent; omit for unstaged. The parent executor is woken only when every sub-issue in a stage finishes.")
 	issueCreateCmd.Flags().String("project", "", "Project ID")
@@ -537,6 +538,7 @@ func init() {
 	issueUpdateCmd.Flags().String("executor-id", "", "New executor agent or team UUID")
 	issueUpdateCmd.Flags().String("reviewer", "", "New reviewer name (member, agent, or team; fuzzy match)")
 	issueUpdateCmd.Flags().String("reviewer-id", "", "New reviewer UUID")
+	addIssueReviewSubmissionFlags(issueUpdateCmd)
 	issueUpdateCmd.Flags().String("project", "", "Project ID")
 	issueUpdateCmd.Flags().String("start-date", "", "New start date (calendar day, YYYY-MM-DD; pass empty string to clear)")
 	issueUpdateCmd.Flags().String("due-date", "", "New due date (calendar day, YYYY-MM-DD)")
@@ -2899,6 +2901,9 @@ func formatIssueRole(issue map[string]any, role string, actors actorDisplayLooku
 }
 
 func applyIssueRoleFlags(ctx context.Context, client *cli.APIClient, cmd *cobra.Command, body map[string]any) error {
+	if err := applyIssueReviewSubmissionFlags(cmd, body); err != nil {
+		return err
+	}
 	if cmd.Flags().Lookup("owner") != nil && (cmd.Flags().Changed("owner") || cmd.Flags().Changed("owner-id")) {
 		aType, aID, has, err := pickActorFromFlags(ctx, client, cmd, "owner", "owner-id", memberOnlyKinds)
 		if err != nil {

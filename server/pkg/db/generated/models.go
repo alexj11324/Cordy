@@ -614,6 +614,8 @@ type ChatMessage struct {
 	ChannelOutboundInstallationID pgtype.UUID        `json:"channel_outbound_installation_id"`
 	ChannelOutboundChatID         pgtype.Text        `json:"channel_outbound_chat_id"`
 	ChannelOutboundMessageIds     []string           `json:"channel_outbound_message_ids"`
+	Sources                       []byte             `json:"sources"`
+	Citations                     []byte             `json:"citations"`
 }
 
 type ChatPinnedAgent struct {
@@ -1022,6 +1024,7 @@ type Issue struct {
 	ReviewerType       pgtype.Text        `json:"reviewer_type"`
 	ReviewerID         pgtype.UUID        `json:"reviewer_id"`
 	ExecutorGeneration int64              `json:"executor_generation"`
+	ReviewSubmission   []byte             `json:"review_submission"`
 }
 
 type IssueDependency struct {
@@ -1517,19 +1520,24 @@ type PluginStorage struct {
 }
 
 type Project struct {
-	ID          pgtype.UUID        `json:"id"`
-	WorkspaceID pgtype.UUID        `json:"workspace_id"`
-	Title       string             `json:"title"`
-	Description pgtype.Text        `json:"description"`
-	Icon        pgtype.Text        `json:"icon"`
-	Status      string             `json:"status"`
-	LeadType    pgtype.Text        `json:"lead_type"`
-	LeadID      pgtype.UUID        `json:"lead_id"`
-	CreatedAt   pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
-	Priority    string             `json:"priority"`
-	StartDate   pgtype.Date        `json:"start_date"`
-	DueDate     pgtype.Date        `json:"due_date"`
+	ID            pgtype.UUID        `json:"id"`
+	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
+	Title         string             `json:"title"`
+	Description   pgtype.Text        `json:"description"`
+	Icon          pgtype.Text        `json:"icon"`
+	Status        string             `json:"status"`
+	LeadType      pgtype.Text        `json:"lead_type"`
+	LeadID        pgtype.UUID        `json:"lead_id"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	Priority      string             `json:"priority"`
+	StartDate     pgtype.Date        `json:"start_date"`
+	DueDate       pgtype.Date        `json:"due_date"`
+	MemberIds     []byte             `json:"member_ids"`
+	LabelIds      []byte             `json:"label_ids"`
+	DependencyIds []byte             `json:"dependency_ids"`
+	Milestones    []byte             `json:"milestones"`
+	Summary       pgtype.Text        `json:"summary"`
 }
 
 type ProjectResource struct {
@@ -1669,6 +1677,10 @@ type TaskMessage struct {
 	Input     []byte             `json:"input"`
 	Output    pgtype.Text        `json:"output"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	CallID    pgtype.Text        `json:"call_id"`
+	State     pgtype.Text        `json:"state"`
+	Sources   []byte             `json:"sources"`
+	Citations []byte             `json:"citations"`
 }
 
 // Short-lived, revocable task capability leases. Raw mat_ bearer values are never stored. scope is server-computed; parent/depth/fences enforce monotonic delegation.
@@ -1801,8 +1813,9 @@ type User struct {
 	Language                pgtype.Text        `json:"language"`
 	ProfileDescription      string             `json:"profile_description"`
 	// User-preferred IANA timezone for report rendering (Viewing tz). NULL means "use the browser-detected tz at render time". Affects dashboards, charts, and any "today" label shown to this user. Does not affect data materialisation — all rollups remain in UTC.
-	Timezone pgtype.Text `json:"timezone"`
-	IsGuest  bool        `json:"is_guest"`
+	Timezone       pgtype.Text `json:"timezone"`
+	IsGuest        bool        `json:"is_guest"`
+	ProfileDetails []byte      `json:"profile_details"`
 }
 
 type UserComposioConnection struct {
@@ -1869,13 +1882,15 @@ type VcsPullRequest struct {
 }
 
 type VerificationCode struct {
-	ID        pgtype.UUID        `json:"id"`
-	Email     string             `json:"email"`
-	Code      string             `json:"code"`
-	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
-	Used      bool               `json:"used"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
-	Attempts  int32              `json:"attempts"`
+	ID              pgtype.UUID        `json:"id"`
+	Email           string             `json:"email"`
+	Code            string             `json:"code"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	Used            bool               `json:"used"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	Attempts        int32              `json:"attempts"`
+	Purpose         string             `json:"purpose"`
+	RequesterUserID pgtype.UUID        `json:"requester_user_id"`
 }
 
 type WebhookDelivery struct {
@@ -1956,7 +1971,8 @@ type Workspace struct {
 	IssueCounter int32              `json:"issue_counter"`
 	AvatarUrl    pgtype.Text        `json:"avatar_url"`
 	// When TRUE, an agent run that resolves to no precise accountable human (would be owner_fallback) is refused at enqueue instead of degrading to the agent owner (MUL-4302 §3.5). Default FALSE = owner_fallback. Never affects authorization (originator_user_id).
-	AttributionFailClosed bool `json:"attribution_fail_closed"`
+	AttributionFailClosed bool        `json:"attribution_fail_closed"`
+	LeadAgentID           pgtype.UUID `json:"lead_agent_id"`
 }
 
 type WorkspaceChannel struct {

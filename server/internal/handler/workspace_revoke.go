@@ -92,6 +92,15 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 		if err != nil {
 			return empty, err
 		}
+		if len(result.ArchivedAgents) > 0 {
+			archivedAgentIDs := make([]pgtype.UUID, len(result.ArchivedAgents))
+			for i, archivedAgent := range result.ArchivedAgents {
+				archivedAgentIDs[i] = archivedAgent.ID
+			}
+			if err := qtx.ClearWorkspaceLeadsForAgents(ctx, archivedAgentIDs); err != nil {
+				return empty, err
+			}
+		}
 
 		// Cancel by runtime AND by archived agent. agent.runtime_id can be
 		// reassigned via UpdateAgent without rewriting the runtime_id on
@@ -137,7 +146,7 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 	// The inbound path also re-checks membership (see ChannelStore.IsWorkspaceMember),
 	// but pruning stops a stale binding from lingering across a remove/re-add.
 	if err := qtx.DeleteChannelUserBindingsByWorkspaceMember(ctx, db.DeleteChannelUserBindingsByWorkspaceMemberParams{
-		WorkspaceID:    workspaceID,
+		WorkspaceID:  workspaceID,
 		OrviloUserID: userID,
 	}); err != nil {
 		return empty, err
@@ -219,6 +228,15 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 		if err := enqueueMemberCapacityRelease(ctx, qtx, uuid.UUID(workspaceID.Bytes), uuid.UUID(memberID.Bytes)); err != nil {
 			return empty, err
 		}
+	}
+	if _, err := qtx.LockWorkspaceForDelete(ctx, workspaceID); err != nil {
+		return empty, err
+	}
+	if err := qtx.ClearProjectMemberReference(ctx, db.ClearProjectMemberReferenceParams{
+		UserID:      uuidToString(userID),
+		WorkspaceID: workspaceID,
+	}); err != nil {
+		return empty, err
 	}
 	if err := qtx.DeleteMember(ctx, memberID); err != nil {
 		return empty, err

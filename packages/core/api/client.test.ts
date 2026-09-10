@@ -207,7 +207,7 @@ describe("ApiClient edit guards", () => {
       id: "issue-1",
       workspace_id: "ws-1",
       number: 1,
-      identifier: "MUL-1",
+      identifier: "ISSUE-1",
       title: "Legacy issue",
       description: null,
       status: "todo",
@@ -259,10 +259,10 @@ describe("ApiClient issue work-product response schema", () => {
     repo_owner: "acme",
     repo_name: "widget",
     number: 7,
-    title: "MUL-1: fix",
+    title: "ISSUE-1: fix",
     state: "open",
     html_url: "https://github.example/acme/widget/pull/7",
-    branch: "fix/mul-1",
+    branch: "fix/issue-1",
     author_login: "octocat",
     author_avatar_url: null,
     merged_at: null,
@@ -450,11 +450,11 @@ describe("ApiClient Plugin surface bridge routes", () => {
 
     await new ApiClient("https://api.example.test").callPluginAction(
       "installation-1",
-      { method: "GET", path: "/context", issueId: "MUL-42" },
+      { method: "GET", path: "/context", issueId: "ISSUE-42" },
     );
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "https://api.example.test/api/v1/plugin/context?issue_id=MUL-42",
+      "https://api.example.test/api/v1/plugin/context?issue_id=ISSUE-42",
     );
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       method: "GET",
@@ -726,7 +726,7 @@ describe("ApiClient server Table query", () => {
                 parent: {
                   id: "parent-1",
                   number: 10,
-                  identifier: "MUL-10",
+                  identifier: "ISSUE-10",
                   title: "Parent",
                   status: "todo",
                 },
@@ -1813,7 +1813,16 @@ describe("ApiClient", () => {
       expect(fetchMock.mock.calls[1]![0]).toBe(
         "https://api.example.test/api/chat/sessions/session-1/messages",
       );
-      expect(page).toEqual({ messages: legacy, limit: 50, has_more: false, next_cursor: null });
+      expect(page).toEqual({
+        messages: legacy.map((message) => ({
+          ...message,
+          sources: [],
+          citations: [],
+        })),
+        limit: 50,
+        has_more: false,
+        next_cursor: null,
+      });
     });
 
     it("keeps a valid reply when its optional quick actions are malformed", async () => {
@@ -2104,7 +2113,7 @@ describe("ApiClient", () => {
       expect(body.get("comment_id")).toBeNull();
     });
 
-    it("threads an AbortSignal into fetch so the coordinator can cancel it (MUL-5181)", async () => {
+    it("threads an AbortSignal into fetch so the coordinator can cancel it (ISSUE-5181)", async () => {
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ id: "att-1", url: "https://cdn/x" }), {
           status: 200,
@@ -2380,17 +2389,7 @@ describe("ApiClient model discovery response schema", () => {
   });
 });
 
-/**
- * Mixed-version contract for subtree unsubscribe (MUL-5483).
- *
- * Web/desktop staging deploys on merge while the backend is deployed by hand,
- * so this client routinely runs against an older server. Subtree unsubscribe
- * must therefore be carried by its own PATH, never by a body field: Go's JSON
- * decoder drops unknown fields, so an old server would unsubscribe only the
- * root and still answer 200 — telling the user the whole tree was muted while
- * every child kept notifying. An unknown path 404s, which surfaces as a
- * rejected mutation the user can act on.
- */
+
 describe("ApiClient unsubscribe endpoints", () => {
   function stubOK() {
     const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
@@ -2822,7 +2821,7 @@ describe("clientErrorMessage", () => {
   });
 
   it("withholds a 5xx message, which carries internal server detail", () => {
-    // MUL-6472: the pre-fix body for a failed automation trigger looked like
+
     // this, and it was rendered verbatim in the run-now toast.
     const leaky = new ApiError(
       'failed to trigger automation: create run: ERROR: duplicate key value violates unique constraint "automation_run_pkey" (SQLSTATE 23505)',

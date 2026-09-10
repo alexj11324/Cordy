@@ -1,5 +1,10 @@
 import { normalizeStatusPatch } from "./status-category";
-import { hashKey, useMutation, useQueryClient, type QueryKey } from "@tanstack/react-query";
+import {
+  hashKey,
+  useMutation,
+  useQueryClient,
+  type QueryKey,
+} from "@tanstack/react-query";
 import { api } from "../api";
 import { issueKeys } from "./queries";
 import { projectKeys } from "../projects/queries";
@@ -84,15 +89,23 @@ function useIssueCreateMutation<TVariables>(
   return useMutation({
     mutationFn,
     onSuccess: (newIssue) => {
-      for (const [key, data] of qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) })) {
-        if (data) qc.setQueryData<ListIssuesCache>(key, addIssueToBuckets(data, newIssue));
+      for (const [key, data] of qc.getQueriesData<ListIssuesCache>({
+        queryKey: issueKeys.list(wsId),
+      })) {
+        if (data)
+          qc.setQueryData<ListIssuesCache>(
+            key,
+            addIssueToBuckets(data, newIssue),
+          );
       }
       // Surface the just-created issue in cmd+k's Recent list without
       // requiring the user to open it first.
       useRecentIssuesStore.getState().recordVisit(wsId, newIssue.id);
       // Invalidate parent's children query so sub-issues list updates immediately
       if (newIssue.parent_issue_id) {
-        qc.invalidateQueries({ queryKey: issueKeys.children(wsId, newIssue.parent_issue_id) });
+        qc.invalidateQueries({
+          queryKey: issueKeys.children(wsId, newIssue.parent_issue_id),
+        });
         qc.invalidateQueries({ queryKey: issueKeys.childProgress(wsId) });
       }
     },
@@ -109,24 +122,32 @@ function useIssueCreateMutation<TVariables>(
 }
 
 export function useCreateIssue() {
-  return useIssueCreateMutation((data: CreateIssueRequest) => api.createIssue(data));
+  return useIssueCreateMutation((data: CreateIssueRequest) =>
+    api.createIssue(data),
+  );
 }
 
 export function useCreateCommentSubIssue() {
-  return useIssueCreateMutation(({
-    anchorCommentId,
-    data,
-  }: {
-    anchorCommentId: string;
-    data: CreateCommentSubIssueManualRequest;
-  }) => api.createCommentSubIssue(anchorCommentId, data));
+  return useIssueCreateMutation(
+    ({
+      anchorCommentId,
+      data,
+    }: {
+      anchorCommentId: string;
+      data: CreateCommentSubIssueManualRequest;
+    }) => api.createCommentSubIssue(anchorCommentId, data),
+  );
 }
 
 export function useUpdateIssue() {
   const qc = useQueryClient();
   const wsId = useWorkspaceId();
   return useMutation({
-    mutationFn: ({ id, move_intent: moveIntent, ...data }: UpdateIssueMutationInput) => {
+    mutationFn: ({
+      id,
+      move_intent: moveIntent,
+      ...data
+    }: UpdateIssueMutationInput) => {
       if (!moveIntent) return api.updateIssue(id, data);
       const { position: _optimisticPosition, ...target } = data;
       return api.moveIssue(id, { ...target, ...moveIntent });
@@ -145,6 +166,7 @@ export function useUpdateIssue() {
         description_base: _descriptionBase,
         title_base: _titleBase,
         expected_revision: _expectedRevision,
+        review_submission: _reviewSubmission,
         ...patch
       } = data;
       // Fire-and-forget cancelQueries — keeps onMutate synchronous so the
@@ -205,12 +227,12 @@ export function useUpdateIssue() {
         const detachedFromParent =
           Object.prototype.hasOwnProperty.call(patch, "parent_issue_id") &&
           patch.parent_issue_id !== parentId;
-        qc.setQueryData<Issue[]>(
-          issueKeys.children(wsId, parentId),
-          (old) =>
-            detachedFromParent
-              ? old?.filter((c) => c.id !== id)
-              : old?.map((c) => (c.id === id ? { ...c, ...normalizeStatusPatch(patch) } : c)),
+        qc.setQueryData<Issue[]>(issueKeys.children(wsId, parentId), (old) =>
+          detachedFromParent
+            ? old?.filter((c) => c.id !== id)
+            : old?.map((c) =>
+                c.id === id ? { ...c, ...normalizeStatusPatch(patch) } : c,
+              ),
         );
       }
       return { change, prevChildren, parentId, id };
@@ -263,18 +285,24 @@ export function useUpdateIssue() {
       // property write resolves would otherwise overwrite the newer bag
       // (clean-room review F3 response-ordering race).
       const { properties: _staleBag, ...reconcilable } = serverIssue;
-      const reconcile = applyIssueChange(qc, wsId, serverIssue.id, reconcilable as typeof serverIssue, {
-        changed: issueChangedDims(intent, serverIssue),
-        baseIssue: serverIssue,
-        // The HTTP response can arrive after a newer WS event. Reconcile the
-        // committed snapshot only into projections that have not already
-        // advanced beyond it; otherwise an older successful response would
-        // undo a later remote write in cache.
-        acceptCurrent: (current) =>
-          current.revision === undefined ||
-          (serverIssue.revision !== undefined &&
-            serverIssue.revision > current.revision),
-      });
+      const reconcile = applyIssueChange(
+        qc,
+        wsId,
+        serverIssue.id,
+        reconcilable as typeof serverIssue,
+        {
+          changed: issueChangedDims(intent, serverIssue),
+          baseIssue: serverIssue,
+          // The HTTP response can arrive after a newer WS event. Reconcile the
+          // committed snapshot only into projections that have not already
+          // advanced beyond it; otherwise an older successful response would
+          // undo a later remote write in cache.
+          acceptCurrent: (current) =>
+            current.revision === undefined ||
+            (serverIssue.revision !== undefined &&
+              serverIssue.revision > current.revision),
+        },
+      );
       reconcileIssueFullSnapshotRevision(
         qc,
         wsId,
@@ -333,7 +361,9 @@ export function useUpdateIssue() {
       // optimistically, so we only need to flush when the parent relation
       // itself moved.
       if (ctx?.parentId || newParentId) {
-        qc.invalidateQueries({ queryKey: issueKeys.childrenByParentsAll(wsId) });
+        qc.invalidateQueries({
+          queryKey: issueKeys.childrenByParentsAll(wsId),
+        });
       }
     },
   });
@@ -356,7 +386,9 @@ export function useDeleteIssue() {
           qc.cancelQueries({ queryKey: issueKeys.children(wsId, parentId) }),
         ),
       );
-      const prevLists = qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) });
+      const prevLists = qc.getQueriesData<ListIssuesCache>({
+        queryKey: issueKeys.list(wsId),
+      });
       const prevMyLists = qc.getQueriesData<ListIssuesCache>({
         queryKey: issueKeys.myAll(wsId),
       });
@@ -411,7 +443,9 @@ export function useDeleteIssue() {
       }
     },
     onSuccess: (_data, id, ctx) => {
-      useRecentContextStore.getState().forgetContext(wsId, { type: "issue", id });
+      useRecentContextStore
+        .getState()
+        .forgetContext(wsId, { type: "issue", id });
       cleanupDeletedIssueCaches(qc, wsId, id, ctx?.metadata);
     },
     onSettled: (_data, _err, _id, ctx) => {
@@ -422,7 +456,8 @@ export function useDeleteIssue() {
       qc.invalidateQueries({ queryKey: issueKeys.myExecutorGroupsAll(wsId) });
       qc.invalidateQueries({ queryKey: issueKeys.projectGanttAll(wsId) });
       qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
-      if (ctx?.metadata) invalidateDeletedIssueParentCaches(qc, wsId, ctx.metadata);
+      if (ctx?.metadata)
+        invalidateDeletedIssueParentCaches(qc, wsId, ctx.metadata);
     },
   });
 }
@@ -448,6 +483,7 @@ export function useBatchUpdateIssues() {
         handoff_note: _handoffNote,
         description: _description,
         description_base: _descriptionBase,
+        review_submission: _reviewSubmission,
         ...patch
       } = updates;
       await qc.cancelQueries({ queryKey: issueKeys.list(wsId) });
@@ -482,7 +518,8 @@ export function useBatchUpdateIssues() {
         });
         for (const [key, snapshot] of change.prevLists) {
           const hash = hashKey(key);
-          if (!prevListByHash.has(hash)) prevListByHash.set(hash, [key, snapshot]);
+          if (!prevListByHash.has(hash))
+            prevListByHash.set(hash, [key, snapshot]);
         }
         for (const [key, snapshot] of change.prevFlatLists) {
           const hash = hashKey(key);
@@ -524,7 +561,9 @@ export function useBatchUpdateIssues() {
         affectedParentIds.add(parentId);
         prevChildren.set(parentId, data);
         qc.setQueryData<Issue[]>(issueKeys.children(wsId, parentId), (old) =>
-          old?.map((c) => (idSet.has(c.id) ? { ...c, ...normalizeStatusPatch(patch) } : c)),
+          old?.map((c) =>
+            idSet.has(c.id) ? { ...c, ...normalizeStatusPatch(patch) } : c,
+          ),
         );
       }
 
@@ -565,10 +604,7 @@ export function useBatchUpdateIssues() {
         qc.setQueryData(inboxKeys.list(wsId), ctx.prevInboxList);
       }
       if (ctx?.prevArchivedInboxList !== undefined) {
-        qc.setQueryData(
-          inboxKeys.archived(wsId),
-          ctx.prevArchivedInboxList,
-        );
+        qc.setQueryData(inboxKeys.archived(wsId), ctx.prevArchivedInboxList);
       }
       if (ctx?.prevChildren) {
         for (const [parentId, snapshot] of ctx.prevChildren) {
@@ -618,10 +654,7 @@ export function useBatchDeleteIssues() {
         qc.cancelQueries({ queryKey: issueKeys.flatAll(wsId) }),
       ]);
       const metadataById = new Map(
-        ids.map((id) => [
-          id,
-          collectDeletedIssueCacheMetadata(qc, wsId, id),
-        ]),
+        ids.map((id) => [id, collectDeletedIssueCacheMetadata(qc, wsId, id)]),
       );
       const parentIssueIds = new Set<string>();
       for (const metadata of metadataById.values()) {
@@ -634,7 +667,9 @@ export function useBatchDeleteIssues() {
           qc.cancelQueries({ queryKey: issueKeys.children(wsId, parentId) }),
         ),
       );
-      const prevLists = qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) });
+      const prevLists = qc.getQueriesData<ListIssuesCache>({
+        queryKey: issueKeys.list(wsId),
+      });
       const prevMyLists = qc.getQueriesData<ListIssuesCache>({
         queryKey: issueKeys.myAll(wsId),
       });
@@ -762,7 +797,15 @@ export function useCreateComment(issueId: string) {
       parentId?: string;
       attachmentIds?: string[];
       suppressAgentIds?: string[];
-    }) => api.createComment(issueId, content, type, parentId, attachmentIds, suppressAgentIds),
+    }) =>
+      api.createComment(
+        issueId,
+        content,
+        type,
+        parentId,
+        attachmentIds,
+        suppressAgentIds,
+      ),
     onSuccess: (comment) => {
       if (comment.issue_revision) {
         onIssueAuxiliaryRevision(qc, wsId, issueId, comment.issue_revision);
@@ -794,7 +837,9 @@ export function useCreateComment(issueId: string) {
       // Posting a comment changes the trigger answer itself (the enqueued
       // task now dedupes follow-up triggers), so cached previews for this
       // issue are stale the moment the create lands.
-      qc.invalidateQueries({ queryKey: issueKeys.commentTriggerPreview(issueId) });
+      qc.invalidateQueries({
+        queryKey: issueKeys.commentTriggerPreview(issueId),
+      });
     },
     // No onSettled invalidate. The `comment:created` WS broadcast keeps
     // the timeline cache fresh after a successful create, and reconnect
@@ -824,7 +869,15 @@ export function useUpdateComment(issueId: string) {
       suppressAgentIds?: string[];
       contentBase?: string;
       expectedRevision?: number;
-    }) => api.updateComment(commentId, content, attachmentIds, suppressAgentIds, contentBase, expectedRevision),
+    }) =>
+      api.updateComment(
+        commentId,
+        content,
+        attachmentIds,
+        suppressAgentIds,
+        contentBase,
+        expectedRevision,
+      ),
     onMutate: async ({ commentId, content, attachmentIds }) => {
       await qc.cancelQueries({ queryKey: issueKeys.timeline(issueId) });
       const prev = qc.getQueryData<TimelineCache>(issueKeys.timeline(issueId));
@@ -832,7 +885,11 @@ export function useUpdateComment(issueId: string) {
       qc.setQueryData<TimelineCache>(issueKeys.timeline(issueId), (old) =>
         old?.map((e) =>
           e.id === commentId
-            ? { ...e, content, attachments: e.attachments?.filter((a) => kept.has(a.id)) }
+            ? {
+                ...e,
+                content,
+                attachments: e.attachments?.filter((a) => kept.has(a.id)),
+              }
             : e,
         ),
       );
@@ -958,8 +1015,16 @@ function collectThreadCommentIds(
 export function useResolveComment(issueId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ commentId, resolved }: { commentId: string; resolved: boolean }) =>
-      resolved ? api.resolveComment(commentId) : api.unresolveComment(commentId),
+    mutationFn: ({
+      commentId,
+      resolved,
+    }: {
+      commentId: string;
+      resolved: boolean;
+    }) =>
+      resolved
+        ? api.resolveComment(commentId)
+        : api.unresolveComment(commentId),
     onMutate: async ({ commentId, resolved }) => {
       await qc.cancelQueries({ queryKey: issueKeys.timeline(issueId) });
       const prev = qc.getQueryData<TimelineCache>(issueKeys.timeline(issueId));
@@ -970,18 +1035,25 @@ export function useResolveComment(issueId: string) {
         // resolution in the same thread. Without this the cache shows two
         // resolutions until the settle refetch, which is exactly the flash the
         // single-resolution fix removes. Unresolve only clears its own row.
-        const threadIds = resolved ? collectThreadCommentIds(old, commentId) : null;
+        const threadIds = resolved
+          ? collectThreadCommentIds(old, commentId)
+          : null;
         return old.map((e) => {
           if (e.id === commentId) {
             return {
               ...e,
               resolved_at: resolved ? new Date().toISOString() : null,
-              resolved_by_type: resolved ? e.resolved_by_type ?? null : null,
-              resolved_by_id: resolved ? e.resolved_by_id ?? null : null,
+              resolved_by_type: resolved ? (e.resolved_by_type ?? null) : null,
+              resolved_by_id: resolved ? (e.resolved_by_id ?? null) : null,
             };
           }
           if (resolved && e.resolved_at && threadIds?.has(e.id)) {
-            return { ...e, resolved_at: null, resolved_by_type: null, resolved_by_id: null };
+            return {
+              ...e,
+              resolved_at: null,
+              resolved_by_type: null,
+              resolved_by_id: null,
+            };
           }
           return e;
         });
@@ -1029,10 +1101,7 @@ export function useToggleIssueReaction(issueId: string) {
   const wsId = useWorkspaceId();
   return useMutation({
     mutationKey: ["toggleIssueReaction", issueId] as const,
-    mutationFn: async ({
-      emoji,
-      existing,
-    }: ToggleIssueReactionVars) => {
+    mutationFn: async ({ emoji, existing }: ToggleIssueReactionVars) => {
       if (existing) {
         await api.removeIssueReaction(issueId, emoji);
         return null;
@@ -1096,9 +1165,7 @@ export function useToggleIssueSubscriber(issueId: string) {
           issueKeys.subscribers(issueId),
           (old) => {
             if (
-              old?.some(
-                (s) => s.user_id === userId && s.user_type === userType,
-              )
+              old?.some((s) => s.user_id === userId && s.user_type === userType)
             )
               return old;
             return [...(old ?? []), temp];
@@ -1108,8 +1175,7 @@ export function useToggleIssueSubscriber(issueId: string) {
       return { prev };
     },
     onError: (_err, _vars, ctx) => {
-      if (ctx?.prev)
-        qc.setQueryData(issueKeys.subscribers(issueId), ctx.prev);
+      if (ctx?.prev) qc.setQueryData(issueKeys.subscribers(issueId), ctx.prev);
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: issueKeys.subscribers(issueId) });

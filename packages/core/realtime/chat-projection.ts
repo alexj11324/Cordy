@@ -52,7 +52,7 @@ export function invalidateChatMessageQueries(
 // aggregate stale so it is refetched from the permission-filtering endpoint
 // (/api/chat/pending-tasks[/has-any]).
 //
-// SECURITY (review on PR #5018 / MUL-4159): this is deliberately an
+
 // invalidate, NOT an optimistic setQueryData. Chat `task:*` events are a
 // workspace fanout delivered to every member with no creator / agent
 // visibility in the payload, so optimistically writing the aggregate from them
@@ -69,27 +69,7 @@ export function refetchPendingChatAggregate(
   qc.invalidateQueries({ queryKey: chatKeys.pendingTasks(wsId) });
 }
 
-/**
- * Apply a chat:message event: write the turn's USER message into the message
- * caches, then reconcile authoritatively (MUL-5711).
- *
- * The payload has always carried the whole message; this handler used to read
- * `chat_session_id` off it and drop the rest, which made a human's own prompt
- * the one row that reached the transcript ONLY through the refetch below. Any
- * client that did not write it locally — a second window or device, a send
- * whose HTTP response failed after the server committed, a surface mounting
- * mid-flight — lost it whenever that refetch was dropped, most reliably to the
- * chat:quick_actions cancel. Both caches are staleTime: Infinity, so nothing
- * re-fetched afterwards and the prompt stayed missing until a remount.
- *
- * Only `role: "user"` is written. SendChatMessage is the event's one producer,
- * and an assistant row fabricated from this payload would carry no elapsed_ms /
- * message_kind / quick_actions while still claiming the id that
- * applyChatDoneToCache is about to write properly.
- *
- * The invalidate stays: this payload has no `attachments`, so the reconciling
- * refetch is what fills them in for clients that did not send the message.
- */
+
 export function applyChatMessageToCache(
   qc: QueryClient,
   payload: ChatMessageEventPayload,
@@ -101,6 +81,8 @@ export function applyChatMessageToCache(
       chat_session_id: sessionId,
       role: "user",
       content: payload.content ?? "",
+      ...(payload.sources !== undefined ? { sources: payload.sources } : {}),
+      ...(payload.citations !== undefined ? { citations: payload.citations } : {}),
       task_id: payload.task_id ?? null,
       created_at: payload.created_at ?? new Date().toISOString(),
     });
@@ -123,11 +105,13 @@ export function applyChatDoneToCache(
       chat_session_id: sessionId,
       role: "assistant",
       content: content ?? "",
+      ...(payload.sources !== undefined ? { sources: payload.sources } : {}),
+      ...(payload.citations !== undefined ? { citations: payload.citations } : {}),
       task_id: taskId,
       created_at: payload.created_at ?? new Date().toISOString(),
       elapsed_ms: payload.elapsed_ms ?? null,
       // Carry the kind so a no_response turn renders its placeholder inline
-      // without waiting for the reconciling refetch (MUL-4351). Missing →
+
       // "message" for older servers.
       message_kind: payload.message_kind ?? "message",
       ...(payload.quick_actions !== undefined
@@ -164,18 +148,7 @@ export function applyChatDoneToCache(
   qc.invalidateQueries({ queryKey: chatKeys.pendingTask(sessionId) });
 }
 
-/**
- * Apply a chat:quick_actions supplement: patch the identified assistant
- * message's quick_actions in both message caches and resolve the pending
- * placeholder. An empty/missing list is terminal ("no suggestions this
- * turn") — the placeholder still resolves.
- *
- * `payload.failed` marks a resolution whose regeneration failed: the carried
- * actions are the turn's UNCHANGED prior pills, so the patch is a no-op, but a
- * failure signal is raised for a view to toast — otherwise an explicit refresh
- * that failed would look identical to one that succeeded with the same
- * suggestions (MUL-5149 review).
- */
+
 export async function applyChatQuickActionsToCache(
   qc: QueryClient,
   payload: ChatQuickActionsPayload,
@@ -190,7 +163,7 @@ export async function applyChatQuickActionsToCache(
     // read the assistant row BEFORE the daemon persisted these actions. Cancel
     // it first so its actions-less response can't land after — and overwrite —
     // the patch below. Both message caches are staleTime: Infinity, so such an
-    // overwrite would never self-heal (MUL-5149 stale-refetch race). Cancelling
+
     // before setQueryData is required: cancelQueries reverts to the pre-fetch
     // state, so patching first would be undone by the revert.
     await Promise.all([
@@ -215,7 +188,7 @@ export async function applyChatQuickActionsToCache(
           }
           : old,
     );
-    // Settle the cancel (MUL-5711). cancelQueries defaults to `revert: true`,
+
     // so the line above does more than ignore the in-flight response — it rolls
     // the cache back to the snapshot taken when that fetch STARTED, dropping
     // rows only that response carried (a peer's user message, anything that
@@ -255,23 +228,7 @@ type ChatSessionUpdatedPayload = {
   updated_at?: string;
 };
 
-/**
- * Patch the cached sessions row for a `chat:session_updated` event (rename,
- * pin/unpin, archive/unarchive from any tab/device) instead of refetching the
- * whole list. `pinned` is present only on pin/unpin events and `status` only on
- * archive/unarchive; a plain rename omits both, so absent fields leave existing
- * state untouched. When either changes we re-sort so the row lands in the right
- * place (pin → top; archive → the other list) like the server order.
- *
- * Archiving MUST also zero the row's unread here: the server payload carries
- * only status/updated_at, and chatSessionsOptions is `staleTime: Infinity`, so a
- * stale cache in another tab/device would otherwise keep an archived session's
- * unread badge lit forever — the same MUL-4360 stuck-badge bug, one surface over.
- * This mirrors the archive mutation's optimistic patch and the backend deriving
- * unread_count=0 for archived rows. Unarchive does NOT fabricate a count — the
- * true unread state comes back from the server refetch (last_read_at is
- * untouched), so we leave the row's unread fields as-is for `active`.
- */
+
 export function applyChatSessionUpdatedToCache(
   qc: QueryClient,
   wsId: string,
@@ -409,7 +366,7 @@ export function subscribeChatProjection({ ws, qc, workspaceId, authStore, isActi
   // DB remains authoritative.
 
   // Two guards stand between the workspace-wide message firehose and the
-  // renderer (MUL-6396). `task:message` is broadcast to EVERY client for
+
   // EVERY run in the workspace, but only the handful of runs a user actually
   // opens is ever rendered:
   //
@@ -484,7 +441,7 @@ export function subscribeChatProjection({ ws, qc, workspaceId, authStore, isActi
 
   // Helpers reused by chat lifecycle handlers.
   //
-  // SECURITY (review on PR #5018 / MUL-4159): chat `task:*` events are a
+
   // *workspace fanout* — every member of the workspace receives them — and
   // the payload carries no creator / agent-visibility. So we must NEVER
   // optimistically write the cross-session pending AGGREGATE
@@ -502,7 +459,7 @@ export function subscribeChatProjection({ ws, qc, workspaceId, authStore, isActi
   // cross-user aggregate leak.
   //
   // chat:message is intentionally NOT a trigger (it fires per streamed
-  // message and would re-create the request storm MUL-4159 fixed); the
+
   // aggregate is refreshed only on task lifecycle transitions, which are
   // per-task and low-frequency, then coalesced by the debounce below.
   let aggregateRefreshTimer: ReturnType<typeof setTimeout> | null = null;
@@ -527,11 +484,11 @@ export function subscribeChatProjection({ ws, qc, workspaceId, authStore, isActi
       role: payload.role,
     });
     // Write the user turn before invalidating so the prompt does not depend
-    // on the refetch surviving (MUL-5711) — same shape as chat:done.
+
     applyChatMessageToCache(qc, payload);
     // NOTE: intentionally does NOT touch the pending aggregate. chat:message
     // fires per streamed message with no status; the aggregate is maintained
-    // by the task lifecycle handlers below (MUL-4159).
+
   });
 
   const unsubChatDone = ws.on("chat:done", (p) => {
@@ -557,7 +514,7 @@ export function subscribeChatProjection({ ws, qc, workspaceId, authStore, isActi
     // NOTE: the pending aggregate is left to the task:completed / task:failed
     // handlers (which carry the task_id needed to remove the right entry).
     // chat:done no longer invalidates it, so a chatty session doesn't refetch
-    // the aggregate on every turn (MUL-4159).
+
     // Assistant message just landed → has_unread may have flipped to true.
     invalidateSessionLists();
   });

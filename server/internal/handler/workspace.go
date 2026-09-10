@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/orvilo-ai/orvilo/server/internal/analytics"
@@ -105,6 +106,7 @@ type WorkspaceResponse struct {
 	Settings    any     `json:"settings"`
 	Repos       any     `json:"repos"`
 	IssuePrefix string  `json:"issue_prefix"`
+	LeadAgentID *string `json:"lead_agent_id"`
 	AvatarURL   *string `json:"avatar_url"`
 	CreatedAt   string  `json:"created_at"`
 	UpdatedAt   string  `json:"updated_at"`
@@ -134,6 +136,7 @@ func (h *Handler) workspaceToResponse(w db.Workspace) WorkspaceResponse {
 		Settings:    settings,
 		Repos:       repos,
 		IssuePrefix: w.IssuePrefix,
+		LeadAgentID: uuidToPtr(w.LeadAgentID),
 		AvatarURL:   h.resolveAvatarURLPtr(textToPtr(w.AvatarUrl)),
 		CreatedAt:   timestampToString(w.CreatedAt),
 		UpdatedAt:   timestampToString(w.UpdatedAt),
@@ -358,6 +361,7 @@ type UpdateWorkspaceRequest struct {
 	Repos       any     `json:"repos"`
 	IssuePrefix *string `json:"issue_prefix"`
 	AvatarURL   *string `json:"avatar_url"`
+	LeadAgentID *string `json:"lead_agent_id"`
 }
 
 type workspaceRepoRef struct {
@@ -409,7 +413,8 @@ func (h *Handler) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req UpdateWorkspaceRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	rawFields, err := decodeJSONBodyWithRawFields(r.Body, &req)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
@@ -467,9 +472,38 @@ func (h *Handler) UpdateWorkspace(w http.ResponseWriter, r *http.Request) {
 		}
 		params.AvatarUrl = pgtype.Text{String: accepted, Valid: true}
 	}
+	if rawLeadAgentID, touched := rawFields["lead_agent_id"]; touched {
+		params.LeadAgentIDSet = true
+		if strings.TrimSpace(string(rawLeadAgentID)) != "null" {
+			var leadAgentID string
+			if err := json.Unmarshal(rawLeadAgentID, &leadAgentID); err != nil || strings.TrimSpace(leadAgentID) == "" {
+				writeError(w, http.StatusBadRequest, "lead_agent_id must be a UUID or null")
+				return
+			}
+			leadAgentUUID, ok := parseUUIDOrBadRequest(w, strings.TrimSpace(leadAgentID), "lead_agent_id")
+			if !ok {
+				return
+			}
+			// Keep the public PATCH contract explicit even though the update query
+			// repeats this predicate at write time to close the archive race.
+			leadAgent, err := h.Queries.GetAgentInWorkspace(r.Context(), db.GetAgentInWorkspaceParams{
+				ID:          leadAgentUUID,
+				WorkspaceID: idUUID,
+			})
+			if err != nil || leadAgent.ArchivedAt.Valid {
+				writeError(w, http.StatusBadRequest, "lead_agent_id must name an active agent in this workspace")
+				return
+			}
+			params.LeadAgentID = leadAgentUUID
+		}
+	}
 
 	ws, err := h.Queries.UpdateWorkspace(r.Context(), params)
 	if err != nil {
+		if params.LeadAgentIDSet && errors.Is(err, pgx.ErrNoRows) {
+			writeError(w, http.StatusBadRequest, "lead_agent_id must name an active agent in this workspace")
+			return
+		}
 		slog.Warn("update workspace failed", append(logger.RequestAttrs(r), "error", err, "workspace_id", id)...)
 		writeError(w, http.StatusInternalServerError, "failed to update workspace: "+err.Error())
 		return

@@ -85,6 +85,21 @@ export default function IssueStatusPickerRoute() {
           });
           return;
         }
+        if (plan.kind === "collect_review_evidence") {
+          const reviewer = issueActorForRole(issue, "reviewer");
+          if (!reviewer) return;
+          router.replace({
+            pathname: "/[workspace]/issue/[id]/picker/review-submission",
+            params: {
+              workspace,
+              id,
+              handoffStatus: plan.status,
+              reviewerType: reviewer.type,
+              reviewerId: reviewer.id,
+            },
+          });
+          return;
+        }
         writingRef.current = true;
         updateIssue.mutate(
           { status: plan.status },

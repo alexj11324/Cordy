@@ -185,7 +185,6 @@ func (c *Client) setIdentityHeaders(req *http.Request) {
 // advertises on BOTH the HTTP control-plane requests and the WS handshake, so a
 // claim built over WS gets the same capability gating (skill refs,
 // coalesced-comments) as the HTTP path. rpc-v1 advertises WS request/response
-// support (MUL-4257).
 func daemonClientCapabilities() string {
 	return strings.Join([]string{
 		protocol.DaemonCapabilitySkillBundlesV1,
@@ -245,18 +244,15 @@ func (c *Client) ResolveRemoteMCPCredential(ctx context.Context, daemonToken, ta
 }
 
 // batchClaimRequestTimeout is the short, request-scoped deadline for the
-// machine-level batch claim (MUL-4257). Unlike the per-runtime claim — which
 // gets the full 30s control-plane timeout because a stall there only blocks
 // that one runtime's goroutine — the batch call covers every runtime the
 // daemon hosts in a single request, so a slow claim would delay ALL of them
 // (the head-of-line coupling the per-runtime pollers were split to avoid,
-// MUL-1744). Bounding the batch to a few seconds caps that worst-case
 // starvation; a claim that commits server-side after the client gives up is
 // recovered by ReclaimStaleDispatchedTasksForRuntimes on the next poll. Kept
 // comfortably above p99 claim latency so recovery stays the exception.
 const batchClaimRequestTimeout = 5 * time.Second
 
-// ClaimTasks is the machine-level (MUL-4257) batch counterpart of ClaimTask:
 // it asks the server, in a single request, to claim up to maxTasks tasks across
 // every runtime the daemon hosts. daemonID scopes the request to this machine —
 // the server rejects any runtime_id whose runtime.daemon_id doesn't match, so a
@@ -284,7 +280,6 @@ func (c *Client) ClaimTasks(ctx context.Context, daemonID string, runtimeIDs []s
 
 // isBatchClaimUnsupported reports whether err is a 404 from the batch claim
 // endpoint — i.e. the server predates the /api/daemon/tasks/claim route and the
-// daemon must fall back to the legacy per-runtime claim (MUL-4257). The batch
 // handler itself never returns 404, so a 404 here means the route is
 // unregistered on an un-upgraded server.
 func isBatchClaimUnsupported(err error) bool {
@@ -295,7 +290,6 @@ func isBatchClaimUnsupported(err error) bool {
 	return reqErr.StatusCode == http.StatusNotFound
 }
 
-// claimTasksLegacy is the pre-batch compatibility fallback (MUL-4257): claim per
 // runtime via the legacy POST /api/daemon/runtimes/{id}/tasks/claim so a new
 // daemon still works against a server that has no batch route. Returns up to
 // maxTasks tasks. A per-runtime error is only propagated when nothing has been
@@ -559,12 +553,16 @@ func (c *Client) ReportProgress(ctx context.Context, taskID, summary string, ste
 
 // TaskMessageData represents a single agent execution message for batch reporting.
 type TaskMessageData struct {
-	Seq     int            `json:"seq"`
-	Type    string         `json:"type"`
-	Tool    string         `json:"tool,omitempty"`
-	Content string         `json:"content,omitempty"`
-	Input   map[string]any `json:"input,omitempty"`
-	Output  string         `json:"output,omitempty"`
+	Seq       int                     `json:"seq"`
+	Type      string                  `json:"type"`
+	Tool      string                  `json:"tool,omitempty"`
+	Content   string                  `json:"content,omitempty"`
+	Sources   []agent.MessageSource   `json:"sources,omitempty"`
+	Citations []agent.MessageCitation `json:"citations,omitempty"`
+	Input     map[string]any          `json:"input,omitempty"`
+	Output    string                  `json:"output,omitempty"`
+	CallID    string                  `json:"call_id,omitempty"`
+	State     string                  `json:"state,omitempty"`
 }
 
 func (c *Client) ReportTaskMessages(ctx context.Context, taskID string, messages []TaskMessageData) error {
@@ -995,7 +993,6 @@ func (c *Client) GetTaskGCCheck(ctx context.Context, taskID string) (*TaskGCStat
 // refuses to execute its agent CLI. It is the one deregistration cause that no
 // amount of waiting fixes, which is what the server needs to know: work for an
 // offline machine may queue until the machine returns, but work for this one
-// must be refused with an explanation (MUL-6164).
 const RuntimeOfflineCodeNotExecutable = "not_executable"
 
 // RuntimeOfflineReason is why a runtime went offline, in the form clients can
@@ -1051,7 +1048,6 @@ func (c *Client) GetWorkspaceRepos(ctx context.Context, workspaceID string) (*Wo
 }
 
 // RuntimeProfile mirrors the server's workspace custom runtime profile
-// (MUL-3284). protocol_family is the provider used for task routing (it
 // selects the agent backend), while command_name is the actual executable
 // the daemon resolves on PATH and launches. fixed_args are launch arguments
 // every agent on this runtime inherits.
@@ -1091,7 +1087,6 @@ func (c *Client) GetRuntimeProfiles(ctx context.Context, workspaceID string) (*R
 // terminal task callbacks (CompleteTask / FailTask). N entries → N+1 attempts
 // in the worst case (one immediate + N retries). Five backoffs totalling
 // 124s is wide enough to ride out the short upstream blips we've seen
-// (MUL-2780) without leaving the task stuck if the outage outlives the
 // window.
 var defaultTerminalRetrySchedule = []time.Duration{
 	4 * time.Second,

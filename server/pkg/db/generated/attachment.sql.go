@@ -454,6 +454,59 @@ func (q *Queries) GetAttachmentByIDOnly(ctx context.Context, id pgtype.UUID) (At
 	return i, err
 }
 
+const linkAttachmentsToAgentThreadTask = `-- name: LinkAttachmentsToAgentThreadTask :many
+UPDATE attachment
+SET task_id = $1
+WHERE workspace_id = $2
+  AND uploader_type = $3
+  AND uploader_id = $4
+  AND issue_id IS NULL
+  AND comment_id IS NULL
+  AND chat_session_id IS NULL
+  AND chat_message_id IS NULL
+  AND task_id IS NULL
+  AND source_context_id IS NULL
+  AND id = ANY($5::uuid[])
+RETURNING id
+`
+
+type LinkAttachmentsToAgentThreadTaskParams struct {
+	TaskID        pgtype.UUID   `json:"task_id"`
+	WorkspaceID   pgtype.UUID   `json:"workspace_id"`
+	UploaderType  string        `json:"uploader_type"`
+	UploaderID    pgtype.UUID   `json:"uploader_id"`
+	AttachmentIds []pgtype.UUID `json:"attachment_ids"`
+}
+
+// The rows are locked and ownership-checked by LockAttachmentsForAgentThread
+// in the same transaction. Keep the predicates here as a second write fence
+// so an attachment can never be stolen if this query is reused incorrectly.
+func (q *Queries) LinkAttachmentsToAgentThreadTask(ctx context.Context, arg LinkAttachmentsToAgentThreadTaskParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, linkAttachmentsToAgentThreadTask,
+		arg.TaskID,
+		arg.WorkspaceID,
+		arg.UploaderType,
+		arg.UploaderID,
+		arg.AttachmentIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const linkAttachmentsToChatMessage = `-- name: LinkAttachmentsToChatMessage :many
 UPDATE attachment
 SET chat_message_id = $1,
@@ -574,6 +627,32 @@ func (q *Queries) LinkAttachmentsToIssue(ctx context.Context, arg LinkAttachment
 	var i LinkAttachmentsToIssueRow
 	err := row.Scan(&i.LinkedCount, &i.IssueRevision)
 	return i, err
+}
+
+const listAttachmentIDsByTask = `-- name: ListAttachmentIDsByTask :many
+SELECT id FROM attachment
+WHERE task_id = $1
+ORDER BY id ASC
+`
+
+func (q *Queries) ListAttachmentIDsByTask(ctx context.Context, taskID pgtype.UUID) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listAttachmentIDsByTask, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAttachmentURLsByChatSession = `-- name: ListAttachmentURLsByChatSession :many
@@ -1050,6 +1129,57 @@ func (q *Queries) ListAttachmentsBySourceContext(ctx context.Context, arg ListAt
 	return items, nil
 }
 
+const listAttachmentsByTask = `-- name: ListAttachmentsByTask :many
+SELECT id, workspace_id, issue_id, comment_id, uploader_type, uploader_id, filename, url, content_type, size_bytes, created_at, chat_session_id, chat_message_id, task_id, source_context_id FROM attachment
+WHERE task_id = $1
+  AND workspace_id = $2
+ORDER BY created_at ASC, id ASC
+`
+
+type ListAttachmentsByTaskParams struct {
+	TaskID      pgtype.UUID `json:"task_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Task ids are the transient ownership handle for agent-produced and
+// continuation attachments. Workspace scope remains mandatory because task_id
+// intentionally has no foreign key.
+func (q *Queries) ListAttachmentsByTask(ctx context.Context, arg ListAttachmentsByTaskParams) ([]Attachment, error) {
+	rows, err := q.db.Query(ctx, listAttachmentsByTask, arg.TaskID, arg.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Attachment{}
+	for rows.Next() {
+		var i Attachment
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.IssueID,
+			&i.CommentID,
+			&i.UploaderType,
+			&i.UploaderID,
+			&i.Filename,
+			&i.Url,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.CreatedAt,
+			&i.ChatSessionID,
+			&i.ChatMessageID,
+			&i.TaskID,
+			&i.SourceContextID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSourceContextAttachmentURLsByWorkspace = `-- name: ListSourceContextAttachmentURLsByWorkspace :many
 SELECT url FROM attachment
 WHERE workspace_id = $1
@@ -1227,6 +1357,73 @@ func (q *Queries) ListSystemRuntimeChatAttachmentURLs(ctx context.Context, runti
 			return nil, err
 		}
 		items = append(items, url)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockAttachmentsForAgentThread = `-- name: LockAttachmentsForAgentThread :many
+SELECT id, workspace_id, issue_id, comment_id, uploader_type, uploader_id, filename, url, content_type, size_bytes, created_at, chat_session_id, chat_message_id, task_id, source_context_id FROM attachment
+WHERE workspace_id = $1
+  AND uploader_type = $2
+  AND uploader_id = $3
+  AND issue_id IS NULL
+  AND comment_id IS NULL
+  AND chat_session_id IS NULL
+  AND chat_message_id IS NULL
+  AND task_id IS NULL
+  AND source_context_id IS NULL
+  AND id = ANY($4::uuid[])
+ORDER BY id
+FOR UPDATE
+`
+
+type LockAttachmentsForAgentThreadParams struct {
+	WorkspaceID   pgtype.UUID   `json:"workspace_id"`
+	UploaderType  string        `json:"uploader_type"`
+	UploaderID    pgtype.UUID   `json:"uploader_id"`
+	AttachmentIds []pgtype.UUID `json:"attachment_ids"`
+}
+
+// Continuation uploads start as unclaimed workspace attachments. Lock the
+// exact rows before creating the continuation so ownership and availability
+// cannot change between validation and task binding.
+func (q *Queries) LockAttachmentsForAgentThread(ctx context.Context, arg LockAttachmentsForAgentThreadParams) ([]Attachment, error) {
+	rows, err := q.db.Query(ctx, lockAttachmentsForAgentThread,
+		arg.WorkspaceID,
+		arg.UploaderType,
+		arg.UploaderID,
+		arg.AttachmentIds,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Attachment{}
+	for rows.Next() {
+		var i Attachment
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.IssueID,
+			&i.CommentID,
+			&i.UploaderType,
+			&i.UploaderID,
+			&i.Filename,
+			&i.Url,
+			&i.ContentType,
+			&i.SizeBytes,
+			&i.CreatedAt,
+			&i.ChatSessionID,
+			&i.ChatMessageID,
+			&i.TaskID,
+			&i.SourceContextID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

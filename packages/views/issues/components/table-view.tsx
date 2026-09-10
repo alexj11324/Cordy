@@ -692,7 +692,7 @@ export function InlineTitle({
   // guard keyed only on the current `editing` value is already gone by click
   // time, and the commit-click bubbles into row navigation (and could hit the
   // title's own open handler): clicking away to save a rename would also open
-  // the issue (MUL-5108 review R1#2).
+
   const gestureStartedWhileEditingRef = useRef(false);
 
   useEffect(() => {
@@ -951,18 +951,7 @@ function propertyDisplayValue(
   return String(value);
 }
 
-/**
- * Render-time context for the module-level cell/header components below,
- * carried on `table.options.meta`. The renderers MUST be module-level
- * components with stable identities: TanStack's flexRender mounts a
- * function-typed `cell`/`header` as a React component, so a renderer closure
- * rebuilt when any lookup changed identity (childProgressMap on every
- * realtime refetch, propertyById, actor names…) was a NEW element type and
- * React remounted every cell — closing any open picker popup and dropping
- * in-progress drafts the moment workspace activity refreshed the window
- * (MUL-5108). Data flows through meta instead so the element types never
- * change.
- */
+
 type TableViewMeta = {
   childProgressMap: Map<string, ChildProgress>;
   propertyById: Map<string, IssueProperty>;
@@ -975,7 +964,10 @@ type TableViewMeta = {
   setEditingCellKey: (key: string | null) => void;
   /** Takes the ISSUE, not its id: the run-confirm gate reads its status
    *  category and owner to decide whether the write needs confirming first. */
-  updateIssue: (issue: Issue, updates: Partial<UpdateIssueRequest>) => void;
+  updateIssue: (
+    issue: Issue,
+    updates: Partial<UpdateIssueRequest>,
+  ) => Promise<boolean>;
   openIssue: (issue: Issue, event?: React.MouseEvent) => void;
   createSubIssue: (issue: Issue) => void;
   toggleTableParentCollapsed: (issueId: string) => void;
@@ -994,25 +986,7 @@ function getTableViewMeta(
   return table.options.meta as unknown as TableViewMeta;
 }
 
-/**
- * Release the hoisted editing key when the cell that owns it unmounts.
- *
- * Row virtualization (see data-table.tsx) unmounts a cell as its row scrolls
- * out of the rendered window. Base UI does NOT call onOpenChange(false) on
- * unmount, so without this the open picker's key — and the frozen row
- * structure keyed off it — would persist after the anchor row leaves the
- * viewport: the table would stay frozen, and scrolling the row back would
- * silently reopen the picker and discard any in-progress rename draft
- * (MUL-5108 review R1#3). Clearing the key iff this unmounting cell still owns
- * it thaws the structure and closes the editor.
- *
- * Live values are read through refs so the empty-dep cleanup always sees the
- * current key/setter. At initial mount a cell is never yet the active editor
- * (the editor is opened by a later interaction, which does not remount the
- * cell), so this never fires spuriously — including under StrictMode's
- * mount → unmount → mount probe, whose first cleanup sees `editingCellKey`
- * still unequal to this cell's key.
- */
+
 export function useReleaseEditingCellOnUnmount(
   cellKey: string | null,
   editingCellKey: string | null,
@@ -1193,6 +1167,7 @@ function IssueTableBodyCell({
           <StatusPicker
             status={issue.status}
             onUpdate={onUpdate}
+            onReviewSubmit={onUpdate}
             align="start"
             open={editorOpen}
             onOpenChange={setEditorOpen}
@@ -1412,7 +1387,7 @@ export function TableView({
   //
   // Read `data` rather than defaulting it in the destructure: an un-settled
   // query has no data, so `= []` would hand this memo a fresh array on every
-  // render and churn every consumer of the map below (MUL-5477).
+
   const groupProjectsQuery = useQuery({
     ...projectListOptions(wsId),
     enabled: serverGroupSpec.kind === "project",
@@ -1558,7 +1533,7 @@ export function TableView({
           // placeholder to be recomputed and the result re-derived on every
           // render. The value comes from a ref Map and is already stable, and
           // the closure ignored both of the arguments the function form
-          // receives, so the two forms are equivalent (MUL-5477).
+
           ...(placeholder ? { placeholderData: placeholder } : {}),
           enabled:
             (branch.groupKey === null ||
@@ -1817,7 +1792,7 @@ export function TableView({
         // custom status must not read as its category. `resolveStatusLabel`
         // falls back to the raw key, which is also what keeps a status
         // introduced by a NEWER backend usable on an installed client instead
-        // of collapsing to the schema fallback or an empty label. (MUL-6243)
+
         return resolveStatusLabel(value.status);
       }
       if (value.kind === "executor") {
@@ -2085,7 +2060,7 @@ export function TableView({
   // While a cell editor popup / rename input is open, hold the row structure
   // still: server branch pagination and realtime refetches can rebuild or
   // reorder the row list, moving the anchor row out of the virtualized render
-  // window and closing the popup the user just opened (MUL-5108). The snapshot
+
   // freezes ORDER only; issue objects inside the rows keep tracking live
   // server-query data so the open editor reflects optimistic updates. Live
   // structure snaps back the moment the editor closes. Ref writes happen
@@ -2160,15 +2135,24 @@ export function TableView({
   // Inline row edits are single-issue writes like the picker in the issue
   // detail or the right-click menu, so they route on the same gate: a status
   // change that promotes an agent-owned issue out of the backlog category
-  // starts a run, and must confirm rather than fire from one click (MUL-6463).
+
   const updateIssue = useCallback(
-    (issue: Issue, updates: Partial<UpdateIssueRequest>) => {
+    async (
+      issue: Issue,
+      updates: Partial<UpdateIssueRequest>,
+    ): Promise<boolean> => {
       const intent = runConfirmIntent(issue, updates, { entryOf });
-      if (intent) {
+      if (intent && !updates.review_submission) {
         openModal("issue-run-confirm", intent);
-        return;
+        return false;
       }
-      actions?.updateIssue(issue.id, updates);
+      if (!actions) return false;
+      try {
+        await actions.updateIssueAsync(issue.id, updates);
+        return true;
+      } catch {
+        return false;
+      }
     },
     [actions, entryOf, openModal],
   );

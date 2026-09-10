@@ -20,6 +20,7 @@ const agentThread = {
   task: "Task",
   agent: "Agent",
   continue_prompt: "Continue this Agent thread",
+  checkpoint: "Checkpoint",
   permission_denied:
     "You no longer have permission to continue this Agent thread.",
   unavailable: "This Agent thread is no longer available for continuation.",

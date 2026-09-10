@@ -443,6 +443,13 @@ RETURNING id
 	return
 }
 
+func createBriefingClaimAgent(t *testing.T, name string) (agentID, runtimeID string) {
+	t.Helper()
+	runtimeID = createRuntimeLocalSkillTestRuntime(t, testUserID)
+	agentID = dbfx.Agent(t, name, runtimeID)
+	return
+}
+
 // TestClaimTask_LeaderGetsBriefing — when the team leader claims a task on
 // an issue with a team executor, the response's agent.instructions must include
 // the Operating Protocol + Roster + user instructions.
@@ -450,15 +457,7 @@ func TestClaimTask_LeaderGetsBriefing(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
-	ctx := context.Background()
-
-	var leaderID, runtimeID string
-	if err := testPool.QueryRow(ctx,
-		`SELECT id, runtime_id FROM agent WHERE workspace_id = $1 ORDER BY created_at ASC LIMIT 1`,
-		testWorkspaceID,
-	).Scan(&leaderID, &runtimeID); err != nil {
-		t.Fatalf("get leader agent: %v", err)
-	}
+	leaderID, runtimeID := createBriefingClaimAgent(t, "Briefing Leader")
 
 	team := seedTeamForBriefing(t, leaderID, "Briefing Claim Team", "Be terse.")
 
@@ -488,28 +487,14 @@ func TestClaimTask_NonLeaderGetsNoBriefing(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
-	ctx := context.Background()
-
-	var leaderID string
-	if err := testPool.QueryRow(ctx,
-		`SELECT id FROM agent WHERE workspace_id = $1 ORDER BY created_at ASC LIMIT 1`,
-		testWorkspaceID,
-	).Scan(&leaderID); err != nil {
-		t.Fatalf("get leader agent: %v", err)
-	}
+	leaderID, _ := createBriefingClaimAgent(t, "Non-Leader Leader")
 
 	team := seedTeamForBriefing(t, leaderID, "Non-Leader Team", "Team guidance.")
 
 	// Create a second agent (NOT the leader) with its own runtime so the
 	// claim path picks its task without ambiguity.
-	helperID := createHandlerTestAgent(t, "Non Leader Helper", []byte("[]"))
+	helperID, helperRuntime := createBriefingClaimAgent(t, "Non Leader Helper")
 	addAgentMember(t, team.ID, helperID, "")
-	var helperRuntime string
-	if err := testPool.QueryRow(ctx,
-		`SELECT runtime_id FROM agent WHERE id = $1`, helperID,
-	).Scan(&helperRuntime); err != nil {
-		t.Fatalf("get helper runtime: %v", err)
-	}
 
 	queueTeamIssueTaskFor(t, util.UUIDToString(team.ID), helperID, helperRuntime, 95002)
 

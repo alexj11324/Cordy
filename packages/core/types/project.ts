@@ -2,11 +2,27 @@ export type ProjectStatus = "planned" | "in_progress" | "paused" | "completed" |
 
 export type ProjectPriority = "urgent" | "high" | "medium" | "low" | "none";
 
-export interface Project {
+export interface ProjectMilestone {
+  id: string;
+  title: string;
+  description?: string;
+  due_date?: string;
+  status: "planned" | "completed";
+}
+
+export interface ProjectMetadata {
+  member_ids?: string[];
+  label_ids?: string[];
+  dependency_ids?: string[];
+  milestones?: ProjectMilestone[];
+}
+
+export interface Project extends ProjectMetadata {
   id: string;
   workspace_id: string;
   title: string;
   description: string | null;
+  summary?: string | null;
   icon: string | null;
   status: ProjectStatus;
   priority: ProjectPriority;
@@ -23,8 +39,9 @@ export interface Project {
   resource_count: number;
 }
 
-export interface CreateProjectRequest {
+export interface CreateProjectRequest extends ProjectMetadata {
   title: string;
+  summary?: string;
   description?: string;
   icon?: string;
   status?: ProjectStatus;
@@ -38,8 +55,9 @@ export interface CreateProjectRequest {
   resources?: CreateProjectResourceRequest[];
 }
 
-export interface UpdateProjectRequest {
+export interface UpdateProjectRequest extends ProjectMetadata {
   title?: string;
+  summary?: string | null;
   description?: string | null;
   icon?: string | null;
   status?: ProjectStatus;

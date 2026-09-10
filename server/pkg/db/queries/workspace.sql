@@ -1,7 +1,8 @@
 -- name: ListWorkspaces :many
 SELECT w.id, w.name, w.slug, w.description, w.settings,
        w.created_at, w.updated_at, w.context, w.repos,
-       w.issue_prefix, w.issue_counter, w.avatar_url, w.attribution_fail_closed
+       w.issue_prefix, w.issue_counter, w.avatar_url, w.attribution_fail_closed,
+       w.lead_agent_id
 FROM member m
 JOIN workspace w ON w.id = m.workspace_id
 WHERE m.user_id = $1
@@ -53,8 +54,25 @@ UPDATE workspace SET
     repos = COALESCE(sqlc.narg('repos'), repos),
     issue_prefix = COALESCE(sqlc.narg('issue_prefix'), issue_prefix),
     avatar_url = COALESCE(sqlc.narg('avatar_url'), avatar_url),
+    lead_agent_id = CASE
+        WHEN sqlc.arg('lead_agent_id_set')::boolean
+            THEN sqlc.narg('lead_agent_id')::uuid
+        ELSE lead_agent_id
+    END,
     updated_at = now()
-WHERE id = $1
+WHERE workspace.id = $1
+  AND (
+      NOT sqlc.arg('lead_agent_id_set')::boolean
+      OR sqlc.narg('lead_agent_id')::uuid IS NULL
+      OR EXISTS (
+          SELECT 1
+          FROM agent
+          WHERE agent.id = sqlc.narg('lead_agent_id')::uuid
+            AND agent.workspace_id = workspace.id
+            AND agent.kind = 'user'
+            AND agent.archived_at IS NULL
+      )
+  )
 RETURNING *;
 
 -- name: IncrementIssueCounter :one

@@ -96,35 +96,44 @@ export function BatchActionToolbar({
     setDeleteOpen(false);
   }, [count]);
 
-  const handleBatchUpdate = async (updates: Partial<UpdateIssueRequest>) => {
+  const handleBatchUpdate = async (
+    updates: Partial<UpdateIssueRequest>,
+  ): Promise<boolean> => {
     try {
       if (surfaceActions) {
         await surfaceActions.batchUpdate(ids, updates);
       } else {
-        await batchUpdate.mutateAsync({ ids, updates });
+        const result = await batchUpdate.mutateAsync({ ids, updates });
+        if (result.updated !== ids.length) {
+          throw new Error(t(($) => $.batch.update_failed));
+        }
       }
       toast.success(t(($) => $.batch.update_success, { count }));
+      return true;
     } catch (err) {
       toast.error(
         err instanceof Error && err.message
           ? err.message
           : t(($) => $.batch.update_failed),
       );
+      return false;
     }
   };
 
-  // Batch status changes apply directly — no run-confirm modal (MUL-4155).
+
   // done/cancelled can never start a run, and a backlog → active promotion now
   // starts its run the same way a single-issue status change or the CLI does,
-  // without an extra confirmation step (product decision on MUL-4155). The
+
   // status change was previously routed through the pre-trigger modal, which for
   // the common done/cancelled case only rendered a misleading "现在开始处理？ →
   // 不会开始处理" box. Agent/team assignment still confirms via
   // handleBatchExecutor — that is the only batch action that should preview a
   // run fan-out.
-  const handleBatchStatus = (updates: Partial<UpdateIssueRequest>) => {
-    if (!updates.status) return;
-    void handleBatchUpdate(updates);
+  const handleBatchStatus = (
+    updates: Partial<UpdateIssueRequest>,
+  ): Promise<boolean> => {
+    if (!updates.status) return Promise.resolve(false);
+    return handleBatchUpdate(updates);
   };
 
   const handleBatchExecutor = (updates: Partial<UpdateIssueRequest>) => {
@@ -135,7 +144,7 @@ export function BatchActionToolbar({
       // circuit. A mixed selection still routes through the modal: the non-backlog
       // issues will trigger and need confirmation.
       // Category, not key: a custom status in the backlog category is a parking
-      // lot too, and assigning into it never starts a run. (MUL-6243)
+
       const allBacklog = selectedIssues.every((i) => issueBehavesAs(i, "backlog"));
       if (!allBacklog) {
         openModal("issue-run-confirm", {
@@ -227,6 +236,7 @@ export function BatchActionToolbar({
         <StatusPicker
           status={common.status}
           onUpdate={handleBatchStatus}
+          onReviewSubmit={handleBatchStatus}
           open={statusOpen}
           onOpenChange={setStatusOpen}
           triggerRender={<Button variant="ghost" size="sm" disabled={loading} />}

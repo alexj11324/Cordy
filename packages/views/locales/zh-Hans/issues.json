@@ -462,7 +462,18 @@
     "workdir_path_copy_failed": "复制本地 workdir 路径失败",
     "workdir_path_unavailable": "暂无本地 workdir — 这个任务还没被本地智能体运行过",
     "unsubscribe_subtree_succeeded": "已取消订阅此任务及其子任务。",
-    "subscription_update_failed": "无法更新订阅状态，请重试。"
+    "subscription_update_failed": "无法更新订阅状态，请重试。",
+    "enter_execution": "进入执行",
+    "execution_not_started": "尚未开始",
+    "execution_loading": "加载中…",
+    "execution_load_failed": "无法加载执行记录",
+    "agent_conversations": {
+      "button_label_other": "{{count}} 个 Agent 对话",
+      "search_placeholder": "搜索 Agent",
+      "empty": "还没有 Agent 对话",
+      "loading": "正在加载 Agent 对话…",
+      "load_failed": "无法加载 Agent 对话"
+    }
   },
   "timeline": {
     "loading": "加载中…"
@@ -923,5 +934,16 @@
     "surface_loading": "正在加载 {{name}}…",
     "surface_unavailable": "{{name}} 的界面无法加载，已安装的版本可能不包含它。",
     "surface_navigated": "{{name}} 试图把面板替换成从别处加载的页面。已经拦下并断开连接，建议告知工作区管理员。"
+  },
+  "review_submission": {
+    "title": "提交审核",
+    "description": "把本次代码和 PR 一并交给审核人。",
+    "worktree": "Worktree 路径",
+    "branch": "分支",
+    "commit": "完整 Commit SHA",
+    "pull_requests": "PR 链接",
+    "pr_hint": "每行填写一个 PR 链接。",
+    "cancel": "取消",
+    "submit": "提交审核"
   }
 }

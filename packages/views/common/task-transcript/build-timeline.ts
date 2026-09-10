@@ -5,6 +5,8 @@ import { redactSecrets } from "./redact";
 export interface TimelineItem {
   seq: number;
   type: "tool_use" | "tool_result" | "thinking" | "text" | "error";
+  call_id?: string;
+  state?: TaskMessagePayload["state"];
   tool?: string;
   content?: string;
   input?: Record<string, unknown>;
@@ -12,8 +14,14 @@ export interface TimelineItem {
   created_at?: string;
 }
 
-function canMergeStreamingText(prev: TimelineItem, next: TimelineItem): boolean {
-  return (prev.type === "thinking" || prev.type === "text") && prev.type === next.type;
+function canMergeStreamingText(
+  prev: TimelineItem,
+  next: TimelineItem,
+): boolean {
+  return (
+    (prev.type === "thinking" || prev.type === "text") &&
+    prev.type === next.type
+  );
 }
 
 /** Merge adjacent text/thinking fragments that were split only by daemon flush timing. */
@@ -22,6 +30,32 @@ export function coalesceTimelineItems(items: TimelineItem[]): TimelineItem[] {
   const out: TimelineItem[] = [];
 
   for (const item of sorted) {
+    if (
+      item.call_id &&
+      (item.type === "tool_use" || item.type === "tool_result")
+    ) {
+      const existingIndex = out.findIndex(
+        (candidate) =>
+          candidate.call_id === item.call_id &&
+          (candidate.type === "tool_use" || candidate.type === "tool_result"),
+      );
+      if (existingIndex >= 0) {
+        const existing = out[existingIndex]!;
+        out[existingIndex] = {
+          ...existing,
+          type:
+            existing.type === "tool_use" || item.type === "tool_use"
+              ? "tool_use"
+              : "tool_result",
+          state: item.state ?? existing.state,
+          tool: item.tool ?? existing.tool,
+          input: item.input ?? existing.input,
+          output: item.output ?? existing.output,
+          created_at: item.created_at ?? existing.created_at,
+        };
+        continue;
+      }
+    }
     const prev = out[out.length - 1];
     if (prev && canMergeStreamingText(prev, item)) {
       out[out.length - 1] = {
@@ -37,7 +71,10 @@ export function coalesceTimelineItems(items: TimelineItem[]): TimelineItem[] {
   return out;
 }
 
-export function appendTimelineItem(items: TimelineItem[], item: TimelineItem): TimelineItem[] {
+export function appendTimelineItem(
+  items: TimelineItem[],
+  item: TimelineItem,
+): TimelineItem[] {
   return coalesceTimelineItems([...items, item]);
 }
 
@@ -56,6 +93,8 @@ export function buildTimeline(msgs: TaskMessagePayload[]): TimelineItem[] {
     items.push({
       seq: msg.seq,
       type: msg.type,
+      call_id: msg.call_id,
+      state: msg.state,
       tool: msg.tool,
       content: msg.content,
       input: msg.input,

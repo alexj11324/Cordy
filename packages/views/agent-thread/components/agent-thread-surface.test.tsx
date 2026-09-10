@@ -8,7 +8,9 @@ vi.mock("../../common/actor-avatar", () => ({
 }));
 
 vi.mock("../../chat/components/chat-message-list", () => ({
-  ChatMessageList: () => <div data-testid="messages" />,
+  ChatMessageList: ({ showProcessSteps }: { showProcessSteps?: boolean }) => (
+    <div data-testid="messages" data-show-process-steps={String(showProcessSteps)} />
+  ),
   ChatMessageSkeleton: () => <div data-testid="messages-loading" />,
 }));
 
@@ -73,5 +75,30 @@ describe("AgentThreadSurface", () => {
     expect(panel).toHaveClass("min-w-0", "overflow-hidden");
     fireEvent.click(screen.getByRole("button", { name: "Collapse Agent conversation sidebar" }));
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("uses compact conversation chrome without tool rows or a composer avatar", () => {
+    render(
+      <AgentThreadSurface
+        onClose={vi.fn()}
+        collapseLabel="Back"
+        agentId="agent-1"
+        agentName="Scout"
+        title="Scout conversation"
+        description="Long panel-only explanation"
+        messages={[]}
+        pendingTask={null}
+        availability="online"
+        onSend={vi.fn()}
+        compact
+      />,
+    );
+
+    expect(screen.queryByText("Long panel-only explanation")).not.toBeInTheDocument();
+    expect(screen.getByTestId("messages")).toHaveAttribute(
+      "data-show-process-steps",
+      "false",
+    );
+    expect(screen.getAllByTestId("agent-avatar")).toHaveLength(1);
   });
 });

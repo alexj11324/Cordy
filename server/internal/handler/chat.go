@@ -84,7 +84,6 @@ func (h *Handler) CreateChatSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Invocation gate: starting a chat produces agent runs, so it uses the
-	// invoke permission (MUL-3963), not the softer view gate. Agent-to-agent
 	// chat sessions are judged by the top-of-chain originator.
 	actorType, actorID := h.resolveActor(r, userID, workspaceID)
 	if !h.canInvokeAgent(r.Context(), agent, actorType, actorID, h.invokeOriginatorFromRequest(r, actorType, actorID), workspaceID) {
@@ -530,7 +529,6 @@ type SetChatSessionArchivedRequest struct {
 // treats status='archived' as read-only, but the channel engine (Feishu/Slack)
 // resolves inbound traffic through channel_chat_session_binding without checking
 // session status, so a bound session kept accumulating agent replies — and a
-// stuck unread badge — after the user archived it (MUL-4372). Dropping the
 // binding in the same tx makes the next inbound message for that external chat
 // create a fresh chat_session under a new binding (see EnsureSession) instead of
 // reviving this archived one. Unarchive deliberately does NOT recreate the
@@ -737,7 +735,6 @@ func (h *Handler) DeleteChatSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// channel_chat_session_binding used to carry a chat_session FK with
-	// ON DELETE CASCADE; MUL-3515 §4 dropped every channel_* foreign key, so
 	// prune the binding here in the same tx that deletes its chat_session.
 	if err := qtx.DeleteChannelChatSessionBindingBySession(r.Context(), session.ID); err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to delete chat session binding")
@@ -910,7 +907,6 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Re-run the INVOKE gate on every send, not just the softer view gate in
-	// gatePublicChatSessionForUser (MUL-4525). canAccessPrivateAgent lets a workspace
 	// admin keep reading a transcript, but sending a message enqueues a run and
 	// must satisfy canInvokeAgent — which has no admin bypass. A session created
 	// while the user could invoke the agent must stop enqueuing work the instant
@@ -925,7 +921,6 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Detect whether this is the very first human message in the session,
-	// BEFORE we insert the new row. This scopes LLM auto-titling (MUL-4295) to
 	// the opening turn: we upgrade the default/original title exactly once, off
 	// the first user message, and never re-run it on every subsequent send. A
 	// query error here is treated as "not first" so we simply skip generation
@@ -947,7 +942,6 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Persist the whole turn atomically (MUL-4351): the owning task, the user
 	// message bound to that task (so it belongs to the task's immutable input
 	// batch the instant it exists), attachment bindings, and the session touch
 	// all commit together, and the daemon is only notified after the commit. For
@@ -1011,7 +1005,6 @@ func (h *Handler) SendChatMessage(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:     timestampToString(msg.CreatedAt),
 	})
 
-	// First user message → kick off best-effort LLM auto-titling (MUL-4295).
 	// Fire-and-forget and non-blocking: the response below is written whether
 	// or not a title is ever generated, and a disabled/failing LLM layer
 	// silently keeps the original first-message-derived title. session.Title
@@ -1094,7 +1087,6 @@ func parseChatMessagesPageParams(r *http.Request) (int, pgtype.Timestamptz, pgty
 // refreshing. The server confirms it is still the session's latest turn before
 // enqueuing (409 otherwise), so the client's pending marker stays aligned with
 // the turn chat:quick_actions will resolve — no ack reconciliation needed
-// (MUL-5149).
 type RegenerateChatQuickActionsRequest struct {
 	MessageID string `json:"message_id"`
 }
@@ -1105,7 +1097,6 @@ type RegenerateChatQuickActionsResponse struct {
 
 // RegenerateChatQuickActions re-runs the suggestion pass for a session's latest
 // assistant turn on explicit user request (the "refresh" button on the
-// quick-actions row, MUL-5149). Generation is server-side, so this spawns no
 // agent run; the refreshed pills arrive over the same chat:quick_actions
 // realtime path as the automatic pass.
 func (h *Handler) RegenerateChatQuickActions(w http.ResponseWriter, r *http.Request) {
@@ -1135,7 +1126,6 @@ func (h *Handler) RegenerateChatQuickActions(w http.ResponseWriter, r *http.Requ
 	}
 	// The refresh no longer runs the agent, but it is still a user-triggered
 	// spend against that agent's conversation, so it keeps clearing the same
-	// INVOKE gate as a send (MUL-4525) rather than the softer view gate in
 	// gatePublicChatSessionForUser. Deliberately NOT relaxed as a side effect of
 	// moving generation server-side.
 	actorType, actorID := h.resolveActor(r, userID, workspaceID)
@@ -1214,6 +1204,7 @@ func (h *Handler) ListChatMessages(w http.ResponseWriter, r *http.Request) {
 	for i, m := range messages {
 		resp[i] = chatMessageToResponse(m, groupedAtt[uuidToString(m.ID)])
 	}
+	h.hydrateChatMessageUsage(r.Context(), resp)
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -1279,6 +1270,7 @@ func (h *Handler) ListChatMessagesPage(w http.ResponseWriter, r *http.Request) {
 	for i, m := range messages {
 		resp[i] = chatMessageToResponse(m, groupedAtt[uuidToString(m.ID)])
 	}
+	h.hydrateChatMessageUsage(r.Context(), resp)
 	writeJSON(w, http.StatusOK, ChatMessagesPageResponse{
 		Messages:   resp,
 		Limit:      limit,
@@ -1541,7 +1533,6 @@ func (h *Handler) ListPendingChatTasks(w http.ResponseWriter, r *http.Request) {
 	// The pending query now returns cs.agent_id per row, so we can filter
 	// out private agents the caller has lost access to directly against the
 	// already-loaded `allowed` set — no second ListAllChatSessionsByCreator
-	// scan on this hot path (MUL-4159).
 	items := make([]PendingChatTaskItem, 0, len(rows))
 	for _, row := range rows {
 		agentID := uuidToString(row.AgentID)
@@ -1572,7 +1563,6 @@ type HasPendingChatTasksResponse struct {
 // Permission filtering is preserved end-to-end: the set of agents the caller
 // may currently see is resolved the same way as ListPendingChatTasks and
 // pushed into the query as agent_ids, so a member who lost access to a private
-// agent never sees a true from a task on that agent (MUL-4159). An empty
 // accessible-agent set short-circuits to false without hitting the DB.
 func (h *Handler) HasPendingChatTasks(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
@@ -1780,7 +1770,6 @@ func (h *Handler) ClearQueuedChatTasks(w http.ResponseWriter, r *http.Request) {
 // source FK (issue / chat_session / automation_run) is set — which is what makes
 // run_only automation tasks and quick_create tasks (whose issue does not exist
 // yet) cancellable at all. Keying cancellation off issue_id / chat_session_id
-// alone is exactly what 404'd these tasks before (MUL-2827).
 //
 // On top of tenancy, two privacy models layer on:
 //   - a chat task is private to the member who started the conversation, so
@@ -2012,12 +2001,14 @@ func buildChatLastMessage(at pgtype.Timestamptz, content, role string, failure p
 }
 
 type ChatMessageResponse struct {
-	ID            string  `json:"id"`
-	ChatSessionID string  `json:"chat_session_id"`
-	Role          string  `json:"role"`
-	Content       string  `json:"content"`
-	TaskID        *string `json:"task_id"`
-	CreatedAt     string  `json:"created_at"`
+	ID            string                     `json:"id"`
+	ChatSessionID string                     `json:"chat_session_id"`
+	Role          string                     `json:"role"`
+	Content       string                     `json:"content"`
+	Sources       []protocol.MessageSource   `json:"sources"`
+	Citations     []protocol.MessageCitation `json:"citations"`
+	TaskID        *string                    `json:"task_id"`
+	CreatedAt     string                     `json:"created_at"`
 	// FailureReason flags an assistant row synthesized by FailTask's chat
 	// fallback. Front-end uses it to switch to the destructive bubble.
 	FailureReason *string `json:"failure_reason"`
@@ -2036,6 +2027,36 @@ type ChatMessageResponse struct {
 	// agent can `orvilo attachment download <id>` rather than guessing
 	// from a markdown URL that may expire.
 	Attachments []AttachmentResponse `json:"attachments,omitempty"`
+	Usage       []TaskUsageData      `json:"usage,omitempty"`
+}
+
+func (h *Handler) hydrateChatMessageUsage(ctx context.Context, messages []ChatMessageResponse) {
+	ids := make([]pgtype.UUID, 0, len(messages))
+	for _, message := range messages {
+		if message.Role != "assistant" || message.TaskID == nil {
+			continue
+		}
+		if id := parseUUID(*message.TaskID); id.Valid {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	rows, err := h.Queries.ListTaskUsageForTasks(ctx, ids)
+	if err != nil {
+		return
+	}
+	byTask := make(map[string][]TaskUsageData, len(ids))
+	for _, row := range rows {
+		key := uuidToString(row.TaskID)
+		byTask[key] = append(byTask[key], taskUsageData(row))
+	}
+	for index := range messages {
+		if messages[index].TaskID != nil {
+			messages[index].Usage = byTask[*messages[index].TaskID]
+		}
+	}
 }
 
 func chatSessionToResponse(s db.ChatSession) ChatSessionResponse {
@@ -2054,11 +2075,14 @@ func chatSessionToResponse(s db.ChatSession) ChatSessionResponse {
 }
 
 func chatMessageToResponse(m db.ChatMessage, attachments []AttachmentResponse) ChatMessageResponse {
+	sources, citations := protocol.DecodeMessageAttribution(m.Content, m.Sources, m.Citations)
 	return ChatMessageResponse{
 		ID:            uuidToString(m.ID),
 		ChatSessionID: uuidToString(m.ChatSessionID),
 		Role:          m.Role,
 		Content:       m.Content,
+		Sources:       sources,
+		Citations:     citations,
 		TaskID:        uuidToPtr(m.TaskID),
 		CreatedAt:     timestampToString(m.CreatedAt),
 		FailureReason: textToPtr(m.FailureReason),
@@ -2105,7 +2129,6 @@ const chatQuickActionResponseLimit = 3
 
 // normalizeMessageKind maps a stored chat_message.message_kind to the value the
 // API exposes. Unknown / empty kinds degrade to 'message' so a future kind
-// never surprises an older client into a broken render (MUL-4351).
 func normalizeMessageKind(kind string) string {
 	switch kind {
 	case protocol.ChatMessageKindNoResponse:

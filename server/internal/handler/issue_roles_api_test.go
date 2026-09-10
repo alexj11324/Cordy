@@ -125,9 +125,10 @@ func TestUpdateIssue_ReviewHandoffRequiresDistinctReviewer(t *testing.T) {
 
 	ok := httptest.NewRecorder()
 	withReviewer := newRequest("PUT", "/api/issues/"+issue.ID+"?workspace_id="+testWorkspaceID, map[string]any{
-		"status":        "in_review",
-		"reviewer_type": "member",
-		"reviewer_id":   testUserID,
+		"status":            "in_review",
+		"reviewer_type":     "member",
+		"reviewer_id":       testUserID,
+		"review_submission": reviewSubmissionFixture(),
 	})
 	withReviewer = withURLParam(withReviewer, "id", issue.ID)
 	testHandler.UpdateIssue(ok, withReviewer)

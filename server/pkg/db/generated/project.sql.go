@@ -11,6 +11,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const clearProjectLabelReference = `-- name: ClearProjectLabelReference :exec
+UPDATE project
+SET label_ids = label_ids - $1::text,
+    updated_at = now()
+WHERE workspace_id = $2::uuid
+  AND label_ids ? $1::text
+`
+
+type ClearProjectLabelReferenceParams struct {
+	LabelID     string      `json:"label_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
+}
+
+// Labels are catalog rows, while project.label_ids is an application-owned
+// reference list. Clear the deleted label in the same transaction as catalog
+// deletion so projects cannot retain an unusable ID.
+func (q *Queries) ClearProjectLabelReference(ctx context.Context, arg ClearProjectLabelReferenceParams) error {
+	_, err := q.db.Exec(ctx, clearProjectLabelReference, arg.LabelID, arg.WorkspaceID)
+	return err
+}
+
 const countIssuesByProject = `-- name: CountIssuesByProject :one
 SELECT count(*) FROM issue
 WHERE project_id = $1
@@ -25,24 +46,34 @@ func (q *Queries) CountIssuesByProject(ctx context.Context, projectID pgtype.UUI
 
 const createProject = `-- name: CreateProject :one
 INSERT INTO project (
-    workspace_id, title, description, icon, status,
-    lead_type, lead_id, priority, start_date, due_date
+    workspace_id, title, summary, description, icon, status,
+    lead_type, lead_id, priority, start_date, due_date,
+    member_ids, label_ids, dependency_ids, milestones
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
-) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date
+    $1, $2, $11, $3, $4, $5, $6, $7, $8, $9, $10,
+    COALESCE($12::jsonb, '[]'::jsonb),
+    COALESCE($13::jsonb, '[]'::jsonb),
+    COALESCE($14::jsonb, '[]'::jsonb),
+    COALESCE($15::jsonb, '[]'::jsonb)
+) RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, member_ids, label_ids, dependency_ids, milestones, summary
 `
 
 type CreateProjectParams struct {
-	WorkspaceID pgtype.UUID `json:"workspace_id"`
-	Title       string      `json:"title"`
-	Description pgtype.Text `json:"description"`
-	Icon        pgtype.Text `json:"icon"`
-	Status      string      `json:"status"`
-	LeadType    pgtype.Text `json:"lead_type"`
-	LeadID      pgtype.UUID `json:"lead_id"`
-	Priority    string      `json:"priority"`
-	StartDate   pgtype.Date `json:"start_date"`
-	DueDate     pgtype.Date `json:"due_date"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	Title         string      `json:"title"`
+	Description   pgtype.Text `json:"description"`
+	Icon          pgtype.Text `json:"icon"`
+	Status        string      `json:"status"`
+	LeadType      pgtype.Text `json:"lead_type"`
+	LeadID        pgtype.UUID `json:"lead_id"`
+	Priority      string      `json:"priority"`
+	StartDate     pgtype.Date `json:"start_date"`
+	DueDate       pgtype.Date `json:"due_date"`
+	Summary       pgtype.Text `json:"summary"`
+	MemberIds     []byte      `json:"member_ids"`
+	LabelIds      []byte      `json:"label_ids"`
+	DependencyIds []byte      `json:"dependency_ids"`
+	Milestones    []byte      `json:"milestones"`
 }
 
 func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (Project, error) {
@@ -57,6 +88,11 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		arg.Priority,
 		arg.StartDate,
 		arg.DueDate,
+		arg.Summary,
+		arg.MemberIds,
+		arg.LabelIds,
+		arg.DependencyIds,
+		arg.Milestones,
 	)
 	var i Project
 	err := row.Scan(
@@ -73,6 +109,11 @@ func (q *Queries) CreateProject(ctx context.Context, arg CreateProjectParams) (P
 		&i.Priority,
 		&i.StartDate,
 		&i.DueDate,
+		&i.MemberIds,
+		&i.LabelIds,
+		&i.DependencyIds,
+		&i.Milestones,
+		&i.Summary,
 	)
 	return i, err
 }
@@ -88,6 +129,14 @@ WITH cleared_issue_projects AS (
     SET project_id = NULL
     WHERE project_id = $1 AND workspace_id = $2
     RETURNING id
+), cleared_inbound_project_dependencies AS (
+    UPDATE project AS dependent
+    SET dependency_ids = dependent.dependency_ids - $1::text,
+        updated_at = now()
+    WHERE dependent.workspace_id = $2
+      AND dependent.id <> $1
+      AND dependent.dependency_ids ? $1::text
+    RETURNING id
 ), deleted_resources AS (
     DELETE FROM project_resource
     WHERE project_id = $1 AND workspace_id = $2
@@ -98,6 +147,7 @@ WHERE p.id = $1
   AND p.workspace_id = $2
   AND (SELECT count(*) FROM cleared_issue_projects) >= 0
   AND (SELECT count(*) FROM cleared_automation_projects) >= 0
+  AND (SELECT count(*) FROM cleared_inbound_project_dependencies) >= 0
   AND (SELECT count(*) FROM deleted_resources) >= 0
 `
 
@@ -117,7 +167,7 @@ func (q *Queries) DeleteProject(ctx context.Context, arg DeleteProjectParams) er
 }
 
 const getProjectInWorkspace = `-- name: GetProjectInWorkspace :one
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, member_ids, label_ids, dependency_ids, milestones, summary FROM project
 WHERE id = $1 AND workspace_id = $2
 `
 
@@ -143,6 +193,11 @@ func (q *Queries) GetProjectInWorkspace(ctx context.Context, arg GetProjectInWor
 		&i.Priority,
 		&i.StartDate,
 		&i.DueDate,
+		&i.MemberIds,
+		&i.LabelIds,
+		&i.DependencyIds,
+		&i.Milestones,
+		&i.Summary,
 	)
 	return i, err
 }
@@ -189,8 +244,111 @@ func (q *Queries) GetProjectIssueStats(ctx context.Context, arg GetProjectIssueS
 	return items, nil
 }
 
+const listProjectMetadataDependencies = `-- name: ListProjectMetadataDependencies :many
+SELECT id
+FROM project
+WHERE workspace_id = $1::uuid
+  AND id = ANY($2::uuid[])
+ORDER BY id
+`
+
+type ListProjectMetadataDependenciesParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	ProjectIds  []pgtype.UUID `json:"project_ids"`
+}
+
+func (q *Queries) ListProjectMetadataDependencies(ctx context.Context, arg ListProjectMetadataDependenciesParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listProjectMetadataDependencies, arg.WorkspaceID, arg.ProjectIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectMetadataLabels = `-- name: ListProjectMetadataLabels :many
+SELECT id
+FROM issue_label
+WHERE workspace_id = $1::uuid
+  AND resource_type = 'project'
+  AND id = ANY($2::uuid[])
+ORDER BY id
+`
+
+type ListProjectMetadataLabelsParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	LabelIds    []pgtype.UUID `json:"label_ids"`
+}
+
+func (q *Queries) ListProjectMetadataLabels(ctx context.Context, arg ListProjectMetadataLabelsParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listProjectMetadataLabels, arg.WorkspaceID, arg.LabelIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var id pgtype.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectMetadataMemberUsers = `-- name: ListProjectMetadataMemberUsers :many
+
+SELECT user_id
+FROM member
+WHERE workspace_id = $1::uuid
+  AND user_id = ANY($2::uuid[])
+ORDER BY user_id
+`
+
+type ListProjectMetadataMemberUsersParams struct {
+	WorkspaceID pgtype.UUID   `json:"workspace_id"`
+	UserIds     []pgtype.UUID `json:"user_ids"`
+}
+
+// The metadata arrays are application-owned references. These lookup queries
+// keep validation workspace-scoped without introducing foreign keys.
+func (q *Queries) ListProjectMetadataMemberUsers(ctx context.Context, arg ListProjectMetadataMemberUsersParams) ([]pgtype.UUID, error) {
+	rows, err := q.db.Query(ctx, listProjectMetadataMemberUsers, arg.WorkspaceID, arg.UserIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []pgtype.UUID{}
+	for rows.Next() {
+		var user_id pgtype.UUID
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listProjects = `-- name: ListProjects :many
-SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date FROM project
+SELECT id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, member_ids, label_ids, dependency_ids, milestones, summary FROM project
 WHERE workspace_id = $1
   AND ($2::text IS NULL OR status = $2)
   AND ($3::text IS NULL OR priority = $3)
@@ -226,6 +384,11 @@ func (q *Queries) ListProjects(ctx context.Context, arg ListProjectsParams) ([]P
 			&i.Priority,
 			&i.StartDate,
 			&i.DueDate,
+			&i.MemberIds,
+			&i.LabelIds,
+			&i.DependencyIds,
+			&i.Milestones,
+			&i.Summary,
 		); err != nil {
 			return nil, err
 		}
@@ -277,39 +440,95 @@ func (q *Queries) LockProjectForDelete(ctx context.Context, arg LockProjectForDe
 	return id, err
 }
 
+const projectMetadataDependencyCycle = `-- name: ProjectMetadataDependencyCycle :one
+WITH RECURSIVE project_edges AS (
+    SELECT p.id AS project_id, edge.dependency_id
+    FROM project p
+    CROSS JOIN LATERAL jsonb_array_elements_text(
+        CASE
+            WHEN p.id = $1::uuid
+                THEN $2::jsonb
+            ELSE p.dependency_ids
+        END
+    ) AS edge(dependency_id)
+    WHERE p.workspace_id = $3::uuid
+), reachable(project_id, dependency_id) AS (
+    SELECT project_id, dependency_id
+    FROM project_edges
+    UNION
+    SELECT reachable.project_id, edge.dependency_id
+    FROM reachable
+    JOIN project_edges edge
+      ON edge.project_id = reachable.dependency_id::uuid
+)
+SELECT EXISTS (
+    SELECT 1
+    FROM reachable
+    WHERE project_id = $1::uuid
+      AND dependency_id = $1::text
+) AS creates_cycle
+`
+
+type ProjectMetadataDependencyCycleParams struct {
+	SourceID      pgtype.UUID `json:"source_id"`
+	DependencyIds []byte      `json:"dependency_ids"`
+	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+}
+
+// dependency_ids point from a project to its prerequisites. Replace the source
+// row in the graph with the candidate list and walk transitively; reaching the
+// source again means the proposed write creates a cycle.
+func (q *Queries) ProjectMetadataDependencyCycle(ctx context.Context, arg ProjectMetadataDependencyCycleParams) (bool, error) {
+	row := q.db.QueryRow(ctx, projectMetadataDependencyCycle, arg.SourceID, arg.DependencyIds, arg.WorkspaceID)
+	var creates_cycle bool
+	err := row.Scan(&creates_cycle)
+	return creates_cycle, err
+}
+
 const updateProject = `-- name: UpdateProject :one
 UPDATE project SET
     title = COALESCE($2, title),
-    description = $3,
-    icon = $4,
-    status = COALESCE($5, status),
-    priority = COALESCE($6, priority),
-    lead_type = $7,
-    lead_id = $8,
-    start_date = $9,
-    due_date = $10,
+    summary = $3,
+    description = $4,
+    icon = $5,
+    status = COALESCE($6, status),
+    priority = COALESCE($7, priority),
+    lead_type = $8,
+    lead_id = $9,
+    start_date = $10,
+    due_date = $11,
+    member_ids = COALESCE($12::jsonb, member_ids),
+    label_ids = COALESCE($13::jsonb, label_ids),
+    dependency_ids = COALESCE($14::jsonb, dependency_ids),
+    milestones = COALESCE($15::jsonb, milestones),
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date
+RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date, member_ids, label_ids, dependency_ids, milestones, summary
 `
 
 type UpdateProjectParams struct {
-	ID          pgtype.UUID `json:"id"`
-	Title       pgtype.Text `json:"title"`
-	Description pgtype.Text `json:"description"`
-	Icon        pgtype.Text `json:"icon"`
-	Status      pgtype.Text `json:"status"`
-	Priority    pgtype.Text `json:"priority"`
-	LeadType    pgtype.Text `json:"lead_type"`
-	LeadID      pgtype.UUID `json:"lead_id"`
-	StartDate   pgtype.Date `json:"start_date"`
-	DueDate     pgtype.Date `json:"due_date"`
+	ID            pgtype.UUID `json:"id"`
+	Title         pgtype.Text `json:"title"`
+	Summary       pgtype.Text `json:"summary"`
+	Description   pgtype.Text `json:"description"`
+	Icon          pgtype.Text `json:"icon"`
+	Status        pgtype.Text `json:"status"`
+	Priority      pgtype.Text `json:"priority"`
+	LeadType      pgtype.Text `json:"lead_type"`
+	LeadID        pgtype.UUID `json:"lead_id"`
+	StartDate     pgtype.Date `json:"start_date"`
+	DueDate       pgtype.Date `json:"due_date"`
+	MemberIds     []byte      `json:"member_ids"`
+	LabelIds      []byte      `json:"label_ids"`
+	DependencyIds []byte      `json:"dependency_ids"`
+	Milestones    []byte      `json:"milestones"`
 }
 
 func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (Project, error) {
 	row := q.db.QueryRow(ctx, updateProject,
 		arg.ID,
 		arg.Title,
+		arg.Summary,
 		arg.Description,
 		arg.Icon,
 		arg.Status,
@@ -318,6 +537,10 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		arg.LeadID,
 		arg.StartDate,
 		arg.DueDate,
+		arg.MemberIds,
+		arg.LabelIds,
+		arg.DependencyIds,
+		arg.Milestones,
 	)
 	var i Project
 	err := row.Scan(
@@ -334,6 +557,11 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) (P
 		&i.Priority,
 		&i.StartDate,
 		&i.DueDate,
+		&i.MemberIds,
+		&i.LabelIds,
+		&i.DependencyIds,
+		&i.Milestones,
+		&i.Summary,
 	)
 	return i, err
 }
