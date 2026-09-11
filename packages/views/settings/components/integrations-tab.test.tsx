@@ -168,6 +168,11 @@ function renderTab() {
   );
 }
 
+function openChannelAction(card: HTMLElement, label: string) {
+  fireEvent.click(within(card).getByRole("button", { name: label }));
+  fireEvent.click(screen.getByRole("menuitem", { name: label }));
+}
+
 describe("Settings IntegrationsTab", () => {
   beforeEach(() => {
     queryCallsRef.current = [];
@@ -282,7 +287,7 @@ describe("Settings IntegrationsTab", () => {
     renderTab();
 
     expect(screen.getAllByRole("button", { name: "View setup" })).toHaveLength(6);
-    fireEvent.click(within(screen.getByTestId("integration-channel-card-dingtalk")).getByRole("button", { name: "View setup" }));
+    openChannelAction(screen.getByTestId("integration-channel-card-dingtalk"), "View setup");
     expect(screen.getByRole("button", { name: "Server setup instructions" })).toBeInTheDocument();
     expect(screen.queryByTestId("dingtalk-hub-install")).toBeNull();
     expect(screen.queryByTestId("integration-setup-guide-dingtalk")).toBeNull();
@@ -297,7 +302,7 @@ describe("Settings IntegrationsTab", () => {
       installations: [{ id: "existing-slack", agent_id: null, status: "installed" }],
     };
     renderTab();
-    fireEvent.click(within(screen.getByTestId("integration-channel-card-slack")).getByRole("button", { name: "View details" }));
+    openChannelAction(screen.getByTestId("integration-channel-card-slack"), "View details");
     expect(screen.getByTestId("slack-tab")).toBeInTheDocument();
     expect(screen.queryByTestId("slack-hub-install")).toBeNull();
   });
@@ -309,7 +314,7 @@ describe("Settings IntegrationsTab", () => {
       configured: true, install_supported: true, managed_supported: false, installations: [],
     };
     renderTab();
-    fireEvent.click(within(screen.getByTestId("integration-channel-card-slack")).getByRole("button", { name: "Configure" }));
+    openChannelAction(screen.getByTestId("integration-channel-card-slack"), "Configure");
     expect(screen.getByTestId("slack-hub-install")).toBeInTheDocument();
     expect(screen.queryByTestId("slack-tab")).toBeNull();
     expect(screen.getByTestId("integration-setup-guide-slack")).toHaveTextContent("xoxb-");
@@ -322,7 +327,7 @@ describe("Settings IntegrationsTab", () => {
       configured: true, install_supported: true, managed_supported: true, installations: [],
     };
     renderTab();
-    fireEvent.click(within(screen.getByTestId("integration-channel-card-slack")).getByRole("button", { name: "Configure" }));
+    openChannelAction(screen.getByTestId("integration-channel-card-slack"), "Configure");
     expect(screen.getByTestId("slack-tab")).toBeInTheDocument();
     expect(screen.queryByTestId("slack-hub-install")).toBeNull();
     expect(screen.getByTestId("integration-setup-guide-slack")).not.toHaveTextContent("xoxb-");
@@ -336,7 +341,7 @@ describe("Settings IntegrationsTab", () => {
       installations: [{ id: "agent-telegram", agent_id: "agent-1", status: "installed" }],
     };
     renderTab();
-    fireEvent.click(within(screen.getByTestId("integration-channel-card-telegram")).getByRole("button", { name: "Manage" }));
+    openChannelAction(screen.getByTestId("integration-channel-card-telegram"), "Manage");
     expect(screen.getByTestId("telegram-tab")).toBeInTheDocument();
     expect(screen.getByTestId("telegram-hub-install")).toBeInTheDocument();
   });
@@ -349,8 +354,7 @@ describe("Settings IntegrationsTab", () => {
     };
 
     renderTab();
-    const card = screen.getByTestId("integration-channel-card-dingtalk");
-    fireEvent.click(within(card).getByRole("button", { name: "Configure" }));
+    openChannelAction(screen.getByTestId("integration-channel-card-dingtalk"), "Configure");
 
     expect(screen.getByTestId("integration-setup-guide-dingtalk")).toBeInTheDocument();
     expect(screen.getByTestId("dingtalk-hub-install")).toBeInTheDocument();
@@ -397,16 +401,14 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.getByTestId("integration-channel-card-linear")).toBeInTheDocument();
   });
 
-  it("shows channel icons and titles without description text", () => {
+  it("shows each channel description beside its title", () => {
     renderTab();
 
     for (const channel of ["lark", "slack", "dingtalk", "wecom", "weixin", "telegram"]) {
       const card = screen.getByTestId(`integration-channel-card-${channel}`);
       const icon = screen.getByTestId(`integration-channel-icon-${channel}`);
-      const title = card.querySelector("h3");
-      const description = title?.nextElementSibling;
-      expect(title).not.toBeNull();
-      expect(description).toBeNull();
+      expect(card.querySelector("[data-slot=item-title]")).not.toBeNull();
+      expect(card.querySelector("[data-slot=item-description]")).not.toBeNull();
       expect(icon).not.toHaveClass("border");
       expect(icon).not.toHaveClass("bg-muted/40");
     }

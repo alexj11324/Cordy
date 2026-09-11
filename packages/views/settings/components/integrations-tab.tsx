@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CircleAlert, Loader2 } from "lucide-react";
+import { CircleAlert, EllipsisVerticalIcon, Loader2, Settings2Icon } from "lucide-react";
 import { ApiError, api } from "@orvilo/core/api";
 import { useAuthStore } from "@orvilo/core/auth";
 import { workspaceSubscriptionSummaryOptions } from "@orvilo/core/billing";
@@ -22,13 +22,23 @@ import type { MessagingConnectionSource } from "@orvilo/core/types";
 import { wecomInstallationsOptions } from "@orvilo/core/wecom";
 import { weixinInstallationsOptions } from "@orvilo/core/weixin";
 import { memberListOptions } from "@orvilo/core/workspace/queries";
-import { Badge } from "@orvilo/ui/components/ui/badge";
+import { Badge } from "@orvilo/ui/components/reui/badge";
+import { Frame, FramePanel } from "@orvilo/ui/components/reui/frame";
+import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@orvilo/ui/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@orvilo/ui/components/ui/dropdown-menu";
+import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 import { ComposioTab } from "./composio-tab";
 import { DingTalkAgentBindButton, DingTalkTab } from "./dingtalk-tab";
@@ -39,7 +49,7 @@ import { LarkAgentBindButton, LarkTab } from "./lark-tab";
 import { LinearIntegrationCard } from "./linear-tab";
 import { MessagingConnectionStatus } from "./messaging-connection-status";
 import { MessagingSetupNotice, useMessagingSetupWritable } from "./messaging-setup-policy";
-import { SettingsSection, SettingsTab, SettingsPillButton } from "./settings-layout";
+import { SettingsSection, SettingsTab } from "./settings-layout";
 import { SlackAgentBindButton, SlackTab } from "./slack-tab";
 import { TelegramAgentBindButton, TelegramTab } from "./telegram-tab";
 import { VCSTab } from "./vcs-tab";
@@ -84,11 +94,29 @@ function installedRecord(listing: InstallationListing | undefined) {
   );
 }
 
+function ConnectionDotBadge({
+  connected,
+  children,
+}: {
+  connected: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <Badge variant="outline">
+      <span
+        aria-hidden="true"
+        className={cn("size-1.5 rounded-full", connected ? "bg-success" : "bg-warning")}
+      />
+      {children}
+    </Badge>
+  );
+}
+
 function ChannelStatus({ query }: { query: IntegrationQuery }) {
   const { t } = useT("settings");
   if (query.isLoading) {
     return (
-      <Badge variant="secondary">
+      <Badge variant="outline">
         <Loader2 className="animate-spin" />
         {t(($) => $.page.integrations_loading)}
       </Badge>
@@ -96,7 +124,7 @@ function ChannelStatus({ query }: { query: IntegrationQuery }) {
   }
   if (query.isError || !query.data) {
     return (
-      <Badge variant="destructive">
+      <Badge variant="destructive-light">
         <CircleAlert />
         {t(($) => $.page.integrations_unavailable)}
       </Badge>
@@ -105,12 +133,57 @@ function ChannelStatus({ query }: { query: IntegrationQuery }) {
   const hub = installedWorkspaceHub(query.data);
   if (hub) return <MessagingConnectionStatus installation={hub} compact />;
   if (installedRecord(query.data)) {
-    return <Badge variant="outline">{t(($) => $.page.integrations_existing_agent)}</Badge>;
+    return (
+      <ConnectionDotBadge connected={false}>
+        {t(($) => $.page.integrations_existing_agent)}
+      </ConnectionDotBadge>
+    );
   }
   if (!query.data.configured) {
-    return <Badge variant="outline">{t(($) => $.page.integrations_setup_required)}</Badge>;
+    return (
+      <ConnectionDotBadge connected={false}>
+        {t(($) => $.page.integrations_setup_required)}
+      </ConnectionDotBadge>
+    );
   }
-  return <Badge variant="outline">{t(($) => $.page.integrations_disconnected)}</Badge>;
+  return (
+    <ConnectionDotBadge connected={false}>
+      {t(($) => $.page.integrations_disconnected)}
+    </ConnectionDotBadge>
+  );
+}
+
+function ChannelActionMenu({
+  actionLabel,
+  onOpen,
+}: {
+  actionLabel: string;
+  onOpen: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            aria-label={actionLabel}
+            size="icon-xs"
+            type="button"
+            variant="outline"
+          >
+            <EllipsisVerticalIcon aria-hidden="true" />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="end" className="min-w-44">
+        <DropdownMenuGroup>
+          <DropdownMenuItem onClick={onOpen}>
+            <Settings2Icon aria-hidden="true" />
+            {actionLabel}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 }
 
 function ChannelAction({
@@ -128,32 +201,43 @@ function ChannelAction({
 }) {
   const { t } = useT("settings");
   if (isGuest) {
-    return <span className="text-caption text-muted-foreground">{t(($) => $.page.integrations_login_required)}</span>;
+    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_login_required)}</span>;
   }
   if (query.data?.installations.length) {
     return (
-      <SettingsPillButton onClick={onOpen}>
-        {canManage && setupWritable
-          ? t(($) => $.page.integrations_manage)
-          : t(($) => $.page.integrations_view_details)}
-      </SettingsPillButton>
+      <ChannelActionMenu
+        actionLabel={
+          canManage && setupWritable
+            ? t(($) => $.page.integrations_manage)
+            : t(($) => $.page.integrations_view_details)
+        }
+        onOpen={onOpen}
+      />
     );
   }
   if (!setupWritable) {
-    return <SettingsPillButton onClick={onOpen}>{t(($) => $.page.integrations_view_setup)}</SettingsPillButton>;
+    return (
+      <ChannelActionMenu
+        actionLabel={t(($) => $.page.integrations_view_setup)}
+        onOpen={onOpen}
+      />
+    );
   }
   if (!canManage) {
-    return <span className="text-caption text-muted-foreground">{t(($) => $.page.integrations_admin_only)}</span>;
+    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_admin_only)}</span>;
   }
   if (query.isLoading || query.isError || !query.data) {
-    return <span className="text-caption text-muted-foreground">{t(($) => $.page.integrations_unavailable)}</span>;
+    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_unavailable)}</span>;
   }
   return (
-    <SettingsPillButton onClick={onOpen}>
-      {installedRecord(query.data)
-        ? t(($) => $.page.integrations_manage)
-        : t(($) => $.page.integrations_configure)}
-    </SettingsPillButton>
+    <ChannelActionMenu
+      actionLabel={
+        installedRecord(query.data)
+          ? t(($) => $.page.integrations_manage)
+          : t(($) => $.page.integrations_configure)
+      }
+      onOpen={onOpen}
+    />
   );
 }
 
@@ -335,40 +419,60 @@ export function IntegrationsTab({
             ) : null}
           </div>
         ) : null}
-        <div className="grid grid-cols-1 gap-4 [@container(min-width:34rem)]:grid-cols-2">
-          {([
-            ["lark", t(($) => $.lark.section_title), "bg-[#3370FF]/10"],
-            ["slack", t(($) => $.slack.section_title), "bg-[#611f69]/10"],
-            ["dingtalk", t(($) => $.dingtalk.section_title), "bg-[#1677FF]/10"],
-            ["wecom", t(($) => $.wecom.section_title), "bg-[#07C160]/10"],
-            ["telegram", t(($) => $.telegram.section_title), "bg-[#2AABEE]/10"],
-            ["weixin", t(($) => $.weixin.section_title), "bg-[#07C160]/10"],
-          ] as const).map(([channel, title, iconClassName]) => (
-            <IntegrationCard
-              key={channel}
-              channel={channel}
-              title={title}
-              iconClassName={iconClassName}
-              status={<ChannelStatus query={listings[channel]} />}
-              action={
-                <ChannelAction
+        <Frame className="w-full">
+          <FramePanel className="space-y-2">
+            <div>
+              <h2 className="text-body font-semibold">{t(($) => $.page.integrations_group_communication)}</h2>
+              <p className="text-body text-muted-foreground">
+                {t(($) => $.page.integrations_group_communication_description)}
+              </p>
+            </div>
+            <div>
+              {([
+                ["lark", t(($) => $.lark.section_title), t(($) => $.lark.page_description)],
+                ["slack", t(($) => $.slack.section_title), t(($) => $.slack.page_description)],
+                ["dingtalk", t(($) => $.dingtalk.section_title), t(($) => $.dingtalk.page_description)],
+                ["wecom", t(($) => $.wecom.section_title), t(($) => $.wecom.page_description)],
+                ["telegram", t(($) => $.telegram.section_title), t(($) => $.telegram.page_description)],
+                ["weixin", t(($) => $.weixin.section_title), t(($) => $.weixin.page_description)],
+              ] as const).map(([channel, title, description]) => (
+                <IntegrationCard
+                  key={channel}
+                  channel={channel}
+                  title={title}
+                  description={description}
+                  status={<ChannelStatus query={listings[channel]} />}
+                  action={
+                    <ChannelAction
+                      canManage={canManage}
+                      isGuest={isGuest}
+                      setupWritable={setupWritable}
+                      query={listings[channel]}
+                      onOpen={() => setManagedChannel(channel)}
+                    />
+                  }
+                />
+              ))}
+            </div>
+          </FramePanel>
+          {linearEnabled ? (
+            <FramePanel className="space-y-2">
+              <div>
+                <h2 className="text-body font-semibold">{t(($) => $.page.integrations_group_collaboration)}</h2>
+                <p className="text-body text-muted-foreground">
+                  {t(($) => $.page.integrations_group_collaboration_description)}
+                </p>
+              </div>
+              <div>
+                <LinearIntegrationCard
                   canManage={canManage}
                   isGuest={isGuest}
-                  setupWritable={setupWritable}
-                  query={listings[channel]}
-                  onOpen={() => setManagedChannel(channel)}
+                  workspaceId={wsId}
                 />
-              }
-            />
-          ))}
-          {linearEnabled ? (
-            <LinearIntegrationCard
-              canManage={canManage}
-              isGuest={isGuest}
-              workspaceId={wsId}
-            />
+              </div>
+            </FramePanel>
           ) : null}
-        </div>
+        </Frame>
       </section>
 
       {composioEnabled && !composioUnconfigured ? (
