@@ -12,6 +12,7 @@ import { markPastedTextFile, PASTED_TEXT_FILENAME } from "./extensions/file-uplo
 import type { ContentEditorRef } from "./content-editor";
 import type { UploadGate } from "./use-upload-gate";
 import {
+  attachmentMarkdown,
   useCoordinatedUploads,
   __liveEditorRegistryKeysForTest,
   type UploadDraftBinding,
@@ -200,5 +201,38 @@ describe("useCoordinatedUploads paste-as-file recovery", () => {
     // user can never recover.
     expect(state.body).toContain(pastedText);
     expect(state.uploads).toHaveLength(0);
+  });
+});
+
+describe("attachmentMarkdown", () => {
+  // The module is imported under jsdom because its graph pulls in the API
+  // singleton and `sonner`, which this file mocks above; the assertions
+  // themselves need no DOM.
+  function makeAttachment(overrides: Partial<Attachment> = {}): Attachment {
+    return {
+      id: "att-1",
+      filename: "report[final].pdf",
+      content_type: "application/pdf",
+      url: "https://storage.example/raw",
+      markdown_url: "https://cdn.example/durable",
+      ...overrides,
+    } as Attachment;
+  }
+
+  it("escapes the label in both branches", () => {
+    // A `]` in a filename ends the markdown label, so an unescaped
+    // `[report[final].pdf](…)` parses back as a label plus literal text and the
+    // draft is corrupt on reload. This function's string is handed to BOTH the
+    // in-editor settle and the persisted body (`deliverFinishedUpload`), and the
+    // editor's own writers escape — so without this, one upload persists a
+    // different spelling than the document shows.
+    expect(attachmentMarkdown(makeAttachment())).toBe(
+      "[report\\[final\\].pdf](https://cdn.example/durable)",
+    );
+    expect(
+      attachmentMarkdown(
+        makeAttachment({ filename: "diagram[1].png", content_type: "image/png" }),
+      ),
+    ).toBe("![diagram\\[1\\].png](https://cdn.example/durable)");
   });
 });

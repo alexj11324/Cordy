@@ -59,6 +59,7 @@ import { MAX_FILE_SIZE } from "@orvilo/core/constants/upload";
 import { useT } from "../i18n";
 import type { UploadGate } from "./use-upload-gate";
 import { pastedTextSource } from "./extensions/file-upload";
+import { escapeMarkdownLabel } from "./utils/escape-markdown-label";
 
 const EMPTY_ATTACHMENTS: Attachment[] = [];
 
@@ -191,12 +192,17 @@ export function __liveEditorRegistryKeysForTest(): string[] {
 
 /** Markdown for a finished upload. Mirrors the shape the in-editor swap
  *  produces (`extensions/file-upload.ts`: image node for images, fileCard link
- *  for everything else) — keep the two in sync. */
+ *  for everything else) — keep the two in sync, the label escaping included.
+ *  The editor's own writers escape through `escapeMarkdownLabel`, and
+ *  `deliverFinishedUpload` hands THIS string to both the in-editor settle and
+ *  the persisted body, so an unescaped label here would let one upload persist
+ *  a different spelling than the document shows. */
 export function attachmentMarkdown(att: Attachment): string {
   const link = toUploadResult(att).markdownLink;
+  const label = escapeMarkdownLabel(att.filename);
   return (att.content_type ?? "").startsWith("image/")
-    ? `![${att.filename}](${link})`
-    : `[${att.filename}](${link})`;
+    ? `![${label}](${link})`
+    : `[${label}](${link})`;
 }
 
 const DELIVER_RETRY_MS = 50;
