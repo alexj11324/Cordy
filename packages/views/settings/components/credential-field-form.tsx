@@ -134,11 +134,15 @@ export function ConnectionSelectField({
   placeholder?: string;
   disabled?: boolean;
 }) {
+  const selectItems = placeholder
+    ? [{ value: "", label: placeholder }, ...items]
+    : items;
+
   return (
     <Field orientation="responsive" data-disabled={disabled ? true : undefined}>
       <FieldLabel htmlFor={id}>{label}</FieldLabel>
       <Select
-        items={items}
+        items={selectItems}
         value={value || null}
         onValueChange={(next) => onValueChange(next ?? "")}
         disabled={disabled}
@@ -148,8 +152,8 @@ export function ConnectionSelectField({
         </SelectTrigger>
         <SelectContent className="w-(--anchor-width)">
           <SelectGroup>
-            {items.map((item) => (
-              <SelectItem key={item.value} value={item.value}>
+            {selectItems.map((item) => (
+              <SelectItem key={item.value || "empty"} value={item.value}>
                 {item.label}
               </SelectItem>
             ))}

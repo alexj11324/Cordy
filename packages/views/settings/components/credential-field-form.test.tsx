@@ -3,7 +3,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { CredentialFieldForm } from "./credential-field-form";
+import { ConnectionSelectField, CredentialFieldForm } from "./credential-field-form";
 
 afterEach(cleanup);
 
@@ -42,5 +42,23 @@ describe("CredentialFieldForm", () => {
     expect(onCancel).toHaveBeenCalled();
     await userEvent.click(screen.getByTestId("submit"));
     expect(onSubmit).toHaveBeenCalled();
+  });
+
+  it("keeps a placeholder item so a connection selection can be cleared", async () => {
+    const onValueChange = vi.fn();
+    render(
+      <ConnectionSelectField
+        id="linear-status"
+        label="Todo"
+        value="backlog"
+        placeholder="Leave unmapped"
+        items={[{ value: "backlog", label: "Backlog" }]}
+        onValueChange={onValueChange}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("combobox", { name: "Todo" }));
+    await userEvent.click(await screen.findByRole("option", { name: "Leave unmapped" }));
+    expect(onValueChange).toHaveBeenCalledWith("");
   });
 });

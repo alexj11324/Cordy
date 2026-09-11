@@ -53,6 +53,11 @@ describe("ReUI global setup", () => {
     expect(reuiCSS).toContain("--color-success: var(--success);")
     expect(reuiCSS).toContain("--color-warning: var(--warning);")
     expect(reuiCSS).toContain("--color-invert: var(--invert);")
+    expect(reuiCSS).toContain("--color-focus: var(--focus);")
+    expect(reuiCSS).toContain("--color-focus-foreground: var(--focus-foreground);")
+    expect(tokensCSS).toContain("--focus: var(--primary);")
+    expect(tokensCSS).toContain("--focus-foreground: var(--primary-foreground);")
+    expect(tokensCSS).toContain("--color-focus: var(--focus);")
 
     // Nova's chroma-0 literals used to live here and won at runtime because
     // this file loads after tokens.css.
