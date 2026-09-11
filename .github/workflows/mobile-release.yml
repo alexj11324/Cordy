@@ -108,7 +108,7 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$RELEASE_COMMIT"
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
         uses: actions/setup-node@v4
