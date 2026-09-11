@@ -45,6 +45,19 @@ function isProfileInstanceRefusal(error: unknown): boolean {
   );
 }
 
+export function canDeleteRuntimeMachine(
+  machine: RuntimeMachine | null | undefined,
+  opts: { isAdmin: boolean; currentUserId?: string | null },
+): boolean {
+  if (!machine) return false;
+  const deletable = machine.runtimes.filter(
+    (runtime) => !isPendingCustomRuntime(runtime),
+  );
+  if (deletable.length === 0) return false;
+  if (opts.isAdmin) return true;
+  return deletable.some((runtime) => runtime.owner_id === opts.currentUserId);
+}
+
 export function DeleteMachineDialog({
   open,
   onOpenChange,
@@ -87,6 +100,10 @@ export function DeleteMachineDialog({
 
   async function handleConfirm() {
     if (!confirmed) return;
+    if (deletableRuntimes.length === 0) {
+      toast.error(t(($) => $.machine.delete_dialog.toast_failed));
+      return;
+    }
     setSubmitting(true);
     try {
       if (willStopDaemon && onStopLocalDaemon) {

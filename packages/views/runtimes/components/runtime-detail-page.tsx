@@ -29,7 +29,10 @@ import {
   sharedCustomName,
 } from "./runtime-machines";
 import { RenameMachineDialog } from "./rename-machine-dialog";
-import { DeleteMachineDialog } from "./delete-machine-dialog";
+import {
+  canDeleteRuntimeMachine,
+  DeleteMachineDialog,
+} from "./delete-machine-dialog";
 import { RuntimeProfilesDialog } from "./runtime-profiles-dialog";
 import { pendingRuntimesForProfiles } from "./pending-runtime";
 import { HealthDot, HealthIcon, useHealthLabel } from "./shared";
@@ -185,12 +188,10 @@ export function RuntimeDetailPage({
       currentName: sharedCustomName(machine.runtimes) ?? "",
     };
   }, [machine, isAdmin, currentUserId]);
-  const canDeleteMachine = Boolean(
-    machine &&
-      machine.runtimes.length > 0 &&
-      (isAdmin ||
-        machine.runtimes.some((runtime) => runtime.owner_id === currentUserId)),
-  );
+  const canDeleteMachine = canDeleteRuntimeMachine(machine, {
+    isAdmin,
+    currentUserId,
+  });
 
   if (isLoading) return <MachineDetailSkeleton />;
 
