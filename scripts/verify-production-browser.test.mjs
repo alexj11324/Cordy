@@ -214,6 +214,26 @@ test("validates one-time broker completion and redemption payloads", () => {
   );
 });
 
+test("login shell probe matches Pulse auth-shell classes, not zinc", async () => {
+  const source = await import("node:fs/promises").then(({ readFile }) =>
+    readFile(
+      new URL("./verify-production-browser.mjs", import.meta.url),
+      "utf8",
+    ),
+  );
+  const shell = await import("node:fs/promises").then(({ readFile }) =>
+    readFile(
+      new URL("../apps/web/components/auth-shell.tsx", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.match(shell, /className="dark grid min-h-dvh w-full bg-background md:grid-cols-2"/u);
+  assert.match(source, /authShell\)\.toHaveClass\(\/\\bbg-background\\b\/u\)/u);
+  assert.match(source, /formPanel\)\.toHaveClass\(\/\\bbg-background\\b\/u\)/u);
+  assert.match(source, /brandPanel\)\.toHaveClass\(\/\\bbg-card\\b\/u\)/u);
+  assert.doesNotMatch(source, /bg-zinc-950/u);
+});
+
 test("browser acceptance uses the environment cookie domain and desktop scheme", async () => {
   const source = await import("node:fs/promises").then(({ readFile }) =>
     readFile(
