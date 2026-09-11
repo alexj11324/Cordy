@@ -1,0 +1,169 @@
+# Dependabot configuration.
+# Reference: https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+#
+# Dependabot only opens pull requests. Nothing merges on its own: every PR
+# still has to pass the required checks and review before it lands.
+#
+# Grouping: minor + patch updates of one ecosystem are batched into a single
+# weekly PR to keep the review queue short. Major updates stay ungrouped, so
+# each breaking-change candidate gets its own PR and its own CI run.
+#
+# Security updates are independent of the version-update policy below: they
+# are not held back by `cooldown` or `open-pull-requests-limit`, no group here
+# sets `applies-to: security-updates`, and every `ignore` rule matches only by
+# name or update type, which Dependabot drops for security updates (only an
+# explicit `versions:` range would apply). A vulnerable React or Expo release
+# still gets its own PR.
+#
+# Commit messages: `prefix` + `include: "scope"` renders `chore(deps): ...`,
+# `chore(deps-dev): ...` and `ci(deps): ...`. Keep the scope out of `prefix`
+# itself; Dependabot appends it, which would produce `chore(deps)(deps):`.
+
+version: 2
+updates:
+  # ---------------------------------------------------------------------------
+  # JavaScript / TypeScript: the pnpm workspace at the repository root. This
+  # one entry covers the root package.json, apps/*, packages/* and the
+  # `catalog:` versions in pnpm-workspace.yaml.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    # Hijacked-maintainer releases carrying malware (e.g. the 2025 Shai-Hulud
+    # worm) were typically unpublished within days. Wait a week before
+    # proposing a new version; security updates are exempt.
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      npm-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # apps/mobile native stack. These versions are owned by the Expo SDK
+      # (expo/bundledNativeModules.json) or pinned through expo-router, move
+      # together via `pnpm exec expo install --fix` during an SDK upgrade, and
+      # a native module bump needs a dev-client rebuild that CI never runs.
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@expo/*"
+      - dependency-name: "eslint-config-expo"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native*"
+      - dependency-name: "@react-navigation/*"
+      - dependency-name: "@shopify/flash-list"
+      # Names shared by the web/desktop catalog and apps/mobile, where mobile
+      # deliberately stays on another line: react/react-dom must equal the
+      # React Native renderer's version exactly, and NativeWind 4 requires
+      # tailwindcss 3 + tailwind-merge 2. Dependabot rewrites the requirement
+      # in every workspace manifest in the same PR, so a web-only bump would
+      # drag mobile along. Upgrade these by hand.
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
+      - dependency-name: "tailwindcss"
+      - dependency-name: "tailwind-merge"
+      # NativeWind 5 moves to tailwindcss 4; take it with the manual upgrade.
+      - dependency-name: "nativewind"
+        update-types:
+          - "version-update:semver-major"
+
+  # ---------------------------------------------------------------------------
+  # Go modules: server/go.mod, the only Go module in the repository.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "gomod"
+    directory: "/server"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      go-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---------------------------------------------------------------------------
+  # GitHub Actions: .github/workflows/*.yml. Tag refs (actions/checkout@v6) and
+  # SHA pins with a trailing version comment (...@3d3c42e5... # v7) are both
+  # updated; for SHA pins Dependabot refreshes the comment too.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    groups:
+      actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # ---------------------------------------------------------------------------
+  # Docker: base images in Dockerfile, Dockerfile.web, Dockerfile.docs and
+  # Dockerfile.auth-broker (every root file whose name contains "dockerfile").
+  #
+  # No pull_request workflow builds these images, so a bumped base image is
+  # first built after merge (release.yml, production images). Review these
+  # PRs with that in mind.
+  #
+  # Runtime baselines move as one coordinated change, never as a
+  # Dockerfile-only bump: Node 22 is also what CI runs, and the Go release is
+  # pinned by server/go.mod and CI's `1.26.x`.
+  #
+  # docker-compose*.yml and deploy/helm reference only self-built images and
+  # pgvector/pgvector:pg17, whose tag pins the PostgreSQL major version (a
+  # data migration, not a routine bump), so those ecosystems are not listed.
+  # ---------------------------------------------------------------------------
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      docker-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "node"
+        update-types:
+          - "version-update:semver-major"
+      # Go versions its releases as 1.x, so a new Go release is a semver minor.
+      - dependency-name: "golang"
+        update-types:
+          - "version-update:semver-major"
+          - "version-update:semver-minor"
