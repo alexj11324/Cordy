@@ -248,6 +248,45 @@ func TestRequireMessagingSetupWritable(t *testing.T) {
 	})
 }
 
+func TestMessagingModeFollowsDeploymentOwnershipAndKillSwitch(t *testing.T) {
+	for _, key := range []string{
+		"ORVILO_LARK_SECRET_KEY", "ORVILO_SLACK_SECRET_KEY", "ORVILO_DINGTALK_SECRET_KEY",
+		"ORVILO_WECOM_SECRET_KEY", "ORVILO_TELEGRAM_SECRET_KEY", "ORVILO_WEIXIN_SECRET_KEY",
+	} {
+		t.Setenv(key, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	}
+	for _, test := range []struct {
+		name, appURL, requested, wantMode string
+	}{
+		{"hosted production", "https://orvilo.aspectlylabs.com", "", "managed"},
+		{"hosted legacy mode", "https://orvilo.aspectlylabs.com", "server_configured", "managed"},
+		{"hosted staging", "https://staging.aspectlylabs.com", "server_configured", "managed"},
+		{"self hosted", "https://app.example.com", "", "server_configured"},
+		{"self hosted cannot opt into App writes", "https://app.example.com", "managed", "server_configured"},
+		{"production kill switch", "https://orvilo.aspectlylabs.com", "disabled", "disabled"},
+		{"staging kill switch", "https://staging.aspectlylabs.com", "disabled", "disabled"},
+		{"local origin", "http://localhost:3000", "managed", "disabled"},
+		{"private origin", "https://192.168.1.1", "server_configured", "disabled"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("ORVILO_APP_URL", test.appURL)
+			t.Setenv("ORVILO_MESSAGING_MODE", test.requested)
+			got := messagingCapabilitiesFromEnv()
+			if got.Mode != test.wantMode || got.SetupWritable != (test.wantMode == "managed") {
+				t.Fatalf("mode=%q writable=%v, want %q", got.Mode, got.SetupWritable, test.wantMode)
+			}
+			if len(got.Platforms) != 6 {
+				t.Fatalf("platform count=%d, want 6", len(got.Platforms))
+			}
+			for _, platform := range got.Platforms {
+				if platform.Enabled != (test.wantMode != "disabled") {
+					t.Errorf("%s enabled=%v in mode %s", platform.Type, platform.Enabled, got.Mode)
+				}
+			}
+		})
+	}
+}
+
 func TestGetConfigUsesDaemonServerURLOverride(t *testing.T) {
 	t.Setenv("ORVILO_DAEMON_SERVER_URL", " https://api.internal.example/// ")
 	t.Setenv("ORVILO_PUBLIC_URL", "https://hooks.example.com/")

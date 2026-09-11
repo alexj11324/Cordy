@@ -228,6 +228,7 @@ VALUES ($1, $2, $3, jsonb_build_object('app_id', $4::text), $5, 'installed')
 // background poller stays quiet for the life of the test.
 func wireLarkInstallServices(t *testing.T) {
 	t.Helper()
+	withManagedMessaging(t)
 	if testHandler == nil {
 		t.Skip("database not available")
 	}

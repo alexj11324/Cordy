@@ -148,6 +148,16 @@ never cancels tasks now. `CancelTasksForIssue` fires only from the issue-deletio
 paths (`DeleteIssue` / `BatchDeleteIssues`), where the owning issue row is going
 away, so no task is left orphaned.
 
+## Review handoff submission
+
+| Behavior | Source |
+|---|---|
+| `issue create`, `issue update`, and `issue status` accept `--review-worktree`, `--review-branch`, `--review-commit`, and repeatable `--review-pr` | `server/cmd/orvilo/cmd_issue.go` (flag registration), `server/cmd/orvilo/cmd_issue_review_submission.go` (`addIssueReviewSubmissionFlags`) |
+| CLI rejects a partial handoff and sends the complete `review_submission` with the status mutation | `server/cmd/orvilo/cmd_issue_review_submission.go` (`applyIssueReviewSubmissionFlags`), `server/cmd/orvilo/cmd_issue.go` (`runIssueStatus`, `applyIssueRoleFlags`) |
+| Server validates full commit SHA and PR URLs, then adds a fresh submission ID | `server/internal/handler/issue_review_submission.go` (`encodeIssueReviewSubmission`) |
+| Entering the review category requires a distinct reviewer and a fresh complete handoff; active review evidence is immutable | `server/migrations/610_issue_review_submission.up.sql` (`enforce_issue_review_submission`) |
+| Generated command help and issue workflow teach the complete review submission | `server/internal/daemon/execenv/runtime_config_sections.go` (`writeAvailableCommands`, `writeWorkflowIssue`) |
+
 ## Ownership-only assignment and duplicate-run awareness
 
 | Behavior | Source |

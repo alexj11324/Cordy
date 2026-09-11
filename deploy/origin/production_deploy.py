@@ -10,6 +10,8 @@ executes a caller-provided command or shell fragment.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import fcntl
 import json
 import os
@@ -57,6 +59,13 @@ BOOTSTRAP_CONTAINERS = {
     "auth-broker": "patchbay-auth-broker-broker-1",
 }
 PRODUCTION_SMOKE_USER_EMAIL = "production-smoke@aspectlylabs.com"
+HOSTED_MESSAGING_SECRETS = {
+    "ORVILO_LARK_SECRET_KEY": "orvilo-lark-secret-key",
+    "ORVILO_DINGTALK_SECRET_KEY": "orvilo-dingtalk-secret-key",
+    "ORVILO_WECOM_SECRET_KEY": "orvilo-wecom-secret-key",
+    "ORVILO_TELEGRAM_SECRET_KEY": "orvilo-telegram-secret-key",
+    "ORVILO_WEIXIN_SECRET_KEY": "orvilo-weixin-secret-key",
+}
 
 
 class DeploymentError(RuntimeError):
@@ -506,6 +515,31 @@ class ProductionDeployment:
         # runtime environment so Next does not require a build-time public env
         # value and the deployed Web and Accounts surfaces use one Clerk app.
         product_env["ORVILO_CLERK_PUBLISHABLE_KEY"] = publishable_key.strip()
+        if product_env.get("ORVILO_MESSAGING_MODE", "").strip() != "disabled":
+            # Overlay after the legacy snapshot, which contains empty provider keys.
+            # Keep keys in memory and preserve the existing Slack encryption key.
+            for name, secret in HOSTED_MESSAGING_SECRETS.items():
+                try:
+                    value = run(
+                        [
+                            "gcloud", "secrets", "versions", "access", "1",
+                            "--project", "general-secrets-store", "--secret", secret,
+                        ],
+                        capture=True,
+                    )
+                except (OSError, subprocess.CalledProcessError):
+                    raise DeploymentError(
+                        f"cannot read hosted messaging key {secret} from GSM"
+                    ) from None
+                try:
+                    valid = len(base64.b64decode(value, validate=True)) == 32
+                except (binascii.Error, ValueError):
+                    valid = False
+                if not valid:
+                    raise DeploymentError(
+                        f"hosted messaging key {secret} must encode exactly 32 bytes"
+                    )
+                product_env[name] = value
         return product_env, broker_env
 
     def issue_browser_acceptance_credentials(self) -> dict[str, str]:

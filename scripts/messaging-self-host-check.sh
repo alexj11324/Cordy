@@ -48,6 +48,9 @@ case "$bootstrap" in
       [[ -n "${SLACK_BOT_TOKEN:-}" && -n "${SLACK_APP_TOKEN:-}" ]] || fail "SLACK_BOT_TOKEN and SLACK_APP_TOKEN must be configured together"
       [[ -n "${SLACK_TEAM_ID:-}" && -n "${SLACK_BOT_USER_ID:-}" ]] || fail "SLACK_TEAM_ID and SLACK_BOT_USER_ID are required for Slack bootstrap"
     fi
+    if [[ -n "${WEIXIN_BOT_ID:-}" || -n "${WEIXIN_ILINK_USER_ID:-}" || -n "${WEIXIN_BOT_TOKEN:-}" || -n "${WEIXIN_BASE_URL:-}" ]]; then
+      [[ -n "${WEIXIN_BOT_ID:-}" && -n "${WEIXIN_ILINK_USER_ID:-}" && -n "${WEIXIN_BOT_TOKEN:-}" ]] || fail "WEIXIN_BOT_ID, WEIXIN_ILINK_USER_ID, and WEIXIN_BOT_TOKEN must be configured together"
+    fi
     ;;
   *) fail "ORVILO_MESSAGING_BOOTSTRAP must be true or false" ;;
 esac

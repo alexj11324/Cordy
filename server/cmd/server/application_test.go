@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/orvilo-ai/orvilo/server/internal/analytics"
 	"github.com/orvilo-ai/orvilo/server/internal/events"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel"
+	"github.com/orvilo-ai/orvilo/server/internal/integrations/channel/engine"
 	"github.com/orvilo-ai/orvilo/server/internal/realtime"
 	"github.com/orvilo-ai/orvilo/server/internal/scheduler"
 	"github.com/redis/go-redis/v9"
@@ -95,6 +98,38 @@ func TestApplicationSharesDispatchAndLivenessCapabilities(t *testing.T) {
 	}
 	if app.Workers.Liveness != app.HTTP.LivenessStore {
 		t.Fatal("heartbeat writes and runtime sweeps have different liveness stores")
+	}
+}
+
+func TestApplicationMessagingModeGatesAllSixAdapters(t *testing.T) {
+	for _, key := range []string{
+		"ORVILO_LARK_SECRET_KEY", "ORVILO_SLACK_SECRET_KEY", "ORVILO_DINGTALK_SECRET_KEY",
+		"ORVILO_WECOM_SECRET_KEY", "ORVILO_TELEGRAM_SECRET_KEY", "ORVILO_WEIXIN_SECRET_KEY",
+	} {
+		t.Setenv(key, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	}
+	for _, test := range []struct {
+		name, appURL, mode string
+		enabled            bool
+	}{
+		{"hosted", "https://orvilo.aspectlylabs.com", "managed", true},
+		{"self hosted", "https://app.example.com", "server_configured", true},
+		{"disabled", "https://orvilo.aspectlylabs.com", "disabled", false},
+		{"local", "http://localhost:3000", "managed", false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("ORVILO_APP_URL", test.appURL)
+			t.Setenv("ORVILO_MESSAGING_MODE", test.mode)
+			app := newApplication(testPool, realtime.NewHub(), events.New(), analytics.NoopClient{}, nil, RouterOptions{})
+			for _, kind := range []channel.Type{"feishu", "slack", "dingtalk", "wecom", "telegram", "weixin"} {
+				// No installation payload: an enabled adapter stops at local validation,
+				// while an unwired adapter returns ErrNoResolverSet before dispatch.
+				err := app.HTTP.ChannelRouter.Handle(t.Context(), channel.InboundMessage{Source: channel.Source{ChannelType: kind}})
+				if got := !errors.Is(err, engine.ErrNoResolverSet); got != test.enabled {
+					t.Errorf("%s wired=%v, want %v (error=%v)", kind, got, test.enabled, err)
+				}
+			}
+		})
 	}
 }
 

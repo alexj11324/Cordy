@@ -47,6 +47,7 @@ const channelInstallationsRef = vi.hoisted(() => ({
     {
       configured: boolean;
       install_supported: boolean;
+      managed_supported?: boolean;
       installations: {
         id: string;
         agent_id: string | null;
@@ -167,6 +168,11 @@ function renderTab() {
   );
 }
 
+function openChannelAction(card: HTMLElement, label: string) {
+  fireEvent.click(within(card).getByRole("button", { name: label }));
+  fireEvent.click(screen.getByRole("menuitem", { name: label }));
+}
+
 describe("Settings IntegrationsTab", () => {
   beforeEach(() => {
     queryCallsRef.current = [];
@@ -269,7 +275,7 @@ describe("Settings IntegrationsTab", () => {
     expect(within(card).getByRole("button", { name: "Manage" })).toBeInTheDocument();
   });
 
-  it("keeps server-configured messaging read-only", () => {
+  it("opens server setup guidance without exposing credential actions", () => {
     authUserRef.current = { id: "admin-user" };
     membersRef.current = [{ user_id: "admin-user", role: "owner" }];
     configStore.getState().setMessagingConfig({
@@ -280,17 +286,75 @@ describe("Settings IntegrationsTab", () => {
 
     renderTab();
 
-    expect(screen.getAllByText("Admin-managed")).toHaveLength(6);
+    expect(screen.getAllByRole("button", { name: "View setup" })).toHaveLength(6);
+    openChannelAction(screen.getByTestId("integration-channel-card-dingtalk"), "View setup");
+    expect(screen.getByRole("button", { name: "Server setup instructions" })).toBeInTheDocument();
+    expect(screen.queryByTestId("dingtalk-hub-install")).toBeNull();
+    expect(screen.queryByTestId("integration-setup-guide-dingtalk")).toBeNull();
+  });
+
+  it("keeps existing self-hosted connections readable for workspace members", () => {
+    authUserRef.current = { id: "member-user" };
+    membersRef.current = [{ user_id: "member-user", role: "member" }];
+    configStore.getState().setMessagingConfig({ mode: "server_configured", setupWritable: false, platforms: [] });
+    channelInstallationsRef.current.slack = {
+      configured: true, install_supported: true,
+      installations: [{ id: "existing-slack", agent_id: null, status: "installed" }],
+    };
+    renderTab();
+    openChannelAction(screen.getByTestId("integration-channel-card-slack"), "View details");
+    expect(screen.getByTestId("slack-tab")).toBeInTheDocument();
+    expect(screen.queryByTestId("slack-hub-install")).toBeNull();
+  });
+
+  it("offers Slack token setup when hosted OAuth is unavailable", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.slack = {
+      configured: true, install_supported: true, managed_supported: false, installations: [],
+    };
+    renderTab();
+    openChannelAction(screen.getByTestId("integration-channel-card-slack"), "Configure");
+    expect(screen.getByTestId("slack-hub-install")).toBeInTheDocument();
+    expect(screen.queryByTestId("slack-tab")).toBeNull();
+    expect(screen.getByTestId("integration-setup-guide-slack")).toHaveTextContent("xoxb-");
+  });
+
+  it("uses Slack OAuth only when the server advertises managed support", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.slack = {
+      configured: true, install_supported: true, managed_supported: true, installations: [],
+    };
+    renderTab();
+    openChannelAction(screen.getByTestId("integration-channel-card-slack"), "Configure");
+    expect(screen.getByTestId("slack-tab")).toBeInTheDocument();
+    expect(screen.queryByTestId("slack-hub-install")).toBeNull();
+    expect(screen.getByTestId("integration-setup-guide-slack")).not.toHaveTextContent("xoxb-");
+  });
+
+  it("keeps workspace setup reachable beside an existing Agent connection", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.telegram = {
+      configured: true, install_supported: true,
+      installations: [{ id: "agent-telegram", agent_id: "agent-1", status: "installed" }],
+    };
+    renderTab();
+    openChannelAction(screen.getByTestId("integration-channel-card-telegram"), "Manage");
+    expect(screen.getByTestId("telegram-tab")).toBeInTheDocument();
+    expect(screen.getByTestId("telegram-hub-install")).toBeInTheDocument();
   });
 
   it("opens the platform setup guide without exposing deployment variables", () => {
     authUserRef.current = { id: "admin-user" };
     membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.dingtalk = {
+      configured: true, install_supported: true, installations: [],
+    };
 
     renderTab();
-    const card = screen.getByTestId("integration-channel-card-dingtalk");
-    fireEvent.click(within(card).getByRole("button", { name: "Configure" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Configure" }));
+    openChannelAction(screen.getByTestId("integration-channel-card-dingtalk"), "Configure");
 
     expect(screen.getByTestId("integration-setup-guide-dingtalk")).toBeInTheDocument();
     expect(screen.getByTestId("dingtalk-hub-install")).toBeInTheDocument();

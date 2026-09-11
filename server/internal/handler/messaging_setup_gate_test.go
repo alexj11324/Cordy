@@ -1,15 +1,20 @@
 package handler
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/orvilo-ai/orvilo/server/internal/testutil"
 )
 
-func TestServerConfiguredMessagingRejectsEveryInstallationWrite(t *testing.T) {
-	t.Setenv("ORVILO_APP_URL", "https://app.example.test")
-	t.Setenv("ORVILO_MESSAGING_MODE", "server_configured")
+func withManagedMessaging(t *testing.T) {
+	t.Helper()
+	t.Setenv("ORVILO_APP_URL", "https://orvilo.aspectlylabs.com")
+	t.Setenv("ORVILO_MESSAGING_MODE", "managed")
+}
+
+func TestMessagingModeGatesEveryInstallationWrite(t *testing.T) {
 	h := &Handler{}
 	tests := []struct {
 		name string
@@ -20,6 +25,7 @@ func TestServerConfiguredMessagingRejectsEveryInstallationWrite(t *testing.T) {
 		{"revoke lark", h.RevokeLarkInstallation},
 		{"install slack byo", h.RegisterSlackBYO},
 		{"begin slack managed", h.BeginManagedSlackInstall},
+		{"finish slack managed", h.ManagedSlackOAuthCallback},
 		{"revoke slack", h.RevokeSlackInstallation},
 		{"install dingtalk", h.RegisterDingTalkBYO},
 		{"revoke dingtalk", h.RevokeDingTalkInstallation},
@@ -31,19 +37,23 @@ func TestServerConfiguredMessagingRejectsEveryInstallationWrite(t *testing.T) {
 		{"poll weixin finalize", h.GetWeixinInstallStatus},
 		{"revoke weixin", h.RevokeWeixinInstallation},
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			recorder := httptest.NewRecorder()
-			test.run(recorder, httptest.NewRequest(http.MethodPost, "/", nil))
-			if recorder.Code != http.StatusForbidden {
-				t.Fatalf("status = %d, want 403; body=%s", recorder.Code, recorder.Body.String())
-			}
-			var body map[string]string
-			if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
-				t.Fatal(err)
-			}
-			if body["code"] != "server_managed_integration" {
-				t.Fatalf("code = %q", body["code"])
+	for _, mode := range []struct {
+		name, appURL, requested, code string
+		status                        int
+	}{
+		{"self hosted", "https://app.example.test", "server_configured", "server_managed_integration", http.StatusForbidden},
+		{"disabled", "https://orvilo.aspectlylabs.com", "disabled", "messaging_disabled", http.StatusServiceUnavailable},
+	} {
+		t.Run(mode.name, func(t *testing.T) {
+			t.Setenv("ORVILO_APP_URL", mode.appURL)
+			t.Setenv("ORVILO_MESSAGING_MODE", mode.requested)
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					body := testutil.Call(t, test.run, httptest.NewRequest(http.MethodPost, "/", nil)).Want(mode.status).Map()
+					if body["code"] != mode.code {
+						t.Fatalf("code = %q, want %q", body["code"], mode.code)
+					}
+				})
 			}
 		})
 	}

@@ -151,6 +151,9 @@ func (h *Handler) ManagedSlackCommands(w http.ResponseWriter, r *http.Request) {
 //     slack_installation:created like the BYO path, and 302 to the redirect_url
 //     bound to the state.
 func (h *Handler) ManagedSlackOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	if !requireMessagingSetupWritable(w) {
+		return
+	}
 	if h.ManagedSlack == nil || h.SlackInstall == nil {
 		writeError(w, http.StatusServiceUnavailable, "slack managed OAuth is not configured")
 		return

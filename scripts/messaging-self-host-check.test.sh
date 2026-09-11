@@ -60,4 +60,16 @@ if ORVILO_APP_URL=https://app.example.com \
   exit 1
 fi
 
+if ORVILO_APP_URL=https://app.example.com \
+  ORVILO_PUBLIC_URL=https://api.example.com \
+  ORVILO_MESSAGING_MODE=server_configured \
+  ORVILO_MESSAGING_BOOTSTRAP=true \
+  ORVILO_MESSAGING_WORKSPACE_ID=00000000-0000-0000-0000-000000000001 \
+  ORVILO_MESSAGING_INSTALLER_USER_ID=00000000-0000-0000-0000-000000000002 \
+  WEIXIN_BOT_TOKEN=fixture-token \
+  bash "$guard" >"$output" 2>&1; then
+  echo "partial Weixin bootstrap credentials were accepted" >&2
+  exit 1
+fi
+
 echo "messaging self-host check tests: OK"

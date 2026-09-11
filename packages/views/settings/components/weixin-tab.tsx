@@ -1,6 +1,7 @@
 "use client";
 
 import { MessagingConnectionStatus } from "./messaging-connection-status";
+import { MessagingSetupNotice, useMessagingSetupWritable } from "./messaging-setup-policy";
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -44,6 +45,7 @@ function errorReason(error: unknown): string {
 }
 
 export function WeixinTab() {
+  const setupWritable = useMessagingSetupWritable();
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -74,7 +76,7 @@ export function WeixinTab() {
   );
   const agentsById = new Map(agents.map((agent) => [agent.id, agent]));
   const canManageAgent = (agent: Agent) =>
-    isWorkspaceAdmin || (!!user?.id && agent.owner_id === user.id);
+    user?.is_guest !== true && (isWorkspaceAdmin || (currentMember != null && !!user?.id && agent.owner_id === user.id));
   const canManageInstallation = (installation: WeixinInstallation) => {
     const agent = agentsById.get(installation.agent_id);
     return agent ? canManageAgent(agent) : isWorkspaceAdmin;
@@ -91,7 +93,7 @@ export function WeixinTab() {
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function handleDisconnect() {
-    if (!disconnectTarget || disconnecting) return;
+    if (!setupWritable || !disconnectTarget || disconnecting) return;
     setDisconnecting(true);
     try {
       await api.deleteWeixinInstallation(wsId, disconnectTarget);
@@ -131,7 +133,8 @@ export function WeixinTab() {
 
   return (
     <div className="space-y-8">
-      {!configured ? (
+      {!setupWritable && <MessagingSetupNotice />}
+      {!configured && installations.length === 0 ? (
         <Card>
           <CardContent className="space-y-2">
             <p className="text-body font-medium">{t(($) => $.weixin.not_enabled_title)}</p>
@@ -163,8 +166,10 @@ export function WeixinTab() {
                     <InstallationRow
                       key={installation.id}
                       installation={installation}
-                      agentName={agentsById.get(installation.agent_id)?.name ?? t(($) => $.weixin.unknown_agent)}
-                      canManage={canManageInstallation(installation)}
+                      agentName={installation.agent_id
+                        ? agentsById.get(installation.agent_id)?.name ?? t(($) => $.weixin.unknown_agent)
+                        : t(($) => $.page.integrations_workspace_connection)}
+                      canManage={canManageInstallation(installation) && setupWritable}
                       onDisconnect={() => setDisconnectTarget(installation.id)}
                     />
                   ))}
@@ -173,7 +178,7 @@ export function WeixinTab() {
             )}
           </section>
 
-          {installSupported ? (
+          {installSupported && setupWritable ? (
             <section className="space-y-3">
               <h2 className="text-body font-semibold">{t(($) => $.weixin.available_agents)}</h2>
               <p className="text-caption text-muted-foreground">
@@ -224,7 +229,7 @@ export function WeixinTab() {
       )}
 
       <AlertDialog
-        open={!!disconnectTarget}
+        open={setupWritable && !!disconnectTarget}
         onOpenChange={(open) => {
           if (!open && !disconnecting) setDisconnectTarget(null);
         }}
@@ -243,7 +248,7 @@ export function WeixinTab() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {connectAgent ? (
+      {connectAgent && setupWritable ? (
         <WeixinInstallDialog
           wsId={wsId}
           agentId={connectAgent.id}
@@ -264,7 +269,24 @@ export function WeixinAgentBindButton({
 }) {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
+  const setupWritable = useMessagingSetupWritable();
+  const user = useAuthStore((state) => state.user);
   const [open, setOpen] = useState(false);
+  const { data: members = [] } = useQuery({ ...memberListOptions(wsId), enabled: !!wsId });
+  const { data: agents = [] } = useQuery({ ...agentListOptions(wsId), enabled: !!wsId && !!agentId });
+  const { data: listing, isError } = useQuery({ ...weixinInstallationsOptions(wsId), enabled: !!wsId });
+  const member = members.find((item) => item.user_id === user?.id);
+  const canManage = member?.role === "owner" || member?.role === "admin" ||
+    (member != null && !!user?.id && agents.some((agent) => agent.id === agentId && agent.owner_id === user.id));
+  if (!canManage || user?.is_guest === true) return null;
+  const existing = listing?.installations.find((installation) =>
+    (agentId ? installation.agent_id === agentId : !installation.agent_id) && installation.status === "installed",
+  );
+  if (existing) {
+    return <MessagingConnectionStatus installation={isError ? { ...existing, runtime: undefined } : existing} compact />;
+  }
+  if (!setupWritable) return <MessagingSetupNotice />;
+  if (listing?.install_supported !== true || isError) return null;
   return (
     <>
       <Button

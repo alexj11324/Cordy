@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Agent } from "@orvilo/core/types";
+import { configStore } from "@orvilo/core/config";
 import { I18nProvider } from "@orvilo/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
@@ -214,6 +215,8 @@ function renderTab(children: ReactNode) {
 }
 
 function resetFixtures() {
+  // App-side credential setup exists only on hosted deployments.
+  configStore.getState().setMessagingConfig({ mode: "managed", setupWritable: true, platforms: [] });
   vi.clearAllMocks();
   membersRef.current = [{ user_id: "user-1", role: "owner" }];
   installationsRef.current = {
@@ -260,6 +263,16 @@ describe("IntegrationsTab", () => {
         />,
       );
       expect(screen.queryByTestId("dingtalk-agent-connect") !== null).toBe(canManage);
+    },
+  );
+
+  it.each(["server_configured", "disabled"] as const)(
+    "hides the DingTalk connect entry on a %s deployment",
+    (mode) => {
+      configStore.getState().setMessagingConfig({ mode, setupWritable: false, platforms: [] });
+      renderTab(<IntegrationsTab agent={agent} />);
+      expect(screen.queryByTestId("dingtalk-agent-connect")).toBeNull();
+      expect(screen.getAllByRole("note").length).toBeGreaterThan(0);
     },
   );
 

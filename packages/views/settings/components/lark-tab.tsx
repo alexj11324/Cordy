@@ -1,6 +1,7 @@
 "use client";
 
 import { MessagingConnectionStatus } from "./messaging-connection-status";
+import { MessagingSetupNotice, useMessagingSetupWritable } from "./messaging-setup-policy";
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -65,6 +66,7 @@ const LARK_INTL_CONNECT_ENABLED: boolean = false;
 // picker. The "Bind your first agent" copy in the empty state hints
 // users at the right entry point.
 export function LarkTab() {
+  const setupWritable = useMessagingSetupWritable();
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -95,7 +97,7 @@ export function LarkTab() {
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function handleDisconnect() {
-    if (!disconnectTarget || disconnecting) return;
+    if (!setupWritable || !disconnectTarget || disconnecting) return;
     setDisconnecting(true);
     try {
       await api.deleteLarkInstallation(wsId, disconnectTarget);
@@ -124,7 +126,8 @@ export function LarkTab() {
 
   return (
     <div className="space-y-8">
-      {!configured ? (
+      {!setupWritable && <MessagingSetupNotice />}
+      {!configured && installations.length === 0 ? (
         <Card>
           <CardContent className="space-y-2">
             <p className="text-body font-medium">{t(($) => $.lark.not_enabled_title)}</p>
@@ -180,7 +183,7 @@ export function LarkTab() {
                   <InstallationRow
                     key={inst.id}
                     installation={inst}
-                    canManage={canManage}
+                    canManage={canManage && setupWritable}
                     onDisconnect={() => setDisconnectTarget(inst.id)}
                   />
                 ))}
@@ -191,7 +194,7 @@ export function LarkTab() {
       )}
 
       <AlertDialog
-        open={!!disconnectTarget}
+        open={setupWritable && !!disconnectTarget}
         onOpenChange={(v) => {
           if (!v && !disconnecting) setDisconnectTarget(null);
         }}
@@ -240,17 +243,19 @@ function InstallationRow({
   // affordance below is the recovery path for that orphan row.
   const { getAgentName } = useActorName();
   const isInstalled = installation.status === "installed";
-  const agentName = getAgentName(installation.agent_id);
+  const agentName = installation.agent_id
+    ? getAgentName(installation.agent_id)
+    : t(($) => $.page.integrations_workspace_connection);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        <ActorAvatar
+        {installation.agent_id && <ActorAvatar
           actorType="agent"
           actorId={installation.agent_id}
           size="lg"
           enableHoverCard
           profileLink
-        />
+        />}
         <div className="space-y-1">
           <MessagingConnectionStatus installation={installation} />
           <p className="text-body font-medium">
@@ -352,6 +357,7 @@ export function LarkAgentBindButton({
     enabled: !!wsId,
   });
   const installSupported = listing?.install_supported === true;
+  const setupWritable = useMessagingSetupWritable();
 
   const { data: members = [] } = useQuery({
     ...memberListOptions(wsId),
@@ -366,7 +372,7 @@ export function LarkAgentBindButton({
   // workspace owner/admin may bind/manage the bot (MUL-4213).
   const canManage = isWorkspaceAdmin || isAgentOwner;
 
-  if (!canManage) return null;
+  if (!canManage || user?.is_guest === true) return null;
 
   // Existing-installation check runs BEFORE the install_supported gate:
   // already-installed bots stay manageable even when new scan-installs are
@@ -397,6 +403,7 @@ export function LarkAgentBindButton({
 
   // No existing bot and the device-flow transport isn't wired end-to-end:
   // a fresh scan would fail at the post-poll bot-info step, so hide the CTA.
+  if (!setupWritable) return <MessagingSetupNotice />;
   if (!installSupported) return null;
 
   // Two CTAs, one per cloud — Feishu (mainland) on the left, Lark
@@ -543,10 +550,11 @@ function LarkAgentBotInstalledControls({
   const manageHref = `${larkDevConsoleHost(installation.region)}/app/${encodeURIComponent(installation.app_id)}`;
 
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const setupWritable = useMessagingSetupWritable();
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function handleDisconnect() {
-    if (disconnecting) return;
+    if (!setupWritable || disconnecting) return;
     setDisconnecting(true);
     try {
       await api.deleteLarkInstallation(wsId, installation.id);
@@ -589,7 +597,7 @@ function LarkAgentBotInstalledControls({
           </span>
           <MessagingConnectionStatus installation={installation} compact />
         </span>
-        <Button
+        {setupWritable && <Button
           variant="destructive"
           size="sm"
           onClick={() => setConfirmOpen(true)}
@@ -602,7 +610,7 @@ function LarkAgentBotInstalledControls({
           {disconnecting
             ? t(($) => $.lark.disconnecting)
             : t(($) => $.lark.disconnect)}
-        </Button>
+        </Button>}
       </div>
 
       {/* Row 2: secondary "Manage in Lark" link to the Bot's dev-console
@@ -627,7 +635,7 @@ function LarkAgentBotInstalledControls({
       </a>
 
       <AlertDialog
-        open={confirmOpen}
+        open={setupWritable && confirmOpen}
         onOpenChange={(v) => {
           if (!v && !disconnecting) setConfirmOpen(false);
         }}

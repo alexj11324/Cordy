@@ -22,6 +22,8 @@ deployment. It does not print or generate provider credentials. Add the
 workspace/installer ids and provider values to the server secret store, then
 run check before starting the gateway. With ORVILO_MESSAGING_BOOTSTRAP=true,
 the server encrypts those values and materializes installation rows at boot.
+For Weixin QR authorization, run /app/orvilo-messaging weixin-auth inside the
+running backend container. It saves encrypted credentials directly to the DB.
 EOF
 }
 
@@ -124,6 +126,13 @@ DINGTALK_ROBOT_CODE=
 WECOM_BOT_ID=
 WECOM_SECRET=
 WECOM_BOT_NAME=
+# Optional import of already authorized credentials. For a new QR session use
+# /app/orvilo-messaging weixin-auth inside the running backend container.
+WEIXIN_BOT_ID=
+WEIXIN_ILINK_USER_ID=
+WEIXIN_BOT_TOKEN=
+# Optional regional provider host; defaults to https://ilinkai.weixin.qq.com.
+WEIXIN_BASE_URL=
 
 # Provider credentials belong in the deployment secret manager. Do not commit
 # them or put them in the Orvilo app. Slack uses the tokens created from the
@@ -131,8 +140,13 @@ WECOM_BOT_NAME=
 # server-side transport credentials.
 EOF
   echo "messaging self-host setup: wrote $env_file (mode and public origins only)"
-  echo "next: store provider credentials securely, source $env_file, then run:"
+  echo "next: store provider credentials securely, then export the server environment:"
+  echo "  set -a"
+  printf '  source %q\n' "$env_file"
+  echo "  set +a"
   echo "  ORVILO_MESSAGING_MANIFEST=$MANIFEST scripts/messaging-self-host-setup.sh check"
+  echo "For Weixin QR authorization after the backend starts:"
+  printf '  docker compose --env-file .env --env-file %q -f docker-compose.selfhost.yml exec backend /app/orvilo-messaging weixin-auth\n' "$env_file"
 }
 
 check() {

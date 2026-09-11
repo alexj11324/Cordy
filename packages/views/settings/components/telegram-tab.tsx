@@ -1,6 +1,7 @@
 "use client";
 
 import { MessagingConnectionStatus } from "./messaging-connection-status";
+import { MessagingSetupNotice, useMessagingSetupWritable } from "./messaging-setup-policy";
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -47,6 +48,7 @@ import { useLocale, useT } from "../../i18n";
 // per-agent (one bot per agent, the (workspace_id, agent_id, channel_type)
 // UNIQUE in channel_installation).
 export function TelegramTab() {
+  const setupWritable = useMessagingSetupWritable();
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -68,7 +70,7 @@ export function TelegramTab() {
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function handleDisconnect() {
-    if (!disconnectTarget || disconnecting) return;
+    if (!setupWritable || !disconnectTarget || disconnecting) return;
     setDisconnecting(true);
     try {
       // Await the server before touching cache/UI (repo rule: no optimistic
@@ -88,6 +90,7 @@ export function TelegramTab() {
 
   return (
     <div className="space-y-8">
+      {!setupWritable && <MessagingSetupNotice />}
       {isError ? (
         <Card>
           <CardContent>
@@ -102,7 +105,7 @@ export function TelegramTab() {
             <p className="text-body text-muted-foreground">{t(($) => $.telegram.loading)}</p>
           </CardContent>
         </Card>
-      ) : !configured ? (
+      ) : !configured && installations.length === 0 ? (
         <Card>
           <CardContent className="space-y-2">
             <p className="text-body font-medium">{t(($) => $.telegram.not_enabled_title)}</p>
@@ -137,7 +140,7 @@ export function TelegramTab() {
                   <InstallationRow
                     key={inst.id}
                     installation={inst}
-                    canManage={canManage}
+                    canManage={canManage && setupWritable}
                     onDisconnect={() => setDisconnectTarget(inst.id)}
                   />
                 ))}
@@ -148,7 +151,7 @@ export function TelegramTab() {
       )}
 
       <AlertDialog
-        open={!!disconnectTarget}
+        open={setupWritable && !!disconnectTarget}
         onOpenChange={(v) => {
           if (!v && !disconnecting) setDisconnectTarget(null);
         }}
@@ -191,17 +194,19 @@ function InstallationRow({
   const locale = useLocale();
   const { getAgentName } = useActorName();
   const isInstalled = installation.status === "installed";
-  const agentName = getAgentName(installation.agent_id);
+  const agentName = installation.agent_id
+    ? getAgentName(installation.agent_id)
+    : t(($) => $.page.integrations_workspace_connection);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        <ActorAvatar
+        {installation.agent_id && <ActorAvatar
           actorType="agent"
           actorId={installation.agent_id}
           size="lg"
           enableHoverCard
           profileLink
-        />
+        />}
         <div className="space-y-1">
           <MessagingConnectionStatus installation={installation} />
           <p className="text-body font-medium">
@@ -273,6 +278,7 @@ export function TelegramAgentBindButton({
     enabled: !!wsId,
   });
   const installSupported = listing?.install_supported === true;
+  const setupWritable = useMessagingSetupWritable();
 
   const { data: members = [] } = useQuery({
     ...memberListOptions(wsId),
@@ -282,7 +288,7 @@ export function TelegramAgentBindButton({
   const canManage =
     currentMember?.role === "owner" || currentMember?.role === "admin";
 
-  if (!canManage) return null;
+  if (!canManage || user?.is_guest === true) return null;
 
   const recordedInstallation = listing?.installations.find(
     (inst) =>
@@ -304,6 +310,7 @@ export function TelegramAgentBindButton({
     );
   }
 
+  if (!setupWritable) return <MessagingSetupNotice />;
   if (!installSupported) return null;
 
   function closeDialog() {
@@ -470,10 +477,11 @@ function TelegramAgentBotInstalledControls({
   const qc = useQueryClient();
 
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const setupWritable = useMessagingSetupWritable();
   const [disconnecting, setDisconnecting] = useState(false);
 
   async function handleDisconnect() {
-    if (disconnecting) return;
+    if (!setupWritable || disconnecting) return;
     setDisconnecting(true);
     try {
       await api.deleteTelegramInstallation(wsId, installation.id);
@@ -501,7 +509,7 @@ function TelegramAgentBotInstalledControls({
             {installation.bot_username ? ` · @${installation.bot_username}` : ""}
           </span>
         </span>
-        <Button
+        {setupWritable && <Button
           variant="destructive"
           size="sm"
           onClick={() => setConfirmOpen(true)}
@@ -514,7 +522,7 @@ function TelegramAgentBotInstalledControls({
           {disconnecting
             ? t(($) => $.telegram.disconnecting)
             : t(($) => $.telegram.disconnect)}
-        </Button>
+        </Button>}
       </div>
 
       {installation.bot_username && (
@@ -530,7 +538,7 @@ function TelegramAgentBotInstalledControls({
       )}
 
       <AlertDialog
-        open={confirmOpen}
+        open={setupWritable && confirmOpen}
         onOpenChange={(v) => {
           if (!v && !disconnecting) setConfirmOpen(false);
         }}

@@ -168,10 +168,8 @@ services:
       ORVILO_LARK_HTTP_BASE_URL: ${ORVILO_LARK_HTTP_BASE_URL:-}
       ORVILO_LARK_CALLBACK_BASE_URL: ${ORVILO_LARK_CALLBACK_BASE_URL:-}
       # Slack bot integration. ORVILO_SLACK_SECRET_KEY is the opt-in: unset =
-      # integration disabled. It decrypts the per-installation bot/app tokens,
-      # which are brought by each workspace via OAuth/BYO and stored encrypted
-      # in the database, so this single deployment-wide key is all the operator
-      # needs to set here.
+      # integration disabled. It decrypts the per-installation bot/app tokens
+      # provisioned through the server-owned bootstrap values below.
       # The messaging bootstrap values are intentionally explicit environment
       # mappings. The operator-only setup script documents them as the secure
       # first-boot path; omitting them here would silently discard that config
@@ -186,6 +184,27 @@ services:
       SLACK_APP_ID: ${SLACK_APP_ID:-}
       SLACK_TEAM_ID: ${SLACK_TEAM_ID:-}
       SLACK_BOT_USER_ID: ${SLACK_BOT_USER_ID:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      ORVILO_TELEGRAM_SECRET_KEY: ${ORVILO_TELEGRAM_SECRET_KEY:-}
+      LARK_APP_ID: ${LARK_APP_ID:-}
+      LARK_APP_SECRET: ${LARK_APP_SECRET:-}
+      LARK_TENANT_KEY: ${LARK_TENANT_KEY:-}
+      LARK_BOT_OPEN_ID: ${LARK_BOT_OPEN_ID:-}
+      LARK_BOT_UNION_ID: ${LARK_BOT_UNION_ID:-}
+      LARK_REGION: ${LARK_REGION:-feishu}
+      DINGTALK_CLIENT_ID: ${DINGTALK_CLIENT_ID:-}
+      DINGTALK_CLIENT_SECRET: ${DINGTALK_CLIENT_SECRET:-}
+      DINGTALK_ROBOT_CODE: ${DINGTALK_ROBOT_CODE:-}
+      ORVILO_DINGTALK_SECRET_KEY: ${ORVILO_DINGTALK_SECRET_KEY:-}
+      WECOM_BOT_ID: ${WECOM_BOT_ID:-}
+      WECOM_SECRET: ${WECOM_SECRET:-}
+      WECOM_BOT_NAME: ${WECOM_BOT_NAME:-}
+      ORVILO_WEIXIN_SECRET_KEY: ${ORVILO_WEIXIN_SECRET_KEY:-}
+      WEIXIN_BOT_ID: ${WEIXIN_BOT_ID:-}
+      WEIXIN_ILINK_USER_ID: ${WEIXIN_ILINK_USER_ID:-}
+      WEIXIN_BOT_TOKEN: ${WEIXIN_BOT_TOKEN:-}
+      WEIXIN_BASE_URL: ${WEIXIN_BASE_URL:-}
       ORVILO_SLACK_SECRET_KEY: ${ORVILO_SLACK_SECRET_KEY:-}
       ORVILO_SLACK_SIGNING_SECRET: ${ORVILO_SLACK_SIGNING_SECRET:-}
       # Self-hosted Git provider integration (Forgejo / Gitea / GitLab). This
@@ -208,7 +227,7 @@ services:
       # opt-in: unset = integration disabled. It encrypts each installation's
       # smart-bot secret at rest. The server needs it to unseal a bot's
       # subscribe credentials at connection time, and to seal the secret when
-      # an installation is created from the WeCom settings tab.
+      # an installation is provisioned by the server bootstrap.
       ORVILO_WECOM_SECRET_KEY: ${ORVILO_WECOM_SECRET_KEY:-}
       # Comma-separated ranges the inbound media fetcher may dial even though
       # they look reserved. Empty (the default) keeps the SSRF guard as strict

@@ -48,6 +48,7 @@ import { IntegrationSetupGuide } from "./integration-setup-guide";
 import { LarkAgentBindButton, LarkTab } from "./lark-tab";
 import { LinearIntegrationCard } from "./linear-tab";
 import { MessagingConnectionStatus } from "./messaging-connection-status";
+import { MessagingSetupNotice, useMessagingSetupWritable } from "./messaging-setup-policy";
 import { SettingsSection, SettingsTab } from "./settings-layout";
 import { SlackAgentBindButton, SlackTab } from "./slack-tab";
 import { TelegramAgentBindButton, TelegramTab } from "./telegram-tab";
@@ -65,6 +66,7 @@ type InstallationSummary = MessagingConnectionSource & {
 type InstallationListing = {
   configured: boolean;
   install_supported?: boolean;
+  managed_supported?: boolean;
   installations: readonly InstallationSummary[];
 };
 
@@ -151,36 +153,13 @@ function ChannelStatus({ query }: { query: IntegrationQuery }) {
   );
 }
 
-function ChannelAction({
-  canManage,
-  isGuest,
+function ChannelActionMenu({
+  actionLabel,
   onOpen,
-  query,
-  setupWritable,
 }: {
-  canManage: boolean;
-  isGuest: boolean;
+  actionLabel: string;
   onOpen: () => void;
-  query: IntegrationQuery;
-  setupWritable: boolean;
 }) {
-  const { t } = useT("settings");
-  if (isGuest) {
-    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_login_required)}</span>;
-  }
-  if (!setupWritable) {
-    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_server_managed)}</span>;
-  }
-  if (!canManage) {
-    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_admin_only)}</span>;
-  }
-  if (query.isLoading || query.isError || !query.data) {
-    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_unavailable)}</span>;
-  }
-  const connected = Boolean(installedRecord(query.data));
-  const actionLabel = connected
-    ? t(($) => $.page.integrations_manage)
-    : t(($) => $.page.integrations_configure);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -207,6 +186,61 @@ function ChannelAction({
   );
 }
 
+function ChannelAction({
+  canManage,
+  isGuest,
+  onOpen,
+  query,
+  setupWritable,
+}: {
+  canManage: boolean;
+  isGuest: boolean;
+  onOpen: () => void;
+  query: IntegrationQuery;
+  setupWritable: boolean;
+}) {
+  const { t } = useT("settings");
+  if (isGuest) {
+    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_login_required)}</span>;
+  }
+  if (query.data?.installations.length) {
+    return (
+      <ChannelActionMenu
+        actionLabel={
+          canManage && setupWritable
+            ? t(($) => $.page.integrations_manage)
+            : t(($) => $.page.integrations_view_details)
+        }
+        onOpen={onOpen}
+      />
+    );
+  }
+  if (!setupWritable) {
+    return (
+      <ChannelActionMenu
+        actionLabel={t(($) => $.page.integrations_view_setup)}
+        onOpen={onOpen}
+      />
+    );
+  }
+  if (!canManage) {
+    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_admin_only)}</span>;
+  }
+  if (query.isLoading || query.isError || !query.data) {
+    return <span className="text-body text-muted-foreground">{t(($) => $.page.integrations_unavailable)}</span>;
+  }
+  return (
+    <ChannelActionMenu
+      actionLabel={
+        installedRecord(query.data)
+          ? t(($) => $.page.integrations_manage)
+          : t(($) => $.page.integrations_configure)
+      }
+      onOpen={onOpen}
+    />
+  );
+}
+
 export function IntegrationsTab({
   standalone = false,
 }: {
@@ -229,7 +263,7 @@ export function IntegrationsTab({
     BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
     false,
   );
-  const setupWritable = messaging?.setupWritable === true;
+  const setupWritable = useMessagingSetupWritable();
   const [managedChannel, setManagedChannel] = useState<MessagingChannel | null>(null);
 
   const lark = useQuery({ ...larkInstallationsOptions(wsId), enabled: !!wsId });
@@ -287,19 +321,20 @@ export function IntegrationsTab({
 
   function managedContent(channel: MessagingChannel) {
     const listing = listings[channel].data;
-    if (installedRecord(listing)) {
-      return {
-        lark: <LarkTab />,
-        slack: <SlackTab />,
-        dingtalk: <DingTalkTab />,
-        wecom: <WecomTab />,
-        telegram: <TelegramTab />,
-        weixin: <WeixinTab />,
-      }[channel];
-    }
-    if (channel === "slack" && messaging?.mode === "managed") {
-      return <SlackTab />;
-    }
+    const hasInstallations = (listing?.installations.length ?? 0) > 0;
+    const hasWorkspaceHub = !!installedWorkspaceHub(listing);
+    const slackOAuth = channel === "slack" && listing?.managed_supported === true;
+    const canStartSetup = setupWritable && canManage && !isGuest && !hasWorkspaceHub;
+    const installSupported = listing?.configured === true &&
+      (slackOAuth || listing.install_supported === true) && !listings[channel].isError;
+    const platformDetails = {
+      lark: <LarkTab />,
+      slack: <SlackTab />,
+      dingtalk: <DingTalkTab />,
+      wecom: <WecomTab />,
+      telegram: <TelegramTab />,
+      weixin: <WeixinTab />,
+    }[channel];
     const installAction = {
       lark: <LarkAgentBindButton />,
       slack: <SlackAgentBindButton />,
@@ -310,11 +345,16 @@ export function IntegrationsTab({
     }[channel];
     return (
       <div className="space-y-5">
-        <IntegrationSetupGuide
-          channel={channel}
-          managed={messaging?.mode === "managed"}
-        />
-        {installAction}
+        {!setupWritable && !hasInstallations && <MessagingSetupNotice />}
+        {canStartSetup && (
+          <>
+            <IntegrationSetupGuide channel={channel} managed={slackOAuth} />
+            {installSupported
+              ? slackOAuth ? platformDetails : installAction
+              : <MessagingSetupNotice />}
+          </>
+        )}
+        {hasInstallations && !(canStartSetup && installSupported && slackOAuth) && platformDetails}
       </div>
     );
   }
@@ -474,7 +514,9 @@ export function IntegrationsTab({
           <DialogHeader>
             <DialogTitle>
               {managedChannel && installedRecord(listings[managedChannel].data)
-                ? t(($) => $.page.integrations_manage)
+                ? canManage && setupWritable
+                  ? t(($) => $.page.integrations_manage)
+                  : t(($) => $.page.integrations_view_details)
                 : t(($) => $.page.integrations_setup_title)}
             </DialogTitle>
           </DialogHeader>

@@ -11,6 +11,9 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 连接 Bot
 
+下文的 App 安装和断开步骤适用于 Orvilo Cloud。自托管部署请使用
+[飞书服务器配置步骤](/self-host-messaging#飞书)。
+
 智能体的所有者、工作区 owner 和 admin 可以发起连接：
 
 1. 打开 **智能体**，选择要接入飞书的智能体。
@@ -64,25 +67,15 @@ Safari 登录成功后仍然停留在登录页。
 
 ## 自托管配置
 
-Orvilo Cloud 无需额外配置。自托管部署需要先设置一个用于加密 Bot 凭据的密钥：
-
-```dotenv
-ORVILO_LARK_SECRET_KEY=<base64 编码的 32 字节密钥>
-```
-
-可以这样生成：
-
-```bash
-openssl rand -base64 32
-```
-
-重启 API 服务后，再从智能体的 **集成** 页面连接 Bot。该密钥需要长期保存：更换或丢失后，已有凭据无法解密，需要重新连接。
+按[飞书服务器配置步骤](/self-host-messaging#飞书)创建平台应用，配置应用凭据和
+`ORVILO_LARK_SECRET_KEY`，再由服务器导入连接。加密密钥需长期保留。
+在 `server_configured` 模式下，App 展示状态和身份绑定流程；平台授权和断开连接由服务器端管理。
 
 `ORVILO_LARK_HTTP_BASE_URL` 和 `ORVILO_LARK_CALLBACK_BASE_URL` 只用于代理、测试等特殊部署，正常情况下不需要设置。
 
 ## 常见问题
 
-- **没有绑定按钮**：确认当前账号是智能体所有者、工作区 owner 或 admin，并检查自托管密钥是否已配置。
+- **没有绑定按钮**：Orvilo Cloud 用户需确认当前账号是智能体所有者、工作区 owner 或 admin；自托管部署使用上面的服务器配置步骤。
 - **二维码失效**：关闭弹窗后重新发起连接。
 - **Bot 要求绑定账号**：打开绑定链接并使用该工作区的 Orvilo 账号登录。
 - **Bot 不执行**：检查智能体是否已归档，以及它使用的[运行时](/daemon-runtimes)是否在线。

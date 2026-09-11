@@ -54,7 +54,8 @@ var (
 // available. A memory fallback remains in place for local/single-process
 // deployments and for a transient Redis outage; the cap and TTL are the same
 // in both stores.
-func ConfigureSessionStore(client redis.UniversalClient) {
+// Keep the optional startup client concrete so a nil pointer stays nil here.
+func ConfigureSessionStore(client *redis.Client) {
 	storeMu.Lock()
 	defer storeMu.Unlock()
 	if client == nil {

@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "@orvilo/core/i18n/react";
+import { configStore } from "@orvilo/core/config";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -173,7 +174,34 @@ function StrictModeWrapper({ children }: { children: ReactNode }) {
   );
 }
 
+describe("Lark deployment setup policy", () => {
+  beforeEach(resetFixtures);
+
+  it.each(["server_configured", "disabled"] as const)("keeps %s credential lifecycle read-only", (mode) => {
+    configStore.getState().setMessagingConfig({ mode, setupWritable: true, platforms: [] });
+    const entry = render(<LarkAgentBindButton agentId="agent-1" />, { wrapper: I18nWrapper });
+    expect(screen.queryByTestId("lark-agent-bind-feishu")).toBeNull();
+    expect(mockBeginInstall).not.toHaveBeenCalled();
+    entry.unmount();
+
+    installationsRef.current = {
+      configured: false,
+      install_supported: true,
+      installations: [{
+        id: "existing-installation", agent_id: "agent-1", status: "installed",
+        installed_at: "2026-09-10T00:00:00Z", region: "feishu",
+        app_id: "app-1", team_id: "team-1", bot_id: "bot-1",
+      }],
+    };
+    render(<><LarkAgentBindButton agentId="agent-1" /><LarkTab /></>, { wrapper: I18nWrapper });
+    expect(screen.getAllByRole("status", { name: "Connection status" })).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: /disconnect/i })).toBeNull();
+    expect(mockDeleteInstallation).not.toHaveBeenCalled();
+  });
+});
+
 function resetFixtures() {
+  configStore.getState().setMessagingConfig({ mode: "managed", setupWritable: true, platforms: [] });
   vi.clearAllMocks();
   membersRef.current = [{ user_id: "user-1", role: "owner" }];
   installationsRef.current = {

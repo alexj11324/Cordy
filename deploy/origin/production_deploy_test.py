@@ -1,7 +1,9 @@
+import base64
 import importlib.util
 import io
 import json
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -143,7 +145,10 @@ class ProductionDeployContractTests(unittest.TestCase):
                 {"CLERK_PUBLISHABLE_KEY": "pk_live_fixture"},
             )
 
-            self.assertEqual(deployment.check()["action"], "check")
+            with mock.patch.object(
+                production_deploy, "run", return_value=base64.b64encode(b"k" * 32).decode()
+            ):
+                self.assertEqual(deployment.check()["action"], "check")
 
     def test_web_runtime_reuses_the_broker_publishable_key(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -158,10 +163,116 @@ class ProductionDeployContractTests(unittest.TestCase):
                 {"CLERK_PUBLISHABLE_KEY": " pk_live_fixture "},
             )
 
-            product_env, broker_env = deployment.deployment_environment(self.manifest())
+            with mock.patch.object(
+                production_deploy, "run", return_value=base64.b64encode(b"k" * 32).decode()
+            ):
+                product_env, broker_env = deployment.deployment_environment(self.manifest())
 
             self.assertEqual(product_env["ORVILO_CLERK_PUBLISHABLE_KEY"], "pk_live_fixture")
             self.assertEqual(broker_env["CLERK_PUBLISHABLE_KEY"], " pk_live_fixture ")
+
+    def test_hosted_messaging_keys_override_empty_snapshots_without_persisting(self):
+        expected = {
+            "ORVILO_LARK_SECRET_KEY": "orvilo-lark-secret-key",
+            "ORVILO_DINGTALK_SECRET_KEY": "orvilo-dingtalk-secret-key",
+            "ORVILO_WECOM_SECRET_KEY": "orvilo-wecom-secret-key",
+            "ORVILO_TELEGRAM_SECRET_KEY": "orvilo-telegram-secret-key",
+            "ORVILO_WEIXIN_SECRET_KEY": "orvilo-weixin-secret-key",
+        }
+        values = {
+            secret: base64.b64encode(bytes([index]) * 32).decode()
+            for index, secret in enumerate(expected.values(), 1)
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            product = {
+                "ORVILO_MESSAGING_MODE": "server_configured",
+                "ORVILO_LARK_SECRET_KEY": "",
+                "ORVILO_WECOM_SECRET_KEY": "",
+                "ORVILO_SLACK_SECRET_KEY": "existing-slack-key",
+            }
+            snapshot = deployment.secrets / "product-env.json"
+            deployment.atomic_json(snapshot, product)
+            deployment.atomic_json(
+                deployment.secrets / "auth-broker-env.json",
+                {"CLERK_PUBLISHABLE_KEY": "pk_live_fixture"},
+            )
+            before = snapshot.read_bytes()
+
+            def read_secret(arguments, *, capture):
+                self.assertTrue(capture)
+                self.assertEqual(arguments[:4], ["gcloud", "secrets", "versions", "access"])
+                self.assertEqual(arguments[4:7], ["1", "--project", "general-secrets-store"])
+                self.assertEqual(arguments[7], "--secret")
+                return values[arguments[8]]
+
+            with mock.patch.object(production_deploy, "run", side_effect=read_secret):
+                product_env, _ = deployment.deployment_environment(self.manifest())
+
+            for name, secret in expected.items():
+                self.assertEqual(product_env.get(name), values[secret])
+            self.assertEqual(product_env["ORVILO_SLACK_SECRET_KEY"], "existing-slack-key")
+            self.assertEqual(snapshot.read_bytes(), before)
+
+    def test_messaging_disabled_does_not_require_gsm(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            deployment.atomic_json(
+                deployment.secrets / "product-env.json",
+                {"ORVILO_MESSAGING_MODE": " disabled ", "ORVILO_SLACK_SECRET_KEY": "existing"},
+            )
+            deployment.atomic_json(
+                deployment.secrets / "auth-broker-env.json",
+                {"CLERK_PUBLISHABLE_KEY": "pk_live_fixture"},
+            )
+            with mock.patch.object(production_deploy, "run") as run:
+                product_env, _ = deployment.deployment_environment(self.manifest())
+            run.assert_not_called()
+            self.assertEqual(product_env["ORVILO_SLACK_SECRET_KEY"], "existing")
+
+    def test_invalid_messaging_key_stops_before_container_changes(self):
+        for invalid in ("not-a-base64-key", base64.b64encode(b"short").decode()):
+            with self.subTest(invalid=invalid), tempfile.TemporaryDirectory() as directory:
+                deployment = production_deploy.ProductionDeployment(Path(directory))
+                deployment.initialize_directories()
+                deployment.atomic_json(deployment.secrets / "product-env.json", {})
+                deployment.atomic_json(
+                    deployment.secrets / "auth-broker-env.json",
+                    {"CLERK_PUBLISHABLE_KEY": "pk_live_fixture"},
+                )
+                deployment.checkout = mock.Mock(return_value=Path(directory) / "release")
+                deployment.compose = mock.Mock()
+                deployment.probe = mock.Mock()
+                with mock.patch.object(production_deploy, "run", return_value=invalid) as run:
+                    with self.assertRaises(production_deploy.DeploymentError) as caught:
+                        deployment.apply(self.manifest())
+                self.assertNotIn(invalid, str(caught.exception))
+                self.assertTrue(all(call.args[0][0] == "gcloud" for call in run.call_args_list))
+                deployment.compose.assert_not_called()
+
+    def test_unavailable_messaging_key_has_no_secret_output_or_container_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            deployment.atomic_json(deployment.secrets / "product-env.json", {})
+            deployment.atomic_json(
+                deployment.secrets / "auth-broker-env.json",
+                {"CLERK_PUBLISHABLE_KEY": "pk_live_fixture"},
+            )
+            deployment.checkout = mock.Mock(return_value=Path(directory) / "release")
+            deployment.compose = mock.Mock()
+            deployment.probe = mock.Mock()
+            error = subprocess.CalledProcessError(
+                1, ["gcloud"], output="secret-output", stderr="secret-error"
+            )
+            with mock.patch.object(production_deploy, "run", side_effect=error):
+                with self.assertRaises(production_deploy.DeploymentError) as caught:
+                    deployment.apply(self.manifest())
+            self.assertNotIn("secret-output", str(caught.exception))
+            self.assertNotIn("secret-error", str(caught.exception))
+            deployment.compose.assert_not_called()
 
     def test_receipt_payload_is_json_serializable(self):
         self.assertEqual(json.loads(json.dumps(self.manifest()))["schema_version"], 1)

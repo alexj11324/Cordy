@@ -1,86 +1,248 @@
 ---
 title: 自托管消息
-description: 在自托管部署中运行 Slack 消息：BYO Socket Mode 配置、托管 OAuth 说明、localhost 坑点和凭据处理。
+description: 在自己的 Orvilo 服务器配置飞书、Slack、钉钉、企业微信、Telegram 和微信。
 ---
 
-import { Callout } from "fumadocs-ui/components/callout";
+自托管消息由服务器运维人员配置。在 `server_configured` 模式下，Orvilo App
+展示连接状态、当前用户有权使用的路由控制和身份绑定流程。凭据、平台授权和断开连接
+均由服务器端管理。
 
-自托管部署通过自备应用（BYO）Socket Mode 接入 Slack：每个智能体对应一个 Slack app，Orvilo 为每个已连接 app 各维护一条 Socket Mode 连接。Orvilo Cloud 无需额外配置；自托管部署需要先设置 token 加密密钥和成员可达的公网地址。
+本指南覆盖飞书、Slack、钉钉、企业微信、Telegram 和个人微信。
+**微信目前仅支持文字私聊**，不支持群消息和媒体。
 
-本页是 [Slack Bot 集成](/slack-bot-integration) 和 [聊天集成](/channels) 的自托管配套说明。容器搭建与升级见 [自托管快速上手](/self-host-quickstart)，完整变量说明见 [环境变量](/environment-variables)。
+## 1. 准备部署
 
-## 自托管 Slack 的工作方式
+先完成[自托管快速上手](/self-host-quickstart)，登录并创建工作区。以下命令在服务器的
+仓库根目录执行。仓库与 backend 镜像应来自同一版本。微信命令要求镜像包含
+`/app/orvilo-messaging`；验证当前源码时使用 `make selfhost-build`。
 
-- 一个 Slack app 对应一个 Orvilo 智能体。需要接入多个智能体时，为每个智能体分别创建 app。
-- Bot 使用 Socket Mode 主动连接 Slack，BYO 安装不需要配置公网 Request URL 或 OAuth Redirect URL。
-- 每个安装都携带自己的 App-level Token（`xapp-`），并拥有只用该 token 鉴权的独立 Socket Mode 连接。Bot token（`xoxb-`）只用于 `chat.postMessage` 这类出站 Web API 调用。
-- 入站事件按真实 Slack app id 路由（`config->>'app_id'`，与事件中的 `api_app_id` 比对），因此多个 BYO app，也就是多个智能体，可以共存于同一个 Slack workspace。
+在部署原有的 `.env` 中配置公网 HTTPS 地址：
 
-管理接口只有四个：
+```dotenv
+FRONTEND_ORIGIN=https://app.example.com
+ORVILO_APP_URL=https://app.example.com
+ORVILO_PUBLIC_URL=https://api.example.com
+```
 
-- `GET /api/workspaces/{id}/slack/installations` —— 查看安装列表，成员可见。
-- `POST /api/workspaces/{id}/slack/install/byo?agent_id=…` —— 连接 BYO app，需要 owner 或 admin。请求体：`{ "bot_token": "xoxb-…", "app_token": "xapp-…" }`。
-- `DELETE /api/workspaces/{id}/slack/installations/{installationId}` —— 断开连接，需要 owner 或 admin。数据行会保留用于审计，重新连接会将其翻回 active。
-- `POST /api/slack/binding/redeem` —— 从"绑定账号"提示进入，把 Slack 用户 id 绑定到当前登录的 Orvilo 用户。
+把示例域名换成自己的域名。手机和 IM 用户必须能访问 App 地址。保留快速上手中的
+HTTPS 反向代理和 WebSocket 转发；跨设备身份绑定不能使用 localhost 或私网地址。
+服务器还需要能主动连接所启用的平台。
 
-仅托管部署可用（没有 `ORVILO_SLACK_CLIENT_ID/_SECRET` 时保持惰性）：
+生成独立的消息配置模板：
 
-- `POST /api/workspaces/{id}/slack/install/managed` —— 发起托管 OAuth 授权（owner/admin）。Body：`{ "redirect_url": "…" }`。
-- `GET /api/integrations/slack/oauth/callback` —— 公开的 Slack 跳转落点；消费一次性 state、交换 code，然后 302 到绑定的 redirect URL。
-- `POST /api/integrations/slack/events` —— 公开的托管 Events API webhook（HMAC 签名，按 app + team 路由租户）。托管安装没有 Socket Mode 连接：这是它唯一的入站，Supervisor 只驻留它的槽位而不拨号。
-- `POST /api/integrations/slack/commands` —— 公开的托管 slash-command webhook（签名机制相同；因为没有 Socket Mode envelope，防重放靠 `trigger_id` 声明）。
+```bash
+scripts/messaging-self-host-setup.sh init \
+  --app-url https://app.example.com \
+  --api-url https://api.example.com \
+  --env-file .env.messaging
+```
 
-## 1. BYO Socket Mode 部署
+脚本创建权限为 `0600` 的文件。通过部署的秘密存储或服务器编辑器填写，保留权限，
+不要提交到仓库。保留原有 `.env`，Compose 仍需要其中的数据库和登录配置。
 
-1. 先设置 `ORVILO_SLACK_SECRET_KEY`（见[凭据处理](#4-凭据处理)）并重启后端。没有它，Slack 集成完全不会启用。
-2. 按 [Slack Bot 集成](/slack-bot-integration) 中的 manifest 为每个智能体创建一个 Slack app，安装到 Slack workspace，然后复制 `xoxb-` Bot token 和 `xapp-` App-level Token（需要 `connections:write` scope）。
-3. 在 Orvilo 中打开该智能体的**集成**页面并填入两个 token，也可以直接调用 `POST .../slack/install/byo?agent_id=…`。
-4. Orvilo 在落库前会验证这对 token：
-   - Bot token 必须以 `xoxb-` 开头，并通过实时 `auth.test` 校验（同时拿到 team id 和 Bot 用户 id）；
-   - App-level Token 必须以 `xapp-` 开头、能解析出 app id，并通过实时 `apps.connections.open` 校验，不会存入永远收不到事件的 token；
-   - 两个 token 必须属于同一个 Slack app（用 `auth.test` 返回的 bot id 查 `bots.info` 比对）。配对不一致直接返回 `400`，不会连上一个坏掉的状态。
-5. 一个智能体只能连一个 Bot：安装数据行按工作区 + 智能体组织。重连同一智能体会原地更新该行。已在别处连接过的 Slack app 会返回 `409` 拒绝，先去原智能体或原工作区断开（如果所属智能体已归档，先恢复或断开它的 Bot）。
+## 2. 选择工作区和密钥
 
-## 2. 托管 OAuth 回调说明
+使用登录到此部署的 [Orvilo CLI](/cli) 查询完整 UUID：
 
-Go 后端在 BYO 之外还带有一个托管（managed）OAuth 服务（`server/internal/integrations/slack/managed_oauth.go`）。它管理一次性、10 分钟有效、只存哈希的安装 state，入库的只有 state 哈希，并在 `https://slack.com/api/oauth.v2.access` 完成 code 交换。安装者访问 `https://slack.com/oauth/v2/authorize`，scope 为 `ManagedSlackBotScopes`（`app_mentions:read,channels:history,chat:write,commands,files:read,groups:history,im:history,mpim:history,reactions:write,users:read`）。没有托管客户端凭据时，交换会明确报错，不会半截运行。
+```bash
+orvilo --profile selfhost --server-url https://api.example.com login
+orvilo --profile selfhost workspace list --output json
+orvilo --profile selfhost workspace member list WORKSPACE_UUID --output json
+```
 
-自托管部署只走 BYO，不需要配置任何 OAuth 回调：Go 服务里虽有托管 begin/callback 路由，但在没有托管客户端凭据（`ORVILO_SLACK_CLIENT_ID/_SECRET`）时保持惰性；BYO 安装本身不做任何 OAuth code 交换。自托管安装不要在 app manifest 里加 Slack redirect URL，Socket Mode 不需要它。
+将 `WORKSPACE_UUID` 替换为所选工作区的 `id`。在 `.env.messaging` 中，将
+`ORVILO_MESSAGING_WORKSPACE_ID` 设为该 ID，将
+`ORVILO_MESSAGING_INSTALLER_USER_ID` 设为 owner/admin 成员的 `user_id`，
+不是成员记录本身的 `id`。
 
-## 3. localhost 绑定警告
+工作区连接的 `ORVILO_MESSAGING_AGENT_ID` 留空。若只连接一个 Agent，使用
+`orvilo --profile selfhost --workspace-id WORKSPACE_UUID agent list --output json`
+查询后填写该 Agent 的完整 UUID。此启动导入模板会为选定范围内的每个平台配置一个连接。
 
-<Callout type="warning">
-Docker Compose 把 `3000` 和 `8080` 只绑定在 `127.0.0.1` 上。不要把绑定改成 `0.0.0.0` 对外暴露；应在前面架带 HTTPS 的反向代理（例如 Caddy），再转发到 `127.0.0.1:3000` / `127.0.0.1:8080`。见[自托管快速上手](/self-host-quickstart#3-choose-how-to-access)。
-</Callout>
+为每个启用的平台分别生成加密密钥：
 
-消息链接能否正常工作，取决于两个 URL 设置：
+```bash
+openssl rand -base64 32
+```
 
-- 账号绑定链接使用 `ORVILO_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`，绝不是 `ORVILO_PUBLIC_URL`（后端/API 地址）。它必须指向所有成员都能访问的 Orvilo 地址，不能是 loopback 地址。
-- 自托管部署必须把 `FRONTEND_ORIGIN` 设为公网应用地址；邀请链接、cookie 属性、WebSocket 来源校验都从它推导。
+写入下文对应的 `ORVILO_*_SECRET_KEY`。更新既有连接时沿用原密钥；替换密钥会导致
+数据库中的已有凭据无法解密。未启用平台的密钥和凭据留空。
 
-如果绑定链接或 `/api/config` 的 `daemon_server_url` 仍然是 `localhost` 地址，说明 `.env` 还留着本地默认值：把 `FRONTEND_ORIGIN` 和 `ORVILO_APP_URL` 显式改成公网地址，然后用 `docker compose -f docker-compose.selfhost.yml up -d` 重建容器（只 `restart` 不会重读 `.env`）。
+修改 `.env.messaging` 后，在执行下文终端检查前导出变量。单独 `source` 不会导出
+新定义的变量：
 
-## 4. 凭据处理
+```bash
+set -a
+. ./.env.messaging
+set +a
+```
 
-- `ORVILO_SLACK_SECRET_KEY` 是 Slack 唯一的部署级密钥，为 base64 编码的 32 字节：
+下文的平台查询命令需要 `curl` 和 `jq`，只展示平台标识，不输出 token 值。
 
-  ```dotenv
-  ORVILO_SLACK_SECRET_KEY=<base64 编码的 32 字节密钥>
-  ```
+## 3. 配置平台
 
-  ```bash
-  openssl rand -base64 32
-  ```
+### Slack
 
-  安装服务要求加密盒非空，开发环境也不允许明文存 token。该密钥是整个集成的总开关：没有它就没有 Slack。
-- 两个 token 都用该密钥加密后存入安装配置（`xoxb-` 出站 token 存为 `bot_token_encrypted`，`xapp-` Socket Mode token 存为 `app_token_encrypted`），落盘形态为 base64 编码密文，绝不明文。API 响应会有意隐去加密后的 Bot token，只返回可展示字段（`app_id`、`team_id`、`bot_user_id`）。
-- 粘贴来的 token 即凭据：不要写进任务、评论或代码仓库。服务端在校验前会对两个值去首尾空格。
-- 该密钥需要长期保存：更换或丢失后，已存 token 无法解密，所有 Bot 都要重新连接。
-- 账号绑定 token 只能使用一次，15 分钟后过期；兑换时绑定的是会话中的 Orvilo 用户，而不是 token 里带的身份。只有工作区成员可以兑换。给 Bot 再发一条消息即可获得新链接。
+1. 运行 `scripts/messaging-self-host-setup.sh slack-manifest`。在
+   [Slack API Apps](https://api.slack.com/apps) 中选择 **Create New App → From a
+   manifest**，粘贴输出的 YAML。
+2. 将 app 安装到 Slack workspace，把 `xoxb-` Bot User OAuth Token 写入
+   `SLACK_BOT_TOKEN`。
+3. 在 **Basic Information → App-Level Tokens** 生成带 `connections:write`
+   权限的 `xapp-` token，写入 `SLACK_APP_TOKEN`，保持 Socket Mode 开启。
+   两个 token 必须属于同一个 app。
+4. 设置 `ORVILO_SLACK_SECRET_KEY`，按上文重新载入 `.env.messaging`，查询 Bot 身份：
 
-## 接下来
+```bash
+curl -fsS https://slack.com/api/auth.test \
+  -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+  | jq -e 'select(.ok == true) | {team_id, user_id}'
+```
 
-- [Slack Bot 集成](/slack-bot-integration) —— 创建 Slack app 并填入 token。
-- [聊天集成](/channels) —— 会话隔离和账号绑定机制。
-- [环境变量](/environment-variables) —— 服务端完整配置说明。
-- [自托管快速上手](/self-host-quickstart) —— 容器搭建与远程访问。
+把返回的 `team_id` 写入 `SLACK_TEAM_ID`，`user_id` 写入 `SLACK_BOT_USER_ID`。
+`SLACK_APP_ID` 可从 app 的 Basic Information 页面复制；启动导入也能从 app-level
+token 解析该值。仓库中的 manifest 包含 Orvilo 使用的消息事件和权限。
+自托管 Slack 使用服务器主动发起的 Socket Mode，不需要托管 OAuth 客户端凭据或回调地址。
+
+### 飞书
+
+1. 在[飞书开发者后台](https://open.feishu.cn/app)创建企业自建应用并启用**机器人**能力。
+   把 App ID、App Secret 写入 `LARK_APP_ID`、`LARK_APP_SECRET`，设置
+   `LARK_REGION=feishu` 和 `ORVILO_LARK_SECRET_KEY`。
+2. 为文字私聊和群内 @ 消息开启应用身份权限 `im:message.p2p_msg:readonly`、
+   `im:message.group_at_msg:readonly`、`im:message:send_as_bot`。参见飞书官方
+   [机器人配置步骤](https://open.feishu.cn/document/develop-an-echo-bot/faq?lang=zh-CN)。
+3. 重新载入 `.env.messaging`，用此应用自己的凭据查询机器人身份：
+
+```bash
+LARK_TENANT_ACCESS_TOKEN="$(
+  jq -n '{app_id: env.LARK_APP_ID, app_secret: env.LARK_APP_SECRET}' \
+    | curl -fsS https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal \
+        -H 'Content-Type: application/json' --data-binary @- \
+    | jq -er 'select(.code == 0) | .tenant_access_token'
+)"
+curl -fsS https://open.feishu.cn/open-apis/bot/v3/info \
+  -H "Authorization: Bearer ${LARK_TENANT_ACCESS_TOKEN}" \
+  | jq -e 'select(.code == 0) | {bot_open_id: .bot.open_id}'
+unset LARK_TENANT_ACCESS_TOKEN
+```
+
+把返回的 `bot_open_id` 写入 `LARK_BOT_OPEN_ID`。`LARK_TENANT_KEY` 和
+`LARK_BOT_UNION_ID` 是可选身份信息，已知时可填写。完成第 4 节的 backend 启动后，
+回到**事件与回调**，选择**使用长连接接收事件**并订阅 `im.message.receive_v1`。
+飞书保存此选项时要求已有运行中的长连接。发布应用，使目标成员可用，再发送一条私聊验证。
+这些步骤针对中国版飞书；托管 App 的国际版 Lark 新建入口仍未开放。
+
+### 钉钉
+
+1. 在[钉钉开发者后台](https://open-dev.dingtalk.com)创建企业内部应用，启用机器人，
+   将消息接收方式设为 **Stream 模式**。
+2. 开启机器人消息发送权限 `qyapi_robot_sendmsg`；添加 `qyapi_chat_manage` 以获取
+   Bot/群信息，并发布给需要使用的组织成员。
+3. 将 **Client ID / AppKey** 写入 `DINGTALK_CLIENT_ID`，**Client Secret /
+   AppSecret** 写入 `DINGTALK_CLIENT_SECRET`，设置 `ORVILO_DINGTALK_SECRET_KEY`。
+   如果控制台提供独立的 robot code，填写 `DINGTALK_ROBOT_CODE`；否则默认使用 client ID。
+
+### 企业微信
+
+1. 在[企业微信管理后台](https://work.weixin.qq.com/wework_admin/frame#apps)创建或编辑
+   智能机器人，开启 **API 模式 → 长连接**。
+2. 将 **BotID** 写入 `WECOM_BOT_ID`，长连接专用 **Secret** 写入 `WECOM_SECRET`。
+   这里使用智能机器人 Secret，不是 webhook 的 Token/EncodingAESKey 或应用 CorpSecret。
+3. 设置 `ORVILO_WECOM_SECRET_KEY`；`WECOM_BOT_NAME` 是可选显示名称。服务器连接
+   `wss://openws.work.weixin.qq.com`，详细配置见
+   [官方长连接指南](https://developer.work.weixin.qq.com/document/path/101463)。
+
+### Telegram
+
+1. 打开官方 [@BotFather](https://t.me/BotFather)，发送 `/newbot`，设置名称和用户名。
+   把返回的 HTTP API token 写入 `TELEGRAM_BOT_TOKEN`，设置
+   `ORVILO_TELEGRAM_SECRET_KEY`。
+2. 重新载入 `.env.messaging`，确认 Bot 身份并移除已有 webhook，使 Orvilo 可以轮询：
+
+```bash
+curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getMe" \
+  | jq -e 'select(.ok == true) | .result | {id, username}'
+curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/deleteWebhook" \
+  --data 'drop_pending_updates=false' \
+  | jq -e 'select(.ok == true) | {ok, description}'
+```
+
+将返回的 username 写入 `TELEGRAM_BOT_USERNAME`。启动 Orvilo 前停止其他轮询此 Bot
+的程序；Telegram 不允许 webhook 与轮询同时运行，也不允许多个程序争用同一个轮询流。
+
+### 微信
+
+设置 `ORVILO_WEIXIN_SECRET_KEY` 以及第 2 节的工作区/安装者范围，并按下文启动
+backend。手机需要登录个人微信；不需要企业微信组织或开发者 AppID。
+
+在自己的服务器运行运维命令：
+
+```bash
+docker compose --env-file .env --env-file .env.messaging \
+  -f docker-compose.selfhost.yml exec backend \
+  /app/orvilo-messaging weixin-auth
+```
+
+用微信扫描终端中的二维码并确认授权。微信要求验证码时，在终端提示处输入。
+保持命令运行，直到它报告安装 ID。命令使用 backend 当前配置的数据库与加密密钥，
+处理支持的区域跳转，并将授权后的 iLink 凭据加密写入数据库，不输出 Bot token。
+
+此命令仅在 `server_configured` 模式可用。可用非密钥参数 `--workspace-id`、
+`--installer-user-id`、`--agent-id` 覆盖对应环境值。二维码过期后重新运行命令获取新码。
+Ctrl-C 可取消本次操作；在验证码提示处关闭输入也会取消。
+
+模板中的 `WEIXIN_BOT_ID`、`WEIXIN_ILINK_USER_ID`、`WEIXIN_BOT_TOKEN` 和可选
+`WEIXIN_BASE_URL` 用于导入运维人员已通过合法 iLink 授权取得的凭据。使用
+`weixin-auth` 时将这些字段留空；此命令无需导入，也不要求
+`ORVILO_MESSAGING_BOOTSTRAP=true`。仅填写变量名称不会授权微信账号。
+
+## 4. 载入配置并检查
+
+要在启动时导入其他五个平台的 token/app 配置，在 `.env.messaging` 中设置
+`ORVILO_MESSAGING_BOOTSTRAP=true`。仅使用微信运维扫码命令时保持 `false`。
+重新载入文件并检查部署配置：
+
+```bash
+set -a
+. ./.env.messaging
+set +a
+scripts/messaging-self-host-setup.sh check
+docker compose --env-file .env --env-file .env.messaging \
+  -f docker-compose.selfhost.yml up -d backend frontend
+```
+
+后续 Compose 命令也要传入这两个 env 文件。消息文件覆盖同名基础值；需要保留的已有
+平台凭据和加密密钥也应保留在配置中。`up -d` 会重建配置发生变化的服务；`restart`
+不会重新读取环境。`deploy/messaging/manifest.yaml` 说明变量名称，服务器实际读取
+注入的环境变量，不直接读取这份 YAML。
+
+`check` 检查部署参数，不验证平台授权。启动导入会加密凭据并创建或更新安装记录。
+存在安装记录本身不代表平台已接受凭据，也不代表消息连接已建立。
+
+## 5. 验证一次文字私聊
+
+1. 在自托管 App 打开 **IM → 查看详情**，确认工作区/Agent 连接和真实运行状态。
+   未连接时检查 backend 日志与平台侧应用配置。
+2. 从平台向 Bot 发送简短文字。若收到身份绑定链接，打开链接，登录此工作区，再发送文字。
+3. 确认文字进入 Orvilo 对话，且回复返回平台。Agent 执行还需要可用的电脑/运行时。
+   微信应使用文字私聊验证。
+
+运维人员可检查服务状态，以下命令不显示凭据：
+
+```bash
+curl -fsS https://api.example.com/readyz
+curl -fsS https://app.example.com/api/config | jq '.messaging'
+docker compose --env-file .env --env-file .env.messaging \
+  -f docker-compose.selfhost.yml logs --tail=100 backend
+```
+
+`/api/config` 应返回 `mode: server_configured`、`setupWritable: false`。
+App 的凭据生命周期接口会以 `server_managed_integration` 拒绝写入；既有身份绑定和
+当前用户有权使用的路由仍可操作。若要暂停所有消息，在配置中设置
+`ORVILO_MESSAGING_MODE=disabled` 并重建 backend。
+`ORVILO_MESSAGING_BOOTSTRAP=false` 只停止导入，不会断开已有连接。
+
+电脑离线时，服务器 PostgreSQL 中的安装记录、IM 会话和消息仍会保留。电脑保存自己的
+Agent 会话和执行文件；换一台电脑登录不需要重新绑定 IM 身份。自托管消息不消耗
+Orvilo Cloud 托管 IM 配额。
