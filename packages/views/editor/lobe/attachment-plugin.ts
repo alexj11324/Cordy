@@ -77,10 +77,13 @@ export function writeAttachmentMarkdown(
   if (!$isAttachmentNode(node)) return;
   if (node.status !== "uploaded") return;
 
-  // Escaped, never raw: the filename is user-controlled, and a `]` in it ends
-  // the label. `[report[final].pdf](…)` parses back as the label
-  // `report[final]` followed by literal text, which destroys the link and
-  // corrupts the draft on reload. Both TipTap writers escape the same way
+  // Escaped, never raw: the filename is user-controlled, and an UNBALANCED
+  // bracket in it breaks the parse-back. A stray `]` (`a]b.pdf`) collapses the
+  // whole construct to plain text with no link at all; an unclosed `[`
+  // (`report[final.pdf`) truncates the label and invents a link. BALANCED pairs
+  // (`report[final].pdf`) are legal in CommonMark link text and survive raw —
+  // which is why this targets the characters rather than the shape, and why a
+  // balanced sample proves nothing. Both TipTap writers escape the same way
   // (`extensions/index.ts` for the image alt, `extensions/file-card.tsx` for
   // the card), through this same helper — one rule, one implementation.
   const label = escapeMarkdownLabel(node.filename || "attachment");

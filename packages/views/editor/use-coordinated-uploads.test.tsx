@@ -211,7 +211,7 @@ describe("attachmentMarkdown", () => {
   function makeAttachment(overrides: Partial<Attachment> = {}): Attachment {
     return {
       id: "att-1",
-      filename: "report[final].pdf",
+      filename: "a]b.pdf",
       content_type: "application/pdf",
       url: "https://storage.example/raw",
       markdown_url: "https://cdn.example/durable",
@@ -219,20 +219,22 @@ describe("attachmentMarkdown", () => {
     } as Attachment;
   }
 
-  it("escapes the label in both branches", () => {
-    // A `]` in a filename ends the markdown label, so an unescaped
-    // `[report[final].pdf](…)` parses back as a label plus literal text and the
-    // draft is corrupt on reload. This function's string is handed to BOTH the
+  it("escapes an unbalanced bracket in both branches", () => {
+    // Unbalanced brackets are what break the parse-back: a stray `]` collapses
+    // the construct to plain text with no link, and an unclosed `[` truncates
+    // the label and invents a link. BALANCED pairs are legal in CommonMark link
+    // text and survive raw, so a `report[final].pdf` sample would pass with or
+    // without the escaping. This function's string is handed to BOTH the
     // in-editor settle and the persisted body (`deliverFinishedUpload`), and the
     // editor's own writers escape — so without this, one upload persists a
     // different spelling than the document shows.
     expect(attachmentMarkdown(makeAttachment())).toBe(
-      "[report\\[final\\].pdf](https://cdn.example/durable)",
+      "[a\\]b.pdf](https://cdn.example/durable)",
     );
     expect(
       attachmentMarkdown(
-        makeAttachment({ filename: "diagram[1].png", content_type: "image/png" }),
+        makeAttachment({ filename: "report[final.pdf", content_type: "image/png" }),
       ),
-    ).toBe("![diagram\\[1\\].png](https://cdn.example/durable)");
+    ).toBe("![report\\[final.pdf](https://cdn.example/durable)");
   });
 });
