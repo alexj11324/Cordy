@@ -192,11 +192,14 @@ export function __liveEditorRegistryKeysForTest(): string[] {
 
 /** Markdown for a finished upload. Mirrors the shape the in-editor swap
  *  produces (`extensions/file-upload.ts`: image node for images, fileCard link
- *  for everything else) — keep the two in sync, the label escaping included.
- *  The editor's own writers escape through `escapeMarkdownLabel`, and
- *  `deliverFinishedUpload` hands THIS string to both the in-editor settle and
- *  the persisted body, so an unescaped label here would let one upload persist
- *  a different spelling than the document shows. */
+ *  for everything else), and escapes its label through the same
+ *  `escapeMarkdownLabel` those writers use — the escaping RULE is shared, so a
+ *  filename cannot corrupt this string either. That is not a claim the two
+ *  outputs are identical for every input: an empty filename yields
+ *  `[attachment](…)` from the writers and `[](…)` here, and both spellings are
+ *  valid markdown. `deliverFinishedUpload` hands THIS string to both the
+ *  in-editor settle and the persisted body, so an unescaped label here would
+ *  let one upload persist a different spelling than the document shows. */
 export function attachmentMarkdown(att: Attachment): string {
   const link = toUploadResult(att).markdownLink;
   const label = escapeMarkdownLabel(att.filename);
