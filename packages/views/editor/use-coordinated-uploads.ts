@@ -89,9 +89,11 @@ const EMPTY_ATTACHMENTS: Attachment[] = [];
 export interface CoordinatedUploadEditor {
   /**
    * Append a markdown fragment to the end of the document (parsed, not raw
-   * text), firing the normal update pipeline. False while the kernel is not up
-   * — the caller then falls back to the persisted draft rather than assuming
-   * the fragment landed.
+   * text), firing the normal update pipeline. False while the kernel is not up.
+   * Most callers hold a binding and fall back to the persisted draft; the
+   * pasted-text recovery path has nowhere else to put the text and drops it
+   * (see `deliverPastedTextBack`), so a second kernel's report is not optional
+   * bookkeeping there.
    */
   insertMarkdownAtEnd: (markdown: string) => boolean;
   /**
@@ -106,6 +108,12 @@ export interface CoordinatedUploadEditor {
    * Must be IDEMPOTENT per `uploadId`: the engine retries until this reports
    * success, so an implementation that draws a second placeholder for an id it
    * already drew turns one retried call into two nodes.
+   *
+   * The id is the engine's `clientUploadId` — the one the editor mints at pick
+   * time and hands to `handleUpload`, which adopts it as the draft record's id.
+   * That shared id is what lets the settle that follows find this node again,
+   * including from a mount that did not start the upload: draw the placeholder
+   * under a different id and the finished attachment has nothing to replace.
    */
   insertUploadPlaceholder: (upload: {
     uploadId: string;

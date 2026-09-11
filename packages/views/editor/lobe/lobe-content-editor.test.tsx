@@ -179,6 +179,41 @@ describe("LobeContentEditor", () => {
     expect(ref.current!.hasActiveUploads()).toBe(false);
   });
 
+  it("re-decides the node kind from the server's content type when settling", async () => {
+    // A reopened composer draws its placeholder from a filename alone
+    // (`insertAttachmentPlaceholder` always draws a card, kind "file"), so the
+    // kind it starts with is a guess. `AttachmentNode.setUploaded` says the
+    // server — not the file extension — decides what an attachment actually
+    // is, and the TipTap kernel re-decides on settle too
+    // (`extensions/file-upload.ts`). Letting the guess stand here is how the
+    // two kernels quietly disagree about what arrived, with no type able to
+    // see it.
+    const { ref } = renderEditor();
+
+    await waitFor(() => {
+      expect(
+        ref.current?.insertUploadPlaceholder({
+          uploadId: "upload-1",
+          filename: "clip.mp4",
+        }),
+      ).toBe(true);
+    });
+
+    expect(
+      ref.current!.settleUploadPlaceholder(
+        "upload-1",
+        makeUploadResult({ content_type: "image/png" }),
+      ),
+    ).toBe(true);
+
+    // The image form, not the link form the drawn-as-file card would write.
+    await waitFor(() => {
+      expect(ref.current!.getMarkdown()).toContain(
+        "![clip.mp4](https://cdn.example/durable.png)",
+      );
+    });
+  });
+
   it("drops the card when the upload fails, and stops gating", async () => {
     const onUploadFile = vi.fn(() => Promise.reject(new Error("network down")));
     const { ref, container } = renderEditor({ onUploadFile });

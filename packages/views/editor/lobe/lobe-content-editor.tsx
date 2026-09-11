@@ -111,9 +111,12 @@ export interface LobeContentEditorHandle {
    * two decisions drift — which is how a host ends up handing this a value
    * whose `href` was never populated.
    *
-   * `kind` is deliberately left unset: a node that already exists was drawn
-   * from the file's MIME type when it was picked, and `toSettleResult` only
-   * re-decides when a caller knows better.
+   * The kind IS re-decided here, from the server's `content_type` rather than
+   * from the filename the placeholder was drawn with: a reopened composer only
+   * had the filename, and the server decides what an attachment actually is
+   * (see `AttachmentNode.setUploaded`, which is where that rule is written
+   * down). The TipTap kernel settles the same way, so neither kernel can
+   * disagree with the other about what arrived.
    */
   settleUploadPlaceholder: (uploadId: string, result: UploadResultLike) => boolean;
   uploadFile: (file: File) => void;
@@ -493,9 +496,15 @@ function LobeContentEditorInner({
       },
       settleUploadPlaceholder: (uploadId, result) => {
         const lexical = editor.getLexicalEditor();
-        return lexical
-          ? settleAttachment(lexical, uploadId, toSettleResult(result))
-          : false;
+        if (!lexical) return false;
+        // Re-decide the kind from the SERVER's content type. The placeholder
+        // was drawn from a filename — all a reopened composer had — so letting
+        // the pick-time guess stand here would contradict
+        // `AttachmentNode.setUploaded` and the TipTap kernel's settle.
+        const kind = (result.content_type ?? "").startsWith("image/")
+          ? "image"
+          : "file";
+        return settleAttachment(lexical, uploadId, toSettleResult(result, kind));
       },
       uploadFile,
     }),
