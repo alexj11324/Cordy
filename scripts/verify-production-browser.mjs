@@ -370,12 +370,13 @@ async function verifyAuthenticatedProduct(browser, sourceSha, auth) {
     const authShell = publicPage.getByTestId("auth-shell");
     const formPanel = authShell.locator(":scope > section");
     const brandPanel = publicPage.getByTestId("auth-brand-panel");
-    await expect(authShell).toHaveClass(/\bbg-zinc-950\b/u);
+    await expect(authShell).toHaveClass(/\bdark\b/u);
+    await expect(authShell).toHaveClass(/\bbg-background\b/u);
     await expect(authShell).toHaveClass(/\bmd:grid-cols-2\b/u);
     await expect(formPanel).toBeVisible();
-    await expect(formPanel).toHaveClass(/\bbg-zinc-950\b/u);
+    await expect(formPanel).toHaveClass(/\bbg-background\b/u);
     await expect(brandPanel).toBeVisible();
-    await expect(brandPanel).toHaveClass(/\bbg-zinc-950\b/u);
+    await expect(brandPanel).toHaveClass(/\bbg-card\b/u);
 
     const [shellBox, formBox, brandBox] = await Promise.all([
       authShell.boundingBox(),
@@ -384,7 +385,7 @@ async function verifyAuthenticatedProduct(browser, sourceSha, auth) {
     ]);
     assert.ok(shellBox, "split login shell must have a rendered box");
     assert.ok(formBox, "custom login form panel must have a rendered box");
-    assert.ok(brandBox, "black login brand panel must have a rendered box");
+    assert.ok(brandBox, "login brand panel must have a rendered box");
     assert.ok(
       formBox.width >= shellBox.width * 0.45 &&
         brandBox.width >= shellBox.width * 0.45,
