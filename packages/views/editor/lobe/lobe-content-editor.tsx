@@ -42,7 +42,12 @@ import { toSettleResult, type UploadResultLike } from "./upload-result";
  * The imperative surface this editor offers today.
  *
  * A superset of `ComposerEditorRef` (`getMarkdown` / `focus` / `blur`), so it
- * can be handed straight to `useComposerSubmit`.
+ * can be handed straight to `useComposerSubmit`. The upload trio
+ * (`insertUploadPlaceholder` / `settleUploadPlaceholder` /
+ * `insertMarkdownAtEnd`) satisfies `CoordinatedUploadEditor` for the same
+ * reason, so one handle drives both hooks. Both interfaces are declared by
+ * their consumers and this side is shaped to match them — a member whose
+ * payload disagrees is a compile error here, which is the point.
  */
 export interface LobeContentEditorHandle {
   /**
@@ -92,11 +97,24 @@ export interface LobeContentEditorHandle {
   }) => boolean;
   isEmpty: () => boolean;
   setMarkdown: (markdown: string) => void;
-  /** Turn a placeholder into the finished attachment. False when absent. */
-  settleUploadPlaceholder: (
-    uploadId: string,
-    result: { href: string; kind?: "file" | "image" },
-  ) => boolean;
+  /**
+   * Turn a placeholder into the finished attachment. False when absent.
+   *
+   * Takes the host's upload result (`UploadResultLike` — the app's
+   * `UploadResult`), NOT the node's internal `{ href }` shape, and converts
+   * here with `toSettleResult`. Every other host-facing member of this editor
+   * already speaks that currency (`onUploadFile` resolves one), and the
+   * conversion is policy rather than a rename: `toSettleResult` picks the URL
+   * that belongs in the document (`markdownLink`, over the raw storage URL). A
+   * caller asked to pre-map it would have to re-decide that policy, and the
+   * two decisions drift — which is how a host ends up handing this a value
+   * whose `href` was never populated.
+   *
+   * `kind` is deliberately left unset: a node that already exists was drawn
+   * from the file's MIME type when it was picked, and `toSettleResult` only
+   * re-decides when a caller knows better.
+   */
+  settleUploadPlaceholder: (uploadId: string, result: UploadResultLike) => boolean;
   uploadFile: (file: File) => void;
 }
 
@@ -474,7 +492,9 @@ function LobeContentEditorInner({
       },
       settleUploadPlaceholder: (uploadId, result) => {
         const lexical = editor.getLexicalEditor();
-        return lexical ? settleAttachment(lexical, uploadId, result) : false;
+        return lexical
+          ? settleAttachment(lexical, uploadId, toSettleResult(result))
+          : false;
       },
       uploadFile,
     }),
