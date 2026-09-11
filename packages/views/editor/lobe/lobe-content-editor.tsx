@@ -3,13 +3,22 @@
 /**
  * The Lexical-backed editor, mid-migration from the TipTap `ContentEditor`.
  *
- * It deliberately does NOT declare `ContentEditorRef`. That interface is the
- * target, but some of its members depend on machinery that is not ported yet —
- * `focusAtCoords` / `focusAtAnchor`, the mention and slash pipelines, and
- * `pasteAsFileThreshold`. Declaring the full interface and filling the gap
- * with no-ops would typecheck everywhere and fail silently at runtime, which
- * is the one outcome worth avoiding. So this declares exactly what it
- * implements, and grows as ports land.
+ * It deliberately does NOT declare `ContentEditorRef`. Declaring the full
+ * interface and filling the gap with no-ops would typecheck everywhere and
+ * fail silently at runtime, which is the one outcome worth avoiding. So this
+ * declares exactly what it implements, and grows as ports land.
+ *
+ * Two different reasons a member can be missing here, and they must not be read
+ * as one queue:
+ *
+ *   - PENDING, genuinely coming: the mention pipeline (Task 3), the slash
+ *     pipeline (Task 4), `pasteAsFileThreshold` (Task 6).
+ *   - CUT, not queued: `focusAtCoords` / `focusAtAnchor`. No product surface
+ *     asks a Lexical editor to place a caret at a point — the only caret-target
+ *     caller drives `TitleEditor`, which stays on TipTap — so there is nothing
+ *     to check their semantics against. Do not add them back speculatively:
+ *     a port with no consumer is how a stub that typechecks and does nothing
+ *     gets in, which is the failure the paragraph above rejects.
  *
  * Must be rendered inside `LobeThemeBridge`.
  */
