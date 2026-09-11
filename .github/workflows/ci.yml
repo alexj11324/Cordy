@@ -192,7 +192,7 @@ jobs:
 
       - name: Setup Go
         if: ${{ needs.changes.outputs.sqlc == 'true' }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.26.x"
           check-latest: true
@@ -510,7 +510,7 @@ jobs:
 
       - name: Setup Go
         if: ${{ needs.changes.outputs.backend == 'true' }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           # Deliberately independent from the minimum patch in server/go.mod:
           # CI follows the newest 1.26 patch available to setup-go.
@@ -562,7 +562,7 @@ jobs:
 
       - name: Setup Go
         if: ${{ needs.changes.outputs.backend == 'true' }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           # Deliberately independent from the minimum patch in server/go.mod:
           # CI follows the newest 1.26 patch available to setup-go.
@@ -612,7 +612,7 @@ jobs:
 
       - name: Setup Go
         if: ${{ needs.changes.outputs.backend == 'true' }}
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           # Deliberately independent from the minimum patch in server/go.mod:
           # CI follows the newest 1.26 patch available to setup-go.

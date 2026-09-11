@@ -28,7 +28,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y rpm
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           # Deliberately independent from the minimum patch in server/go.mod:
           # CI follows the newest 1.26 patch available to setup-go.

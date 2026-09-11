@@ -63,7 +63,7 @@ jobs:
           fi
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           # Deliberately independent from the minimum patch in server/go.mod:
           # releases follow the newest 1.26 patch available to setup-go.
@@ -598,7 +598,7 @@ jobs:
           fi
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           # Deliberately independent from the minimum patch in server/go.mod:
           # releases follow the newest 1.26 patch available to setup-go.
@@ -799,7 +799,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: "1.26.x"
           check-latest: true
