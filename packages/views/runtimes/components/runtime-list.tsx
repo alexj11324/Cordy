@@ -36,13 +36,11 @@ import {
   dataGridFeatures,
   type DataGridFeatures,
 } from "@orvilo/ui/components/reui/data-grid/data-grid";
-import { DataGridScrollArea } from "@orvilo/ui/components/reui/data-grid/data-grid-scroll-area";
 import { DataGridTable } from "@orvilo/ui/components/reui/data-grid/data-grid-table";
 import {
   Frame,
   FrameHeader,
   FramePanel,
-  FrameTitle,
 } from "@orvilo/ui/components/reui/frame";
 import {
   DropdownMenu,
@@ -71,7 +69,7 @@ import {
 import { useT, useTimeAgo } from "../../i18n";
 
 // The machine detail's Harness inventory uses the ReUI settings-14 table
-// composition (Frame + DataGridScrollArea + DataGridTable), while keeping
+// composition (Frame + DataGridTable), while keeping
 // this view's existing query and action behavior. The source block is the
 // settings-14 preview at https://reui.io/preview/base/settings-14?ref=mcp;
 // only its table shell is reused here, without its demo API keys or controls.
@@ -542,12 +540,11 @@ export function RuntimeList({
             machineTitle={machineTitle}
           />
         ),
-        size: 420,
+        size: 220,
         enableSorting: false,
         enableHiding: false,
         meta: {
           headerTitle: t(($) => $.list.col_runtime),
-          fillWidth: true,
         },
       },
       {
@@ -573,11 +570,12 @@ export function RuntimeList({
         accessorFn: (row) => row.runtime.metadata?.version ?? "",
         header: t(($) => $.list.col_cli),
         cell: ({ row }) => <CliCell runtime={row.original.runtime} />,
-        size: 180,
+        size: 220,
         enableSorting: false,
         enableHiding: false,
         meta: {
           headerTitle: t(($) => $.list.col_cli),
+          fillWidth: true,
         },
       },
       {
@@ -628,14 +626,13 @@ export function RuntimeList({
       tableClassNames={{ bodyRow: "group/row" }}
     >
       <Frame className="w-full" dense>
-        <FrameHeader className="flex-row items-center justify-between">
-          <FrameTitle>{t(($) => $.list.col_runtime)}</FrameTitle>
-          {headerAction}
-        </FrameHeader>
-        <FramePanel className="p-0!">
-          <DataGridScrollArea orientation="horizontal">
-            <DataGridTable />
-          </DataGridScrollArea>
+        {headerAction ? (
+          <FrameHeader className="flex-row items-center justify-end">
+            {headerAction}
+          </FrameHeader>
+        ) : null}
+        <FramePanel className="overflow-visible p-0!">
+          <DataGridTable />
         </FramePanel>
       </Frame>
     </DataGrid>

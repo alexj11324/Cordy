@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from "react";
+import { createContext, useContext, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "@orvilo/ui/lib/utils";
 import {
@@ -39,9 +39,9 @@ import { TabContent } from "./tab-content";
 import { WindowOverlay } from "./window-overlay";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import {
-  TRAFFIC_LIGHT_CLUSTER_END,
   TRAFFIC_LIGHT_CONTENT_GAP,
   contentInsetAfterTrafficLights,
+  trafficLightClusterEndForWindow,
 } from "../../../shared/window-chrome";
 
 const TOP_BAR_HEIGHT_CLASS = "h-12";
@@ -49,9 +49,33 @@ const pinTriggerClassName =
   "flex size-7 items-center justify-center rounded-md bg-transparent text-faint-foreground shadow-none hover:bg-muted hover:text-foreground aria-expanded:bg-transparent! aria-expanded:text-faint-foreground!";
 const noDragStyle = { WebkitAppRegion: "no-drag" } as React.CSSProperties;
 const dragStyle = { WebkitAppRegion: "drag" } as React.CSSProperties;
+const TrafficLightEndContext = createContext(0);
 
-function trafficLightEndPx(): number {
-  return window.desktopAPI.appInfo?.os === "macos" ? TRAFFIC_LIGHT_CLUSTER_END : 0;
+function useWindowFullscreen(): boolean {
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void window.desktopAPI.getFullscreen?.().then((value) => {
+      if (!cancelled && typeof value === "boolean") setFullscreen(value);
+    });
+    const unsubscribe = window.desktopAPI.onFullscreenChange?.((value) => {
+      setFullscreen(value);
+    });
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, []);
+  return fullscreen;
+}
+
+function trafficLightEndPx(fullscreen: boolean): number {
+  if (window.desktopAPI.appInfo?.os !== "macos") return 0;
+  return trafficLightClusterEndForWindow(fullscreen);
+}
+
+function pinOffsetPx(clusterEnd: number): number {
+  return contentInsetAfterTrafficLights(clusterEnd);
 }
 
 function SidebarPinTrigger() {
@@ -82,22 +106,19 @@ function SidebarPinTrigger() {
   );
 }
 
-function pinOffsetPx(): number {
-  return contentInsetAfterTrafficLights(trafficLightEndPx());
-}
-
 // Pin lives in the sidebar title row as a `no-drag` child of a drag parent —
 // the Electron-documented pattern. A `position: fixed` overlay is not a
 // descendant of any drag region, so Chromium's app-region hit test still
 // treated those pixels as the native titlebar.
 function SidebarTopSpacer() {
+  const trafficLightEnd = useContext(TrafficLightEndContext);
   return (
     <div
       data-slot="window-toolbar"
       className={cn("flex shrink-0 items-center overflow-visible", TOP_BAR_HEIGHT_CLASS)}
       style={dragStyle}
     >
-      <div className="h-full shrink-0" style={{ width: pinOffsetPx() }} />
+      <div className="h-full shrink-0" style={{ width: pinOffsetPx(trafficLightEnd) }} />
       <SidebarPinTrigger />
       <div className="min-w-0 flex-1" />
     </div>
@@ -125,6 +146,7 @@ function useNativeNavigationGestures() {
 function MainTopBar({ sidebarAvailable }: { sidebarAvailable: boolean }) {
   const { open, isCompact } = useSidebar();
   const sidebarOutOfFlow = !open || isCompact;
+  const trafficLightEnd = useContext(TrafficLightEndContext);
 
   return (
     <header
@@ -135,7 +157,7 @@ function MainTopBar({ sidebarAvailable }: { sidebarAvailable: boolean }) {
     >
       {!sidebarAvailable || sidebarOutOfFlow ? (
         <div className="flex h-full shrink-0 items-center" style={dragStyle}>
-          <div className="h-full shrink-0" style={{ width: pinOffsetPx() }} />
+          <div className="h-full shrink-0" style={{ width: pinOffsetPx(trafficLightEnd) }} />
           <SidebarPinTrigger />
         </div>
       ) : (
@@ -225,6 +247,7 @@ export function DesktopShell() {
   useInternalLinkHandler();
   useNativeNavigationGestures();
   useNavigationInputBindings();
+  const trafficLightEnd = trafficLightEndPx(useWindowFullscreen());
 
   // Reactive read of current workspace slug from the platform singleton.
   // On first mount, it is null until WorkspaceRouteLayout (inside the tab
@@ -284,7 +307,7 @@ export function DesktopShell() {
             autoCollapse={false}
             style={
               {
-                "--desktop-traffic-light-end": `${trafficLightEndPx()}px`,
+                "--desktop-traffic-light-end": `${trafficLightEnd}px`,
                 "--desktop-content-gutter": `${TRAFFIC_LIGHT_CONTENT_GAP}px`,
               } as React.CSSProperties
             }
@@ -294,7 +317,8 @@ export function DesktopShell() {
             )}
           >
             {slug && <GlobalShortcuts />}
-            <ShellHeaderProvider>
+            <TrafficLightEndContext.Provider value={trafficLightEnd}>
+              <ShellHeaderProvider>
               {slug && (
                 <AppSidebar
                   topSlot={<SidebarTopSpacer />}
@@ -318,7 +342,8 @@ export function DesktopShell() {
                 </div>
                 {slug && <GlobalRightSidebar />}
               </SidebarInset>
-            </ShellHeaderProvider>
+              </ShellHeaderProvider>
+            </TrafficLightEndContext.Provider>
           </SidebarProvider>
         </div>
         {slug && <ModalRegistry />}

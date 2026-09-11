@@ -48,3 +48,8 @@ export const TRAFFIC_LIGHT_CONTENT_INSET =
 export function contentInsetAfterTrafficLights(clusterEndPx: number): number {
   return clusterEndPx + TRAFFIC_LIGHT_CONTENT_GAP;
 }
+
+/** Right edge of the traffic-light cluster for the current window mode. */
+export function trafficLightClusterEndForWindow(isFullScreen: boolean): number {
+  return isFullScreen ? 0 : TRAFFIC_LIGHT_CLUSTER_END;
+}

@@ -11,12 +11,6 @@ import {
   type ReactNode,
 } from "react";
 import { Badge } from "@orvilo/ui/components/reui/badge";
-import {
-  Alert,
-  AlertAction,
-  AlertDescription,
-  AlertTitle,
-} from "@orvilo/ui/components/reui/alert";
 import { PhoneInput } from "@orvilo/ui/components/reui/phone-input";
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Card, CardContent, CardFooter } from "@orvilo/ui/components/ui/card";
@@ -76,7 +70,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@orvilo/ui/components/ui/alert-dialog";
-import { InfoIcon, ShieldCheckIcon } from "lucide-react";
+import { InfoIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@orvilo/core/auth";
 import { api } from "@orvilo/core/api";
@@ -353,44 +347,6 @@ function TimezoneComboboxField({
   );
 }
 
-function ProfileSyncAlert() {
-  const [dismissed, setDismissed] = useState(false);
-
-  if (dismissed) return null;
-
-  return (
-    <Alert variant="warning">
-      <ShieldCheckIcon aria-hidden="true" />
-      <AlertTitle>Profile updates are shared</AlertTitle>
-      <AlertDescription>
-        Changes sync to mentions, approvals, and people directories in every
-        workspace you join.
-      </AlertDescription>
-      <AlertAction>
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          onClick={() => setDismissed(true)}
-        >
-          Dismiss
-        </Button>
-        <Button
-          type="button"
-          size="xs"
-          onClick={() =>
-            document
-              .getElementById("profile-3-basic-details")
-              ?.scrollIntoView({ behavior: "smooth", block: "start" })
-          }
-        >
-          Review Details
-        </Button>
-      </AlertAction>
-    </Alert>
-  );
-}
-
 export function AccountTab() {
   const { t } = useT("settings");
   const user = useAuthStore((s) => s.user);
@@ -549,16 +505,6 @@ export function AccountTab() {
   return (
     <TooltipProvider delay={200}>
       <div className="w-full max-w-4xl space-y-6">
-        <header className="space-y-1 px-1">
-          <h1 className="text-display-sm font-semibold tracking-tight">Profile</h1>
-          <p className="text-muted-foreground max-w-2xl text-body leading-relaxed">
-            Manage the identity and regional details shared across your
-            workspace memberships.
-          </p>
-        </header>
-
-        <ProfileSyncAlert />
-
         <Card className="overflow-hidden p-0">
           <CardContent className="px-6 py-7 sm:px-8">
             <div>

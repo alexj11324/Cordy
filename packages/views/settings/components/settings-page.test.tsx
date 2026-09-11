@@ -25,10 +25,8 @@ vi.mock("./integrations-tab", stub("IntegrationsTab"));
 vi.mock("./labs-tab", stub("LabsTab"));
 vi.mock("./notifications-tab", stub("NotificationsTab"));
 vi.mock("./labels-tab", stub("LabelsTab"));
-vi.mock("./properties-tab", stub("PropertiesTab"));
 vi.mock("./quick-actions-tab", stub("QuickActionsTab"));
 vi.mock("./keyboard-shortcuts-tab", stub("KeyboardShortcutsTab"));
-vi.mock("./issue-statuses-tab", stub("IssueStatusesTab"));
 vi.mock("./plugins-tab", stub("PluginsTab"));
 vi.mock("./billing-tab", stub("BillingTab"));
 vi.mock("./skills-tab", stub("SkillsTab"));
@@ -152,16 +150,30 @@ describe("SettingsPage flux dialog", () => {
       "IM",
       "Billing",
       "Labels",
-      "Issue Statuses",
-      "Properties",
       "Skills",
       "MCP",
       "Plugins",
     ]) {
       expect(screen.getByRole("tab", { name })).toBeInTheDocument();
     }
+    expect(screen.queryByRole("tab", { name: "Issue Statuses" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Properties" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Labs" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Quick Actions" })).not.toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "MCP" }).innerHTML).toContain("15.688");
+  });
+
+  it("opens Workspace General for the removed issue-status and property URLs", () => {
+    navigationState.search = "tab=issue-statuses";
+    const { unmount } = renderWithI18n(<SettingsPage />);
+    expect(screen.queryByRole("tab", { name: "Issue Statuses" })).not.toBeInTheDocument();
+    expect(screen.getByText("WorkspaceTab")).toBeInTheDocument();
+    unmount();
+
+    navigationState.search = "tab=properties";
+    renderWithI18n(<SettingsPage />);
+    expect(screen.queryByRole("tab", { name: "Properties" })).not.toBeInTheDocument();
+    expect(screen.getByText("WorkspaceTab")).toBeInTheDocument();
   });
 
   it("opens Workspace General for the removed members URL", () => {

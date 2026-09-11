@@ -132,7 +132,9 @@ describe("KeyboardShortcutsTab", () => {
     fireEvent.click(recorder);
     fireEvent.keyDown(recorder, { key: "k", ctrlKey: true });
 
-    expect(getShortcut("createIssue")).toEqual(createShortcutChord("C"));
+    expect(getShortcut("createIssue")).toEqual(
+      createShortcutChord("N", { primary: true }),
+    );
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Already used by Open search.",
     );
@@ -151,7 +153,9 @@ describe("KeyboardShortcutsTab", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Reset Create issue" }),
     );
-    expect(getShortcut("createIssue")).toEqual(createShortcutChord("C"));
+    expect(getShortcut("createIssue")).toEqual(
+      createShortcutChord("N", { primary: true }),
+    );
   });
 
   it("confirms before restoring all shortcut defaults", () => {

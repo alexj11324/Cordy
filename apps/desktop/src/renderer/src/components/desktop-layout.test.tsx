@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { act, fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@orvilo/core/i18n/react";
@@ -120,6 +120,7 @@ const { DesktopShell } = await import("./desktop-layout");
 function renderShell(
   os: "macos" | "windows" = "windows",
   host: "electron" | "browser" = "electron",
+  extra: Record<string, unknown> = {},
 ) {
   (
     window as unknown as { desktopAPI: Record<string, unknown> }
@@ -128,6 +129,9 @@ function renderShell(
     appInfo: { version: "0.0.0-test", os },
     onNavigationGesture: () => () => {},
     onInboxOpen: () => () => {},
+    getFullscreen: async () => false,
+    onFullscreenChange: () => () => {},
+    ...extra,
   };
 
   const qc = new QueryClient({
@@ -265,6 +269,27 @@ describe("DesktopShell sidebar trigger", () => {
     expect(getByTestId("page-content")).toHaveAttribute("data-sidebar-open", "false");
     expect(header.firstElementChild?.firstElementChild).toHaveStyle({
       width: `${TRAFFIC_LIGHT_CONTENT_INSET}px`,
+    });
+  });
+
+  it("drops the traffic-light inset when the window is fullscreen", async () => {
+    const { container } = renderShell("macos", "electron", {
+      getFullscreen: async () => true,
+    });
+
+    await waitFor(() => {
+      const wrapper = container.querySelector<HTMLElement>(
+        "[data-slot='sidebar-wrapper']",
+      )!;
+      const toolbar = container.querySelector<HTMLElement>(
+        "[data-slot='window-toolbar']",
+      )!;
+      expect(wrapper.style.getPropertyValue("--desktop-traffic-light-end")).toBe(
+        "0px",
+      );
+      expect(toolbar.firstElementChild).toHaveStyle({
+        width: `${TRAFFIC_LIGHT_CONTENT_GAP}px`,
+      });
     });
   });
 

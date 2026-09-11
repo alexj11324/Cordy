@@ -79,6 +79,19 @@
       "local_daemon": "Local daemon"
     },
     "rename": "Rename machine",
+    "delete": "Delete machine",
+    "delete_dialog": {
+      "title": "Delete {{name}}?",
+      "description": "This removes every Harness on this machine, unbinds its agents, and disconnects the daemon. This cannot be undone.",
+      "self_heal_notice": "If this machine's daemon is still running, it may re-register itself. Stop the daemon first to remove it permanently.",
+      "stop_daemon_notice": "The local daemon on this computer will be stopped so it cannot re-register.",
+      "confirm": "I understand this machine will be removed from the workspace.",
+      "cancel": "Cancel",
+      "submit": "Delete machine",
+      "submitting": "Deleting...",
+      "toast_deleted": "Machine deleted",
+      "toast_failed": "Couldn't delete this machine"
+    },
     "rename_dialog": {
       "title": "Rename machine",
       "description": "Give this machine a name you'll recognize. It applies to every Harness on this machine and shows up when you pick a device for an agent.",

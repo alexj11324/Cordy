@@ -79,7 +79,7 @@ const primary = (key: string) =>
 
 export const SHORTCUT_ACTIONS: readonly ShortcutActionDefinition[] = [
   { id: "openSearch", category: "general", defaultShortcut: primary("K"), allowInEditable: true },
-  { id: "createIssue", category: "general", defaultShortcut: createShortcutChord("C"), allowInEditable: false },
+  { id: "createIssue", category: "general", defaultShortcut: primary("N"), allowInEditable: true },
   { id: "toggleSidebar", category: "general", defaultShortcut: primary("B"), allowInEditable: false },
   {
     id: "toggleRightSidebar",
@@ -316,16 +316,17 @@ const PRIMARY_RESERVED_KEYS = new Set([
 ]);
 
 // Accelerators owned by the browser UI around a tab: print, address bar,
-// new tab/window, bookmark, view source. A web page cannot reliably own
-// them, but the Electron renderer receives the bare primary chords as plain
-// keydowns — neither Electron's default menu nor the desktop shell binds
-// any of them — so exactly those are recordable on desktop (MUL-4457).
-// Variants with extra modifiers stay reserved on both runtimes: several
-// belong to the OS or window manager (Option+Cmd+D toggles the macOS Dock,
-// Ctrl+Alt+T opens a terminal on common Linux desktops), which even the
-// desktop app cannot own.
+// new tab, bookmark, view source. A web page cannot reliably own them, but
+// the Electron renderer receives the bare primary chords as plain keydowns —
+// neither Electron's default menu nor the desktop shell binds any of them —
+// so exactly those are recordable on desktop (MUL-4457).
+//
+// Mod+N is claimed by createIssue (new task), so it is not reserved here.
+// Browsers may still intercept it for a new window on web; extra modifiers
+// stay reserved on both runtimes (Option+Cmd+D toggles the macOS Dock,
+// Ctrl+Alt+T opens a terminal on common Linux desktops).
 const BROWSER_ONLY_PRIMARY_RESERVED_KEYS = new Set([
-  "P", "L", "T", "N", "D", "U",
+  "P", "L", "T", "D", "U",
 ]);
 
 /** Browser/window/OS accelerators the app cannot reliably own in `runtime`. */
@@ -375,8 +376,8 @@ function hasCommandModifier(shortcut: ShortcutChord): boolean {
 
 /**
  * Product-level safety policy layered on top of OS/browser reservations.
- * Plain text keys are useful for non-editable navigation (for example `C`),
- * but an action allowed inside editors must not fire while the user types.
+ * Plain text keys are useful for non-editable navigation, but an action
+ * allowed inside editors must not fire while the user types.
  * Send is the one deliberate exception: plain Enter is supported explicitly.
  */
 export function isShortcutAllowedForAction(
