@@ -53,9 +53,10 @@ import { toSettleResult, type UploadResultLike } from "./upload-result";
  * `useUploadGate`, which checks `hasActiveUploads` against `UploadGateEditor`.
  * The other two are enforced nowhere — no call site passes a Lobe ref to
  * `useComposerSubmit` or `useCoordinatedUploads` yet — so until a composer
- * actually does (T14-T17), the comparison in this file's test suite is the only
- * thing standing between a drifted member and the first migration that trips
- * over it.
+ * actually does (T14-T17), this file's test suite is the only thing standing
+ * between a drifted member and the first migration that trips over it: it
+ * assigns the handle to each of those two interfaces, so tsc rejects a drifted
+ * member there.
  */
 export interface LobeContentEditorHandle {
   /**

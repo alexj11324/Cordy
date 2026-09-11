@@ -13,6 +13,7 @@ import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { LobeThemeBridge } from "../../chat/lobe/lobe-theme-bridge";
+import type { ComposerEditorRef } from "../use-composer-submit";
 import type { CoordinatedUploadEditor } from "../use-coordinated-uploads";
 import {
   LobeContentEditor,
@@ -248,20 +249,24 @@ describe("LobeContentEditor", () => {
     await waitFor(() => expect(onUploadingChange).toHaveBeenCalledWith(false));
   });
 
-  it("still satisfies the upload engine's contract", async () => {
-    // `CoordinatedUploadEditor` is declared by its consumer, and nothing in
-    // `lobe-content-editor.tsx` declares `implements` — so the only place this
-    // handle is otherwise compared against the engine is the first composer
-    // that wires a Lobe ref into `useCoordinatedUploads`, which does not exist
-    // yet. The assignment below is that comparison in the meantime: tsc fails
-    // on it the moment a member drifts, instead of at that first migration.
+  it("still satisfies the consumer-declared editor contracts", async () => {
+    // `CoordinatedUploadEditor` and `ComposerEditorRef` are both declared by
+    // their consumers, and nothing in `lobe-content-editor.tsx` declares
+    // `implements` — so the only other place this handle is compared against
+    // them is the first composer that wires a Lobe ref into
+    // `useCoordinatedUploads` / `useComposerSubmit`, which does not exist yet.
+    // (`UploadGateEditor` is deliberately absent here: `feedback.tsx` enforces
+    // that one at a real call site.) The two assignments below are the
+    // comparison in the meantime: tsc fails on them the moment a member drifts,
+    // instead of at that first migration.
     const { ref } = renderEditor();
     await waitFor(() => expect(ref.current).not.toBeNull());
 
     const asEngine: CoordinatedUploadEditor | null = ref.current;
+    const asComposer: ComposerEditorRef | null = ref.current;
 
-    // The runtime half is the id handshake the engine's recovery chain rests
-    // on: settle lands only when it is given the id the insert drew, and
+    // The runtime half for the engine is the id handshake its recovery chain
+    // rests on: settle lands only when it is given the id the insert drew, and
     // reports false otherwise — which is what sends the engine to its append
     // fallback instead of losing the link.
     await waitFor(() => {
@@ -273,5 +278,12 @@ describe("LobeContentEditor", () => {
     expect(asEngine!.settleUploadPlaceholder("not-the-drawn-id", makeUploadResult())).toBe(
       false,
     );
+
+    // And for the send contract, that the three members answer the way
+    // `useComposerSubmit` reads them: markdown as a string, focus and blur as
+    // callable.
+    expect(typeof asComposer?.getMarkdown()).toBe("string");
+    expect(typeof asComposer?.focus).toBe("function");
+    expect(typeof asComposer?.blur).toBe("function");
   });
 });
