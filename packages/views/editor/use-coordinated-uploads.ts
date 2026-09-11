@@ -21,9 +21,9 @@
  * The SOURCE OF TRUTH for what a submit binds is the draft BODY
  * (reference-filtered): an upload that settles after its mount died gets its
  * markdown link delivered back into the body — into the reopened composer's
- * live editor when one exists (confirmed, with retry while the Tiptap instance
- * is still warming up), else appended to the persisted draft — so the file is
- * visible, deletable, and deleting it really unbinds it.
+ * live editor when one exists (confirmed, with retry while the kernel's
+ * instance is still warming up), else appended to the persisted draft — so the
+ * file is visible, deletable, and deleting it really unbinds it.
  *
  * A surface plugs in with a {@link UploadDraftBinding}: imperative, store-backed
  * accessors that must remain callable after the component unmounts. Bindings
@@ -58,10 +58,70 @@ import {
 import { MAX_FILE_SIZE } from "@orvilo/core/constants/upload";
 import { useT } from "../i18n";
 import type { UploadGate } from "./use-upload-gate";
-import type { ContentEditorRef } from "./content-editor";
 import { pastedTextSource } from "./extensions/file-upload";
 
 const EMPTY_ATTACHMENTS: Attachment[] = [];
+
+/**
+ * What the engine needs from an editor: draw an upload placeholder, settle it
+ * into the finished attachment, and append a finished link.
+ *
+ * Declared here, at the consumer, rather than imported from the editor that
+ * happens to be in use today. The engine reads no text, moves no caret, and
+ * flushes no debounce — it only needs the three operations below — so binding
+ * its parameters to the full `ContentEditorRef` would make it unusable by any
+ * other kernel, which is exactly what a kernel swap looks like.
+ * `ContentEditorRef` still satisfies this structurally, so the existing call
+ * sites needed no change when it was narrowed.
+ *
+ * Every member reports WHETHER IT LANDED, and that boolean is the load-bearing
+ * part of this contract rather than a convenience. An imperative handle exists
+ * from the component's first commit while the kernel instance behind it is
+ * created a passive effect later, so between those two moments the handle is
+ * real but every method on it is a no-op. That window is not hypothetical: an
+ * upload outlives the mount that started it, and settles against a composer
+ * that has just reopened — see `deliverFinishedUpload` and the placeholder
+ * rebuild effect, both of which RETRY through it. So report the truth about the
+ * DOCUMENT, not whether the call itself returned: a `true` that changed nothing
+ * stops the retries that exist for exactly this window, and a `false` after a
+ * real change makes the caller do the same work a second time.
+ */
+export interface CoordinatedUploadEditor {
+  /**
+   * Append a markdown fragment to the end of the document (parsed, not raw
+   * text), firing the normal update pipeline. False while the kernel is not up
+   * — the caller then falls back to the persisted draft rather than assuming
+   * the fragment landed.
+   */
+  insertMarkdownAtEnd: (markdown: string) => boolean;
+  /**
+   * Draw a placeholder for an upload this document is not showing yet, and
+   * report whether it landed.
+   *
+   * A composer that reopens over an upload a previous mount started holds the
+   * draft's record of it but no node — placeholders are never serialised, so
+   * they die with the document that drew them. Without this the user faces a
+   * composer that looks idle while the send gate quietly blocks on the upload.
+   *
+   * Must be IDEMPOTENT per `uploadId`: the engine retries until this reports
+   * success, so an implementation that draws a second placeholder for an id it
+   * already drew turns one retried call into two nodes.
+   */
+  insertUploadPlaceholder: (upload: {
+    uploadId: string;
+    filename: string;
+    size?: number;
+  }) => boolean;
+  /**
+   * Turn a placeholder into the finished attachment, in place. False when this
+   * document holds no node for the id — the caller then appends the link
+   * instead. A `false` must mean "the document does not hold it", never "the
+   * node was updated but something else went wrong": the caller reads it as
+   * permission to fall back, and a wrong `false` puts the link in the document
+   * twice.
+   */
+  settleUploadPlaceholder: (uploadId: string, result: UploadResult) => boolean;
+}
 
 /**
  * Store-backed accessors for one composer target's uploads and body. Every
@@ -90,7 +150,7 @@ export interface UploadDraftBinding {
 // The editor currently showing each registry key. Lets a settle handler whose
 // own mount is gone (the upload outlived the composer) hand the finished link
 // to the editor a REOPENED composer mounted for the same target.
-const liveEditors = new Map<string, RefObject<ContentEditorRef | null>>();
+const liveEditors = new Map<string, RefObject<CoordinatedUploadEditor | null>>();
 
 /** Test-only: registry keys currently registered. Lets timing tests assert
  *  registration is part of the COMMIT (layout), not a passive task later. */
@@ -120,7 +180,7 @@ const DELIVER_MAX_TRIES = 100; // ~5s — editor init is a passive effect away
  *    quick unmount, and it converges to identical content anyway.
  *  - no composer mounted for the key → append to the persisted draft; the next
  *    mount reads it as `defaultValue`.
- *  - composer mounted but its Tiptap instance not created yet (the handle
+ *  - composer mounted but its kernel instance not created yet (the handle
  *    exists from first commit; the instance arrives in a passive effect) →
  *    RETRY. Appending to the store here would be erased by the mounted
  *    editor's first emit, which snapshots a body without the link.
@@ -184,7 +244,7 @@ function deliverFinishedUpload(
  */
 function deliverPastedTextBack(
   binding: UploadDraftBinding | undefined,
-  editorRef: RefObject<ContentEditorRef | null>,
+  editorRef: RefObject<CoordinatedUploadEditor | null>,
   text: string,
 ): void {
   if (!binding) {
@@ -243,7 +303,7 @@ export function useCoordinatedUploads(
   boundUploads: DraftUpload[],
   ctx: UploadContext,
   editorGate: UploadGate,
-  editorRef: RefObject<ContentEditorRef | null>,
+  editorRef: RefObject<CoordinatedUploadEditor | null>,
   opts?: {
     /**
      * Resolve the binding a NEW upload should target, snapshotted at pick
@@ -322,7 +382,7 @@ export function useCoordinatedUploads(
   // store write re-drawing it.
   //
   // Retried while it cannot land, because the imperative handle exists from
-  // the first commit while the Tiptap instance arrives a passive effect later
+  // the first commit while the kernel instance arrives a passive effect later
   // — the same window deliverFinishedUpload retries through.
   const rebuiltUploadIdsRef = useRef<Set<string>>(new Set());
   // Chat pins its document to the draft an in-flight upload started while the
