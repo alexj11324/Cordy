@@ -55,7 +55,7 @@ jobs:
         run: node scripts/package.mjs --${{ matrix.target }} --x64 --arm64 --publish never
 
       - name: Upload Desktop artifacts (${{ matrix.target }})
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.target }}
           path: apps/desktop/dist
