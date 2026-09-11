@@ -119,6 +119,18 @@ export interface CoordinatedUploadEditor {
    * node was updated but something else went wrong": the caller reads it as
    * permission to fall back, and a wrong `false` puts the link in the document
    * twice.
+   *
+   * Write `result.markdownLink` into the node — NOT `result.link` and NOT
+   * `result.url`. `UploadResult` carries three URLs and they are not
+   * interchangeable: the other two are the raw storage URL, which may be
+   * private or short-lived, while `markdownLink` is the durable URL the server
+   * chose for a body that outlives the session (see `pickMarkdownLink`). The
+   * engine writes its own copy into the persisted draft with `markdownLink`
+   * (`attachmentMarkdown`), and that body is what a submit sends — so a node
+   * built from a raw URL persists a link that expires for whoever reads the
+   * issue afterwards, which is the MUL-3130 regression these two fields were
+   * split to prevent. Both kernels pick `markdownLink`
+   * (`extensions/file-upload.ts`, `lobe/upload-result.ts`); a third must too.
    */
   settleUploadPlaceholder: (uploadId: string, result: UploadResult) => boolean;
 }

@@ -46,8 +46,9 @@ import { toSettleResult, type UploadResultLike } from "./upload-result";
  * (`insertUploadPlaceholder` / `settleUploadPlaceholder` /
  * `insertMarkdownAtEnd`) satisfies `CoordinatedUploadEditor` for the same
  * reason, so one handle drives both hooks. Both interfaces are declared by
- * their consumers and this side is shaped to match them — a member whose
- * payload disagrees is a compile error here, which is the point.
+ * their consumers and this side is shaped to match them. Nothing here declares
+ * `implements`, so a drifting member is NOT caught in this file — it is caught
+ * one call out, where the handle is handed to the hook.
  */
 export interface LobeContentEditorHandle {
   /**
