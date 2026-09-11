@@ -104,7 +104,7 @@ function AttachmentDecorator({
 
   if (node.kind === "image") {
     return (
-      // eslint-disable-next-line @next/next/no-img-element -- editor content, not a page asset
+      // Editor content, not a page asset — a raw <img> is correct here.
       <img
         alt={node.filename}
         className="max-w-full rounded-md"
