@@ -222,7 +222,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digests-backend-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
@@ -342,7 +342,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digests-web-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
@@ -453,7 +453,7 @@ jobs:
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
       - name: Upload digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digests-auth-broker-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
@@ -771,7 +771,7 @@ jobs:
           NODE
 
       - name: Upload Desktop artifacts for final publication
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.target }}-${{ matrix.arch }}
           path: ${{ runner.temp }}/orvilo-desktop-${{ matrix.target }}-${{ matrix.arch }}
@@ -951,7 +951,7 @@ jobs:
 
       - name: Stage stable Homebrew cask
         if: needs.verify.outputs.is_stable == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: homebrew-cask
           path: dist/homebrew/Casks/orvilo.rb
