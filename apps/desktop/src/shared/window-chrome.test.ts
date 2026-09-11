@@ -10,6 +10,7 @@ import {
   TRAFFIC_LIGHT_CONTENT_INSET,
   TRAFFIC_LIGHT_POSITION,
   contentInsetAfterTrafficLights,
+  trafficLightClusterEndForWindow,
 } from "./window-chrome";
 
 describe("window chrome", () => {
@@ -27,6 +28,8 @@ describe("window chrome", () => {
       TRAFFIC_LIGHT_CONTENT_INSET,
     );
     expect(contentInsetAfterTrafficLights(0)).toBe(TRAFFIC_LIGHT_CONTENT_GAP);
+    expect(trafficLightClusterEndForWindow(false)).toBe(TRAFFIC_LIGHT_CLUSTER_END);
+    expect(trafficLightClusterEndForWindow(true)).toBe(0);
   });
 
   it("uses hidden chrome so the titlebar does not swallow pin clicks", () => {

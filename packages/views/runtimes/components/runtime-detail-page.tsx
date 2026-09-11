@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, Cloud, Monitor, Pencil, Plus, Server } from "lucide-react";
+import { AlertCircle, Cloud, Monitor, Pencil, Plus, Server, Trash2 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@orvilo/core/auth";
 import { useWorkspaceId } from "@orvilo/core/hooks";
@@ -21,7 +21,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@orvilo/ui/components/ui/tooltip";
-import { AppLink } from "../../navigation";
+import { AppLink, useNavigation } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { buildWorkloadIndex, RuntimeList } from "./runtime-list";
 import {
@@ -29,6 +29,10 @@ import {
   sharedCustomName,
 } from "./runtime-machines";
 import { RenameMachineDialog } from "./rename-machine-dialog";
+import {
+  canDeleteRuntimeMachine,
+  DeleteMachineDialog,
+} from "./delete-machine-dialog";
 import { RuntimeProfilesDialog } from "./runtime-profiles-dialog";
 import { pendingRuntimesForProfiles } from "./pending-runtime";
 import { HealthDot, HealthIcon, useHealthLabel } from "./shared";
@@ -42,6 +46,7 @@ export interface RuntimeDetailPageProps {
   localMachineActions?: React.ReactNode;
   hasLocalMachine?: boolean;
   bootstrapping?: boolean;
+  onStopLocalDaemon?: () => Promise<void>;
 }
 
 function useNowTick(intervalMs = 30_000): number {
@@ -89,10 +94,12 @@ export function RuntimeDetailPage({
   localMachineActions,
   hasLocalMachine,
   bootstrapping,
+  onStopLocalDaemon,
 }: RuntimeDetailPageProps) {
   const { t } = useT("runtimes");
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
+  const navigation = useNavigation();
   const qc = useQueryClient();
   const healthLabel = useHealthLabel();
   const currentUserId = useAuthStore((state) => state.user?.id);
@@ -108,6 +115,7 @@ export function RuntimeDetailPage({
   const now = useNowTick();
   const machineLocator = decodeRouteParam(runtimeId);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [createProfileOpen, setCreateProfileOpen] = useState(false);
   const workloadIndex = useMemo(
     () => buildWorkloadIndex(agents, tasks),
@@ -180,6 +188,10 @@ export function RuntimeDetailPage({
       currentName: sharedCustomName(machine.runtimes) ?? "",
     };
   }, [machine, isAdmin, currentUserId]);
+  const canDeleteMachine = canDeleteRuntimeMachine(machine, {
+    isAdmin,
+    currentUserId,
+  });
 
   if (isLoading) return <MachineDetailSkeleton />;
 
@@ -289,6 +301,24 @@ export function RuntimeDetailPage({
                   <TooltipContent>{t(($) => $.machine.rename)}</TooltipContent>
                 </Tooltip>
               )}
+              {canDeleteMachine && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="outline"
+                        aria-label={t(($) => $.machine.delete)}
+                        onClick={() => setDeleteOpen(true)}
+                      >
+                        <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>{t(($) => $.machine.delete)}</TooltipContent>
+                </Tooltip>
+              )}
               {machine.isCurrent && localMachineActions}
             </div>
           </div>
@@ -360,6 +390,18 @@ export function RuntimeDetailPage({
           wsId={wsId}
           runtimeId={renameTarget.runtimeId}
           currentName={renameTarget.currentName}
+        />
+      )}
+      {canDeleteMachine && machine && (
+        <DeleteMachineDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          machine={machine}
+          wsId={wsId}
+          onStopLocalDaemon={
+            machine.isCurrent ? onStopLocalDaemon : undefined
+          }
+          onDeleted={() => navigation.push(paths.devices())}
         />
       )}
       {canAddRuntime && createProfileOpen && (

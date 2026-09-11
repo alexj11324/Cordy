@@ -38,7 +38,7 @@ describe("shortcut store", () => {
     );
     useShortcutStore.getState().setShortcut(
       "createIssue",
-      createShortcutChord("C"),
+      createShortcutChord("N", { primary: true }),
     );
 
     expect(useShortcutStore.getState().overrides.createIssue).toBeUndefined();

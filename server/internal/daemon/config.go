@@ -443,40 +443,36 @@ func LoadConfig(overrides Overrides) (Config, error) {
 	// Profile
 	profile := overrides.Profile
 
-	// daemon_id resolution: override > env > persistent UUID on disk.
-	// The persistent UUID is written once to `<profile-dir>/daemon.id` and
-	// then reused forever so hostname drift (.local suffix, system rename,
-	// mDNS state, profile switch) no longer mints a new runtime identity.
-	// Callers may still pin a specific id via ORVILO_DAEMON_ID or the
-	// override field (e.g. for tests or embedded environments).
+	// daemon_id resolution: override > env > OS machine-id (cached in
+	// ~/.orvilo/daemon.id). The OS-native UUID (IOPlatformUUID /
+	// MachineGuid / /etc/machine-id) is what survives installing a new
+	// Desktop app; the file is only a cache. Callers may still pin a
+	// specific id via ORVILO_DAEMON_ID or the override field.
 	daemonID := strings.TrimSpace(os.Getenv("ORVILO_DAEMON_ID"))
 	if overrides.DaemonID != "" {
 		daemonID = overrides.DaemonID
 	}
+	var superseded []string
 	if daemonID == "" {
-		persisted, err := EnsureDaemonID(profile)
+		persisted, migrated, err := EnsureDaemonID(profile)
 		if err != nil {
 			return Config{}, fmt.Errorf("ensure daemon id: %w", err)
 		}
 		daemonID = persisted
+		superseded = migrated
 	}
-	// Historical daemon_ids derived from the current hostname/profile. The
-	// server uses these at register time to merge any pre-UUID runtime rows
-	// for this machine into the new UUID-keyed row and delete the stale ones.
+	// Historical daemon_ids: hostname forms, leftover per-profile UUIDs,
+	// and any on-disk UUID we just replaced with the OS-derived id. The
+	// server merges those runtime rows (and their agents) on register.
 	legacyDaemonIDs := LegacyDaemonIDs(host, profile)
-	// Pre-change (#1220) daemon identity was stored per profile, which means
-	// the same machine could end up with multiple leftover daemon.id files
-	// — e.g. ~/.orvilo/daemon.id (default) plus ~/.orvilo/profiles/<x>/
-	// daemon.id. Surface those UUIDs so the server can merge their runtime
-	// rows into the canonical machine UUID. Fatal-free: a broken profiles
-	// dir shouldn't block startup.
+	legacyDaemonIDs = append(legacyDaemonIDs, superseded...)
 	if uuids, err := LegacyDaemonUUIDs(); err == nil {
 		legacyDaemonIDs = append(legacyDaemonIDs, uuids...)
 	}
 	// Strip anything that collides with the resolved daemon_id (e.g. when
 	// the user explicitly pins ORVILO_DAEMON_ID=<hostname>, or when the
 	// canonical id was itself promoted from a pre-change profile file).
-	legacyDaemonIDs = filterLegacyIDs(legacyDaemonIDs, daemonID)
+	legacyDaemonIDs = uniqueNonEmpty(filterLegacyIDs(legacyDaemonIDs, daemonID))
 
 	deviceName := envOrDefault("ORVILO_DAEMON_DEVICE_NAME", host)
 	if overrides.DeviceName != "" {

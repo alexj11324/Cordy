@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { CircleAlert, EllipsisVerticalIcon, Loader2, Settings2Icon } from "lucide-react";
+import { CircleAlert, Loader2, Settings2Icon } from "lucide-react";
 import { ApiError, api } from "@orvilo/core/api";
 import { useAuthStore } from "@orvilo/core/auth";
 import { workspaceSubscriptionSummaryOptions } from "@orvilo/core/billing";
@@ -24,27 +24,19 @@ import { weixinInstallationsOptions } from "@orvilo/core/weixin";
 import { memberListOptions } from "@orvilo/core/workspace/queries";
 import { Badge } from "@orvilo/ui/components/reui/badge";
 import { Frame, FramePanel } from "@orvilo/ui/components/reui/frame";
-import { Button } from "@orvilo/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@orvilo/ui/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@orvilo/ui/components/ui/dropdown-menu";
-import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 import { ComposioTab } from "./composio-tab";
 import { DingTalkAgentBindButton, DingTalkTab } from "./dingtalk-tab";
 import { IntegrationCard } from "./integration-card";
 import type { IntegrationChannel } from "./integration-channel-icon";
 import { IntegrationSetupGuide } from "./integration-setup-guide";
+import { ConnectionDotBadge, IntegrationRowMenu } from "./integration-row-chrome";
 import { LarkAgentBindButton, LarkTab } from "./lark-tab";
 import { LinearIntegrationCard } from "./linear-tab";
 import { MessagingConnectionStatus } from "./messaging-connection-status";
@@ -91,24 +83,6 @@ function installedWorkspaceHub(listing: InstallationListing | undefined) {
 function installedRecord(listing: InstallationListing | undefined) {
   return listing?.installations.find(
     (installation) => installation.status === "installed",
-  );
-}
-
-function ConnectionDotBadge({
-  connected,
-  children,
-}: {
-  connected: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <Badge variant="outline">
-      <span
-        aria-hidden="true"
-        className={cn("size-1.5 rounded-full", connected ? "bg-success" : "bg-warning")}
-      />
-      {children}
-    </Badge>
   );
 }
 
@@ -161,28 +135,10 @@ function ChannelActionMenu({
   onOpen: () => void;
 }) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            aria-label={actionLabel}
-            size="icon-xs"
-            type="button"
-            variant="outline"
-          >
-            <EllipsisVerticalIcon aria-hidden="true" />
-          </Button>
-        }
-      />
-      <DropdownMenuContent align="end" className="min-w-44">
-        <DropdownMenuGroup>
-          <DropdownMenuItem onClick={onOpen}>
-            <Settings2Icon aria-hidden="true" />
-            {actionLabel}
-          </DropdownMenuItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <IntegrationRowMenu
+      ariaLabel={actionLabel}
+      items={[{ label: actionLabel, icon: Settings2Icon, onSelect: onOpen }]}
+    />
   );
 }
 

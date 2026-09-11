@@ -12,15 +12,14 @@ import {
   Bell,
   Plug,
   Tags,
-  CircleDot,
   Keyboard,
   ListTodo,
   Blocks,
   CreditCard,
-  Server,
   Sparkles,
 } from "lucide-react";
 import { GitHubMark } from "./github-mark";
+import { McpMark } from "./mcp-mark";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@orvilo/ui/components/ui/tabs";
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Input } from "@orvilo/ui/components/ui/input";
@@ -52,8 +51,6 @@ import { GitHubTab } from "./github-tab";
 import { IntegrationsTab } from "./integrations-tab";
 import { NotificationsTab } from "./notifications-tab";
 import { LabelsTab } from "./labels-tab";
-import { IssueStatusesTab } from "./issue-statuses-tab";
-import { PropertiesTab } from "./properties-tab";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
 import { PluginsTab } from "./plugins-tab";
 import { McpTab } from "./mcp-tab";
@@ -80,8 +77,6 @@ const WORKSPACE_TAB_KEYS = [
   "integrations",
   "billing",
   "labels",
-  "issue_statuses",
-  "properties",
   "skills",
   "mcp",
   "plugins",
@@ -93,8 +88,6 @@ const WORKSPACE_TAB_VALUES = {
   integrations: "integrations",
   billing: "billing",
   labels: "labels",
-  issue_statuses: "issue-statuses",
-  properties: "properties",
   skills: "skills",
   mcp: "mcp",
   plugins: "plugins",
@@ -106,10 +99,8 @@ const WORKSPACE_TAB_ICONS = {
   integrations: Plug,
   billing: CreditCard,
   labels: Tags,
-  issue_statuses: CircleDot,
-  properties: SlidersHorizontal,
   skills: Sparkles,
-  mcp: Server,
+  mcp: McpMark,
   plugins: Blocks,
 } as const;
 
@@ -120,6 +111,8 @@ const LEGACY_TAB_REDIRECTS: Record<string, string> = {
   lark: "integrations",
   members: "workspace",
   chat: "preferences",
+  "issue-statuses": "workspace",
+  properties: "workspace",
 };
 
 const SETTINGS_NAV_TRIGGER_CLASS =
@@ -424,8 +417,6 @@ function SettingsTabPanels({
         <DialogTabPanel value="billing"><BillingTab /></DialogTabPanel>
       ) : null}
       <DialogTabPanel value="labels"><LabelsTab /></DialogTabPanel>
-      <DialogTabPanel value="issue-statuses"><IssueStatusesTab /></DialogTabPanel>
-      <DialogTabPanel value="properties"><PropertiesTab /></DialogTabPanel>
       <DialogTabPanel value="skills"><SkillsTab /></DialogTabPanel>
       <DialogTabPanel value="mcp"><McpTab /></DialogTabPanel>
       {pluginsEnabled ? <DialogTabPanel value="plugins"><PluginsTab /></DialogTabPanel> : null}
@@ -494,10 +485,6 @@ function tabTitle(
       return t(($) => $.page.tabs.billing);
     case "labels":
       return t(($) => $.page.tabs.labels);
-    case "issue-statuses":
-      return t(($) => $.page.tabs.issue_statuses);
-    case "properties":
-      return t(($) => $.page.tabs.properties);
     case "skills":
       return t(($) => $.page.tabs.skills);
     case "mcp":

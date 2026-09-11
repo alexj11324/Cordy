@@ -28,6 +28,12 @@ export function RuntimeDetailPage() {
       localMachineActions={<DaemonRuntimeActions />}
       hasLocalMachine
       bootstrapping={context.bootstrapping}
+      onStopLocalDaemon={async () => {
+        const result = await window.daemonAPI.stop();
+        if (!result.success) {
+          throw new Error(result.error ?? "Failed to stop daemon");
+        }
+      }}
     />
   );
 }

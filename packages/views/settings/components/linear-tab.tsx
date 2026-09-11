@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CheckCircle2, CircleAlert, GitMerge, Loader2, Settings2, Trash2 } from "lucide-react";
+import { CircleAlert, GitMerge, Loader2, Settings2, Trash2 } from "lucide-react";
 import { ApiError, api } from "@orvilo/core/api";
 import {
   linearBindingsOptions,
@@ -49,6 +49,11 @@ import { FieldGroup } from "@orvilo/ui/components/ui/field";
 import { ConnectionSelectField } from "./credential-field-form";
 import { useT } from "../../i18n";
 import { IntegrationCard } from "./integration-card";
+import {
+  ConnectionDotBadge,
+  IntegrationRowMenu,
+  type IntegrationRowMenuItem,
+} from "./integration-row-chrome";
 
 type LinearIntegrationCardProps = {
   canManage: boolean;
@@ -82,15 +87,9 @@ function connectionErrorIsConfiguration(error: unknown) {
   return error instanceof ApiError && error.status === 503;
 }
 
-function formatLastSync(value: string | null | undefined) {
-  if (!value) return null;
-  const timestamp = Date.parse(value);
-  return Number.isNaN(timestamp) ? null : new Date(timestamp).toLocaleString();
-}
-
 function connectionLabel(status: string | undefined, t: ReturnType<typeof useT<"settings">>["t"]) {
   if (status === "active") {
-    return t(($) => $.page.linear.healthy);
+    return t(($) => $.page.connection_status.connected);
   }
   if (status === "reauthorization_required") {
     return t(($) => $.page.linear.reauthorization_required);
@@ -924,10 +923,6 @@ export function LinearIntegrationCard({
   );
   const configured = connectionQuery.data?.configured ?? false;
   const bindings = bindingsQuery.data?.bindings ?? [];
-  const activeBindingCount = bindings.filter(
-    (binding) => binding.status === "active" && binding.sync_mode !== "not_synced",
-  ).length;
-  const lastSync = formatLastSync(connection?.last_success_at);
 
   async function connect() {
     try {
@@ -953,104 +948,152 @@ export function LinearIntegrationCard({
   }
 
   const status = connectionQuery.isLoading ? (
-    <Badge variant="secondary"><Loader2 className="animate-spin" />{t(($) => $.page.linear.loading)}</Badge>
+    <Badge variant="outline">
+      <Loader2 className="animate-spin" />
+      {t(($) => $.page.linear.loading)}
+    </Badge>
   ) : connectionQuery.isError ? (
-    <Badge variant="outline"><CircleAlert />{connectionErrorIsConfiguration(connectionQuery.error) ? t(($) => $.page.linear.not_configured) : t(($) => $.page.linear.unavailable)}</Badge>
+    <Badge variant="outline">
+      <CircleAlert />
+      {connectionErrorIsConfiguration(connectionQuery.error)
+        ? t(($) => $.page.linear.not_configured)
+        : t(($) => $.page.linear.unavailable)}
+    </Badge>
   ) : !configured ? (
-    <Badge variant="outline">{t(($) => $.page.linear.not_configured)}</Badge>
+    <ConnectionDotBadge connected={false}>
+      {t(($) => $.page.linear.not_configured)}
+    </ConnectionDotBadge>
   ) : isReauthorizationRequired ? (
-    <Badge variant="destructive"><CircleAlert />{t(($) => $.page.linear.reauthorization_required)}</Badge>
+    <Badge variant="destructive">
+      <CircleAlert />
+      {t(($) => $.page.linear.reauthorization_required)}
+    </Badge>
   ) : hasUnknownStatus ? (
-    <Badge variant="outline"><CircleAlert />{connectionLabel(connection?.status, t)}</Badge>
+    <ConnectionDotBadge connected={false}>
+      {connectionLabel(connection?.status, t)}
+    </ConnectionDotBadge>
   ) : isConnected ? (
-    <Badge className="bg-emerald-600 text-white hover:bg-emerald-600"><CheckCircle2 />{connectionLabel(connection?.status, t)}</Badge>
+    <ConnectionDotBadge connected>
+      {t(($) => $.page.connection_status.connected)}
+    </ConnectionDotBadge>
   ) : (
-    <Badge variant="outline">{t(($) => $.page.linear.disconnected)}</Badge>
+    <ConnectionDotBadge connected={false}>
+      {t(($) => $.page.linear.disconnected)}
+    </ConnectionDotBadge>
   );
+
+  const menuItems: IntegrationRowMenuItem[] = [];
+  if (openConflicts.length > 0) {
+    menuItems.push({
+      label: t(($) => $.page.linear.conflict_center),
+      icon: GitMerge,
+      onSelect: () => setConflictOpen(true),
+    });
+  }
+  if (isReauthorizationRequired || !isConnected) {
+    menuItems.push({
+      label: isReauthorizationRequired
+        ? t(($) => $.page.linear.reconnect)
+        : t(($) => $.page.linear.connect),
+      icon: Settings2,
+      onSelect: () => void connect(),
+    });
+  } else {
+    menuItems.push({
+      label: t(($) => $.page.linear.manage),
+      icon: Settings2,
+      onSelect: () => setWizardOpen(true),
+    });
+    menuItems.push({
+      label: t(($) => $.page.linear.disconnect),
+      icon: Trash2,
+      onSelect: () => setDisconnectOpen(true),
+      variant: "destructive" as const,
+    });
+  }
 
   let action;
   if (isGuest) {
-    action = <span className="text-caption text-muted-foreground">{t(($) => $.page.linear.login_required)}</span>;
+    action = (
+      <span className="text-body text-muted-foreground">
+        {t(($) => $.page.linear.login_required)}
+      </span>
+    );
   } else if (!canManage) {
-    action = <span className="text-caption text-muted-foreground">{t(($) => $.page.linear.admin_only)}</span>;
+    action = (
+      <span className="text-body text-muted-foreground">
+        {t(($) => $.page.linear.admin_only)}
+      </span>
+    );
   } else if (connectionQuery.isLoading) {
     action = <Loader2 className="size-4 animate-spin text-muted-foreground" />;
   } else if (connectionQuery.isError || hasUnknownStatus) {
-    action = <span className="text-caption text-muted-foreground">{t(($) => $.page.linear.unavailable)}</span>;
+    action = (
+      <span className="text-body text-muted-foreground">
+        {t(($) => $.page.linear.unavailable)}
+      </span>
+    );
   } else if (!configured) {
-    action = <span className="text-caption text-muted-foreground">{t(($) => $.page.linear.server_configuration_required)}</span>;
-  } else if (isReauthorizationRequired || !isConnected) {
-    action = <Button onClick={() => void connect()} size="sm"><Settings2 />{isReauthorizationRequired ? t(($) => $.page.linear.reconnect) : t(($) => $.page.linear.connect)}</Button>;
+    action = (
+      <span className="text-body text-muted-foreground">
+        {t(($) => $.page.linear.server_configuration_required)}
+      </span>
+    );
   } else {
     action = (
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button onClick={() => setWizardOpen(true)} size="sm" variant="outline"><Settings2 />{t(($) => $.page.linear.manage)}</Button>
-        <Button className="text-destructive hover:text-destructive" onClick={() => setDisconnectOpen(true)} size="sm" variant="ghost"><Trash2 />{t(($) => $.page.linear.disconnect)}</Button>
-      </div>
+      <IntegrationRowMenu
+        ariaLabel={
+          isConnected
+            ? t(($) => $.page.linear.manage)
+            : isReauthorizationRequired
+              ? t(($) => $.page.linear.reconnect)
+              : t(($) => $.page.linear.connect)
+        }
+        items={menuItems}
+      />
     );
   }
 
   return (
     <>
       <IntegrationCard
-        action={
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {openConflicts.length > 0 ? (
-              <Button onClick={() => setConflictOpen(true)} size="sm" variant="outline">
-                <GitMerge />{t(($) => $.page.linear.conflict_center)}
-              </Button>
-            ) : null}
-            {action}
-          </div>
-        }
+        action={action}
         channel="linear"
         description={t(($) => $.page.linear.description)}
         iconClassName="bg-[#5E6AD2]/10"
-        status={
-          <div className="flex flex-wrap items-center gap-2">
-            {status}
-            {isConnected ? (
-              <span className="text-micro text-muted-foreground">
-                {connection?.organization_name} · {t(($) => $.page.linear.projects_synced, { count: activeBindingCount })}
-                {" · "}
-                {lastSync
-                  ? t(($) => $.page.linear.last_sync, { time: lastSync })
-                  : t(($) => $.page.linear.last_sync_never)}
-                {openConflicts.length > 0
-                  ? ` · ${t(($) => $.page.linear.conflicts_count, { count: openConflicts.length })}`
-                  : ""}
-              </span>
-            ) : null}
-          </div>
-        }
+        status={status}
         title={t(($) => $.page.linear.title)}
       />
-      <Dialog open={wizardOpen} onOpenChange={setWizardOpen}>
-        {wizardOpen && catalogQuery.data ? (
-          <BindingWizard
-            bindings={bindings}
-            catalog={catalogQuery.data}
-            connectionId={connection?.id ?? ""}
-            memberBindings={memberBindingsQuery.data?.bindings ?? []}
-            members={membersQuery.data ?? []}
-            pullImportEnabled={connectionQuery.data?.pull_import_enabled ?? false}
-            onClose={() => setWizardOpen(false)}
-            onSaved={() => void qc.invalidateQueries({ queryKey: linearKeys.connection(workspaceId) })}
-            projects={projectsQuery.data ?? []}
-            workspaceId={workspaceId}
-          />
-        ) : (
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{t(($) => $.page.linear.loading_catalog)}</DialogTitle>
-              <DialogDescription>
-                {catalogQuery.isError ? t(($) => $.page.linear.catalog_failed) : t(($) => $.page.linear.loading_catalog_description)}
-              </DialogDescription>
-            </DialogHeader>
-            {catalogQuery.isLoading ? <Loader2 className="mx-auto animate-spin" /> : null}
-          </DialogContent>
-        )}
-      </Dialog>
+      {wizardOpen ? (
+        <Dialog open onOpenChange={setWizardOpen}>
+          {catalogQuery.data ? (
+            <BindingWizard
+              bindings={bindings}
+              catalog={catalogQuery.data}
+              connectionId={connection?.id ?? ""}
+              memberBindings={memberBindingsQuery.data?.bindings ?? []}
+              members={membersQuery.data ?? []}
+              pullImportEnabled={connectionQuery.data?.pull_import_enabled ?? false}
+              onClose={() => setWizardOpen(false)}
+              onSaved={() => void qc.invalidateQueries({ queryKey: linearKeys.connection(workspaceId) })}
+              projects={projectsQuery.data ?? []}
+              workspaceId={workspaceId}
+            />
+          ) : (
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t(($) => $.page.linear.loading_catalog)}</DialogTitle>
+                <DialogDescription>
+                  {catalogQuery.isError
+                    ? t(($) => $.page.linear.catalog_failed)
+                    : t(($) => $.page.linear.loading_catalog_description)}
+                </DialogDescription>
+              </DialogHeader>
+              {catalogQuery.isLoading ? <Loader2 className="mx-auto animate-spin" /> : null}
+            </DialogContent>
+          )}
+        </Dialog>
+      ) : null}
       <Dialog open={conflictOpen} onOpenChange={setConflictOpen}>
         {conflictOpen ? (
           <ConflictCenter

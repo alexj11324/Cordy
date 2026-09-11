@@ -11,16 +11,32 @@ import (
 	"github.com/google/uuid"
 )
 
+func stubOSMachine(t *testing.T, machineID, username string) {
+	t.Helper()
+	origID, origUser := readOSMachineID, readOSUsername
+	readOSMachineID = func() (string, error) { return machineID, nil }
+	readOSUsername = func() string { return username }
+	t.Cleanup(func() {
+		readOSMachineID = origID
+		readOSUsername = origUser
+	})
+}
+
 func TestEnsureDaemonID_Persists(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubOSMachine(t, "11111111-2222-3333-4444-555555555555", "alex")
+	want := DeriveDaemonID("11111111-2222-3333-4444-555555555555", "alex")
 
-	first, err := EnsureDaemonID("")
+	first, superseded, err := EnsureDaemonID("")
 	if err != nil {
 		t.Fatalf("EnsureDaemonID first call: %v", err)
 	}
-	if _, err := uuid.Parse(first); err != nil {
-		t.Fatalf("EnsureDaemonID returned non-UUID: %q", first)
+	if first != want {
+		t.Fatalf("EnsureDaemonID = %q, want OS-derived %q", first, want)
+	}
+	if len(superseded) != 0 {
+		t.Fatalf("fresh install superseded = %v, want none", superseded)
 	}
 
 	path := filepath.Join(home, ".orvilo", "daemon.id")
@@ -32,7 +48,7 @@ func TestEnsureDaemonID_Persists(t *testing.T) {
 		t.Fatalf("file contents %q differ from returned UUID %q", data, first)
 	}
 
-	second, err := EnsureDaemonID("")
+	second, _, err := EnsureDaemonID("")
 	if err != nil {
 		t.Fatalf("EnsureDaemonID second call: %v", err)
 	}
@@ -44,12 +60,13 @@ func TestEnsureDaemonID_Persists(t *testing.T) {
 func TestEnsureDaemonID_SharedAcrossProfiles(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubOSMachine(t, "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "alex")
 
-	defaultID, err := EnsureDaemonID("")
+	defaultID, _, err := EnsureDaemonID("")
 	if err != nil {
 		t.Fatalf("default profile: %v", err)
 	}
-	stagingID, err := EnsureDaemonID("staging")
+	stagingID, _, err := EnsureDaemonID("staging")
 	if err != nil {
 		t.Fatalf("staging profile: %v", err)
 	}
@@ -57,19 +74,18 @@ func TestEnsureDaemonID_SharedAcrossProfiles(t *testing.T) {
 		t.Fatalf("profiles should share one machine id, got default=%s staging=%s", defaultID, stagingID)
 	}
 
-	// Profile-scoped file must not be created under the new layout — the
-	// only source of truth is ~/.orvilo/daemon.id.
 	profileFile := filepath.Join(home, ".orvilo", "profiles", "staging", "daemon.id")
 	if _, err := os.Stat(profileFile); !os.IsNotExist(err) {
 		t.Fatalf("profile-scoped daemon.id should not be created, stat err: %v", err)
 	}
 }
 
-func TestEnsureDaemonID_PromotesPreChangeProfileFile(t *testing.T) {
+func TestEnsureDaemonID_MigratesPreChangeProfileFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubOSMachine(t, "deadbeef-0000-0000-0000-000000000001", "alex")
+	want := DeriveDaemonID("deadbeef-0000-0000-0000-000000000001", "alex")
 
-	// Seed a per-profile daemon.id the way pre-#1220 daemons laid it out.
 	legacyID := uuid.Must(uuid.NewV7()).String()
 	profileDir := filepath.Join(home, ".orvilo", "profiles", "staging")
 	if err := os.MkdirAll(profileDir, 0o755); err != nil {
@@ -79,30 +95,82 @@ func TestEnsureDaemonID_PromotesPreChangeProfileFile(t *testing.T) {
 		t.Fatalf("seed legacy id: %v", err)
 	}
 
-	// First call on the post-change daemon with the matching profile must
-	// reuse the pre-change UUID so existing runtime rows continue to match
-	// without needing a merge round-trip.
-	got, err := EnsureDaemonID("staging")
+	got, superseded, err := EnsureDaemonID("staging")
 	if err != nil {
 		t.Fatalf("EnsureDaemonID: %v", err)
 	}
-	if got != legacyID {
-		t.Fatalf("expected promoted UUID %s, got %s", legacyID, got)
+	if got != want {
+		t.Fatalf("expected OS-derived UUID %s, got %s", want, got)
+	}
+	if !containsString(superseded, legacyID) {
+		t.Fatalf("superseded %v missing leftover profile UUID %s", superseded, legacyID)
 	}
 
-	// The canonical file now holds that same UUID.
 	data, err := os.ReadFile(filepath.Join(home, ".orvilo", "daemon.id"))
 	if err != nil {
 		t.Fatalf("read canonical file: %v", err)
 	}
-	if strings.TrimSpace(string(data)) != legacyID {
-		t.Fatalf("canonical file %q != promoted %q", data, legacyID)
+	if strings.TrimSpace(string(data)) != want {
+		t.Fatalf("canonical file %q != derived %q", data, want)
+	}
+}
+
+func TestEnsureDaemonID_MigratesRandomCachedUUID(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stubOSMachine(t, "cafe0000-0000-0000-0000-000000000002", "alex")
+	want := DeriveDaemonID("cafe0000-0000-0000-0000-000000000002", "alex")
+
+	legacyID := uuid.Must(uuid.NewV7()).String()
+	dir := filepath.Join(home, ".orvilo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "daemon.id"), []byte(legacyID+"\n"), 0o600); err != nil {
+		t.Fatalf("seed random id: %v", err)
+	}
+
+	got, superseded, err := EnsureDaemonID("")
+	if err != nil {
+		t.Fatalf("EnsureDaemonID: %v", err)
+	}
+	if got != want {
+		t.Fatalf("got %s, want OS-derived %s", got, want)
+	}
+	if !containsString(superseded, legacyID) {
+		t.Fatalf("superseded %v missing cached UUID %s", superseded, legacyID)
+	}
+}
+
+func TestEnsureDaemonID_SurvivesDeletedCacheFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	stubOSMachine(t, "abcdabcd-abcd-abcd-abcd-abcdabcdabcd", "alex")
+
+	first, _, err := EnsureDaemonID("")
+	if err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	if err := os.Remove(filepath.Join(home, ".orvilo", "daemon.id")); err != nil {
+		t.Fatalf("remove cache: %v", err)
+	}
+	second, superseded, err := EnsureDaemonID("")
+	if err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	if second != first {
+		t.Fatalf("reinstall minted a new id: %q → %q", first, second)
+	}
+	if len(superseded) != 0 {
+		t.Fatalf("wiped cache should not report superseded, got %v", superseded)
 	}
 }
 
 func TestEnsureDaemonID_RegeneratesCorruptFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	stubOSMachine(t, "99999999-0000-0000-0000-000000000003", "alex")
+	want := DeriveDaemonID("99999999-0000-0000-0000-000000000003", "alex")
 
 	dir := filepath.Join(home, ".orvilo")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -113,18 +181,58 @@ func TestEnsureDaemonID_RegeneratesCorruptFile(t *testing.T) {
 		t.Fatalf("seed corrupt file: %v", err)
 	}
 
-	id, err := EnsureDaemonID("")
+	id, superseded, err := EnsureDaemonID("")
 	if err != nil {
 		t.Fatalf("EnsureDaemonID: %v", err)
 	}
-	if _, err := uuid.Parse(id); err != nil {
-		t.Fatalf("expected valid UUID, got %q", id)
+	if id != want {
+		t.Fatalf("got %q, want %q", id, want)
+	}
+	if len(superseded) != 0 {
+		t.Fatalf("corrupt file is not a UUID to merge, superseded=%v", superseded)
 	}
 
 	data, _ := os.ReadFile(path)
 	if strings.TrimSpace(string(data)) != id {
-		t.Fatalf("file not rewritten with new UUID")
+		t.Fatalf("file not rewritten with derived UUID")
 	}
+}
+
+func TestEnsureDaemonID_FallsBackToCacheWhenOSUnavailable(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	legacyID := uuid.Must(uuid.NewV7()).String()
+	dir := filepath.Join(home, ".orvilo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "daemon.id"), []byte(legacyID+"\n"), 0o600); err != nil {
+		t.Fatalf("seed cache: %v", err)
+	}
+
+	origID := readOSMachineID
+	readOSMachineID = func() (string, error) { return "", errEmptyMachineID }
+	t.Cleanup(func() { readOSMachineID = origID })
+
+	got, superseded, err := EnsureDaemonID("")
+	if err != nil {
+		t.Fatalf("EnsureDaemonID: %v", err)
+	}
+	if got != legacyID {
+		t.Fatalf("got %s, want cached %s", got, legacyID)
+	}
+	if len(superseded) != 0 {
+		t.Fatalf("unavailable OS id should keep the cache, superseded=%v", superseded)
+	}
+}
+
+func containsString(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestLegacyDaemonUUIDs_ScansProfileDirs(t *testing.T) {

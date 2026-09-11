@@ -1,7 +1,10 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import {
   deviceDisplayName,
   deviceKind,
+  deviceLabelForViewer,
+  isCurrentLocalRuntime,
   runtimeDisplayLabel,
   runtimeDisplayName,
   splitRuntimeName,
@@ -165,6 +168,81 @@ describe("device display helpers", () => {
         provider: "claude",
       }),
     ).toBe("build-server-01");
+  });
+
+  it("treats the current daemon UUID as this machine", () => {
+    expect(
+      isCurrentLocalRuntime(
+        {
+          runtime_mode: "local",
+          daemon_id: "daemon-new",
+          name: "Claude (Mac)",
+          device_info: "Mac",
+          owner_id: "user-1",
+        },
+        { localDaemonId: "daemon-new" },
+      ),
+    ).toBe(true);
+  });
+
+  it("still treats this machine as local when the daemon UUID rotated but the host matches", () => {
+    expect(
+      isCurrentLocalRuntime(
+        {
+          runtime_mode: "local",
+          daemon_id: "daemon-old",
+          name: "Claude (Mac)",
+          device_info: "Mac · darwin-arm64",
+          owner_id: "user-1",
+        },
+        {
+          localDaemonId: "daemon-new",
+          localMachineName: "Mac",
+          currentUserId: "user-1",
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it("labels the viewing user's current computer as this machine", () => {
+    expect(
+      deviceLabelForViewer(
+        {
+          runtime_mode: "local",
+          daemon_id: "daemon-old",
+          name: "Claude (Mac)",
+          custom_name: null,
+          device_info: "Mac",
+          owner_id: "user-1",
+          provider: "claude",
+        },
+        {
+          localDaemonId: "daemon-new",
+          localMachineName: "Mac",
+          currentUserId: "user-1",
+        },
+        "This machine",
+      ),
+    ).toBe("This machine");
+  });
+
+  it("does not claim another user's identically named host", () => {
+    expect(
+      isCurrentLocalRuntime(
+        {
+          runtime_mode: "local",
+          daemon_id: "someone-else",
+          name: "Claude (Mac)",
+          device_info: "Mac",
+          owner_id: "user-2",
+        },
+        {
+          localDaemonId: "daemon-new",
+          localMachineName: "Mac",
+          currentUserId: "user-1",
+        },
+      ),
+    ).toBe(false);
   });
 
   it("uses a terminal icon family for cloud runtimes", () => {

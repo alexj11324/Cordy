@@ -75,6 +75,19 @@
       "local_daemon": "本地守护进程"
     },
     "rename": "重命名机器",
+    "delete": "删除机器",
+    "delete_dialog": {
+      "title": "删除 {{name}}？",
+      "description": "这会移除这台机器上的全部 Harness、解绑关联智能体，并断开守护进程。此操作无法撤销。",
+      "self_heal_notice": "如果这台机器的守护进程仍在运行，它可能会重新注册。请先停止守护进程，才能永久移除。",
+      "stop_daemon_notice": "将停止这台电脑上的本地守护进程，避免它再次注册。",
+      "confirm": "我了解这台机器会从工作区中移除。",
+      "cancel": "取消",
+      "submit": "删除机器",
+      "submitting": "正在删除...",
+      "toast_deleted": "已删除机器",
+      "toast_failed": "无法删除这台机器"
+    },
     "rename_dialog": {
       "title": "重命名机器",
       "description": "给这台机器起一个你能认出来的名字。会应用到这台机器上的所有 Harness，并在给智能体选择设备时显示。",

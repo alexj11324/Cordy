@@ -137,6 +137,8 @@ describe("AccountTab", () => {
     render(<AccountTab />, { wrapper: I18nWrapper });
 
     expect(screen.getByTestId("profile-avatar")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Profile" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Profile updates are shared")).not.toBeInTheDocument();
     expect(screen.getByLabelText("First Name")).toHaveValue("Ada");
     expect(screen.getByLabelText("Last Name")).toHaveValue("Lovelace");
     expect(screen.getByLabelText("Primary Email Address")).toHaveValue(

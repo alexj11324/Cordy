@@ -352,6 +352,15 @@ function loadRenderer(window: BrowserWindow): void {
   }
 }
 
+function installFullscreenBroadcast(window: BrowserWindow): void {
+  const send = () => {
+    if (window.isDestroyed()) return;
+    window.webContents.send("window:fullscreen", window.isFullScreen());
+  };
+  window.on("enter-full-screen", send);
+  window.on("leave-full-screen", send);
+}
+
 function installLocaleRefresh(window: BrowserWindow): void {
   // Electron has no dedicated OS-language event. Check whenever any Orvilo
   // window regains focus, then broadcast so all open windows remain aligned.
@@ -559,6 +568,7 @@ function createWindow(): BrowserWindow {
 
   installContextMenu(window.webContents);
   installNavigationGestures(window);
+  installFullscreenBroadcast(window);
 
   loadRenderer(window);
   return window;
@@ -596,6 +606,7 @@ function createIssueWindow(context: IssueWindowContext): void {
 
   window.on("ready-to-show", () => window.show());
   installLocaleRefresh(window);
+  installFullscreenBroadcast(window);
   installDownloadSaveDialogHandler(window);
 
   window.webContents.setWindowOpenHandler((details) => {
@@ -905,6 +916,10 @@ if (!gotTheLock) {
       BrowserWindow.fromWebContents(event.sender)?.setWindowButtonVisibility(
         !immersive,
       );
+    });
+
+    ipcMain.handle("window:getFullscreen", (event) => {
+      return BrowserWindow.fromWebContents(event.sender)?.isFullScreen() ?? false;
     });
 
     // Main owns foreground detection and item-level dedupe. Every renderer

@@ -15,6 +15,57 @@ export function splitRuntimeName(name: string): {
   return { base: match[1], hostname: match[2] };
 }
 
+export interface LocalMachineMatch {
+  localDaemonId?: string | null;
+  localMachineName?: string | null;
+  currentUserId?: string | null;
+}
+
+/**
+ * True when this runtime is the viewing user's current computer.
+ * Prefer the daemon UUID. Fall back to host name only for that user's
+ * own local runtimes — the workspace list includes everyone else's
+ * machines, and host names are not unique.
+ */
+export function isCurrentLocalRuntime(
+  runtime: Pick<
+    AgentRuntime,
+    "runtime_mode" | "daemon_id" | "name" | "device_info" | "owner_id"
+  >,
+  options: LocalMachineMatch,
+): boolean {
+  if (runtime.runtime_mode !== "local") return false;
+  if (options.localDaemonId && runtime.daemon_id === options.localDaemonId) {
+    return true;
+  }
+  const localName = options.localMachineName?.trim();
+  if (!localName || !options.currentUserId) return false;
+  if (runtime.owner_id !== options.currentUserId) return false;
+  const needle = localName.toLowerCase();
+  if (runtime.daemon_id?.toLowerCase() === needle) return true;
+  const host = deviceHostName(runtime);
+  return !!host && host.toLowerCase() === needle;
+}
+
+/** Device name for the viewing user: "this machine" when it is theirs. */
+export function deviceLabelForViewer(
+  runtime: Pick<
+    AgentRuntime,
+    | "runtime_mode"
+    | "daemon_id"
+    | "name"
+    | "device_info"
+    | "owner_id"
+    | "custom_name"
+    | "provider"
+  >,
+  options: LocalMachineMatch,
+  thisMachineLabel: string,
+): string {
+  if (isCurrentLocalRuntime(runtime, options)) return thisMachineLabel;
+  return deviceDisplayName(runtime);
+}
+
 /** Return the registered machine name without the Harness prefix. */
 export function deviceHostName(
   runtime: Pick<AgentRuntime, "name" | "device_info">,

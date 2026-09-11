@@ -88,6 +88,10 @@ interface DesktopAPI {
   downloadURL: (url: string) => Promise<void>;
   /** Hide macOS traffic lights for full-screen modals; restore when false. */
   setImmersiveMode: (immersive: boolean) => Promise<void>;
+  /** Whether this window is currently in native fullscreen. */
+  getFullscreen: () => Promise<boolean>;
+  /** Subscribe to native fullscreen enter/leave. Returns an unsubscribe fn. */
+  onFullscreenChange: (callback: (fullscreen: boolean) => void) => () => void;
   /** Show a native OS notification for a new inbox item. */
   showNotification: (payload: {
     slug: string;

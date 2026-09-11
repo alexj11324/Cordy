@@ -115,6 +115,9 @@ export function installWebDesktopBridge(): boolean {
     openExternal: async (url: string) => openBrowserUrl(url),
     downloadURL: async (url: string) => openBrowserUrl(url),
     setImmersiveMode: async (_immersive: boolean) => undefined,
+    getFullscreen: async () => false,
+    onFullscreenChange: (_callback: (fullscreen: boolean) => void) =>
+      noopUnsubscribe(),
     showNotification: (payload: {
       slug: string;
       itemId: string;

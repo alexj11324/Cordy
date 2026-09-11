@@ -13,12 +13,16 @@ vi.mock("../../runtimes/components/provider-logo", () => ({
   ),
 }));
 
-vi.mock("@orvilo/core/runtimes", () => ({
-  deviceDisplayName: (runtime: AgentRuntime) =>
-    runtime.name.match(/\(([^)]+)\)/)?.[1] ?? runtime.name,
-  deviceKind: () => "desktop",
-  runtimeDisplayLabel: (runtime: AgentRuntime) => runtime.name,
-}));
+vi.mock("@orvilo/core/runtimes", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@orvilo/core/runtimes")>();
+  return {
+    ...actual,
+    deviceDisplayName: (runtime: AgentRuntime) =>
+      runtime.name.match(/\(([^)]+)\)/)?.[1] ?? runtime.name,
+    deviceKind: () => "desktop",
+    runtimeDisplayLabel: (runtime: AgentRuntime) => runtime.name,
+  };
+});
 
 function agent(overrides: Partial<Agent> = {}): Agent {
   return {
@@ -94,12 +98,18 @@ function renderCard(
   listRow: AgentListRow = row(),
   onOpenSummary = vi.fn(),
   localDaemonId: string | null | undefined = "daemon-1",
+  localMachine?: {
+    localMachineName?: string | null;
+    currentUserId?: string | null;
+  },
 ) {
   return {
     onOpenSummary,
     ...renderWithI18n(
       <AgentCard
+        currentUserId={localMachine?.currentUserId}
         localDaemonId={localDaemonId}
+        localMachineName={localMachine?.localMachineName}
         onOpenSummary={onOpenSummary}
         row={listRow}
       />,
@@ -237,6 +247,24 @@ describe("AgentCard", () => {
 
     expect(screen.getByText("Other Mac")).toBeInTheDocument();
     expect(screen.queryByText("This machine")).not.toBeInTheDocument();
+  });
+
+  it("still labels this machine after a new app mints a different daemon UUID", () => {
+    renderCard(
+      row({
+        runtime: runtime({
+          daemon_id: "daemon-old",
+          name: "Claude (Mac)",
+          device_info: "Mac · darwin-arm64",
+        }),
+      }),
+      vi.fn(),
+      "daemon-new",
+      { localMachineName: "Mac", currentUserId: "user-1" },
+    );
+
+    expect(screen.getByText("This machine")).toBeInTheDocument();
+    expect(screen.queryByText("Mac")).not.toBeInTheDocument();
   });
 
   it("uses the owner name and a colored ReUI icon fallback", () => {

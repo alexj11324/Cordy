@@ -109,6 +109,21 @@ describe("keyboard shortcut definitions", () => {
     expect(action.allowInEditable).toBe(false);
   });
 
+  it("creates issues with Command/Ctrl+N from editors and the shell", () => {
+    const action = SHORTCUT_ACTION_BY_ID.createIssue;
+    const chord = createShortcutChord("N", { primary: true });
+    expect(action.defaultShortcut).toEqual(chord);
+    expect(action.allowInEditable).toBe(true);
+    for (const platform of ["macos", "windows", "linux"] as const) {
+      for (const runtime of ["web", "desktop"] as const) {
+        expect(
+          isShortcutAllowedForAction("createIssue", chord, platform, runtime),
+          `Mod+N must stay assignable on ${platform}/${runtime}`,
+        ).toBe(true);
+      }
+    }
+  });
+
   it("strictly distinguishes Command and Control on macOS", () => {
     const commandF = createShortcutChord("F", { primary: true });
     const controlF = createShortcutChord("F", { control: true });
@@ -208,7 +223,7 @@ describe("keyboard shortcut definitions", () => {
   });
 
   it("reserves browser-owned accelerators on web but frees the bare chords on desktop", () => {
-    for (const key of ["P", "L", "T", "N", "D", "U"]) {
+    for (const key of ["P", "L", "T", "D", "U"]) {
       const chord = createShortcutChord(key, { primary: true });
       expect(isReservedShortcut(chord, "macos", "web")).toBe(true);
       expect(isReservedShortcut(chord, "windows", "web")).toBe(true);

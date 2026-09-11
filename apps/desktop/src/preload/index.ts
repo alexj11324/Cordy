@@ -247,6 +247,19 @@ const desktopAPI = {
   /** Toggle immersive mode — hide macOS traffic lights for full-screen modals */
   setImmersiveMode: (immersive: boolean) =>
     ipcRenderer.invoke("window:setImmersive", immersive),
+  /** Whether this window is currently in native fullscreen. */
+  getFullscreen: (): Promise<boolean> =>
+    ipcRenderer.invoke("window:getFullscreen"),
+  /** Subscribe to native fullscreen enter/leave. Returns an unsubscribe fn. */
+  onFullscreenChange: (callback: (fullscreen: boolean) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, value: unknown) => {
+      if (typeof value === "boolean") callback(value);
+    };
+    ipcRenderer.on("window:fullscreen", handler);
+    return () => {
+      ipcRenderer.removeListener("window:fullscreen", handler);
+    };
+  },
   /**
    * Show a native OS notification for a new inbox item. Fired from the
    * renderer only when the app is unfocused — in-focus feedback is the

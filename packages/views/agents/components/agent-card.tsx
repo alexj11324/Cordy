@@ -7,8 +7,8 @@ import {
   type AgentAvailability,
 } from "@orvilo/core/agents";
 import {
-  deviceDisplayName,
   deviceKind,
+  deviceLabelForViewer,
 } from "@orvilo/core/runtimes";
 import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 import {
@@ -69,17 +69,25 @@ export function AgentCreateCard({
 export function AgentCard({
   row,
   localDaemonId,
+  localMachineName,
+  currentUserId,
   onOpenSummary,
 }: {
   row: AgentListRow;
   localDaemonId?: string | null;
+  localMachineName?: string | null;
+  currentUserId?: string | null;
   onOpenSummary: () => void;
 }) {
   const { t } = useT("agents");
   return (
     <AtlasDealCard
       onOpen={onOpenSummary}
-      opportunity={toAtlasDealCard(row, t, localDaemonId)}
+      opportunity={toAtlasDealCard(row, t, {
+        localDaemonId,
+        localMachineName,
+        currentUserId,
+      })}
     />
   );
 }
@@ -87,7 +95,11 @@ export function AgentCard({
 function toAtlasDealCard(
   row: AgentListRow,
   t: ReturnType<typeof useT<"agents">>["t"],
-  localDaemonId?: string | null,
+  localMachine: {
+    localDaemonId?: string | null;
+    localMachineName?: string | null;
+    currentUserId?: string | null;
+  },
 ): AtlasDealCardOpportunity {
   const { agent, presence, runtime, owner } = row;
   const needsRuntime = !agent.archived_at && !isAgentRuntimeBound(agent);
@@ -130,14 +142,12 @@ function toAtlasDealCard(
         ? t(($) => $.access.scope_labels.specific_people)
         : t(($) => $.access.scope_labels.owner_only);
 
-  const isCurrentLocalDevice =
-    runtime?.runtime_mode === "local" &&
-    !!localDaemonId &&
-    runtime.daemon_id === localDaemonId;
   const deviceLabel = runtime
-    ? isCurrentLocalDevice
-      ? t(($) => $.gallery_card.device_this_machine)
-      : deviceDisplayName(runtime)
+    ? deviceLabelForViewer(
+        runtime,
+        localMachine,
+        t(($) => $.gallery_card.device_this_machine),
+      )
     : t(($) => $.row.needs_device);
 
   const capacity = Math.max(

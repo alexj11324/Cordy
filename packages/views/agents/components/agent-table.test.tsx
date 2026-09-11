@@ -19,11 +19,13 @@ vi.mock("../../runtimes/components/provider-logo", () => ({
     <span data-testid={`provider-logo-${provider}`}>{provider}</span>
   ),
 }));
-vi.mock("@orvilo/core/runtimes", () => ({
-  deviceDisplayName: (runtime: AgentRuntime) =>
-    runtime.name.match(/\(([^)]+)\)/)?.[1] ?? runtime.name,
-  deviceKind: () => "laptop",
-}));
+vi.mock("@orvilo/core/runtimes", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@orvilo/core/runtimes")>();
+  return {
+    ...actual,
+    deviceKind: () => "laptop",
+  };
+});
 vi.mock("@orvilo/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
@@ -146,12 +148,18 @@ function renderTable({
   selectedIds = new Set<string>(),
   onSelectedIdsChange = vi.fn(),
   locale = "en",
+  localDaemonId,
+  localMachineName,
+  currentUserId,
 }: {
   rows?: AgentListRow[];
   adapter?: NavigationAdapter;
   selectedIds?: Set<string>;
   onSelectedIdsChange?: (ids: ReadonlySet<string>) => void;
   locale?: "en" | "zh-Hans";
+  localDaemonId?: string | null;
+  localMachineName?: string | null;
+  currentUserId?: string | null;
 } = {}) {
   // Base UI's scroll area settles its viewport with getAnimations(); keep the
   // jsdom shim local to this ReUI table test instead of changing every view.
@@ -170,6 +178,9 @@ function renderTable({
           onSelectedIdsChange={onSelectedIdsChange}
           noMatchText="No agents"
           locale={locale}
+          localDaemonId={localDaemonId}
+          localMachineName={localMachineName}
+          currentUserId={currentUserId}
         />
       </NavigationProvider>
     </QueryClientProvider>
@@ -208,6 +219,7 @@ describe("AgentTable uses data-grid-base-1", () => {
 
     expect(screen.getByTestId("provider-logo-codex")).toBeInTheDocument();
     expect(screen.getByText("Alex MacBook Pro")).toBeInTheDocument();
+    expect(screen.queryByText("This machine")).not.toBeInTheDocument();
     expect(document.querySelector('[data-kind="laptop"]')).not.toBeNull();
     expect(screen.getByText("Mira Stone")).toBeInTheDocument();
     expect(screen.getByText("12")).toBeInTheDocument();
@@ -333,5 +345,24 @@ describe("AgentTable uses data-grid-base-1", () => {
     view.rerenderRows([rows[0]!]);
 
     expect(await screen.findByText("Agent 0")).toBeInTheDocument();
+  });
+
+  it("labels this machine after a new app mints a different daemon UUID", () => {
+    renderTable({
+      rows: [
+        row("a-1", "Alpha Agent", {
+          runtime: runtime({
+            daemon_id: "daemon-old",
+            owner_id: "u-1",
+          }),
+        }),
+      ],
+      localDaemonId: "daemon-new",
+      localMachineName: "Alex MacBook Pro",
+      currentUserId: "u-1",
+    });
+
+    expect(screen.getByText("This machine")).toBeInTheDocument();
+    expect(screen.queryByText("Alex MacBook Pro")).not.toBeInTheDocument();
   });
 });
