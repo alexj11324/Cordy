@@ -61,7 +61,7 @@ describe("ReUI global setup", () => {
     expect(tokensCSS).toContain("--background: var(--page-canvas);")
     expect(tokensCSS).toContain("--app-shell: oklch(0.985 0 0);")
     expect(tokensCSS).toContain("--page-canvas: oklch(1 0 0);")
-    expect(tokensCSS).toContain("--muted-foreground: oklch(0.556 0 0);")
+    expect(tokensCSS).toContain("--muted-foreground: oklch(0.53 0 0);")
     expect(tokensCSS).toContain("--app-shell: oklch(0.145 0 0);")
     expect(tokensCSS).toContain("--page-canvas: oklch(0.145 0 0);")
     expect(tokensCSS).toContain("--sidebar: oklch(0.145 0 0);")
@@ -86,7 +86,8 @@ describe("ReUI global setup", () => {
       "--secondary": "oklch(0.97 0 0)",
       "--secondary-foreground": "oklch(0.205 0 0)",
       "--muted": "oklch(0.97 0 0)",
-      "--muted-foreground": "oklch(0.556 0 0)",
+      // Pulse is 0.556; 0.53 is the WCAG AA floor on --surface-selected 0.95.
+      "--muted-foreground": "oklch(0.53 0 0)",
       "--accent": "oklch(0.97 0 0)",
       "--accent-foreground": "oklch(0.205 0 0)",
       "--destructive": "oklch(0.577 0.245 27.325)",

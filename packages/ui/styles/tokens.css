@@ -183,10 +183,10 @@
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.205 0 0);
     --muted: oklch(0.97 0 0);
-    /* Pulse / shadcn neutral. The old 0.505 floor existed because
-       --sidebar-accent was oklch(0.935 …) and 0.556 failed AA on it. Pulse's
-       accent is 0.97, which is what unlocks this lighter muted step. */
-    --muted-foreground: oklch(0.556 0 0);
+    /* Pulse / shadcn is 0.556, which is 4.35:1 on --surface-hover (0.97)
+       and 4.27:1 on --surface-selected (0.95) — both miss WCAG AA 4.5:1.
+       0.53 is the lightest step that still clears 4.5:1 on 0.95. */
+    --muted-foreground: oklch(0.53 0 0);
     /* The quiet step below muted, for marks that are not text: disclosure
        chevrons, separator glyphs, the em dash standing in for an empty cell,
        the large icon in an empty state. It exists because the alternative
