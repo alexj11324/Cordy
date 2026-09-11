@@ -39,3 +39,21 @@
 **怎么做**:
 - 新增 build script 白名单要写进 `pnpm-workspace.yaml` 的 `onlyBuiltDependencies`，不是 package.json
 - 仓库现有的 `pnpm.overrides` 迁移属于独立问题，动它之前先确认影响面
+
+**补充（2026-09-11，同日实测）**: 上面那条修法**已应用**，但**不足以保证 postinstall 真的执行** ——
+`pnpm-workspace.yaml:61` 的 `onlyBuiltDependencies: ['@lobehub/editor']` 位置正确，而一次
+`pnpm install` 仍然把它列进了 `Ignored build scripts` 横幅，且 patch 确实没打上。
+**没有确认机制，所以不写机制**：当时安装跑在 `CI=true` 下（为绕过
+`ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY` 不得不加），这是一个**候选**而非结论；
+另一个可疑点在于 `node_modules` 此前由**另一个 pnpm store**（`~/.cache/codex-pnpm-store/v10`）
+构建，而新 pnpm 默认 `~/Library/pnpm/store/v11`，`node_modules/.modules.yaml` 可能是旧状态。
+值得注意的是矛盾之处：`.modules.yaml` 的 `ignoredBuilds` **只**记了 `msw`/`sharp`/
+`electron-winstaller`/`unrs-resolver`，**没有** `@lobehub/editor`，可是它的脚本确实没跑。
+
+**怎么做（补充）**:
+- **装完必须校验 patch，不能只看警告横幅**。按 `@lobehub/editor` 自带
+  `scripts/postinstall-lexical-patch.cjs` 里**硬编码的 sha256** 校验
+  `Lexical.{dev,prod}.{js,mjs}` 与对应 Yjs 文件（共 6 个）；不匹配就手动跑该脚本再校验。
+  失败是**静默**的：只有一行 warning，而 `lexical` 未打补丁会让编辑器行为异常且难以归因。
+- 该脚本用「临时文件 + rename」写，因此**不会**污染 pnpm store；store 里那份是未打补丁的，
+  这既解释了为什么重装会退回未打补丁状态，也说明重跑脚本是安全且幂等的。
