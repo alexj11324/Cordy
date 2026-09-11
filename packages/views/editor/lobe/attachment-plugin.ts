@@ -16,6 +16,7 @@ import { IMarkdownShortCutService, type IEditor } from "@lobehub/editor";
 import type { LexicalEditor, LexicalNode } from "lexical";
 
 import { AttachmentNode, $isAttachmentNode } from "./attachment-node";
+import { escapeMarkdownLabel } from "../utils/escape-markdown-label";
 
 /*
  * The kernel-side types this plugin is built from — `IEditorKernel`,
@@ -76,7 +77,13 @@ export function writeAttachmentMarkdown(
   if (!$isAttachmentNode(node)) return;
   if (node.status !== "uploaded") return;
 
-  const label = node.filename || "attachment";
+  // Escaped, never raw: the filename is user-controlled, and a `]` in it ends
+  // the label. `[report[final].pdf](…)` parses back as the label
+  // `report[final]` followed by literal text, which destroys the link and
+  // corrupts the draft on reload. Both TipTap writers escape the same way
+  // (`extensions/index.ts` for the image alt, `extensions/file-card.tsx` for
+  // the card), through this same helper — one rule, one implementation.
+  const label = escapeMarkdownLabel(node.filename || "attachment");
   // Images use the image form so a reload renders a picture; everything else
   // is a link. The href is the durable URL the host settled with.
   ctx.appendLine(

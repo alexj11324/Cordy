@@ -137,6 +137,44 @@ describe("writeAttachmentMarkdown", () => {
     expect(lines).toEqual(["[attachment](https://cdn.example/x)"]);
   });
 
+  it("escapes the label, so a bracketed filename cannot break the link", () => {
+    // The filename is user-controlled and a `]` ends a markdown label:
+    // `[report[final].pdf](…)` parses back as the label `report[final]` plus
+    // literal text, destroying the link and corrupting the draft on reload.
+    // Both TipTap writers escape through `escapeMarkdownLabel`
+    // (`extensions/file-card.tsx`, `extensions/index.ts`). That helper's own
+    // suite owns the character matrix, so this asserts only that the writer
+    // applies it — in both of the forms it emits.
+    const href = "https://cdn.example/x";
+    const editor = makeEditor();
+    const fileNode = inEditor(editor, () => {
+      const created = $createAttachmentNode({
+        clientUploadId: "bracket-file",
+        filename: "report[final].pdf",
+      });
+      created.setUploaded({ href });
+      return created;
+    });
+    const imageNode = inEditor(editor, () => {
+      const created = $createAttachmentNode({
+        clientUploadId: "bracket-image",
+        filename: "report[final].png",
+        kind: "image",
+      });
+      created.setUploaded({ href });
+      return created;
+    });
+    const { ctx, lines } = makeContext();
+
+    writeAttachmentMarkdown(ctx, fileNode);
+    writeAttachmentMarkdown(ctx, imageNode);
+
+    expect(lines).toEqual([
+      "[report\\[final\\].pdf](https://cdn.example/x)",
+      "![report\\[final\\].png](https://cdn.example/x)",
+    ]);
+  });
+
   it("ignores nodes that are not attachments", () => {
     const editor = makeEditor();
     const text = inEditor(editor, () => {
