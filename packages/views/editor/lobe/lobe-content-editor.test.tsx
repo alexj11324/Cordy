@@ -13,6 +13,7 @@ import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { LobeThemeBridge } from "../../chat/lobe/lobe-theme-bridge";
+import type { CoordinatedUploadEditor } from "../use-coordinated-uploads";
 import {
   LobeContentEditor,
   type LobeContentEditorHandle,
@@ -245,5 +246,25 @@ describe("LobeContentEditor", () => {
     release(makeUploadResult());
 
     await waitFor(() => expect(onUploadingChange).toHaveBeenCalledWith(false));
+  });
+
+  it("still satisfies the upload engine's contract", async () => {
+    // `CoordinatedUploadEditor` is declared by its consumer, and nothing in
+    // `lobe-content-editor.tsx` declares `implements` — so the only place this
+    // handle is otherwise compared against the engine is the first composer
+    // that wires a Lobe ref into `useCoordinatedUploads`, which does not exist
+    // yet. The assignment below is that comparison in the meantime: tsc fails
+    // on it the moment a member drifts, instead of at that first migration.
+    const { ref } = renderEditor();
+    await waitFor(() => expect(ref.current).not.toBeNull());
+
+    const asEngine: CoordinatedUploadEditor | null = ref.current;
+
+    // The runtime half is the id handshake the engine's recovery chain rests
+    // on: settle only lands if it can find the node the insert drew, and the
+    // engine falls back to appending a duplicate link when it cannot.
+    expect(typeof asEngine?.insertUploadPlaceholder).toBe("function");
+    expect(typeof asEngine?.settleUploadPlaceholder).toBe("function");
+    expect(typeof asEngine?.insertMarkdownAtEnd).toBe("function");
   });
 });

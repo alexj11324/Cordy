@@ -42,13 +42,20 @@ import { toSettleResult, type UploadResultLike } from "./upload-result";
  * The imperative surface this editor offers today.
  *
  * A superset of `ComposerEditorRef` (`getMarkdown` / `focus` / `blur`), so it
- * can be handed straight to `useComposerSubmit`. The upload trio
+ * can be handed straight to `useComposerSubmit`; the upload trio
  * (`insertUploadPlaceholder` / `settleUploadPlaceholder` /
  * `insertMarkdownAtEnd`) satisfies `CoordinatedUploadEditor` for the same
- * reason, so one handle drives both hooks. Both interfaces are declared by
- * their consumers and this side is shaped to match them. Nothing here declares
- * `implements`, so a drifting member is NOT caught in this file — it is caught
- * one call out, where the handle is handed to the hook.
+ * reason, so one handle can drive both hooks.
+ *
+ * Those interfaces are declared by their consumers and nothing here declares
+ * `implements`, so a drifting member is NOT caught in this file. Exactly one of
+ * them is enforced anywhere today: `feedback.tsx` hands this handle to
+ * `useUploadGate`, which checks `hasActiveUploads` against `UploadGateEditor`.
+ * The other two are enforced nowhere — no call site passes a Lobe ref to
+ * `useComposerSubmit` or `useCoordinatedUploads` yet — so until a composer
+ * actually does (T14-T17), the comparison in this file's test suite is the only
+ * thing standing between a drifted member and the first migration that trips
+ * over it.
  */
 export interface LobeContentEditorHandle {
   /**
@@ -501,6 +508,9 @@ function LobeContentEditorInner({
         // was drawn from a filename — all a reopened composer had — so letting
         // the pick-time guess stand here would contradict
         // `AttachmentNode.setUploaded` and the TipTap kernel's settle.
+        // `content_type` is required and non-nullable on `Attachment`, so this
+        // always has an answer, and the expression is deliberately identical to
+        // the TipTap kernel's so the two cannot disagree about an empty one.
         const kind = (result.content_type ?? "").startsWith("image/")
           ? "image"
           : "file";

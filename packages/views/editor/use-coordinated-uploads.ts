@@ -129,16 +129,26 @@ export interface CoordinatedUploadEditor {
    * twice.
    *
    * Write `result.markdownLink` into the node — NOT `result.link` and NOT
-   * `result.url`. `UploadResult` carries three URLs and they are not
-   * interchangeable: the other two are the raw storage URL, which may be
-   * private or short-lived, while `markdownLink` is the durable URL the server
-   * chose for a body that outlives the session (see `pickMarkdownLink`). The
-   * engine writes its own copy into the persisted draft with `markdownLink`
-   * (`attachmentMarkdown`), and that body is what a submit sends — so a node
+   * `result.url`. Three URL fields is one policy decision plus an alias, not
+   * three interchangeable links: `link` is `att.url` copied verbatim
+   * (`toUploadResult`), so `link` and `url` are the same raw storage URL — the
+   * one that may be private or short-lived — while `markdownLink` is the
+   * separate choice `pickMarkdownLink` makes on the server's behalf (MUL-3192).
+   * The engine writes its own copy into the persisted draft with `markdownLink`
+   * (`attachmentMarkdown`), and that body is what a submit sends, so a node
    * built from a raw URL persists a link that expires for whoever reads the
-   * issue afterwards, which is the MUL-3130 regression these two fields were
-   * split to prevent. Both kernels pick `markdownLink`
+   * issue afterwards — the MUL-3130 regression these fields were split to
+   * prevent. Both kernels pick `markdownLink`
    * (`extensions/file-upload.ts`, `lobe/upload-result.ts`); a third must too.
+   *
+   * Re-decide the kind from `result.content_type`; do not keep whatever kind
+   * the placeholder happened to be drawn with. A placeholder a reopened
+   * composer drew knew only a filename, and the server — not the file extension
+   * — decides what an attachment actually is: `AttachmentNode.setUploaded` is
+   * where that rule is written down, and `kind` is optional on a settle result
+   * so a caller can hand over the server's answer. The TipTap kernel re-decides
+   * on settle too; a kernel that keeps its guess makes the same upload an image
+   * in one and a file card in the other, and no type can see the difference.
    */
   settleUploadPlaceholder: (uploadId: string, result: UploadResult) => boolean;
 }
