@@ -230,7 +230,7 @@ jobs:
 
       - name: Setup pnpm
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.frontend == 'true' }}
@@ -339,7 +339,7 @@ jobs:
 
       - name: Setup pnpm
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.frontend == 'true' }}
@@ -401,7 +401,7 @@ jobs:
 
       - name: Setup pnpm
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.frontend == 'true' }}
