@@ -33,7 +33,7 @@ jobs:
 
       - name: Filter mobile paths
         id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           # Ignored for pull requests; on main it compares only the commits in
           # the completed push, avoiding a second full Mobile run after merge.
