@@ -920,7 +920,7 @@ jobs:
           done < <(find "$DESKTOP_ASSETS_DIR" -type f -print0)
 
       - name: Publish Go CLI and Homebrew artifacts
-        uses: goreleaser/goreleaser-action@v6
+        uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           # Keep GoReleaser in the already-created draft. The final step
