@@ -261,10 +261,17 @@ describe("LobeContentEditor", () => {
     const asEngine: CoordinatedUploadEditor | null = ref.current;
 
     // The runtime half is the id handshake the engine's recovery chain rests
-    // on: settle only lands if it can find the node the insert drew, and the
-    // engine falls back to appending a duplicate link when it cannot.
-    expect(typeof asEngine?.insertUploadPlaceholder).toBe("function");
-    expect(typeof asEngine?.settleUploadPlaceholder).toBe("function");
-    expect(typeof asEngine?.insertMarkdownAtEnd).toBe("function");
+    // on: settle lands only when it is given the id the insert drew, and
+    // reports false otherwise — which is what sends the engine to its append
+    // fallback instead of losing the link.
+    await waitFor(() => {
+      expect(
+        asEngine?.insertUploadPlaceholder({ uploadId: "pair-1", filename: "a.bin" }),
+      ).toBe(true);
+    });
+    expect(asEngine!.settleUploadPlaceholder("pair-1", makeUploadResult())).toBe(true);
+    expect(asEngine!.settleUploadPlaceholder("not-the-drawn-id", makeUploadResult())).toBe(
+      false,
+    );
   });
 });

@@ -90,9 +90,9 @@ export interface CoordinatedUploadEditor {
   /**
    * Append a markdown fragment to the end of the document (parsed, not raw
    * text), firing the normal update pipeline. False while the kernel is not up.
-   * Most callers hold a binding and fall back to the persisted draft; the
-   * pasted-text recovery path has nowhere else to put the text and drops it
-   * (see `deliverPastedTextBack`), so a second kernel's report is not optional
+   * Most callers hold a binding and fall back to the persisted draft; only the
+   * branch WITHOUT a draft binding drops the text outright (see
+   * `deliverPastedTextBack`), so a second kernel's report is not optional
    * bookkeeping there.
    */
   insertMarkdownAtEnd: (markdown: string) => boolean;
@@ -137,8 +137,9 @@ export interface CoordinatedUploadEditor {
    * The engine writes its own copy into the persisted draft with `markdownLink`
    * (`attachmentMarkdown`), and that body is what a submit sends, so a node
    * built from a raw URL persists a link that expires for whoever reads the
-   * issue afterwards — the MUL-3130 regression these fields were split to
-   * prevent. Both kernels pick `markdownLink`
+   * issue afterwards — a recurrence of the MUL-3130 regression, which
+   * collapsing both semantics into one `link` field introduced and this split
+   * exists to prevent. Both kernels pick `markdownLink`
    * (`extensions/file-upload.ts`, `lobe/upload-result.ts`); a third must too.
    *
    * Re-decide the kind from `result.content_type`; do not keep whatever kind

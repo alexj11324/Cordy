@@ -122,8 +122,10 @@ export interface LobeContentEditorHandle {
    * from the filename the placeholder was drawn with: a reopened composer only
    * had the filename, and the server decides what an attachment actually is
    * (see `AttachmentNode.setUploaded`, which is where that rule is written
-   * down). The TipTap kernel settles the same way, so neither kernel can
-   * disagree with the other about what arrived.
+   * down). The TipTap kernel's settle decides from the same server field, so an
+   * upload settled through this member cannot disagree with it about what
+   * arrived. (The inline `uploadFile` path below still settles from the
+   * browser's MIME — see the note there.)
    */
   settleUploadPlaceholder: (uploadId: string, result: UploadResultLike) => boolean;
   uploadFile: (file: File) => void;
@@ -448,6 +450,15 @@ function LobeContentEditorInner({
           // A null result means the host declined the upload; anything else
           // settles through `toSettleResult`, which picks the URL that belongs
           // in the document rather than re-deciding that policy here.
+          //
+          // KNOWN DIFFERENCE from the handle path above, not an oversight: the
+          // kind here is the one derived from the browser's `file.type`, since
+          // this node was drawn from the File and `AttachmentSettleResult`
+          // carries no second `content_type` source. When the browser MIME and
+          // the server disagree — most reachably an empty `file.type`, i.e.
+          // extensionless files, some drag sources, HEIC — this path and the
+          // handle path (and TipTap) write different kinds for the same upload.
+          // Tracked as Task 21; do not paper over it here.
           if (result) {
             settleAttachment(lexical, clientUploadId, toSettleResult(result, kind));
           } else {
