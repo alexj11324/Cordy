@@ -11,66 +11,128 @@ import (
 	"github.com/orvilo-ai/orvilo/server/internal/cli"
 )
 
-// daemonIDFileName is the file that stores this machine's stable daemon
-// identifier. Once created, the UUID inside is the daemon's identity forever
-// — hostname changes, .local suffix drift, profile switches and system
-// renames no longer mint a new identity.
+// daemonIDFileName caches the derived daemon UUID under ~/.orvilo/. The
+// source of truth is the OS machine-id (IOPlatformUUID / MachineGuid /
+// /etc/machine-id), so deleting the file or installing a new Desktop app
+// still resolves to the same identity. The file is a cache and a fallback
+// when the platform UUID cannot be read.
 const daemonIDFileName = "daemon.id"
 
-// EnsureDaemonID returns a stable UUID for this daemon instance, persisting
-// it to disk on first call. Identity is machine-scoped: every profile on the
-// same machine shares one UUID stored at `~/.orvilo/daemon.id`. Profile
-// boundaries are about which backend/account a daemon is talking to, not
-// about the physical machine's identity, so a single host running both the
-// CLI-spawned daemon and the desktop-spawned daemon (or toggling profiles)
-// registers as one runtime everywhere rather than N.
+// EnsureDaemonID returns a stable UUID for this OS user on this machine.
+// Identity is derived from the OS-native machine-id (the same identifiers
+// used by node-machine-id, VS Code host id, and systemd) hashed into a
+// UUID v5, then cached at `~/.orvilo/daemon.id`.
 //
-// The `profile` argument is retained purely for one-time migration: if the
-// canonical file does not yet exist and the current profile has a leftover
-// per-profile daemon.id from the pre-#1220 layout, promote it in place so a
-// user who previously ran the daemon under a named profile keeps the same
-// UUID instead of a fresh mint + merge round-trip. Any OTHER leftover
-// per-profile daemon.id files are surfaced separately via LegacyDaemonUUIDs
-// so the server can merge their runtime rows into the canonical row at
-// register time.
+// Every profile on the same machine shares that UUID. Profile boundaries
+// are about which backend/account a daemon is talking to, not about the
+// physical machine, so CLI-spawned and Desktop-spawned daemons register
+// as one runtime.
 //
-// If the file exists but is corrupt (unparseable), it is regenerated so the
-// daemon can continue starting up instead of hard-failing.
-func EnsureDaemonID(profile string) (string, error) {
+// superseded lists UUIDs this machine previously advertised (a random v7
+// left in daemon.id, or a pre-#1220 per-profile file) so the server can
+// merge old runtime rows — and the agents bound to them — into the
+// canonical id on the next register.
+func EnsureDaemonID(profile string) (string, []string, error) {
 	dir, err := cli.ProfileDir("")
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	path := filepath.Join(dir, daemonIDFileName)
 
-	if data, err := os.ReadFile(path); err == nil {
-		if id := strings.TrimSpace(string(data)); id != "" {
-			if _, perr := uuid.Parse(id); perr == nil {
-				return id, nil
+	existing, err := readDaemonIDFile(path)
+	if err != nil {
+		return "", nil, err
+	}
+
+	derived, derivedErr := deriveHostDaemonID()
+	if derivedErr == nil && derived != "" {
+		var superseded []string
+		if existing != "" && existing != derived {
+			superseded = append(superseded, existing)
+		}
+		if promoted := peekProfileDaemonID(profile); promoted != "" && promoted != derived && promoted != existing {
+			superseded = append(superseded, promoted)
+		}
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return "", nil, fmt.Errorf("create profile directory: %w", err)
+		}
+		if existing != derived {
+			if err := writeDaemonIDFile(path, derived); err != nil {
+				return "", nil, err
 			}
 		}
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("read daemon id file: %w", err)
+		return derived, uniqueNonEmpty(superseded), nil
 	}
 
+	// Platform UUID unavailable: keep a cached id, promote a leftover
+	// per-profile file, or mint a random v7 so the daemon can still start.
+	if existing != "" {
+		return existing, nil, nil
+	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("create profile directory: %w", err)
+		return "", nil, fmt.Errorf("create profile directory: %w", err)
 	}
-
-	// One-time promotion from pre-change per-profile layout.
 	if promoted, ok := promoteProfileDaemonID(profile, path); ok {
-		return promoted, nil
+		return promoted, nil, nil
 	}
 
 	id, err := uuid.NewV7()
 	if err != nil {
-		return "", fmt.Errorf("generate daemon id: %w", err)
+		return "", nil, fmt.Errorf("generate daemon id: %w", err)
 	}
-
 	if err := writeDaemonIDFile(path, id.String()); err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return id.String(), nil
+	return id.String(), nil, nil
+}
+
+func readDaemonIDFile(path string) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return "", nil
+		}
+		return "", fmt.Errorf("read daemon id file: %w", err)
+	}
+	id := strings.TrimSpace(string(data))
+	if id == "" {
+		return "", nil
+	}
+	if _, perr := uuid.Parse(id); perr != nil {
+		return "", nil
+	}
+	return id, nil
+}
+
+func peekProfileDaemonID(profile string) string {
+	if profile == "" {
+		return ""
+	}
+	profileDir, err := cli.ProfileDir(profile)
+	if err != nil {
+		return ""
+	}
+	id, err := readDaemonIDFile(filepath.Join(profileDir, daemonIDFileName))
+	if err != nil {
+		return ""
+	}
+	return id
+}
+
+func uniqueNonEmpty(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
 }
 
 // promoteProfileDaemonID copies a pre-change per-profile daemon.id into the

@@ -12,7 +12,11 @@ import {
 import { api } from "@orvilo/core/api";
 import { useWorkspaceId } from "@orvilo/core/hooks";
 import { useWorkspacePaths } from "@orvilo/core/paths";
-import { deviceDisplayName, deviceKind } from "@orvilo/core/runtimes";
+import {
+  deviceKind,
+  deviceLabelForViewer,
+  type LocalMachineMatch,
+} from "@orvilo/core/runtimes";
 import { workspaceKeys } from "@orvilo/core/workspace/queries";
 import { resolvePublicFileUrl } from "@orvilo/core/workspace/avatar-url";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
@@ -41,6 +45,9 @@ interface AgentTableProps {
   onSelectedIdsChange: (ids: ReadonlySet<string>) => void;
   noMatchText: string;
   locale: string;
+  localDaemonId?: string | null;
+  localMachineName?: string | null;
+  currentUserId?: string | null;
 }
 
 /**
@@ -53,6 +60,9 @@ export function AgentTable({
   onSelectedIdsChange,
   noMatchText,
   locale,
+  localDaemonId,
+  localMachineName,
+  currentUserId,
 }: AgentTableProps) {
   const { t } = useT("agents");
   const { t: tCommon } = useT("common");
@@ -110,8 +120,15 @@ export function AgentTable({
   );
 
   const data = useMemo(
-    () => rows.map((row) => toEmployee(row, t as TFunction<"agents">, locale)),
-    [locale, rows, t],
+    () =>
+      rows.map((row) =>
+        toEmployee(row, t as TFunction<"agents">, locale, {
+          localDaemonId,
+          localMachineName,
+          currentUserId,
+        }),
+      ),
+    [currentUserId, locale, localDaemonId, localMachineName, rows, t],
   );
 
   return (
@@ -243,6 +260,7 @@ function toEmployee(
   row: AgentListRow,
   t: TFunction<"agents">,
   locale: string,
+  localMachine: LocalMachineMatch,
 ): IEmployee {
   const { agent, runtime, owner, runCount, lastActiveDays } = row;
   const scope = effectiveAccessScope(
@@ -286,7 +304,11 @@ function toEmployee(
     flag: "us",
     email: agent.description?.trim() || t(($) => $.row.no_description),
     company: runtime
-      ? deviceDisplayName(runtime)
+      ? deviceLabelForViewer(
+          runtime,
+          localMachine,
+          t(($) => $.gallery_card.device_this_machine),
+        )
       : t(($) => $.row.needs_device),
     companyLogo: runtime ? (
       <DeviceKindIcon kind={deviceKind(runtime)} />

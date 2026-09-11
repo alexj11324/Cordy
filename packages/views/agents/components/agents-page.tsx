@@ -217,7 +217,10 @@ function ListError({
 // Page
 // ---------------------------------------------------------------------------
 
-export function AgentsPage({ localDaemonId }: AgentsPageProps = {}) {
+export function AgentsPage({
+  localDaemonId,
+  localMachineName,
+}: AgentsPageProps = {}) {
   const { t } = useT("agents");
   const locale = useLocale();
   const wsId = useWorkspaceId();
@@ -539,6 +542,9 @@ export function AgentsPage({ localDaemonId }: AgentsPageProps = {}) {
               onSelectedIdsChange={setSelectedIds}
               noMatchText={noMatchText}
               locale={locale}
+              localDaemonId={localDaemonId}
+              localMachineName={localMachineName}
+              currentUserId={currentUser?.id}
             />
           ) : (
             <div
@@ -561,6 +567,8 @@ export function AgentsPage({ localDaemonId }: AgentsPageProps = {}) {
                       key={row.agent.id}
                       row={row}
                       localDaemonId={localDaemonId}
+                      localMachineName={localMachineName}
+                      currentUserId={currentUser?.id}
                       onOpenSummary={() => setProfileAgentId(row.agent.id)}
                     />
                   ))}

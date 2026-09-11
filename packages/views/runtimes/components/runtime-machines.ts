@@ -1,4 +1,8 @@
-import { deriveRuntimeHealth, type RuntimeHealth } from "@orvilo/core/runtimes";
+import {
+  deriveRuntimeHealth,
+  isCurrentLocalRuntime,
+  type RuntimeHealth,
+} from "@orvilo/core/runtimes";
 import type { AgentRuntime } from "@orvilo/core/types";
 import { formatDeviceInfo } from "../utils";
 
@@ -198,21 +202,13 @@ function finalizeRuntimeMachine(
   );
   const first = runtimes[0];
   const providerNames = Array.from(new Set(runtimes.map((r) => r.provider))).sort();
-  // Device-name consolidation is only safe for the current user's own
-  // local runtimes — the list spans the whole workspace, so a host-name
-  // match alone could claim another member's identically-named machine.
-  const ownsLocalRuntime =
-    !!options.currentUserId &&
-    runtimes.some((r) => r.owner_id === options.currentUserId);
-  const matchesLocalName = (value: string | null | undefined): boolean =>
-    !!value && value.toLowerCase() === options.localMachineName?.toLowerCase();
-  const isCurrent =
-    (!!options.localDaemonId && draft.daemonId === options.localDaemonId) ||
-    (draft.mode === "local" &&
-      !!options.localMachineName &&
-      ownsLocalRuntime &&
-      (matchesLocalName(draft.daemonId) ||
-        runtimes.some((r) => matchesLocalName(runtimeDeviceName(r)))));
+  const isCurrent = runtimes.some((runtime) =>
+    isCurrentLocalRuntime(runtime, {
+      localDaemonId: options.localDaemonId,
+      localMachineName: options.localMachineName,
+      currentUserId: options.currentUserId,
+    }),
+  );
   const title = machineTitle(runtimes, {
     isCurrent,
     localMachineName: options.localMachineName,
