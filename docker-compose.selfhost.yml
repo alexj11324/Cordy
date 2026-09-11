@@ -207,6 +207,8 @@ services:
       WEIXIN_BASE_URL: ${WEIXIN_BASE_URL:-}
       ORVILO_SLACK_SECRET_KEY: ${ORVILO_SLACK_SECRET_KEY:-}
       ORVILO_SLACK_SIGNING_SECRET: ${ORVILO_SLACK_SIGNING_SECRET:-}
+      ORVILO_SLACK_CLIENT_ID: ${ORVILO_SLACK_CLIENT_ID:-}
+      ORVILO_SLACK_CLIENT_SECRET: ${ORVILO_SLACK_CLIENT_SECRET:-}
       # Self-hosted Git provider integration (Forgejo / Gitea / GitLab). This
       # is a self-host-only feature, so the compose file turns it on by default;
       # the managed cloud leaves it unset (off). It still needs a valid

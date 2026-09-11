@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 
@@ -111,6 +112,10 @@ type ManagedWebhookConfig struct {
 	// on Slack Events API types (message, reaction, channel_created). It must
 	// not delay the HTTP ACK; HandleEvents already returns 200 first.
 	OnNativeEvent func(ctx context.Context, inst db.ChannelInstallation, body []byte)
+	// Revoke retires an installation after app_uninstalled / bot
+	// tokens_revoked. Nil skips lifecycle handling (tests that only
+	// exercise verification).
+	Revoke func(ctx context.Context, installationID pgtype.UUID) error
 }
 
 // ManagedWebhook serves the deployment-wide Slack Events API webhook.
@@ -121,6 +126,7 @@ type ManagedWebhook struct {
 	secret   string
 	logger   *slog.Logger
 	onNative func(ctx context.Context, inst db.ChannelInstallation, body []byte)
+	revoke   func(ctx context.Context, installationID pgtype.UUID) error
 }
 
 // NewManagedWebhook builds the ingress. Handle may be nil in tests that only
@@ -133,7 +139,7 @@ func NewManagedWebhook(cfg ManagedWebhookConfig) (*ManagedWebhook, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &ManagedWebhook{q: cfg.Queries, handle: cfg.Handle, slash: cfg.Slash, secret: cfg.SigningSecret, logger: logger, onNative: cfg.OnNativeEvent}, nil
+	return &ManagedWebhook{q: cfg.Queries, handle: cfg.Handle, slash: cfg.Slash, secret: cfg.SigningSecret, logger: logger, onNative: cfg.OnNativeEvent, revoke: cfg.Revoke}, nil
 }
 
 // verifiedBody reads the bounded body and checks the HMAC-SHA256 request
@@ -270,13 +276,17 @@ func (w *ManagedWebhook) HandleSlash(rw http.ResponseWriter, r *http.Request) {
 // installation's stored config (not from a per-connection fixed id, since one
 // webhook serves every managed team). A nil engine handle (tests) ACKs only.
 func (w *ManagedWebhook) dispatchDetached(event slackevents.EventsAPIEvent, body []byte) {
-	if w.onNative == nil && w.handle == nil {
+	if w.onNative == nil && w.handle == nil && w.revoke == nil {
 		return
 	}
 	payload := append([]byte(nil), body...)
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), managedWebhookTimeout)
 		defer cancel()
+		if shouldRevokeSlackInstall(event, payload) {
+			w.revokeInstallation(ctx, event)
+			return
+		}
 		if w.onNative != nil {
 			inst, err := lookupInstallation(ctx, w.q, event.APIAppID, event.TeamID)
 			if err == nil && inst.Status == "installed" && nativeEventEligible(payload, installBotUserID(inst.Config)) {
@@ -295,6 +305,20 @@ func (w *ManagedWebhook) dispatchDetached(event slackevents.EventsAPIEvent, body
 				"app_id", event.APIAppID, "error", err)
 		}
 	}()
+}
+
+func (w *ManagedWebhook) revokeInstallation(ctx context.Context, event slackevents.EventsAPIEvent) {
+	if w.revoke == nil {
+		return
+	}
+	inst, err := lookupInstallation(ctx, w.q, event.APIAppID, event.TeamID)
+	if err != nil || inst.Status != "installed" {
+		return
+	}
+	if err := w.revoke(ctx, inst.ID); err != nil {
+		w.logger.WarnContext(ctx, "slack managed webhook: revoke after uninstall failed",
+			"app_id", event.APIAppID, "error", err)
+	}
 }
 
 // translate resolves the tenant and normalizes the inner event. ok=false means

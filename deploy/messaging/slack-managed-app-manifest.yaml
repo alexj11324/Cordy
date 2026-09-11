@@ -1,4 +1,5 @@
-# Official Orvilo Cloud Slack app. This is intentionally separate from the
+# Official Orvilo Cloud Slack app. Paste this file into api.slack.com →
+# Create New App → From a manifest. It is intentionally separate from the
 # self-hosted Socket Mode manifest: one hosted app uses OAuth + signed Events
 # API callbacks and routes each event by app_id + team_id.
 display_information:
@@ -42,6 +43,7 @@ settings:
     request_url: https://api.aspectlylabs.com/api/integrations/slack/events
     bot_events:
       - app_uninstalled
+      - tokens_revoked
       - app_mention
       - message.channels
       - message.groups

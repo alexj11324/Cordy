@@ -324,7 +324,7 @@ func TestWSConnectorRespondsToServerPingWithPong(t *testing.T) {
 	<-done
 }
 
-func TestWSConnectorEmitInfraErrorSendsNackAndReturns(t *testing.T) {
+func TestWSConnectorEmitInfraErrorAcksAndKeepsConnection(t *testing.T) {
 	t.Parallel()
 	conn := newFakeWSConn()
 	decoder := FrameDecoderFunc(func([]byte, Installation) (InboundMessage, bool, error) {
@@ -332,44 +332,58 @@ func TestWSConnectorEmitInfraErrorSendsNackAndReturns(t *testing.T) {
 	})
 	c := quietConnector(t, conn, decoder, time.Hour)
 
-	infra := errors.New("dispatcher infra failure")
+	emitted := make(chan struct{}, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	done := make(chan error, 1)
 	go func() {
 		done <- c.Run(ctx, Installation{AppID: "test_app"}, func(context.Context, InboundMessage) (DispatchResult, error) {
-			return DispatchResult{}, infra
+			emitted <- struct{}{}
+			return DispatchResult{}, errors.New("dispatcher infra failure")
 		})
 	}()
 
 	pushDataFrame(conn, []byte("triggers-infra"), "m-infra")
 
 	select {
-	case err := <-done:
-		if err == nil || !errors.Is(err, infra) {
-			t.Fatalf("expected Run to wrap infra error, got %v", err)
-		}
+	case <-emitted:
 	case <-time.After(2 * time.Second):
-		t.Fatal("Run did not return after infra error")
+		t.Fatal("emit did not run after ACK")
 	}
 
-	// NACK should have been written on the way out (code=500).
+	select {
+	case err := <-done:
+		t.Fatalf("Run must keep the connection after emit error, got %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+
 	writes := conn.snapshot()
-	found := false
+	foundAck, foundNack := false, false
 	for _, w := range writes {
 		f, err := UnmarshalFrame(w)
 		if err != nil {
 			continue
 		}
-		if f.Method == FrameMethodData && contains(string(f.Payload), `"code":500`) {
-			found = true
-			break
+		if f.Method != FrameMethodData {
+			continue
+		}
+		payload := string(f.Payload)
+		if contains(payload, `"code":200`) {
+			foundAck = true
+		}
+		if contains(payload, `"code":500`) {
+			foundNack = true
 		}
 	}
-	if !found {
-		t.Errorf("expected NACK (code=500) frame written on infra error path")
+	if !foundAck {
+		t.Errorf("expected ACK (code=200) after decode")
 	}
+	if foundNack {
+		t.Errorf("must not NACK after an already-ACKed emit failure")
+	}
+	cancel()
+	<-done
 }
 
 func TestWSConnectorSendsAppLayerPings(t *testing.T) {

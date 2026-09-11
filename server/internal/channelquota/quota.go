@@ -1,5 +1,7 @@
 // Package channelquota enforces hosted IM Agent-turn quotas against durable
 // task/message provenance. Self-hosted messaging never calls this package.
+// Managed deployments without a readable Cloud policy skip metering rather
+// than refusing every inbound turn.
 package channelquota
 
 import (
@@ -62,12 +64,20 @@ func (e *ExceededError) Error() string {
 	return fmt.Sprintf("hosted IM turn quota exceeded (%d/%d)", e.Used, e.Limit)
 }
 
+// meteringActive is the single switch for hosted IM turn limits: the
+// deployment must be in managed mode AND Cloud policy must be readable.
+// A managed cloud that has not wired ORVILO_CLOUD_URL (provider == nil),
+// or a Cloud that has not rolled out im_agent_turns (ActionOff), must
+// still deliver Slack/Lark/etc. messages — never fail-closed as
+// "quota unavailable". Unavailable is reserved for a present enforce
+// gate whose window cannot be trusted.
+func meteringActive(managed bool, provider entitlement.Provider) bool {
+	return managed && provider != nil
+}
+
 func Resolve(ctx context.Context, provider entitlement.Provider, managed bool, workspaceID uuid.UUID) Admission {
-	if !managed {
+	if !meteringActive(managed, provider) {
 		return Admission{Kind: AdmissionBypass}
-	}
-	if provider == nil {
-		return Admission{Kind: AdmissionUnavailable}
 	}
 	decision := provider.Gate(ctx, workspaceID, entitlement.GateImAgentTurns)
 	switch decision.Gate.Action {
@@ -98,11 +108,11 @@ func ResolveUsage(ctx context.Context, provider entitlement.Provider, managed bo
 		return UsagePolicy{Mode: UsageDisabled}
 	}
 	if provider == nil {
-		return UsagePolicy{Mode: UsageUnavailable}
+		return UsagePolicy{Mode: UsageUnlimited, Window: CurrentMonthWindow(0, now)}
 	}
 	decision := provider.Gate(ctx, workspaceID, entitlement.GateImAgentTurns)
 	if decision.Gate.Action == entitlement.ActionOff {
-		return UsagePolicy{Mode: UsageUnavailable}
+		return UsagePolicy{Mode: UsageUnlimited, Window: CurrentMonthWindow(0, now)}
 	}
 	if decision.Gate.Action != entitlement.ActionObserve && decision.Gate.Action != entitlement.ActionEnforce {
 		return UsagePolicy{Mode: UsageUnavailable}

@@ -39,7 +39,7 @@ import (
 const ManagedOAuthStateTTL = 10 * time.Minute
 
 // ManagedSlackBotScopes is the scope set requested for the hosted Slack app.
-const ManagedSlackBotScopes = "app_mentions:read,channels:history,channels:read,chat:write,commands,files:read,groups:history,im:history,mpim:history,reactions:write,users:read"
+const ManagedSlackBotScopes = "app_mentions:read,channels:history,chat:write,commands,files:read,groups:history,im:history,mpim:history,reactions:write,users:read"
 
 // DefaultSlackOAuthTokenURL is Slack's token endpoint. Overridden in tests.
 const DefaultSlackOAuthTokenURL = "https://slack.com/api/oauth.v2.access"

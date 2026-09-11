@@ -36,8 +36,12 @@ import (
 //  4. Every data frame requires an ACK back. The ACK reuses the
 //     inbound frame's Headers verbatim (Lark correlates by
 //     message_id) and writes a JSON Response{code:200, ...} as the
-//     Payload. We send ACK 200 on successful Dispatcher emit, 500
-//     when the Dispatcher reported an infra failure so Lark retries.
+//     Payload. Decode failures and heartbeats ACK 200 on the read
+//     loop. Real events are enqueued first; the serial worker ACKs
+//     then enrich+emits so a lease-loss cancel does not drop an
+//     already-ACKed event, conversation order holds, and Connect
+//     returns when run ctx fires. Dispatcher infra failures are
+//     logged; they must not NACK or tear down the long-conn.
 //
 // Ownership of the §4.4 invariant (ctx cancel breaks blocking read):
 //
@@ -92,17 +96,21 @@ type WSConnectorConfig struct {
 	// Enricher optionally expands a decoded message's body with the
 	// context the user explicitly attached (quoted reply / forwarded
 	// bundle) before it is emitted to the dispatcher. It runs on the
-	// inbound read loop, so it is bounded by EnrichTimeout to protect
-	// the Lark long-conn ACK budget; on timeout / fetch failure the
-	// enricher degrades to a placeholder rather than blocking. Nil
-	// disables enrichment (the decoded body is emitted as-is).
+	// detached dispatch goroutine after the frame is ACKed; on timeout
+	// / fetch failure the enricher degrades to a placeholder rather
+	// than blocking. Nil disables enrichment (the decoded body is
+	// emitted as-is).
 	Enricher Enricher
 
 	// EnrichTimeout caps a single message's enrichment (at most two
-	// GetMessage calls). It MUST stay well under Lark's ~3s long-conn
-	// ACK window, since enrichment runs before the frame is ACKed.
-	// Zero defaults to 2 seconds.
+	// GetMessage calls). Enrichment runs after the long-conn ACK, so
+	// this bound protects dispatch latency rather than Lark's ~3s ACK
+	// window. Zero defaults to 2 seconds.
 	EnrichTimeout time.Duration
+
+	// DispatchTimeout bounds detached enrich+emit after the frame ACK.
+	// Zero defaults to 30 seconds.
+	DispatchTimeout time.Duration
 
 	// CredentialsProvider returns the InstallationCredentials the
 	// EndpointFetcher needs. Typically wraps
@@ -156,6 +164,9 @@ func (c WSConnectorConfig) withDefaults() WSConnectorConfig {
 	}
 	if c.EnrichTimeout == 0 {
 		c.EnrichTimeout = 2 * time.Second
+	}
+	if c.DispatchTimeout == 0 {
+		c.DispatchTimeout = 30 * time.Second
 	}
 	if c.Now == nil {
 		c.Now = time.Now
@@ -218,9 +229,9 @@ func (c *WSLongConnConnector) Run(ctx context.Context, inst Installation, emit E
 	}
 
 	// runCtx fans out cancellation to the watchdog + ping goroutines
-	// on EVERY Run exit, not just on outer-ctx cancel. A read error or
-	// emit-infra failure would otherwise leave the ping goroutine
-	// ticking on the outer ctx — and the deferred join would deadlock.
+	// on EVERY Run exit, not just on outer-ctx cancel. A read error
+	// would otherwise leave the ping goroutine ticking on the outer
+	// ctx — and the deferred join would deadlock.
 	runCtx, runCancel := context.WithCancel(ctx)
 
 	var closeOnce sync.Once
@@ -259,11 +270,39 @@ func (c *WSLongConnConnector) Run(ctx context.Context, inst Installation, emit E
 	pingDone := make(chan struct{})
 	go c.pingLoop(runCtx, conn, &writeMu, endpoint.ServiceID, pingInterval, log, pingDone)
 
+	// Serial worker: ACK only after dequeue so a lease-loss cancel does
+	// not drop an already-ACKed event (Lark will retry whatever we
+	// never ACKed). Dispatch uses runCtx so Connect returns promptly.
+	jobs := make(chan inboundDispatch, 64)
+	var dispatchWG sync.WaitGroup
+	dispatchWG.Add(1)
+	go func() {
+		defer dispatchWG.Done()
+		for {
+			select {
+			case <-runCtx.Done():
+				return
+			case job, ok := <-jobs:
+				if !ok {
+					return
+				}
+				if werr := c.writeFrame(&writeMu, conn, job.ack); werr != nil {
+					log.Warn("lark ws connector: ack write failed", "err", werr.Error())
+					closeConn()
+					return
+				}
+				c.dispatchOne(runCtx, log, job.creds, job.msg, emit)
+			}
+		}
+	}()
+
 	defer func() {
 		runCancel()
 		closeConn()
 		close(done)
 		<-pingDone
+		close(jobs)
+		dispatchWG.Wait()
 	}()
 
 	// The provider-issued endpoint and authenticated WebSocket handshake
@@ -356,18 +395,15 @@ func (c *WSLongConnConnector) Run(ctx context.Context, inst Installation, emit E
 			)
 		}
 
-		// Data frames: hand the (possibly reassembled) JSON payload to
-		// the decoder, emit if it resolved to a message, and ACK back.
+		// Data frames: enqueue then ACK on the worker. Heartbeats and
+		// decode failures ACK on the read loop — there is no work to
+		// hand off, and NACKing them would retry garbage.
 		msg, ok, derr := c.cfg.FrameDecoder.Decode(payload, inst)
 		if derr != nil {
 			log.Warn("lark ws connector: frame decode failed",
 				"err", derr.Error(),
 				"payload_len", len(frame.Payload),
 			)
-			// A decode failure still gets a 200 ACK: the message is
-			// valid wire-wise, we just can't act on it. NACKing would
-			// trigger a Lark-side retry storm of a payload we've
-			// already proven we can't parse.
 			if werr := c.writeFrame(&writeMu, conn, NewAckFrame(frame, true)); werr != nil {
 				log.Warn("lark ws connector: ack-after-decode-error write failed", "err", werr.Error())
 				return fmt.Errorf("write ack: %w", werr)
@@ -375,46 +411,39 @@ func (c *WSLongConnConnector) Run(ctx context.Context, inst Installation, emit E
 			continue
 		}
 		if !ok {
-			// Heartbeat / unhandled event type. ACK 200 so the server
-			// stops sending it; the decoder owns the "what we handle"
-			// policy.
 			if werr := c.writeFrame(&writeMu, conn, NewAckFrame(frame, true)); werr != nil {
 				log.Warn("lark ws connector: ack-after-drop write failed", "err", werr.Error())
 				return fmt.Errorf("write ack: %w", werr)
 			}
 			continue
 		}
+		select {
+		case jobs <- inboundDispatch{ack: NewAckFrame(frame, true), creds: creds, msg: msg}:
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
 
-		// Enrich the decoded body with explicitly-attached context
-		// (quoted reply / forwarded bundle) before emitting. This runs
-		// before the frame ACK, so it is bounded by EnrichTimeout and
-		// degrades to a placeholder on failure rather than blocking the
-		// pipeline. Most messages need no enrichment and return
-		// immediately without any network call.
-		if c.cfg.Enricher != nil {
-			enrichCtx, cancelEnrich := context.WithTimeout(ctx, c.cfg.EnrichTimeout)
-			msg = c.cfg.Enricher.Enrich(enrichCtx, msg, creds)
-			cancelEnrich()
-		}
+type inboundDispatch struct {
+	ack   *Frame
+	creds InstallationCredentials
+	msg   InboundMessage
+}
 
-		_, emitErr := emit(ctx, msg)
-		if emitErr != nil {
-			// Infra failure from Dispatcher (DB down, etc.). NACK so
-			// Lark retries this event on a healthy replica; then
-			// return so the Hub backs off and reconnects.
-			if werr := c.writeFrame(&writeMu, conn, NewAckFrame(frame, false)); werr != nil {
-				log.Warn("lark ws connector: nack write failed", "err", werr.Error())
-			}
-			log.Error("lark ws connector: emit infra error",
-				"event_id", msg.EventID,
-				"err", emitErr.Error(),
-			)
-			return fmt.Errorf("dispatch: %w", emitErr)
-		}
-		if werr := c.writeFrame(&writeMu, conn, NewAckFrame(frame, true)); werr != nil {
-			log.Warn("lark ws connector: ack write failed", "err", werr.Error())
-			return fmt.Errorf("write ack: %w", werr)
-		}
+func (c *WSLongConnConnector) dispatchOne(parent context.Context, log *slog.Logger, creds InstallationCredentials, msg InboundMessage, emit EventEmitter) {
+	ctx, cancel := context.WithTimeout(parent, c.cfg.DispatchTimeout)
+	defer cancel()
+	if c.cfg.Enricher != nil {
+		enrichCtx, cancelEnrich := context.WithTimeout(ctx, c.cfg.EnrichTimeout)
+		msg = c.cfg.Enricher.Enrich(enrichCtx, msg, creds)
+		cancelEnrich()
+	}
+	if _, err := emit(ctx, msg); err != nil {
+		log.Error("lark ws connector: emit failed after ack",
+			"event_id", msg.EventID,
+			"err", err.Error(),
+		)
 	}
 }
 

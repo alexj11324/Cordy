@@ -16,6 +16,14 @@ services:
       # silently reject tokens issued on orvilo.aspectlylabs.com.
       CLERK_AUTHORIZED_PARTIES: https://accounts.aspectlylabs.com,https://orvilo.aspectlylabs.com
       ORVILO_DESKTOP_BROKER_AUTH_TOKEN: ${ORVILO_DESKTOP_BROKER_AUTH_TOKEN:?Set ORVILO_DESKTOP_BROKER_AUTH_TOKEN}
+      # Hosted IM / Cloud metering. Empty keeps inbound turns unlimited
+      # rather than refusing every Slack/Lark message. Do not use :? —
+      # Cloud may not be fully wired on every cut.
+      ORVILO_CLOUD_URL: ${ORVILO_CLOUD_URL:-}
+      ORVILO_SLACK_SECRET_KEY: ${ORVILO_SLACK_SECRET_KEY:-}
+      ORVILO_SLACK_CLIENT_ID: ${ORVILO_SLACK_CLIENT_ID:-}
+      ORVILO_SLACK_CLIENT_SECRET: ${ORVILO_SLACK_CLIENT_SECRET:-}
+      ORVILO_SLACK_SIGNING_SECRET: ${ORVILO_SLACK_SIGNING_SECRET:-}
 
   frontend:
     image: ${ORVILO_WEB_IMAGE_REF:?ORVILO_WEB_IMAGE_REF must be an immutable digest}

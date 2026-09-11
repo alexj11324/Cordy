@@ -33,6 +33,8 @@ oauth_config:
 settings:
   event_subscriptions:
     bot_events:
+      - app_uninstalled
+      - tokens_revoked
       - app_mention
       - message.im
       - message.channels
