@@ -16,7 +16,7 @@ test("shared card running border, state transitions and hover", async ({
   });
   await page.goto("/");
   const card = page.getByTestId("preview-card");
-  const beam = card.locator(".running-task-card");
+  const beam = card.locator(".border-beam");
   const beamStyle = (property: string) =>
     beam.evaluate(
       (element, name) =>

@@ -15,14 +15,15 @@ describe("AuthShell", () => {
     );
 
     expect(screen.getByTestId("auth-shell")).toHaveClass(
-      "bg-zinc-950",
+      "dark",
+      "bg-background",
       "md:grid-cols-2",
     );
     expect(screen.getByTestId("auth-form").parentElement).toHaveClass(
-      "bg-zinc-950",
+      "bg-background",
     );
     expect(screen.getByTestId("auth-brand-panel")).toHaveClass(
-      "bg-zinc-950",
+      "bg-card",
       "md:flex",
     );
     expect(screen.getByTestId("orvilo-icon")).toBeInTheDocument();

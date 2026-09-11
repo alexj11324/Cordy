@@ -13,8 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@orvilo/ui/components/ui/dialog";
-import { Input } from "@orvilo/ui/components/ui/input";
-import { Label } from "@orvilo/ui/components/ui/label";
+import { CredentialFieldForm } from "./credential-field-form";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -973,8 +972,6 @@ export function DingTalkAgentBindButton({
       data-testid="dingtalk-agent-bind-buttons"
     >
       <Button
-        variant="outline"
-        size="sm"
         onClick={() => setDialogOpen(true)}
         disabled={!wsId}
         title={
@@ -992,83 +989,54 @@ export function DingTalkAgentBindButton({
         open={dialogOpen}
         onOpenChange={(v) => (v ? setDialogOpen(true) : closeDialog())}
       >
-        <DialogContent
-          className="gap-0 overflow-hidden p-0 sm:max-w-lg"
-          data-testid="dingtalk-byo-dialog"
-        >
-          <DialogHeader className="gap-1 border-b px-5 py-3">
-            <DialogTitle className="text-title-sm font-semibold">
-              {t(($) => $.dingtalk.byo_dialog_title)}
-            </DialogTitle>
-
-            <button
-              type="button"
-              onClick={() => openExternal(dingtalkDocsUrl(i18n.language))}
-              className="inline-flex w-fit items-center gap-1.5 text-caption text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
-              data-testid="dingtalk-byo-docs-link"
-            >
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-              {t(($) => $.dingtalk.byo_docs_link)}
-            </button>
+        <DialogContent className="sm:max-w-lg" data-testid="dingtalk-byo-dialog">
+          <DialogHeader>
+            <DialogTitle>{t(($) => $.dingtalk.byo_dialog_title)}</DialogTitle>
           </DialogHeader>
-
-          <div className="space-y-4 p-5">
-            <div className="space-y-1.5">
-              <Label
-                htmlFor="dingtalk-byo-client-id"
-                className="text-caption text-muted-foreground"
+          <CredentialFieldForm
+            leading={
+              <button
+                type="button"
+                onClick={() => openExternal(dingtalkDocsUrl(i18n.language))}
+                className="inline-flex w-fit items-center gap-1.5 text-body font-medium text-primary underline-offset-2 hover:underline"
+                data-testid="dingtalk-byo-docs-link"
               >
-                {t(($) => $.dingtalk.byo_appkey_label)}
-              </Label>
-              <Input
-                id="dingtalk-byo-client-id"
-                data-testid="dingtalk-byo-client-id"
-                type="password"
-                value={clientId}
-                onChange={(e) => setClientId(e.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-                disabled={submitting}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label
-                htmlFor="dingtalk-byo-client-secret"
-                className="text-caption text-muted-foreground"
-              >
-                {t(($) => $.dingtalk.byo_appsecret_label)}
-              </Label>
-              <Input
-                id="dingtalk-byo-client-secret"
-                data-testid="dingtalk-byo-client-secret"
-                type="password"
-                value={clientSecret}
-                onChange={(e) => setClientSecret(e.target.value)}
-                autoComplete="off"
-                spellCheck={false}
-                disabled={submitting}
-              />
-            </div>
-          </div>
-
-          {/* Inline footer instead of <DialogFooter>: its -mx-4/-mb-4 offsets
-              assume the default p-4 DialogContent; with p-0 they push the bar
-              outside the dialog (same workaround as CreateAgentDialog). */}
-          <div className="flex items-center justify-end gap-2 border-t bg-background px-5 py-3">
-            <Button variant="ghost" onClick={closeDialog} disabled={submitting}>
-              {t(($) => $.dingtalk.byo_cancel)}
-            </Button>
-            <Button
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              data-testid="dingtalk-byo-submit"
-            >
-              {submitting
+                <ExternalLink data-icon="inline-start" />
+                {t(($) => $.dingtalk.byo_docs_link)}
+              </button>
+            }
+            fields={[
+              {
+                id: "dingtalk-byo-client-id",
+                label: t(($) => $.dingtalk.byo_appkey_label),
+                value: clientId,
+                onChange: setClientId,
+                type: "password",
+                testId: "dingtalk-byo-client-id",
+                disabled: submitting,
+              },
+              {
+                id: "dingtalk-byo-client-secret",
+                label: t(($) => $.dingtalk.byo_appsecret_label),
+                value: clientSecret,
+                onChange: setClientSecret,
+                type: "password",
+                testId: "dingtalk-byo-client-secret",
+                disabled: submitting,
+              },
+            ]}
+            cancelLabel={t(($) => $.dingtalk.byo_cancel)}
+            submitLabel={
+              submitting
                 ? t(($) => $.dingtalk.byo_submitting)
-                : t(($) => $.dingtalk.byo_submit)}
-            </Button>
-          </div>
+                : t(($) => $.dingtalk.byo_submit)
+            }
+            submitting={submitting}
+            canSubmit={canSubmit}
+            onCancel={closeDialog}
+            onSubmit={() => void handleSubmit()}
+            submitTestId="dingtalk-byo-submit"
+          />
         </DialogContent>
       </Dialog>
     </div>

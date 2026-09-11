@@ -14,12 +14,10 @@ import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@orvilo/ui/components/ui/dialog";
-import { Input } from "@orvilo/ui/components/ui/input";
-import { Label } from "@orvilo/ui/components/ui/label";
+import { CredentialFieldForm } from "./credential-field-form";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -460,8 +458,6 @@ export function SlackAgentBindButton({
       data-testid="slack-agent-bind-buttons"
     >
       <Button
-        variant="outline"
-        size="sm"
         onClick={() => setDialogOpen(true)}
         disabled={!wsId}
         title={
@@ -483,88 +479,64 @@ export function SlackAgentBindButton({
           <DialogHeader>
             <DialogTitle>{t(($) => $.slack.byo_dialog_title)}</DialogTitle>
           </DialogHeader>
-
-          {SLACK_BYO_VIDEO_URL ? (
-            <button
-              type="button"
-              onClick={() => openExternal(SLACK_BYO_VIDEO_URL)}
-              className="inline-flex w-fit items-center gap-2 text-body font-medium text-primary underline-offset-2 hover:underline"
-            >
-              <ExternalLink className="h-4 w-4" />
-              {t(($) => $.slack.byo_video_cta)}
-            </button>
-          ) : null}
-
-          <button
-            type="button"
-            onClick={() => openExternal(slackDocsUrl(i18n.language))}
-            className="inline-flex w-fit items-center gap-2 text-body font-medium text-primary underline-offset-2 hover:underline"
-            data-testid="slack-byo-docs-link"
-          >
-            <ExternalLink className="h-4 w-4" />
-            {t(($) => $.slack.byo_docs_link)}
-          </button>
-
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="slack-byo-bot-token">
-                {t(($) => $.slack.byo_bot_token_label)}
-              </Label>
-              <Input
-                id="slack-byo-bot-token"
-                data-testid="slack-byo-bot-token"
-                type="password"
-                value={botToken}
-                onChange={(e) => setBotToken(e.target.value)}
-                // Slack token prefix: a format hint, not copy.
-                // eslint-disable-next-line no-restricted-syntax
-                placeholder="xoxb-…"
-                autoComplete="off"
-                spellCheck={false}
-                disabled={submitting}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="slack-byo-app-token">
-                {t(($) => $.slack.byo_app_token_label)}
-              </Label>
-              <Input
-                id="slack-byo-app-token"
-                data-testid="slack-byo-app-token"
-                type="password"
-                value={appToken}
-                onChange={(e) => setAppToken(e.target.value)}
-                // Slack token prefix: a format hint, not copy.
-                // eslint-disable-next-line no-restricted-syntax
-                placeholder="xapp-…"
-                autoComplete="off"
-                spellCheck={false}
-                disabled={submitting}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={closeDialog}
-              disabled={submitting}
-            >
-              {t(($) => $.slack.byo_cancel)}
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              data-testid="slack-byo-submit"
-            >
-              {submitting
+          <CredentialFieldForm
+            leading={
+              <>
+                {SLACK_BYO_VIDEO_URL ? (
+                  <button
+                    type="button"
+                    onClick={() => openExternal(SLACK_BYO_VIDEO_URL)}
+                    className="inline-flex w-fit items-center gap-2 text-body font-medium text-primary underline-offset-2 hover:underline"
+                  >
+                    <ExternalLink data-icon="inline-start" />
+                    {t(($) => $.slack.byo_video_cta)}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => openExternal(slackDocsUrl(i18n.language))}
+                  className="inline-flex w-fit items-center gap-2 text-body font-medium text-primary underline-offset-2 hover:underline"
+                  data-testid="slack-byo-docs-link"
+                >
+                  <ExternalLink data-icon="inline-start" />
+                  {t(($) => $.slack.byo_docs_link)}
+                </button>
+              </>
+            }
+            fields={[
+              {
+                id: "slack-byo-bot-token",
+                label: t(($) => $.slack.byo_bot_token_label),
+                value: botToken,
+                onChange: setBotToken,
+                type: "password",
+                placeholder: "xoxb-…",
+                testId: "slack-byo-bot-token",
+                disabled: submitting,
+              },
+              {
+                id: "slack-byo-app-token",
+                label: t(($) => $.slack.byo_app_token_label),
+                value: appToken,
+                onChange: setAppToken,
+                type: "password",
+                placeholder: "xapp-…",
+                testId: "slack-byo-app-token",
+                disabled: submitting,
+              },
+            ]}
+            cancelLabel={t(($) => $.slack.byo_cancel)}
+            submitLabel={
+              submitting
                 ? t(($) => $.slack.byo_submitting)
-                : t(($) => $.slack.byo_submit)}
-            </Button>
-          </DialogFooter>
+                : t(($) => $.slack.byo_submit)
+            }
+            submitting={submitting}
+            canSubmit={canSubmit}
+            onCancel={closeDialog}
+            onSubmit={() => void handleSubmit()}
+            submitTestId="slack-byo-submit"
+          />
         </DialogContent>
       </Dialog>
     </div>

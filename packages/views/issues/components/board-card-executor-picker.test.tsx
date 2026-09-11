@@ -189,6 +189,23 @@ describe("BoardCardContent executor picker", () => {
     vi.clearAllMocks();
   });
 
+  it("keeps the executor avatar in a non-clipping 24px slot", () => {
+    const { container } = renderCard(makeIssue("agent"));
+    const row = container.querySelector("[data-board-identifier-row]");
+    if (!(row instanceof HTMLElement)) throw new Error("expected identifier row");
+    const trigger = row.querySelector("button");
+    if (!(trigger instanceof HTMLButtonElement)) throw new Error("expected executor trigger");
+    const identifier = row.querySelector("p");
+    if (!(identifier instanceof HTMLElement)) throw new Error("expected identifier");
+
+    expect(identifier).toHaveClass("min-w-0", "flex-1", "truncate");
+    expect(trigger).toHaveClass("size-6", "shrink-0", "overflow-visible");
+    expect(trigger).not.toHaveClass("overflow-hidden");
+    expect(trigger.className.split(/\s+/)).not.toContain("-mx-1");
+    expect(trigger.className.split(/\s+/)).not.toContain("min-w-0");
+    expect(row.querySelector('[data-agent-identity], [data-slot="avatar"]')).not.toBeNull();
+  });
+
   it.each<IssueExecutorType>(["agent", "team"])(
     "opens the picker from an avatar-only %s executor without navigating the card",
     (executorType) => {

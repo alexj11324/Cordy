@@ -13,7 +13,14 @@ import { Button } from "@orvilo/ui/components/ui/button";
 import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@orvilo/ui/components/ui/dialog";
 import { Input } from "@orvilo/ui/components/ui/input";
-import { Label } from "@orvilo/ui/components/ui/label";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldSeparator,
+} from "@orvilo/ui/components/ui/field";
 import { ApiError, api } from "@orvilo/core/api";
 import { useAuthStore } from "@orvilo/core/auth";
 import { useWorkspaceId } from "@orvilo/core/hooks";
@@ -202,8 +209,6 @@ export function WeixinTab() {
                           <p className="min-w-0 truncate text-body font-medium">{agent.name}</p>
                         </div>
                         <Button
-                          variant="outline"
-                          size="sm"
                           onClick={() => setConnectAgent(agent)}
                           title={t(($) => $.weixin.connect_button_title, { agent: agent.name })}
                           data-testid={`weixin-connect-agent-${agent.id}`}
@@ -291,8 +296,6 @@ export function WeixinAgentBindButton({
     <>
       <Button
         type="button"
-        variant="outline"
-        size="sm"
         disabled={!wsId}
         onClick={() => setOpen(true)}
         title={agentName ? t(($) => $.weixin.connect_button_title, { agent: agentName }) : undefined}
@@ -584,30 +587,45 @@ function WeixinInstallDialog({
           ) : null}
 
           {status === "need_verify_code" && session ? (
-            <form className="w-full space-y-3" onSubmit={handleVerify}>
-              <div className="space-y-1.5">
-                <p className="text-body font-medium">{t(($) => $.weixin.verify_title)}</p>
-                <p className="text-caption text-muted-foreground">{t(($) => $.weixin.verify_description)}</p>
-                <Label htmlFor="weixin-verify-code">{t(($) => $.weixin.verify_code_label)}</Label>
-                <Input
-                  id="weixin-verify-code"
-                  name="weixin_verification_code"
-                  data-testid="weixin-verify-code"
-                  value={verifyCode}
-                  onChange={(event) => setVerifyCode(event.target.value)}
-                  placeholder={t(($) => $.weixin.verify_code_placeholder)}
-                  autoComplete="one-time-code"
-                  inputMode="numeric"
-                  spellCheck={false}
-                  disabled={verifying}
-                />
-                {errorKind === "verify_invalid" ? (
-                  <p className="text-caption text-destructive">{t(($) => $.weixin.install_error_verify_invalid)}</p>
-                ) : null}
-              </div>
-              <Button type="submit" className="w-full" disabled={!verifyCode.trim() || verifying}>
-                {verifying ? t(($) => $.weixin.verifying) : t(($) => $.weixin.verify_submit)}
-              </Button>
+            <form
+              className="w-full"
+              onSubmit={handleVerify}
+            >
+              <p className="mb-4 text-body font-medium">{t(($) => $.weixin.verify_title)}</p>
+              <FieldGroup>
+                <Field
+                  orientation="responsive"
+                  data-invalid={errorKind === "verify_invalid" ? true : undefined}
+                  data-disabled={verifying ? true : undefined}
+                >
+                  <FieldLabel htmlFor="weixin-verify-code">
+                    {t(($) => $.weixin.verify_code_label)}
+                  </FieldLabel>
+                  <Input
+                    id="weixin-verify-code"
+                    name="weixin_verification_code"
+                    data-testid="weixin-verify-code"
+                    value={verifyCode}
+                    onChange={(event) => setVerifyCode(event.target.value)}
+                    placeholder={t(($) => $.weixin.verify_code_placeholder)}
+                    autoComplete="one-time-code"
+                    inputMode="numeric"
+                    spellCheck={false}
+                    disabled={verifying}
+                    aria-invalid={errorKind === "verify_invalid" ? true : undefined}
+                  />
+                  <FieldDescription>{t(($) => $.weixin.verify_description)}</FieldDescription>
+                  {errorKind === "verify_invalid" ? (
+                    <FieldError>{t(($) => $.weixin.install_error_verify_invalid)}</FieldError>
+                  ) : null}
+                </Field>
+                <FieldSeparator />
+                <div className="flex justify-end gap-2">
+                  <Button type="submit" disabled={!verifyCode.trim() || verifying}>
+                    {verifying ? t(($) => $.weixin.verifying) : t(($) => $.weixin.verify_submit)}
+                  </Button>
+                </div>
+              </FieldGroup>
             </form>
           ) : null}
 

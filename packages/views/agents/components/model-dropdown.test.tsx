@@ -84,6 +84,14 @@ function openDropdown(container: HTMLElement) {
 }
 
 describe("ModelDropdown", () => {
+  it("overrides Dialog's sm:max-w-sm so the three columns have room", () => {
+    const { container } = renderDropdown();
+    openDropdown(container);
+    const panel = document.querySelector('[data-slot="dialog-content"]');
+    expect(panel?.className).toMatch(/sm:max-w-\[min\(48rem/);
+    expect(panel?.className).not.toMatch(/\bsm:max-w-sm\b/);
+  });
+
   it("shows a compact trigger and opens the four-column picker on click", async () => {
     const onSelection = vi.fn();
     const { container, onChange } = renderDropdown({

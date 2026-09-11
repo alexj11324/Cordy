@@ -200,6 +200,17 @@
   position: relative;
 }
 
+/* Same ring, but as a sibling overlay. The mask on ::before promotes a
+ * composited rounded clip in Chromium; when it lives on the card host it
+ * also clips real children (the top-right executor avatar). Keep the mask
+ * on this empty layer so card content can paint in full. */
+.border-beam-layer {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
 .border-beam::before {
   content: "";
   position: absolute;
@@ -227,7 +238,8 @@
 }
 
 /* A card only animates while its real task snapshot contains running work. */
-.running-task-card:not(:has([data-issue-agent-activity="running"]))::before {
+.running-task-card:not(:has([data-issue-agent-activity="running"]))::before,
+.running-task-card:not(:has([data-issue-agent-activity="running"])) > .border-beam-layer::before {
   display: none;
 }
 
@@ -332,7 +344,9 @@ html[data-dnd-dragging="true"] * {
   *::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
   *::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
   body {
-    @apply bg-background text-foreground;
+    /* `antialiased` = grayscale smoothing. Pulse/ReUI use it so macOS
+       subpixel smoothing does not make nav labels read heavier than reui.io. */
+    @apply bg-background text-foreground antialiased;
   }
   html {
     @apply font-sans;

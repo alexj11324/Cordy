@@ -106,32 +106,34 @@ export function ManualCreateAgentPage() {
           </span>
         }
       />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto w-full max-w-4xl px-5 py-8 sm:px-8">
-          {duplicateAgent && (
-            <div className="mb-5 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-body">
-              {t(($) => $.creation_studio.duplicate_env_notice)}
-            </div>
-          )}
-          {duplicateRuntimeReset && (
-            <div className="mb-5 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-body">
-              {t(($) => $.creation_studio.duplicate_runtime_reset_notice)}
-            </div>
-          )}
-          <AgentConfigurationPanel
-            showConversationStarters={false}
-            draft={form.draft}
-            onChange={form.setDraft}
-            runtimes={form.runtimes}
-            runtimesLoading={form.runtimesLoading}
-            members={form.members}
-            currentUserId={form.currentUserId}
-            nameError={submit.nameError}
-            onNameChange={(name) => {
-              submit.clearNameError();
-              form.setDraft((current) => ({ ...current, name }));
-            }}
-          />
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto w-full max-w-4xl px-5 py-8 sm:px-8">
+            {duplicateAgent && (
+              <div className="mb-5 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-body">
+                {t(($) => $.creation_studio.duplicate_env_notice)}
+              </div>
+            )}
+            {duplicateRuntimeReset && (
+              <div className="mb-5 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-body">
+                {t(($) => $.creation_studio.duplicate_runtime_reset_notice)}
+              </div>
+            )}
+            <AgentConfigurationPanel
+              showConversationStarters={false}
+              draft={form.draft}
+              onChange={form.setDraft}
+              runtimes={form.runtimes}
+              runtimesLoading={form.runtimesLoading}
+              members={form.members}
+              currentUserId={form.currentUserId}
+              nameError={submit.nameError}
+              onNameChange={(name) => {
+                submit.clearNameError();
+                form.setDraft((current) => ({ ...current, name }));
+              }}
+            />
+          </div>
         </div>
         <CreateAgentFooter
           canCreate={canCreate}

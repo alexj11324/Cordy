@@ -40,7 +40,7 @@ export function ModelSpeedColumn({
   return (
     <div
       aria-label={t(($) => $.inspector.prop_speed)}
-      className="min-w-0 overflow-y-auto border-l border-border/60 p-1.5"
+      className="min-w-[10.5rem] overflow-y-auto border-l border-border/60 p-1.5"
     >
       <p className="px-2 py-1 text-micro text-muted-foreground">
         {t(($) => $.inspector.prop_speed)}

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { create } from "zustand";
@@ -22,7 +23,19 @@ vi.mock("@orvilo/core/paths", () => ({
 }));
 vi.mock("../navigation", () => ({ useNavigation: () => state }));
 vi.mock("../i18n", () => ({ useT: () => ({ t: (selector: (keys: unknown) => string) => selector({ sidebar: { title: "Agent chat", open: "Open right sidebar", close: "Close right sidebar", chat_page_notice: "Conversation is open in Chat" } }) }) }));
-vi.mock("./components/chat-window", () => ({ ChatWindow: ({ docked }: { docked: boolean }) => <div data-testid="chat-content" data-docked={String(docked)} /> }));
+vi.mock("./components/chat-window", () => ({
+  ChatWindow: ({
+    docked,
+    headerEnd,
+  }: {
+    docked: boolean;
+    headerEnd?: ReactNode;
+  }) => (
+    <div data-testid="chat-content" data-docked={String(docked)}>
+      {headerEnd}
+    </div>
+  ),
+}));
 vi.mock("../agent-thread/components/task-agent-thread-panel", () => ({
   TaskAgentThreadPanel: ({ taskId }: { taskId: string }) => <div data-testid="agent-thread-content">{taskId}</div>,
 }));
@@ -41,7 +54,8 @@ describe("global right sidebar", () => {
     expect(screen.getByTestId("chat-content")).toHaveAttribute("data-docked", "true");
     const close = screen.getByRole("button", { name: "Close right sidebar" });
     expect(close).toHaveAttribute("aria-expanded", "true");
-    expect(close.closest("header")?.parentElement).toBe(screen.getByRole("complementary"));
+    expect(screen.queryByText("Agent chat")).not.toBeInTheDocument();
+    expect(screen.getByTestId("chat-content")).toContainElement(close);
     expect(screen.queryByRole("button", { name: "Open right sidebar" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Close right sidebar" }));
     expect(screen.getByRole("button", { name: "Open right sidebar" })).toHaveAttribute("aria-expanded", "false");
@@ -55,6 +69,8 @@ describe("global right sidebar", () => {
     state.pathname = "/acme/chat/session-1"; view.rerender(<Shell />);
     expect(screen.queryByTestId("chat-content")).toBeNull();
     expect(screen.getByText("Conversation is open in Chat")).toBeInTheDocument();
+    expect(screen.queryByText("Agent chat")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close right sidebar" }).closest("header")).not.toHaveClass("border-b");
     state.pathname = "/acme/projects"; view.rerender(<Shell />);
     expect(screen.getByTestId("chat-content")).toBeInTheDocument();
     expect(useStore.getState().isOpen).toBe(true);

@@ -41,7 +41,7 @@ describe("DesktopEntryPage", () => {
     installDesktopAPI(vi.fn());
     renderEntry();
 
-    expect(screen.getByTestId("desktop-entry")).toHaveClass("bg-zinc-950");
+    expect(screen.getByTestId("desktop-entry")).toHaveClass("dark", "bg-background");
     expect(screen.getByTestId("desktop-entry-brand")).toHaveTextContent(
       "Orvilo",
     );

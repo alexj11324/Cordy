@@ -165,7 +165,7 @@ export function ModelDropdown({
           <AIModelSelectorContent
             command={false}
             title={t(($) => $.model_dropdown.label)}
-            className="w-[min(35rem,calc(100vw-1rem))] max-w-[min(35rem,calc(100vw-1rem))] gap-0 overflow-hidden p-0"
+            className="w-[min(48rem,calc(100vw-2rem))] max-w-[min(48rem,calc(100vw-2rem))] gap-0 overflow-hidden p-0 sm:max-w-[min(48rem,calc(100vw-2rem))]"
           >
             {open && (
               <ModelSelectorContent

@@ -201,7 +201,7 @@ export const BoardColumn = memo(function BoardColumn({
         data-hidden-column-drop-target={status}
         className="h-full min-h-full shrink-0 self-stretch"
       >
-        <Card size="sm" className="bg-muted h-full min-h-full w-10 gap-0 p-0">
+        <Card size="sm" className="bg-card h-full min-h-full w-10 gap-0 p-0">
           <Button
             type="button"
             variant="ghost"

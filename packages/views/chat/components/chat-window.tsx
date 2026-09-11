@@ -96,7 +96,14 @@ const apiLogger = createLogger("chat.api");
 const CHAT_VIRTUOSO_INITIAL_FIRST_ITEM_INDEX = 1_000_000;
 
 
-export function ChatWindow({ docked = false }: { docked?: boolean }) {
+export function ChatWindow({
+  docked = false,
+  headerEnd,
+}: {
+  docked?: boolean;
+  /** Docked column chrome (close control). Floating chat keeps window tools. */
+  headerEnd?: React.ReactNode;
+}) {
   const { t } = useT("chat");
   const wsId = useWorkspaceId();
   const isOpen = useChatStore((s) => s.isOpen);
@@ -849,9 +856,19 @@ export function ChatWindow({ docked = false }: { docked?: boolean }) {
       }}
     >
       {!docked && !isMobile && <ChatResizeHandles onDragStart={startDrag} />}
-      {/* Header — ⊕ new + session dropdown | window tools */}
-      <div className="flex items-center justify-between border-b px-4 py-2.5 gap-2">
-        <div className="flex items-center gap-1 min-w-0">
+      {/* Header — docked column: session title in the chrome row, no hairline.
+          Floating: ⊕ new + session dropdown | window tools. */}
+      <div
+        className={cn(
+          "flex items-center justify-between gap-2",
+          docked ? "h-12 shrink-0 px-3" : "border-b px-4 py-2.5",
+        )}
+        style={docked ? ({ WebkitAppRegion: "drag" } as React.CSSProperties) : undefined}
+      >
+        <div
+          className="flex min-w-0 items-center gap-1"
+          style={docked ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties) : undefined}
+        >
           {!docked && <Tooltip>
             <TooltipTrigger
               render={
@@ -878,8 +895,15 @@ export function ChatWindow({ docked = false }: { docked?: boolean }) {
             onNewChat={docked ? handleNewChat : undefined}
           />
         </div>
-        {!docked && <div className="flex items-center gap-0.5 shrink-0">
-          {!docked && !isMobile && (
+        {docked ? (
+          headerEnd ? (
+            <div className="shrink-0" style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}>
+              {headerEnd}
+            </div>
+          ) : null
+        ) : (
+          <div className="flex shrink-0 items-center gap-0.5">
+          {!isMobile && (
             <Tooltip>
               <TooltipTrigger
                 render={
@@ -919,7 +943,8 @@ export function ChatWindow({ docked = false }: { docked?: boolean }) {
             </TooltipTrigger>
             <TooltipContent side="top">{t(($) => $.window.minimize_tooltip)}</TooltipContent>
           </Tooltip>
-        </div>}
+          </div>
+        )}
       </div>
 
       {/* Messages / skeleton / empty state */}

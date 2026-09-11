@@ -1,4 +1,12 @@
-/* Orvilo design tokens — shared across Web + Desktop */
+/* Orvilo design tokens — shared across Web + Desktop.
+ *
+ * Chrome (shell, canvas, sidebar, text, borders) follows ReUI Pulse /
+ * shadcn base-nova + `neutral`. Dark nav matches Pulse Help Desk: the
+ * template's layout rebinds `--sidebar` to `--background` (near-black),
+ * so we do not paint chrome with the theme table's unused 0.205 gray.
+ * We keep Orvilo's extra roles (app-shell, surface, faint-foreground,
+ * brand, type scale) and retarget their values onto that palette so
+ * existing `bg-app-shell` / `text-faint-foreground` class names keep working. */
 
 @theme inline {
     --font-heading: var(--font-sans);
@@ -38,9 +46,17 @@
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
     --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
     --color-warning: var(--warning);
+    --color-warning-foreground: var(--warning-foreground);
     --color-info: var(--info);
+    --color-info-foreground: var(--info-foreground);
+    --color-invert: var(--invert);
+    --color-invert-foreground: var(--invert-foreground);
+    --color-focus: var(--focus);
+    --color-focus-foreground: var(--focus-foreground);
     --color-brand: var(--brand);
     --color-brand-foreground: var(--brand-foreground);
     --color-accent-foreground: var(--accent-foreground);
@@ -65,12 +81,6 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
-    --color-invert-foreground: var(--invert-foreground);
-    --color-invert: var(--invert);
-    --color-warning-foreground: var(--warning-foreground);
-    --color-info-foreground: var(--info-foreground);
-    --color-success-foreground: var(--success-foreground);
-    --color-destructive-foreground: var(--destructive-foreground);
 }
 
 /* Type scale for chrome we author (settings, issue page, sidebar).
@@ -134,18 +144,18 @@
 
 :root {
     color-scheme: light;
-    /* Surface system: the app shell is the quiet outer frame; the page canvas
-       is where lists, boards, and conversations live; surfaces are reserved
-       for bounded content groups; raised surfaces are ephemeral overlays. */
-    --app-shell: oklch(0.964435 0.001327 286.375);
-    --page-canvas: oklch(0.988087 0 0);
+    /* Surface system, values from ReUI Pulse (base-nova + neutral).
+       Light chrome follows Pulse --sidebar (0.985) over --background (1).
+       Dark chrome follows Pulse Help Desk's layout rebind: nav = --background. */
+    --app-shell: oklch(0.985 0 0);
+    --page-canvas: oklch(1 0 0);
     --surface: oklch(1 0 0);
-    --surface-foreground: oklch(0.141 0.005 285.823);
+    --surface-foreground: oklch(0.145 0 0);
     --surface-raised: oklch(1 0 0);
-    --surface-hover: oklch(0.967 0.001 286.375);
-    --surface-selected: oklch(0.95 0.002 286.375);
-    --surface-selected-foreground: oklch(0.141 0.005 285.823);
-    --surface-border: oklch(0.92 0.004 286.32);
+    --surface-hover: oklch(0.97 0 0);
+    --surface-selected: oklch(0.95 0 0);
+    --surface-selected-foreground: oklch(0.145 0 0);
+    --surface-border: oklch(0.922 0 0);
     --surface-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 1px rgb(15 23 42 / 0.03);
     --floating-shadow: 0 16px 40px rgb(15 23 42 / 0.14), 0 3px 10px rgb(15 23 42 / 0.08);
 
@@ -165,80 +175,80 @@
        sheets), which keep --floating-shadow. */
     --menu-shadow: 0 8px 24px rgb(15 23 42 / 0.08), 0 2px 6px rgb(15 23 42 / 0.05);
     --background: var(--page-canvas);
-    --foreground: oklch(0.141 0.005 285.823);
+    --foreground: oklch(0.145 0 0);
     --card: var(--surface);
-    --card-foreground: oklch(0.141 0.005 285.823);
+    --card-foreground: oklch(0.145 0 0);
     --popover: var(--surface-raised);
-    --popover-foreground: oklch(0.141 0.005 285.823);
-    --primary: oklch(0.21 0.006 285.885);
+    --popover-foreground: oklch(0.145 0 0);
+    --primary: oklch(0.205 0 0);
     --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.967 0.001 286.375);
-    --secondary-foreground: oklch(0.21 0.006 285.885);
-    --muted: oklch(0.967 0.001 286.375);
-    /* Lightness is pinned by WCAG AA, not by taste: muted text sits on every
-       light surface we have, and the darkest of them — --sidebar-accent, the
-       nav hover state — is the binding constraint. At the old 0.552 that pair
-       was 3.98:1; 0.505 clears 4.5:1 on all of app-shell / page-canvas /
-       sidebar / sidebar-accent / muted / surface-selected / surface, with the
-       worst case at 4.88:1. Raise it and the nav labels fail again. Hue and
-       chroma are unchanged so the neutral ramp keeps its cast. */
-    --muted-foreground: oklch(0.505 0.016 285.938);
+    --secondary: oklch(0.97 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.97 0 0);
+    /* Pulse / shadcn is 0.556, which is 4.35:1 on --surface-hover (0.97)
+       and 4.27:1 on --surface-selected (0.95) — both miss WCAG AA 4.5:1.
+       0.53 is the lightest step that still clears 4.5:1 on 0.95. */
+    --muted-foreground: oklch(0.53 0 0);
     /* The quiet step below muted, for marks that are not text: disclosure
        chevrons, separator glyphs, the em dash standing in for an empty cell,
        the large icon in an empty state. It exists because the alternative
        people reached for was alpha — 152 call sites of
        text-muted-foreground/30..80 — and alpha on light surfaces lands
        between 1.5:1 and 3.8:1, which fails even the 3:1 floor for non-text.
-       0.606 is the lightest step that still clears 3:1 (WCAG 1.4.11) on every
-       surface, worst case --sidebar-accent at 3.19:1. Deliberately NOT valid
-       for text: text has one floor, --muted-foreground, and there is no room
-       for a third readable step (AA caps a lighter text tone at L 0.523 here,
-       0.018 away from muted — a difference no one can see). */
-    --faint-foreground: oklch(0.606 0.016 285.938);
-    --accent: oklch(0.967 0.001 286.375);
-    --accent-foreground: oklch(0.21 0.006 285.885);
+       0.606 still clears 3:1 (WCAG 1.4.11) on every Pulse surface; worst
+       case is --surface-selected. Deliberately NOT valid for text. */
+    --faint-foreground: oklch(0.606 0 0);
+    --accent: oklch(0.97 0 0);
+    --accent-foreground: oklch(0.205 0 0);
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.945 0.003 286.32);
-    --input: oklch(0.92 0.004 286.32);
-    --ring: oklch(0.705 0.015 286.067);
-    /* Brand-derived blue gradient (h=255 = brand hue). chart-1 equals brand
-       so the most important series visually anchors to the product colour;
-       chart-2..5 step lighter + less saturated so a stacked bar reads
-       "primary → secondary → tertiary" at a glance instead of fighting
-       for attention as five equally-weighted greys. */
-    --chart-1: oklch(0.55 0.16 255);
-    --chart-2: oklch(0.66 0.13 255);
-    --chart-3: oklch(0.76 0.10 255);
-    --chart-4: oklch(0.85 0.06 255);
-    --chart-5: oklch(0.92 0.03 255);
+    --border: oklch(0.922 0 0);
+    --input: oklch(0.922 0 0);
+    --ring: oklch(0.708 0 0);
+    /* Pulse Help Desk charts are chroma-0. --brand stays product blue. */
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
     --radius: 0.625rem;
-    --sidebar: oklch(0.964435 0.001327 286.375);
-    --sidebar-foreground: oklch(0.141 0.005 285.823);
-    --sidebar-primary: oklch(0.21 0.006 285.885);
+    --sidebar: oklch(0.985 0 0);
+    --sidebar-foreground: oklch(0.145 0 0);
+    --sidebar-primary: oklch(0.205 0 0);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.935 0.003 286.375);
-    --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
-    --sidebar-border: oklch(0.92 0.004 286.32);
-    --sidebar-ring: oklch(0.705 0.015 286.067);
-    /* Sidebar semantic ramp. Keeping these aliases next to the source palette
-       makes the light/dark relationship explicit while allowing components to
-       speak in roles instead of choosing raw palette values. The two washes
-       mirror the restrained navigation contrast from the LobeHub reference:
-       hover is 6% of the theme foreground and active is 3%. Because the
-       foreground flips with the theme, the same tokens stay quiet in both
-       light and dark mode. */
+    --sidebar-accent: oklch(0.97 0 0);
+    --sidebar-accent-foreground: oklch(0.205 0 0);
+    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-ring: oklch(0.708 0 0);
+    /* Sidebar semantic ramp. Hover is 6% of the theme foreground and active
+       is 3%. Because the foreground flips with the theme, the same tokens
+       stay quiet in both light and dark mode. */
     --sidebar-text-primary: var(--sidebar-foreground);
     --sidebar-text-secondary: var(--muted-foreground);
     --sidebar-icon-secondary: var(--faint-foreground);
     --sidebar-icon-active: var(--sidebar-text-primary);
     --sidebar-item-active-foreground: var(--sidebar-text-primary);
-    --sidebar-item-hover: color-mix(in oklab, var(--sidebar) 94%, var(--sidebar-foreground));
-    --sidebar-item-active: color-mix(in oklab, var(--sidebar) 97%, var(--sidebar-foreground));
+    /* Pulse Help Desk shell: 5% primary wash on the nav, not a gray slab. */
+    --sidebar-item-hover: color-mix(in oklab, var(--primary) 5%, transparent);
+    --sidebar-item-active: color-mix(in oklab, var(--primary) 5%, transparent);
     --brand: oklch(0.55 0.16 255);
     --brand-foreground: oklch(0.985 0 0);
-    --success: oklch(0.55 0.16 145);
-    --warning: oklch(0.75 0.16 85);
-    --info: oklch(0.55 0.18 250);
+    /* ReUI extended set. `*-foreground` here means readable text on a LIGHT
+       TINT of that hue (badge/alert), not "text on a solid fill". A missing
+       one renders transparent rather than throwing, so restore after any
+       `shadcn add` that rewrites this file. */
+    --destructive-foreground: var(--color-red-800);
+    --success: var(--color-emerald-500);
+    --success-foreground: var(--color-emerald-900);
+    --info: var(--color-violet-500);
+    --info-foreground: var(--color-violet-900);
+    --warning: var(--color-yellow-500);
+    --warning-foreground: var(--color-yellow-900);
+    --invert: var(--color-zinc-900);
+    --invert-foreground: var(--color-zinc-50);
+    /* ReUI Badge still ships focus / focus-light / focus-outline. Keep the
+       aliases so those variants resolve after the palette moved here. */
+    --focus: var(--primary);
+    --focus-foreground: var(--primary-foreground);
     --scrollbar-thumb: oklch(0 0 0 / 10%);
     --scrollbar-thumb-hover: oklch(0 0 0 / 18%);
     --scrollbar-track: transparent;
@@ -248,23 +258,21 @@
     --find-match: oklch(0.92 0.15 100);
     --find-match-active: oklch(0.82 0.17 62);
     --find-match-foreground: oklch(0.22 0.03 92);
-    --destructive-foreground: var(--color-red-800);
-    --success-foreground: var(--color-emerald-900);
-    --info-foreground: var(--color-violet-900);
-    --warning-foreground: var(--color-yellow-900);
-    --invert: var(--color-zinc-900);
-    --invert-foreground: var(--color-zinc-50);
 }
 
 .dark {
     color-scheme: dark;
-    --app-shell: oklch(0.155 0.005 285.823);
-    --page-canvas: oklch(0.18 0.005 285.823);
-    --surface: oklch(0.21 0.006 285.885);
+    /* Pulse Help Desk paints the nav with --background, not the theme table's
+       --sidebar. Their shell is `[--sidebar:var(--color-background)]`; the 0.205
+       sidebar token is only for raised cards. Mapping chrome to 0.205 was what
+       turned the left rail gray. */
+    --app-shell: oklch(0.145 0 0);
+    --page-canvas: oklch(0.145 0 0);
+    --surface: oklch(0.205 0 0);
     --surface-foreground: oklch(0.985 0 0);
-    --surface-raised: oklch(0.235 0.007 285.885);
-    --surface-hover: oklch(0.274 0.006 286.033);
-    --surface-selected: oklch(0.3 0.006 286.033);
+    --surface-raised: oklch(0.205 0 0);
+    --surface-hover: oklch(0.269 0 0);
+    --surface-selected: oklch(0.3 0 0);
     --surface-selected-foreground: oklch(0.985 0 0);
     --surface-border: oklch(1 0 0 / 10%);
     --surface-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 1px 1px rgb(0 0 0 / 0.16);
@@ -274,57 +282,54 @@
     --foreground: oklch(0.985 0 0);
     --card: var(--surface);
     --card-foreground: oklch(0.985 0 0);
-    --popover: var(--surface-raised);
+    --popover: var(--surface);
     --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.92 0.004 286.32);
-    --primary-foreground: oklch(0.21 0.006 285.885);
-    --secondary: oklch(0.274 0.006 286.033);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.274 0.006 286.033);
-    --muted-foreground: oklch(0.705 0.015 286.067);
-    /* Same role as light mode, mirrored: fainter means darker here. 0.60 is
-       the darkest step still clearing 3:1 on every dark surface, worst case
-       --surface-selected at 3.45:1. The step away from muted (0.105 L) matches
-       light mode's, so a chevron reads equally quiet in both themes. */
-    --faint-foreground: oklch(0.60 0.015 286.067);
-    --accent: oklch(0.274 0.006 286.033);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    /* Same role as light mode, mirrored: fainter means darker here. 0.60
+       still clears 3:1 on every dark Pulse surface, worst case
+       --surface-selected. */
+    --faint-foreground: oklch(0.60 0 0);
+    --accent: oklch(0.269 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 6%);
+    --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.552 0.016 285.938);
-    /* Dark mode mirrors light mode's "primary → secondary" gradient on the
-       brand hue, but flips the lightness curve: the most important series
-       is the brightest (so it pops on the dark background) and trailing
-       series get progressively darker / less saturated. */
-    --chart-1: oklch(0.72 0.16 255);
-    --chart-2: oklch(0.62 0.13 255);
-    --chart-3: oklch(0.52 0.10 255);
-    --chart-4: oklch(0.42 0.06 255);
-    --chart-5: oklch(0.32 0.03 255);
-    --sidebar: oklch(0.21 0.006 285.885);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.145 0 0);
     --sidebar-foreground: oklch(0.985 0 0);
     --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.274 0.006 286.033);
+    --sidebar-accent: oklch(0.269 0 0);
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.552 0.016 285.938);
+    --sidebar-ring: oklch(0.556 0 0);
     --brand: oklch(0.65 0.16 255);
     --brand-foreground: oklch(0.985 0 0);
-    --success: oklch(0.65 0.15 145);
-    --warning: oklch(0.70 0.16 85);
-    --info: oklch(0.65 0.18 250);
+    --destructive-foreground: var(--color-red-600);
+    --success: var(--color-emerald-500);
+    --success-foreground: var(--color-emerald-600);
+    --info: var(--color-violet-500);
+    --info-foreground: var(--color-violet-600);
+    --warning: var(--color-yellow-500);
+    --warning-foreground: var(--color-yellow-600);
+    --invert: var(--color-zinc-700);
+    --invert-foreground: var(--color-zinc-50);
+    --focus: var(--primary);
+    --focus-foreground: var(--primary-foreground);
     --scrollbar-thumb: oklch(1 0 0 / 8%);
     --scrollbar-thumb-hover: oklch(1 0 0 / 18%);
     --scrollbar-track: transparent;
     --find-match: oklch(0.82 0.16 100);
     --find-match-active: oklch(0.76 0.18 60);
     --find-match-foreground: oklch(0.18 0.02 92);
-    --destructive-foreground: var(--color-red-600);
-    --success-foreground: var(--color-emerald-600);
-    --info-foreground: var(--color-violet-600);
-    --warning-foreground: var(--color-yellow-600);
-    --invert: var(--color-zinc-700);
-    --invert-foreground: var(--color-zinc-50);
 }

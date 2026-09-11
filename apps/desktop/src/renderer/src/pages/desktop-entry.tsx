@@ -38,7 +38,7 @@ export function DesktopEntryPage({
   return (
     <div
       data-testid="desktop-entry"
-      className="flex h-screen flex-col bg-zinc-950 text-white"
+      className="dark flex h-screen flex-col bg-background text-foreground"
     >
       <DragStrip />
       <main className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-8 py-12">
@@ -48,14 +48,14 @@ export function DesktopEntryPage({
             className="flex items-center gap-4"
           >
             <OrviloIcon
-              className="size-16 shrink-0 text-white sm:size-20"
+              className="size-16 shrink-0 text-foreground sm:size-20"
               noSpin
             />
-            <h1 className="text-5xl font-semibold tracking-[-0.04em] text-white sm:text-6xl">
+            <h1 className="text-5xl font-semibold tracking-[-0.04em] text-foreground sm:text-6xl">
               Orvilo
             </h1>
           </div>
-          <p className="mt-12 max-w-lg text-balance text-title leading-relaxed font-medium text-zinc-200 sm:text-display-sm">
+          <p className="mt-12 max-w-lg text-balance text-title leading-relaxed font-medium text-muted-foreground sm:text-display-sm">
             {t(($) => $.guest.hero_tagline)}
           </p>
           <div
@@ -64,7 +64,7 @@ export function DesktopEntryPage({
           >
             <Button
               type="button"
-              className="h-11 min-w-28 rounded-full bg-white px-6 text-zinc-950 transition-none hover:bg-zinc-200 active:not-aria-[haspopup]:translate-y-0 disabled:opacity-100"
+              className="h-11 min-w-28 rounded-full px-6 transition-none active:not-aria-[haspopup]:translate-y-0 disabled:opacity-100"
               disabled={pending !== null}
               aria-busy={pending === "cloud"}
               onClick={() => {
@@ -76,7 +76,7 @@ export function DesktopEntryPage({
             <Button
               type="button"
               variant="outline"
-              className="h-11 min-w-28 rounded-full border-zinc-700 bg-zinc-900 px-6 text-white transition-none hover:bg-zinc-800 hover:text-white active:not-aria-[haspopup]:translate-y-0 disabled:opacity-100"
+              className="h-11 min-w-28 rounded-full px-6 transition-none active:not-aria-[haspopup]:translate-y-0 disabled:opacity-100"
               disabled={pending !== null}
               aria-busy={pending === "guest"}
               onClick={() => {
@@ -88,7 +88,7 @@ export function DesktopEntryPage({
                 : t(($) => $.guest.button)}
             </Button>
           </div>
-          <p className="mt-5 text-caption text-zinc-500">
+          <p className="mt-5 text-caption text-muted-foreground">
             {t(($) => $.guest.entry_description)}
           </p>
           {onResetGuest && (
@@ -101,12 +101,12 @@ export function DesktopEntryPage({
           )}
           <div data-testid="desktop-entry-feedback" className="mt-4 min-h-5">
             {failed === "cloud" && (
-              <p role="alert" className="text-caption text-red-400">
+              <p role="alert" className="text-caption text-destructive">
                 {t(($) => $.desktop.entry.login_error)}
               </p>
             )}
             {(failed === "guest" || failed === "reset") && (
-              <p role="alert" className="text-caption text-red-400">
+              <p role="alert" className="text-caption text-destructive">
                 {t(($) => $.guest.unavailable)}
               </p>
             )}

@@ -129,7 +129,7 @@ function MainTopBar({ sidebarAvailable }: { sidebarAvailable: boolean }) {
   return (
     <header
       className={cn(
-        "relative flex shrink-0 items-center gap-2 border-b border-border/60 pr-3",
+        "relative flex shrink-0 items-center gap-2 pr-3",
         TOP_BAR_HEIGHT_CLASS,
       )}
     >
@@ -289,7 +289,7 @@ export function DesktopShell() {
               } as React.CSSProperties
             }
             className={cn(
-              "flex-1 [--sidebar-width:260px] [--sidebar-border:transparent]",
+              "flex-1 [--sidebar-width:260px] [--sidebar:var(--color-background)] [--sidebar-accent:color-mix(in_oklab,var(--color-primary)_5%,transparent)] [--sidebar-accent-foreground:var(--color-primary)]",
               "bg-app-shell",
             )}
           >

@@ -2,18 +2,16 @@
 
 import { Loader2 } from "lucide-react";
 import { Button } from "@orvilo/ui/components/ui/button";
-import { cn } from "@orvilo/ui/lib/utils";
 import { useT } from "../../i18n";
 
 /**
- * Where the flow ends. Both exits live here — commit the agent, or abandon the
- * attempt — because they are the two answers to one question, and reading them
- * side by side is what makes the destructive one legible. A discard control
- * parked elsewhere (say, a trash icon over the transcript) reads as "clear this
- * chat" rather than "throw away what I am building".
+ * Where the flow ends. Commit and abandon sit together because they are the
+ * two answers to one question; a discard parked elsewhere (a trash icon over
+ * the transcript) reads as "clear this chat".
  *
- * `onDiscard` is optional: the manual route has nothing to abandon, its form is
- * gone the moment the user navigates away.
+ * This is a page action, not a dialog chrome bar: no top rule, no frosted
+ * strip. The primary control sits in the center. `onDiscard` is optional —
+ * the manual route has nothing to abandon.
  */
 export function CreateAgentFooter({
   canCreate,
@@ -34,39 +32,41 @@ export function CreateAgentFooter({
 }) {
   const { t } = useT("agents");
   return (
-    <div className="pe-chat-launcher sticky bottom-0 mt-8 flex items-center justify-between gap-3 border-t bg-background/95 py-3 pl-5 backdrop-blur">
+    <div className="flex flex-col items-center justify-center gap-3 px-5 py-6">
       {error ? (
         <p
           role="alert"
-          className="min-w-0 flex-1 break-words text-body text-destructive"
+          className="max-w-lg text-center text-body text-destructive"
         >
           {error}
         </p>
       ) : null}
-      {onDiscard ? (
+      <div className="flex items-center justify-center gap-3">
+        {onDiscard ? (
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={onDiscard}
+            disabled={creating || discarding}
+          >
+            {t(($) => $.creation_studio.drafts.discard)}
+          </Button>
+        ) : null}
         <Button
           type="button"
-          variant="ghost"
-          className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
-          onClick={onDiscard}
-          disabled={creating || discarding}
+          className="shrink-0"
+          onClick={onCreate}
+          disabled={!canCreate}
         >
-          {t(($) => $.creation_studio.drafts.discard)}
+          {creating && <Loader2 className="size-4 animate-spin" />}
+          {creating
+            ? t(($) => $.creation_studio.creating)
+            : team
+              ? t(($) => $.creation_studio.create_and_add)
+              : t(($) => $.creation_studio.create_and_open)}
         </Button>
-      ) : null}
-      <Button
-        type="button"
-        className={cn("shrink-0", !onDiscard && "ml-auto")}
-        onClick={onCreate}
-        disabled={!canCreate}
-      >
-        {creating && <Loader2 className="size-4 animate-spin" />}
-        {creating
-          ? t(($) => $.creation_studio.creating)
-          : team
-            ? t(($) => $.creation_studio.create_and_add)
-            : t(($) => $.creation_studio.create_and_open)}
-      </Button>
+      </div>
     </div>
   );
 }

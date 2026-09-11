@@ -49,7 +49,7 @@ export function DashboardLayout({
       <SidebarProvider
         hasExternalTrigger
         className={cn(
-          "h-svh [--sidebar-width:260px] [--sidebar-border:transparent]",
+          "h-svh [--sidebar-width:260px] [--sidebar:var(--color-background)] [--sidebar-accent:color-mix(in_oklab,var(--color-primary)_5%,transparent)] [--sidebar-accent-foreground:var(--color-primary)]",
         )}
       >
         <ShellHeaderProvider>
@@ -58,7 +58,7 @@ export function DashboardLayout({
           <AppSidebar searchSlot={searchSlot} />
           <SidebarInset className="relative m-0! flex-row! overflow-hidden">
             <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-slot="shell-main-column">
-            <header className="border-border/60 flex h-12 shrink-0 items-center gap-2 border-b px-4">
+            <header className="flex h-12 shrink-0 items-center gap-2 px-4">
               <SidebarTrigger className="xl:hidden" />
               <div className="min-w-0 flex-1">
                 <ShellBreadcrumb />
