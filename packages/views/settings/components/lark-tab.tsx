@@ -424,8 +424,6 @@ export function LarkAgentBindButton({
         data-testid="lark-agent-bind-buttons"
       >
         <Button
-          variant="outline"
-          size="sm"
           onClick={() => setDialogRegion("feishu")}
           disabled={!wsId}
           title={
@@ -443,8 +441,6 @@ export function LarkAgentBindButton({
             unaffected. */}
         {LARK_INTL_CONNECT_ENABLED && (
           <Button
-            variant="outline"
-            size="sm"
             onClick={() => setDialogRegion("lark")}
             disabled={!wsId}
             title={

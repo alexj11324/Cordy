@@ -1,15 +1,32 @@
 @import "@orvilo/auth-ui/styles.css";
+
+/* Accounts is always the Pulse dark inset (well + raised brand rail).
+   These names match packages/ui/styles/tokens.css `.dark` so auth-ui can
+   share the same variables as Web/Desktop without pulling Tailwind. */
 :root {
   color-scheme: dark;
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --ring: oklch(0.556 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
   font-family:
     Inter,
     ui-sans-serif,
-    -apple-system,
-    BlinkMacSystemFont,
+    system-ui,
     "Segoe UI",
+    "PingFang SC",
+    "Microsoft YaHei",
     sans-serif;
-  background: #09090b;
-  color: #f4f4f5;
+  background: var(--background);
+  color: var(--foreground);
 }
 
 * {
@@ -21,7 +38,7 @@ body {
   min-height: 100%;
   height: 100%;
   margin: 0;
-  background: #09090b;
+  background: var(--background);
 }
 
 button,
@@ -56,7 +73,7 @@ button:disabled {
   min-height: 100dvh;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   overflow: hidden;
-  background: #09090b;
+  background: var(--background);
 }
 
 .accounts-auth-brand-panel,
@@ -70,8 +87,8 @@ button:disabled {
   flex-direction: column;
   justify-content: space-between;
   padding: 40px;
-  background: #181818;
-  color: #f4f4f5;
+  background: var(--card);
+  color: var(--foreground);
 }
 
 .accounts-auth-form-panel {
@@ -82,8 +99,8 @@ button:disabled {
   min-width: 0;
   overflow-y: auto;
   padding: 56px 40px 40px;
-  background: #09090b;
-  color: #f4f4f5;
+  background: var(--background);
+  color: var(--foreground);
 }
 
 .accounts-brand-lockup {
@@ -104,7 +121,7 @@ button:disabled {
 .accounts-brand-quote {
   max-width: 34rem;
   margin: 48px 0 0;
-  color: #d4d4d8;
+  color: var(--muted-foreground);
   font-size: clamp(1rem, 1.6vw, 1.25rem);
   line-height: 1.45;
   text-wrap: balance;
@@ -114,7 +131,7 @@ button:disabled {
   position: absolute;
   top: 40px;
   right: 40px;
-  color: #e4e4e7;
+  color: var(--foreground);
   font-size: 0.875rem;
   font-weight: 500;
 }
@@ -133,17 +150,17 @@ button:disabled {
 
 .accounts-auth-message [role="alert"] {
   margin: 0;
-  color: #fca5a5;
+  color: var(--destructive);
   line-height: 1.6;
 }
 
 .accounts-auth-message > button,
 .accounts-auth-message > a {
-  border: 1px solid #3f3f46;
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 9px 14px;
-  background: #18181b;
-  color: #f4f4f5;
+  background: var(--card);
+  color: var(--foreground);
   cursor: pointer;
   text-decoration: none;
 }

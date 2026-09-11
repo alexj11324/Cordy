@@ -126,6 +126,19 @@ function mount(
 beforeEach(() => useModelFavoritesStore.setState({ favorites: [] }));
 afterEach(cleanup);
 describe("four-column model selector", () => {
+  it("keeps model, effort, and speed columns from collapsing into each other", async () => {
+    mount();
+    await screen.findByRole("navigation", {
+      name: enAgents.model_selector.providers,
+    });
+    const grid = document.querySelector("[data-model-selector] .grid");
+    expect(grid?.className).toMatch(
+      /grid-cols-\[minmax\(12\.5rem,1\.4fr\)_minmax\(10rem,1fr\)_minmax\(10\.5rem,1fr\)\]/,
+    );
+    expect(grid?.className).not.toMatch(/minmax\(0,/);
+    expect(grid?.className).toMatch(/\boverflow-x-auto\b/);
+  });
+
   it("matches T3 Code's provider rail: 44px column, 20px glyphs", async () => {
     mount();
     const nav = await screen.findByRole("navigation", {

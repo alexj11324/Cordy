@@ -1,8 +1,14 @@
-/* ReUI base-nova theme foundation shared by Web and Desktop.
+/* ReUI Tailwind/shadcn mapping shared by Web and Desktop.
  *
- * ReUI exposes this layer as the application's global Tailwind/shadcn theme:
- * component source is copied into the project, while the shared CSS variables
- * provide the visual contract that source expects.
+ * Component source is copied from the base-nova registry; this file is the
+ * `@theme inline` bridge those class names resolve through (`bg-primary`,
+ * `bg-info`, `rounded-xl`, …). It is NOT a second palette.
+ *
+ * Product color values live in tokens.css. This file loads after that layer
+ * so `@theme` and `@layer base` apply, but it must not redeclare --background,
+ * --app-shell, --primary, and the rest. The stock nova theme is chroma-0
+ * gray-black / pure white; writing those literals here used to wash the UI
+ * to zinc and collapse the app-shell / page-canvas surface stack.
  *
  * Source: https://reui.io/docs/styling
  */
@@ -33,6 +39,8 @@
     --color-destructive: var(--destructive);
     --color-accent-foreground: var(--accent-foreground);
     --color-accent: var(--accent);
+    --color-brand: var(--brand);
+    --color-brand-foreground: var(--brand-foreground);
     --color-muted-foreground: var(--muted-foreground);
     --color-muted: var(--muted);
     --color-secondary-foreground: var(--secondary-foreground);
@@ -54,8 +62,6 @@
     --color-warning-foreground: var(--warning-foreground);
     --color-invert: var(--invert);
     --color-invert-foreground: var(--invert-foreground);
-    --color-focus: var(--focus);
-    --color-focus-foreground: var(--focus-foreground);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
@@ -63,125 +69,6 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
-}
-
-:root {
-    color-scheme: light;
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.205 0 0);
-    --primary-foreground: oklch(0.985 0 0);
-    --secondary: oklch(0.97 0 0);
-    --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.205 0 0);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
-
-    /* ReUI's extended semantic state tokens. */
-    --destructive-foreground: var(--color-red-800);
-    --info: var(--color-violet-500);
-    --info-foreground: var(--color-violet-900);
-    --success: var(--color-emerald-500);
-    --success-foreground: var(--color-emerald-900);
-    --warning: var(--color-yellow-500);
-    --warning-foreground: var(--color-yellow-900);
-    --invert: var(--color-zinc-900);
-    --invert-foreground: var(--color-zinc-50);
-
-    /* The current ReUI Badge source also exposes a focus variant. */
-    --focus: var(--primary);
-    --focus-foreground: var(--primary-foreground);
-
-    /* Product surface aliases follow the ReUI base roles. */
-    --app-shell: var(--sidebar);
-    --page-canvas: var(--background);
-    --surface: var(--card);
-    --surface-foreground: var(--card-foreground);
-    --surface-raised: var(--popover);
-    --surface-hover: var(--muted);
-    --surface-selected: var(--accent);
-    --surface-selected-foreground: var(--accent-foreground);
-    --surface-border: var(--border);
-}
-
-.dark {
-    color-scheme: dark;
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
-
-    --destructive-foreground: var(--color-red-600);
-    --info: var(--color-violet-500);
-    --info-foreground: var(--color-violet-600);
-    --success: var(--color-emerald-500);
-    --success-foreground: var(--color-emerald-600);
-    --warning: var(--color-yellow-500);
-    --warning-foreground: var(--color-yellow-600);
-    --invert: var(--color-zinc-700);
-    --invert-foreground: var(--color-zinc-50);
-    --focus: var(--primary);
-    --focus-foreground: var(--primary-foreground);
-
-    --app-shell: var(--sidebar);
-    --page-canvas: var(--background);
-    --surface: var(--card);
-    --surface-foreground: var(--card-foreground);
-    --surface-raised: var(--popover);
-    --surface-hover: var(--muted);
-    --surface-selected: var(--accent);
-    --surface-selected-foreground: var(--accent-foreground);
-    --surface-border: var(--border);
 }
 
 @layer base {

@@ -14,12 +14,10 @@ import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@orvilo/ui/components/ui/dialog";
-import { Input } from "@orvilo/ui/components/ui/input";
-import { Label } from "@orvilo/ui/components/ui/label";
+import { CredentialFieldForm } from "./credential-field-form";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -398,8 +396,6 @@ export function WecomAgentBindButton({
       data-testid="wecom-agent-bind-buttons"
     >
       <Button
-        variant="outline"
-        size="sm"
         onClick={() => setDialogOpen(true)}
         disabled={!wsId}
         title={
@@ -421,81 +417,50 @@ export function WecomAgentBindButton({
           <DialogHeader>
             <DialogTitle>{t(($) => $.wecom.byo_dialog_title)}</DialogTitle>
           </DialogHeader>
-
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="wecom-byo-bot-id">
-                {t(($) => $.wecom.byo_bot_id_label)}
-              </Label>
-              <Input
-                id="wecom-byo-bot-id"
-                data-testid="wecom-byo-bot-id"
-                value={botId}
-                onChange={(e) => setBotId(e.target.value)}
-                placeholder={t(($) => $.wecom.byo_bot_id_placeholder)}
-                autoComplete="off"
-                spellCheck={false}
-                disabled={submitting}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="wecom-byo-secret">
-                {t(($) => $.wecom.byo_secret_label)}
-              </Label>
-              <Input
-                id="wecom-byo-secret"
-                data-testid="wecom-byo-secret"
-                type="password"
-                value={secret}
-                onChange={(e) => setSecret(e.target.value)}
-                placeholder={t(($) => $.wecom.byo_secret_placeholder)}
-                autoComplete="off"
-                spellCheck={false}
-                disabled={submitting}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="wecom-byo-bot-name">
-                {t(($) => $.wecom.byo_bot_name_label)}
-              </Label>
-              <Input
-                id="wecom-byo-bot-name"
-                data-testid="wecom-byo-bot-name"
-                value={botName}
-                onChange={(e) => setBotName(e.target.value)}
-                placeholder={t(($) => $.wecom.byo_bot_name_placeholder)}
-                autoComplete="off"
-                spellCheck={false}
-                disabled={submitting}
-              />
-              <p className="text-caption text-muted-foreground">
-                {t(($) => $.wecom.byo_bot_name_hint)}
-              </p>
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={closeDialog}
-              disabled={submitting}
-            >
-              {t(($) => $.wecom.byo_cancel)}
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              data-testid="wecom-byo-submit"
-            >
-              {submitting
+          <CredentialFieldForm
+            fields={[
+              {
+                id: "wecom-byo-bot-id",
+                label: t(($) => $.wecom.byo_bot_id_label),
+                value: botId,
+                onChange: setBotId,
+                placeholder: t(($) => $.wecom.byo_bot_id_placeholder),
+                testId: "wecom-byo-bot-id",
+                disabled: submitting,
+              },
+              {
+                id: "wecom-byo-secret",
+                label: t(($) => $.wecom.byo_secret_label),
+                value: secret,
+                onChange: setSecret,
+                type: "password",
+                placeholder: t(($) => $.wecom.byo_secret_placeholder),
+                testId: "wecom-byo-secret",
+                disabled: submitting,
+              },
+              {
+                id: "wecom-byo-bot-name",
+                label: t(($) => $.wecom.byo_bot_name_label),
+                value: botName,
+                onChange: setBotName,
+                placeholder: t(($) => $.wecom.byo_bot_name_placeholder),
+                description: t(($) => $.wecom.byo_bot_name_hint),
+                testId: "wecom-byo-bot-name",
+                disabled: submitting,
+              },
+            ]}
+            cancelLabel={t(($) => $.wecom.byo_cancel)}
+            submitLabel={
+              submitting
                 ? t(($) => $.wecom.byo_submitting)
-                : t(($) => $.wecom.byo_submit)}
-            </Button>
-          </DialogFooter>
+                : t(($) => $.wecom.byo_submit)
+            }
+            submitting={submitting}
+            canSubmit={canSubmit}
+            onCancel={closeDialog}
+            onSubmit={() => void handleSubmit()}
+            submitTestId="wecom-byo-submit"
+          />
         </DialogContent>
       </Dialog>
     </div>

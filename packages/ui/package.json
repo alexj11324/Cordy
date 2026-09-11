@@ -9,6 +9,7 @@
   },
   "exports": {
     "./components/ui/*": "./components/ui/*.tsx",
+    "./components/examples/c-field-9": "./components/examples/c-field-9.tsx",
     "./components/ai-elements/*": "./components/ai-elements/*.tsx",
     "./components/reui/*": "./components/reui/*.tsx",
     "./components/blocks/data-grid-base-1/components/data-grid-view": "./components/blocks/data-grid-base-1/components/data-grid-view.tsx",

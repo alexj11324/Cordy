@@ -14,12 +14,10 @@ import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@orvilo/ui/components/ui/dialog";
-import { Input } from "@orvilo/ui/components/ui/input";
-import { Label } from "@orvilo/ui/components/ui/label";
+import { CredentialFieldForm } from "./credential-field-form";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -351,8 +349,6 @@ export function TelegramAgentBindButton({
       data-testid="telegram-agent-bind-buttons"
     >
       <Button
-        variant="outline"
-        size="sm"
         onClick={() => setDialogOpen(true)}
         disabled={!wsId}
         title={
@@ -374,60 +370,47 @@ export function TelegramAgentBindButton({
           <DialogHeader>
             <DialogTitle>{t(($) => $.telegram.connect_dialog_title)}</DialogTitle>
           </DialogHeader>
-
-          <p className="text-caption text-muted-foreground">
-            {t(($) => $.telegram.connect_dialog_description)}
-          </p>
-
-          <button
-            type="button"
-            onClick={() => openExternal(telegramDocsUrl(i18n.language))}
-            className="inline-flex w-fit items-center gap-2 text-body font-medium text-primary underline-offset-2 hover:underline"
-            data-testid="telegram-docs-link"
-          >
-            <ExternalLink className="h-4 w-4" />
-            {t(($) => $.telegram.connect_docs_link)}
-          </button>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="telegram-bot-token">
-              {t(($) => $.telegram.bot_token_label)}
-            </Label>
-            <Input
-              id="telegram-bot-token"
-              data-testid="telegram-bot-token"
-              type="password"
-              value={botToken}
-              onChange={(e) => setBotToken(e.target.value)}
-              // Telegram token shape: a format hint, not copy.
-              // eslint-disable-next-line no-restricted-syntax
-              placeholder="123456789:AA…"
-              autoComplete="off"
-              spellCheck={false}
-              disabled={submitting}
-            />
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={closeDialog}
-              disabled={submitting}
-            >
-              {t(($) => $.telegram.connect_cancel)}
-            </Button>
-            <Button
-              size="sm"
-              onClick={handleSubmit}
-              disabled={!canSubmit}
-              data-testid="telegram-connect-submit"
-            >
-              {submitting
+          <CredentialFieldForm
+            leading={
+              <>
+                <p className="text-body text-muted-foreground">
+                  {t(($) => $.telegram.connect_dialog_description)}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => openExternal(telegramDocsUrl(i18n.language))}
+                  className="inline-flex w-fit items-center gap-2 text-body font-medium text-primary underline-offset-2 hover:underline"
+                  data-testid="telegram-docs-link"
+                >
+                  <ExternalLink data-icon="inline-start" />
+                  {t(($) => $.telegram.connect_docs_link)}
+                </button>
+              </>
+            }
+            fields={[
+              {
+                id: "telegram-bot-token",
+                label: t(($) => $.telegram.bot_token_label),
+                value: botToken,
+                onChange: setBotToken,
+                type: "password",
+                placeholder: "123456789:AA…",
+                testId: "telegram-bot-token",
+                disabled: submitting,
+              },
+            ]}
+            cancelLabel={t(($) => $.telegram.connect_cancel)}
+            submitLabel={
+              submitting
                 ? t(($) => $.telegram.connect_submitting)
-                : t(($) => $.telegram.connect_submit)}
-            </Button>
-          </DialogFooter>
+                : t(($) => $.telegram.connect_submit)
+            }
+            submitting={submitting}
+            canSubmit={canSubmit}
+            onCancel={closeDialog}
+            onSubmit={() => void handleSubmit()}
+            submitTestId="telegram-connect-submit"
+          />
         </DialogContent>
       </Dialog>
     </div>

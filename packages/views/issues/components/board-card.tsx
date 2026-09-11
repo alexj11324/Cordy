@@ -57,6 +57,12 @@ function PickerWrapper({ children, className }: { children: ReactNode; className
 const HOVER_REVEAL_OPACITY_CLASS =
   "opacity-0 transition-opacity group-hover/card:opacity-100 group-data-[popup-open]/card:opacity-100 focus-within:opacity-100 has-[[data-open]]:opacity-100 has-[[data-popup-open]]:opacity-100 [@media(hover:none)]:opacity-100";
 
+/** Avatar-only executor control. The shared picker trigger uses min-w-0,
+ *  max-w-full, -mx-1 and overflow-hidden so text chips can truncate; those
+ *  same rules shrink this 24px face into the card's rounded corner. */
+const BOARD_CARD_EXECUTOR_TRIGGER_CLASS =
+  "inline-flex size-6 shrink-0 items-center justify-center overflow-visible rounded-md hover:bg-accent/30 transition-colors cursor-pointer";
+
 export const BoardCardContent = memo(function BoardCardContent({
   issue,
   editable = false,
@@ -134,7 +140,7 @@ export const BoardCardContent = memo(function BoardCardContent({
   ) : null;
 
   const assignedExecutor = showAssignedExecutor ? (
-    <span className="flex shrink-0 items-center">
+    <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden">
       <ActorAvatar
         actorType={issue.executor_type!}
         actorId={issue.executor_id!}
@@ -157,24 +163,27 @@ export const BoardCardContent = memo(function BoardCardContent({
 
   const executorNode = executorInner ? (
     canEdit ? (
-      <PickerWrapper className={cn("inline-flex items-center", showUnassignedAssign && HOVER_REVEAL_OPACITY_CLASS)}>
+      <PickerWrapper className={cn("inline-flex size-6 shrink-0 items-center justify-center", showUnassignedAssign && HOVER_REVEAL_OPACITY_CLASS)}>
         <ExecutorPicker
           executorType={issue.executor_type}
           executorId={issue.executor_id}
           onUpdate={handleUpdate}
+          triggerRender={<button type="button" className={BOARD_CARD_EXECUTOR_TRIGGER_CLASS} />}
           trigger={executorInner}
         />
       </PickerWrapper>
     ) : (
-      <span className="inline-flex items-center">{executorInner}</span>
+      <span className="inline-flex size-6 shrink-0 items-center justify-center">{executorInner}</span>
     )
   ) : null;
 
   return (
-    <div className="running-task-card border-beam rounded-lg border-[0.5px] border-surface-border bg-surface py-2 px-2.5 shadow-[var(--surface-shadow)] transition-colors hover:border-foreground/15 hover:bg-surface-hover focus-within:border-foreground/15 focus-within:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
+    <div className="running-task-card relative overflow-hidden rounded-lg border-[0.5px] border-surface-border bg-surface py-2 px-2.5 shadow-[var(--surface-shadow)] transition-colors hover:border-foreground/15 hover:bg-surface-hover focus-within:border-foreground/15 focus-within:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
+      <span className="border-beam border-beam-layer" aria-hidden="true" />
+      <div className="relative">
       {/* Identifier and assigned executor; live activity remains in the footer. */}
-      <div data-board-identifier-row="" className="flex min-h-6 items-center justify-between gap-2">
-        <p className="min-w-0 truncate text-caption text-muted-foreground">{issue.identifier}</p>
+      <div data-board-identifier-row="" className="flex min-h-6 items-center gap-2">
+        <p className="min-w-0 flex-1 truncate text-caption text-muted-foreground">{issue.identifier}</p>
         {executorNode}
       </div>
 
@@ -301,6 +310,7 @@ export const BoardCardContent = memo(function BoardCardContent({
               )}
               <IssueAgentActivityIndicator issueId={issue.id} size="md" />
           </div>
+      </div>
       </div>
     </div>
   );

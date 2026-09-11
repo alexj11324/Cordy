@@ -45,6 +45,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@orvilo/ui/components/ui/dialog";
+import { FieldGroup } from "@orvilo/ui/components/ui/field";
+import { ConnectionSelectField } from "./credential-field-form";
 import { useT } from "../../i18n";
 import { IntegrationCard } from "./integration-card";
 
@@ -75,10 +77,6 @@ const emptyDraft: BindingDraft = {
   statusMapping: {},
   agentLabelMapping: {},
 };
-
-function selectClassName() {
-  return "h-9 w-full rounded-md border border-input bg-background px-3 text-body";
-}
 
 function connectionErrorIsConfiguration(error: unknown) {
   return error instanceof ApiError && error.status === 503;
@@ -603,64 +601,49 @@ function BindingWizard({
       {step === 2 ? (
         <div className="space-y-4 rounded-lg border p-4">
           <h4 className="font-medium">{t(($) => $.page.linear.match_title)}</h4>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1.5 text-body">
-              <span className="text-muted-foreground">{t(($) => $.page.linear.orvilo_project)}</span>
-              <select
-                className={selectClassName()}
-                value={draft.orviloProjectId}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    orviloProjectId: event.target.value,
-                    linearProjectId: "",
-                    linearTeamId: "",
-                    syncMode: "import",
-                    initialSourceOfTruth: "linear",
-                    statusMapping: {},
-                    agentLabelMapping: {},
-                  }))
-                }
-              >
-                <option value="">{t(($) => $.page.linear.select_project)}</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1.5 text-body">
-              <span className="text-muted-foreground">{t(($) => $.page.linear.linear_project)}</span>
-              <select
-                className={selectClassName()}
-                value={draft.linearProjectId}
-                onChange={(event) => setDraftValue("linearProjectId", event.target.value)}
-              >
-                <option value="">{t(($) => $.page.linear.select_project)}</option>
-                {catalog.projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="space-y-1.5 text-body sm:col-span-2">
-              <span className="text-muted-foreground">{t(($) => $.page.linear.linear_team)}</span>
-              <select
-                className={selectClassName()}
-                value={draft.linearTeamId}
-                onChange={(event) => setDraftValue("linearTeamId", event.target.value)}
-              >
-                <option value="">{t(($) => $.page.linear.select_team)}</option>
-                {catalog.teams.map((team) => (
-                  <option key={team.id} value={team.id}>
-                    {team.key} · {team.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <FieldGroup>
+            <ConnectionSelectField
+              id="linear-orvilo-project"
+              label={t(($) => $.page.linear.orvilo_project)}
+              value={draft.orviloProjectId}
+              placeholder={t(($) => $.page.linear.select_project)}
+              items={projects.map((project) => ({ value: project.id, label: project.title }))}
+              onValueChange={(orviloProjectId) =>
+                setDraft((current) => ({
+                  ...current,
+                  orviloProjectId,
+                  linearProjectId: "",
+                  linearTeamId: "",
+                  syncMode: "import",
+                  initialSourceOfTruth: "linear",
+                  statusMapping: {},
+                  agentLabelMapping: {},
+                }))
+              }
+            />
+            <ConnectionSelectField
+              id="linear-linear-project"
+              label={t(($) => $.page.linear.linear_project)}
+              value={draft.linearProjectId}
+              placeholder={t(($) => $.page.linear.select_project)}
+              items={catalog.projects.map((project) => ({
+                value: project.id,
+                label: project.name,
+              }))}
+              onValueChange={(linearProjectId) => setDraftValue("linearProjectId", linearProjectId)}
+            />
+            <ConnectionSelectField
+              id="linear-linear-team"
+              label={t(($) => $.page.linear.linear_team)}
+              value={draft.linearTeamId}
+              placeholder={t(($) => $.page.linear.select_team)}
+              items={catalog.teams.map((team) => ({
+                value: team.id,
+                label: `${team.key} · ${team.name}`,
+              }))}
+              onValueChange={(linearTeamId) => setDraftValue("linearTeamId", linearTeamId)}
+            />
+          </FieldGroup>
           {suggestedLinearProject && suggestedLinearProject.id === draft.linearProjectId ? (
             <p className="text-micro text-muted-foreground">
               {t(($) => $.page.linear.name_match_suggestion)}
@@ -702,19 +685,18 @@ function BindingWizard({
             </label>
           ))}
           {draft.syncMode === "two_way" ? (
-            <label className="space-y-1.5 text-body">
-              <span className="text-muted-foreground">{t(($) => $.page.linear.initial_source)}</span>
-              <select
-                className={selectClassName()}
-                value={draft.initialSourceOfTruth ?? "linear"}
-                onChange={(event) =>
-                  setDraftValue("initialSourceOfTruth", event.target.value as "linear" | "orvilo")
-                }
-              >
-                <option value="linear">{t(($) => $.page.linear.source_linear)}</option>
-                <option value="orvilo">{t(($) => $.page.linear.source_orvilo)}</option>
-              </select>
-            </label>
+            <ConnectionSelectField
+              id="linear-initial-source"
+              label={t(($) => $.page.linear.initial_source)}
+              value={draft.initialSourceOfTruth ?? "linear"}
+              items={[
+                { value: "linear", label: t(($) => $.page.linear.source_linear) },
+                { value: "orvilo", label: t(($) => $.page.linear.source_orvilo) },
+              ]}
+              onValueChange={(next) =>
+                setDraftValue("initialSourceOfTruth", next as "linear" | "orvilo")
+              }
+            />
           ) : null}
         </div>
       ) : null}
@@ -726,35 +708,35 @@ function BindingWizard({
           {catalog.states.length === 0 ? (
             <p className="text-body text-muted-foreground">{t(($) => $.page.linear.no_states)}</p>
           ) : (
-            <div className="space-y-2">
+            <FieldGroup>
               {catalog.states.map((state) => (
-                <label className="grid items-center gap-2 text-body sm:grid-cols-[1fr_1fr]" key={state.id}>
-                  <span>{state.name}</span>
-                  <select
-                    className={selectClassName()}
-                    value={String(draft.statusMapping[state.id] ?? "")}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        statusMapping: {
-                          ...current.statusMapping,
-                          [state.id]: event.target.value,
-                        },
-                      }))
-                    }
-                  >
-                    <option value="">{t(($) => $.page.linear.leave_unmapped)}</option>
-                    <option value="backlog">{t(($) => $.page.linear.status_backlog)}</option>
-                    <option value="todo">{t(($) => $.page.linear.status_todo)}</option>
-                    <option value="in_progress">{t(($) => $.page.linear.status_in_progress)}</option>
-                    <option value="in_review">{t(($) => $.page.linear.status_in_review)}</option>
-                    <option value="done">{t(($) => $.page.linear.status_done)}</option>
-                    <option value="blocked">{t(($) => $.page.linear.status_blocked)}</option>
-                    <option value="cancelled">{t(($) => $.page.linear.status_cancelled)}</option>
-                  </select>
-                </label>
+                <ConnectionSelectField
+                  key={state.id}
+                  id={`linear-status-${state.id}`}
+                  label={state.name}
+                  value={String(draft.statusMapping[state.id] ?? "")}
+                  placeholder={t(($) => $.page.linear.leave_unmapped)}
+                  items={[
+                    { value: "backlog", label: t(($) => $.page.linear.status_backlog) },
+                    { value: "todo", label: t(($) => $.page.linear.status_todo) },
+                    { value: "in_progress", label: t(($) => $.page.linear.status_in_progress) },
+                    { value: "in_review", label: t(($) => $.page.linear.status_in_review) },
+                    { value: "done", label: t(($) => $.page.linear.status_done) },
+                    { value: "blocked", label: t(($) => $.page.linear.status_blocked) },
+                    { value: "cancelled", label: t(($) => $.page.linear.status_cancelled) },
+                  ]}
+                  onValueChange={(next) =>
+                    setDraft((current) => ({
+                      ...current,
+                      statusMapping: {
+                        ...current.statusMapping,
+                        [state.id]: next,
+                      },
+                    }))
+                  }
+                />
               ))}
-            </div>
+            </FieldGroup>
           )}
           <div className="space-y-2 border-t pt-4">
             <h4 className="font-medium">{t(($) => $.page.linear.member_mapping_title)}</h4>
@@ -766,31 +748,27 @@ function BindingWizard({
                 {t(($) => $.page.linear.no_members)}
               </p>
             ) : (
-              members.map((member) => (
-                <label
-                  className="grid items-center gap-2 text-body sm:grid-cols-[1fr_1fr]"
-                  key={member.user_id}
-                >
-                  <span>{member.name || member.email}</span>
-                  <select
-                    className={selectClassName()}
+              <FieldGroup>
+                {members.map((member) => (
+                  <ConnectionSelectField
+                    key={member.user_id}
+                    id={`linear-member-${member.user_id}`}
+                    label={member.name || member.email}
                     value={memberMappings[member.user_id] ?? ""}
-                    onChange={(event) =>
+                    placeholder={t(($) => $.page.linear.member_not_mapped)}
+                    items={catalog.users.map((user) => ({
+                      value: user.id,
+                      label: user.email ? `${user.name} · ${user.email}` : user.name,
+                    }))}
+                    onValueChange={(next) =>
                       setMemberMappings((current) => ({
                         ...current,
-                        [member.user_id]: event.target.value,
+                        [member.user_id]: next,
                       }))
                     }
-                  >
-                    <option value="">{t(($) => $.page.linear.member_not_mapped)}</option>
-                    {catalog.users.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {user.name}{user.email ? ` · ${user.email}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ))
+                  />
+                ))}
+              </FieldGroup>
             )}
           </div>
         </div>

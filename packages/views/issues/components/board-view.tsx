@@ -910,7 +910,7 @@ function BoardViewImpl({
 
 
   return (
-    <div className="bg-muted flex min-h-0 min-w-0 w-full flex-1 items-stretch overflow-hidden px-3 py-2">
+    <div className="bg-background flex min-h-0 min-w-0 w-full flex-1 items-stretch overflow-hidden px-3 py-2">
     <Kanban
       value={displayedColumns}
       onValueChange={setColumns}

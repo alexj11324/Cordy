@@ -94,7 +94,8 @@ describe("DesktopLoginPage", () => {
     renderPage();
 
     expect(screen.getByTestId("desktop-login-pending")).toHaveClass(
-      "bg-zinc-950",
+      "dark",
+      "bg-background",
     );
     expect(
       screen.queryByTestId("authentication-form-panel"),

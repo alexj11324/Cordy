@@ -72,18 +72,18 @@ export function GlobalRightSidebar() {
           onClose={closeAgentPanel}
           closeIcon="panel"
         />
-      ) : (
+      ) : isChatPage ? (
         <>
-          <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border/60 px-3" style={{ WebkitAppRegion: "drag" } as CSSProperties}>
-            <span className="truncate text-body font-medium">{t(($) => $.sidebar.title)}</span>
+          <header
+            className="flex h-12 shrink-0 items-center justify-end gap-2 px-3"
+            style={{ WebkitAppRegion: "drag" } as CSSProperties}
+          >
             <GlobalRightSidebarToggle inSidebar />
           </header>
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            {isChatPage
-              ? <p className="p-4 text-body text-muted-foreground">{t(($) => $.sidebar.chat_page_notice)}</p>
-              : <ChatWindow docked />}
-          </div>
+          <p className="p-4 text-body text-muted-foreground">{t(($) => $.sidebar.chat_page_notice)}</p>
         </>
+      ) : (
+        <ChatWindow docked headerEnd={<GlobalRightSidebarToggle inSidebar />} />
       )}
     </aside>
   );

@@ -557,7 +557,7 @@ export function ModelSelectorContent({
             )}
           </div>
         ) : (
-          <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(12.5rem,1.4fr)_minmax(10rem,1fr)_minmax(10.5rem,1fr)] overflow-x-auto">
             <div
               className="min-w-0 flex-1 overflow-y-auto p-1.5"
               aria-label={t(($) => $.model_dropdown.label)}
@@ -732,7 +732,7 @@ export function ModelSelectorContent({
             </div>
             <div
               aria-label={t(($) => $.model_selector.effort)}
-              className="min-w-0 overflow-y-auto border-l border-border/60 p-1.5"
+              className="min-w-[10rem] overflow-y-auto border-l border-border/60 p-1.5"
             >
               <p className="px-2 py-1 text-micro text-muted-foreground">
                 {t(($) => $.model_selector.effort)}

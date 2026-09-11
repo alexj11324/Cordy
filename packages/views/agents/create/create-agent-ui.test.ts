@@ -145,7 +145,7 @@ describe("Agent creation errors", () => {
     expect(input).toHaveProperty("selectionEnd", "Existing agent".length);
   });
 
-  it("renders a generic error on the left side of the sticky footer", () => {
+  it("renders a generic error above the centered create action", () => {
     render(
       createElement(CreateAgentFooter, {
         canCreate: true,
@@ -158,7 +158,11 @@ describe("Agent creation errors", () => {
 
     const error = screen.getByRole("alert");
     const button = screen.getByRole("button", { name: "Create and open" });
-    expect(error.parentElement).toBe(button.parentElement);
+    const footer = button.closest("div.flex.flex-col");
+    expect(footer).toContainElement(error);
+    expect(footer?.className).toMatch(/\bitems-center\b/);
+    expect(footer?.className).not.toMatch(/\bborder-t\b/);
+    expect(footer?.className).not.toMatch(/bg-background\/95/);
     expect(
       error.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
