@@ -15,11 +15,7 @@ import { Virtuoso, type Components, type VirtuosoHandle } from "react-virtuoso";
 import { cn } from "@orvilo/ui/lib/utils";
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { Button } from "@orvilo/ui/components/ui/button";
-import {
-  Message as AIMessage,
-  MessageActions as AIMessageActions,
-  MessageContent as AIMessageContent,
-} from "@orvilo/ui/components/ai-elements/message";
+import { MessageActions as AIMessageActions } from "@orvilo/ui/components/ai-elements/message";
 import {
   Suggestion as AISuggestion,
   Suggestions as AISuggestions,
@@ -93,6 +89,8 @@ import {
 } from "@orvilo/core/chat/queries";
 import { RichContent } from "../../rich-content";
 import { RichContentScrollRootProvider } from "../../rich-content/scroll-root";
+import { LobeMessageItem } from "../lobe/lobe-message-item";
+import { LobeThemeBridge } from "../lobe/lobe-theme-bridge";
 import { copyText } from "@orvilo/ui/lib/clipboard";
 import { AttachmentList } from "../../issues/components/comment-card";
 import { ImageSequenceProvider } from "../../editor";
@@ -183,6 +181,16 @@ type ChatRenderItem =
  * the task so they can inherit the live row; everything else keys on its own
  * id.
  */
+/**
+ * `created_at` arrives as an ISO string; LobeHub's `ChatItem` wants epoch
+ * milliseconds. An unparseable value is dropped rather than handed over as
+ * NaN — the row still renders correctly, it just loses its clock.
+ */
+function lobeMessageTime(message: ChatMessage): number | undefined {
+  const parsed = Date.parse(message.created_at);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
 function messageRowKey(message: ChatMessage): string {
   return message.role === "assistant" && message.task_id
     ? `task:${message.task_id}`
@@ -368,8 +376,9 @@ export function ChatMessageList({
   );
 
   return (
-    <ImageSequenceProvider items={imageSequence}>
-      <Conversation managed={false} className="contents">
+    <LobeThemeBridge>
+      <ImageSequenceProvider items={imageSequence}>
+        <Conversation managed={false} className="contents">
         <div
           ref={setScrollContainerRef}
           data-tab-scroll-root
@@ -467,9 +476,10 @@ export function ChatMessageList({
               />
             </RichContentScrollRootProvider>
           )}
-        </div>
-      </Conversation>
-    </ImageSequenceProvider>
+          </div>
+        </Conversation>
+      </ImageSequenceProvider>
+    </LobeThemeBridge>
   );
 }
 
@@ -560,27 +570,25 @@ const MessageBubble = memo(function MessageBubble({
 
   if (message.role === "user") {
     return (
-      <AIMessage from="user" className="max-w-full">
-        <AIMessageContent className="rounded-2xl bg-muted px-3.5 py-2 text-body max-w-[80%] break-words">
-          {/* User messages are authored as markdown in ContentEditor, so they
-           * render through the SAME RichContent as assistant replies and as
-           * Issue/Comment — a Mermaid fence a user pastes is a diagram here
-           * too. `compact` trims the leading/trailing block margins so a
-           * single-line bubble stays as tight as the plain-text version. */}
-          <RichContent
-            content={message.content}
+      <LobeMessageItem role="user" time={lobeMessageTime(message)}>
+        {/* User messages are authored as markdown in ContentEditor, so they
+         * render through the SAME RichContent as assistant replies and as
+         * Issue/Comment — a Mermaid fence a user pastes is a diagram here
+         * too. `compact` trims the leading/trailing block margins so a
+         * single-line bubble stays as tight as the plain-text version. */}
+        <RichContent
+          content={message.content}
+          attachments={message.attachments}
+          density="compact"
+          phase="settled"
+        />
+        <AIAttachments variant="list" className="mt-1.5">
+          <AttachmentList
             attachments={message.attachments}
-            density="compact"
-            phase="settled"
+            content={message.content}
           />
-          <AIAttachments variant="list" className="mt-1.5">
-            <AttachmentList
-              attachments={message.attachments}
-              content={message.content}
-            />
-          </AIAttachments>
-        </AIMessageContent>
-      </AIMessage>
+        </AIAttachments>
+      </LobeMessageItem>
     );
   }
 
@@ -671,8 +679,11 @@ function AssistantMessage({
   const isNoResponse = message?.message_kind === "no_response";
 
   return (
-    <AIMessage from="assistant" className="max-w-full">
-      <AIMessageContent className="w-full space-y-1.5 overflow-visible">
+    <LobeMessageItem
+      role="assistant"
+      time={message ? lobeMessageTime(message) : undefined}
+    >
+      <div className="w-full space-y-1.5 overflow-visible">
         {timeline.length > 0 && (
           <TimelineView
             items={timeline}
@@ -726,8 +737,8 @@ function AssistantMessage({
             ) : null}
           </>
         )}
-      </AIMessageContent>
-    </AIMessage>
+      </div>
+    </LobeMessageItem>
   );
 }
 

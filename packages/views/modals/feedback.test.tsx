@@ -90,7 +90,24 @@ vi.mock("../editor", async () => {
   const uploadGate = await vi.importActual<typeof import("../editor/use-upload-gate")>(
     "../editor/use-upload-gate",
   );
-  const ContentEditor = forwardRef(({ defaultValue, onSubmit, onUploadingChange }: any, ref) => {
+  return {
+    ...uploadGate,
+    useEditorUpload: () => ({
+      uploadWithToast: vi.fn(),
+      upload: vi.fn(),
+      uploading: false,
+    }),
+    useFileDropZone: () => ({ isDragOver: false, dropZoneProps: {} }),
+    FileDropOverlay: () => null,
+    FileUploadButton: () => <button type="button">Upload</button>,
+  };
+});
+
+vi.mock("../editor/lobe", () => {
+  // Stands in for the real Lexical editor. Mocked at the module the component
+  // is imported from, so the tests keep exercising the modal's wiring without
+  // mounting the whole LobeHub kernel graph.
+  const LobeContentEditor = forwardRef(({ defaultValue, onSubmit, onUploadingChange }: any, ref) => {
     liveEditorMarkdown = defaultValue;
     // Mirrors the real editor: the placeholder node is in the doc from before
     // the await until the upload settles, and the host hears about it through
@@ -126,18 +143,11 @@ vi.mock("../editor", async () => {
       />
     );
   });
-  ContentEditor.displayName = "MockContentEditor";
+  LobeContentEditor.displayName = "MockLobeContentEditor";
   return {
-    ...uploadGate,
-    useEditorUpload: () => ({
-      uploadWithToast: vi.fn(),
-      upload: vi.fn(),
-      uploading: false,
-    }),
-    ContentEditor,
-    useFileDropZone: () => ({ isDragOver: false, dropZoneProps: {} }),
-    FileDropOverlay: () => null,
-    FileUploadButton: () => <button type="button">Upload</button>,
+    LobeContentEditor,
+    // Passthrough: the real bridge only mounts theme providers.
+    LobeThemeBridge: ({ children }: any) => children,
   };
 });
 

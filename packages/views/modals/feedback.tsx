@@ -11,13 +11,21 @@ import {
 import { Button } from "@orvilo/ui/components/ui/button";
 import { FileUploadButton } from "@orvilo/ui/components/common/file-upload-button";
 import {
-  ContentEditor,
-  type ContentEditorRef,
-  useFileDropZone,
   FileDropOverlay,
+  useFileDropZone,
   useUploadGate,
   useEditorUpload,
 } from "../editor";
+// Deliberately the subpath, not `../editor`. Re-exporting from the package
+// index would drag `@lobehub/ui`'s root — and with it `SortableList` and
+// `@dnd-kit/core` — into the module graph of every existing `../editor`
+// consumer, including test files whose dnd-kit mocks predate it. The subpath
+// keeps that graph confined to the call sites that actually mount the editor.
+import {
+  LobeContentEditor,
+  LobeThemeBridge,
+  type LobeContentEditorHandle,
+} from "../editor/lobe";
 import {
   useCreateFeedback,
   useFeedbackDraftStore,
@@ -66,7 +74,7 @@ export function FeedbackModal({
   const setDraft = useFeedbackDraftStore((s) => s.setDraft);
   const clearDraft = useFeedbackDraftStore((s) => s.clearDraft);
 
-  const editorRef = useRef<ContentEditorRef>(null);
+  const editorRef = useRef<LobeContentEditorHandle>(null);
   const incomingInitialMessage =
     initialMessage ?? (typeof data?.initialMessage === "string" ? data.initialMessage : "");
   const kind = typeof data?.kind === "string" && FEEDBACK_KIND_SET.has(data.kind as FeedbackKind)
@@ -162,18 +170,24 @@ export function FeedbackModal({
             {...dropZoneProps}
             className="relative h-full overflow-y-auto rounded-lg border-1 border-border transition-colors focus-within:border-brand"
           >
-            <ContentEditor
-              ref={editorRef}
-              defaultValue={seededMessage}
-              placeholder={t(($) => $.feedback.placeholder)}
-              onUpdate={(md) => { setMessage(md); setDraft({ message: md }); }}
-              onUploadFile={(file) => uploadWithToast(file)}
-              onUploadingChange={uploadGate.onUploadingChange}
-              onSubmit={handleSubmit}
-              debounceMs={150}
-              showBubbleMenu={false}
-              className="px-3 py-2"
-            />
+            <LobeThemeBridge>
+              <LobeContentEditor
+                ref={editorRef}
+                className="px-3 py-2"
+                debounceMs={150}
+                defaultValue={seededMessage}
+                placeholder={t(($) => $.feedback.placeholder)}
+                onUpdate={(md) => { setMessage(md); setDraft({ message: md }); }}
+                // The id is deliberately dropped: feedback has no draft-level
+                // upload binding, so there is nothing to reconcile an upload
+                // against if it outlives this dialog. `uploadWithToast`'s own
+                // second parameter is an UploadContext, not that id — passing
+                // it through here would be a type error, not a wiring choice.
+                onUploadFile={(file) => uploadWithToast(file)}
+                onUploadingChange={uploadGate.onUploadingChange}
+                onSubmit={handleSubmit}
+              />
+            </LobeThemeBridge>
             {isDragOver && <FileDropOverlay />}
           </div>
         </div>
