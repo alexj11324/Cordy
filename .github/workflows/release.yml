@@ -237,7 +237,7 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
           pattern: digests-backend-*
@@ -357,7 +357,7 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
           pattern: digests-web-*
@@ -468,7 +468,7 @@ jobs:
       cancel-in-progress: true
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
           pattern: digests-auth-broker-*
@@ -814,7 +814,7 @@ jobs:
           node-version: 22
 
       - name: Download staged Desktop artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: ${{ runner.temp }}/desktop-assets
           pattern: desktop-*
@@ -996,7 +996,7 @@ jobs:
           node-version: 22
 
       - name: Download generated Homebrew cask
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: homebrew-cask
           path: ${{ runner.temp }}/homebrew-cask
