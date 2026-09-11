@@ -11,7 +11,7 @@ import {
   toChatItemPlacement,
   type LobeMessageItemProps,
 } from "./lobe-message-item";
-import { LobeThemeBridge } from "./lobe-theme-bridge";
+import { LobeThemeBridge } from "../../lobe";
 
 function renderItem(props: LobeMessageItemProps) {
   return render(

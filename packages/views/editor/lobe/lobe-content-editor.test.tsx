@@ -12,7 +12,7 @@ import { render, waitFor } from "@testing-library/react";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { LobeThemeBridge } from "../../chat/lobe/lobe-theme-bridge";
+import { LobeThemeBridge } from "../../lobe";
 import type { ComposerEditorRef } from "../use-composer-submit";
 import type { CoordinatedUploadEditor } from "../use-coordinated-uploads";
 import {

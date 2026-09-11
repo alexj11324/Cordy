@@ -2,8 +2,10 @@
 // Integration smoke test: proves the LobeHub/antd components actually render
 // under our theme bridge. The token mapping matrix itself lives in
 // `lobe-tokens.test.ts` (node) — this suite only covers wiring and the pieces
-// that need a DOM (theme detection, the CSS-variable namespace).
+// that need a DOM: theme detection, the CSS-variable namespace, and the
+// providers every animated component resolves out of context.
 
+import { Button, Form } from "@lobehub/ui/base-ui";
 import { ChatItem } from "@lobehub/ui/chat";
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -56,5 +58,20 @@ describe("LobeThemeBridge", () => {
 
     expect(() => setDarkMode(true)).not.toThrow();
     expect(screen.getByText("Toggles")).toBeTruthy();
+  });
+
+  // `ChatItem` above never reaches `useMotionComponent`, so it cannot prove
+  // the bridge is complete. These are the components the settings surface is
+  // built from, and they resolve their animation component from context: with
+  // no `MotionProvider` in the tree they throw before rendering anything.
+  it("renders motion-driven base-ui components", () => {
+    render(
+      <LobeThemeBridge>
+        <Button>Bridged button</Button>
+        <Form.SubmitFooter />
+      </LobeThemeBridge>,
+    );
+
+    expect(screen.getByText("Bridged button")).toBeTruthy();
   });
 });

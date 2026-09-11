@@ -3,12 +3,13 @@
 /**
  * Keeps `@lobehub/ui` / antd components looking like the rest of Orvilo.
  *
- * The chat panel is built from antd-based components while the surrounding app
- * is Tailwind over the CSS variables in `packages/ui/styles/tokens.css`. This
- * bridge is the only place the two systems meet: it reads those variables in
- * the browser and hands antd the matching token set.
+ * Surfaces built from antd-based components (chat, the feedback editor, and
+ * the settings page) sit inside an app that is Tailwind over the CSS variables
+ * in `packages/ui/styles/tokens.css`. This bridge is the only place the two
+ * systems meet: it reads those variables in the browser and hands antd the
+ * matching token set.
  *
- * Two decisions worth knowing about:
+ * Four decisions worth knowing about:
  *
  * - `cssVar.key` is namespaced to Orvilo rather than reusing LobeHub's
  *   `lobe-vars`. The published packages reference their CSS variables only
@@ -19,17 +20,36 @@
  *   dark mode by swapping that class, without remounting the tree, so a
  *   one-shot read on mount would leave the panel in the wrong theme after a
  *   toggle. The read itself is synchronous and cheap.
+ *
+ * - `MotionProvider` is mandatory, not decorative. `ThemeProvider` below does
+ *   not supply a motion context, and every `base-ui` component that animates —
+ *   `Button`, `Form.SubmitFooter`, the `Modal` and `Drawer` atoms — calls
+ *   `useMotionComponent()`, which throws without one. Mounting the theme
+ *   provider alone renders a tree that dies on the first button. It is a named
+ *   export (the module has no default), and the component it takes must be
+ *   `motion` from `motion/react` — the same one `@lobehub/ui` itself renders
+ *   through.
+ *
+ * - `enableGlobalStyle` is turned off. It defaults to on, and when on it
+ *   injects a document-wide reset (`body { margin: 0; line-height: 1;
+ *   overflow: hidden auto; background-color: ... }`, `html { overscroll-behavior:
+ *   none }`). That is defensible for a full-page LobeHub app; it is not for a
+ *   bridge mounted in a panel, a modal, or a dashboard route, where it would
+ *   restyle and rescroll the page behind it.
  */
 
 import { StyleProvider } from "@ant-design/cssinjs";
-// Deep import on purpose. The package root re-exports every component it
+// Deep imports on purpose. The package root re-exports every component it
 // ships, and anything that pulls it in drags the whole library into the module
 // graph — under Vitest that evaluates SortableList, which needs a
 // `defaultDropAnimationSideEffects` export our dnd-kit mocks do not provide,
 // breaking seven unrelated issue-board suites. `ThemeProvider` has its own
-// entry and reaches only four internal modules, so this also keeps a large
-// amount of dead weight out of the renderer bundle.
+// entry and reaches only four internal modules, and `MotionProvider` is a
+// context-only module of a few lines, so this also keeps a large amount of
+// dead weight out of the renderer bundle.
+import { MotionProvider } from "@lobehub/ui/es/MotionProvider/index";
 import ThemeProvider from "@lobehub/ui/es/ThemeProvider/index";
+import { motion } from "motion/react";
 import { type ReactNode, useEffect, useState } from "react";
 
 import {
@@ -125,22 +145,29 @@ export function LobeThemeBridge({ children }: LobeThemeBridgeProps) {
   }, []);
 
   return (
-    <StyleProvider hashPriority="low">
-      <ThemeProvider
-        appearance={theme.appearance}
-        // `ThemeProvider` renders a real <div>. Callers mount this bridge
-        // inside flex columns (the message list sits between a scroll
-        // container and the composer), where an extra box would take a share
-        // of the layout. `display: contents` removes the box while the CSS
-        // variables still inherit down to the panel.
-        className="contents"
-        theme={{
-          cssVar: { key: CSS_VAR_KEY },
-          token: { ...theme.tokens.seed, ...theme.tokens.map },
-        }}
-      >
-        {children}
-      </ThemeProvider>
-    </StyleProvider>
+    // Renders no DOM of its own, so it can wrap the whole bridge without
+    // affecting the layout decision below.
+    <MotionProvider motion={motion}>
+      <StyleProvider hashPriority="low">
+        <ThemeProvider
+          appearance={theme.appearance}
+          // Document-wide body/html reset; see the header note on why a bridge
+          // must not install one.
+          enableGlobalStyle={false}
+          // `ThemeProvider` renders a real <div>. Callers mount this bridge
+          // inside flex columns (the message list sits between a scroll
+          // container and the composer), where an extra box would take a share
+          // of the layout. `display: contents` removes the box while the CSS
+          // variables still inherit down to the panel.
+          className="contents"
+          theme={{
+            cssVar: { key: CSS_VAR_KEY },
+            token: { ...theme.tokens.seed, ...theme.tokens.map },
+          }}
+        >
+          {children}
+        </ThemeProvider>
+      </StyleProvider>
+    </MotionProvider>
   );
 }

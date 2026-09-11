@@ -18,7 +18,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { LobeComposer } from "./lobe-composer";
-import { LobeThemeBridge } from "./lobe-theme-bridge";
+import { LobeThemeBridge } from "../../lobe";
 
 function renderComposer(props: Partial<Parameters<typeof LobeComposer>[0]> = {}) {
   const utils = render(

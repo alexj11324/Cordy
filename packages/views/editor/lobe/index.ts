@@ -1,4 +1,4 @@
-export { LobeThemeBridge } from "../../chat/lobe/lobe-theme-bridge";
+export { LobeThemeBridge } from "../../lobe";
 
 export {
   $createAttachmentNode,
