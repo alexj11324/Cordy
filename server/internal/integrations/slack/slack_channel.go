@@ -39,6 +39,7 @@ type slackChannel struct {
 	handler        channel.InboundHandler
 	installationID pgtype.UUID
 	onNativeEvent  func(ctx context.Context, installationID pgtype.UUID, body []byte)
+	revoke         func(ctx context.Context, installationID pgtype.UUID) error
 	slash          *SlashCommandProcessor // nil disables /issue and /new slash-command handling
 	logger         *slog.Logger
 }
@@ -50,6 +51,10 @@ type slackChannel struct {
 const slashCommandTimeout = 10 * time.Second
 
 const nativeAutomationTimeout = 30 * time.Second
+
+// dispatchEventsAPITimeout bounds engine ingest after the Socket Mode ACK so
+// a slow DB write cannot stall the receive loop or trip Slack's 3s retry.
+const dispatchEventsAPITimeout = 30 * time.Second
 
 func (c *slackChannel) Type() channel.Type { return TypeSlack }
 
@@ -146,18 +151,27 @@ func (c *slackChannel) handleSocketEvent(ctx context.Context, sm *socketmode.Cli
 				c.logger.WarnContext(ctx, "slack: ack failed", "error", err)
 			}
 		}
-		if c.onNativeEvent != nil && evt.Request != nil && nativeEventEligible(evt.Request.Payload, c.botUserID) {
-			payload := append([]byte(nil), evt.Request.Payload...)
+		var payload []byte
+		if evt.Request != nil {
+			payload = evt.Request.Payload
+		}
+		if shouldRevokeSlackInstall(eventsAPI, payload) {
+			c.revokeInstallation()
+			return nil
+		}
+		if c.onNativeEvent != nil && evt.Request != nil && nativeEventEligible(payload, c.botUserID) {
+			copied := append([]byte(nil), payload...)
 			// Native fan-out is independent of the interactive channel handler.
 			// Run it after ACK and off the socket receive loop so a database
 			// hiccup cannot make Slack redeliver or stall this installation.
 			go func() {
 				nativeCtx, cancel := context.WithTimeout(context.Background(), nativeAutomationTimeout)
 				defer cancel()
-				c.onNativeEvent(nativeCtx, c.installationID, payload)
+				c.onNativeEvent(nativeCtx, c.installationID, copied)
 			}()
 		}
-		return c.dispatchEventsAPI(ctx, eventsAPI, mentionRe)
+		c.dispatchEventsAPI(eventsAPI, mentionRe)
+		return nil
 	case socketmode.EventTypeSlashCommand:
 		// ACK first: like Events API envelopes, Slack expires an un-ACKed slash
 		// command in ~3s, well under the DB + Slack HTTP work below. The reply is
@@ -194,27 +208,47 @@ func (c *slackChannel) handleSocketEvent(ctx context.Context, sm *socketmode.Cli
 	return nil
 }
 
-// dispatchEventsAPI translates one Events API envelope to a normalized inbound
-// message and hands it to the engine. A non-nil handler error is an
-// infrastructure failure; it propagates so the supervisor reconnects. A
-// legitimate product drop returns nil.
-func (c *slackChannel) dispatchEventsAPI(ctx context.Context, e slackevents.EventsAPIEvent, mentionRe *regexp.Regexp) error {
-	var (
-		msg channel.InboundMessage
-		ok  bool
-	)
-	switch inner := e.InnerEvent.Data.(type) {
-	case *slackevents.AppMentionEvent:
-		msg, ok = inboundFromAppMention(e, inner, c.botUserID, mentionRe)
-	case *slackevents.MessageEvent:
-		msg, ok = inboundFromMessage(e, inner, c.botUserID, mentionRe)
-	default:
-		return nil
+// dispatchEventsAPI translates one already-ACKed Events API envelope off the
+// receive loop. Handler errors are logged; they must not reconnect the socket
+// after Slack has been told the envelope arrived.
+func (c *slackChannel) dispatchEventsAPI(e slackevents.EventsAPIEvent, mentionRe *regexp.Regexp) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), dispatchEventsAPITimeout)
+		defer cancel()
+		var (
+			msg channel.InboundMessage
+			ok  bool
+		)
+		switch inner := e.InnerEvent.Data.(type) {
+		case *slackevents.AppMentionEvent:
+			msg, ok = inboundFromAppMention(e, inner, c.botUserID, mentionRe)
+		case *slackevents.MessageEvent:
+			msg, ok = inboundFromMessage(e, inner, c.botUserID, mentionRe)
+		default:
+			return
+		}
+		if !ok {
+			return
+		}
+		if err := c.handler(ctx, msg); err != nil {
+			c.logger.WarnContext(ctx, "slack: engine dispatch failed",
+				"app_id", c.appID, "error", err)
+		}
+	}()
+}
+
+func (c *slackChannel) revokeInstallation() {
+	if c.revoke == nil {
+		return
 	}
-	if !ok {
-		return nil
-	}
-	return c.handler(ctx, msg)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), dispatchEventsAPITimeout)
+		defer cancel()
+		if err := c.revoke(ctx, c.installationID); err != nil {
+			c.logger.WarnContext(ctx, "slack: revoke after uninstall failed",
+				"app_id", c.appID, "error", err)
+		}
+	}()
 }
 
 // dispatchSlashCommand processes an already-ACKed `/issue`, `/new`, or `/clear` command
@@ -248,6 +282,9 @@ type ChannelDeps struct {
 	// leaves slash-command handling off (the connection still serves messages
 	// and @-mentions); tests that only exercise inbound messages pass nil.
 	Slash *SlashCommandProcessor
+	// Revoke retires this installation after app_uninstalled / bot
+	// tokens_revoked. Nil skips lifecycle handling.
+	Revoke func(ctx context.Context, installationID pgtype.UUID) error
 }
 
 // RegisterSlack registers the per-installation Slack Factory so the
@@ -304,6 +341,7 @@ func newSlackFactory(deps ChannelDeps) channel.Factory {
 			handler:        cfg.Handler,
 			installationID: cfg.ID,
 			onNativeEvent:  deps.OnNativeEvent,
+			revoke:         deps.Revoke,
 			slash:          deps.Slash,
 			logger:         logger,
 		}, nil

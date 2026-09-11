@@ -362,8 +362,8 @@ func buildLarkConnector(installSvc *lark.InstallationService, apiClient lark.API
 	// Inbound enricher: expands quoted replies / forwarded bundles AND
 	// prefetches a window of surrounding group history (MUL-3084) into the
 	// agent's body via the IM API before dispatch. It shares the
-	// connector's resolved credentials and runs under the connector's
-	// EnrichTimeout so it cannot overrun the Lark long-conn ACK budget.
+	// connector's resolved credentials and runs on the detached dispatch
+	// path after the long-conn ACK.
 	enricher := lark.NewInboundEnricher(apiClient, lark.InboundEnricherConfig{
 		RecentContextSize: lark.DefaultRecentContextSize,
 		Logger:            slog.Default(),
@@ -625,6 +625,10 @@ func newApplication(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, anal
 	h.TaskService.FeatureFlags = opts.FeatureFlags
 	h.TaskService.Metrics = opts.BusinessMetrics
 	messagingMode := handler.ResolvedMessagingModeFromEnv()
+	// ManagedMessaging selects hosted IM product behavior (official OAuth
+	// app, Events API webhook). Turn metering is independent: channelquota
+	// skips limits when Cloud policy is not wired, so a managed cloud
+	// without ORVILO_CLOUD_URL still delivers messages.
 	services.Tasks.ManagedMessaging = messagingMode == "managed"
 	h.IssueService.Metrics = opts.BusinessMetrics
 	entitlementClient, entitlementErr := entitlement.New(entitlement.Config{
@@ -929,28 +933,18 @@ func newApplication(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, anal
 		slog.Info("lark integration disabled (messaging disabled or ORVILO_LARK_SECRET_KEY unavailable)")
 	}
 
-	// Slack integration. Multi-tenant B2 model (MUL-3666): Orvilo hosts ONE
-	// Slack app, workspaces self-install via OAuth, and inbound runs on a single
-	// deployment-level Socket Mode connection routed by team_id — replacing the
-	// stage-3 per-installation connection model (MUL-3516).
+	// Slack integration. Two inbound models share one at-rest key
+	// (ORVILO_SLACK_SECRET_KEY) and the same engine tables as Feishu:
 	//
-	// Two deployment-level env vars gate the two halves:
-	//   - ORVILO_SLACK_SECRET_KEY decrypts the per-installation bot token
-	//     (xoxb-) stored on the channel_installation row. It gates the inbound
-	//     ResolverSet + the outbound reply subscriber, so without it there is no
-	//     Slack at all.
-	//   - ORVILO_SLACK_APP_TOKEN is the app-level token (xapp-) authorizing the
-	//     single Socket Mode connection. It cannot be obtained via OAuth, so it
-	//     is a one-time operator config. Without it, inbound is disabled (the
-	//     ResolverSet + outbound are still wired so an existing install's replies
-	//     keep flowing, but no new events are received).
+	//   - BYO: each installation pastes its own xoxb- + xapp- tokens.
+	//     The Supervisor holds one Socket Mode connection per install.
+	//   - Managed (hosted cloud): one official Slack app, OAuth v2 per
+	//     workspace, HTTP Events API webhook routed by app_id + team_id.
+	//     ORVILO_SLACK_CLIENT_ID/_SECRET and ORVILO_SLACK_SIGNING_SECRET
+	//     gate that path; without them BeginInstall / the webhook 503.
 	//
-	// The ResolverSet/Outbound share the same engine.ChatSession, channel_*
-	// tables, IssueService and TaskService as Feishu, so /issue, dedup, and
-	// run-triggering behave identically. Feishu is untouched. Each Slack
-	// installation is a bring-your-own-app (BYO) install carrying its OWN
-	// app-level token, so a per-installation Slack Factory is registered and the
-	// Supervisor drives one Socket Mode connection per installation (like Feishu).
+	// There is no deployment-level Socket Mode token. /issue, dedup, and
+	// run-triggering behave identically on both transports.
 	if slackKey, err := secretbox.LoadKey("ORVILO_SLACK_SECRET_KEY"); messagingMode != "disabled" && err == nil {
 		box, err := secretbox.New(slackKey)
 		if err != nil {
@@ -1017,6 +1011,43 @@ func newApplication(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, anal
 				Logger:  slog.Default(),
 			})
 
+			// BYO self-serve install (paste bot token + app-level token). The
+			// InstallService needs only the at-rest encryption key — there is no
+			// hosted OAuth client credential. Created before RegisterSlack so
+			// app_uninstalled / tokens_revoked can retire the same rows.
+			installSvc, ierr := slack.NewInstallService(queries, pool, box, slog.Default())
+			if ierr != nil {
+				slog.Error("slack: InstallService init failed; install disabled", "error", ierr)
+			} else {
+				h.SlackInstall = installSvc
+			}
+			var revokeSlack func(context.Context, pgtype.UUID) error
+			if installSvc != nil {
+				revokeSlack = func(ctx context.Context, id pgtype.UUID) error {
+					inst, err := queries.GetChannelInstallation(ctx, db.GetChannelInstallationParams{
+						ID:          id,
+						ChannelType: string(slack.TypeSlack),
+					})
+					if err != nil {
+						return err
+					}
+					if inst.Status != "installed" {
+						return nil
+					}
+					if err := installSvc.Revoke(ctx, id); err != nil {
+						return err
+					}
+					bus.Publish(events.Event{
+						Type:        protocol.EventSlackInstallationRevoked,
+						WorkspaceID: util.UUIDToString(inst.WorkspaceID),
+						ActorType:   "system",
+						ActorID:     "slack",
+						Payload:     map[string]any{"id": util.UUIDToString(id)},
+					})
+					return nil
+				}
+			}
+
 			// Per-installation inbound: the Supervisor builds + supervises one
 			// Socket Mode connection per active Slack installation, authenticated
 			// with that installation's OWN app-level token (xapp-, pasted at BYO
@@ -1025,6 +1056,7 @@ func newApplication(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, anal
 				Decrypt: box.Open,
 				Logger:  slog.Default(),
 				Slash:   slackSlash,
+				Revoke:  revokeSlack,
 				OnNativeEvent: func(ctx context.Context, installationID pgtype.UUID, body []byte) {
 					inst, err := queries.GetChannelInstallation(ctx, db.GetChannelInstallationParams{
 						ID:          installationID,
@@ -1037,15 +1069,6 @@ func newApplication(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, anal
 				},
 			})
 
-			// BYO self-serve install (paste bot token + app-level token). The
-			// InstallService needs only the at-rest encryption key — there is no
-			// hosted OAuth client credential.
-			installSvc, ierr := slack.NewInstallService(queries, pool, box, slog.Default())
-			if ierr != nil {
-				slog.Error("slack: InstallService init failed; install disabled", "error", ierr)
-			} else {
-				h.SlackInstall = installSvc
-			}
 			// Managed (hosted) OAuth for the official Orvilo Slack app: state
 			// issuance + code exchange. The service stores only state hashes, so
 			// it needs no secretbox; persistence still goes through InstallService
@@ -1076,13 +1099,14 @@ func newApplication(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus, anal
 				SigningSecret: strings.TrimSpace(os.Getenv("ORVILO_SLACK_SIGNING_SECRET")),
 				Logger:        slog.Default(),
 				OnNativeEvent: h.HandleSlackNativeAutomation,
+				Revoke:        revokeSlack,
 			})
 			if werr != nil {
 				slog.Error("slack: ManagedWebhook init failed; managed ingress disabled", "error", werr)
 			} else {
 				h.ManagedSlackWebhook = managedWebhook
 			}
-			slog.Info("slack integration enabled (BYO per-installation socket mode)")
+			slog.Info("slack integration enabled (BYO socket mode + managed Events API webhook)")
 		}
 	} else {
 		slog.Info("slack integration disabled (messaging disabled or ORVILO_SLACK_SECRET_KEY unavailable)")

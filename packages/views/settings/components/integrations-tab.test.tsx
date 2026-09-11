@@ -220,6 +220,12 @@ describe("Settings IntegrationsTab", () => {
     );
   });
 
+  it("treats disabled hosted-turn policy as unlimited", () => {
+    messagingQuotaRef.current = { mode: "disabled", used: null, reserved: null, limit: null };
+    renderTab();
+    expect(screen.getByTestId("messaging-quota")).toHaveTextContent("Unlimited");
+  });
+
   it("shows hosted installation and owned-workspace capacity", () => {
     configStore.getState().setFeatureFlags({
       [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,

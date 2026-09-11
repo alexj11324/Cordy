@@ -21,8 +21,8 @@ func TestResolveHostedIMAdmission(t *testing.T) {
 	if got := Resolve(context.Background(), nil, false, workspaceID); got.Kind != AdmissionBypass {
 		t.Fatalf("self-host admission = %v, want bypass", got.Kind)
 	}
-	if got := Resolve(context.Background(), nil, true, workspaceID); got.Kind != AdmissionUnavailable {
-		t.Fatalf("managed admission without provider = %v, want unavailable", got.Kind)
+	if got := Resolve(context.Background(), nil, true, workspaceID); got.Kind != AdmissionBypass {
+		t.Fatalf("managed admission without provider = %v, want bypass", got.Kind)
 	}
 
 	start := time.Now().UTC().Truncate(time.Second)
@@ -58,5 +58,22 @@ func TestResolveObserveBypassesAndMalformedEnforceFailsClosed(t *testing.T) {
 	})
 	if got := Resolve(context.Background(), malformed, true, workspaceID); got.Kind != AdmissionUnavailable {
 		t.Fatalf("malformed admission = %v, want unavailable", got.Kind)
+	}
+}
+
+func TestResolveUsageTreatsMissingPolicyAsUnlimited(t *testing.T) {
+	workspaceID := uuid.New()
+	now := time.Date(2026, 9, 11, 0, 0, 0, 0, time.UTC)
+	if got := ResolveUsage(context.Background(), nil, false, workspaceID, now); got.Mode != UsageDisabled {
+		t.Fatalf("self-host usage = %s, want disabled", got.Mode)
+	}
+	if got := ResolveUsage(context.Background(), nil, true, workspaceID, now); got.Mode != UsageUnlimited {
+		t.Fatalf("managed usage without provider = %s, want unlimited", got.Mode)
+	}
+	absent := providerFunc(func(context.Context, uuid.UUID, entitlement.GateName) entitlement.Decision {
+		return entitlement.Decision{Gate: entitlement.Gate{Action: entitlement.ActionOff}, Reason: entitlement.ReasonGateAbsent}
+	})
+	if got := ResolveUsage(context.Background(), absent, true, workspaceID, now); got.Mode != UsageUnlimited {
+		t.Fatalf("absent gate usage = %s, want unlimited", got.Mode)
 	}
 }

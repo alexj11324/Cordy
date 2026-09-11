@@ -328,7 +328,8 @@ export function IntegrationsTab({
               t(($) => $.page.integrations_quota_loading)
             ) : messagingQuota.isError || messagingQuota.data?.mode === "unavailable" ? (
               t(($) => $.page.integrations_quota_unavailable)
-            ) : messagingQuota.data?.mode === "unlimited" ? (
+            ) : messagingQuota.data?.mode === "unlimited" ||
+              messagingQuota.data?.mode === "disabled" ? (
               t(($) => $.page.integrations_quota_unlimited)
             ) : messagingQuota.data?.mode === "managed" &&
               messagingQuota.data.limit != null && quotaConsumed != null ? (

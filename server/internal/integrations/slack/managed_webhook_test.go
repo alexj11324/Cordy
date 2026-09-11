@@ -13,10 +13,12 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 
@@ -308,5 +310,81 @@ func TestManagedWebhook_SlashForgedSignatureRefused(t *testing.T) {
 	}
 	if len(stub.delivered()) != 0 {
 		t.Fatal("forged slash must never dispatch")
+	}
+}
+
+func TestManagedWebhook_UninstallRevokesInstallation(t *testing.T) {
+	id := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	row := managedRow("A1")
+	row.ID = id
+	var mu sync.Mutex
+	var revoked []pgtype.UUID
+	webhook, err := NewManagedWebhook(ManagedWebhookConfig{
+		Queries:       &fakeAppLookup{rows: map[string]db.ChannelInstallation{"A1": row}},
+		SigningSecret: "s3cr3t",
+		Revoke: func(_ context.Context, installationID pgtype.UUID) error {
+			mu.Lock()
+			defer mu.Unlock()
+			revoked = append(revoked, installationID)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("new webhook: %v", err)
+	}
+	body := `{"token":"x","team_id":"T1","api_app_id":"A1","event":{"type":"app_uninstalled"},"type":"event_callback"}`
+	header, _ := signSlackRequest("s3cr3t", body, time.Now())
+	req := httptest.NewRequest(http.MethodPost, ManagedEventsPath, strings.NewReader(body))
+	req.Header = header
+	rec := httptest.NewRecorder()
+	webhook.HandleEvents(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("uninstall: code=%d, want ACK", rec.Code)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(revoked)
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(revoked) != 1 || revoked[0] != id {
+		t.Fatalf("revoke calls = %v, want [%v]", revoked, id)
+	}
+}
+
+func TestManagedWebhook_UserTokenRevocationDoesNotRevoke(t *testing.T) {
+	id := pgtype.UUID{Bytes: [16]byte{1}, Valid: true}
+	row := managedRow("A1")
+	row.ID = id
+	var called atomic.Bool
+	webhook, err := NewManagedWebhook(ManagedWebhookConfig{
+		Queries:       &fakeAppLookup{rows: map[string]db.ChannelInstallation{"A1": row}},
+		SigningSecret: "s3cr3t",
+		Revoke: func(_ context.Context, _ pgtype.UUID) error {
+			called.Store(true)
+			return nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("new webhook: %v", err)
+	}
+	body := `{"token":"x","team_id":"T1","api_app_id":"A1","event":{"type":"tokens_revoked","tokens":{"oauth":["xoxp-1"],"bot":[]}},"type":"event_callback"}`
+	header, _ := signSlackRequest("s3cr3t", body, time.Now())
+	req := httptest.NewRequest(http.MethodPost, ManagedEventsPath, strings.NewReader(body))
+	req.Header = header
+	rec := httptest.NewRecorder()
+	webhook.HandleEvents(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("tokens_revoked: code=%d, want ACK", rec.Code)
+	}
+	time.Sleep(50 * time.Millisecond)
+	if called.Load() {
+		t.Fatal("user-only token revocation must not retire the bot install")
 	}
 }
