@@ -461,14 +461,15 @@ function LobeContentEditorInner({
           // settles through `toSettleResult`, which picks the URL that belongs
           // in the document rather than re-deciding that policy here.
           //
-          // KNOWN DIFFERENCE from the handle path above, not an oversight: the
-          // kind here is the one derived from the browser's `file.type`, since
-          // this node was drawn from the File and `AttachmentSettleResult`
-          // carries no second `content_type` source. When the browser MIME and
-          // the server disagree — most reachably an empty `file.type`, i.e.
+          // KNOWN DIFFERENCE from the handle path above, and NOT forced by the
+          // types: this call site still settles with the kind it drew from the
+          // browser's `file.type`. `result` is the host's `UploadResult`, so the
+          // server's `content_type` is available right here — Task 21 re-decides
+          // this settle from it (promoting to image, never demoting an image the
+          // user already saw). Until that lands, when the browser MIME and the
+          // server disagree — most reachably an empty `file.type`, i.e.
           // extensionless files, some drag sources, HEIC — this path and the
           // handle path (and TipTap) write different kinds for the same upload.
-          // Tracked as Task 21; do not paper over it here.
           if (result) {
             settleAttachment(lexical, clientUploadId, toSettleResult(result, kind));
           } else {
