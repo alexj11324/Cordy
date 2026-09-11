@@ -52,8 +52,11 @@
 
 **怎么做（补充）**:
 - **装完必须校验 patch，不能只看警告横幅**。按 `@lobehub/editor` 自带
-  `scripts/postinstall-lexical-patch.cjs` 里**硬编码的 sha256** 校验
-  `Lexical.{dev,prod}.{js,mjs}` 与对应 Yjs 文件（共 6 个）；不匹配就手动跑该脚本再校验。
+  `scripts/postinstall-lexical-patch.cjs` 里**硬编码的 sha256** 校验**全部 8 个**文件 ——
+  `lexical` 的 `Lexical.{dev,prod}.{js,mjs}` 四个，加上 `@lexical/yjs` 的
+  `LexicalYjs.{dev,prod}.{js,mjs}` 四个（脚本里两组 `PATCH_CONFIGS` 分别标着
+  `packageName: 'lexical'` / `packageName: '@lexical/yjs'`）；不匹配就手动跑该脚本再校验。
+  只查前四个会「看起来干净」却漏掉协同用的那一份。
   失败是**静默**的：只有一行 warning，而 `lexical` 未打补丁会让编辑器行为异常且难以归因。
 - 该脚本用「临时文件 + rename」写，因此**不会**污染 pnpm store；store 里那份是未打补丁的，
   这既解释了为什么重装会退回未打补丁状态，也说明重跑脚本是安全且幂等的。
