@@ -1,10 +1,7 @@
 "use client";
 
 import type { Agent, MemberWithUser } from "@orvilo/core/types";
-import {
-  SettingsCard,
-  SettingsSection,
-} from "../../settings/components/settings-layout";
+import { SettingsGroup } from "../../settings/components/settings-shell";
 import { useT } from "../../i18n";
 import { AccessPicker } from "./inspector/access-picker";
 
@@ -24,11 +21,16 @@ export function AgentAccessSettings({
   const { t } = useT("agents");
 
   return (
-    <SettingsSection
+    <SettingsGroup
       title={t(($) => $.access.section_title)}
       description={t(($) => $.inspector.section_access_hint)}
     >
-      <SettingsCard>
+      {/* `AccessPicker` is a self-contained card body: its own rows carry
+          `px-4`/`sm:px-6`, so it needs the group's body padding cancelled or
+          every scope row lands 16px right of the group's title. The negative
+          margins match the row padding at each breakpoint rather than guessing
+          one number. */}
+      <div className="-mx-4 sm:-mx-6">
         <AccessPicker
           permissionMode={agent.permission_mode}
           invocationTargets={agent.invocation_targets}
@@ -44,7 +46,7 @@ export function AgentAccessSettings({
           onDirtyChange={onDirtyChange}
           onChange={(next) => onUpdate(agent.id, next)}
         />
-      </SettingsCard>
-    </SettingsSection>
+      </div>
+    </SettingsGroup>
   );
 }

@@ -14,9 +14,6 @@ import { Button } from "@orvilo/ui/components/ui/button";
 import { Input } from "@orvilo/ui/components/ui/input";
 import { toast } from "sonner";
 import { useT } from "../../../i18n";
-import {
-  SettingsCard,
-} from "../../../settings/components/settings-layout";
 
 interface ArgEntry {
   id: string;
@@ -181,7 +178,35 @@ export function CustomArgsTab({
             {t(($) => $.tab_body.custom_args.add_argument_action)}
           </Button>
         </div>
-        <SettingsCard className={compact ? "rounded-none border-0 bg-transparent" : undefined}>
+        {/* This panel is the one place in the agents surface where the
+            `SettingsCard` → `SettingsGroup` mapping does not hold, and the
+            reason is structural rather than stylistic: `Form.Group` renders its
+            header **unconditionally** — Lobe's `Collapse` builds
+            `items[0].label` from `title` whether or not one was passed
+            (`es/Collapse/Collapse.mjs`), and `@rc-component/collapse` renders
+            that header div with no guard (`Panel.js`). A group with no `title`
+            therefore still renders a `.ant-collapse-header` whose only content
+            is an empty title div, and — because `FormGroup` defaults
+            `defaultActive` to true — that item lands on
+            `ant-collapse-item-active`, which the `outlined` variant rules a
+            hairline under (`es/Collapse/style.mjs`).
+            The empty header and the active class were **measured** in jsdom;
+            the band's height was not, because jsdom returns the unresolved
+            `var(--ant-collapse-header-padding)` for it. That declaration comes
+            from the Collapse ConfigProvider token, `DEFAULT_PADDING =
+            "12px 16px"` in `es/Collapse/style.mjs`.
+            `SettingsGroup` has no title-less mode, and inventing a heading for
+            this card is a product decision, not a migration one — so the panel
+            keeps the markup `SettingsCard` rendered and the migration stops at
+            the import. `variant="borderless"` is not an escape either: it
+            zeroes the header's inline padding but not its block padding. */}
+        <div
+          className={
+            compact
+              ? undefined
+              : "divide-y divide-border overflow-hidden rounded-xl border border-border bg-surface"
+          }
+        >
           <div className={compact ? "space-y-2" : "space-y-2 p-3"}>
             {entries.length === 0 && editor?.kind !== "add" ? (
               <div className={compact ? "space-y-1 py-1" : "flex min-h-28 flex-col items-center justify-center px-4 py-6 text-center"}>
@@ -248,7 +273,7 @@ export function CustomArgsTab({
 
             {editor?.kind === "add" ? renderEditor() : null}
           </div>
-        </SettingsCard>
+        </div>
       </div>
 
     </div>
