@@ -279,6 +279,37 @@ describe("PreferencesTab — Timezone section", () => {
     await pickOption(user, "Viewing Timezone", name);
   }
 
+  // The migration's original defect, and the guard against it returning.
+  //
+  // The type scale has to reach the option *elements*, and it has to be inline
+  // style, because antd sets `font-size` on those same elements with a
+  // selector that outranks a utility class — a class on the popup *container*
+  // did nothing at all. Nothing caught that the first time: the mono face
+  // still applied (antd does not contest `font-family` on an option), so only
+  // the size was wrong, and 12-vs-14px is not a difference a screenshot
+  // adjudicates. jsdom does not resolve `var()`, so this asserts the
+  // declaration rather than a resolved pixel — which is exactly the layer the
+  // regression happened at.
+  it("puts the caption/mono type scale on the trigger and on the options", async () => {
+    userRef.current = { id: "user-1", timezone: "Asia/Shanghai" };
+    const user = userEvent.setup();
+    await renderTab();
+
+    const combobox = () =>
+      tab.getByRole("combobox", { name: "Viewing Timezone" });
+
+    expect(combobox().closest(".ant-select")).toHaveAttribute(
+      "style",
+      expect.stringContaining("--text-caption"),
+    );
+
+    await user.click(combobox());
+    const mirror = await screen.findByRole("listbox");
+    expect(
+      within(mirror.parentElement as HTMLElement).getByTitle("Asia/Shanghai"),
+    ).toHaveAttribute("style", expect.stringContaining("--text-caption"));
+  });
+
   it("renders the stored timezone in the trigger", async () => {
     userRef.current = { id: "user-1", timezone: "Asia/Shanghai" };
     await renderTab();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { toast } from "sonner";
 import { useTheme } from "@orvilo/ui/components/common/theme-provider";
 import {
@@ -223,16 +223,21 @@ function TimezoneRow() {
   };
 
   // The IANA list is long and mostly punctuation; the monospace face is what
-  // makes "Asia/Shanghai" scannable against its neighbours. It has to be a
-  // class on the trigger and the popup rather than a wrapper node around each
-  // option, because an option's label has to stay a plain string for the
-  // select to give it a `title` (see `settings-select.tsx`).
+  // makes "Asia/Shanghai" scannable against its neighbours. It reaches the
+  // trigger and each option as inline style rather than a class, because antd
+  // sets `font-size` on both elements itself and its selectors outrank a
+  // utility — the full reasoning is in `settings-select.tsx`. The values are
+  // still the tokens, so this is the design scale and not a pixel count.
   //
-  // The popup class carries the type scale as well as the face: antd renders
-  // the option list at its own 14px otherwise, while the trigger beside it is
-  // `text-caption` at 12px — a visible size jump over a 600-item list. No
-  // screenshot of a closed dropdown can show that, which is why the evidence
-  // for this round includes one with the popup open.
+  // It has to be a style on each option rather than a wrapper node around each
+  // option's text, because an option's label has to stay a plain string for the
+  // select to give it a `title` (see `settings-select.tsx`), and the old
+  // per-option `SelectItem className` is gone for the same reason.
+  const TZ_TYPOGRAPHY: CSSProperties = {
+    fontSize: "var(--text-caption)",
+    lineHeight: "var(--text-caption--line-height)",
+    fontFamily: "var(--font-mono)",
+  };
   const formatTZLabel = (tz: string) =>
     tz === BROWSER_TZ_VALUE
       ? `${browser}${t(($) => $.preferences.timezone.browser_suffix)}`
@@ -245,7 +250,7 @@ function TimezoneRow() {
       minWidth={WIDE_SELECT_MIN_WIDTH}
     >
       <SettingsSelect
-        className="w-full text-caption font-mono"
+        className="w-full"
         id="preferences-timezone"
         label={t(($) => $.preferences.timezone.title)}
         options={[
@@ -255,7 +260,7 @@ function TimezoneRow() {
             label: formatTZLabel(timezone),
           })),
         ]}
-        popupClassName="text-caption font-mono"
+        typography={TZ_TYPOGRAPHY}
         value={value}
         onValueChange={(next) => {
           void handleChange(next);
