@@ -52,7 +52,7 @@
 
 import Form from "@lobehub/ui/es/Form/index";
 import { cn } from "@orvilo/ui/lib/utils";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 
 export interface SettingsGroupProps {
   title?: ReactNode;
@@ -76,17 +76,43 @@ export function SettingsGroup({
   children,
   className,
 }: SettingsGroupProps) {
+  // A group's title is the only thing that tells two same-named rows apart —
+  // "Project", "Priority" and "Due date" each appear in both create-issue
+  // groups — and nothing in the DOM said so until this. `Form.Group` renders a
+  // Collapse, and rc-collapse sets a role only when `accordion` is true, so
+  // there was no group role to name and the tests had to reach for the
+  // `.ant-collapse-item` class instead.
+  //
+  // `role="group"` therefore has to be added by a wrapper. It cannot be put on
+  // the Collapse root: antd spreads `omit(props, ["rootClassName"])` into
+  // rc-collapse, which renders `pickAttrs(props, { aria: true, data: true })` —
+  // a whitelist that lets `aria-*` through and drops `role` entirely.
+  //
+  // The name comes from `aria-labelledby` pointing at the title element rather
+  // than `aria-label` repeating the string: one copy of the text cannot drift
+  // from the other, and the tests then assert the same string a reader sees.
+  // The wrapper carries no class and no style, so it changes no layout — the
+  // settings tab body is a plain block and spacing comes from `Form.Group`'s
+  // own margin.
+  const labelId = useId();
+  const labelled = title !== undefined && title !== null;
+
   return (
-    <Form.Group
-      className={className}
-      collapsible={false}
-      desc={description}
-      extra={extra}
-      title={title}
-      variant={variant}
+    <div
+      aria-labelledby={labelled ? labelId : undefined}
+      role={labelled ? "group" : undefined}
     >
-      {children}
-    </Form.Group>
+      <Form.Group
+        className={className}
+        collapsible={false}
+        desc={description}
+        extra={extra}
+        title={labelled ? <span id={labelId}>{title}</span> : undefined}
+        variant={variant}
+      >
+        {children}
+      </Form.Group>
+    </div>
   );
 }
 
@@ -110,14 +136,27 @@ export function SettingsGroup({
  */
 const ROW_CLASS = "orvilo-settings-row";
 
+/** See `ROW_CLASS`: the other half of the row's alignment, also in `base.css`. */
+const ROW_ALIGN_START_CLASS = "orvilo-settings-row-start";
+
 export interface SettingsFormRowProps {
   label?: ReactNode;
   description?: ReactNode;
   /**
-   * Width floor for the control column, in pixels. The old `SettingsRow` used
-   * five container-query tiers; `Form.Item` sizes from the value itself.
+   * The control column's width, in pixels — an exact width, not a floor:
+   * `Form.Item` turns it into
+   * `.ant-form-item-control { width: var(--form-item-min-width) !important }`.
+   * The old `SettingsRow` used five container-query tiers; these are the same
+   * tiers restated as the pixels they resolved to.
    */
   minWidth?: number;
+  /**
+   * Where the control sits when the row is taller than the label. `center` is
+   * the default Lobe's own `Form` gives its rows; `start` is for a row whose
+   * control is a block of its own, such as a shortcut recorder with an error
+   * line under it.
+   */
+  align?: "start" | "center";
   /** Draw a separator above this row. */
   divider?: boolean;
   children: ReactNode;
@@ -128,13 +167,14 @@ export function SettingsFormRow({
   label,
   description,
   minWidth,
+  align = "center",
   divider,
   children,
   className,
 }: SettingsFormRowProps) {
   return (
     <Form.Item
-      className={cn(ROW_CLASS, className)}
+      className={cn(ROW_CLASS, align === "start" && ROW_ALIGN_START_CLASS, className)}
       colon={false}
       desc={description}
       divider={divider}

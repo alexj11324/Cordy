@@ -83,10 +83,20 @@ import { useCommentComposerStore } from "@orvilo/core/issues/stores";
  * `lobe: true` mounts the theme bridge, which is imported on demand — so the
  * first query in every test has to be an async one. This helper is that first
  * query, so no test has to remember the rule twice.
+ *
+ * It returns the tab's single group, and every row query below goes through it.
+ * A document-wide `getByRole(role, { name })` computes the accessible name of
+ * every candidate in the document, which against the antd stylesheet the bridge
+ * injects costs ~3.4s where the same query scoped to its group costs ~9ms —
+ * per call, per file, and Tasks 5-9 copy whatever this file does.
  */
+let tab: ReturnType<typeof within>;
+
 async function renderTab() {
   renderWithI18n(<PreferencesTab />, { lobe: true });
-  await screen.findByRole("combobox", { name: "Theme" });
+  // Shared with the picking helpers below so every row query in this file is
+  // scoped without threading the handle through four signatures.
+  tab = within(await screen.findByRole("group", { name: "General" }));
 }
 
 /**
@@ -108,7 +118,7 @@ async function pickOption(
   comboboxName: string,
   optionName: string | RegExp,
 ) {
-  await user.click(screen.getByRole("combobox", { name: comboboxName }));
+  await user.click(tab.getByRole("combobox", { name: comboboxName }));
   const mirror = await screen.findByRole("listbox");
   await user.click(
     within(mirror.parentElement as HTMLElement).getByTitle(optionName),
@@ -178,7 +188,7 @@ describe("PreferencesTab — Language switcher", () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     await renderTab();
 
-    await user.click(screen.getByRole("combobox", { name: "Language" }));
+    await user.click(tab.getByRole("combobox", { name: "Language" }));
 
     const options = await screen.findAllByRole("option");
     expect(options).toHaveLength(2);
@@ -277,7 +287,7 @@ describe("PreferencesTab — Timezone section", () => {
     // text content: this select renders `<input role="combobox">`, whose text
     // content is empty by construction — the selected label is a sibling node,
     // and antd mirrors it into that node's `title`.
-    expect(screen.getByTitle("Asia/Shanghai")).toBeInTheDocument();
+    expect(tab.getByTitle("Asia/Shanghai")).toBeInTheDocument();
   });
 
   // handleChange PATCHes then updates the store asynchronously, so the
@@ -350,7 +360,7 @@ describe("PreferencesTab — Sticky comment bar", () => {
 
     // Named query, not an index into the page's switches: the switch's
     // accessible name is the only thing that survives a wrapper changing.
-    const toggle = screen.getByRole("switch", { name: "Sticky comment bar" });
+    const toggle = tab.getByRole("switch", { name: "Sticky comment bar" });
     expect(toggle).toHaveAttribute("aria-checked", "true");
 
     await user.click(toggle);

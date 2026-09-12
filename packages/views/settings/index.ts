@@ -36,6 +36,8 @@ export type {
 // which and why.
 export { SettingsSwitch } from "./components/settings-switch";
 export type { SettingsSwitchProps } from "./components/settings-switch";
+export { SettingsEmptyState } from "./components/settings-empty";
+export type { SettingsEmptyStateProps } from "./components/settings-empty";
 export { SettingsSelect } from "./components/settings-select";
 export type {
   SettingsSelectOption,

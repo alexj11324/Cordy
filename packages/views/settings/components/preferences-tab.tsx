@@ -227,6 +227,12 @@ function TimezoneRow() {
   // class on the trigger and the popup rather than a wrapper node around each
   // option, because an option's label has to stay a plain string for the
   // select to give it a `title` (see `settings-select.tsx`).
+  //
+  // The popup class carries the type scale as well as the face: antd renders
+  // the option list at its own 14px otherwise, while the trigger beside it is
+  // `text-caption` at 12px — a visible size jump over a 600-item list. No
+  // screenshot of a closed dropdown can show that, which is why the evidence
+  // for this round includes one with the popup open.
   const formatTZLabel = (tz: string) =>
     tz === BROWSER_TZ_VALUE
       ? `${browser}${t(($) => $.preferences.timezone.browser_suffix)}`
@@ -249,7 +255,7 @@ function TimezoneRow() {
             label: formatTZLabel(timezone),
           })),
         ]}
-        popupClassName="font-mono"
+        popupClassName="text-caption font-mono"
         value={value}
         onValueChange={(next) => {
           void handleChange(next);

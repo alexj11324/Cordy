@@ -3,7 +3,6 @@
 import { memo, useCallback, useMemo, useState, type KeyboardEvent } from "react";
 import { Keyboard, Search } from "lucide-react";
 import { Button, Input } from "@lobehub/ui/base-ui";
-import { Empty } from "@lobehub/ui";
 import { cn } from "@orvilo/ui/lib/utils";
 import {
   findShortcutConflict,
@@ -23,6 +22,7 @@ import {
 import { isImeComposing } from "@orvilo/core/utils";
 import { useT } from "../../i18n";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
+import { SettingsEmptyState } from "./settings-empty";
 import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 import { useSettingsConfirm } from "./settings-confirm";
 
@@ -225,7 +225,7 @@ export function KeyboardShortcutsTab() {
       })}
 
       {visibleActions.length === 0 ? (
-        <Empty title={t(($) => $.shortcuts.no_results)} />
+        <SettingsEmptyState title={t(($) => $.shortcuts.no_results)} />
       ) : null}
 
       <SettingsGroup
@@ -300,6 +300,7 @@ const ShortcutRow = memo(function ShortcutRow({
         ) : description
       }
       minWidth={SHORTCUT_CONTROL_MIN_WIDTH}
+      align="start"
     >
       <div className="flex flex-col items-stretch gap-1.5 sm:items-end">
         <div className="flex flex-wrap items-center justify-end gap-1.5">

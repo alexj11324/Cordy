@@ -17,19 +17,19 @@ function resetStore() {
 }
 
 /**
- * One create mode's group, by its title.
+ * One create mode's group, by its name.
  *
  * Field names repeat across the two groups — Priority, Project and Due date are
  * in both — so a document-wide `getByRole("switch", { name })` would be
- * ambiguous. The group title is the only handle Lobe's `Form.Group` gives a
- * section (`collapsible={false}` leaves no disclosure role to query), so the
- * scope is the collapse item that contains it. Every assertion below is still a
- * role/name query; only the container is structural.
+ * ambiguous, and to a screen reader the two switches were literally
+ * indistinguishable until `SettingsGroup` grew a `role="group"` wrapper named
+ * by its own title. This is the handle the reference tells every tab to use,
+ * and it also makes each query ~380× cheaper: a document-wide named role query
+ * computes the accessible name of every candidate, which against the antd
+ * stylesheet costs 3.4s where the scoped one costs 9ms.
  */
-function group(title: string): HTMLElement {
-  const item = screen.getByText(title).closest(".ant-collapse-item");
-  if (!item) throw new Error(`no group container for "${title}"`);
-  return item as HTMLElement;
+async function group(title: string) {
+  return within(await screen.findByRole("group", { name: title }));
 }
 
 /** `lobe: true` loads the theme bridge on demand, so the first query is async. */
@@ -52,24 +52,18 @@ describe("IssueTab", () => {
     // 3 quick create fields + 9 manual create fields.
     expect(screen.getAllByRole("switch")).toHaveLength(12);
 
-    const quick = group("Create with agent");
-    expect(within(quick).getByRole("switch", { name: "Project" })).toBeChecked();
-    expect(
-      within(quick).getByRole("switch", { name: "Priority" }),
-    ).not.toBeChecked();
-    expect(
-      within(quick).getByRole("switch", { name: "Due date" }),
-    ).not.toBeChecked();
+    const quick = await group("Create with agent");
+    expect(quick.getByRole("switch", { name: "Project" })).toBeChecked();
+    expect(quick.getByRole("switch", { name: "Priority" })).not.toBeChecked();
+    expect(quick.getByRole("switch", { name: "Due date" })).not.toBeChecked();
 
     // Manual create defaults to status, priority, executor, labels, project.
-    const manual = group("Create manually");
+    const manual = await group("Create manually");
     for (const field of ["Status", "Priority", "Executor", "Labels", "Project"]) {
-      expect(within(manual).getByRole("switch", { name: field })).toBeChecked();
+      expect(manual.getByRole("switch", { name: field })).toBeChecked();
     }
     for (const field of ["Owner", "Reviewer", "Due date", "Start date"]) {
-      expect(
-        within(manual).getByRole("switch", { name: field }),
-      ).not.toBeChecked();
+      expect(manual.getByRole("switch", { name: field })).not.toBeChecked();
     }
   });
 
@@ -78,7 +72,7 @@ describe("IssueTab", () => {
     await renderTab();
 
     await user.click(
-      within(group("Create with agent")).getByRole("switch", {
+      (await group("Create with agent")).getByRole("switch", {
         name: "Priority",
       }),
     );
@@ -94,7 +88,7 @@ describe("IssueTab", () => {
     await renderTab();
 
     await user.click(
-      within(group("Create manually")).getByRole("switch", { name: "Labels" }),
+      (await group("Create manually")).getByRole("switch", { name: "Labels" }),
     );
 
     expect(useIssueCreateSettingsStore.getState().manualCreateFields).toEqual([

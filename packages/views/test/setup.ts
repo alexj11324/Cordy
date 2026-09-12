@@ -35,7 +35,15 @@ if (typeof window !== "undefined") {
     });
   }
 
-  // jsdom doesn't provide matchMedia; useIsMobile() relies on it.
+  // useIsMobile() and antd-style's useResponsive() rely on matchMedia.
+  //
+  // This guard never fires: jsdom ships a `matchMedia` of its own, so the stub
+  // below is dead code and the suite has always been served by jsdom's version,
+  // which answers `false` to every query. The observable behaviour is the same
+  // either way — which is why `useResponsive().mobile` is false in tests, and
+  // why `prefers-reduced-motion` has always answered false here. Kept as it is
+  // rather than corrected, because 85 suites share this file and the behaviour
+  // is not broken, only unexplained.
   if (typeof window.matchMedia !== "function") {
     window.matchMedia = (query: string) =>
       ({

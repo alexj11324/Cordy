@@ -399,7 +399,7 @@ html[data-dnd-dragging="true"] * {
   color: var(--find-match-foreground);
 }
 
-/* Lobe's `Form` stylesheet is not mounted, so these are the three rules that
+/* Lobe's `Form` stylesheet is not mounted, so these are the four rules that
  * must be restated — one per thing that breaks without them:
  *
  *   - `.ant-form-item-row { flex-wrap: nowrap }`: antd wraps the row by
@@ -410,11 +410,16 @@ html[data-dnd-dragging="true"] * {
  *     pins itself to the control's height and hides the overflow, so a two-line
  *     description loses its second line;
  *   - `.ant-form-item { margin: 0 !important }`: Lobe zeroes antd's own
- *     `margin-bottom: 24px`, which otherwise doubles up with the row's padding.
+ *     `margin-bottom: 24px`, which otherwise doubles up with the row's padding;
+ *   - `.ant-form-item-row { align-items: center }`: without it Lobe's own cva
+ *     default (`layout: "vertical"` → `align-items: stretch`) wins and every
+ *     row is silently top-aligned, where the old `SettingsRow` centred by
+ *     default. `.orvilo-settings-row-start` restores the top alignment for the
+ *     rows that used to ask for it.
  *
- * The fourth difference is a prop, not a rule: with no `Form` the antd label
- * colon renders, and `SettingsFormRow` suppresses it with `colon={false}` —
- * see that component, not this block.
+ * The colon is one more difference, and it is a prop rather than a rule: with
+ * no `Form` the antd label colon renders, and `SettingsFormRow` suppresses it
+ * with `colon={false}` — see that component, not this block.
  *
  * The settings page mounts no `Form` on purpose: every control there commits
  * through its own store or through `useAutoSave`, so a `Form` around the tab
@@ -431,6 +436,15 @@ html[data-dnd-dragging="true"] * {
 }
 .orvilo-settings-row .ant-form-item-row {
   flex-wrap: nowrap;
+  /* `!important` because Lobe's own cva sets `align-items: stretch` on the same
+   * element through a class of equal specificity that antd-style injects later
+   * in the document — measured: without it the computed value stays `stretch`.
+   * `flex-wrap` above needs no such thing: it is overridden from antd's own
+   * stylesheet, which is one step less specific. */
+  align-items: center !important;
+}
+.orvilo-settings-row-start .ant-form-item-row {
+  align-items: flex-start !important;
 }
 .orvilo-settings-row .ant-form-item-label > label {
   height: unset;

@@ -46,6 +46,43 @@ describe("SettingsGroup", () => {
   // title into a disclosure toggle, which both hides rows on a stray click and
   // breaks the settings nav search — it matches on row content, and a collapsed
   // section matches nothing. The title must not be a button.
+  // The group's title is the only thing that tells two same-named rows apart,
+  // and rc-collapse sets no role at all unless `accordion` is true, so the
+  // wrapper is what makes the section addressable: `role="group"` named by
+  // `aria-labelledby` pointing at the title element itself. Every tab's tests
+  // scope their queries with this, so it is pinned here.
+  it("is an addressable group named by its title", async () => {
+    renderWithI18n(
+      <SettingsGroup title="Appearance">
+        <div>Row body</div>
+      </SettingsGroup>,
+      { lobe: true },
+    );
+
+    const group = await screen.findByRole("group", { name: "Appearance" });
+    expect(group).toBeTruthy();
+    // The name comes from the visible title, not a copy of it.
+    const labelId = group.getAttribute("aria-labelledby");
+    expect(labelId).toBeTruthy();
+    expect(document.getElementById(labelId as string)?.textContent).toBe(
+      "Appearance",
+    );
+  });
+
+  // A group with no title has no name to be addressed by, and an unnamed group
+  // role adds nothing — the shortcuts tab's toolbar is exactly that case.
+  it("adds no group role when it has no title", async () => {
+    renderWithI18n(
+      <SettingsGroup extra={<button type="button">Reset</button>}>
+        <div>Row body</div>
+      </SettingsGroup>,
+      { lobe: true },
+    );
+
+    expect(await screen.findByText("Row body")).toBeTruthy();
+    expect(screen.queryAllByRole("group")).toHaveLength(0);
+  });
+
   it("does not make the section title a collapse toggle", async () => {
     renderWithI18n(
       <SettingsGroup title="Appearance">
@@ -64,12 +101,17 @@ describe("SettingsGroup", () => {
   // hashed class names — a comparison between our own two variants would pass
   // just as well with the default flipped to `borderless`.
   it("defaults to the outlined variant and forwards borderless", async () => {
+    // Compares the collapse root's class list, not its subtree: `SettingsGroup`
+    // wraps the title in a `<span>` to carry the group's `aria-labelledby`, so
+    // our tree differs from a raw `Form.Group`'s in a way this test is not
+    // about. What it *is* about — that `variant` reaches the library unchanged
+    // — is a class on that root.
     async function groupHtml(node: ReactElement): Promise<string> {
       const { container, unmount } = renderWithI18n(node, { lobe: true });
       // Waits out the on-demand bridge load before reading the tree.
       await screen.findByText("Appearance");
       const html =
-        container.querySelector('[class*="ant-collapse"]')?.outerHTML ?? "";
+        container.querySelector('[class*="ant-collapse"]')?.className ?? "";
       unmount();
       // antd mints a fresh `css-var-_r_N_` scope class per mount, so two
       // structurally identical trees never compare equal verbatim.
