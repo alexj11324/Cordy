@@ -20,12 +20,18 @@
  *   surface behind the whole rail and a pill behind every tab, neither of which
  *   is this rail's geometry.
  *
- * - **The theme bridge is mounted *inside* `DialogContent`.** Radix portals the
- *   dialog into `document.body`, and the bridge's antd tokens are CSS variables
- *   declared on a real element in its own subtree. A bridge wrapped *around*
- *   `DialogContent` would be an ancestor in the React tree only — context
- *   reaches through a portal, CSS variables do not — so every Lobe component
- *   inside the dialog would render with unset variables.
+ * - **The theme bridge is mounted *inside* `DialogContent`.** The dialog's
+ *   primitive portals it into `document.body`. That primitive is
+ *   `@base-ui/react/dialog` — `packages/ui/components/ui/dialog.tsx` imports it,
+ *   and it is the same library Lobe's own `ModalRoot` is built on — **not
+ *   Radix**, which this note said for a while and which matters: the two differ
+ *   in exactly the layering behaviour a bridge placement argument turns on. Like
+ *   any portalling primitive it moves the DOM without moving React's position.
+ *   The bridge's antd tokens are CSS variables declared on a real element in its
+ *   own subtree, so a bridge wrapped *around* `DialogContent` would be an
+ *   ancestor in the React tree only — context reaches through a portal, CSS
+ *   variables do not — and every Lobe component inside the dialog would render
+ *   with unset variables.
  *
  * - **The footer has one button, not Cancel + Save.** Every field in this
  *   dialog commits through its own control or through `useAutoSave`; there is
