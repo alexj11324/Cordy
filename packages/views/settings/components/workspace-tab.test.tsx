@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 const mockUpdateWorkspace = vi.hoisted(() => vi.fn());
 const mockInvalidateQueries = vi.hoisted(() => vi.fn());
 const mockToastSuccess = vi.hoisted(() => vi.fn());
+const mockToastError = vi.hoisted(() => vi.fn());
 const workspaceRef = vi.hoisted(() => ({
   current: {
     id: "workspace-1",
@@ -89,8 +90,26 @@ vi.mock("./delete-workspace-dialog", () => ({
 }));
 
 vi.mock("sonner", () => ({
-  toast: { success: mockToastSuccess, error: vi.fn() },
+  toast: { success: mockToastSuccess, error: mockToastError },
 }));
+
+// The prefix confirmation's rethrow contract lives in the promise `onOk`
+// returns, not in the DOM — see the test that reads it. Captured here and
+// delegated to the real `confirmModal`, because the tests above also drive the
+// dialog through the UI.
+const capturedConfirm = vi.hoisted(() => ({
+  current: null as { onOk: () => Promise<unknown> } | null,
+}));
+const mockConfirmModal = vi.hoisted(() => vi.fn());
+const actualConfirmModal = vi.hoisted(() => ({
+  current: null as null | ((config: never) => unknown),
+}));
+
+vi.mock("@lobehub/ui/base-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@lobehub/ui/base-ui")>();
+  actualConfirmModal.current = actual.confirmModal as never;
+  return { ...actual, confirmModal: mockConfirmModal };
+});
 
 import { renderWithI18n } from "../../test/i18n";
 import { WorkspaceTab } from "./workspace-tab";
@@ -119,6 +138,11 @@ async function renderTab() {
 describe("WorkspaceTab — automatic updates", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    capturedConfirm.current = null;
+    mockConfirmModal.mockImplementation((config: never) => {
+      capturedConfirm.current = config as { onOk: () => Promise<unknown> };
+      return actualConfirmModal.current?.(config);
+    });
     vi.useFakeTimers({ shouldAdvanceTime: true });
     workspaceRef.current = {
       id: "workspace-1",
@@ -241,6 +265,43 @@ describe("WorkspaceTab — automatic updates", () => {
     });
     expect(mockToastSuccess).toHaveBeenCalledWith("Workspace settings saved", {
       id: "settings-auto-save",
+    });
+  });
+
+  /**
+   * The same rethrow contract as the tokens tab's, and it had no test at all —
+   * which is the same hole one step further out. `performPrefixSave` rethrows
+   * on purpose so `useSettingsConfirm`'s `onOk` returns a rejecting promise and
+   * the dialog stays up; nothing asserted it, so replacing that `throw` with a
+   * `return` would have gone unnoticed.
+   *
+   * Asserted at the promise rather than in the DOM, because the promise is
+   * what the contract is about and it needs no timing. A "the title is still in
+   * the document" spelling is vacuous *as an instant check* — read immediately
+   * after the failure, the closing dialog is still there, so the assertion's
+   * subject exists in both states. (Measured in `tokens-tab.test.tsx`, which
+   * carries the DOM spelling too: with a wait, the node does leave, so the
+   * window is what was missing, not the node.) The tokens tab asserts this
+   * contract twice, at both layers; here the promise alone is enough, because
+   * `settings-confirm.test.tsx` already owns the library-side half.
+   */
+  it("hands confirmModal an onOk that rejects when the prefix save fails", async () => {
+    const user = setupUser();
+    const card = await renderTab();
+    mockUpdateWorkspace.mockRejectedValue(new Error("prefix refused"));
+    const input = card.getByPlaceholderText("TES") as HTMLInputElement;
+
+    await user.clear(input);
+    await user.type(input, "NEW");
+    await user.tab();
+
+    await screen.findByText(/Change issue prefix/i);
+    expect(capturedConfirm.current).not.toBeNull();
+
+    await act(async () => {
+      await expect(capturedConfirm.current?.onOk()).rejects.toThrow(
+        "prefix refused",
+      );
     });
   });
 
