@@ -40,6 +40,7 @@ import {
 import { useLocale, useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 import { openExternal } from "../../platform";
+import { useSettingsConfirm } from "./settings-confirm";
 import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 import {
   hasActiveWorkspaceSeatCapacity,
@@ -149,20 +150,21 @@ function statusBadgeVariant(
  * this file does own render in the `extra`-less body: the upgrade CTA and the
  * seat-purchase CTA are group content, not a section `action`.)
  *
- * **The two dialogs are `Modal`, including the confirmation.** The seat
- * purchase is a form in a dialog. The checkout confirmation is an `AlertDialog`
- * with a *cancel* — and that cancel is product behaviour, not decoration:
- * `handleCheckoutConfirmOpenChange` releases the idempotency intent so the next
- * attempt is a new Stripe session, after an ambiguous failure deliberately
- * keeps the key. `useSettingsConfirm` has no `onCancel` hook, so routing this
- * dialog through it would silently drop that release (and with it a passing
- * assertion). A controlled `Modal` keeps the cancel path, the AlertDialog's
- * no-outside-dismiss semantics (`maskClosable={false}`) and its missing close
- * affordance (`closable={false}`).
+ * **The seat purchase is a `Modal`; the Checkout confirmation is the page's
+ * `useSettingsConfirm`.** The confirmation's *cancel* is product behaviour, not
+ * decoration: it releases the idempotency intent so an attempt the user backed
+ * out of is not replayed by the next one, while an ambiguous failure
+ * deliberately keeps the key. That side effect is why the wrapper grew an
+ * optional `onCancel` rather than this file keeping a `Modal` of its own —
+ * one channel for confirmations, so the tone, the button copy and the promise
+ * contract are decided in one place. See `openCheckoutConfirm` for the one
+ * contract this call site does not use.
  *
- * `Badge` and `Progress` stay shadcn: the migration reference records that Lobe
- * has no equivalent for either (decision 7 for `Progress`), and `Tag` is a
- * different component rather than a rename of `Badge`.
+ * `Badge` and `Progress` stay shadcn. `Progress` is decision 7; `Badge` is a
+ * sanctioned exemption — the migration reference records that Lobe has no
+ * `Badge` and that `Tag` is a different component rather than a rename of it,
+ * so swapping it would change what the plan and status pills *mean*, not just
+ * how they look.
  *
  * A second gate inside the tab keeps direct/test mounts fail-closed. The
  * Settings shell also omits this component and its navigation entry while the
@@ -208,7 +210,6 @@ function BillingTabContent() {
     : null;
   const [interval, setInterval] =
     useState<WorkspaceSubscriptionInterval>("month");
-  const [checkoutConfirmOpen, setCheckoutConfirmOpen] = useState(false);
   const [seatPurchaseOpen, setSeatPurchaseOpen] = useState(false);
   const [additionalSeatsInput, setAdditionalSeatsInput] = useState("1");
   const [seatPreview, setSeatPreview] =
@@ -247,6 +248,7 @@ function BillingTabContent() {
     attempts: number;
   } | null>(null);
   const consumedCallbackKeyRef = useRef<string | null>(null);
+  const confirm = useSettingsConfirm();
 
   useEffect(() => {
     checkoutIntentRef.current = null;
@@ -577,14 +579,11 @@ function BillingTabContent() {
         idempotencyKey: intent.key,
       });
       if (!response?.url) {
-        setCheckoutConfirmOpen(false);
         setActionError(t(($) => $.workspace.errors.checkout_response));
         return;
       }
-      setCheckoutConfirmOpen(false);
       openExternal(response.url, { webTarget: "same-tab" });
     } catch (error) {
-      setCheckoutConfirmOpen(false);
       if (error instanceof ApiError && error.status === 409) {
         checkoutIntentRef.current = null;
         setActionError(t(($) => $.workspace.errors.already_subscribed));
@@ -595,10 +594,39 @@ function BillingTabContent() {
     }
   };
 
-  const handleCheckoutConfirmOpenChange = (open: boolean) => {
-    setCheckoutConfirmOpen(open);
-    if (!open) checkoutIntentRef.current = null;
-  };
+  /**
+   * The Checkout confirmation goes through `useSettingsConfirm` — the page's
+   * one channel for confirmations — rather than a `Modal` of its own. What this
+   * call site needs from that channel is `onCancel`: backing out releases the
+   * idempotency intent, so an attempt the user abandoned is not replayed by the
+   * next one. The wrapper forwards that hook to `confirmModal`, which has
+   * always accepted it (`Modal/imperative.mjs`, `ConfirmBody`'s `handleCancel`).
+   *
+   * `onConfirm` resolves rather than rejecting when Checkout fails. The failure
+   * is surfaced by the panel's action-error alert, and the dialog closes so the
+   * user retries from the same call to action — the sequence the suite pins in
+   * "reuses the Checkout idempotency key after an ambiguous failure". This is
+   * the one call site that does not use the wrapper's reject-to-stay-open
+   * contract, and it does so deliberately.
+   */
+  const openCheckoutConfirm = () =>
+    confirm({
+      title: t(($) => $.workspace.confirm.title),
+      description: t(($) => $.workspace.confirm.description, {
+        interval:
+          interval === "month"
+            ? t(($) => $.workspace.upgrade.monthly)
+            : t(($) => $.workspace.upgrade.yearly),
+        count: actualSeats,
+      }),
+      confirmLabel: t(($) => $.workspace.actions.continue_to_stripe),
+      cancelLabel: t(($) => $.workspace.actions.cancel),
+      tone: "default",
+      onCancel: () => {
+        checkoutIntentRef.current = null;
+      },
+      onConfirm: handleCheckout,
+    });
 
   const handlePortal = async () => {
     setActionError(null);
@@ -1150,7 +1178,7 @@ function BillingTabContent() {
               type="primary"
               icon={CreditCard}
               disabled={isMutating}
-              onClick={() => setCheckoutConfirmOpen(true)}
+              onClick={openCheckoutConfirm}
             >
               {t(($) => $.workspace.actions.upgrade)}
             </Button>
@@ -1631,52 +1659,6 @@ function BillingTabContent() {
         </div>
       </Modal>
 
-      <Modal
-        open={checkoutConfirmOpen}
-        title={t(($) => $.workspace.confirm.title)}
-        width={512}
-        // The `AlertDialog` this replaces dismissed on Cancel and on Escape and
-        // on nothing else, and it released the Checkout intent on the way out
-        // (`handleCheckoutConfirmOpenChange`) so a deliberately abandoned
-        // attempt does not reuse the previous idempotency key. `onCancel` is
-        // the only hook that release has, which is why this is a controlled
-        // `Modal` rather than `useSettingsConfirm` — the wrapper has no
-        // `onCancel`. `maskClosable={false}` keeps the outside click inert the
-        // way the alert dialog's was; Escape still closes.
-        closable={false}
-        maskClosable={false}
-        onCancel={() => handleCheckoutConfirmOpenChange(false)}
-        footer={
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              type="fill"
-              disabled={checkoutMutation.isPending}
-              onClick={() => handleCheckoutConfirmOpenChange(false)}
-            >
-              {t(($) => $.workspace.actions.cancel)}
-            </Button>
-            <Button
-              type="primary"
-              icon={ExternalLink}
-              loading={checkoutMutation.isPending}
-              disabled={checkoutMutation.isPending}
-              onClick={() => void handleCheckout()}
-            >
-              {t(($) => $.workspace.actions.continue_to_stripe)}
-            </Button>
-          </div>
-        }
-      >
-        <p className="text-body text-muted-foreground">
-          {t(($) => $.workspace.confirm.description, {
-            interval:
-              interval === "month"
-                ? t(($) => $.workspace.upgrade.monthly)
-                : t(($) => $.workspace.upgrade.yearly),
-            count: actualSeats,
-          })}
-        </p>
-      </Modal>
     </>
   );
 }

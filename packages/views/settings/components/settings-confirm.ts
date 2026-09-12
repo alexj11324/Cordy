@@ -49,6 +49,26 @@ export interface SettingsConfirmOptions {
   confirmLabel?: ReactNode;
   cancelLabel?: ReactNode;
   /**
+   * Runs when the dialog is dismissed **by its Cancel button**, before it
+   * closes. Optional, and omitted by every call site that has nothing to undo.
+   *
+   * It exists because a dismissal can have a side effect that is not cleanup:
+   * `billing-tab`'s Checkout confirmation releases a Stripe idempotency intent
+   * here, so that backing out and trying again starts a new session instead of
+   * replaying the one the user abandoned. Without this hook that tab had to
+   * keep a raw `Modal` of its own, which is the thing this wrapper exists to
+   * prevent — a second channel where the tone, the button copy and the promise
+   * contract are decided again, and can be decided differently.
+   *
+   * **It fires for Cancel only.** The library's own dismissal paths — the
+   * header's close control, Escape, a click outside — go through
+   * `StackItem`'s `handleOpenChange`, which closes the stack entry without
+   * consulting `config.onCancel` (`Modal/imperative.mjs`). That asymmetry is
+   * the library's, not this wrapper's; a call site whose side effect must be
+   * unavoidable has to say so rather than assume this covers every exit.
+   */
+  onCancel?: () => void;
+  /**
    * Defaults to `destructive`: a confirm that turns out to be harmless looks
    * alarmist for one render, while a destructive confirm that forgot the tone
    * reads as safe. Pass `"default"` for the genuinely non-destructive ones.
@@ -119,6 +139,7 @@ export function useSettingsConfirm(): (
       confirmLabel,
       cancelLabel,
       tone = "destructive",
+      onCancel,
       onConfirm,
     }: SettingsConfirmOptions) => {
       const config: ModalConfirmConfig = {
@@ -127,6 +148,10 @@ export function useSettingsConfirm(): (
         okText: confirmLabel ?? t(($) => $.confirm.confirm),
         cancelText: cancelLabel ?? t(($) => $.confirm.cancel),
         okButtonProps: { danger: tone === "destructive" },
+        // Additive and behaviour-preserving when omitted: the library calls it
+        // as `onCancel?.()`, so an undefined value is what every call site that
+        // predates this option already gets.
+        onCancel,
         onOk: () => {
           const result = onConfirm();
           if (!isThenable(result)) throw new MissingPromiseError();
