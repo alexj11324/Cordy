@@ -315,9 +315,18 @@ function LabelEditorDialog({
    * The reference's "a self-contained dialog is where an antd `Form` belongs"
    * does describe this dialog: its values exist only while it is open (one
    * commit point, Save) and no server value can arrive late. It stays a
-   * controlled draft because moving it into a `Form` store would replace the
-   * state model rather than the rendering — and because the draft has to be
-   * reseeded per row anyway, which is the thing a `Form` is worst at.
+   * controlled draft because **this migration is presentation only** — moving
+   * it into a `Form` store would replace the state model rather than the
+   * rendering, and that is a change nothing here asked for.
+   *
+   * **Per-row reseeding is not the reason**, though an earlier version of this
+   * comment said it was. `FormModal` reseeds per row correctly, by **mount
+   * identity**: `key={editing?.id ?? "new"}` gives each row its own store, and
+   * `destroyOnHidden` — which `FormModal` maps to the Form's `clearOnDestroy` —
+   * clears it on close. The difference is *how* the reseed happens, not whether
+   * `Form` can do it: this dialog stays mounted and reseeds through the effect
+   * below, where the recipe remounts. Both work; only one keeps the state model
+   * this tab already had.
    *
    * The reseed is a `useEffect` on `[label, open]`, which is safe here for a
    * reason specific to this dialog: `editing` is a snapshot of the row the menu
