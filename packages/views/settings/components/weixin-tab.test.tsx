@@ -128,6 +128,10 @@ vi.mock("sonner", () => ({
 }));
 
 import { renderWithI18n } from "../../test/i18n";
+import {
+  expectLobePrimaryTreatment,
+  lobeButtonTreatmentClasses,
+} from "../../test/lobe-button-treatment";
 import { WeixinAgentBindButton, WeixinTab } from "./weixin-tab";
 
 afterEach(cleanup);
@@ -250,6 +254,49 @@ describe("WeixinTab", () => {
     renderUI(<WeixinAgentBindButton agentId="agent-1" />);
     expect(screen.queryByRole("button", { name: "Connect Weixin" })).toBeNull();
     expect(mockBegin).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Where the primary treatment lands — asserted as *treatment*, not presence,
+   * and not props.
+   *
+   * The connect CTA shipped as a secondary control. Its base was a shadcn
+   * `<Button>` with **no `variant`** (`bg-primary text-primary-foreground`, the
+   * loudest control in the row), and the migrated `<LobeButton>` had **no
+   * `type`**, which is Lobe's outlined default: the two libraries' defaults point
+   * opposite ways, so the call site read identically before and after and no prop
+   * diff could see the demotion. `01f54227` restored `type="primary"`.
+   *
+   * Both halves are asserted in one render on purpose. "The CTA is primary" alone
+   * would also pass on a build where every button in the row is primary — a
+   * guard asserting a treatment that nothing distinguishes. The row's Disconnect
+   * is the control: its base was `<Button variant="outline">`, Lobe's default
+   * already is that treatment, and promoting it to primary would be a new defect
+   * rather than a restoration.
+   *
+   * What this is **not**: it pins that each control wears the class Lobe paints
+   * for that treatment, not what the treatment looks like. The pixel pass is
+   * still what says the two are the same colour.
+   */
+  it("keeps the connect CTA primary and the row's Disconnect outlined", async () => {
+    // Two agents, so one row can hold an installation and the other the CTA that
+    // creates one — `availableAgents` excludes an agent that is already
+    // installed, so a single agent cannot show both controls.
+    agentsRef.current = [
+      { id: "agent-1", name: "Planner", owner_id: "user-1", archived_at: null },
+      { id: "agent-2", name: "Researcher", owner_id: "user-1", archived_at: null },
+    ];
+    installationsRef.current = {
+      installations: [{ id: "installation-1", agent_id: "agent-1", bot_id: "personal-bot", status: "installed" }],
+      configured: true,
+      install_supported: true,
+    };
+    renderUI(<WeixinTab />, { lobe: true });
+
+    await expectLobePrimaryTreatment(await screen.findByTestId("weixin-connect-agent-agent-2"));
+
+    const { primary } = await lobeButtonTreatmentClasses();
+    expect(await screen.findByRole("button", { name: /^Disconnect$/i })).not.toHaveClass(primary);
   });
 
   it("starts a Personal Weixin session and renders its QR code", async () => {

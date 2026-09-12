@@ -86,6 +86,7 @@ vi.mock("sonner", () => ({
 }));
 
 import { renderWithI18n } from "../../test/i18n";
+import { expectLobePrimaryTreatment } from "../../test/lobe-button-treatment";
 import { ComposioTab } from "./composio-tab";
 
 /**
@@ -202,6 +203,22 @@ describe("ComposioTab", () => {
     ).toBeInTheDocument();
     // Not treated as connected, so no Connected badge.
     expect(screen.queryByText(enSettings.composio.connected)).not.toBeInTheDocument();
+  });
+
+  /**
+   * The tile's Connect is the loudest control on the card, and it is the one
+   * Lobe's default would demote: the base was a shadcn `<Button>` with no
+   * `variant` (solid primary), while `<LobeButton>` with no `type` is the
+   * outlined treatment. `type="primary"` is what holds that correspondence — the
+   * default fixture (one connectable toolkit, nothing connected) is the branch
+   * that renders it, and the expired branch above is the outlined counter-case
+   * in the same suite.
+   */
+  it("renders Connect as a solid primary control", async () => {
+    renderTab();
+    await expectLobePrimaryTreatment(
+      await screen.findByRole("button", { name: enSettings.composio.connect }),
+    );
   });
 
   it("toasts success and clears the ?connected param on a successful callback", async () => {
