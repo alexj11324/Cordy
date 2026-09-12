@@ -7,9 +7,10 @@ import {
   requestWebNotificationPermission,
   type WebNotificationPermission,
 } from "@orvilo/core/platform";
+import { Button } from "@lobehub/ui/base-ui";
 import { isDesktopShell } from "../../platform";
 import { useT } from "../../i18n";
-import { SettingsCard, SettingsPillButton, SettingsRow } from "./settings-layout";
+import { SettingsFormRow } from "./settings-shell";
 
 /**
  * Web-only control for the browser permission that native notification banners
@@ -20,6 +21,10 @@ import { SettingsCard, SettingsPillButton, SettingsRow } from "./settings-layout
  * Capability and permission are read from `window`, so the first paint defers
  * to a post-mount effect to keep SSR and client markup identical (no hydration
  * mismatch).
+ *
+ * It renders a bare `SettingsFormRow` and not a card of its own: it is mounted
+ * inside the notifications tab's "System Notifications" group, and a nested
+ * card would draw a second border inside the first.
  */
 export function BrowserNotificationSetting() {
   const { t } = useT("settings");
@@ -47,22 +52,20 @@ export function BrowserNotificationSetting() {
         : t(($) => $.notifications.browser.hint);
 
   return (
-    <SettingsCard>
-      <SettingsRow
-        label={t(($) => $.notifications.browser.label)}
-        description={statusHint}
-      >
-          {permission === "default" && (
-            <SettingsPillButton active onClick={handleEnable}>
-              {t(($) => $.notifications.browser.enable)}
-            </SettingsPillButton>
-          )}
-          {permission === "granted" && (
-            <span className="shrink-0 text-caption font-medium text-muted-foreground">
-              {t(($) => $.notifications.browser.enabled_badge)}
-            </span>
-          )}
-      </SettingsRow>
-    </SettingsCard>
+    <SettingsFormRow
+      label={t(($) => $.notifications.browser.label)}
+      description={statusHint}
+    >
+      {permission === "default" && (
+        <Button shape="round" type="primary" onClick={handleEnable}>
+          {t(($) => $.notifications.browser.enable)}
+        </Button>
+      )}
+      {permission === "granted" && (
+        <span className="text-caption text-muted-foreground shrink-0 font-medium">
+          {t(($) => $.notifications.browser.enabled_badge)}
+        </span>
+      )}
+    </SettingsFormRow>
   );
 }

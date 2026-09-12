@@ -51,6 +51,7 @@
  */
 
 import Form from "@lobehub/ui/es/Form/index";
+import { cn } from "@orvilo/ui/lib/utils";
 import type { ReactNode } from "react";
 
 export interface SettingsGroupProps {
@@ -89,6 +90,26 @@ export function SettingsGroup({
   );
 }
 
+/**
+ * `Form.Item`'s row wraps by default, and Lobe only turns that off from the
+ * `Form` component's own stylesheet — `styles.root` carries `.ant-row {
+ * flex-wrap: nowrap }` and is applied by `Form`, which the settings page
+ * deliberately never mounts (there is no page-level save, so a `Form` around
+ * the tabs would claim ownership of every tab's value). Without it, a row whose
+ * label and description are wide enough pushes its control onto a second line:
+ * the timezone row's description plus its 288px control overflowed a 654px row
+ * and stacked, while its neighbours stayed side by side.
+ *
+ * So the three rules that decide the row's geometry are restated for these rows
+ * in `@orvilo/ui/styles/base.css`, under the class below, with the effect
+ * Lobe's own `Form` would have had. Plain CSS rather than utilities: each rule
+ * has to land on an antd *child* of the item, which a class on the item itself
+ * cannot reach, and this way none of them depends on Tailwind emitting a
+ * candidate. The fourth difference is not CSS at all — antd turns the label
+ * colon on unless it is told otherwise, so `Form.Item` gets `colon={false}`.
+ */
+const ROW_CLASS = "orvilo-settings-row";
+
 export interface SettingsFormRowProps {
   label?: ReactNode;
   description?: ReactNode;
@@ -113,7 +134,8 @@ export function SettingsFormRow({
 }: SettingsFormRowProps) {
   return (
     <Form.Item
-      className={className}
+      className={cn(ROW_CLASS, className)}
+      colon={false}
       desc={description}
       divider={divider}
       label={label}

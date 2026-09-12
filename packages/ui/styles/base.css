@@ -398,3 +398,38 @@ html[data-dnd-dragging="true"] * {
   background-color: var(--find-match-active);
   color: var(--find-match-foreground);
 }
+
+/* Lobe's `Form` gives its rows their geometry from the `Form` component's own
+ * stylesheet: `.ant-row { flex-wrap: nowrap }`, `.ant-form-item-label > label
+ * { height: unset }`, `.ant-form-item { margin: 0 !important }`, and
+ * `colon: false` so antd's label suffix disappears. The settings page never
+ * mounts a `Form` — every control there commits through its own store or
+ * through `useAutoSave`, so a `Form` around the tab panels would own values
+ * nothing writes — and each of those rules is load-bearing:
+ *
+ *   - without `nowrap`, a row whose label and description are wide enough
+ *     pushes its control onto a second line while its neighbours stay side by
+ *     side (the timezone row, at 288px of control, did);
+ *   - antd's horizontal label pins itself to the control's height and hides
+ *     the overflow, so a two-line description loses its second line;
+ *   - antd's own `margin-bottom: 24px` doubles up with the row's padding;
+ *   - and antd's `label::after` colon renders, because `colon: false` lives on
+ *     the `Form`, landing a stray ":" beside every label.
+ *
+ * Scoped to the rows that opt in rather than applied globally, so antd forms
+ * elsewhere in the app keep their own geometry. Plain CSS rather than
+ * utilities: three of the four rules have to reach antd's child elements, which
+ * a class on the item itself cannot do, and this way none of them depends on
+ * Tailwind emitting a candidate.
+ *
+ * If the settings tabs ever do mount a Lobe `Form`, this block should go: it
+ * exists only to restate what that component would have applied. */
+.orvilo-settings-row {
+  margin-bottom: 0 !important;
+}
+.orvilo-settings-row .ant-form-item-row {
+  flex-wrap: nowrap;
+}
+.orvilo-settings-row .ant-form-item-label > label {
+  height: unset;
+}

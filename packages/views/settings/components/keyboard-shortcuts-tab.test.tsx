@@ -1,5 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import {
   createShortcutChord,
   configureShortcutPlatform,
@@ -8,6 +14,60 @@ import {
 } from "@orvilo/core/shortcuts";
 import { renderWithI18n } from "../../test/i18n";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
+
+// This file needs far more than the repo's 20s default, and the reason is the
+// migration, not the assertions. It mounts 23 `Form.Item` rows and 22 Lobe
+// `Button`s; each button is a `motion` element, and jsdom gives every one of
+// them a real animation runtime. Measured on this machine: one mount is ~6s
+// against ~0.1-0.3s *per test* for the whole file before the tab was migrated,
+// and under full-suite parallelism each test lands between 12s and 25s. Raised
+// here rather than in `vitest.config.ts` because it is this tab's shape — a row
+// of actions per shortcut — that pays it. `hookTimeout` is raised with it
+// because unmounting those rows again in `afterEach` costs the same order of
+// magnitude, and the hook budget is separate from the test budget.
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 60_000 });
+
+/**
+ * `lobe: true` loads the theme bridge on demand, so the first query has to be
+ * async.
+ */
+async function renderTab() {
+  renderWithI18n(<KeyboardShortcutsTab />, { lobe: true });
+  await screen.findByText("Open search");
+}
+
+/**
+ * A query bound to one group of the tab.
+ *
+ * Every role query in this suite goes through here rather than through
+ * `screen`, and that is not style: `getByRole(role, { name })` computes the
+ * accessible name of every candidate in the document, and against the antd
+ * stylesheet the theme bridge injects that costs **3.4s** per call under jsdom
+ * where the same query scoped to its group costs 9ms — measured on this
+ * component, not guessed. An un-named `getAllByRole` is cheap (~70ms), so the
+ * cost is the name computation, not the role walk.
+ *
+ * The container is the group's collapse item, which is the only structural
+ * handle Lobe's `Form.Group` offers (`collapsible={false}` leaves no role to
+ * query). The `within()` calls are the assertions; only the container is
+ * structural.
+ */
+function group(title: string) {
+  const item = screen.getByText(title).closest(".ant-collapse-item");
+  if (!item) throw new Error(`no group container for "${title}"`);
+  return within(item as HTMLElement);
+}
+
+/**
+ * The tab's leading toolbar — the group that holds the search box and the
+ * page-level "Restore defaults". It has no title, so it is reached through the
+ * search box rather than through `group()`.
+ */
+function toolbar() {
+  const item = screen.getByRole("searchbox").closest(".ant-collapse-item");
+  if (!item) throw new Error("no toolbar container");
+  return within(item as HTMLElement);
+}
 
 describe("KeyboardShortcutsTab", () => {
   beforeEach(() => {
@@ -21,15 +81,15 @@ describe("KeyboardShortcutsTab", () => {
     useShortcutStore.getState().resetAll();
   });
 
-  it("shows distinct left and right sidebar actions", () => {
-    renderWithI18n(<KeyboardShortcutsTab />);
+  it("shows distinct left and right sidebar actions", async () => {
+    await renderTab();
 
     expect(
-      screen.getByRole("button", {
+      group("General").getByRole("button", {
         name: "Change shortcut for Toggle left sidebar",
       }),
     ).toBeInTheDocument();
-    const rightSidebarRecorder = screen.getByRole("button", {
+    const rightSidebarRecorder = group("General").getByRole("button", {
       name: "Change shortcut for Toggle right sidebar",
     });
     expect(within(rightSidebarRecorder).getByTitle("Ctrl")).toHaveTextContent(
@@ -38,9 +98,9 @@ describe("KeyboardShortcutsTab", () => {
     expect(within(rightSidebarRecorder).getByTitle("/")).toHaveTextContent("/");
   });
 
-  it("records a shortcut and applies it immediately", () => {
-    renderWithI18n(<KeyboardShortcutsTab />);
-    const recorder = screen.getByRole("button", {
+  it("records a shortcut and applies it immediately", async () => {
+    await renderTab();
+    const recorder = group("General").getByRole("button", {
       name: "Change shortcut for Open search",
     });
 
@@ -54,9 +114,9 @@ describe("KeyboardShortcutsTab", () => {
     expect(within(recorder).getByTitle("E")).toHaveTextContent("E");
   });
 
-  it("only captures keys while the recorder is active", () => {
-    renderWithI18n(<KeyboardShortcutsTab />);
-    const recorder = screen.getByRole("button", {
+  it("only captures keys while the recorder is active", async () => {
+    await renderTab();
+    const recorder = group("General").getByRole("button", {
       name: "Change shortcut for Open search",
     });
 
@@ -80,9 +140,9 @@ describe("KeyboardShortcutsTab", () => {
     );
   });
 
-  it("rejects unsafe plain keys in editors while allowing Send = Enter", () => {
-    renderWithI18n(<KeyboardShortcutsTab />);
-    const searchRecorder = screen.getByRole("button", {
+  it("rejects unsafe plain keys in editors while allowing Send = Enter", async () => {
+    await renderTab();
+    const searchRecorder = group("General").getByRole("button", {
       name: "Change shortcut for Open search",
     });
     fireEvent.click(searchRecorder);
@@ -94,7 +154,7 @@ describe("KeyboardShortcutsTab", () => {
       "This key would interfere with typing or basic keyboard navigation.",
     );
 
-    const sendRecorder = screen.getByRole("button", {
+    const sendRecorder = group("General").getByRole("button", {
       name: "Change shortcut for Send",
     });
     fireEvent.click(sendRecorder);
@@ -102,9 +162,9 @@ describe("KeyboardShortcutsTab", () => {
     expect(getShortcut("send")).toEqual(createShortcutChord("Enter"));
   });
 
-  it("only allows Enter or Primary+Enter for Send", () => {
-    renderWithI18n(<KeyboardShortcutsTab />);
-    const sendRecorder = screen.getByRole("button", {
+  it("only allows Enter or Primary+Enter for Send", async () => {
+    await renderTab();
+    const sendRecorder = group("General").getByRole("button", {
       name: "Change shortcut for Send",
     });
 
@@ -123,9 +183,9 @@ describe("KeyboardShortcutsTab", () => {
     );
   });
 
-  it("rejects shortcuts already assigned to another action", () => {
-    renderWithI18n(<KeyboardShortcutsTab />);
-    const recorder = screen.getByRole("button", {
+  it("rejects shortcuts already assigned to another action", async () => {
+    await renderTab();
+    const recorder = group("General").getByRole("button", {
       name: "Change shortcut for Create issue",
     });
 
@@ -140,50 +200,66 @@ describe("KeyboardShortcutsTab", () => {
     );
   });
 
-  it("can disable and restore an action", () => {
-    renderWithI18n(<KeyboardShortcutsTab />);
+  it("can disable and restore an action", async () => {
+    await renderTab();
 
     fireEvent.click(
-      screen.getByRole("button", {
+      group("General").getByRole("button", {
         name: "Disable Create issue shortcut",
       }),
     );
     expect(getShortcut("createIssue")).toBeNull();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Reset Create issue" }),
+      group("General").getByRole("button", { name: "Reset Create issue" }),
     );
     expect(getShortcut("createIssue")).toEqual(
       createShortcutChord("N", { primary: true }),
     );
   });
 
-  it("confirms before restoring all shortcut defaults", () => {
+  // The tab's page-level action used to be passed to `SettingsTab` as
+  // `action`, which the settings dialog never rendered — `SettingsTab` returns
+  // early inside `SettingsDialogBody` and that branch drops the header
+  // entirely. It now rides on the first `Form.Group`'s `extra`, so this suite
+  // is also the regression guard for "Restore defaults" existing at all.
+  it("confirms before restoring all shortcut defaults", async () => {
     useShortcutStore.getState().setShortcut(
       "openSearch",
       createShortcutChord("J", { primary: true }),
     );
-    renderWithI18n(<KeyboardShortcutsTab />);
+    await renderTab();
 
-    fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
-    expect(screen.getByRole("alertdialog")).toHaveTextContent(
+    fireEvent.click(
+      toolbar().getByRole("button", { name: "Restore defaults" }),
+    );
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent(
       "This will remove every custom shortcut and restore the defaults on this device.",
     );
     expect(getShortcut("openSearch")).toEqual(
       createShortcutChord("J", { primary: true }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
     expect(getShortcut("openSearch")).toEqual(
       createShortcutChord("J", { primary: true }),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Restore defaults" }));
     fireEvent.click(
-      screen.getByRole("button", { name: "Restore all defaults" }),
+      toolbar().getByRole("button", { name: "Restore defaults" }),
     );
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Restore all defaults" }),
+    );
+    // The confirm dialog closes only once its promise resolves, so the
+    // dismissal is a tick later than the click.
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
     expect(getShortcut("openSearch")).toEqual(
       createShortcutChord("K", { primary: true }),
     );

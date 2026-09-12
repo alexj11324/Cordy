@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import {
   describe,
   it,
@@ -9,12 +8,8 @@ import {
   afterEach,
   vi,
 } from "vitest";
-import { render, screen, act, cleanup, waitFor } from "@testing-library/react";
+import { screen, act, cleanup, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@orvilo/core/i18n/react";
-import enCommon from "../../locales/en/common.json";
-import enAuth from "../../locales/en/auth.json";
-import enSettings from "../../locales/en/settings.json";
 
 const mockPersist = vi.hoisted(() => vi.fn());
 const mockUpdateMe = vi.hoisted(() => vi.fn());
@@ -80,18 +75,43 @@ vi.mock("@orvilo/core/auth", async () => {
   return { ...actual, useAuthStore };
 });
 
+import { renderWithI18n } from "../../test/i18n";
 import { PreferencesTab } from "./preferences-tab";
 import { useCommentComposerStore } from "@orvilo/core/issues/stores";
 
-const TEST_RESOURCES = {
-  en: { common: enCommon, auth: enAuth, settings: enSettings },
-};
+/**
+ * `lobe: true` mounts the theme bridge, which is imported on demand — so the
+ * first query in every test has to be an async one. This helper is that first
+ * query, so no test has to remember the rule twice.
+ */
+async function renderTab() {
+  renderWithI18n(<PreferencesTab />, { lobe: true });
+  await screen.findByRole("combobox", { name: "Theme" });
+}
 
-function I18nWrapper({ children }: { children: ReactNode }) {
-  return (
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      {children}
-    </I18nProvider>
+/**
+ * Picks an option out of one of the selects.
+ *
+ * The click is scoped to the open popup rather than the document, because the
+ * trigger carries a `title` equal to the *selected* label — picking the value
+ * that is already selected would match the trigger and the option both.
+ *
+ * The popup is reached through `[role=listbox]`, which antd renders as a
+ * clipped mirror of the options for assistive technology, and takes the click
+ * on the item next to it: those mirror nodes are not the ones a pointer
+ * reaches, and the items that are carry no role at all. The mirror is also
+ * windowed to the active index, so it cannot be used to enumerate a long list
+ * like the timezone one — hence `getByTitle` for the item and nothing else.
+ */
+async function pickOption(
+  user: ReturnType<typeof userEvent.setup>,
+  comboboxName: string,
+  optionName: string | RegExp,
+) {
+  await user.click(screen.getByRole("combobox", { name: comboboxName }));
+  const mirror = await screen.findByRole("listbox");
+  await user.click(
+    within(mirror.parentElement as HTMLElement).getByTitle(optionName),
   );
 }
 
@@ -115,13 +135,12 @@ describe("PreferencesTab — Language switcher", () => {
     user: ReturnType<typeof userEvent.setup>,
     name: string,
   ) {
-    await user.click(screen.getByRole("combobox", { name: "Language" }));
-    await user.click(await screen.findByRole("option", { name }));
+    await pickOption(user, "Language", name);
   }
 
   it("does nothing when clicking the current locale", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<PreferencesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     await pickLanguage(user, "English");
 
@@ -132,10 +151,9 @@ describe("PreferencesTab — Language switcher", () => {
 
   it("shows a confirmation toast when the theme is saved locally", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<PreferencesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
-    await user.click(screen.getByRole("combobox", { name: "Theme" }));
-    await user.click(await screen.findByRole("option", { name: "Dark" }));
+    await pickOption(user, "Theme", "Dark");
 
     expect(mockSetTheme).toHaveBeenCalledWith("dark");
     expect(mockToastSuccess).toHaveBeenCalledTimes(1);
@@ -143,7 +161,7 @@ describe("PreferencesTab — Language switcher", () => {
 
   it("when not logged in: persists + reloads, no PATCH", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<PreferencesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     await pickLanguage(user, "中文");
 
@@ -158,20 +176,21 @@ describe("PreferencesTab — Language switcher", () => {
 
   it("offers only the locales the product ships", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<PreferencesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     await user.click(screen.getByRole("combobox", { name: "Language" }));
 
-    expect(
-      (await screen.findAllByRole("option")).map((o) => o.textContent),
-    ).toEqual(["English", "中文"]);
+    const options = await screen.findAllByRole("option");
+    expect(options).toHaveLength(2);
+    expect(options[0]).toHaveAccessibleName("English");
+    expect(options[1]).toHaveAccessibleName("中文");
   });
 
   it("when logged in + PATCH success: confirms the save before reloading", async () => {
     userRef.current = { id: "user-1" };
     mockUpdateMe.mockResolvedValueOnce({});
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<PreferencesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     await pickLanguage(user, "中文");
 
@@ -188,7 +207,7 @@ describe("PreferencesTab — Language switcher", () => {
     userRef.current = { id: "user-1" };
     mockUpdateMe.mockRejectedValueOnce(new Error("network"));
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<PreferencesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     await pickLanguage(user, "中文");
 
@@ -211,8 +230,8 @@ describe("PreferencesTab — Timezone section", () => {
   // Shrink the picker to the curated COMMON_TIMEZONES fallback. With the
   // real Intl.supportedValuesOf the popup renders ~600 options, and
   // userEvent traversal of that list blew past the per-test timeout on
-  // slow CI runners (MUL-4427). Everything these tests pick — Asia/Tokyo
-  // and the "(browser)" sentinel — exists in the fallback list too.
+  // slow CI runners (MUL-4427). Everything these tests pick — a zone from
+  // the curated list and the "(browser)" sentinel — exists in it too.
   const intlWithValues = Intl as typeof Intl & {
     supportedValuesOf?: (key: "timeZone") => string[];
   };
@@ -229,46 +248,51 @@ describe("PreferencesTab — Timezone section", () => {
     userRef.current = null;
   });
 
-  // Base UI Select portals its popup onto document.body; unmount each
-  // render fully between tests so a prior test's trigger/popup can't
-  // shadow the next one's.
+  // The select portals its popup onto document.body; unmount each render
+  // fully between tests so a prior test's trigger/popup can't shadow the
+  // next one's.
   afterEach(() => {
     cleanup();
   });
 
-  // Opens the Select popup and clicks the option whose accessible name
-  // matches. Re-queries the trigger each call so it operates on the
-  // current render, never a stale node.
+  // Opens the Select popup and clicks the option whose label matches.
+  // Re-queries the trigger each call so it operates on the current render,
+  // never a stale node.
+  //
+  // The zones these tests pick are near the top of the list on purpose: antd
+  // renders a virtual window over the popup, and under jsdom only the first
+  // screenful (nine of the curator's nineteen) exists in the DOM at all.
   async function pickTimezone(
     user: ReturnType<typeof userEvent.setup>,
     name: RegExp | string,
   ) {
-    await user.click(screen.getByRole("combobox", { name: "Viewing Timezone" }));
-    await user.click(await screen.findByRole("option", { name }));
+    await pickOption(user, "Viewing Timezone", name);
   }
 
-  it("renders the stored timezone in the trigger", () => {
+  it("renders the stored timezone in the trigger", async () => {
     userRef.current = { id: "user-1", timezone: "Asia/Shanghai" };
-    render(<PreferencesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
-    expect(
-      screen.getByRole("combobox", { name: "Viewing Timezone" }).textContent,
-    ).toContain("Asia/Shanghai");
+    // Asserted through the trigger's `title` rather than the combobox's own
+    // text content: this select renders `<input role="combobox">`, whose text
+    // content is empty by construction — the selected label is a sibling node,
+    // and antd mirrors it into that node's `title`.
+    expect(screen.getByTitle("Asia/Shanghai")).toBeInTheDocument();
   });
 
   // handleChange PATCHes then updates the store asynchronously, so the
   // post-pick assertions must waitFor it to settle.
   it("saving a new timezone PATCHes /api/me and updates the auth store", async () => {
     userRef.current = { id: "user-1", timezone: "Asia/Shanghai" };
-    const updatedUser = { id: "user-1", timezone: "Asia/Tokyo" };
+    const updatedUser = { id: "user-1", timezone: "America/New_York" };
     mockUpdateMe.mockResolvedValueOnce(updatedUser);
     const user = userEvent.setup();
-    render(<PreferencesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
-    await pickTimezone(user, "Asia/Tokyo");
+    await pickTimezone(user, "America/New_York");
 
     await waitFor(() => {
-      expect(mockUpdateMe).toHaveBeenCalledWith({ timezone: "Asia/Tokyo" });
+      expect(mockUpdateMe).toHaveBeenCalledWith({ timezone: "America/New_York" });
       expect(mockSetUser).toHaveBeenCalledWith(updatedUser);
       expect(mockToastSuccess).toHaveBeenCalledTimes(1);
     });
@@ -278,12 +302,12 @@ describe("PreferencesTab — Timezone section", () => {
     userRef.current = { id: "user-1", timezone: "Asia/Shanghai" };
     mockUpdateMe.mockRejectedValueOnce(new Error("network down"));
     const user = userEvent.setup();
-    render(<PreferencesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
-    await pickTimezone(user, "Asia/Tokyo");
+    await pickTimezone(user, "America/New_York");
 
     await waitFor(() => {
-      expect(mockUpdateMe).toHaveBeenCalledWith({ timezone: "Asia/Tokyo" });
+      expect(mockUpdateMe).toHaveBeenCalledWith({ timezone: "America/New_York" });
       expect(mockToastError).toHaveBeenCalledTimes(1);
     });
     expect(mockSetUser).not.toHaveBeenCalled();
@@ -294,7 +318,7 @@ describe("PreferencesTab — Timezone section", () => {
     const clearedUser = { id: "user-1", timezone: null };
     mockUpdateMe.mockResolvedValueOnce(clearedUser);
     const user = userEvent.setup();
-    render(<PreferencesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     // The "(browser)" sentinel option resets the preference to NULL; the
     // wire payload is an empty string the backend translates to NULL.
@@ -322,8 +346,10 @@ describe("PreferencesTab — Sticky comment bar", () => {
 
   it("renders on by default and toggles the preference off with a saved toast", async () => {
     const user = userEvent.setup();
-    render(<PreferencesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
+    // Named query, not an index into the page's switches: the switch's
+    // accessible name is the only thing that survives a wrapper changing.
     const toggle = screen.getByRole("switch", { name: "Sticky comment bar" });
     expect(toggle).toHaveAttribute("aria-checked", "true");
 
