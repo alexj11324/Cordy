@@ -512,7 +512,13 @@ html[data-dnd-dragging="true"] * {
  * resolves to. Measured on both trees: 10px either side of the switch, where
  * `--radius-xl` had given the narrow card 14px and the radius changed as the
  * window crossed it. `overflow: hidden` clips the inner bands to the corners
- * the way the old `SettingsCard` did. */
+ * the way the old `SettingsCard` did.
+ *
+ * **That equality is coupling, not identity** — the two corners match because
+ * Lobe's outlined `Form.Group` reads `cssVar.borderRadius` today. If Lobe
+ * switches its card to `borderRadiusLG`, this rule keeps painting 10px and the
+ * two corners part company silently; the fix is then to follow the card's token,
+ * not to add a second hard-coded number here. */
 .orvilo-settings-group-outlined {
   border: 1px solid var(--border);
   border-radius: var(--radius);
