@@ -68,6 +68,13 @@ const EMPTY_DRAFT: LabelDraft = {
  * rather than relocated, and it is the sentence that says what these two
  * catalogs *are*. It goes on the group, where it renders.
  *
+ * **The group's title is a section title, not the page title.** Handing
+ * `labels.title` to the group printed `Labels` twice — the shell's header says
+ * `page.tabs.labels`, and the two strings are identical in both locales — so
+ * the group names its own section (`labels.section_title`) the way
+ * `tokens-tab` and `notifications-tab` do. The description needs a header above
+ * it; that header just must not be the one already on screen.
+ *
  * **Every row is a `SettingsFormRow`, not a bespoke flex row.** That is the
  * shape `tokens-tab` set for a catalog whose rows carry an action: the row's
  * own `Form.Item` supplies the label, the description, and the antd geometry
@@ -146,10 +153,17 @@ export function LabelsTab() {
   return (
     <>
       <SettingsGroup
-        title={t(($) => $.labels.title)}
+        // NOT `labels.title`. The shell's `DialogHeader` already renders
+        // `page.tabs.labels`, and the two strings are identical in both
+        // locales, so reusing it printed "Labels" twice — once in the dialog
+        // header and once on the card 100px below it. The section needs its own
+        // name, which is the convention `tokens-tab` ("Authorized clients" /
+        // "Personal access tokens") and `notifications-tab` ("Notifications" /
+        // "Inbox Notifications") already set.
+        title={t(($) => $.labels.section_title)}
         description={t(($) => $.labels.description)}
         extra={
-          <div className="flex flex-col items-end gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex flex-col items-end gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
             {/* The buttons keep their own row below `sm`. A single wrapping row
                 is what the first version used, and it cost the group its title:
                 a wrapping flex container's max-content contribution is the SUM
@@ -295,16 +309,22 @@ function LabelEditorDialog({
   const update = useUpdateLabel();
 
   /**
-   * A self-contained dialog: its values exist only while it is open and no
-   * server value can arrive late — the reference names that as the one place an
-   * antd `Form` belongs. It stays a controlled draft anyway, unchanged from
-   * before the migration: the reference's other condition is a *single* commit
-   * point, and this dialog has two — it creates or updates depending on the row
-   * it was opened from, and the payload differs between them.
+   * A controlled draft, reseeded from the row on open — the same state model as
+   * before the migration, kept because this migration is presentation only.
    *
-   * Seeding from the row is therefore still a `useEffect` on `[label, open]`.
-   * `editing` is a snapshot of the row the menu was opened on, not a live query
-   * value, so a refetch cannot reach in and overwrite typing.
+   * The reference's "a self-contained dialog is where an antd `Form` belongs"
+   * does describe this dialog: its values exist only while it is open (one
+   * commit point, Save) and no server value can arrive late. It stays a
+   * controlled draft because moving it into a `Form` store would replace the
+   * state model rather than the rendering — and because the draft has to be
+   * reseeded per row anyway, which is the thing a `Form` is worst at.
+   *
+   * The reseed is a `useEffect` on `[label, open]`, which is safe here for a
+   * reason specific to this dialog: `editing` is a snapshot of the row the menu
+   * was opened on, not a live query value, so a refetch cannot reach in and
+   * overwrite what is being typed. (That is not the
+   * `setFieldsValue`-from-a-fetch the reference warns about: this seeds from a
+   * snapshot taken at click time, not from data arriving.)
    */
   const [current, setCurrent] = useState<LabelDraft>(EMPTY_DRAFT);
 
@@ -353,7 +373,13 @@ function LabelEditorDialog({
 
   return (
     <Modal
-      destroyOnHidden
+      // No `destroyOnHidden`. base-ui's `Modal` destructures a fixed prop list
+      // and spreads no rest (`es/base-ui/Modal/Modal.mjs`), so the prop is a
+      // silent no-op even though `ModalComponentProps` declares it — the same
+      // shape as the `role`/`pickAttrs` trap. It would also be the wrong tool:
+      // it destroys the Modal's *children*, while the draft lives in
+      // `LabelEditorDialog`, outside the Modal. The `useEffect` below is what
+      // actually reseeds the draft.
       open={open}
       title={
         label

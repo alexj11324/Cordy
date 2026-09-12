@@ -697,6 +697,7 @@
   },
   "labels": {
     "title": "标签",
+    "section_title": "标签分类",
     "description": "分别管理工作区中用于整理任务和 skill 的标签。两类标签相互独立。",
     "scopes": {
       "issue": "任务",

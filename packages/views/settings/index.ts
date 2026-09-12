@@ -31,9 +31,12 @@ export type {
   SettingsFormRowProps,
   SettingsGroupProps,
 } from "./components/settings-shell";
-// The two controls that cannot be a bare Lobe component without losing either
-// an accessible name or the current entry point; each module's header says
-// which and why.
+// The four exports below are the ones that cannot be a bare Lobe component, for
+// two different reasons: `SettingsSwitch` and `SettingsSelect` lose the
+// accessible name (or the search and windowing) of the component that wraps
+// them, and `SettingsEmptyState` / `SettingsSearchBar` sit behind a deep import
+// because `Empty` and `SearchBar` are reachable only from the root barrel,
+// which is the ~11s import no tab may pay. Each module's header says which.
 export { SettingsSwitch } from "./components/settings-switch";
 export type { SettingsSwitchProps } from "./components/settings-switch";
 export { SettingsEmptyState } from "./components/settings-empty";

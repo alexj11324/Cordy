@@ -699,6 +699,7 @@
   },
   "labels": {
     "title": "Labels",
+    "section_title": "Label catalogs",
     "description": "Manage the separate label catalogs used to organize issues and skills in this workspace.",
     "scopes": {
       "issue": "Issues",

@@ -57,10 +57,15 @@ const LABEL = {
  * and it is scoped to the tab's group, which is the only handle that tells two
  * same-named rows on this page apart. See the test notes in
  * `reference-lobe-tab-migration.md` for why the group query is worth it.
+ *
+ * The name is the **section** title, not `page.tabs.labels`. The group used to
+ * carry `labels.title`, which is the same string the dialog header renders; the
+ * two being equal was the defect, so a scoping handle built on it would encode
+ * the bug into the suite.
  */
 async function renderTab() {
   renderWithI18n(<LabelsTab />, { lobe: true });
-  return within(await screen.findByRole("group", { name: "Labels" }));
+  return within(await screen.findByRole("group", { name: "Label catalogs" }));
 }
 
 describe("LabelsTab", () => {
@@ -91,13 +96,18 @@ describe("LabelsTab", () => {
   });
 
   /**
-   * The `action` regression. This tab's create control used to be handed to
-   * `SettingsTab`, whose nested branch returns before rendering `action` — so
-   * inside the settings dialog, the only surface this tab has, it did not
-   * exist. It lives on the group's `extra` now, and this asserts what the
-   * running renderer was measured to show: the control renders.
+   * Where the create control lives: inside the group, so that it renders
+   * wherever the group sits.
+   *
+   * **What this does not prove, and must not be read as proving.** It renders
+   * `<LabelsTab />` standalone, which never enters `SettingsDialogBody` — and
+   * the nested branch that *defined* the `action` defect is the one that branch
+   * guards. So this would have passed before the fix too. The in-dialog half is
+   * `zz-smoke.mjs`'s "the labels tab's page-level action renders inside the
+   * dialog", which walks the real dialog and fails when the control is removed;
+   * the renderer measurement is in the task 6 report.
    */
-  it("renders the create-label control", async () => {
+  it("puts the create-label control inside the group", async () => {
     const group = await renderTab();
 
     expect(
@@ -166,18 +176,24 @@ describe("LabelsTab", () => {
    * promise, and stays open when that promise rejects — so a delete that fails
    * must leave the confirmation up rather than dismiss as though the label were
    * gone. Two DOM-level spellings of this were tried and **both were vacuous**,
-   * verified by breaking the code they were meant to guard:
+   * verified by breaking the code they were meant to guard —
+   * `expect(screen.getByText("Delete label?")).toBeInTheDocument()` and
+   * `expect(screen.getByRole("dialog")).toHaveAttribute("data-open")` each
+   * stayed green with `onConfirm` swallowing the rejection.
    *
-   *   - `expect(screen.getByText("Delete label?")).toBeInTheDocument()` stayed
-   *     green with `onConfirm` swallowing the rejection — the popup node
-   *     outlives the close, so "the title is in the document" is true either
-   *     way. `tokens-tab.test.tsx` asserts exactly this and has the same hole.
-   *   - `expect(screen.getByRole("dialog")).toHaveAttribute("data-open")`, with
-   *     a settle delay first, also stayed green: under jsdom the exit never
-   *     completes, so the closing dialog keeps `data-open` forever.
+   * **The reason is a missing time window, not a node that never leaves.** This
+   * was first written the other way round here — "the popup outlives the close"
+   * / "the exit never completes under jsdom" — and both halves were wrong: they
+   * describe the instant the assertion happens to run at, not the behaviour. The
+   * closing dialog *is* still in the document (and still `data-open`) when the
+   * error toast is awaited, and it does leave once given a window; measured in
+   * `tokens-tab.test.tsx`, whose rethrow test now waits for exactly that reason.
+   * So a DOM spelling of this contract needs a window to mean anything, and even
+   * then it asserts a dismissal rather than the promise.
    *
    * What the promise did is only observable at the promise. `onOk` is the whole
-   * contract, so the test reads it off the config and awaits it.
+   * contract, so the test reads it off the config and awaits it — the same shape
+   * `tokens-tab.test.tsx` uses.
    */
   it("hands confirmModal an onOk that rejects when the request fails", async () => {
     const user = userEvent.setup();

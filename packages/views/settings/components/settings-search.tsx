@@ -17,13 +17,29 @@
  *
  * `label` is required and is the accessible name, the same
  * one-silent-default discipline as `SettingsSwitch` and `SettingsSelect`. Unlike
- * those two there is nothing to work around to make it land: `SearchBar`
- * renders antd's `Input` and hands it `...rest` **after** its own handlers
- * (`es/SearchBar/SearchBar.mjs`, the `jsx(Input, { … onPressEnter …, ...rest })`
- * call), so `aria-label` and `id` reach the real `<input>`. The three
- * accessibility traps this migration hit — base-ui `Switch` and `Select`
- * dropping `aria-label`, `role` filtered out of `Form.Group` — are all cases
- * where a prop stops at a container; this is the case where it does not.
+ * those two there is nothing to work around to make it land — but it is a
+ * **four-hop chain**, and the hop that would drop it is the last one, so it is
+ * worth naming rather than assuming:
+ *
+ * 1. `es/SearchBar/SearchBar.mjs` hands `...rest` to Lobe's `Input` **after** its
+ *    own handlers (`jsx(Input, { … onPressEnter …, ...rest })`), so a call
+ *    site's prop is not overwritten by `onChange`/`onFocus`.
+ * 2. `es/Input/Input.mjs` destructures `{ ref, variant, shadow, className,
+ *    ...rest }` and spreads `...rest` into antd's `Input`.
+ * 3. `antd/es/input/Input.js` spreads `...rest` into `rc-input`.
+ * 4. `rc-input/es/Input.js` builds `otherProps = omit(props, [...])` and puts it
+ *    on the real `<input>`. **This list is the one that matters** — a prop added
+ *    to it would stop the chain here without any error — and `aria-label` and
+ *    `id` are both absent from it.
+ *
+ * Measured end to end rather than inferred: the renderer's `<input>` carries
+ * `aria-label`, and `getByRole("textbox", { name })` resolves to exactly one
+ * node. That check is pinned in `zz-smoke.mjs` ("the catalog search box carries
+ * an accessible name"), which fails when the prop is removed.
+ *
+ * The three accessibility traps this migration hit — base-ui `Switch` and
+ * `Select` dropping `aria-label`, `role` filtered out of `Form.Group` — are all
+ * cases where a prop stops at a container; this is the case where it does not.
  *
  * `SearchBar` also renders a keyboard-shortcut badge and a spotlight overlay,
  * both off unless asked for, and turns on `allowClear`, which the old
