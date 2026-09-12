@@ -1,10 +1,9 @@
+import { Button } from "@lobehub/ui/base-ui";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
-import { useEffect, useRef } from "react";
 import { describe, expect, it } from "vitest";
 
 import { renderWithI18n } from "../../test/i18n";
 import {
-  type SettingsConfirmHandle,
   type SettingsConfirmOptions,
   useSettingsConfirm,
 } from "./settings-confirm";
@@ -21,28 +20,25 @@ function deferred() {
 
 /**
  * Stands in for a tab's row action: the trigger is a hook, so it has to be
- * driven from inside a component. The cleanup destroys whatever dialog it
- * opened — `confirmModal` keeps its stack at module level, so an entry left
- * open would render into the next test's tree.
+ * driven from inside a component.
+ *
+ * Note what this does *not* do: clean up the dialogs it opens. `confirmModal`
+ * keeps its stack at module level, so a dialog whose opener unmounts would
+ * render into the next test's tree — but the hook closes its own dialogs on
+ * unmount, so the tests below stay isolated without any help from here. Adding a
+ * cleanup would hide the bug that the hook's cleanup exists to prevent.
  */
 function ConfirmTrigger({
   onConfirm,
   ...options
 }: Partial<SettingsConfirmOptions> & { onConfirm: () => Promise<void> }) {
   const confirm = useSettingsConfirm();
-  const handle = useRef<SettingsConfirmHandle | null>(null);
-
-  useEffect(() => () => handle.current?.destroy(), []);
 
   return (
     <button
       type="button"
       onClick={() => {
-        handle.current = confirm({
-          title: "Confirm title",
-          onConfirm,
-          ...options,
-        });
+        confirm({ title: "Confirm title", onConfirm, ...options });
       }}
     >
       Open confirm
@@ -168,22 +164,37 @@ describe("useSettingsConfirm", () => {
 
   // `ModalConfirmConfig` has no destructive field; `okButtonProps` (and inside
   // it `danger`) is the only hook, and it is what gives the confirming button
-  // the red treatment the old `AlertDialogAction` had. Compared against the
-  // non-destructive tone rather than against a class name, which is hashed.
+  // the red treatment the old `AlertDialogAction` had.
+  //
+  // The oracle is a `<Button type="primary" danger>` rendered by the library
+  // itself, not a class name — antd-style hashes them — and not a comparison
+  // between the two tones, which "the tones are swapped" would satisfy just as
+  // well. Equality against the reference pins the direction.
   it("tones the confirming button destructively unless told otherwise", async () => {
     async function confirmingButtonClass(tone: "default" | "destructive") {
       const { unmount } = renderWithI18n(
-        <ConfirmTrigger tone={tone} onConfirm={async () => {}} />,
+        <>
+          <ConfirmTrigger tone={tone} onConfirm={async () => {}} />
+          <Button type="primary" danger>
+            Danger reference
+          </Button>
+        </>,
         { lobe: true },
       );
+
+      const reference = await screen.findByRole("button", {
+        name: "Danger reference",
+      });
       const okButton = await openConfirm();
-      const className = okButton.className;
+      const classes = { ok: okButton.className, reference: reference.className };
       unmount();
-      return className;
+      return classes;
     }
 
-    expect(await confirmingButtonClass("destructive")).not.toBe(
-      await confirmingButtonClass("default"),
-    );
+    const destructive = await confirmingButtonClass("destructive");
+    expect(destructive.ok).toBe(destructive.reference);
+
+    const plain = await confirmingButtonClass("default");
+    expect(plain.ok).not.toBe(plain.reference);
   });
 });

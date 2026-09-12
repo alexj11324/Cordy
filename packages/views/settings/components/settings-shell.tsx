@@ -37,12 +37,14 @@
  * file (7.6-8.4s of that import) against 1.30s / 1.28s / 1.27s for this one.
  * The package declares `"./es/*"` in its exports map, so the deep path is a
  * supported subpath, and it resolves to the same module the root re-exports —
- * identity confirmed by execution, not assumed. That check is not kept here:
- * importing the root to compare against costs 18s in the suite that renders
- * this module, which is the fan-out cost re-created inside a test. The cheap
- * equivalent lives in `lobe/lobe-theme-bridge.test.tsx`
- * (`expect(DeepModalHost).toBe(BarrelModalHost)`), in a suite that imports the
- * barrel regardless.
+ * confirmed by execution, not assumed. That check is not kept here: importing
+ * the root to compare against costs 18s in the suite that renders this module,
+ * which is the fan-out cost re-created inside a test. What
+ * `lobe/lobe-theme-bridge.test.tsx` asserts cheaply is the weaker but still
+ * load-bearing half: this package resolves to a *single instance* across a
+ * barrel and a deep path (`expect(DeepModalHost).toBe(BarrelModalHost)`). It
+ * compares a different module, so it does not by itself prove the two `Form`
+ * specifiers agree; it does prove the resolution guarantee they both rely on.
  *
  * The exception stops here. A tab importing a Lobe component directly uses the
  * barrel — the point of this shell is that tabs mostly will not need to.

@@ -1,4 +1,6 @@
+import Form from "@lobehub/ui/es/Form/index";
 import { screen } from "@testing-library/react";
+import type { ReactElement } from "react";
 import { describe, expect, it } from "vitest";
 
 import { renderWithI18n } from "../../test/i18n";
@@ -13,10 +15,12 @@ import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 // that cannot see the `Form` around it. That was verified by execution rather
 // than kept as an assertion here: importing the root into this file to compare
 // them costs 18s (3.07s → 21.30s, `tests` alone 1.41s → 11.12s), which is the
-// fan-out cost this module exists to avoid, re-created inside a test. The
-// cheap equivalent already exists: `lobe/lobe-theme-bridge.test.tsx` asserts
-// `expect(DeepModalHost).toBe(BarrelModalHost)` in a suite that imports the
-// barrel anyway, covering the same deep-vs-barrel resolution for this package.
+// fan-out cost this module exists to avoid, re-created inside a test. What is
+// kept, in `lobe/lobe-theme-bridge.test.tsx`, is the weaker but still
+// load-bearing half: `expect(DeepModalHost).toBe(BarrelModalHost)` proves this
+// package resolves to a single instance across a barrel and a deep path. It
+// compares a different module, so it does not by itself prove the two `Form`
+// specifiers agree — only the resolution guarantee behind them.
 
 describe("SettingsGroup", () => {
   it("renders the section header, its action and its rows", async () => {
@@ -52,6 +56,44 @@ describe("SettingsGroup", () => {
 
     expect(await screen.findByText("Appearance")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Appearance" })).toBeNull();
+  });
+
+  // `variant` decides the card's chrome, and it reaches us through a prop this
+  // wrapper forwards. The oracle is a raw `Form.Group` rendered by the library
+  // with the same props, because the variant only shows up in antd-style's
+  // hashed class names — a comparison between our own two variants would pass
+  // just as well with the default flipped to `borderless`.
+  it("defaults to the outlined variant and forwards borderless", async () => {
+    async function groupHtml(node: ReactElement): Promise<string> {
+      const { container, unmount } = renderWithI18n(node, { lobe: true });
+      // Waits out the on-demand bridge load before reading the tree.
+      await screen.findByText("Appearance");
+      const html =
+        container.querySelector('[class*="ant-collapse"]')?.outerHTML ?? "";
+      unmount();
+      // antd mints a fresh `css-var-_r_N_` scope class per mount, so two
+      // structurally identical trees never compare equal verbatim.
+      return html.replaceAll(/css-var-[\w-]+/g, "css-var-*");
+    }
+
+    const children = <div>Row body</div>;
+    const outlined = await groupHtml(
+      <SettingsGroup title="Appearance">{children}</SettingsGroup>,
+    );
+    const borderless = await groupHtml(
+      <SettingsGroup title="Appearance" variant="borderless">
+        {children}
+      </SettingsGroup>,
+    );
+    const rawOutlined = await groupHtml(
+      <Form.Group collapsible={false} title="Appearance" variant="outlined">
+        {children}
+      </Form.Group>,
+    );
+
+    expect(outlined).not.toBe("");
+    expect(outlined).not.toBe(borderless);
+    expect(outlined).toBe(rawOutlined);
   });
 });
 

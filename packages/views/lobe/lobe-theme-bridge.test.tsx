@@ -122,6 +122,39 @@ describe("LobeThemeBridge", () => {
   // over the chat page. Both hosts read the same module-level stack, so a
   // second host would paint a second copy of every dialog — and in a dev build
   // it throws before that (`base-ui`'s modal host is a dev-mode singleton).
+  // The takeover branch is the reason the claim effect carries `currentOwner`
+  // in its dependencies. Without it the claim is never re-taken, the slot stays
+  // empty for the surviving bridge, and `confirmModal` goes back to being the
+  // silent no-op the host exists to prevent — a failure that shows up only when
+  // one surface closes while another is open.
+  it("hands the host over when the owning bridge unmounts", () => {
+    const { rerender } = render(
+      <>
+        <LobeThemeBridge key="first">
+          <div>First bridge</div>
+        </LobeThemeBridge>
+        <LobeThemeBridge key="second">
+          <div>Second bridge</div>
+        </LobeThemeBridge>
+      </>,
+    );
+
+    // Effects run in tree order, so "first" holds the claim at this point.
+    // Dropping it leaves "second" as the only live bridge.
+    rerender(
+      <LobeThemeBridge key="second">
+        <div>Second bridge</div>
+      </LobeThemeBridge>,
+    );
+
+    expect(screen.queryByText("First bridge")).toBeNull();
+    expect(screen.getByText("Second bridge")).toBeTruthy();
+
+    openConfirmation("Delete workspace?");
+
+    expect(screen.getAllByText("Delete workspace?")).toHaveLength(1);
+  });
+
   it("renders one dialog when two bridges are mounted", () => {
     render(
       <>

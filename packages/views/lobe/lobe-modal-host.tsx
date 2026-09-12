@@ -76,10 +76,12 @@ export function LobeModalHost() {
   const currentOwner = useSyncExternalStore(subscribe, getOwner, getOwner);
 
   // The claim is gated on module state rather than on `currentOwner`, and it
-  // re-runs whenever a different bridge takes over. Reading the snapshot here
-  // instead would strand the slot: StrictMode runs this effect, cleans it up,
-  // then runs it again, and by the second run the snapshot still names us even
-  // though the cleanup already gave the claim back.
+  // re-runs whenever a different bridge takes over. Gating it on the snapshot
+  // would make correctness depend on React's replay flush order: StrictMode
+  // tears this effect down and replays it, and whether the replayed closure
+  // still sees the claim it just released is an implementation detail of the
+  // replay rather than something this component controls. Module state is true
+  // whenever the replay happens to read it.
   useEffect(() => {
     claim(id);
   }, [currentOwner, id]);

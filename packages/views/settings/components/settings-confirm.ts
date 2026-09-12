@@ -28,12 +28,16 @@
  *   the project's state rules forbid on destructive flows. So `onConfirm` is
  *   typed to return `Promise<void>`, and a non-promise return at runtime is
  *   turned into a throw, which the library catches as "keep the dialog open".
- *   Rejections from `onConfirm` propagate untouched — do not catch inside it;
- *   surface the failure in the caller (a toast) and rethrow.
+ *
+ *   What that covers is the *shape* of the return. The other way to lose the
+ *   contract — catching inside `onConfirm` so the promise resolves on failure —
+ *   cannot be prevented by any code here: a swallowed failure and a success are
+ *   indistinguishable from the outside. It is prevented by this paragraph. Let
+ *   the rejection out and surface it in the caller (a toast) instead.
  */
 
 import { confirmModal, type ModalConfirmConfig } from "@lobehub/ui/base-ui";
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import { useT } from "../../i18n";
@@ -87,6 +91,26 @@ export function useSettingsConfirm(): (
   options: SettingsConfirmOptions,
 ) => SettingsConfirmHandle {
   const { t } = useT("settings");
+  const opened = useRef<Set<SettingsConfirmHandle>>(new Set());
+
+  // `confirmModal`'s stack is module state that outlives this component. A
+  // dialog still open when its opener unmounts — the user navigates away, a tab
+  // is swapped — would stay in that stack, and whichever host mounts next
+  // renders it again: a dialog nobody owns, dismissing nothing. Closing the
+  // hook's dialogs on unmount is not something a call site can be asked to
+  // remember, so it happens here.
+  //
+  // Handles are never removed from the set: `destroy()` is idempotent (the
+  // library filters the stack and returns early when there is nothing to
+  // remove), so calling it on an already-closed dialog is a safe no-op, and the
+  // set can only grow to the number of dialogs one hook instance opened.
+  useEffect(
+    () => () => {
+      for (const handle of opened.current) handle.destroy();
+      opened.current.clear();
+    },
+    [],
+  );
 
   return useCallback(
     ({
@@ -109,7 +133,9 @@ export function useSettingsConfirm(): (
           return result;
         },
       };
-      return confirmModal(config);
+      const handle = confirmModal(config);
+      opened.current.add(handle);
+      return handle;
     },
     [t],
   );
