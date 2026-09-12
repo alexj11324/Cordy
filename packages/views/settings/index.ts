@@ -38,6 +38,8 @@ export { SettingsSwitch } from "./components/settings-switch";
 export type { SettingsSwitchProps } from "./components/settings-switch";
 export { SettingsEmptyState } from "./components/settings-empty";
 export type { SettingsEmptyStateProps } from "./components/settings-empty";
+export { SettingsSearchBar } from "./components/settings-search";
+export type { SettingsSearchBarProps } from "./components/settings-search";
 export { SettingsSelect } from "./components/settings-select";
 export type {
   SettingsSelectOption,
