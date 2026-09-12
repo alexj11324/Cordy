@@ -34,7 +34,7 @@ export function IssueTab() {
     toast.success(t(($) => $.auto_save.toast_saved), { id: "settings-auto-save" });
 
   return (
-    <>
+    <div className="space-y-8">
       <SettingsGroup
         title={t(($) => $.issue.quick_create_title)}
         description={t(($) => $.issue.quick_create_description)}
@@ -70,6 +70,6 @@ export function IssueTab() {
           </SettingsFormRow>
         ))}
       </SettingsGroup>
-    </>
+    </div>
   );
 }

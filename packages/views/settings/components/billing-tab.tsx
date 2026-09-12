@@ -40,7 +40,6 @@ import {
 import { useLocale, useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 import { openExternal } from "../../platform";
-import { useSettingsConfirm } from "./settings-confirm";
 import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 import {
   hasActiveWorkspaceSeatCapacity,
@@ -151,15 +150,40 @@ function statusBadgeVariant(
  * this file does own render in the `extra`-less body: the upgrade CTA and the
  * seat-purchase CTA are group content, not a section `action`.)
  *
- * **The seat purchase is a `Modal`; the Checkout confirmation is the page's
- * `useSettingsConfirm`.** The confirmation's *cancel* is product behaviour, not
- * decoration: it releases the idempotency intent so an attempt the user backed
- * out of is not replayed by the next one, while an ambiguous failure
- * deliberately keeps the key. That side effect is why the wrapper grew an
- * optional `onCancel` rather than this file keeping a `Modal` of its own —
- * one channel for confirmations, so the tone, the button copy and the promise
- * contract are decided in one place. See `openCheckoutConfirm` for the one
- * contract this call site does not use.
+ * **The Checkout confirmation is a controlled `Modal`, not
+ * `useSettingsConfirm`.** Its dismissal has a side effect on *every* exit the
+ * user can take: the idempotency intent is released, so an attempt the user
+ * backed out of is not replayed by the next one. (The programmatic close after
+ * a Checkout outcome is the deliberate exception — an ambiguous failure keeps
+ * the key so the retry replays the same Session.) `confirmModal` cannot see
+ * every exit — its `onCancel`, and the wrapper's, fire for the Cancel button
+ * alone, and Escape goes through `StackItem`'s `handleOpenChange`, which never
+ * reads that config — so routing this dialog through the shared channel
+ * narrowed a four-path release to one and made the next Upgrade replay the
+ * abandoned Stripe Session. See `handleCheckoutConfirmOpenChange`. The
+ * seat-purchase dialog above is also a `Modal`, for the ordinary reason: it
+ * collects input.
+ *
+ * **Every branch is `space-y-8`.** `SettingsTab`'s nested branch wrapped the
+ * children it was given in `space-y-12`, and dropping `SettingsTab` left the
+ * lede, the banners and the five groups with no separation at all — the tab
+ * body sets `gap: 0` and neither Lobe's `Alert` nor `Form.Group` carries a
+ * margin of its own. `space-y-8` is what every other migrated tab uses (lark,
+ * wecom, telegram, slack, weixin, dingtalk, integrations), so the four tabs that
+ * lost this spacing are restored to that value rather than to a new one.
+ *
+ * **Four buttons are `size="small"` and stay that way.** F5 asked for the
+ * default `middle` on this tab's buttons, and its stated reason was alignment
+ * beside a 32px `Select`; none of these four sits next to one. They are icon-led
+ * refresh controls (`prices`, automation quota, seat summary, seat purchase)
+ * living in an `Alert` action slot or beside `text-caption` copy, where
+ * `middle` would outweigh the text they belong to.
+ *
+ * The loading branch's `workspace.loading` title is **newly visible**: the
+ * pre-migration loading state used `SettingsCard`, which had no title, so
+ * "Loading workspace billing" / "正在加载工作区账单" now appears where nothing
+ * did. It is a different key with a different value from `page.tabs.billing` in
+ * both locales, so it is not the page title repeated.
  *
  * `Badge` and `Progress` stay shadcn. `Progress` is decision 7; `Badge` is a
  * sanctioned exemption — the migration reference records that Lobe has no
@@ -249,7 +273,7 @@ function BillingTabContent() {
     attempts: number;
   } | null>(null);
   const consumedCallbackKeyRef = useRef<string | null>(null);
-  const confirm = useSettingsConfirm();
+  const [checkoutConfirmOpen, setCheckoutConfirmOpen] = useState(false);
 
   useEffect(() => {
     checkoutIntentRef.current = null;
@@ -580,11 +604,21 @@ function BillingTabContent() {
         idempotencyKey: intent.key,
       });
       if (!response?.url) {
+        setCheckoutConfirmOpen(false);
         setActionError(t(($) => $.workspace.errors.checkout_response));
         return;
       }
+      setCheckoutConfirmOpen(false);
       openExternal(response.url, { webTarget: "same-tab" });
     } catch (error) {
+      // Closed programmatically rather than through `onOpenChange`, and the two
+      // are not interchangeable: this path **keeps** the idempotency intent, so
+      // an ambiguous failure retries the same Stripe Session instead of opening
+      // a second one. Only a dismissal the user asked for — Cancel or Escape —
+      // releases it. That is what the suite pins in "reuses the Checkout
+      // idempotency key after an ambiguous failure" against "starts a new
+      // Checkout intent after explicit cancellation".
+      setCheckoutConfirmOpen(false);
       if (error instanceof ApiError && error.status === 409) {
         checkoutIntentRef.current = null;
         setActionError(t(($) => $.workspace.errors.already_subscribed));
@@ -596,38 +630,41 @@ function BillingTabContent() {
   };
 
   /**
-   * The Checkout confirmation goes through `useSettingsConfirm` — the page's
-   * one channel for confirmations — rather than a `Modal` of its own. What this
-   * call site needs from that channel is `onCancel`: backing out releases the
-   * idempotency intent, so an attempt the user abandoned is not replayed by the
-   * next one. The wrapper forwards that hook to `confirmModal`, which has
-   * always accepted it (`Modal/imperative.mjs`, `ConfirmBody`'s `handleCancel`).
+   * The Checkout confirmation is a controlled `Modal`, **not**
+   * `useSettingsConfirm`. This is the second answer to that question, and the
+   * reason the first one was wrong is worth keeping.
    *
-   * `onConfirm` resolves rather than rejecting when Checkout fails. The failure
-   * is surfaced by the panel's action-error alert, and the dialog closes so the
-   * user retries from the same call to action — the sequence the suite pins in
-   * "reuses the Checkout idempotency key after an ambiguous failure". This is
-   * the one call site that does not use the wrapper's reject-to-stay-open
-   * contract, and it does so deliberately.
+   * The `AlertDialog` this replaces released the idempotency intent on *every*
+   * dismissal — `onOpenChange` fires for the Cancel button, Escape, the X and a
+   * backdrop press alike — so an attempt the user deliberately abandoned is not
+   * replayed by the next one. `confirmModal` cannot express that, and it cannot
+   * be extended to: `ModalConfirmConfig` has no `onOpenChange` field, and the
+   * three non-button exits go through `StackItem.handleOpenChange`, which closes
+   * the stack entry without ever reading `config.onCancel`. The wrapper's
+   * `onCancel` — and `confirmModal`'s own — fire for the **Cancel button
+   * alone**. Routing this dialog through the shared channel narrowed a
+   * four-path release to one: pressing Escape, then Upgrade again, replayed the
+   * abandoned Stripe Session.
+   *
+   * So the one-channel rule loses here, by name rather than silently. A
+   * confirmation whose dismissal has a side effect on *every* exit needs a
+   * channel that can see every exit; a future call site with an exit-dependent
+   * side effect should read this paragraph rather than repeat the mistake.
+   * `maskClosable={false}` keeps the outside press inert the way the alert
+   * dialog's was and `closable={false}` removes the X, so the two remaining
+   * exits — Escape and Cancel — both land in `onCancel`.
+   *
+   * `handleCheckout` resolves rather than rejecting when Checkout fails. The
+   * failure is surfaced by the panel's action-error alert, and the dialog closes
+   * so the user retries from the same call to action — the sequence the suite
+   * pins in "reuses the Checkout idempotency key after an ambiguous failure".
+   * That is what the wrapper's reject-to-stay-open contract exists to prevent,
+   * and it is the other reason this dialog does not use the wrapper.
    */
-  const openCheckoutConfirm = () =>
-    confirm({
-      title: t(($) => $.workspace.confirm.title),
-      description: t(($) => $.workspace.confirm.description, {
-        interval:
-          interval === "month"
-            ? t(($) => $.workspace.upgrade.monthly)
-            : t(($) => $.workspace.upgrade.yearly),
-        count: actualSeats,
-      }),
-      confirmLabel: t(($) => $.workspace.actions.continue_to_stripe),
-      cancelLabel: t(($) => $.workspace.actions.cancel),
-      tone: "default",
-      onCancel: () => {
-        checkoutIntentRef.current = null;
-      },
-      onConfirm: handleCheckout,
-    });
+  const handleCheckoutConfirmOpenChange = (open: boolean) => {
+    setCheckoutConfirmOpen(open);
+    if (!open) checkoutIntentRef.current = null;
+  };
 
   const handlePortal = async () => {
     setActionError(null);
@@ -771,18 +808,17 @@ function BillingTabContent() {
     setSeatPreview(null);
   };
 
-  // The panel's own description, which `SettingsTab` used to render above the
-  // content of every branch below. The dialog's `DialogHeader` does not supply
-  // one (`tabDescription("billing")` is empty), so the tab keeps it, and it
-  // describes the panel rather than one group — which is why it sits above
-  // whatever the panel turns out to be, the loading and failure states
-  // included, exactly where `SettingsTab` put it.
+  // The panel's own description. `SettingsTab` accepted a `description` prop
+  // but never rendered it inside the dialog — its nested branch returns
+  // `children` and nothing else — so before this migration the sentence was not
+  // on screen at all, on any branch. Moving it inline (see the header note) put
+  // it on the panel, and it describes the panel rather than any one group, so
+  // all three branches below render it. Restricting it to the loaded one would
+  // make the sentence appear and disappear as the summary resolved.
   //
-  // It is hoisted here because nothing asserted it outside the loaded panel:
-  // dropping it from the other two branches left every suite green, and only
-  // the renderer pass — run in an environment whose cloud runtime is
-  // unconfigured, so the failure branch is the one that renders — showed the
-  // description had gone missing.
+  // Nothing asserted it outside the loaded panel, which is why that restriction
+  // cost no test: the renderer pass is what showed the loading and failure
+  // states rendering a panel with no description.
   const lede = (
     <p className="text-body text-muted-foreground">
       {t(($) => $.workspace.description)}
@@ -791,7 +827,7 @@ function BillingTabContent() {
 
   if (summaryQuery.isPending) {
     return (
-      <>
+      <div className="space-y-8">
         {lede}
         <SettingsGroup title={t(($) => $.workspace.loading)}>
           <div
@@ -804,7 +840,7 @@ function BillingTabContent() {
             <Skeleton className="h-4 w-2/3" />
           </div>
         </SettingsGroup>
-      </>
+      </div>
     );
   }
 
@@ -814,7 +850,7 @@ function BillingTabContent() {
     // the page title (see the note above) and `load_failed.title` is already
     // the alert's own.
     return (
-      <>
+      <div className="space-y-8">
         {lede}
         <Alert
           type="error"
@@ -831,7 +867,7 @@ function BillingTabContent() {
             </Button>
           }
         />
-      </>
+      </div>
     );
   }
 
@@ -905,7 +941,7 @@ function BillingTabContent() {
     : null;
 
   return (
-    <>
+    <div className="space-y-8">
       {lede}
 
       {returnResult === "cancel" ? (
@@ -1198,7 +1234,7 @@ function BillingTabContent() {
               type="primary"
               icon={CreditCard}
               disabled={isMutating}
-              onClick={openCheckoutConfirm}
+              onClick={() => handleCheckoutConfirmOpenChange(true)}
             >
               {t(($) => $.workspace.actions.upgrade)}
             </Button>
@@ -1679,6 +1715,44 @@ function BillingTabContent() {
         </div>
       </Modal>
 
-    </>
+      <Modal
+        open={checkoutConfirmOpen}
+        title={t(($) => $.workspace.confirm.title)}
+        width={512}
+        closable={false}
+        maskClosable={false}
+        onCancel={() => handleCheckoutConfirmOpenChange(false)}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="fill"
+              disabled={checkoutMutation.isPending}
+              onClick={() => handleCheckoutConfirmOpenChange(false)}
+            >
+              {t(($) => $.workspace.actions.cancel)}
+            </Button>
+            <Button
+              type="primary"
+              icon={ExternalLink}
+              loading={checkoutMutation.isPending}
+              disabled={checkoutMutation.isPending}
+              onClick={() => void handleCheckout()}
+            >
+              {t(($) => $.workspace.actions.continue_to_stripe)}
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-body text-muted-foreground">
+          {t(($) => $.workspace.confirm.description, {
+            interval:
+              interval === "month"
+                ? t(($) => $.workspace.upgrade.monthly)
+                : t(($) => $.workspace.upgrade.yearly),
+            count: actualSeats,
+          })}
+        </p>
+      </Modal>
+    </div>
   );
 }

@@ -67,7 +67,7 @@ export function NotificationsTab() {
   const systemEnabled = preferences.system_notifications !== "muted";
 
   return (
-    <>
+    <div className="space-y-8">
       <SettingsGroup
         title={t(($) => $.notifications.title)}
         description={t(($) => $.notifications.description)}
@@ -112,6 +112,6 @@ export function NotificationsTab() {
             desktop (OS-native delivery) or where the Notification API is absent. */}
         <BrowserNotificationSetting />
       </SettingsGroup>
-    </>
+    </div>
   );
 }

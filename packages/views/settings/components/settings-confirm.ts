@@ -52,20 +52,22 @@ export interface SettingsConfirmOptions {
    * Runs when the dialog is dismissed **by its Cancel button**, before it
    * closes. Optional, and omitted by every call site that has nothing to undo.
    *
-   * It exists because a dismissal can have a side effect that is not cleanup:
-   * `billing-tab`'s Checkout confirmation releases a Stripe idempotency intent
-   * here, so that backing out and trying again starts a new session instead of
-   * replaying the one the user abandoned. Without this hook that tab had to
-   * keep a raw `Modal` of its own, which is the thing this wrapper exists to
-   * prevent — a second channel where the tone, the button copy and the promise
-   * contract are decided again, and can be decided differently.
+   * **It fires for Cancel alone, and that is too narrow for most side effects.**
+   * The library's other dismissal paths — the header's close control, Escape, a
+   * click outside — go through `StackItem`'s `handleOpenChange`, which closes
+   * the stack entry without consulting `config.onCancel`
+   * (`Modal/imperative.mjs`), and `ModalConfirmConfig` has no `onOpenChange`
+   * field that could cover them instead. So a hook here sees one exit out of
+   * four, and a call site must not read it as "every dismissal".
    *
-   * **It fires for Cancel only.** The library's own dismissal paths — the
-   * header's close control, Escape, a click outside — go through
-   * `StackItem`'s `handleOpenChange`, which closes the stack entry without
-   * consulting `config.onCancel` (`Modal/imperative.mjs`). That asymmetry is
-   * the library's, not this wrapper's; a call site whose side effect must be
-   * unavoidable has to say so rather than assume this covers every exit.
+   * That is exactly why `billing-tab`'s Checkout confirmation does **not** use
+   * this wrapper: its dismissal releases a Stripe idempotency intent on every
+   * exit, and a hook that fires for one of four would let Escape-then-retry
+   * replay the session the user walked away from. That call site keeps a
+   * controlled `Modal`, which sees all of them. `onCancel` is kept for the
+   * narrower case it does cover — a side effect that belongs to backing out
+   * specifically, where the other exits are meant to leave it alone — and it
+   * has no call site today.
    */
   onCancel?: () => void;
   /**

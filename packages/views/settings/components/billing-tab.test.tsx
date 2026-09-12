@@ -661,6 +661,41 @@ describe("BillingTab", () => {
     );
   });
 
+  it("starts a new Checkout intent after the confirmation is dismissed with Escape", async () => {
+    const user = userEvent.setup();
+    mocks.checkout
+      .mockRejectedValueOnce(new Error("network lost after submit"))
+      .mockResolvedValueOnce({
+        requestId: "request-3",
+        sessionId: "cs_test_3",
+        url: "https://checkout.stripe.com/test-session-3",
+      });
+    renderTab();
+
+    await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
+    await user.click(screen.getByRole("button", { name: "Continue to Stripe" }));
+    await screen.findByText("Billing action failed");
+    // The failed attempt closed the dialog but kept the intent, so the Escape
+    // below is the only thing that can release it.
+    await waitForModalToLeave("Continue to Stripe Checkout?");
+
+    // Escape is the exit the shared confirm wrapper cannot see: it arrives
+    // through the modal's own `onOpenChange`, never through an `onCancel` prop.
+    // It has to release the intent exactly as Cancel does, or the next Upgrade
+    // replays the Stripe Session the user walked away from.
+    await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
+    await user.keyboard("{Escape}");
+    await waitForModalToLeave("Continue to Stripe Checkout?");
+
+    await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
+    await user.click(screen.getByRole("button", { name: "Continue to Stripe" }));
+
+    await waitFor(() => expect(mocks.checkout).toHaveBeenCalledTimes(2));
+    expect(mocks.checkout.mock.calls[1]?.[0].idempotencyKey).not.toBe(
+      mocks.checkout.mock.calls[0]?.[0].idempotencyKey,
+    );
+  });
+
   it.each([
     [503, "Billing is temporarily unavailable. Retry in a moment."],
     [

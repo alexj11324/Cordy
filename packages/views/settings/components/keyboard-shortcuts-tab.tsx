@@ -164,7 +164,7 @@ export function KeyboardShortcutsTab() {
   };
 
   return (
-    <>
+    <div className="space-y-8">
       <SettingsGroup
         variant="borderless"
         extra={
@@ -239,7 +239,7 @@ export function KeyboardShortcutsTab() {
         <FixedShortcutRow label={t(($) => $.shortcuts.fixed.reset_zoom)} shortcut={createShortcutChord("0", { primary: true })} />
         <FixedShortcutRow label={t(($) => $.shortcuts.fixed.close_dialog)} shortcut={createShortcutChord("Escape")} />
       </SettingsGroup>
-    </>
+    </div>
   );
 }
 
