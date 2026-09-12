@@ -32,7 +32,7 @@ import { githubShortLabel, repositoryIdentity } from "../../common/github-url";
 export { repositoryIdentity } from "../../common/github-url";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
-import { SettingsSaveState } from "./settings-layout";
+import { SettingsSaveState } from "./settings-save-state";
 import { useSettingsConfirm } from "./settings-confirm";
 import { SettingsEmptyState } from "./settings-empty";
 import { SettingsSearchBar } from "./settings-search";

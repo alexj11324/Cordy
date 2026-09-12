@@ -11,17 +11,17 @@ export {
   SettingsListRow,
   SettingsPillButton,
   SettingsRow,
-  SettingsSaveState,
   SettingsSearchField,
   SettingsSection,
   SettingsSelectTrigger,
   SettingsTab,
   SettingsTextarea,
 } from "./components/settings-layout";
-export type {
-  SettingsControlSize,
-  SettingsSaveStatus,
-} from "./components/settings-layout";
+export type { SettingsControlSize } from "./components/settings-layout";
+// Moved out of `settings-layout` ahead of its deletion: three live tabs still
+// render the save-state atom, and the status contract never belonged there.
+export { SettingsSaveState } from "./components/settings-save-state";
+export type { SettingsSaveStatus } from "./components/settings-save-status";
 // The Lobe replacements, published here because the tab migrations live inside
 // this package but the desktop tabs reach them through this barrel. The shell's
 // row is `SettingsFormRow`, not `SettingsField`/`SettingsRow`: those names still

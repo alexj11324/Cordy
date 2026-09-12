@@ -9,17 +9,11 @@ import {
   type ReactNode,
   type TextareaHTMLAttributes,
 } from "react";
-import { AlertCircle, Check, Loader2, Search, type LucideIcon } from "lucide-react";
+import { Search, type LucideIcon } from "lucide-react";
 import { Input } from "@orvilo/ui/components/ui/input";
 import { SelectTrigger } from "@orvilo/ui/components/ui/select";
 import { Textarea } from "@orvilo/ui/components/ui/textarea";
 import { cn } from "@orvilo/ui/lib/utils";
-import type { SettingsSaveStatus } from "./settings-save-status";
-
-// Re-exported rather than defined here: `use-auto-save` owns this lifecycle and
-// has to be able to name it without importing this module's components. It
-// keeps flowing out of here for as long as the atom layer has consumers.
-export type { SettingsSaveStatus };
 
 /**
  * Transparent field chrome for stacked settings rows that edit in place.
@@ -408,49 +402,5 @@ export function SettingsSearchField({
         className={cn(SETTINGS_CONTROL_CLASS, "pl-9")}
       />
     </div>
-  );
-}
-
-export function SettingsSaveState({
-  status,
-  savingLabel,
-  savedLabel,
-  errorLabel,
-}: {
-  status: SettingsSaveStatus;
-  savingLabel: string;
-  savedLabel: string;
-  errorLabel: string;
-}) {
-  if (status === "idle") return null;
-
-  const content =
-    status === "saving" ? (
-      <>
-        <Loader2 className="size-3 animate-spin" />
-        {savingLabel}
-      </>
-    ) : status === "saved" ? (
-      <>
-        <Check className="size-3 text-success" />
-        {savedLabel}
-      </>
-    ) : (
-      <>
-        <AlertCircle className="size-3 text-destructive" />
-        {errorLabel}
-      </>
-    );
-
-  return (
-    <span
-      role="status"
-      className={cn(
-        "inline-flex items-center gap-1.5 text-caption text-muted-foreground",
-        status === "error" && "text-destructive",
-      )}
-    >
-      {content}
-    </span>
   );
 }

@@ -19,7 +19,7 @@ import { useLocaleAdapter } from "@orvilo/core/i18n/react";
 import type { User, UserProfileDetails } from "@orvilo/core/types";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useT } from "../../i18n";
-import { SettingsSaveState } from "./settings-layout";
+import { SettingsSaveState } from "./settings-save-state";
 import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 import { SettingsSelect } from "./settings-select";
 import { useAutoSave } from "./use-auto-save";
