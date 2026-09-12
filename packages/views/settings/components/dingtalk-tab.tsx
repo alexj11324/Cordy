@@ -5,8 +5,34 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 import { toast } from "sonner";
 import { ChevronDown, ChevronRight, ExternalLink, Info, Trash2 } from "lucide-react";
 import { cn } from "@orvilo/ui/lib/utils";
+// Two design systems in one file, split by *surface* rather than by component,
+// and the split is wider here than in the other channel tabs.
+//
+// `DingTalkTab` is Lobe. It is rendered only from `./integrations-tab`'s channel
+// dialog (`managedContent`), and that component has exactly two importers:
+//   settings-page.tsx        — inside <LobeThemeBridge> at its root
+//   integrations/index.tsx   — WorkspaceIntegrationsPage (the Web
+//                              `/integrations` route), bridged since b8a78232
+// Both are bridged, so every surface that can reach `DingTalkTab` is.
+//
+// Everything else this file exports is reachable from the **agent detail
+// page**, which has no bridge: `packages/views/agents/**` contains no
+// `@lobehub/ui` import at all. `agents/components/tabs/integrations-tab.tsx`
+// renders `DingTalkAgentBindButton` (:352), `DingTalkBotGroups` (:201, :371),
+// `DingTalkConnectionLabel` (:189, :333) and reads `getDingTalkBotIdentity`
+// (:137). Lobe's `Button` and `Modal` call `useMotionComponent()` and throw
+// `Please wrap your app with <ConfigProvider> (or <MotionProvider>)` without a
+// bridge — measured, not assumed — so those exports keep the shadcn primitives
+// until their own surface is bridged (Task 10). The alias below is what keeps
+// the two apart at the call sites.
+//
+// **`DingTalkBotGroups` straddles both**, and that is the one non-obvious call
+// in this file: the migrated `InstallationRow` renders it *and* the unbridged
+// agent pane does, so it can only satisfy the stronger host and stays shadcn.
+// The consequence is recorded rather than resolved: the migrated settings panel
+// contains one shadcn block, exactly as `weixin-tab`'s install dialog does.
+import { Button as LobeButton } from "@lobehub/ui/base-ui";
 import { Button } from "@orvilo/ui/components/ui/button";
-import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +40,9 @@ import {
   DialogTitle,
 } from "@orvilo/ui/components/ui/dialog";
 import { CredentialFieldForm } from "./credential-field-form";
+import { SettingsEmptyState } from "./settings-empty";
+import { useSettingsConfirm } from "./settings-confirm";
+import { SettingsGroup } from "./settings-shell";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -562,25 +591,39 @@ export function DingTalkTab() {
   const showGroupDiscovery =
     groupDiscoverySupported || groupsLoading || groupsError;
 
-  const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
-  const [disconnecting, setDisconnecting] = useState(false);
+  // The `disconnectTarget` / `disconnecting` pair of `useState`s is gone with
+  // the `AlertDialog`: the imperative confirm owns the open state and the
+  // in-flight spinner, so the row hands its installation id straight through.
+  const confirm = useSettingsConfirm();
 
-  async function handleDisconnect() {
-    if (!setupWritable || !disconnectTarget || disconnecting) return;
-    setDisconnecting(true);
+  /**
+   * Rejects on failure on purpose: `useSettingsConfirm`'s `onOk` keeps the
+   * dialog open only while its promise is unsettled, so swallowing the error
+   * here would dismiss the confirmation exactly when the bot is still
+   * installed. The toast is what the user reads; the rethrow holds the dialog.
+   */
+  async function handleDisconnect(installationId: string) {
+    if (!setupWritable) return;
     try {
-      await api.deleteDingTalkInstallation(wsId, disconnectTarget);
+      await api.deleteDingTalkInstallation(wsId, installationId);
       await qc.invalidateQueries({ queryKey: dingtalkKeys.installations(wsId) });
       toast.success(t(($) => $.dingtalk.toast_disconnected));
-      setDisconnectTarget(null);
     } catch (e) {
       toast.error(
         e instanceof Error ? e.message : t(($) => $.dingtalk.toast_disconnect_failed),
       );
-    } finally {
-      setDisconnecting(false);
+      throw e;
     }
   }
+
+  const openDisconnectConfirm = (installationId: string) =>
+    confirm({
+      title: t(($) => $.dingtalk.disconnect_confirm_title),
+      description: t(($) => $.dingtalk.disconnect_confirm_description),
+      confirmLabel: t(($) => $.dingtalk.disconnect),
+      cancelLabel: t(($) => $.dingtalk.disconnect_confirm_cancel),
+      onConfirm: () => handleDisconnect(installationId),
+    });
 
   if (isError && !data) {
     return (
@@ -588,9 +631,9 @@ export function DingTalkTab() {
         <p className="text-caption text-muted-foreground">
           {t(($) => $.page.connection_status.unavailable)}
         </p>
-        <Button variant="outline" size="sm" onClick={() => void refetch()}>
+        <LobeButton onClick={() => void refetch()}>
           {t(($) => $.page.connection_status.retry)}
-        </Button>
+        </LobeButton>
       </div>
     );
   }
@@ -599,113 +642,114 @@ export function DingTalkTab() {
     <div className="space-y-8">
       {!setupWritable && <MessagingSetupNotice />}
       {!configured && displayedInstallations.length === 0 ? (
-        <Card>
-          <CardContent className="space-y-2">
-            <p className="text-body font-medium">{t(($) => $.dingtalk.not_enabled_title)}</p>
-            <p className="text-caption text-muted-foreground">
-              {t(($) => $.dingtalk.not_enabled_description_prefix)}{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                ORVILO_DINGTALK_SECRET_KEY
-              </code>{" "}
-              {t(($) => $.dingtalk.not_enabled_description_suffix)}{" "}
-              {t(($) => $.dingtalk.not_enabled_self_host_hint)}
-            </p>
-          </CardContent>
-        </Card>
+        /* A notice: there are no rows behind it, so the paragraph is the
+           group's body. `description` would render it in the header, beside the
+           title, where it reads as a subtitle for a section that does not
+           exist. */
+        <SettingsGroup variant="outlined" title={t(($) => $.dingtalk.not_enabled_title)}>
+          <p className="text-caption text-muted-foreground">
+            {t(($) => $.dingtalk.not_enabled_description_prefix)}{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-micro">
+              ORVILO_DINGTALK_SECRET_KEY
+            </code>{" "}
+            {t(($) => $.dingtalk.not_enabled_description_suffix)}{" "}
+            {t(($) => $.dingtalk.not_enabled_self_host_hint)}
+          </p>
+        </SettingsGroup>
       ) : (
-        <section className="space-y-4">
-          <div className="space-y-1.5">
-            <h2 className="text-body font-semibold">
-              {t(($) => $.dingtalk.connections_title)}
-            </h2>
-            {!isLoading &&
-              displayedInstallations.length > 0 &&
-              groupDiscoverySupported && (
-              <p className="max-w-3xl text-caption leading-relaxed text-muted-foreground">
+        /* The `<section><h2>` heading and the caption under it were two
+           elements describing one section; a group's title and `desc` are where
+           they go, and the rows' `divider` is where the card's `divide-y` went.
+           The description keeps its `text-caption` scale: `desc` renders as a
+           `<small>` in the group's header, and the span is what carries the
+           scale the old paragraph set. */
+        <SettingsGroup
+          variant="outlined"
+          title={t(($) => $.dingtalk.connections_title)}
+          description={
+            !isLoading &&
+            displayedInstallations.length > 0 &&
+            groupDiscoverySupported ? (
+              <span className="block max-w-3xl text-caption leading-relaxed text-muted-foreground">
                 {t(($) => $.dingtalk.groups_overview_description)}
-              </p>
-            )}
-          </div>
+              </span>
+            ) : undefined
+          }
+        >
           {isLoading || (!canManage && agentsLoading) ? (
-            <Card>
-              <CardContent>
-                <p className="text-body text-muted-foreground">{t(($) => $.dingtalk.loading)}</p>
-              </CardContent>
-            </Card>
+            <SettingsEmptyState title={t(($) => $.dingtalk.loading)} />
           ) : displayedInstallations.length === 0 ? (
-            <Card>
-              <CardContent className="space-y-2">
-                <p className="text-body font-medium">{t(($) => $.dingtalk.empty_title)}</p>
-                <p className="text-caption text-muted-foreground">
+            <SettingsEmptyState
+              title={t(($) => $.dingtalk.empty_title)}
+              description={
+                <>
                   {t(($) => $.dingtalk.empty_description_prefix)}{" "}
                   <strong>{t(($) => $.dingtalk.empty_description_cta)}</strong>{" "}
                   {t(($) => $.dingtalk.empty_description_suffix)}
-                </p>
-              </CardContent>
-            </Card>
+                </>
+              }
+            />
           ) : (
-            <Card className="py-0">
-              <CardContent className="divide-y divide-border/70">
-                {displayedInstallations.map((inst) => (
-                  <InstallationRow
-                    key={inst.id}
-                    workspaceId={wsId}
-                    installation={inst}
-                    canManage={canManage}
-                    canDisconnect={canManage && setupWritable}
-                    onDisconnect={() => setDisconnectTarget(inst.id)}
-                    groups={groupsData?.groups ?? []}
-                    botIdentity={groupsData?.bot_identities?.[inst.id]}
-                    inactiveCount={groupsData?.inactive_group_counts?.[inst.id] ?? 0}
-                    groupsLoading={groupsLoading}
-                    groupsError={groupsError}
-                    groupDiscoverySupported={groupDiscoverySupported}
-                    showGroupDiscovery={showGroupDiscovery}
-                    onRetryGroups={() => void retryGroups()}
-                  />
-                ))}
-              </CardContent>
-            </Card>
+            /* The card's `divide-y` moves here unchanged: the rows keep their
+               own markup (see `InstallationRow`), so the separators are still
+               this container's job. */
+            <div className="divide-y divide-border/70">
+              {displayedInstallations.map((inst) => (
+                <InstallationRow
+                  key={inst.id}
+                  workspaceId={wsId}
+                  installation={inst}
+                  canManage={canManage}
+                  canDisconnect={canManage && setupWritable}
+                  onDisconnect={() => openDisconnectConfirm(inst.id)}
+                  groups={groupsData?.groups ?? []}
+                  botIdentity={groupsData?.bot_identities?.[inst.id]}
+                  inactiveCount={groupsData?.inactive_group_counts?.[inst.id] ?? 0}
+                  groupsLoading={groupsLoading}
+                  groupsError={groupsError}
+                  groupDiscoverySupported={groupDiscoverySupported}
+                  showGroupDiscovery={showGroupDiscovery}
+                  onRetryGroups={() => void retryGroups()}
+                />
+              ))}
+            </div>
           )}
-        </section>
+        </SettingsGroup>
       )}
 
       {configured && data?.group_routing_supported === true &&
         displayedInstallations.some((installation) => installation.status === "installed") && (
         <DingTalkGroupRoutes workspaceId={wsId} installations={displayedInstallations} canManage={canManage} />
       )}
-
-      <AlertDialog
-        open={setupWritable && !!disconnectTarget}
-        onOpenChange={(v) => {
-          if (!v && !disconnecting) setDisconnectTarget(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t(($) => $.dingtalk.disconnect_confirm_title)}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.dingtalk.disconnect_confirm_description)}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={disconnecting}>
-              {t(($) => $.dingtalk.disconnect_confirm_cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleDisconnect} disabled={disconnecting}>
-              {disconnecting
-                ? t(($) => $.dingtalk.disconnecting)
-                : t(($) => $.dingtalk.disconnect)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
 
+/**
+ * One installation. **It keeps its own markup rather than becoming a
+ * `SettingsFormRow`, and that is a measured constraint rather than a
+ * preference.**
+ *
+ * A `SettingsFormRow`'s label column is an antd `<label>`, and the connection
+ * line below the agent's name contains two real `<button>`s — the bot-name
+ * tooltip trigger and the permission-help icon. `button` is a *labelable*
+ * element, so `dom-accessibility-api` treats the `<label>` as labelling the
+ * first button in it: `getControlOfLabel` falls back to
+ * `findLabelableElement(label)` (`isLabelableElement` matches `button`,
+ * `input`, `meter`, `output`, `progress`, `select`, `textarea`;
+ * `accessible-name-and-description.mjs`), and the button's accessible name
+ * then becomes the whole label's text instead of its own.
+ *
+ * Measured on this row: `getByRole("button", { name: "Role matrix bot" })`
+ * stops matching while `getByText("Role matrix bot")` still does — the control
+ * is on screen and unnamed. So the row keeps its two-column markup, inside the
+ * `SettingsGroup` that replaced the card; the group supplies the panel and the
+ * title, and `divide-y` still supplies the separators.
+ *
+ * The second reason is the block below: `DingTalkBotGroups` belongs to this
+ * installation and is rendered as its sibling, which a single `Form.Item`
+ * cannot express.
+ */
 function InstallationRow({
   workspaceId,
   installation,
@@ -804,10 +848,12 @@ function InstallationRow({
           </div>
         </div>
         {canDisconnect && isInstalled && (
-          <Button variant="outline" size="sm" onClick={onDisconnect}>
-            <Trash2 className="h-3 w-3" aria-hidden="true" />
+          <LobeButton
+            icon={<Trash2 className="h-3 w-3" aria-hidden="true" />}
+            onClick={onDisconnect}
+          >
             {t(($) => $.dingtalk.disconnect)}
-          </Button>
+          </LobeButton>
         )}
       </div>
       {isInstalled && showGroupDiscovery && (

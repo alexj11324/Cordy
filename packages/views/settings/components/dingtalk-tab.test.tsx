@@ -2,11 +2,9 @@
 
 import { type ReactNode } from "react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@orvilo/core/i18n/react";
 import { configStore } from "@orvilo/core/config";
-import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
 type MemberRole = "owner" | "admin" | "member";
@@ -148,25 +146,78 @@ vi.mock("sonner", () => ({
 
 vi.mock("../../platform", () => ({ openExternal: mockOpenExternal }));
 
-import { toast } from "sonner";
-import { DingTalkAgentBindButton, DingTalkTab } from "./dingtalk-tab";
+/**
+ * `confirmModal` is imperative and module-level, so the config the wrapper
+ * hands it — and therefore the promise `onOk` returns — is the only place the
+ * rethrow contract is observable. Recorded here and delegated to the real one,
+ * because the tests below also drive the dialog through the UI.
+ */
+const capturedConfirm = vi.hoisted(() => ({
+  current: null as { onOk: () => Promise<unknown> } | null,
+}));
+const mockConfirmModal = vi.hoisted(() => vi.fn());
+const actualConfirmModal = vi.hoisted(() => ({
+  current: null as null | ((config: never) => unknown),
+}));
 
-const TEST_RESOURCES = { en: { common: enCommon, settings: enSettings } };
+vi.mock("@lobehub/ui/base-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@lobehub/ui/base-ui")>();
+  actualConfirmModal.current = actual.confirmModal as never;
+  return { ...actual, confirmModal: mockConfirmModal };
+});
+
+import { toast } from "sonner";
+import { renderWithI18n } from "../../test/i18n";
+import { DingTalkAgentBindButton, DingTalkTab } from "./dingtalk-tab";
 
 afterEach(cleanup);
 
-function renderUI(children: ReactNode) {
-  return render(
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      {children}
-    </I18nProvider>,
-  );
+/**
+ * `lobe: true` mounts the theme bridge on demand, so every assertion after a
+ * bridged render must start with an async query — until the bridge's module
+ * resolves the tree is a `Suspense` fallback of `null`. It defaults to **off**
+ * here because most of this file renders `DingTalkAgentBindButton`, the
+ * agent-pane half, which produces no Lobe element at all; the cases that assert
+ * emptiness keep the flag off on purpose, so that what makes the container
+ * empty is the component and not a pending module load.
+ */
+function renderUI(children: ReactNode, { lobe = false }: { lobe?: boolean } = {}) {
+  return renderWithI18n(<>{children}</>, { lobe });
 }
+
+/**
+ * Whether the confirm dialog leaves the document within `timeout`. Polls,
+ * because a check that samples at a fixed moment cannot tell an open dialog
+ * from a closing one, and the text is the dialog's own copy — the imperative
+ * confirm is the base-ui `Modal`, not antd's, so there is no
+ * `.ant-modal-confirm` to query.
+ *
+ * The timeout is a parameter because the two callers want opposite things from
+ * it: the success path passes a budget (polling returns the instant the node
+ * goes, so a generous one is free), the failure path a fixed window (spent in
+ * full, and only the one that would catch a mutated build).
+ */
+async function dialogLeavesWithin(timeout: number): Promise<boolean> {
+  try {
+    await waitFor(
+      () => expect(screen.queryByText("Disconnect this DingTalk bot?")).toBeNull(),
+      { timeout },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A dismissal window: long enough for a close, short enough to be an assertion. */
+const CLOSE_WINDOW_MS = 1_200;
+/** A budget, not a window: the success path must not fail a loaded runner. */
+const CLOSE_BUDGET_MS = 8_000;
 
 describe("DingTalk deployment setup policy", () => {
   beforeEach(resetFixtures);
 
-  it.each(["server_configured", "disabled"] as const)("keeps %s credential lifecycle read-only", (mode) => {
+  it.each(["server_configured", "disabled"] as const)("keeps %s credential lifecycle read-only", async (mode) => {
     configStore.getState().setMessagingConfig({ mode, setupWritable: true, platforms: [] });
     const entry = renderUI(<DingTalkAgentBindButton agentId="agent-1" />);
     expect(screen.queryByTestId("dingtalk-agent-connect")).toBeNull();
@@ -182,8 +233,10 @@ describe("DingTalk deployment setup policy", () => {
         app_id: "app-1", team_id: "team-1", bot_id: "bot-1",
       }],
     };
-    renderUI(<><DingTalkAgentBindButton agentId="agent-1" /><DingTalkTab /></>);
-    expect(screen.getAllByRole("status", { name: "Connection status" })).toHaveLength(2);
+    // The mixed render needs the bridge: `DingTalkTab` is Lobe, the bind button
+    // beside it is not.
+    renderUI(<><DingTalkAgentBindButton agentId="agent-1" /><DingTalkTab /></>, { lobe: true });
+    expect(await screen.findAllByRole("status", { name: "Connection status" })).toHaveLength(2);
     expect(screen.queryByRole("button", { name: /disconnect/i })).toBeNull();
     expect(mockDeleteInstallation).not.toHaveBeenCalled();
   });
@@ -192,6 +245,11 @@ describe("DingTalk deployment setup policy", () => {
 function resetFixtures() {
   configStore.getState().setMessagingConfig({ mode: "managed", setupWritable: true, platforms: [] });
   vi.clearAllMocks();
+  capturedConfirm.current = null;
+  mockConfirmModal.mockImplementation((config: never) => {
+    capturedConfirm.current = config as { onOk: () => Promise<unknown> };
+    return actualConfirmModal.current?.(config);
+  });
   membersRef.current = [{ user_id: "user-1", role: "owner" }];
   agentsRef.current = [
     { id: "agent-1" },
@@ -323,7 +381,7 @@ describe("DingTalkTab", () => {
     { role: "member", canManage: false },
   ] as const)(
     "applies the Settings permission matrix for role=$role",
-    ({ role, canManage }) => {
+    async ({ role, canManage }) => {
       // Settings intentionally has no Agent-owner input: every plain member,
       // including someone who owns one of these Agents, stays read-only here.
       membersRef.current = [{ user_id: "user-1", role }];
@@ -348,7 +406,13 @@ describe("DingTalkTab", () => {
         }],
       }];
 
-      renderUI(<DingTalkTab />);
+      renderUI(<DingTalkTab />, { lobe: true });
+      // The section heading is the group's title now, and `Form.Group` renders
+      // its label as a bare div — the name lives on the wrapper `SettingsGroup`
+      // adds. This is also the async anchor a bridged render needs.
+      expect(
+        await screen.findByRole("group", { name: "Bot installation records" }),
+      ).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /Disconnect/i }) !== null).toBe(canManage);
       expect(
         screen.queryByRole("button", { name: "Role matrix bot" }) !== null,
@@ -362,24 +426,18 @@ describe("DingTalkTab", () => {
       expect(screen.getByTestId("dingtalk-installation-metadata").textContent).toContain(
         "Installed",
       );
-      expect(
-        screen.queryByRole("heading", {
-          name: "Bot installation records",
-          level: 2,
-        }),
-      ).toBeTruthy();
     },
   );
 
-  it("surfaces the not-enabled notice when the deployment has no DingTalk key", () => {
+  it("surfaces the not-enabled notice when the deployment has no DingTalk key", async () => {
     installationsRef.current = { installations: [], configured: false, install_supported: false };
-    renderUI(<DingTalkTab />);
-    expect(screen.getByText(/DingTalk integration not enabled/i)).toBeTruthy();
+    renderUI(<DingTalkTab />, { lobe: true });
+    expect(await screen.findByText(/DingTalk integration not enabled/i)).toBeTruthy();
   });
 
-  it("shows the empty state when configured but nothing is connected", () => {
-    renderUI(<DingTalkTab />);
-    expect(screen.getByText(/No bots installed yet/i)).toBeTruthy();
+  it("shows the empty state when configured but nothing is connected", async () => {
+    renderUI(<DingTalkTab />, { lobe: true });
+    expect(await screen.findByText(/No bots installed yet/i)).toBeTruthy();
   });
 
   it("shows linked Staff IDs from the bot name without adding them to the row", async () => {
@@ -402,8 +460,8 @@ describe("DingTalkTab", () => {
         bot_name: "Linked Bot",
       }],
     }];
-    renderUI(<DingTalkTab />);
-    expect(screen.getByText("Agent agent-7")).toBeTruthy();
+    renderUI(<DingTalkTab />, { lobe: true });
+    expect(await screen.findByText("Agent agent-7")).toBeTruthy();
     const botName = screen.getByRole("button", { name: "Linked Bot" });
     expect(screen.queryByText(/Linked staff ID:/i)).toBeNull();
     await userEvent.hover(botName);
@@ -413,17 +471,20 @@ describe("DingTalkTab", () => {
     expect(screen.getByText(/Disconnect/i)).toBeTruthy();
   });
 
-  it("does not render a linked identity when this member has no DingTalk binding", () => {
+  it("does not render a linked identity when this member has no DingTalk binding", async () => {
     installationsRef.current = {
       installations: [{ id: "i1", agent_id: "agent-7", status: "installed" }],
       configured: true,
       install_supported: true,
     };
-    renderUI(<DingTalkTab />);
+    renderUI(<DingTalkTab />, { lobe: true });
+    // Positive anchor first: under the bridge an un-anchored negative is
+    // satisfied by the `Suspense` fallback rather than by the component.
+    expect(await screen.findByText("Agent agent-7")).toBeTruthy();
     expect(screen.queryByText(/Linked staff ID:/i)).toBeNull();
   });
 
-  it("hides linked DingTalk identities from a regular workspace member", () => {
+  it("hides linked DingTalk identities from a regular workspace member", async () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     installationsRef.current = {
       installations: [{
@@ -435,11 +496,11 @@ describe("DingTalkTab", () => {
       configured: true,
       install_supported: true,
     };
-    renderUI(<DingTalkTab />);
-    expect(screen.getByText("Agent agent-7")).toBeTruthy();
+    renderUI(<DingTalkTab />, { lobe: true });
+    expect(await screen.findByText("Agent agent-7")).toBeTruthy();
     expect(screen.queryByText(/staff-must-stay-private/)).toBeNull();
     expect(screen.queryByText(/Linked staff ID:/i)).toBeNull();
-    expect(screen.getByRole("heading", { name: "Bot installation records", level: 2 })).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Bot installation records" })).toBeTruthy();
     const overviewDescription = screen.getByText(
       enSettings.dingtalk.groups_overview_description,
     );
@@ -476,9 +537,9 @@ describe("DingTalkTab", () => {
       },
     ];
 
-    renderUI(<DingTalkTab />);
-    expect(screen.getByText("Agent agent-7")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Bot installation records", level: 2 })).toBeTruthy();
+    renderUI(<DingTalkTab />, { lobe: true });
+    expect(await screen.findByText("Agent agent-7")).toBeTruthy();
+    expect(screen.getByRole("group", { name: "Bot installation records" })).toBeTruthy();
     expect(screen.getByText("Release Bot")).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /qyapi_chat_manage/i }),
@@ -521,9 +582,15 @@ describe("DingTalkTab", () => {
       screen.getByTestId("dingtalk-installation-row"),
     );
     expect(screen.getByTestId("dingtalk-installation-row").classList).toContain("py-6");
+    // The row's other half of the same claim: it sits inside the group that
+    // replaced the card. `[data-slot="card"]` is gone with shadcn's `Card`, so
+    // the host is now named by the group's accessible name rather than by a
+    // base-ui slot attribute.
     expect(
-      screen.getByTestId("dingtalk-installation-row").closest('[data-slot="card"]')?.classList,
-    ).toContain("py-0");
+      screen.getByRole("group", { name: "Bot installation records" }).contains(
+        screen.getByTestId("dingtalk-installation-row"),
+      ),
+    ).toBe(true);
     const conversationId = screen.getByLabelText(
       "DingTalk group conversation ID cid-platform",
     );
@@ -540,7 +607,7 @@ describe("DingTalkTab", () => {
     expect(screen.getAllByText("cid-platform")).toHaveLength(1);
   });
 
-  it("sorts active groups by recency, then inactive groups by title and conversation ID", () => {
+  it("sorts active groups by recency, then inactive groups by title and conversation ID", async () => {
     installationsRef.current = {
       installations: [{ id: "i1", agent_id: "agent-7", status: "installed" }],
       configured: true,
@@ -582,7 +649,8 @@ describe("DingTalkTab", () => {
       },
     ];
 
-    renderUI(<DingTalkTab />);
+    renderUI(<DingTalkTab />, { lobe: true });
+    await screen.findByTestId("dingtalk-bot-groups");
     expect(
       screen.getAllByTestId("dingtalk-group-item").map((item) =>
         item.querySelector("code")?.textContent,
@@ -642,8 +710,8 @@ describe("DingTalkTab", () => {
       ],
     };
 
-    renderUI(<DingTalkTab />);
-    await userEvent.click(screen.getByRole("button", { name: /long inactive/i }));
+    renderUI(<DingTalkTab />, { lobe: true });
+    await userEvent.click(await screen.findByRole("button", { name: /long inactive/i }));
     expect(
       screen.getAllByTestId("dingtalk-group-item").map((item) =>
         item.querySelector("code")?.textContent,
@@ -651,7 +719,7 @@ describe("DingTalkTab", () => {
     ).toEqual(["cid-alpha", "cid-bravo-a", "cid-bravo-b", "cid-zulu"]);
   });
 
-  it("renders discovery UI only when the backend explicitly supports it", () => {
+  it("renders discovery UI only when the backend explicitly supports it", async () => {
     installationsRef.current = {
       installations: [{ id: "i1", agent_id: "agent-7", status: "installed" }],
       configured: true,
@@ -662,8 +730,8 @@ describe("DingTalkTab", () => {
       group_discovery_supported: false,
     };
 
-    renderUI(<DingTalkTab />);
-    expect(screen.getByRole("status", { name: "Connection status" })).toBeTruthy();
+    renderUI(<DingTalkTab />, { lobe: true });
+    expect(await screen.findByRole("status", { name: "Connection status" })).toBeTruthy();
     expect(screen.queryByText("Identity unavailable")).toBeNull();
     expect(screen.queryByTestId("dingtalk-bot-groups")).toBeNull();
     expect(
@@ -680,20 +748,20 @@ describe("DingTalkTab", () => {
     groupsRef.current.isLoading = true;
     groupsRef.current.data = undefined as never;
 
-    const loading = renderUI(<DingTalkTab />);
-    expect(screen.getByText("Loading groups…")).toBeTruthy();
+    const loading = renderUI(<DingTalkTab />, { lobe: true });
+    expect(await screen.findByText("Loading groups…")).toBeTruthy();
     loading.unmount();
 
     groupsRef.current.isLoading = false;
     groupsRef.current.isError = true;
     groupsRef.current.data = undefined as never;
-    renderUI(<DingTalkTab />);
+    renderUI(<DingTalkTab />, { lobe: true });
 
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
     expect(groupsRef.current.refetch).toHaveBeenCalledOnce();
   });
 
-  it("shows only the server-filtered Agent, bot, groups, and install time to a regular member", () => {
+  it("shows only the server-filtered Agent, bot, groups, and install time to a regular member", async () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     installationsRef.current = {
       installations: [
@@ -717,8 +785,8 @@ describe("DingTalkTab", () => {
       },
     ];
 
-    renderUI(<DingTalkTab />);
-    expect(screen.getByText("Agent agent-7")).toBeTruthy();
+    renderUI(<DingTalkTab />, { lobe: true });
+    expect(await screen.findByText("Agent agent-7")).toBeTruthy();
     expect(screen.getByText("Visible Bot")).toBeTruthy();
     expect(screen.getByText("Visible group")).toBeTruthy();
     expect(screen.getByTestId("dingtalk-bot-groups")).toBeTruthy();
@@ -729,7 +797,7 @@ describe("DingTalkTab", () => {
     expect(screen.queryByRole("button", { name: /qyapi_chat_manage/i })).toBeNull();
   });
 
-  it("shows an unavailable bot identity without admin remediation to a regular member", () => {
+  it("shows an unavailable bot identity without admin remediation to a regular member", async () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     installationsRef.current = {
       installations: [
@@ -753,12 +821,12 @@ describe("DingTalkTab", () => {
       },
     ];
 
-    renderUI(<DingTalkTab />);
-    expect(screen.getByText("Identity unavailable")).toBeTruthy();
+    renderUI(<DingTalkTab />, { lobe: true });
+    expect(await screen.findByText("Identity unavailable")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /qyapi_chat_manage/i })).toBeNull();
   });
 
-  it("filters a legacy server row when the member cannot see its Agent", () => {
+  it("filters a legacy server row when the member cannot see its Agent", async () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     agentsRef.current = [{ id: "agent-7" }];
     installationsRef.current = {
@@ -774,13 +842,15 @@ describe("DingTalkTab", () => {
       install_supported: true,
     };
 
-    renderUI(<DingTalkTab />);
+    renderUI(<DingTalkTab />, { lobe: true });
+    // Positive anchor first — the two negatives below are only meaningful once
+    // the empty state has actually rendered.
+    expect(await screen.findByText("No bots installed yet")).toBeTruthy();
     expect(screen.queryByText("Agent agent-private")).toBeNull();
     expect(screen.queryByTestId("dingtalk-installation-row")).toBeNull();
-    expect(screen.getByText("No bots installed yet")).toBeTruthy();
   });
 
-  it("labels an orphaned admin-only installation without linking to a missing Agent", () => {
+  it("labels an orphaned admin-only installation without linking to a missing Agent", async () => {
     installationsRef.current = {
       installations: [
         {
@@ -795,15 +865,15 @@ describe("DingTalkTab", () => {
       install_supported: true,
     };
 
-    renderUI(<DingTalkTab />);
-    expect(screen.getByText("Deleted Agent")).toBeTruthy();
+    renderUI(<DingTalkTab />, { lobe: true });
+    expect(await screen.findByText("Deleted Agent")).toBeTruthy();
     expect(screen.getByTestId("actor-avatar").getAttribute("data-profile-link")).toBe(
       "false",
     );
     expect(screen.getByRole("button", { name: /Disconnect/i })).toBeTruthy();
   });
 
-  it("shows a placeholder instead of 'Invalid Date' when installed_at is missing or malformed", () => {
+  it("shows a placeholder instead of 'Invalid Date' when installed_at is missing or malformed", async () => {
     installationsRef.current = {
       installations: [
         { id: "i1", agent_id: "agent-7", status: "installed", installed_at: "" },
@@ -812,7 +882,83 @@ describe("DingTalkTab", () => {
       configured: true,
       install_supported: true,
     };
-    renderUI(<DingTalkTab />);
+    renderUI(<DingTalkTab />, { lobe: true });
+    // Positive anchor first: both rows must be on screen before "no Invalid
+    // Date anywhere" says anything.
+    expect(await screen.findAllByTestId("dingtalk-installation-row")).toHaveLength(2);
     expect(screen.queryByText(/Invalid Date/i)).toBeNull();
+  });
+
+  /**
+   * The caller's half of the `confirmModal` contract.
+   *
+   * `confirmModal` closes on the line after `onOk` unless `onOk` returns a
+   * promise, and stays open when that promise rejects — so a disconnect that
+   * fails must leave the confirmation up rather than dismiss as though the bot
+   * were gone. The first case shows the success path *does* close, which is
+   * what gives the second one's negative its meaning; the third reads the
+   * contract off the config the wrapper handed the library, where it is not a
+   * DOM question at all.
+   */
+  it("disconnects only after the confirmation, and the dialog closes when it succeeds", async () => {
+    mockDeleteInstallation.mockResolvedValue(undefined);
+    installationsRef.current = {
+      installations: [{ id: "i1", agent_id: "agent-7", status: "installed" }],
+      configured: true,
+      install_supported: true,
+    };
+    renderUI(<DingTalkTab />, { lobe: true });
+    await userEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+    expect(mockDeleteInstallation).not.toHaveBeenCalled();
+
+    await screen.findByText("Disconnect this DingTalk bot?");
+    // Two buttons carry this name now — the row's and the dialog's — and the
+    // dialog's is last in document order (it is portalled to the end of
+    // `<body>`), so `.at(-1)` is the one that runs the request.
+    const confirmButtons = await screen.findAllByRole("button", { name: /^Disconnect$/ });
+    await userEvent.click(confirmButtons.at(-1)!);
+    await waitFor(() => {
+      expect(mockDeleteInstallation).toHaveBeenCalledWith("workspace-1", "i1");
+    });
+    expect(mockInvalidate).toHaveBeenCalled();
+    expect(await dialogLeavesWithin(CLOSE_BUDGET_MS)).toBe(true);
+  });
+
+  it("keeps the confirmation up when the disconnect request fails", async () => {
+    mockDeleteInstallation.mockRejectedValue(new Error("network failed"));
+    installationsRef.current = {
+      installations: [{ id: "i1", agent_id: "agent-7", status: "installed" }],
+      configured: true,
+      install_supported: true,
+    };
+    renderUI(<DingTalkTab />, { lobe: true });
+    await userEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+    await screen.findByText("Disconnect this DingTalk bot?");
+    const confirmButtons = await screen.findAllByRole("button", { name: /^Disconnect$/ });
+    await userEvent.click(confirmButtons.at(-1)!);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("network failed"));
+    expect(await dialogLeavesWithin(CLOSE_WINDOW_MS)).toBe(false);
+
+    // It is deliberately still open, and the confirm stack is module state that
+    // outlives this case — an open dialog would land on the next one in this
+    // file and read exactly like a flake. Close it and wait for it to go.
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(await dialogLeavesWithin(CLOSE_BUDGET_MS)).toBe(true);
+  });
+
+  it("hands confirmModal an onOk that rejects when the disconnect fails", async () => {
+    mockDeleteInstallation.mockRejectedValue(new Error("network failed"));
+    installationsRef.current = {
+      installations: [{ id: "i1", agent_id: "agent-7", status: "installed" }],
+      configured: true,
+      install_supported: true,
+    };
+    renderUI(<DingTalkTab />, { lobe: true });
+    await userEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+    expect(capturedConfirm.current).not.toBeNull();
+
+    await expect(capturedConfirm.current?.onOk()).rejects.toThrow("network failed");
+    expect(toast.error).toHaveBeenCalledWith("network failed");
   });
 });
