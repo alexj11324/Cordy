@@ -26,16 +26,25 @@
  *    site's prop is not overwritten by `onChange`/`onFocus`.
  * 2. `es/Input/Input.mjs` destructures `{ ref, variant, shadow, className,
  *    ...rest }` and spreads `...rest` into antd's `Input`.
- * 3. `antd/es/input/Input.js` spreads `...rest` into `rc-input`.
- * 4. `rc-input/es/Input.js` builds `otherProps = omit(props, [...])` and puts it
- *    on the real `<input>`. **This list is the one that matters** — a prop added
- *    to it would stop the chain here without any error — and `aria-label` and
- *    `id` are both absent from it.
+ * 3. `antd/es/input/Input.js` spreads `...rest` into `@rc-component/input`
+ *    (`import RcInput from '@rc-component/input'`, line 4).
+ * 4. `@rc-component/input/es/Input.js` builds `otherProps = omit(props, [...])`
+ *    and puts it on the real `<input>`. **This list is the one that matters** —
+ *    a prop added to it would stop the chain here without any error — and
+ *    `aria-label` and `id` are both absent from it.
+ *
+ * **Hop 4 is `@rc-component/input`, not `rc-input`.** Both exist in the store
+ * and the names are near-identical, but `rc-input` is reached only through
+ * Lobe's `rc-input-number` and is not on this chain. Verified by reading the
+ * import in hop 3 rather than by matching on the name — the earlier version of
+ * this comment cited `rc-input` and sent a reader to a file that never runs.
  *
  * Measured end to end rather than inferred: the renderer's `<input>` carries
  * `aria-label`, and `getByRole("textbox", { name })` resolves to exactly one
- * node. That check is pinned in `zz-smoke.mjs` ("the catalog search box carries
- * an accessible name"), which fails when the prop is removed.
+ * node. That check is pinned in the settings smoke script ("the catalog search
+ * box carries an accessible name"), which fails when the prop is removed. The
+ * script currently lives in this plan's workspace rather than the repo; Task 10
+ * promotes it.
  *
  * The three accessibility traps this migration hit — base-ui `Switch` and
  * `Select` dropping `aria-label`, `role` filtered out of `Form.Group` — are all

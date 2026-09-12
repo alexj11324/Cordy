@@ -103,9 +103,11 @@ describe("LabelsTab", () => {
    * `<LabelsTab />` standalone, which never enters `SettingsDialogBody` — and
    * the nested branch that *defined* the `action` defect is the one that branch
    * guards. So this would have passed before the fix too. The in-dialog half is
-   * `zz-smoke.mjs`'s "the labels tab's page-level action renders inside the
-   * dialog", which walks the real dialog and fails when the control is removed;
-   * the renderer measurement is in the task 6 report.
+   * the settings smoke script's "the labels tab's page-level action renders
+   * inside the dialog", which walks the real dialog and fails when the control
+   * is removed; the renderer measurement is in the task 6 report. That script
+   * currently lives in this plan's workspace rather than the repo — Task 10
+   * promotes it — so it is named by what it checks, not by a path.
    */
   it("puts the create-label control inside the group", async () => {
     const group = await renderTab();
