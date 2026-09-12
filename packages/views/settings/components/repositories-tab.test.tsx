@@ -1,10 +1,7 @@
-import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@orvilo/core/i18n/react";
-import enCommon from "../../locales/en/common.json";
-import enSettings from "../../locales/en/settings.json";
+import { renderWithI18n } from "../../test/i18n";
 
 const mockUpdateWorkspace = vi.hoisted(() => vi.fn());
 const mockGetGitHubConnectURL = vi.hoisted(() => vi.fn());
@@ -131,22 +128,62 @@ vi.mock("../../navigation", () => ({
 
 import { RepositoriesTab, repositoryIdentity } from "./repositories-tab";
 
-const TEST_RESOURCES = {
-  en: { common: enCommon, settings: enSettings },
-};
-
-function I18nWrapper({ children }: { children: ReactNode }) {
-  return (
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      {children}
-    </I18nProvider>
+// `{ lobe: true }` is required, not decoration: this suite used a bare `render`
+// with its own `I18nProvider`, so it never reached `LobeThemeBridge` while the
+// tab was on shadcn. Every control on it is Lobe now. A test file is a host
+// surface, and it is the one that appears in no screenshot.
+//
+// Async because the bridge is lazy — until its module resolves the tree is a
+// `Suspense` fallback of `null`. The "Remote sources" group renders on every
+// path, which makes it the handle each case can wait on.
+async function renderTab() {
+  const result = renderWithI18n(<RepositoriesTab />, { lobe: true });
+  // Waited on as a DOM node, not by role. One case ("opens the picker after
+  // returning from a GitHub connection") mounts with a modal already open, and
+  // base-ui marks everything behind a modal inert — so the group is in the
+  // document but is not reachable by `getByRole` there, and a role query would
+  // time out on a perfectly healthy render.
+  await waitFor(() =>
+    expect(document.querySelector('[role="group"]')).not.toBeNull(),
   );
+  return result;
+}
+
+/**
+ * Polls on a real timer, for assertions whose subject leaves through a frame
+ * rather than through a commit.
+ *
+ * `waitFor` is not usable for the confirm dialog's departure, and the reason is
+ * measured rather than assumed: with `vi.useFakeTimers({ shouldAdvanceTime:
+ * true })` installed by an earlier test in this file, an 8s `waitFor` budget
+ * expired **and** an 8s real-time poll expired with it, while the same
+ * assertion passed the moment the file ran without fake timers anywhere. The
+ * OK button's promise had settled and `close()` had run — the button was out of
+ * its loading state within 10ms — but the popup kept `data-open` for the whole
+ * budget. Which module captured a faked timer is not something this file
+ * chased down; what it did was stop faking them, since nothing here needs the
+ * debounce.
+ *
+ * The budget discipline is the reference's: a generous ceiling that returns the
+ * instant the condition holds, so a correct build that closes slowly still
+ * passes.
+ */
+async function waitForRealTime(assert: () => void, budgetMs = 8_000) {
+  const deadline = Date.now() + budgetMs;
+  for (;;) {
+    try {
+      assert();
+      return;
+    } catch (error) {
+      if (Date.now() >= deadline) throw error;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 describe("RepositoriesTab — automatic updates", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers({ shouldAdvanceTime: true });
     workspaceRef.current = {
       id: "workspace-1",
       name: "Test Workspace",
@@ -177,16 +214,12 @@ describe("RepositoriesTab — automatic updates", () => {
     );
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   function setupUser() {
-    return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    return userEvent.setup();
   }
 
-  it("shows repository names and details without URL or description inputs", () => {
-    render(<RepositoriesTab />, {wrapper: I18nWrapper});
+  it("shows repository names and details without URL or description inputs", async () => {
+    await renderTab();
     expect(screen.queryAllByRole("textbox")).toHaveLength(0);
     expect(screen.getByText("Remote address")).toBeTruthy();
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
@@ -194,7 +227,7 @@ describe("RepositoriesTab — automatic updates", () => {
 
   it("only adds a remote after the dialog is submitted", async () => {
     const user = setupUser();
-    render(<RepositoriesTab />, {wrapper: I18nWrapper});
+    await renderTab();
     await user.click(screen.getByRole("button", {name: "Add a remote repository"}));
     await user.type(screen.getByRole("textbox"), "git@github.com:orvilo-ai/second.git");
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
@@ -204,25 +237,82 @@ describe("RepositoriesTab — automatic updates", () => {
     ]}));
   });
 
-  it("keeps stored descriptions without asking users to edit them", () => {
+  it("keeps stored descriptions without asking users to edit them", async () => {
     workspaceRef.current = {...workspaceRef.current, repos: [{url: "https://github.com/alexj11324/Cordy", description: "Main app"}]};
-    render(<RepositoriesTab />, {wrapper: I18nWrapper});
+    await renderTab();
     expect(screen.queryAllByRole("textbox")).toHaveLength(0);
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
   });
 
   it("persists confirmed removal without deleting a local checkout", async () => {
     const user = setupUser();
-    render(<RepositoriesTab />, {wrapper: I18nWrapper});
+    await renderTab();
     await user.click(screen.getByRole("button", {name: "Delete repository"}));
+    // Opening the confirmation must not touch the server.
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", {name: "Delete repository"}));
-    await waitFor(() => expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {repos: []}));
+    // The row button and the dialog's OK button carry the same string
+    // (`repositories.delete_aria` and `delete_confirm_action` are both "Delete
+    // repository"), so the confirm has to be scoped to the dialog.
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete repository" }));
+    await waitFor(() =>
+      expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {repos: []}),
+    );
+    // ...and the dialog leaves once the promise `onConfirm` returned settles.
+    // This is what gives the absent-dialog assertions elsewhere their meaning.
+    await waitForRealTime(() =>
+      expect(screen.queryByRole("dialog")).toBeNull(),
+    );
   });
 
-  it("keeps workspace repository mutations unavailable to members", () => {
+  // There is deliberately **no** failure-path counterpart here, and that is a
+  // stated gap rather than an oversight — the mechanism is different on this
+  // tab from every other confirm in the family.
+  //
+  // The GitHub tab's disconnect (and every `useSettingsConfirm` call site that
+  // goes through `mutateAsync`) can hold its dialog open on failure, because the
+  // call site returns a promise that rejects. Removal here does not talk to the
+  // server at all: it replaces local state and hands the new list to
+  // `useAutoSave.saveNow`, which is **fire-and-forget** (`void runSave(next)`,
+  // returning `undefined`) — so the promise `onConfirm` returns is already
+  // resolved by the time the dialog tests it, exactly as the old
+  // `AlertDialogAction` closed synchronously on click. A failure therefore shows
+  // up as the autosave readout flipping to its error state in this group's
+  // header, plus the toast, not as a dialog that stays open.
+  //
+  // Making it await would take a change to `use-auto-save.ts` — `flush()` saves
+  // `latestValueRef.current`, which at that instant is still the pre-removal
+  // list, so calling it here would save the old value back and lose the
+  // removal. That is a state-model change, not a migration step.
+
+  it("shows the autosave failure in the Remote sources header", async () => {
+    // `mockRejectedValue`, not `...Once`. The removal's own `saveNow` is the
+    // first call, but the hook's debounce re-saves the same list ~650ms later
+    // and a `...Once` would let that second call succeed — the readout would
+    // read "Saved" again before the assertion could see the error, which is a
+    // guard that cannot fail.
+    mockUpdateWorkspace.mockRejectedValue(new Error("boom"));
+    const user = setupUser();
+    await renderTab();
+    await user.click(screen.getByRole("button", { name: "Delete repository" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete repository" }));
+
+    // The status region used to be `SettingsTab`'s `action`, and the dialog
+    // branch returned before reading it — so inside the settings dialog this
+    // readout never rendered at all. It is on this group's `extra` now, which
+    // renders on both branches, and it is the only feedback this flow gives: the
+    // removal is local-state + a fire-and-forget autosave, so a failure cannot
+    // hold the dialog open (see the note above).
+    await waitForRealTime(() => {
+      const group = screen.getByRole("group", { name: "Remote sources" });
+      expect(within(group).getByRole("status")).toHaveTextContent("Couldn't save");
+    });
+  });
+
+  it("keeps workspace repository mutations unavailable to members", async () => {
     membersRef.current = [{user_id: "user-1", role: "member"}];
-    render(<RepositoriesTab />, {wrapper: I18nWrapper});
+    await renderTab();
     expect(screen.queryAllByRole("textbox")).toHaveLength(0);
     expect(screen.queryByRole("button", {name: "Add a remote repository"})).toBeNull();
   });
@@ -234,7 +324,7 @@ describe("RepositoriesTab — automatic updates", () => {
       url: "https://github.com/apps/orvilo/installations/new",
     });
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     await user.click(screen.getByRole("button", { name: "Connect GitHub" }));
 
@@ -252,14 +342,14 @@ describe("RepositoriesTab — automatic updates", () => {
     open.mockRestore();
   });
 
-  it("keeps GitHub import disabled when repository browsing is unavailable", () => {
+  it("keeps GitHub import disabled when repository browsing is unavailable", async () => {
     githubRef.current = {
       installations: [],
       configured: true,
       repository_browse_configured: false,
       can_manage: true,
     };
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     const button = screen.getByRole("button", { name: "Connect GitHub" });
     expect(
@@ -303,7 +393,7 @@ describe("RepositoriesTab — automatic updates", () => {
       },
     ];
     const user = setupUser();
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     await user.click(
       screen.getByRole("button", { name: "Choose from GitHub" }),
@@ -351,7 +441,7 @@ describe("RepositoriesTab — automatic updates", () => {
       "tab=repositories&github_connected=1",
     );
 
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     expect(
       await screen.findByRole("heading", {
@@ -368,7 +458,7 @@ describe("RepositoriesTab — automatic updates", () => {
       "tab=repositories&github_connected=1",
     );
 
-    render(<RepositoriesTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     await waitFor(() => {
       expect(mockNavReplace).toHaveBeenCalledWith(

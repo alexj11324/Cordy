@@ -4,17 +4,7 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ExternalLink } from "lucide-react";
-import { Switch } from "@orvilo/ui/components/ui/switch";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@orvilo/ui/components/ui/alert-dialog";
+import { Button } from "@lobehub/ui/base-ui";
 import { useAuthStore } from "@orvilo/core/auth";
 import { useWorkspaceId } from "@orvilo/core/hooks";
 import { useCurrentWorkspace } from "@orvilo/core/paths";
@@ -27,13 +17,9 @@ import { api } from "@orvilo/core/api";
 import type { Workspace } from "@orvilo/core/types";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
-import {
-  SettingsCard,
-  SettingsPillButton,
-  SettingsRow,
-  SettingsSection,
-  SettingsTab,
-} from "./settings-layout";
+import { useSettingsConfirm } from "./settings-confirm";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
+import { SettingsSwitch } from "./settings-switch";
 import { GitHubMark } from "./github-mark";
 
 type SettingsKey =
@@ -49,6 +35,10 @@ export function GitHubTab() {
   const qc = useQueryClient();
   const navigation = useNavigation();
   const user = useAuthStore((s) => s.user);
+  // The `disconnectTarget` / `disconnecting` pair of `useState`s is gone with
+  // the `AlertDialog`: the imperative confirm owns the open state and the
+  // in-flight spinner, so the row hands the installation id straight through.
+  const confirm = useSettingsConfirm();
 
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const currentMember = members.find((m) => m.user_id === user?.id) ?? null;
@@ -71,8 +61,6 @@ export function GitHubTab() {
   const flags = deriveGitHubSettings(workspace);
   const [savingKey, setSavingKey] = useState<SettingsKey | null>(null);
   const [connecting, setConnecting] = useState(false);
-  const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
-  const [disconnecting, setDisconnecting] = useState(false);
 
   async function persistSetting(key: SettingsKey, next: boolean) {
     if (!workspace || savingKey) return;
@@ -112,227 +100,218 @@ export function GitHubTab() {
     }
   }
 
-  async function handleDisconnect() {
-    if (!disconnectTarget || disconnecting) return;
-    setDisconnecting(true);
+  // Returns its promise and lets a failure reject: that is the *caller* half of
+  // `confirmModal`'s contract, and it is what keeps the dialog open when the
+  // request fails. `useSettingsConfirm` throws instead of closing if a call
+  // site ever returns something that is not thenable.
+  async function handleDisconnect(installationId: string) {
     try {
-      await api.deleteGitHubInstallation(wsId, disconnectTarget);
+      await api.deleteGitHubInstallation(wsId, installationId);
       await qc.invalidateQueries({ queryKey: ["github", wsId] });
       toast.success(t(($) => $.github.toast_disconnected));
-      setDisconnectTarget(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t(($) => $.github.toast_disconnect_failed));
-    } finally {
-      setDisconnecting(false);
+      throw e;
     }
   }
+
+  const openDisconnectConfirm = (installationId: string) =>
+    confirm({
+      title: t(($) => $.github.disconnect_confirm_title),
+      description: t(($) => $.github.disconnect_confirm_description),
+      confirmLabel: t(($) => $.github.disconnect_confirm_action),
+      cancelLabel: t(($) => $.github.disconnect_confirm_cancel),
+      onConfirm: () => handleDisconnect(installationId),
+    });
 
   if (!workspace) return null;
 
   const repositoriesHref = `${navigation.pathname}?tab=repositories`;
 
   return (
-    <SettingsTab
-      title={t(($) => $.page.tabs.github)}
-      description={t(($) => $.github.page_description)}
-    >
-      <SettingsSection>
-        <SettingsCard>
-          <SettingsRow
-            htmlFor="github-master"
+    <div className="space-y-8">
+      {/* The baseline had a bordered card with no heading and one switch row.
+          `Form.Group` always renders a header, so a titleless outlined group
+          would have drawn the ~59px dead header `tokens-tab` measured — the
+          section's own name is therefore the group title, and the row keeps
+          only the description. Same strings, same order, no new copy. */}
+      <SettingsGroup title={t(($) => $.github.section_master)}>
+        <SettingsFormRow
+          align="start"
+          description={
+            flags.enabled
+              ? t(($) => $.github.master_description_on)
+              : t(($) => $.github.master_description_off)
+          }
+        >
+          <SettingsSwitch
+            checked={flags.enabled}
+            disabled={!canManage || savingKey === "github_enabled"}
+            id="github-master"
             label={t(($) => $.github.section_master)}
-            description={
-              flags.enabled
-                ? t(($) => $.github.master_description_on)
-                : t(($) => $.github.master_description_off)
-            }
-            align="start"
-          >
-            <Switch
-              id="github-master"
-              checked={flags.enabled}
-              onCheckedChange={(v) => persistSetting("github_enabled", v)}
-              disabled={!canManage || savingKey === "github_enabled"}
-            />
-          </SettingsRow>
-        </SettingsCard>
-      </SettingsSection>
+            onCheckedChange={(v) => persistSetting("github_enabled", v)}
+          />
+        </SettingsFormRow>
+      </SettingsGroup>
 
-      <SettingsSection title={t(($) => $.github.section_connection)}>
-        <SettingsCard>
-          <SettingsRow
-            label={
-              <span className="inline-flex items-center gap-2">
-                <GitHubMark className="size-4" />
-                {t(($) => $.github.connection_title)}
-              </span>
-            }
-            description={
-              connected ? (
-                <>
-                  {t(($) => $.github.connected_to, {
-                    login: installations.map((i) => i.account_login).join(", "),
-                  })}
-                  {primaryInstallation?.connected_by ? (
-                    <span className="mt-1 block">
-                      {t(($) => $.github.connected_by, {
-                        name: primaryInstallation.connected_by!,
-                      })}
-                    </span>
-                  ) : null}
-                </>
-              ) : canManage ? (
-                <>
-                  {t(($) => $.github.connection_description_prefix)}{" "}
-                  <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                    {t(($) => $.github.connection_identifier_example)}
-                  </code>{" "}
-                  {t(($) => $.github.connection_description_suffix)}{" "}
-                  <strong>{t(($) => $.github.connection_description_done)}</strong>.
-                </>
-              ) : (
-                t(($) => $.github.contact_admin_to_connect)
-              )
-            }
-            align="start"
-          >
-            {canManage ? (
-              connected && primaryInstallation ? (
-                <SettingsPillButton
-                  onClick={() => setDisconnectTarget(primaryInstallation.id)}
-                >
-                  {t(($) => $.github.disconnect)}
-                </SettingsPillButton>
-              ) : (
-                <SettingsPillButton
-                  active
-                  onClick={handleConnect}
-                  disabled={connecting || !configured}
-                  title={
-                    !configured
-                      ? t(($) => $.github.connect_disabled_tooltip)
-                      : undefined
-                  }
-                >
-                  {connecting
-                    ? t(($) => $.github.connect_opening)
-                    : t(($) => $.github.connect_github)}
-                </SettingsPillButton>
-              )
-            ) : null}
-          </SettingsRow>
-
-          {canManage && !configured ? (
-            <p className="px-4 py-3 text-caption text-muted-foreground">
-              {t(($) => $.github.not_configured)}{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-micro">GITHUB_APP_SLUG</code>{" "}
-              {t(($) => $.github.not_configured_and)}{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-micro">GITHUB_WEBHOOK_SECRET</code>.
-            </p>
-          ) : null}
-
-          {!canManage && connected ? (
-            <p className="px-4 py-3 text-caption text-muted-foreground">
-              {t(($) => $.github.read_only_hint)}
-            </p>
-          ) : null}
-        </SettingsCard>
-      </SettingsSection>
-
-      <SettingsSection title={t(($) => $.github.section_features)}>
-        <SettingsCard>
-          <SettingsRow
-            htmlFor="github-pr-sidebar"
-            label={t(($) => $.github.feature_pr_sidebar_label)}
-            description={t(($) => $.github.feature_pr_sidebar_description)}
-            align="start"
-          >
-            <Switch
-              id="github-pr-sidebar"
-              checked={flags.prSidebar}
-              disabled={!canManage || !flags.enabled || savingKey === "github_pr_sidebar_enabled"}
-              onCheckedChange={(v) => persistSetting("github_pr_sidebar_enabled", v)}
-            />
-          </SettingsRow>
-
-          <SettingsRow
-            htmlFor="github-coauthor"
-            label={t(($) => $.github.feature_co_author_label)}
-            description={
+      <SettingsGroup title={t(($) => $.github.section_connection)}>
+        <SettingsFormRow
+          align="start"
+          label={
+            <span className="inline-flex items-center gap-2">
+              <GitHubMark className="size-4" />
+              {t(($) => $.github.connection_title)}
+            </span>
+          }
+          description={
+            connected ? (
               <>
-                {t(($) => $.github.feature_co_author_description_prefix)}{" "}
-                <code className="rounded bg-muted px-1 py-0.5 text-caption">
-                  {"Co-authored-by: orvilo-agent <github@aspectlylabs.com>"}
-                </code>{" "}
-                {t(($) => $.github.feature_co_author_description_suffix)}
+                {t(($) => $.github.connected_to, {
+                  login: installations.map((i) => i.account_login).join(", "),
+                })}
+                {primaryInstallation?.connected_by ? (
+                  <span className="mt-1 block">
+                    {t(($) => $.github.connected_by, {
+                      name: primaryInstallation.connected_by!,
+                    })}
+                  </span>
+                ) : null}
               </>
-            }
-            align="start"
-          >
-            <Switch
-              id="github-coauthor"
-              checked={flags.coAuthor}
-              disabled={!canManage || !flags.enabled || savingKey === "co_authored_by_enabled"}
-              onCheckedChange={(v) => persistSetting("co_authored_by_enabled", v)}
-            />
-          </SettingsRow>
+            ) : canManage ? (
+              <>
+                {t(($) => $.github.connection_description_prefix)}{" "}
+                <code className="rounded bg-muted px-1 py-0.5 text-micro">
+                  {t(($) => $.github.connection_identifier_example)}
+                </code>{" "}
+                {t(($) => $.github.connection_description_suffix)}{" "}
+                <strong>{t(($) => $.github.connection_description_done)}</strong>.
+              </>
+            ) : (
+              t(($) => $.github.contact_admin_to_connect)
+            )
+          }
+        >
+          {canManage ? (
+            connected && primaryInstallation ? (
+              // `SettingsPillButton` with no `tone` and no `active` was the
+              // `muted` pill: `bg-muted` on a transparent border, which is
+              // Lobe's `fill`, not its bordered default. `shape="round"`
+              // carries the pill geometry.
+              <Button
+                shape="round"
+                type="fill"
+                onClick={() => openDisconnectConfirm(primaryInstallation.id)}
+              >
+                {t(($) => $.github.disconnect)}
+              </Button>
+            ) : (
+              // `active` resolved `SettingsPillButton`'s tone to `primary`.
+              <Button
+                disabled={connecting || !configured}
+                shape="round"
+                title={
+                  !configured
+                    ? t(($) => $.github.connect_disabled_tooltip)
+                    : undefined
+                }
+                type="primary"
+                onClick={handleConnect}
+              >
+                {connecting
+                  ? t(($) => $.github.connect_opening)
+                  : t(($) => $.github.connect_github)}
+              </Button>
+            )
+          ) : null}
+        </SettingsFormRow>
 
-          <SettingsRow
-            htmlFor="github-auto-link"
+        {/* The group panel already carries `padding-inline: 16px`
+            (`Collapse`'s `DEFAULT_PADDING`), so these notices lost the `px-4`
+            that lined them up with the old card's rows and keep only the
+            block padding. */}
+        {canManage && !configured ? (
+          <p className="py-3 text-caption text-muted-foreground">
+            {t(($) => $.github.not_configured)}{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-micro">GITHUB_APP_SLUG</code>{" "}
+            {t(($) => $.github.not_configured_and)}{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-micro">GITHUB_WEBHOOK_SECRET</code>.
+          </p>
+        ) : null}
+
+        {!canManage && connected ? (
+          <p className="py-3 text-caption text-muted-foreground">
+            {t(($) => $.github.read_only_hint)}
+          </p>
+        ) : null}
+      </SettingsGroup>
+
+      <SettingsGroup title={t(($) => $.github.section_features)}>
+        <SettingsFormRow
+          align="start"
+          description={t(($) => $.github.feature_pr_sidebar_description)}
+          label={t(($) => $.github.feature_pr_sidebar_label)}
+        >
+          <SettingsSwitch
+            checked={flags.prSidebar}
+            disabled={!canManage || !flags.enabled || savingKey === "github_pr_sidebar_enabled"}
+            id="github-pr-sidebar"
+            label={t(($) => $.github.feature_pr_sidebar_label)}
+            onCheckedChange={(v) => persistSetting("github_pr_sidebar_enabled", v)}
+          />
+        </SettingsFormRow>
+
+        <SettingsFormRow
+          align="start"
+          description={
+            <>
+              {t(($) => $.github.feature_co_author_description_prefix)}{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-caption">
+                {"Co-authored-by: orvilo-agent <github@aspectlylabs.com>"}
+              </code>{" "}
+              {t(($) => $.github.feature_co_author_description_suffix)}
+            </>
+          }
+          label={t(($) => $.github.feature_co_author_label)}
+        >
+          <SettingsSwitch
+            checked={flags.coAuthor}
+            disabled={!canManage || !flags.enabled || savingKey === "co_authored_by_enabled"}
+            id="github-coauthor"
+            label={t(($) => $.github.feature_co_author_label)}
+            onCheckedChange={(v) => persistSetting("co_authored_by_enabled", v)}
+          />
+        </SettingsFormRow>
+
+        <SettingsFormRow
+          align="start"
+          description={t(($) => $.github.feature_auto_link_description)}
+          label={t(($) => $.github.feature_auto_link_label)}
+        >
+          <SettingsSwitch
+            checked={flags.autoLinkPRs}
+            disabled={!canManage || !flags.enabled || savingKey === "github_auto_link_prs_enabled"}
+            id="github-auto-link"
             label={t(($) => $.github.feature_auto_link_label)}
-            description={t(($) => $.github.feature_auto_link_description)}
-            align="start"
+            onCheckedChange={(v) => persistSetting("github_auto_link_prs_enabled", v)}
+          />
+        </SettingsFormRow>
+      </SettingsGroup>
+
+      <SettingsGroup title={t(($) => $.github.section_repositories)}>
+        <SettingsFormRow label={t(($) => $.github.repositories_shortcut_label)}>
+          {/* `SettingsPillButton` with no `tone` again — the `muted` pill, i.e.
+              Lobe's `fill`. `icon` takes the node directly, the way the other
+              migrated tabs pass it. */}
+          <Button
+            icon={<ExternalLink className="size-4" />}
+            shape="round"
+            type="fill"
+            onClick={() => navigation.push(repositoriesHref)}
           >
-            <Switch
-              id="github-auto-link"
-              checked={flags.autoLinkPRs}
-              disabled={!canManage || !flags.enabled || savingKey === "github_auto_link_prs_enabled"}
-              onCheckedChange={(v) => persistSetting("github_auto_link_prs_enabled", v)}
-            />
-          </SettingsRow>
-        </SettingsCard>
-      </SettingsSection>
-
-      <SettingsSection title={t(($) => $.github.section_repositories)}>
-        <SettingsCard>
-          <SettingsRow label={t(($) => $.github.repositories_shortcut_label)}>
-            <SettingsPillButton
-              icon={ExternalLink}
-              onClick={() => navigation.push(repositoriesHref)}
-            >
-              {t(($) => $.github.repositories_shortcut_link)}
-            </SettingsPillButton>
-          </SettingsRow>
-        </SettingsCard>
-      </SettingsSection>
-
-      <AlertDialog
-        open={!!disconnectTarget}
-        onOpenChange={(v) => {
-          if (!v && !disconnecting) setDisconnectTarget(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t(($) => $.github.disconnect_confirm_title)}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.github.disconnect_confirm_description)}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={disconnecting}>
-              {t(($) => $.github.disconnect_confirm_cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleDisconnect} disabled={disconnecting}>
-              {disconnecting
-                ? t(($) => $.github.disconnecting)
-                : t(($) => $.github.disconnect_confirm_action)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </SettingsTab>
+            {t(($) => $.github.repositories_shortcut_link)}
+          </Button>
+        </SettingsFormRow>
+      </SettingsGroup>
+    </div>
   );
 }

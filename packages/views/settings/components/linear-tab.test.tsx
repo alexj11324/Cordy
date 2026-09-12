@@ -91,10 +91,17 @@ function renderCard() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  // `lobe: true` added by Task 8b, and it is the only edit made to this file
+  // from there. `LinearIntegrationCard` renders `IntegrationCard`,
+  // `IntegrationRowMenu` and `ConnectionDotBadge`, and the row menu's trigger
+  // and the confirm dialog are Lobe now — so without the bridge those three
+  // suites get a `MotionProvider` throw. Turning the flag on wraps the helper
+  // in one more provider; it cannot change what the product code does.
   return renderWithI18n(
     <QueryClientProvider client={qc}>
       <LinearIntegrationCard canManage isGuest={false} workspaceId="ws-1" />
     </QueryClientProvider>,
+    { lobe: true },
   );
 }
 

@@ -22,14 +22,9 @@ import type { MessagingConnectionSource } from "@orvilo/core/types";
 import { wecomInstallationsOptions } from "@orvilo/core/wecom";
 import { weixinInstallationsOptions } from "@orvilo/core/weixin";
 import { memberListOptions } from "@orvilo/core/workspace/queries";
+import { Modal } from "@lobehub/ui/base-ui";
 import { Badge } from "@orvilo/ui/components/reui/badge";
 import { Frame, FramePanel } from "@orvilo/ui/components/reui/frame";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@orvilo/ui/components/ui/dialog";
 import { useT } from "../../i18n";
 import { ComposioTab } from "./composio-tab";
 import { DingTalkAgentBindButton, DingTalkTab } from "./dingtalk-tab";
@@ -41,7 +36,7 @@ import { LarkAgentBindButton, LarkTab } from "./lark-tab";
 import { LinearIntegrationCard } from "./linear-tab";
 import { MessagingConnectionStatus } from "./messaging-connection-status";
 import { MessagingSetupNotice, useMessagingSetupWritable } from "./messaging-setup-policy";
-import { SettingsSection, SettingsTab } from "./settings-layout";
+import { SettingsGroup } from "./settings-shell";
 import { SlackAgentBindButton, SlackTab } from "./slack-tab";
 import { TelegramAgentBindButton, TelegramTab } from "./telegram-tab";
 import { VCSTab } from "./vcs-tab";
@@ -432,54 +427,70 @@ export function IntegrationsTab({
         </Frame>
       </section>
 
+      {/* `SettingsSection` without a `SettingsCard` is a *bare* section, and a
+          bare `Form.Group` is borderless — Lobe's own default. Using the
+          outlined variant here would have put `ComposioTab`'s already-migrated
+          card grid inside a second bordered panel. */}
       {composioEnabled && !composioUnconfigured ? (
-        <SettingsSection title={t(($) => $.composio.section_title)}>
+        <SettingsGroup variant="borderless" title={t(($) => $.composio.section_title)}>
           <ComposioTab />
-        </SettingsSection>
+        </SettingsGroup>
       ) : null}
       {vcsAvailable ? (
-        <SettingsSection title={t(($) => $.vcs.section_title)}>
+        <SettingsGroup variant="borderless" title={t(($) => $.vcs.section_title)}>
           <VCSTab />
-        </SettingsSection>
+        </SettingsGroup>
       ) : null}
     </>
   );
 
   return (
     <>
-      {standalone ? (
-        <div className="mx-auto w-full max-w-6xl space-y-8 p-4 sm:p-6 lg:p-8">
-          <SettingsTab
-            title={t(($) => $.page.integrations_title)}
-          >
-            {content}
-          </SettingsTab>
-        </div>
-      ) : (
-        <SettingsTab
-          title={t(($) => $.page.tabs.integrations)}
-        >
-          {content}
-        </SettingsTab>
-      )}
+      {/* `SettingsTab` is gone, and with it its `nestedInDialog` branch, which
+          returned before reading `title`/`description`/`action` — inside the
+          settings dialog the page title is the shell's `DialogHeader`, so
+          dropping it there is the mapping. The standalone Web route
+          (`WorkspaceIntegrationsPage`) has no shell, so it keeps its own
+          heading; that branch passes `integrations_title`, and the two keys
+          resolve to the same string in both locales. Neither branch has an
+          `action` to move to `extra`, so nothing was lost.
 
-      <Dialog
-        open={managedChannel !== null}
-        onOpenChange={(open) => !open && setManagedChannel(null)}
+          The spacing the discarded branch supplied (`space-y-12`) is now this
+          container's, at the family convention of `space-y-8` — the same value
+          the standalone wrapper already used. */}
+      <div
+        className={
+          standalone
+            ? "mx-auto w-full max-w-6xl space-y-8 p-4 sm:p-6 lg:p-8"
+            : "space-y-8"
+        }
       >
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>
-              {managedChannel && installedRecord(listings[managedChannel].data)
-                ? canManage && setupWritable
-                  ? t(($) => $.page.integrations_manage)
-                  : t(($) => $.page.integrations_view_details)
-                : t(($) => $.page.integrations_setup_title)}
-            </DialogTitle>
-          </DialogHeader>
-          {managedChannel ? managedContent(managedChannel) : null}
-        </DialogContent>
-      </Dialog>
+        {standalone ? (
+          <h2 className="text-display-sm font-semibold tracking-tight">
+            {t(($) => $.page.integrations_title)}
+          </h2>
+        ) : null}
+        {content}
+      </div>
+
+      {/* The channel dialog. `sm:max-w-3xl` was 768px; the Modal owns its own
+          max-height and scrolling, so the old `max-h-[90vh] overflow-y-auto`
+          is gone. `destroyOnHidden` is deliberately absent: this is base-ui's
+          `Modal`, which destructures a fixed prop list and drops it. */}
+      <Modal
+        open={managedChannel !== null}
+        title={
+          managedChannel && installedRecord(listings[managedChannel].data)
+            ? canManage && setupWritable
+              ? t(($) => $.page.integrations_manage)
+              : t(($) => $.page.integrations_view_details)
+            : t(($) => $.page.integrations_setup_title)
+        }
+        width={768}
+        onCancel={() => setManagedChannel(null)}
+      >
+        {managedChannel ? managedContent(managedChannel) : null}
+      </Modal>
     </>
   );
 }
