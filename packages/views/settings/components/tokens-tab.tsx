@@ -154,13 +154,18 @@ export function TokensTab() {
           header, so a second group holding only the list had a header with no
           title in it — measured, ~59px of dead space above the first token —
           and, because `SettingsGroup` only emits `role="group"` when it has a
-          name, the list had no section semantics either. The title is the one
-          the rail and the dialog header already use: here it names the card
-          the rows live in, which is what a reader needs to know what the
-          "Revoke" buttons below belong to. */}
+          name, the list had no section semantics either.
+
+          The title is `section_title`, not `title`: `tokens.title` is verbatim
+          the string the rail and the `DialogHeader` already show, and the two
+          sat about 100px apart. R4 governs the *page* title and R31 the
+          *section* name, so there is no conflict to resolve here — there was a
+          missing section label, which is what the other tabs have
+          (`notifications.title` is "Inbox Notifications" under a page called
+          "Notifications"). */}
       <SettingsGroup
         variant="outlined"
-        title={t(($) => $.tokens.title)}
+        title={t(($) => $.tokens.section_title)}
         description={`${t(($) => $.tokens.description)} ${t(($) => $.tokens.security_note)}`}
       >
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">

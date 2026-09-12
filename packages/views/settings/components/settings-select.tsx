@@ -126,6 +126,22 @@ export interface SettingsSelectProps {
   onValueChange: (value: string) => void;
   disabled?: boolean;
   id?: string;
+  /**
+   * Render a filter box in the popup. For long lists only — the ~600-item IANA
+   * timezone list is the case this exists for; a 2-to-5-item enum gets a search
+   * box that is pure noise.
+   *
+   * This prop is why the module note above chose the antd-backed root `Select`
+   * over the base-ui atoms in the first place — "search, virtua virtualisation
+   * and value rendering", for exactly that list. It was chosen for a capability
+   * it then never exposed, and no call site could pass it. Now it can.
+   *
+   * Filtering matches the label *and* the value, because the timezone options
+   * are `(GMT+9) Tokyo` over `Asia/Tokyo`: someone looking for Tokyo types
+   * either one. antd's own default (`optionFilterProp: "value"`) would match
+   * neither of the two a user is likely to type.
+   */
+  search?: boolean;
   /** Layout class for the trigger. Not for type — see `typography`. */
   className?: string;
   /**
@@ -155,6 +171,7 @@ export function SettingsSelect({
   onValueChange,
   disabled,
   id,
+  search,
   className,
   typography,
 }: SettingsSelectProps) {
@@ -162,6 +179,15 @@ export function SettingsSelect({
     <Select
       aria-label={label}
       className={className}
+      filterOption={
+        search
+          ? (input, option) =>
+              `${option?.label ?? ""} ${option?.value ?? ""}`
+                .toLocaleLowerCase()
+                .includes(input.toLocaleLowerCase())
+          : undefined
+      }
+      showSearch={search}
       styles={
         typography
           ? {

@@ -52,6 +52,7 @@
 
 import Form from "@lobehub/ui/es/Form/index";
 import { cn } from "@orvilo/ui/lib/utils";
+import { useResponsive } from "antd-style";
 import { useId, type ReactNode } from "react";
 
 export interface SettingsGroupProps {
@@ -99,22 +100,45 @@ export function SettingsGroup({
   // group with no name, which is worse for a screen reader than no group at
   // all. A caller passing `title={someCondition ? label : ""}` gets the
   // unlabelled behaviour, not a nameless landmark.
+  // `FormGroup`'s narrow tree is a different component in every respect, and it
+  // drops `desc` outright: read `FormGroup.mjs` to the end and the `if (mobile)`
+  // branch returns `mobileGroupHeader` + `mobileGroupBody` before `desc` is ever
+  // passed to the Collapse that would render it. So below antd-style's `xs`
+  // (479.98px) every group lost its description — which is the copy that says
+  // what the section is *for*, and on the account tab the only place two of them
+  // appear at all. Measured in the renderer at a 460px viewport: the title
+  // rendered, the description did not.
+  //
+  // Descriptions are therefore rendered here, inside the group's body and ahead
+  // of the rows, on the narrow tree only; the wide tree still hands `desc` to
+  // `Form.Group`, which knows how to place it next to the title. It takes no
+  // horizontal padding of its own: `mobileGroupBody` already carries
+  // `padding-inline: 16px`, which is what lines the rows up, and an extra
+  // `px-4` on top of that put the description 16px right of every label
+  // beside it — measured, not assumed.
+  const { mobile } = useResponsive();
   const labelId = useId();
   const labelled = title !== undefined && title !== null && title !== "";
 
   return (
     <div
       aria-labelledby={labelled ? labelId : undefined}
+      className={cn(
+        mobile && variant === "outlined" && "orvilo-settings-group-outlined",
+      )}
       role={labelled ? "group" : undefined}
     >
       <Form.Group
         className={className}
         collapsible={false}
-        desc={description}
+        desc={mobile ? undefined : description}
         extra={extra}
         title={labelled ? <span id={labelId}>{title}</span> : undefined}
         variant={variant}
       >
+        {mobile && description ? (
+          <p className="text-body text-muted-foreground pt-2">{description}</p>
+        ) : null}
         {children}
       </Form.Group>
     </div>
@@ -144,6 +168,9 @@ const ROW_CLASS = "orvilo-settings-row";
 /** See `ROW_CLASS`: the other half of the row's alignment, also in `base.css`. */
 const ROW_ALIGN_START_CLASS = "orvilo-settings-row-start";
 
+/** See `disabled` on the props: dims the label, also in `base.css`. */
+const ROW_DISABLED_CLASS = "orvilo-settings-row-disabled";
+
 export interface SettingsFormRowProps {
   label?: ReactNode;
   description?: ReactNode;
@@ -165,13 +192,37 @@ export interface SettingsFormRowProps {
    */
   htmlFor?: string;
   /**
-   * The control column's width, in pixels — an exact width, not a floor:
-   * `Form.Item` turns it into
-   * `.ant-form-item-control { width: var(--form-item-min-width) !important }`.
-   * The old `SettingsRow` used five container-query tiers; these are the same
-   * tiers restated as the pixels they resolved to.
+   * The control column's width, in pixels. The old `SettingsRow` used five
+   * container-query tiers; these are the same tiers restated as the pixels they
+   * resolved to.
+   *
+   * **The width is exact, but not because of this prop.** `Form.Item` turns it
+   * into `.ant-form-item-control { width: var(--form-item-min-width) !important
+   * }`, and that declaration is only a *base size*: a flex item's `width` is
+   * where it starts, not what it gets, and Lobe leaves the column at
+   * `flex: 0 1 auto` (`itemStyles.root` sets `flex: unset` on the row's
+   * children), so on its own the column shrinks — measured, the account tab's
+   * long labels resolved their neighbours to 384/327/271/375px in one card.
+   * What makes it exact is `packages/ui/styles/base.css`, which pins
+   * `flex: 0 0 auto` on the control and `flex: 1 1 0%` on the label above the
+   * stacking breakpoint. Lobe's own pair of rules exists but only under
+   * antd-style's `responsive.sm`, which is `@media (max-width: 575.98px)`.
    */
   minWidth?: number;
+  /**
+   * Marks the row as disabled so its label dims, for a row whose control is
+   * `disabled` because the viewer may not edit it — a non-managing workspace
+   * member, say.
+   *
+   * The old rows got this from a `data-disabled` attribute on a base-ui
+   * `Field`, whose `FieldLabel` carries
+   * `group-data-[disabled=true]/field:opacity-50`. These rows have no `Field`
+   * and no `FieldLabel`, so re-adding that attribute would have been dead — the
+   * variant needs a `group/field` ancestor and a `[data-slot=field-label]`
+   * target, and an antd row has neither. The class below is the replacement,
+   * and its rule lives with the rest of this row's geometry in `base.css`.
+   */
+  disabled?: boolean;
   /**
    * Where the control sits when the row is taller than the label. `center` is
    * the default Lobe's own `Form` gives its rows; `start` is for a row whose
@@ -192,12 +243,18 @@ export function SettingsFormRow({
   minWidth,
   align = "center",
   divider,
+  disabled,
   children,
   className,
 }: SettingsFormRowProps) {
   return (
     <Form.Item
-      className={cn(ROW_CLASS, align === "start" && ROW_ALIGN_START_CLASS, className)}
+      className={cn(
+        ROW_CLASS,
+        align === "start" && ROW_ALIGN_START_CLASS,
+        disabled && ROW_DISABLED_CLASS,
+        className,
+      )}
       colon={false}
       desc={description}
       divider={divider}

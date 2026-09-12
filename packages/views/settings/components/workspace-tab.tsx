@@ -323,7 +323,10 @@ export function WorkspaceTab() {
           </FrameHeader>
           <Separator />
           <div className="px-4">
-            <SettingsFormRow label={t(($) => $.workspace.logo_label)}>
+            <SettingsFormRow
+              disabled={!canManageWorkspace}
+              label={t(($) => $.workspace.logo_label)}
+            >
               <AvatarUploadControl
                 variant="workspace"
                 value={workspace.avatar_url ?? null}
@@ -364,6 +367,7 @@ export function WorkspaceTab() {
             </SettingsFormRow>
 
             <SettingsFormRow
+              disabled={!canManageWorkspace}
               divider
               label={t(($) => $.workspace.name_label)}
               htmlFor="workspace-name"
@@ -374,6 +378,7 @@ export function WorkspaceTab() {
                 autoComplete="organization"
                 disabled={!canManageWorkspace}
                 id="workspace-name"
+                name="workspace-name"
                 type="text"
                 value={name}
                 onBlur={detailsAutoSave.flush}
@@ -390,6 +395,7 @@ export function WorkspaceTab() {
               <Input
                 className="w-full"
                 id="workspace-url"
+                name="workspace-url"
                 readOnly
                 type="url"
                 value={workspaceUrl}
@@ -397,6 +403,7 @@ export function WorkspaceTab() {
             </SettingsFormRow>
 
             <SettingsFormRow
+              disabled={!canManageWorkspace}
               divider
               label={t(($) => $.workspace.issue_prefix_label)}
               htmlFor="workspace-issue-prefix"

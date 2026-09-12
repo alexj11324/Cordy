@@ -813,6 +813,7 @@
   },
   "tokens": {
     "title": "Authorized clients",
+    "section_title": "Personal access tokens",
     "description": "Manage clients that can access your account. Revoking access signs that client out.",
     "security_note": "A token grants full access to your account — treat it like a password.",
     "empty": "No authorized clients yet.",

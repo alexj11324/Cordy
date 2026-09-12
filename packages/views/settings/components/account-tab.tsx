@@ -78,11 +78,13 @@ interface SelectOption {
 }
 
 /**
- * The old `SettingsRow`'s width tiers, in pixels. `Form.Item` turns `minWidth`
- * into an exact width for the control column
- * (`.ant-form-item-control { width: var(--form-item-min-width) !important }`),
- * so a row is either hugging its control or exactly this wide — which is why
- * the text rows share one value and can never drift apart.
+ * The old `SettingsRow`'s width tiers, in pixels: a row is either hugging its
+ * control or exactly this wide, which is why the text rows share one value and
+ * cannot drift apart.
+ *
+ * The exactness comes from `base.css`, not from the prop — `Form.Item` turns
+ * `minWidth` into `width`, and a flex item's `width` is only its base size.
+ * `SettingsFormRow`'s `minWidth` documents both halves.
  */
 const TEXT_MIN_WIDTH = 384;
 const SELECT_MIN_WIDTH = 192;
@@ -111,10 +113,22 @@ const TIME_FORMAT_OPTIONS: SelectOption[] = [
 ];
 
 /**
- * The registry block's curated zones, flattened. The old combobox grouped them
- * under "Americas" / "Europe" / "Asia Pacific" labels; `SettingsSelect` is a
- * flat single-choice list, so the group names are gone and the labels — which
- * carry the offset, and are what a user scans for — are not.
+ * The registry block's curated zones, flattened.
+ *
+ * Three things the old `TimezoneComboboxField` had are not here, and they are
+ * named rather than waved at:
+ *
+ *   - the **group labels** ("Americas" / "Europe" / "Asia Pacific") — a flat
+ *     15-item list needs no headings, and `SettingsSelect` has no grouped mode;
+ *   - the **"No timezones found."** empty state — with 15 options and a filter
+ *     that matches both the offset label and the IANA value, an empty result is
+ *     reachable but not worth a translated string of its own;
+ *   - the **placeholder** ("Select a timezone").
+ *
+ * The **filter itself is back**, on `search` — that is the capability the
+ * combobox had and this row must keep, since scanning 15 items for one zone is
+ * the interaction. The option labels, which carry the GMT offset and are what a
+ * user actually reads, are unchanged.
  */
 const TIMEZONE_OPTIONS: SelectOption[] = [
   { value: "America/Los_Angeles", label: "(GMT-8) Los Angeles" },
@@ -548,6 +562,7 @@ export function AccountTab() {
             id="profile-3-timezone"
             label="Preferred Timezone"
             options={TIMEZONE_OPTIONS}
+            search
             value={form.timezone}
             onValueChange={(value) => updateField("timezone", value)}
           />

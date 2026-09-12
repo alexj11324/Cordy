@@ -271,11 +271,33 @@ describe("WorkspaceTab — automatic updates", () => {
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
   });
 
+  /**
+   * The three rows a regular member may not edit are dimmed as well as
+   * disabled, and the URL row is not — it is read-only for everyone and never
+   * dimmed. The dimming itself is a rule in `base.css` and is measured in the
+   * renderer; what this file owns is which rows carry the marker.
+   */
   it("disables editable workspace controls for regular members", async () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     const card = await renderTab();
 
-    expect(card.getByPlaceholderText("TES")).toBeDisabled();
-    expect(card.getByDisplayValue("Test Workspace")).toBeDisabled();
+    const prefix = card.getByPlaceholderText("TES");
+    const name = card.getByDisplayValue("Test Workspace");
+    expect(prefix).toBeDisabled();
+    expect(name).toBeDisabled();
+
+    const marked = (el: HTMLElement) =>
+      el.closest(".orvilo-settings-row")?.className ?? "";
+    expect(marked(prefix)).toContain("orvilo-settings-row-disabled");
+    expect(marked(name)).toContain("orvilo-settings-row-disabled");
+    // The logo row has no labelled control, so it is reached through the
+    // upload control's own accessible name.
+    const logoRow = card
+      .getByLabelText("Change workspace logo")
+      .closest(".orvilo-settings-row");
+    expect(logoRow?.className).toContain("orvilo-settings-row-disabled");
+    expect(
+      marked(card.getByLabelText("URL") as HTMLElement),
+    ).not.toContain("orvilo-settings-row-disabled");
   });
 });

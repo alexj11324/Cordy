@@ -213,6 +213,51 @@ describe("SettingsFormRow", () => {
     expect(container.querySelector(".ant-form-item")).toBeTruthy();
   });
 
+  // antd renders the row's label as a real `<label>`, but it mints the `for`
+  // from the item's *field id*, which only exists for an item that has a
+  // `name` — and the state-ownership rule forbids one here, because antd would
+  // then own a value nothing writes. Without `htmlFor` the label points at
+  // nothing and a bare `Input` in the control slot is an unnamed textbox.
+  it("names a bare control through htmlFor", async () => {
+    renderWithI18n(
+      <SettingsFormRow label="Theme" htmlFor="profile-theme">
+        <input id="profile-theme" />
+      </SettingsFormRow>,
+      { lobe: true },
+    );
+
+    const control = await screen.findByLabelText("Theme");
+    expect(control).toHaveAttribute("id", "profile-theme");
+    expect(control.tagName).toBe("INPUT");
+  });
+
+  // `disabled` is a class, not an attribute: the dimming it triggers is a rule
+  // in `base.css` keyed on that class, because these rows are antd's and the
+  // variant the old `FieldLabel` used (`group-data-[disabled=true]/field`) has
+  // no `Field` and no `[data-slot=field-label]` to reach here. jsdom applies no
+  // stylesheet, so the class is all this layer can assert; the computed
+  // `opacity` is read in the running renderer, by the controller smoke's
+  // "a disabled row's label is dimmed" check.
+  it("marks a disabled row for dimming, and only when asked", async () => {
+    const { container } = renderWithI18n(
+      <>
+        <SettingsFormRow disabled label="Locked">
+          <input disabled />
+        </SettingsFormRow>
+        <SettingsFormRow label="Open">
+          <input />
+        </SettingsFormRow>
+      </>,
+      { lobe: true },
+    );
+
+    await screen.findByText("Locked");
+    const rows = container.querySelectorAll(".orvilo-settings-row");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].className).toContain("orvilo-settings-row-disabled");
+    expect(rows[1].className).not.toContain("orvilo-settings-row-disabled");
+  });
+
   it("draws a separator above a row only when asked", async () => {
     renderWithI18n(
       <>
