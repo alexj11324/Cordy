@@ -7,10 +7,22 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
+// Two design systems in one file, on purpose, and the split is by *surface*
+// rather than by component: `SlackTab` lives only inside the settings dialog,
+// which mounts `LobeThemeBridge`, so it is Lobe. `SlackAgentBindButton` and its
+// two sub-components are rendered from the **agent detail page**
+// (`packages/views/agents/components/tabs/integrations-tab.tsx`), and that
+// surface has no bridge — `packages/views/agents/**` contains no
+// `@lobehub/ui` import at all. Every Lobe primitive they would need (`Button`,
+// `Modal`, `ActionIcon`, `DropdownMenu`) calls `useMotionComponent()` and
+// throws `Please wrap your app with <ConfigProvider> (or <MotionProvider>)`
+// without one — measured, not assumed. So they keep the shadcn primitives
+// until their own surface gets a bridge; the alias below is what keeps the two
+// apart at the call sites.
+import { Button as LobeButton } from "@lobehub/ui/base-ui";
 import { SlackMark } from "./slack-mark";
 import { cn } from "@orvilo/ui/lib/utils";
 import { Button } from "@orvilo/ui/components/ui/button";
-import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +40,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@orvilo/ui/components/ui/alert-dialog";
+import { SettingsEmptyState } from "./settings-empty";
+import { useSettingsConfirm } from "./settings-confirm";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 import { useAuthStore } from "@orvilo/core/auth";
 import { useWorkspaceId } from "@orvilo/core/hooks";
 import { memberListOptions } from "@orvilo/core/workspace/queries";
@@ -80,8 +95,7 @@ export function SlackTab() {
     (inst) => isWorkspaceInstall(inst.agent_id) && inst.status === "installed",
   );
 
-  const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
-  const [disconnecting, setDisconnecting] = useState(false);
+  const confirm = useSettingsConfirm();
   const [managedConnecting, setManagedConnecting] = useState(false);
 
   async function handleManagedConnect() {
@@ -103,22 +117,36 @@ export function SlackTab() {
     }
   }
 
-  async function handleDisconnect() {
-    if (!setupWritable || !disconnectTarget || disconnecting) return;
-    setDisconnecting(true);
+  /**
+   * Rejects on failure on purpose: `useSettingsConfirm`'s `onOk` keeps the
+   * dialog open only while its promise is unsettled, so swallowing the error
+   * here would dismiss the confirmation exactly when the bot is still
+   * installed — the optimistic-removal shape the project's state rules forbid
+   * on destructive flows. The toast is what the user reads; the rethrow is what
+   * holds the dialog.
+   */
+  async function handleDisconnect(installationId: string) {
+    if (!setupWritable) return;
     try {
-      await api.deleteSlackInstallation(wsId, disconnectTarget);
+      await api.deleteSlackInstallation(wsId, installationId);
       await qc.invalidateQueries({ queryKey: slackKeys.installations(wsId) });
       toast.success(t(($) => $.slack.toast_disconnected));
-      setDisconnectTarget(null);
     } catch (e) {
       toast.error(
         e instanceof Error ? e.message : t(($) => $.slack.toast_disconnect_failed),
       );
-    } finally {
-      setDisconnecting(false);
+      throw e;
     }
   }
+
+  const openDisconnectConfirm = (installationId: string) =>
+    confirm({
+      title: t(($) => $.slack.disconnect_confirm_title),
+      description: t(($) => $.slack.disconnect_confirm_description),
+      confirmLabel: t(($) => $.slack.disconnect),
+      cancelLabel: t(($) => $.slack.disconnect_confirm_cancel),
+      onConfirm: () => handleDisconnect(installationId),
+    });
 
   if (isError && !data) {
     return (
@@ -126,9 +154,9 @@ export function SlackTab() {
         <p className="text-caption text-muted-foreground">
           {t(($) => $.page.connection_status.unavailable)}
         </p>
-        <Button variant="outline" size="sm" onClick={() => void refetch()}>
+        <LobeButton onClick={() => void refetch()}>
           {t(($) => $.page.connection_status.retry)}
-        </Button>
+        </LobeButton>
       </div>
     );
   }
@@ -137,131 +165,113 @@ export function SlackTab() {
     <div className="space-y-8">
       {!setupWritable && <MessagingSetupNotice />}
       {!configured && installations.length === 0 ? (
-        <Card>
-          <CardContent className="space-y-2">
-            <p className="text-body font-medium">{t(($) => $.slack.not_enabled_title)}</p>
-            <p className="text-caption text-muted-foreground">
-              {t(($) => $.slack.not_enabled_description_prefix)}{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                ORVILO_SLACK_SECRET_KEY
-              </code>{" "}
-              {t(($) => $.slack.not_enabled_description_suffix)}{" "}
-              {t(($) => $.slack.not_enabled_self_host_hint)}
-            </p>
-          </CardContent>
-        </Card>
+        // A notice, not a settings group: there are no rows behind it, so the
+        // group's body would be an empty padded box under the header. The
+        // paragraph is the body, which is why it goes in `children` rather than
+        // in `description` — `desc` renders *inside the header*, beside the
+        // title, and would read as a subtitle for a section that does not
+        // exist.
+        <SettingsGroup
+          variant="outlined"
+          title={t(($) => $.slack.not_enabled_title)}
+        >
+          <p className="text-body text-muted-foreground">
+            {t(($) => $.slack.not_enabled_description_prefix)}{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-micro">
+              ORVILO_SLACK_SECRET_KEY
+            </code>{" "}
+            {t(($) => $.slack.not_enabled_description_suffix)}{" "}
+            {t(($) => $.slack.not_enabled_self_host_hint)}
+          </p>
+        </SettingsGroup>
       ) : !installSupported && installations.length === 0 ? (
-        <Card>
-          <CardContent className="space-y-2">
-            <p className="text-body font-medium">{t(($) => $.slack.preview_title)}</p>
-            <p className="text-caption text-muted-foreground">
-              {t(($) => $.slack.preview_description)}
-            </p>
-          </CardContent>
-        </Card>
+        <SettingsGroup
+          variant="outlined"
+          title={t(($) => $.slack.preview_title)}
+        >
+          <p className="text-body text-muted-foreground">
+            {t(($) => $.slack.preview_description)}
+          </p>
+        </SettingsGroup>
       ) : (
         <>
           {canManage && setupWritable && user?.is_guest !== true && managedSupported && !installedManagedBot ? (
-            <Card>
-              <CardContent className="flex flex-wrap items-center justify-between gap-3">
-                <div className="space-y-1">
-                  <p className="text-body font-medium">
-                    {t(($) => $.slack.managed_connect_title)}
-                  </p>
-                  <p className="text-caption text-muted-foreground">
-                    {t(($) => $.slack.managed_connect_description)}
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleManagedConnect}
+            <SettingsGroup
+              variant="outlined"
+              title={t(($) => $.slack.managed_connect_title)}
+              extra={
+                <LobeButton
                   disabled={managedConnecting}
                   data-testid="slack-managed-connect"
+                  onClick={handleManagedConnect}
                 >
                   <SlackMark className="h-3 w-3" />
                   {managedConnecting
                     ? t(($) => $.slack.managed_connecting)
                     : t(($) => $.slack.managed_connect_button)}
-                </Button>
-              </CardContent>
-            </Card>
+                </LobeButton>
+              }
+            >
+              <p className="text-body text-muted-foreground">
+                {t(($) => $.slack.managed_connect_description)}
+              </p>
+            </SettingsGroup>
           ) : null}
-          <section className="space-y-3">
-          <h2 className="text-body font-semibold">{t(($) => $.slack.installed_bots)}</h2>
-          {isLoading ? (
-            <Card>
-              <CardContent>
-                <p className="text-body text-muted-foreground">{t(($) => $.slack.loading)}</p>
-              </CardContent>
-            </Card>
-          ) : installations.length === 0 ? (
-            <Card>
-              <CardContent className="space-y-2">
-                <p className="text-body font-medium">{t(($) => $.slack.empty_title)}</p>
-                <p className="text-caption text-muted-foreground">
-                  {t(($) => $.slack.empty_description_prefix)}{" "}
-                  <strong>{t(($) => $.slack.empty_description_cta)}</strong>{" "}
-                  {t(($) => $.slack.empty_description_suffix)}
-                </p>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card>
-              <CardContent className="divide-y">
-                {installations.map((inst) => (
-                  <InstallationRow
-                    key={inst.id}
-                    installation={inst}
-                    canManage={canManage && setupWritable}
-                    onDisconnect={() => setDisconnectTarget(inst.id)}
-                  />
-                ))}
-              </CardContent>
-            </Card>
-          )}
-          </section>
+          {/* The section heading and the card that held the rows were two
+              elements describing one section. A group's title is where a
+              section heading goes, so they merge into one — which is also what
+              keeps the title out of the body, where `Form.Group` would render an
+              empty padded box for a header-only group. */}
+          <SettingsGroup
+            variant="outlined"
+            title={t(($) => $.slack.installed_bots)}
+          >
+            {isLoading ? (
+              <SettingsEmptyState title={t(($) => $.slack.loading)} />
+            ) : installations.length === 0 ? (
+              <SettingsEmptyState
+                title={t(($) => $.slack.empty_title)}
+                description={
+                  <>
+                    {t(($) => $.slack.empty_description_prefix)}{" "}
+                    <strong>{t(($) => $.slack.empty_description_cta)}</strong>{" "}
+                    {t(($) => $.slack.empty_description_suffix)}
+                  </>
+                }
+              />
+            ) : (
+              installations.map((inst, index) => (
+                <InstallationRow
+                  key={inst.id}
+                  divider={index > 0}
+                  installation={inst}
+                  canManage={canManage && setupWritable}
+                  onDisconnect={() => openDisconnectConfirm(inst.id)}
+                />
+              ))
+            )}
+          </SettingsGroup>
         </>
       )}
-
-      <AlertDialog
-        open={setupWritable && !!disconnectTarget}
-        onOpenChange={(v) => {
-          if (!v && !disconnecting) setDisconnectTarget(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t(($) => $.slack.disconnect_confirm_title)}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.slack.disconnect_confirm_description)}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={disconnecting}>
-              {t(($) => $.slack.disconnect_confirm_cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleDisconnect} disabled={disconnecting}>
-              {disconnecting
-                ? t(($) => $.slack.disconnecting)
-                : t(($) => $.slack.disconnect)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
 
+/**
+ * One installation, as a `SettingsFormRow`: the identity is the row's label,
+ * the connection state and install date are its description, and the
+ * destructive action is the control column. `divider` replaces the old
+ * `divide-y` on the card that used to hold these rows.
+ */
 function InstallationRow({
   installation,
   canManage,
+  divider,
   onDisconnect,
 }: {
   installation: SlackInstallation;
   canManage: boolean;
+  divider: boolean;
   onDisconnect: () => void;
 }) {
   const { t } = useT("settings");
@@ -278,45 +288,49 @@ function InstallationRow({
       })
     : agentName;
   return (
-    <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
-      <div className="flex items-start gap-3">
-        {isManaged ? (
-          <span className="flex size-8 items-center justify-center rounded-md bg-muted">
-            <SlackMark className="h-4 w-4" />
-          </span>
-        ) : (
-          <ActorAvatar
-            actorType="agent"
-            actorId={installation.agent_id}
-            size="lg"
-            enableHoverCard
-            profileLink
-          />
-        )}
-        <div className="space-y-1">
-          <MessagingConnectionStatus installation={installation} />
-          <p className="text-body font-medium">
-            {title}
-            {!isInstalled && (
-              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
-                {t(($) => $.slack.revoked_badge)}
-              </span>
-            )}
-          </p>
-          <p className="text-micro text-muted-foreground">
+    <SettingsFormRow
+      divider={divider}
+      label={
+        <span className="inline-flex min-w-0 items-center gap-2">
+          {isManaged ? (
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted">
+              <SlackMark className="h-4 w-4" />
+            </span>
+          ) : (
+            <ActorAvatar
+              actorType="agent"
+              actorId={installation.agent_id}
+              size="lg"
+              enableHoverCard
+              profileLink
+            />
+          )}
+          <span className="min-w-0 truncate">{title}</span>
+          {!isInstalled ? (
+            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
+              {t(($) => $.slack.revoked_badge)}
+            </span>
+          ) : null}
+        </span>
+      }
+      description={
+        <>
+          <MessagingConnectionStatus installation={installation} compact />
+          <span className="block">
             {t(($) => $.slack.installed_at_label, {
               when: new Date(installation.installed_at).toLocaleString(locale),
             })}
-          </p>
-        </div>
-      </div>
-      {canManage && isInstalled && (
-        <Button variant="outline" size="sm" onClick={onDisconnect}>
+          </span>
+        </>
+      }
+    >
+      {canManage && isInstalled ? (
+        <LobeButton onClick={onDisconnect}>
           <Trash2 className="h-3 w-3" />
           {t(($) => $.slack.disconnect)}
-        </Button>
-      )}
-    </div>
+        </LobeButton>
+      ) : null}
+    </SettingsFormRow>
   );
 }
 
@@ -471,6 +485,8 @@ export function SlackAgentBindButton({
         {t(($) => $.slack.bind_button)}
       </Button>
 
+      {/* shadcn `Dialog`, not Lobe `Modal`: this component renders on the agent
+          detail page, which has no `LobeThemeBridge`. See the import note. */}
       <Dialog
         open={dialogOpen}
         onOpenChange={(v) => (v ? setDialogOpen(true) : closeDialog())}
@@ -675,6 +691,7 @@ function SlackAgentBotInstalledControls({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
     </div>
   );
 }
