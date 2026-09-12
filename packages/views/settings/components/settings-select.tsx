@@ -78,6 +78,16 @@
  * call site names the design scale, not a pixel count. What it cannot do is use
  * a utility class for them; `className` remains for layout, which antd does not
  * contest.
+ *
+ * **A smaller type scale also shrinks the box, so the wrapper pins the height.**
+ * `.ant-select` sets no height — its box is padding + the content's
+ * line-height, and the padding is a token antd derived from the *default* font
+ * size, which an inline `font-size` cannot move. The timezone select came out
+ * 30px tall beside two 36px siblings in the same card. `typography` therefore
+ * also sets `min-height: var(--ant-control-height)` on the root, so a call site
+ * changing the scale cannot silently change the control's height. A call site
+ * that genuinely wants a shorter control can still say so, since its own
+ * `minHeight` wins.
  */
 
 import Select from "@lobehub/ui/es/Select/Select";
@@ -122,7 +132,28 @@ export function SettingsSelect({
       aria-label={label}
       className={className}
       styles={
-        typography ? { root: typography, popup: { listItem: typography } } : undefined
+        typography
+          ? {
+              // Shrinking the type must not shrink the control. `.ant-select`
+              // sets no height of its own — its box *is* padding + the
+              // content's line-height — and the padding is a token antd
+              // derives from the default font size, so an inline `font-size`
+              // moves the line box but not the padding. A 12px timezone select
+              // therefore came out 30px tall (6+16+6 + 2px border) beside two
+              // 36px siblings (6+22+6 + 2), in the same card. The option rows
+              // never had this problem because `.ant-select-item` carries its
+              // own `min-height`.
+              //
+              // `min-height` rather than a line-height, which was measured and
+              // rejected: the obvious token, `--ant-line-height`, is a
+              // unitless ratio (1.571…) meant to multiply the *default* size,
+              // so applying it to 12px yields 33px — still wrong, and now
+              // wrong by a number nobody can predict. Pinning the box to the
+              // control-height token leaves the type free.
+              root: { minHeight: "var(--ant-control-height)", ...typography },
+              popup: { listItem: typography },
+            }
+          : undefined
       }
       disabled={disabled}
       id={id}

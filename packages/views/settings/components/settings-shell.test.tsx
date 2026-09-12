@@ -43,9 +43,15 @@ describe("SettingsGroup", () => {
 
   // `Form.Group` derives `collapsible` from the variant when it is undefined,
   // and an outlined group is collapsible by default. That turns the section
-  // title into a disclosure toggle, which both hides rows on a stray click and
-  // breaks the settings nav search — it matches on row content, and a collapsed
-  // section matches nothing. The title must not be a button.
+  // title into a disclosure toggle, so a stray click hides every row beneath
+  // it. The title must not be a button.
+  //
+  // An earlier revision of this comment added a second reason — "breaks the
+  // settings nav search, because it matches on row content, and a collapsed
+  // section matches nothing". That reason was not real: the page's only search
+  // is `matches()` in `settings-page.tsx`, which filters *rail tabs* on their
+  // value, label and description, and nothing on the page looks at row
+  // content. The collapsible default is reason enough on its own.
   // The group's title is the only thing that tells two same-named rows apart,
   // and rc-collapse sets no role at all unless `accordion` is true, so the
   // wrapper is what makes the section addressable: `role="group"` named by
@@ -74,6 +80,22 @@ describe("SettingsGroup", () => {
   it("adds no group role when it has no title", async () => {
     renderWithI18n(
       <SettingsGroup extra={<button type="button">Reset</button>}>
+        <div>Row body</div>
+      </SettingsGroup>,
+      { lobe: true },
+    );
+
+    expect(await screen.findByText("Row body")).toBeTruthy();
+    expect(screen.queryAllByRole("group")).toHaveLength(0);
+  });
+
+  // An empty string is the shape a conditional title arrives in —
+  // `title={showHeader ? label : ""}` — and it is not a title. `role="group"`
+  // with an empty `aria-labelledby` announces a group with no name, which is
+  // worse than no group at all, so it must take the untitled branch.
+  it("treats an empty title as no title", async () => {
+    renderWithI18n(
+      <SettingsGroup title="">
         <div>Row body</div>
       </SettingsGroup>,
       { lobe: true },

@@ -94,8 +94,13 @@ export function SettingsGroup({
   // The wrapper carries no class and no style, so it changes no layout — the
   // settings tab body is a plain block and spacing comes from `Form.Group`'s
   // own margin.
+  // An empty string is treated as no title rather than as a title that happens
+  // to be empty: `role="group"` with an empty `aria-labelledby` announces a
+  // group with no name, which is worse for a screen reader than no group at
+  // all. A caller passing `title={someCondition ? label : ""}` gets the
+  // unlabelled behaviour, not a nameless landmark.
   const labelId = useId();
-  const labelled = title !== undefined && title !== null;
+  const labelled = title !== undefined && title !== null && title !== "";
 
   return (
     <div

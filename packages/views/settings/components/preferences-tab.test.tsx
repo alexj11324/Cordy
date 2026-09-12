@@ -90,13 +90,16 @@ import { useCommentComposerStore } from "@orvilo/core/issues/stores";
  * injects costs ~3.4s where the same query scoped to its group costs ~9ms —
  * per call, per file, and Tasks 5-9 copy whatever this file does.
  */
-let tab: ReturnType<typeof within>;
-
 async function renderTab() {
   renderWithI18n(<PreferencesTab />, { lobe: true });
-  // Shared with the picking helpers below so every row query in this file is
-  // scoped without threading the handle through four signatures.
-  tab = within(await screen.findByRole("group", { name: "General" }));
+  // Returned rather than assigned to a module-level binding: the picking
+  // helpers below take it as their first argument. A shared mutable binding
+  // would outlive the render that created it — `findByRole` resolves against
+  // whatever the document holds at the time, so a stale handle from a previous
+  // test would keep resolving against the previous test's tree wherever the
+  // two overlap. `notifications-tab.test.tsx` returns its groups the same way;
+  // this file and that one should not teach two shapes for one job.
+  return within(await screen.findByRole("group", { name: "General" }));
 }
 
 /**
@@ -114,6 +117,7 @@ async function renderTab() {
  * like the timezone one — hence `getByTitle` for the item and nothing else.
  */
 async function pickOption(
+  tab: ReturnType<typeof within>,
   user: ReturnType<typeof userEvent.setup>,
   comboboxName: string,
   optionName: string | RegExp,
@@ -142,17 +146,18 @@ describe("PreferencesTab — Language switcher", () => {
   });
 
   async function pickLanguage(
+    tab: ReturnType<typeof within>,
     user: ReturnType<typeof userEvent.setup>,
     name: string,
   ) {
-    await pickOption(user, "Language", name);
+    await pickOption(tab, user, "Language", name);
   }
 
   it("does nothing when clicking the current locale", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    await renderTab();
+    const tab = await renderTab();
 
-    await pickLanguage(user, "English");
+    await pickLanguage(tab, user, "English");
 
     expect(mockPersist).not.toHaveBeenCalled();
     expect(mockUpdateMe).not.toHaveBeenCalled();
@@ -161,9 +166,9 @@ describe("PreferencesTab — Language switcher", () => {
 
   it("shows a confirmation toast when the theme is saved locally", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    await renderTab();
+    const tab = await renderTab();
 
-    await pickOption(user, "Theme", "Dark");
+    await pickOption(tab, user, "Theme", "Dark");
 
     expect(mockSetTheme).toHaveBeenCalledWith("dark");
     expect(mockToastSuccess).toHaveBeenCalledTimes(1);
@@ -171,9 +176,9 @@ describe("PreferencesTab — Language switcher", () => {
 
   it("when not logged in: persists + reloads, no PATCH", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    await renderTab();
+    const tab = await renderTab();
 
-    await pickLanguage(user, "中文");
+    await pickLanguage(tab, user, "中文");
 
     expect(mockPersist).toHaveBeenCalledWith("zh-Hans");
     expect(mockUpdateMe).not.toHaveBeenCalled();
@@ -186,7 +191,7 @@ describe("PreferencesTab — Language switcher", () => {
 
   it("offers only the locales the product ships", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    await renderTab();
+    const tab = await renderTab();
 
     await user.click(tab.getByRole("combobox", { name: "Language" }));
 
@@ -200,9 +205,9 @@ describe("PreferencesTab — Language switcher", () => {
     userRef.current = { id: "user-1" };
     mockUpdateMe.mockResolvedValueOnce({});
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    await renderTab();
+    const tab = await renderTab();
 
-    await pickLanguage(user, "中文");
+    await pickLanguage(tab, user, "中文");
 
     expect(mockPersist).toHaveBeenCalledWith("zh-Hans");
     expect(mockUpdateMe).toHaveBeenCalledWith({ language: "zh-Hans" });
@@ -217,9 +222,9 @@ describe("PreferencesTab — Language switcher", () => {
     userRef.current = { id: "user-1" };
     mockUpdateMe.mockRejectedValueOnce(new Error("network"));
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    await renderTab();
+    const tab = await renderTab();
 
-    await pickLanguage(user, "中文");
+    await pickLanguage(tab, user, "中文");
 
     // Local persist still happened so the reload below sees the new locale.
     expect(mockPersist).toHaveBeenCalledWith("zh-Hans");
@@ -273,10 +278,11 @@ describe("PreferencesTab — Timezone section", () => {
   // renders a virtual window over the popup, and under jsdom only the first
   // screenful (nine of the curator's nineteen) exists in the DOM at all.
   async function pickTimezone(
+    tab: ReturnType<typeof within>,
     user: ReturnType<typeof userEvent.setup>,
     name: RegExp | string,
   ) {
-    await pickOption(user, "Viewing Timezone", name);
+    await pickOption(tab, user, "Viewing Timezone", name);
   }
 
   // The migration's original defect, and the guard against it returning.
@@ -293,7 +299,7 @@ describe("PreferencesTab — Timezone section", () => {
   it("puts the caption/mono type scale on the trigger and on the options", async () => {
     userRef.current = { id: "user-1", timezone: "Asia/Shanghai" };
     const user = userEvent.setup();
-    await renderTab();
+    const tab = await renderTab();
 
     const combobox = () =>
       tab.getByRole("combobox", { name: "Viewing Timezone" });
@@ -310,9 +316,31 @@ describe("PreferencesTab — Timezone section", () => {
     ).toHaveAttribute("style", expect.stringContaining("--text-caption"));
   });
 
+  // The other half of the same invariant: shrinking the type must not shrink
+  // the control. `.ant-select` sets no height — its box is padding + the
+  // content's line-height — so the 12px trigger rendered 30px tall beside two
+  // 36px siblings in the same card, and the padding is a token antd derived
+  // from the default font size, which an inline `font-size` cannot move.
+  //
+  // **Reach, stated honestly: this pins the declaration, not the box.** jsdom
+  // has no layout engine, so it cannot see a rendered height at all. The
+  // assertion fails if someone removes the `min-height`; it cannot fail if the
+  // token resolves to the wrong number, or if a future antd stops deriving the
+  // box this way. The box is verified by reading computed heights in the
+  // running renderer, which is the only place this defect was ever visible.
+  it("pins the trigger to the control-height token so the type scale cannot shrink the box", async () => {
+    const tab = await renderTab();
+
+    expect(
+      tab
+        .getByRole("combobox", { name: "Viewing Timezone" })
+        .closest(".ant-select"),
+    ).toHaveAttribute("style", expect.stringContaining("--ant-control-height"));
+  });
+
   it("renders the stored timezone in the trigger", async () => {
     userRef.current = { id: "user-1", timezone: "Asia/Shanghai" };
-    await renderTab();
+    const tab = await renderTab();
 
     // Asserted through the trigger's `title` rather than the combobox's own
     // text content: this select renders `<input role="combobox">`, whose text
@@ -328,9 +356,9 @@ describe("PreferencesTab — Timezone section", () => {
     const updatedUser = { id: "user-1", timezone: "America/New_York" };
     mockUpdateMe.mockResolvedValueOnce(updatedUser);
     const user = userEvent.setup();
-    await renderTab();
+    const tab = await renderTab();
 
-    await pickTimezone(user, "America/New_York");
+    await pickTimezone(tab, user, "America/New_York");
 
     await waitFor(() => {
       expect(mockUpdateMe).toHaveBeenCalledWith({ timezone: "America/New_York" });
@@ -343,9 +371,9 @@ describe("PreferencesTab — Timezone section", () => {
     userRef.current = { id: "user-1", timezone: "Asia/Shanghai" };
     mockUpdateMe.mockRejectedValueOnce(new Error("network down"));
     const user = userEvent.setup();
-    await renderTab();
+    const tab = await renderTab();
 
-    await pickTimezone(user, "America/New_York");
+    await pickTimezone(tab, user, "America/New_York");
 
     await waitFor(() => {
       expect(mockUpdateMe).toHaveBeenCalledWith({ timezone: "America/New_York" });
@@ -359,11 +387,11 @@ describe("PreferencesTab — Timezone section", () => {
     const clearedUser = { id: "user-1", timezone: null };
     mockUpdateMe.mockResolvedValueOnce(clearedUser);
     const user = userEvent.setup();
-    await renderTab();
+    const tab = await renderTab();
 
     // The "(browser)" sentinel option resets the preference to NULL; the
     // wire payload is an empty string the backend translates to NULL.
-    await pickTimezone(user, /browser/i);
+    await pickTimezone(tab, user, /browser/i);
 
     await waitFor(() => {
       expect(mockUpdateMe).toHaveBeenCalledWith({ timezone: "" });
@@ -387,7 +415,7 @@ describe("PreferencesTab — Sticky comment bar", () => {
 
   it("renders on by default and toggles the preference off with a saved toast", async () => {
     const user = userEvent.setup();
-    await renderTab();
+    const tab = await renderTab();
 
     // Named query, not an index into the page's switches: the switch's
     // accessible name is the only thing that survives a wrapper changing.

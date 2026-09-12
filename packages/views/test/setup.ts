@@ -37,13 +37,35 @@ if (typeof window !== "undefined") {
 
   // useIsMobile() and antd-style's useResponsive() rely on matchMedia.
   //
-  // This guard never fires: jsdom ships a `matchMedia` of its own, so the stub
-  // below is dead code and the suite has always been served by jsdom's version,
-  // which answers `false` to every query. The observable behaviour is the same
-  // either way — which is why `useResponsive().mobile` is false in tests, and
-  // why `prefers-reduced-motion` has always answered false here. Kept as it is
-  // rather than corrected, because 85 suites share this file and the behaviour
-  // is not broken, only unexplained.
+  // **This guard fires, and this stub is live.** jsdom does not implement
+  // `matchMedia` — verified directly against the version this repo resolves:
+  //
+  //   $ node -e "const {JSDOM}=require('jsdom');
+  //              console.log(typeof new JSDOM('').window.matchMedia)"
+  //   undefined                     // jsdom 29.0.1
+  //
+  // and inside the vitest environment the function is this arrow function, not
+  // jsdom's: `String(window.matchMedia)` starts `(query) => ({` and the object
+  // it returns has `Object` for its prototype rather than `MediaQueryList`.
+  //
+  // So deleting the stub is not a tidy-up: every suite that mounts a Lobe
+  // component would fail with `TypeError: window.matchMedia is not a function`,
+  // because `useResponsive()` and `useIsMobile()` call it during render.
+  // Observed, by making the guard above not fire: 13 of the preferences suite's
+  // tests fail immediately with exactly that TypeError, plus a downstream
+  // `Cannot read properties of undefined (reading 'addEventListener')` from the
+  // callers that receive `undefined` back. It is
+  // also why `useResponsive().mobile` is false in tests and why
+  // `prefers-reduced-motion` always answers false — the stub answers `false` to
+  // every query, which is what antd-style needs to pick its desktop defaults
+  // under jsdom.
+  //
+  // A note for whoever reads this next: an earlier revision of this comment
+  // claimed the opposite — that jsdom ships its own `matchMedia` and the stub
+  // was dead code — on the strength of a second-hand, self-labelled
+  // "not independently verified" claim. It was wrong, and it actively invited
+  // someone to delete a load-bearing stub. Hence the command above: the claim
+  // is cheap to re-check and expensive to trust.
   if (typeof window.matchMedia !== "function") {
     window.matchMedia = (query: string) =>
       ({
