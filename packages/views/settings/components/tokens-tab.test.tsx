@@ -62,21 +62,37 @@ async function renderTab() {
 }
 
 /**
- * Whether the confirm dialog has left the document inside the window a
- * dismissal takes. The same instrument as `settings-confirm.test.tsx`'s, and
- * for the same reason: "is it gone" is only meaningful after a wait, and a
- * check that never waits cannot tell open from closing.
+ * Whether the confirm dialog leaves the document within `timeout`. Polls —
+ * `waitFor` re-runs the callback until it stops throwing — because a check that
+ * samples at a fixed moment cannot tell an open dialog from a closing one, and
+ * that is exactly how the assertion this replaces was vacuous.
+ *
+ * The timeout is a parameter because the two callers want opposite things from
+ * it, and the failure directions are not symmetric:
+ *
+ *   - the **success** path passes a generous budget. Polling stops the moment
+ *     the node goes, so a fast close costs nothing, and a slow one cannot fail
+ *     it — the expensive direction is a correct build failing a test under
+ *     parallel load.
+ *   - the **failure** path passes a fixed window. It spends that whole window
+ *     waiting, and a longer one is not better: no correct run ever closes, so
+ *     the only question is whether a mutated build that closes would be caught.
  */
-async function closedWithinWindow(): Promise<boolean> {
+async function dialogLeavesWithin(timeout: number): Promise<boolean> {
   try {
     await waitFor(() => expect(screen.queryByText("Revoke token")).toBeNull(), {
-      timeout: 1_200,
+      timeout,
     });
     return true;
   } catch {
     return false;
   }
 }
+
+/** A dismissal window: long enough for a close, short enough to be an assertion. */
+const CLOSE_WINDOW_MS = 1_200;
+/** A budget, not a window: the success path must not fail a loaded runner. */
+const CLOSE_BUDGET_MS = 8_000;
 
 describe("TokensTab", () => {
   beforeEach(() => {
@@ -153,7 +169,7 @@ describe("TokensTab", () => {
     // in this file — which is what gives the negative assertion two tests down
     // its meaning. Without this demonstration "the title is still in the
     // document" could be true because nothing ever leaves it.
-    expect(await closedWithinWindow()).toBe(true);
+    expect(await dialogLeavesWithin(CLOSE_BUDGET_MS)).toBe(true);
   });
 
   /**
@@ -194,7 +210,7 @@ describe("TokensTab", () => {
     await waitFor(() => {
       expect(mockToastError).toHaveBeenCalledWith("network down");
     });
-    expect(await closedWithinWindow()).toBe(false);
+    expect(await dialogLeavesWithin(CLOSE_WINDOW_MS)).toBe(false);
   });
 
   it("hands confirmModal an onOk that rejects when the revoke fails", async () => {
