@@ -2,11 +2,9 @@
 
 import { type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@orvilo/core/i18n/react";
 import { configStore } from "@orvilo/core/config";
-import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
 type MemberRole = "owner" | "admin" | "member" | "guest";
@@ -46,6 +44,26 @@ const MockApiError = vi.hoisted(() =>
     }
   },
 );
+
+/**
+ * `confirmModal` is imperative and module-level, so the config the wrapper
+ * hands it — and therefore the promise `onOk` returns — is the only place the
+ * rethrow contract is observable. Recorded here and delegated to the real one,
+ * because the tests below also drive the dialog through the UI.
+ */
+const capturedConfirm = vi.hoisted(() => ({
+  current: null as { onOk: () => Promise<unknown> } | null,
+}));
+const mockConfirmModal = vi.hoisted(() => vi.fn());
+const actualConfirmModal = vi.hoisted(() => ({
+  current: null as null | ((config: never) => unknown),
+}));
+
+vi.mock("@lobehub/ui/base-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@lobehub/ui/base-ui")>();
+  actualConfirmModal.current = actual.confirmModal as never;
+  return { ...actual, confirmModal: mockConfirmModal };
+});
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
@@ -109,26 +127,69 @@ vi.mock("sonner", () => ({
   toast: { success: mockToastSuccess, error: mockToastError, message: vi.fn() },
 }));
 
+import { renderWithI18n } from "../../test/i18n";
 import { WeixinAgentBindButton, WeixinTab } from "./weixin-tab";
-
-const TEST_RESOURCES = { en: { common: enCommon, settings: enSettings } };
 
 afterEach(cleanup);
 
-function renderUI(children: ReactNode) {
-  return render(
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      {children}
-    </I18nProvider>,
-  );
+/**
+ * `lobe: true` mounts the theme bridge on demand, so everything after a
+ * bridged render must start with an async query — until the bridge's module
+ * resolves the tree is a `Suspense` fallback of `null` and a synchronous
+ * `getBy*` would fail.
+ *
+ * The flag defaults to **off** here rather than on, which is the opposite of
+ * the Slack/Telegram suite's helper, and deliberately so: most of this file
+ * renders `WeixinAgentBindButton`, whose host surface (the agent detail page)
+ * mounts no bridge and which therefore renders no Lobe element at all. A
+ * bridged render would make the negative assertions in those tests pass
+ * *vacuously* — the container is empty while the bridge module resolves — which
+ * is the "guard that cannot fail" shape. Renders that can reach a migrated
+ * component pass `lobe: true` explicitly, and a render that reaches one without
+ * the bridge throws loudly rather than failing silently.
+ */
+function renderUI(children: ReactNode, { lobe = false }: { lobe?: boolean } = {}) {
+  return renderWithI18n(<>{children}</>, { lobe });
 }
+
+/**
+ * Whether the confirm dialog leaves the document within `timeout`. Polls —
+ * `waitFor` re-runs the callback until it stops throwing — because a check that
+ * samples at a fixed moment cannot tell an open dialog from a closing one.
+ *
+ * The timeout is a parameter because the two callers want opposite things from
+ * it: the **success** path passes a generous budget (polling stops the moment
+ * the node goes, so a slow close cannot fail it), and the **failure** path
+ * passes a fixed window it spends in full (no correct run ever closes, so the
+ * only question is whether a mutated build that closes would be caught).
+ */
+async function dialogLeavesWithin(timeout: number): Promise<boolean> {
+  try {
+    await waitFor(
+      () => expect(screen.queryByText("Disconnect this Weixin account?")).toBeNull(),
+      { timeout },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A dismissal window: long enough for a close, short enough to be an assertion. */
+const CLOSE_WINDOW_MS = 1_200;
+/** A budget, not a window: the success path must not fail a loaded runner. */
+const CLOSE_BUDGET_MS = 8_000;
 
 describe("Weixin deployment setup policy", () => {
   beforeEach(resetFixtures);
 
-  it.each(["server_configured", "disabled"] as const)("keeps %s credential lifecycle read-only", (mode) => {
+  it.each(["server_configured", "disabled"] as const)("keeps %s credential lifecycle read-only", async (mode) => {
     configStore.getState().setMessagingConfig({ mode, setupWritable: true, platforms: [] });
-    const entry = renderUI(<WeixinAgentBindButton agentId="agent-1" />);
+    // No bridge: on this path the component renders `MessagingSetupNotice`
+    // (shadcn) or `null`, so no Lobe element renders — and the negative
+    // assertion below is decided by the component rather than by a bridge
+    // module that has not resolved yet.
+    const entry = renderUI(<WeixinAgentBindButton agentId="agent-1" />, { lobe: false });
     expect(screen.queryByRole("button", { name: "Connect Weixin" })).toBeNull();
     expect(mockBegin).not.toHaveBeenCalled();
     entry.unmount();
@@ -142,8 +203,8 @@ describe("Weixin deployment setup policy", () => {
         app_id: "app-1", team_id: "team-1", bot_id: "bot-1",
       }],
     };
-    renderUI(<><WeixinAgentBindButton agentId="agent-1" /><WeixinTab /></>);
-    expect(screen.getAllByRole("status", { name: "Connection status" })).toHaveLength(2);
+    renderUI(<><WeixinAgentBindButton agentId="agent-1" /><WeixinTab /></>, { lobe: true });
+    expect(await screen.findAllByRole("status", { name: "Connection status" })).toHaveLength(2);
     expect(screen.queryByRole("button", { name: /disconnect/i })).toBeNull();
     expect(mockDelete).not.toHaveBeenCalled();
   });
@@ -152,6 +213,11 @@ describe("Weixin deployment setup policy", () => {
 function resetFixtures() {
   configStore.getState().setMessagingConfig({ mode: "managed", setupWritable: true, platforms: [] });
   vi.clearAllMocks();
+  capturedConfirm.current = null;
+  mockConfirmModal.mockImplementation((config: never) => {
+    capturedConfirm.current = config as { onOk: () => Promise<unknown> };
+    return actualConfirmModal.current?.(config);
+  });
   membersRef.current = [{ user_id: "user-1", role: "owner" }];
   agentsRef.current = [
     { id: "agent-1", name: "Planner", owner_id: "user-1", archived_at: null },
@@ -194,9 +260,9 @@ describe("WeixinTab", () => {
       poll_interval_seconds: 30,
     });
     const user = userEvent.setup();
-    renderUI(<WeixinTab />);
+    renderUI(<WeixinTab />, { lobe: true });
 
-    await user.click(screen.getByTestId("weixin-connect-agent-agent-1"));
+    await user.click(await screen.findByTestId("weixin-connect-agent-agent-1"));
     await waitFor(() => expect(mockBegin).toHaveBeenCalledWith("workspace-1", "agent-1"));
     expect(await screen.findByTestId("weixin-qr")).toHaveAttribute(
       "data-value",
@@ -219,9 +285,9 @@ describe("WeixinTab", () => {
       .mockResolvedValueOnce({ status: "need_verify_code" })
       .mockResolvedValueOnce({ status: "success", installation_id: "installation-1" });
     const user = userEvent.setup();
-    renderUI(<WeixinTab />);
+    renderUI(<WeixinTab />, { lobe: true });
 
-    await user.click(screen.getByTestId("weixin-connect-agent-agent-1"));
+    await user.click(await screen.findByTestId("weixin-connect-agent-agent-1"));
     const codeInput = await screen.findByTestId("weixin-verify-code", {}, { timeout: 4000 });
     await user.type(codeInput, " 2468 ");
     await user.click(screen.getByRole("button", { name: /continue/i }));
@@ -243,10 +309,13 @@ describe("WeixinTab", () => {
     };
     mockDelete.mockResolvedValue(undefined);
     const user = userEvent.setup();
-    renderUI(<WeixinTab />);
+    renderUI(<WeixinTab />, { lobe: true });
 
-    await user.click(screen.getByRole("button", { name: /^Disconnect$/i }));
+    await user.click(await screen.findByRole("button", { name: /^Disconnect$/i }));
     expect(mockDelete).not.toHaveBeenCalled();
+    // Two buttons carry this name — the row's and the dialog's — and the
+    // dialog's is the last in document order (it is portalled to the end of
+    // `<body>`), so `.at(-1)` is the one that runs the request.
     const confirmButtons = await screen.findAllByRole("button", { name: /^Disconnect$/i });
     await user.click(confirmButtons.at(-1)!);
     await waitFor(() =>
@@ -255,17 +324,67 @@ describe("WeixinTab", () => {
     expect(mockInvalidate).toHaveBeenCalledWith({
       queryKey: ["weixin", "workspace-1", "installations"],
     });
+    expect(await dialogLeavesWithin(CLOSE_BUDGET_MS)).toBe(true);
   });
 
-  it("renders unknown installation statuses as a safe unavailable fallback", () => {
+  it("renders unknown installation statuses as a safe unavailable fallback", async () => {
     installationsRef.current = {
       installations: [{ id: "installation-unknown", agent_id: "agent-1", bot_id: "bot", status: "future_status" }],
       configured: true,
       install_supported: true,
     };
-    renderUI(<WeixinTab />);
+    renderUI(<WeixinTab />, { lobe: true });
 
-    expect(screen.getByText(/^revoked$/i)).toBeInTheDocument();
+    expect(await screen.findByText(/^revoked$/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Disconnect$/i })).toBeNull();
+  });
+
+  /**
+   * The caller's half of the rethrow contract, at both observable layers.
+   *
+   * `confirmModal` closes on the line after `onOk` unless `onOk` returns a
+   * promise, and stays open when that promise rejects — so a disconnect that
+   * fails must leave the confirmation up rather than dismiss as though the
+   * account were gone. The success path above is what gives the negative
+   * assertion meaning: without a run in which the dialog is shown to close, "it
+   * is still in the document" could be true because nothing ever leaves it. The
+   * second test here drops the DOM entirely — the contract lives in the promise
+   * `onOk` returns, and that is directly readable off the config the wrapper
+   * handed the library.
+   */
+  it("keeps the confirmation up when the disconnect request fails", async () => {
+    mockDelete.mockRejectedValue(new Error("network failed"));
+    installationsRef.current = {
+      installations: [{ id: "installation-1", agent_id: "agent-1", bot_id: "personal-bot", status: "installed" }],
+      configured: true,
+      install_supported: true,
+    };
+    const user = userEvent.setup();
+    renderUI(<WeixinTab />, { lobe: true });
+
+    await user.click(await screen.findByRole("button", { name: /^Disconnect$/i }));
+    await screen.findByText("Disconnect this Weixin account?");
+    const confirmButtons = await screen.findAllByRole("button", { name: /^Disconnect$/i });
+    await user.click(confirmButtons.at(-1)!);
+
+    await waitFor(() => expect(mockToastError).toHaveBeenCalledWith(enSettings.weixin.toast_disconnect_failed));
+    expect(await dialogLeavesWithin(CLOSE_WINDOW_MS)).toBe(false);
+  });
+
+  it("hands confirmModal an onOk that rejects when the disconnect fails", async () => {
+    mockDelete.mockRejectedValue(new Error("network failed"));
+    installationsRef.current = {
+      installations: [{ id: "installation-1", agent_id: "agent-1", bot_id: "personal-bot", status: "installed" }],
+      configured: true,
+      install_supported: true,
+    };
+    const user = userEvent.setup();
+    renderUI(<WeixinTab />, { lobe: true });
+
+    await user.click(await screen.findByRole("button", { name: /^Disconnect$/i }));
+    expect(capturedConfirm.current).not.toBeNull();
+
+    await expect(capturedConfirm.current?.onOk()).rejects.toThrow("network failed");
+    expect(mockToastError).toHaveBeenCalledWith(enSettings.weixin.toast_disconnect_failed);
   });
 });

@@ -4,19 +4,20 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle, Check, Loader2, Plug, RefreshCw, Trash2 } from "lucide-react";
-import { Button } from "@orvilo/ui/components/ui/button";
+// Two design systems in one file, and here the split is by *element kind*
+// rather than by surface — every surface that renders this tab is inside
+// `LobeThemeBridge` (`settings-page.tsx` mounts it around the whole dialog
+// body), so nothing here is gated by a host. What stays on shadcn is the app
+// tile's `Card`: Lobe has no `Card` at all (verified against the installed
+// `@lobehub/ui@5.42.6`), and a tile is not one of the four things the family's
+// `Card` → `Form.Group` mapping covers — it is not a box around a list of rows,
+// not a hand-written section heading, not a placeholder, and its body is not
+// prose. It is the item of a 1/2/3-column catalog, and flattening that grid
+// into single-column rows would be a design change rather than a migration
+// step. The search box, the three placeholders and the confirm dialog below are
+// all Lobe.
+import { Button as LobeButton } from "@lobehub/ui/base-ui";
 import { Card, CardContent } from "@orvilo/ui/components/ui/card";
-import { Input } from "@orvilo/ui/components/ui/input";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@orvilo/ui/components/ui/alert-dialog";
 import { api } from "@orvilo/core/api";
 import {
   composioConnectionsOptions,
@@ -27,6 +28,9 @@ import type { ComposioToolkit } from "@orvilo/core/types";
 import { ComposioToolkitLogo } from "../../common/composio-toolkit-logo";
 import { useT, useTimeAgo } from "../../i18n";
 import { useNavigation } from "../../navigation";
+import { useSettingsConfirm } from "./settings-confirm";
+import { SettingsEmptyState } from "./settings-empty";
+import { SettingsSearchBar } from "./settings-search";
 
 // ComposioTab renders the connectable Composio toolkit catalog and lets the
 // user connect / disconnect the apps their agents can act on.
@@ -48,11 +52,10 @@ export function ComposioTab() {
 
   const [query, setQuery] = useState("");
   const [connectingSlug, setConnectingSlug] = useState<string | null>(null);
-  const [disconnectTarget, setDisconnectTarget] = useState<{
-    connectionId: string;
-    name: string;
-  } | null>(null);
-  const [disconnecting, setDisconnecting] = useState(false);
+  // The `disconnectTarget` / `disconnecting` pair of `useState`s is gone with
+  // the `AlertDialog`: the imperative confirm owns both the open state and the
+  // in-flight spinner, so the row hands its connection id straight through.
+  const confirm = useSettingsConfirm();
 
   // The hosted Composio consent flow is a full-page redirect that lands back
   // on the settings page carrying either `?connected=<slug>` (success) or
@@ -159,20 +162,33 @@ export function ComposioTab() {
     }
   }
 
-  async function handleDisconnect() {
-    if (!disconnectTarget || disconnecting) return;
-    setDisconnecting(true);
+  /**
+   * Rejects on failure on purpose: `useSettingsConfirm`'s `onOk` keeps the
+   * dialog open only while its promise is unsettled, so swallowing the error
+   * here would dismiss the confirmation exactly when the connection is still
+   * live — the optimistic-removal shape the project's state rules forbid on
+   * destructive flows. The toast is what the user reads; the rethrow is what
+   * holds the dialog.
+   */
+  async function handleDisconnect(connectionId: string) {
     try {
-      await api.deleteComposioConnection(disconnectTarget.connectionId);
+      await api.deleteComposioConnection(connectionId);
       await qc.invalidateQueries({ queryKey: composioKeys.connections() });
       toast.success(t(($) => $.composio.toast_disconnected));
-      setDisconnectTarget(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t(($) => $.composio.disconnect_failed));
-    } finally {
-      setDisconnecting(false);
+      throw e;
     }
   }
+
+  const openDisconnectConfirm = (connectionId: string) =>
+    confirm({
+      title: t(($) => $.composio.disconnect_confirm_title),
+      description: t(($) => $.composio.disconnect_confirm_description),
+      confirmLabel: t(($) => $.composio.disconnect),
+      cancelLabel: t(($) => $.composio.disconnect_confirm_cancel),
+      onConfirm: () => handleDisconnect(connectionId),
+    });
 
   return (
     <div className="space-y-6">
@@ -181,31 +197,29 @@ export function ComposioTab() {
       </section>
 
       {toolkitsQuery.isLoading ? (
-        <Card>
-          <CardContent>
-            <p className="text-body text-muted-foreground">{t(($) => $.composio.loading)}</p>
-          </CardContent>
-        </Card>
+        <SettingsEmptyState title={t(($) => $.composio.loading)} />
       ) : toolkitsQuery.isError ? (
-        <Card>
-          <CardContent>
-            <p className="text-body text-destructive">{t(($) => $.composio.load_failed)}</p>
-          </CardContent>
-        </Card>
+        // A load failure folds into the same placeholder as an empty catalog,
+        // the way the Telegram tab already does: there is no group to wrap it
+        // in here (the catalogue is not a section of rows), and `Form.Group`
+        // with no children would draw a header over an empty padded panel.
+        <SettingsEmptyState title={t(($) => $.composio.load_failed)} />
       ) : toolkits.length === 0 ? (
-        <Card>
-          <CardContent className="space-y-2">
-            <p className="text-body font-medium">{t(($) => $.composio.empty_title)}</p>
-            <p className="text-caption text-muted-foreground">{t(($) => $.composio.empty_description)}</p>
-          </CardContent>
-        </Card>
+        <SettingsEmptyState
+          title={t(($) => $.composio.empty_title)}
+          description={t(($) => $.composio.empty_description)}
+        />
       ) : (
         <section className="space-y-3">
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={t(($) => $.composio.search_placeholder)}
+          <SettingsSearchBar
             className="max-w-xs"
+            // `label` is the accessible name and the placeholder is not: the
+            // old `Input` had no label at all, so the catalog search box had
+            // none either. Same string for both, the way `labels-tab` does it.
+            label={t(($) => $.composio.search_placeholder)}
+            placeholder={t(($) => $.composio.search_placeholder)}
+            value={query}
+            onValueChange={setQuery}
           />
           {connectionsQuery.isError && (
             // Don't silently treat a failed connections fetch as "nothing
@@ -227,40 +241,12 @@ export function ComposioTab() {
                 connecting={connectingSlug === tk.slug}
                 anyConnecting={connectingSlug !== null}
                 onConnect={() => handleConnect(tk)}
-                onDisconnect={(connectionId, name) =>
-                  setDisconnectTarget({ connectionId, name })
-                }
+                onDisconnect={openDisconnectConfirm}
               />
             ))}
           </div>
         </section>
       )}
-
-      <AlertDialog
-        open={!!disconnectTarget}
-        onOpenChange={(v) => {
-          if (!v && !disconnecting) setDisconnectTarget(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t(($) => $.composio.disconnect_confirm_title)}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.composio.disconnect_confirm_description)}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={disconnecting}>
-              {t(($) => $.composio.disconnect_confirm_cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleDisconnect} disabled={disconnecting}>
-              {disconnecting
-                ? t(($) => $.composio.disconnecting)
-                : t(($) => $.composio.disconnect)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
@@ -282,7 +268,7 @@ function ToolkitCard({
   connecting: boolean;
   anyConnecting: boolean;
   onConnect: () => void;
-  onDisconnect: (connectionId: string, name: string) => void;
+  onDisconnect: (connectionId: string) => void;
 }) {
   const { t } = useT("settings");
   const timeAgo = useTimeAgo();
@@ -320,14 +306,11 @@ function ToolkitCard({
               <Check className="h-3 w-3" />
               {t(($) => $.composio.connected)}
             </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onDisconnect(connectionId!, toolkit.name || toolkit.slug)}
+            <LobeButton
               aria-label={t(($) => $.composio.disconnect)}
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
+              icon={<Trash2 className="h-3 w-3" />}
+              onClick={() => onDisconnect(connectionId!)}
+            />
           </div>
         ) : expired ? (
           // Token-expired connection: surface the failure and let the user
@@ -337,24 +320,24 @@ function ToolkitCard({
               <AlertTriangle className="h-3 w-3" />
               {t(($) => $.composio.expired)}
             </span>
-            <Button size="sm" variant="outline" onClick={onConnect} disabled={anyConnecting}>
+            <LobeButton disabled={anyConnecting} onClick={onConnect}>
               {connecting ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
               ) : (
                 <RefreshCw className="h-3 w-3" />
               )}
               {connecting ? t(($) => $.composio.connecting) : t(($) => $.composio.reconnect)}
-            </Button>
+            </LobeButton>
           </div>
         ) : toolkit.connectable ? (
-          <Button size="sm" onClick={onConnect} disabled={anyConnecting}>
+          <LobeButton disabled={anyConnecting} type="primary" onClick={onConnect}>
             {connecting ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <Plug className="h-3 w-3" />
             )}
             {connecting ? t(($) => $.composio.connecting) : t(($) => $.composio.connect)}
-          </Button>
+          </LobeButton>
         ) : null}
       </CardContent>
     </Card>

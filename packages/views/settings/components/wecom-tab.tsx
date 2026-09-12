@@ -9,8 +9,20 @@ import { toast } from "sonner";
 import { ChevronRight, Trash2 } from "lucide-react";
 import { WecomMark } from "./wecom-mark";
 import { cn } from "@orvilo/ui/lib/utils";
+// Two design systems in one file, and the split is by *surface* rather than by
+// component. `WecomTab` lives only inside the settings Integrations dialog,
+// which mounts `LobeThemeBridge`, so it is Lobe. `WecomAgentBindButton` and its
+// two sub-components are rendered from the **agent detail page**
+// (`packages/views/agents/components/tabs/integrations-tab.tsx`), and that
+// surface has no bridge — `packages/views/agents/**` contains no `@lobehub/ui`
+// import at all. Every Lobe primitive they would need (`Button`, `Modal`,
+// `ActionIcon`, `DropdownMenu`) calls `useMotionComponent()` and throws
+// `Please wrap your app with <ConfigProvider> (or <MotionProvider>)` without
+// one — measured, not assumed. So they keep the shadcn primitives until their
+// own surface gets a bridge; the alias below is what keeps the two apart at the
+// call sites.
+import { Button as LobeButton } from "@lobehub/ui/base-ui";
 import { Button } from "@orvilo/ui/components/ui/button";
-import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -38,6 +50,9 @@ import { api } from "@orvilo/core/api";
 import type { WecomInstallation } from "@orvilo/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
+import { useSettingsConfirm } from "./settings-confirm";
+import { SettingsEmptyState } from "./settings-empty";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 
 // WecomTab is the workspace settings panel for WeCom smart-bot
 // installations. Listing is member-visible; the disconnect action is
@@ -70,25 +85,40 @@ export function WecomTab() {
   const configured = data?.configured === true;
   const installSupported = data?.install_supported === true;
 
-  const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
-  const [disconnecting, setDisconnecting] = useState(false);
+  // The `disconnectTarget` / `disconnecting` pair of `useState`s is gone with
+  // the `AlertDialog`: the imperative confirm owns both the open state and the
+  // in-flight spinner, so the row hands its installation id straight through.
+  const confirm = useSettingsConfirm();
 
-  async function handleDisconnect() {
-    if (!setupWritable || !disconnectTarget || disconnecting) return;
-    setDisconnecting(true);
+  /**
+   * Rejects on failure on purpose: `useSettingsConfirm`'s `onOk` keeps the
+   * dialog open only while its promise is unsettled, so swallowing the error
+   * here would dismiss the confirmation exactly when the bot is still
+   * installed. The toast is what the user reads; the rethrow is what holds the
+   * dialog.
+   */
+  async function handleDisconnect(installationId: string) {
+    if (!setupWritable) return;
     try {
-      await api.deleteWecomInstallation(wsId, disconnectTarget);
+      await api.deleteWecomInstallation(wsId, installationId);
       await qc.invalidateQueries({ queryKey: wecomKeys.installations(wsId) });
       toast.success(t(($) => $.wecom.toast_disconnected));
-      setDisconnectTarget(null);
     } catch (e) {
       toast.error(
         e instanceof Error ? e.message : t(($) => $.wecom.toast_disconnect_failed),
       );
-    } finally {
-      setDisconnecting(false);
+      throw e;
     }
   }
+
+  const openDisconnectConfirm = (installationId: string) =>
+    confirm({
+      title: t(($) => $.wecom.disconnect_confirm_title),
+      description: t(($) => $.wecom.disconnect_confirm_description),
+      confirmLabel: t(($) => $.wecom.disconnect),
+      cancelLabel: t(($) => $.wecom.disconnect_confirm_cancel),
+      onConfirm: () => handleDisconnect(installationId),
+    });
 
   if (isError && !data) {
     return (
@@ -96,9 +126,9 @@ export function WecomTab() {
         <p className="text-caption text-muted-foreground">
           {t(($) => $.page.connection_status.unavailable)}
         </p>
-        <Button variant="outline" size="sm" onClick={() => void refetch()}>
+        <LobeButton onClick={() => void refetch()}>
           {t(($) => $.page.connection_status.retry)}
-        </Button>
+        </LobeButton>
       </div>
     );
   }
@@ -107,103 +137,73 @@ export function WecomTab() {
     <div className="space-y-8">
       {!setupWritable && <MessagingSetupNotice />}
       {!configured && installations.length === 0 ? (
-        <Card>
-          <CardContent className="space-y-2">
-            <p className="text-body font-medium">{t(($) => $.wecom.not_enabled_title)}</p>
-            <p className="text-caption text-muted-foreground">
-              {t(($) => $.wecom.not_enabled_description_prefix)}{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                ORVILO_WECOM_SECRET_KEY
-              </code>{" "}
-              {t(($) => $.wecom.not_enabled_description_suffix)}{" "}
-              {t(($) => $.wecom.not_enabled_self_host_hint)}
-            </p>
-          </CardContent>
-        </Card>
+        <SettingsGroup variant="outlined" title={t(($) => $.wecom.not_enabled_title)}>
+          <p className="text-body text-muted-foreground">
+            {t(($) => $.wecom.not_enabled_description_prefix)}{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-micro">
+              ORVILO_WECOM_SECRET_KEY
+            </code>{" "}
+            {t(($) => $.wecom.not_enabled_description_suffix)}{" "}
+            {t(($) => $.wecom.not_enabled_self_host_hint)}
+          </p>
+        </SettingsGroup>
       ) : !installSupported && installations.length === 0 ? (
-        <Card>
-          <CardContent className="space-y-2">
-            <p className="text-body font-medium">{t(($) => $.wecom.preview_title)}</p>
-            <p className="text-caption text-muted-foreground">
-              {t(($) => $.wecom.preview_description)}
-            </p>
-          </CardContent>
-        </Card>
+        <SettingsGroup variant="outlined" title={t(($) => $.wecom.preview_title)}>
+          <p className="text-body text-muted-foreground">
+            {t(($) => $.wecom.preview_description)}
+          </p>
+        </SettingsGroup>
       ) : (
-        <section className="space-y-3">
-          <h2 className="text-body font-semibold">{t(($) => $.wecom.installed_bots)}</h2>
+        /* The `<section><h2>` heading and the `divide-y` card under it were two
+           elements describing one section; a group's title is where a section
+           heading goes, and the rows' `divider` is where the `divide-y` went. */
+        <SettingsGroup variant="outlined" title={t(($) => $.wecom.installed_bots)}>
           {isLoading ? (
-            <Card>
-              <CardContent>
-                <p className="text-body text-muted-foreground">{t(($) => $.wecom.loading)}</p>
-              </CardContent>
-            </Card>
+            <SettingsEmptyState title={t(($) => $.wecom.loading)} />
           ) : installations.length === 0 ? (
-            <Card>
-              <CardContent className="space-y-2">
-                <p className="text-body font-medium">{t(($) => $.wecom.empty_title)}</p>
-                <p className="text-caption text-muted-foreground">
+            <SettingsEmptyState
+              title={t(($) => $.wecom.empty_title)}
+              description={
+                <>
                   {t(($) => $.wecom.empty_description_prefix)}{" "}
                   <strong>{t(($) => $.wecom.empty_description_cta)}</strong>{" "}
                   {t(($) => $.wecom.empty_description_suffix)}
-                </p>
-              </CardContent>
-            </Card>
+                </>
+              }
+            />
           ) : (
-            <Card>
-              <CardContent className="divide-y">
-                {installations.map((inst) => (
-                  <InstallationRow
-                    key={inst.id}
-                    installation={inst}
-                    canManage={canManage && setupWritable}
-                    onDisconnect={() => setDisconnectTarget(inst.id)}
-                  />
-                ))}
-              </CardContent>
-            </Card>
+            installations.map((inst, index) => (
+              <InstallationRow
+                key={inst.id}
+                divider={index > 0}
+                installation={inst}
+                canManage={canManage && setupWritable}
+                onDisconnect={() => openDisconnectConfirm(inst.id)}
+              />
+            ))
           )}
-        </section>
+        </SettingsGroup>
       )}
-
-      <AlertDialog
-        open={setupWritable && !!disconnectTarget}
-        onOpenChange={(v) => {
-          if (!v && !disconnecting) setDisconnectTarget(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t(($) => $.wecom.disconnect_confirm_title)}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.wecom.disconnect_confirm_description)}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={disconnecting}>
-              {t(($) => $.wecom.disconnect_confirm_cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleDisconnect} disabled={disconnecting}>
-              {disconnecting
-                ? t(($) => $.wecom.disconnecting)
-                : t(($) => $.wecom.disconnect)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
 
+/**
+ * One installation, as a `SettingsFormRow`: the identity is the row's label,
+ * the connection state and bot id are its description, and the destructive
+ * action is the control column. `divider` replaces the old `divide-y` on the
+ * card that used to hold these rows. `MessagingConnectionStatus` keeps the
+ * full (non-compact) form this tab already rendered.
+ */
 function InstallationRow({
   installation,
   canManage,
+  divider,
   onDisconnect,
 }: {
   installation: WecomInstallation;
   canManage: boolean;
+  divider: boolean;
   onDisconnect: () => void;
 }) {
   const { t } = useT("settings");
@@ -213,37 +213,43 @@ function InstallationRow({
     ? getAgentName(installation.agent_id)
     : t(($) => $.page.integrations_workspace_connection);
   return (
-    <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
-      <div className="flex items-start gap-3">
-        {installation.agent_id && <ActorAvatar
-          actorType="agent"
-          actorId={installation.agent_id}
-          size="lg"
-          enableHoverCard
-          profileLink
-        />}
-        <div className="space-y-1">
+    <SettingsFormRow
+      divider={divider}
+      label={
+        <span className="inline-flex min-w-0 items-center gap-2">
+          {installation.agent_id ? (
+            <ActorAvatar
+              actorType="agent"
+              actorId={installation.agent_id}
+              size="lg"
+              enableHoverCard
+              profileLink
+            />
+          ) : null}
+          <span className="min-w-0 truncate">{agentName}</span>
+          {!isInstalled ? (
+            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
+              {t(($) => $.wecom.revoked_badge)}
+            </span>
+          ) : null}
+        </span>
+      }
+      description={
+        <>
           <MessagingConnectionStatus installation={installation} />
-          <p className="text-body font-medium">
-            {agentName}
-            {!isInstalled && (
-              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
-                {t(($) => $.wecom.revoked_badge)}
-              </span>
-            )}
-          </p>
-          <p className="text-micro text-muted-foreground">
+          <span className="block text-micro text-muted-foreground">
             {t(($) => $.wecom.bot_id_label, { botId: installation.bot_id })}
-          </p>
-        </div>
-      </div>
+          </span>
+        </>
+      }
+    >
       {canManage && isInstalled && (
-        <Button variant="outline" size="sm" onClick={onDisconnect}>
+        <LobeButton onClick={onDisconnect}>
           <Trash2 className="h-3 w-3" />
           {t(($) => $.wecom.disconnect)}
-        </Button>
+        </LobeButton>
       )}
-    </div>
+    </SettingsFormRow>
   );
 }
 
