@@ -232,6 +232,9 @@ importers:
       '@fontsource-variable/source-serif-4':
         specifier: ^5.2.9
         version: 5.2.9
+      '@lobehub/ui':
+        specifier: 5.42.6
+        version: 5.42.6(@date-fns/tz@1.4.1)(@lobehub/fluent-emoji@4.1.1(@types/react@19.2.14)(antd@6.6.3(date-fns@4.1.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(@lobehub/icons@5.18.0)(@shikijs/themes@4.4.3)(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(antd@6.6.3(date-fns@4.1.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(date-fns@4.1.0)(micromark-util-types@2.0.2)(micromark@4.0.2)(motion@12.38.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@orvilo/core':
         specifier: workspace:*
         version: link:../../packages/core

@@ -1462,6 +1462,7 @@
     },
     "updates": {
       "title": "Updates",
+      "section_title": "Version and updates",
       "description": "Control automatic background updates or check for a new version manually.",
       "current_version": "Current version",
       "automatic_updates_title": "Automatic background updates",
@@ -1476,6 +1477,7 @@
     },
     "daemon": {
       "title": "Daemon",
+      "section_title": "Startup and CLI",
       "description": "Configure how the local agent daemon behaves with the desktop app.",
       "settings_saved": "Daemon settings saved",
       "settings_save_failed": "Failed to save daemon settings",

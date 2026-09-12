@@ -1459,6 +1459,7 @@
     },
     "updates": {
       "title": "更新",
+      "section_title": "版本与更新",
       "description": "控制后台自动更新，或手动检查新版本。",
       "current_version": "当前版本",
       "automatic_updates_title": "后台自动更新",
@@ -1473,6 +1474,7 @@
     },
     "daemon": {
       "title": "守护进程",
+      "section_title": "启动与 CLI",
       "description": "配置本地智能体守护进程与桌面应用协同工作的方式。",
       "settings_saved": "守护进程设置已保存",
       "settings_save_failed": "保存守护进程设置失败",

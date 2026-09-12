@@ -2,10 +2,19 @@ import { act, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { I18nProvider } from "@orvilo/core/i18n/react";
+import { LobeThemeBridge } from "@orvilo/views/lobe";
 import { RESOURCES } from "@orvilo/views/locales";
 import type { DaemonStatus } from "../../../shared/daemon-types";
 import { DaemonPanel } from "./daemon-panel";
 import { DaemonSettingsTab } from "./daemon-settings-tab";
+
+// See the note in `updates-settings-tab.test.tsx`: mounting `LobeThemeBridge`
+// is the expensive part (antd's cssinjs runtime builds the component stylesheet
+// on first render), measured at 8.4s here inside a full `vitest run` against a
+// 5s default. The budget is widened rather than the assertion loosened — this
+// test's first query waits on a render it cannot make faster.
+const LOBE_MOUNT_TIMEOUT_MS = 20_000;
+vi.setConfig({ testTimeout: LOBE_MOUNT_TIMEOUT_MS });
 
 vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
@@ -36,11 +45,17 @@ function installDaemonAPI(status: DaemonStatus) {
   });
 }
 
+// `LobeThemeBridge` wraps both surfaces: `DaemonSettingsTab` is on the Lobe
+// settings shell, and `DaemonPanel` sits inside the same settings dialog at
+// runtime. A Lobe control calls `useMotionComponent()`, which throws without a
+// `MotionProvider`, and the bridge is where `SettingsPage` supplies one.
 function renderInSimplifiedChinese(element: ReactNode) {
   return render(
-    <I18nProvider locale="zh-Hans" resources={RESOURCES}>
-      {element}
-    </I18nProvider>,
+    <LobeThemeBridge>
+      <I18nProvider locale="zh-Hans" resources={RESOURCES}>
+        {element}
+      </I18nProvider>
+    </LobeThemeBridge>,
   );
 }
 
