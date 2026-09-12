@@ -252,10 +252,19 @@ describe("SettingsFormRow", () => {
     );
 
     await screen.findByText("Locked");
-    const rows = container.querySelectorAll(".orvilo-settings-row");
+    // Addressed by the label each row carries rather than by index:
+    // `noUncheckedIndexedAccess` is on, and a positional query would also make
+    // the two assertions read as one fact when they are two.
+    const rows = [
+      ...container.querySelectorAll<HTMLElement>(".orvilo-settings-row"),
+    ];
     expect(rows).toHaveLength(2);
-    expect(rows[0].className).toContain("orvilo-settings-row-disabled");
-    expect(rows[1].className).not.toContain("orvilo-settings-row-disabled");
+    const byLabel = (text: string) =>
+      rows.find((row) => row.textContent?.includes(text));
+    expect(byLabel("Locked")?.className).toContain("orvilo-settings-row-disabled");
+    expect(byLabel("Open")?.className).not.toContain(
+      "orvilo-settings-row-disabled",
+    );
   });
 
   it("draws a separator above a row only when asked", async () => {

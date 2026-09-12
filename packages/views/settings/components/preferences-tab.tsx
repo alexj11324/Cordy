@@ -198,7 +198,9 @@ function TimezoneRow() {
 
   // Full IANA list (from timezoneOptions in common/timezone-select) so a
   // user needing a non-curated zone isn't stuck with ~18 common ones.
-  // Memoized — timezoneOptions enumerates ~600 IANA zones per call.
+  // Memoized — timezoneOptions enumerates the whole IANA set per call (418 in
+  // the Electron renderer's Chromium, measured, not ~600 as an earlier comment
+  // claimed).
   const options = useMemo(
     () => timezoneOptions(stored ?? browser),
     [stored, browser],
@@ -260,6 +262,11 @@ function TimezoneRow() {
             label: formatTZLabel(timezone),
           })),
         ]}
+        // The full IANA list is ~419 rows here; this is the list `settings-select.tsx`
+        // names as the reason the wrapper chose the antd-backed `Select` over
+        // the base-ui atoms in the first place. Filtering matches the value as
+        // well as the label, so "Asia/Shanghai" and "Shanghai" both land.
+        search
         typography={TZ_TYPOGRAPHY}
         value={value}
         onValueChange={(next) => {

@@ -18,8 +18,9 @@
  * (`SelectTrigger`) does forward `aria-label` and does produce a real
  * accessible name. What it costs is everything the `Select` component supplies
  * on top of the atoms — search, virtua virtualization, value rendering — which
- * the ~600-item IANA timezone list needs. So the trade is not "deprecated vs
- * current": it is "a deprecated wrapper that can be named" against "atoms that
+ * the IANA timezone list needs — 418 zones plus the curated fallback in this
+ * renderer, measured, where this comment used to say "~600". So the trade is not
+ * "deprecated vs current": it is "a deprecated wrapper that can be named" against "atoms that
  * can be named but that we would have to re-implement". If a future surface
  * needs a nameable select over a *short* list, the atoms are the right answer
  * there.
@@ -127,7 +128,7 @@ export interface SettingsSelectProps {
   disabled?: boolean;
   id?: string;
   /**
-   * Render a filter box in the popup. For long lists only — the ~600-item IANA
+   * Render a filter box in the popup. For long lists only — the IANA timezone
    * timezone list is the case this exists for; a 2-to-5-item enum gets a search
    * box that is pure noise.
    *
