@@ -466,6 +466,7 @@
     "title": "设置",
     "dialog_cancel": "取消",
     "dialog_save": "保存更改",
+    "dialog_done": "完成",
     "my_account": "我的账号",
     "workspace_fallback": "工作区",
     "tabs": {

@@ -466,6 +466,7 @@
     "title": "Settings",
     "dialog_cancel": "Cancel",
     "dialog_save": "Save changes",
+    "dialog_done": "Done",
     "my_account": "My Account",
     "workspace_fallback": "Workspace",
     "tabs": {

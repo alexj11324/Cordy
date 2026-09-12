@@ -98,24 +98,30 @@ describe("SettingsPage flux dialog", () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
-  it("opens as a dialog with Cancel and Save changes", () => {
+  // The dialog has no page-level save: every field commits through its own
+  // control or through `useAutoSave`, so the footer used to offer two buttons
+  // that both only dismissed. It offers one now, and the assertion that there
+  // is no "Save" is the point of the case, not decoration — a button labelled
+  // Save that only closes is a lie about where the write happens.
+  it("opens as a dialog whose only footer action is Done", () => {
     renderWithI18n(<SettingsPage />);
 
     expect(screen.getByRole("dialog")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save changes" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Done" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /save/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
   });
 
-  it("dismisses to issues when Cancel is pressed without an overlay handler", () => {
+  it("dismisses to issues when Done is pressed without an overlay handler", () => {
     renderWithI18n(<SettingsPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(push).toHaveBeenCalledWith("/acme/issues");
   });
 
   it("calls onDismiss instead of navigating when the overlay owns close", () => {
     const onDismiss = vi.fn();
     renderWithI18n(<SettingsPage onDismiss={onDismiss} />);
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(onDismiss).toHaveBeenCalled();
     expect(push).not.toHaveBeenCalled();
   });
@@ -193,9 +199,10 @@ describe("SettingsPage flux dialog", () => {
 
   it("marks standalone vs embedded on the dialog surface", () => {
     renderWithI18n(<SettingsPage variant="standalone" />);
-    expect(
-      document.querySelector("[data-settings-variant]"),
-    ).toHaveAttribute("data-settings-variant", "standalone");
+    expect(screen.getByRole("dialog")).toHaveAttribute(
+      "data-settings-variant",
+      "standalone",
+    );
   });
 
   it("puts initial focus on Profile so the desktop overlay can land in the rail", () => {
