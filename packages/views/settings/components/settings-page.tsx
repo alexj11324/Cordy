@@ -328,9 +328,11 @@ export function SettingsPage({
                 {/* `SettingsDialogBody` renders no DOM: it is a context that
                     tells a not-yet-migrated tab's `SettingsTab` to drop the
                     page heading the `DialogHeader` above already owns. It
-                    cannot go until the last tab stops rendering `SettingsTab`
-                    (tasks 4-9) — drop it earlier and every un-migrated tab
-                    grows a second title and description above its body. */}
+                    stays until Task 10 removes the import along with
+                    `settings-layout.tsx`, by which point tasks 4-9 have removed
+                    the last `SettingsTab` (R21). Drop it earlier and every
+                    un-migrated tab grows a second title and description above
+                    its body. */}
                 <SettingsDialogBody>
                   <SettingsTabPanels
                     billingEnabled={billingEnabled}
