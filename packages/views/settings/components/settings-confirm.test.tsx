@@ -48,25 +48,43 @@ function ConfirmTrigger({
 
 const DIALOG_TITLE = "Confirm title";
 
-// A closing dialog leaves the DOM through an exit animation, so "is it gone"
-// is only meaningful after a window, not at the instant the request settles.
-// Every test below reads the same window, which is what makes the negative
-// assertions real: the success path demonstrably closes inside it, so a failed
-// request that closed the dialog — or an `onConfirm` that returned no promise
-// and let `confirmModal` close immediately — would be caught rather than
-// observed too early and reported as "still open".
+// A closing dialog leaves the DOM through an exit animation, so "is it gone" is
+// only meaningful after a wait, not at the instant the request settles. Every
+// test below reads the same window, which is what makes the negative assertions
+// real: the success path demonstrably closes inside it, so a failed request that
+// closed the dialog — or an `onConfirm` that returned no promise and let
+// `confirmModal` close immediately — would be caught rather than observed too
+// early and reported as "still open".
+//
+// **Two constants, because the two directions want opposite things from the
+// same number, and one constant cannot be both.**
+//
+//   - `CLOSE_WINDOW_MS` is for the negative assertions. They spend the whole
+//     window waiting (a correct run never closes), so a longer one is not
+//     better: the only question is whether a build that closes would be caught.
+//   - `CLOSE_BUDGET_MS` is for the positive one. It is a budget, not a window:
+//     polling returns the moment the node goes, so a fast close costs nothing,
+//     and a correct build that closes slowly under parallel load cannot fail a
+//     test that should pass. That is the expensive direction — a CI flake
+//     waiting for a busy day — and the earlier single 1s constant sat inside it.
+//
+// The pair only makes sense *together*: the generous budget is cheap rather than
+// merely slow because the deterministic promise assertion below covers the same
+// behaviour. A generous budget with no such guard is just a slower failure,
+// which is why this pair was not copied into the tabs that have neither.
 const CLOSE_WINDOW_MS = 1_000;
+const CLOSE_BUDGET_MS = 8_000;
 
 async function openConfirm(): Promise<HTMLElement> {
   fireEvent.click(await screen.findByRole("button", { name: "Open confirm" }));
   return screen.findByRole("button", { name: "Confirm" });
 }
 
-async function closedWithinWindow(): Promise<boolean> {
+async function closedWithin(timeout: number): Promise<boolean> {
   try {
     await waitFor(
       () => expect(screen.queryByText(DIALOG_TITLE)).toBeNull(),
-      { timeout: CLOSE_WINDOW_MS },
+      { timeout },
     );
     return true;
   } catch {
@@ -110,7 +128,7 @@ describe("useSettingsConfirm", () => {
       request.resolve();
     });
 
-    expect(await closedWithinWindow()).toBe(true);
+    expect(await closedWithin(CLOSE_BUDGET_MS)).toBe(true);
   });
 
   // The whole point of the wrapper: `confirmModal` closes as soon as `onOk`
@@ -135,7 +153,7 @@ describe("useSettingsConfirm", () => {
 
     expect(screen.getByText(DIALOG_TITLE)).toBeTruthy();
     expect(okButton.getAttribute("aria-busy")).toBeNull();
-    expect(await closedWithinWindow()).toBe(false);
+    expect(await closedWithin(CLOSE_WINDOW_MS)).toBe(false);
   });
 
   it("stays open when the callback forgets to return its promise", async () => {
@@ -159,7 +177,7 @@ describe("useSettingsConfirm", () => {
     // No `aria-busy` at any point: the guard fired instead of the library
     // awaiting a promise that was never returned.
     expect(okButton.getAttribute("aria-busy")).toBeNull();
-    expect(await closedWithinWindow()).toBe(false);
+    expect(await closedWithin(CLOSE_WINDOW_MS)).toBe(false);
   });
 
   // `ModalConfirmConfig` has no destructive field; `okButtonProps` (and inside

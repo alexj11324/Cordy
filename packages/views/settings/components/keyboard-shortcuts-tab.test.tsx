@@ -30,6 +30,28 @@ import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
 vi.setConfig({ testTimeout: 45_000, hookTimeout: 45_000 });
 
 /**
+ * The wait budget for an absence assertion — "the dialog has gone".
+ *
+ * A **budget**, not a window: polling returns the moment the node leaves, so a
+ * fast close costs nothing, and a correct build that closes slowly under
+ * parallel load cannot fail a test that should pass. That is the direction
+ * worth paying for; a window sized tightly enough to be interesting is a CI
+ * flake waiting for a busy day. `settings-confirm.test.tsx` carries the other
+ * half of the same rule — a *negative* assertion ("it is still open") spends
+ * its window in full and so wants a small one. One constant cannot be both.
+ *
+ * The two assertions below that use it are not the same internally, and the
+ * comments at each say which is which:
+ *
+ *   - **Cancel** dismisses on a synchronous React commit. No promise is
+ *     involved, so the wait only covers the commit itself, and the budget is
+ *     pure headroom.
+ *   - **Confirm** dismisses only once the store's promise settles — that one is
+ *     genuinely async, and is the reason the budget exists at all.
+ */
+const CLOSE_BUDGET_MS = 8_000;
+
+/**
  * `lobe: true` loads the theme bridge on demand, so the first query has to be
  * async.
  */
@@ -243,9 +265,13 @@ describe("KeyboardShortcutsTab", () => {
       createShortcutChord("J", { primary: true }),
     );
 
+    // Synchronous: Cancel dismisses without awaiting anything, so this wait is
+    // for the commit, not for a request. The budget is headroom, not a timeout
+    // the close is racing.
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    await waitFor(
+      () => expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      { timeout: CLOSE_BUDGET_MS },
     );
     expect(getShortcut("openSearch")).toEqual(
       createShortcutChord("J", { primary: true }),
@@ -257,10 +283,12 @@ describe("KeyboardShortcutsTab", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Restore all defaults" }),
     );
-    // The confirm dialog closes only once its promise resolves, so the
-    // dismissal is a tick later than the click.
-    await waitFor(() =>
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    // Asynchronous, unlike the Cancel above: the dialog closes only once the
+    // store's promise resolves, so the dismissal is a tick later than the click
+    // and this is the assertion the budget was chosen for.
+    await waitFor(
+      () => expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+      { timeout: CLOSE_BUDGET_MS },
     );
     expect(getShortcut("openSearch")).toEqual(
       createShortcutChord("K", { primary: true }),
