@@ -5,7 +5,13 @@
  * replacements for `SettingsSection` / `SettingsCard` / `SettingsRow`.
  *
  * `SettingsGroup` is a section (title / description / action) that can also be
- * the card around its rows; `SettingsField` is one labelled row.
+ * the card around its rows; `SettingsFormRow` is one labelled row.
+ *
+ * The row is `SettingsFormRow` rather than `SettingsRow` or `SettingsField`
+ * because both of those names are still exported, for a while longer, by
+ * `settings-layout` — and a barrel cannot export two different components under
+ * one name. It is semantically the old `SettingsRow`: the `Form.Item` that owns
+ * a row's label, description and control slot.
  *
  * `SettingsGroup` exists mostly to make one silent default impossible:
  * `Form.Group` derives collapsibility from the variant when `collapsible` is
@@ -67,7 +73,7 @@ export function SettingsGroup({
   );
 }
 
-export interface SettingsFieldProps {
+export interface SettingsFormRowProps {
   label?: ReactNode;
   description?: ReactNode;
   /**
@@ -81,14 +87,14 @@ export interface SettingsFieldProps {
   className?: string;
 }
 
-export function SettingsField({
+export function SettingsFormRow({
   label,
   description,
   minWidth,
   divider,
   children,
   className,
-}: SettingsFieldProps) {
+}: SettingsFormRowProps) {
   return (
     <Form.Item
       className={className}

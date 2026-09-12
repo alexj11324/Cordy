@@ -22,3 +22,12 @@ export type {
   SettingsControlSize,
   SettingsSaveStatus,
 } from "./components/settings-layout";
+// The Lobe replacements, published here because the tab migrations live inside
+// this package but the desktop tabs reach them through this barrel. The shell's
+// row is `SettingsFormRow`, not `SettingsField`/`SettingsRow`: those names still
+// belong to `settings-layout` until its last consumer is migrated.
+export { SettingsGroup, SettingsFormRow } from "./components/settings-shell";
+export type {
+  SettingsFormRowProps,
+  SettingsGroupProps,
+} from "./components/settings-shell";

@@ -2,7 +2,7 @@ import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import { renderWithI18n } from "../../test/i18n";
-import { SettingsField, SettingsGroup } from "./settings-shell";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 
 // `lobe: true` mounts the theme bridge; the first query therefore has to be an
 // async one (`findBy`), because the bridge is loaded on demand.
@@ -44,12 +44,12 @@ describe("SettingsGroup", () => {
   });
 });
 
-describe("SettingsField", () => {
+describe("SettingsFormRow", () => {
   it("renders its label, description and control", async () => {
     renderWithI18n(
-      <SettingsField label="Theme" description="Applies to this device">
+      <SettingsFormRow label="Theme" description="Applies to this device">
         <span>control</span>
-      </SettingsField>,
+      </SettingsFormRow>,
       { lobe: true },
     );
 
@@ -60,9 +60,9 @@ describe("SettingsField", () => {
 
   it("reserves the control column from minWidth", async () => {
     const { container } = renderWithI18n(
-      <SettingsField label="Theme" minWidth={384}>
+      <SettingsFormRow label="Theme" minWidth={384}>
         <span>control</span>
-      </SettingsField>,
+      </SettingsFormRow>,
       { lobe: true },
     );
 
@@ -77,12 +77,12 @@ describe("SettingsField", () => {
   it("draws a separator above a row only when asked", async () => {
     renderWithI18n(
       <>
-        <SettingsField label="First">
+        <SettingsFormRow label="First">
           <span>first control</span>
-        </SettingsField>
-        <SettingsField label="Second" divider>
+        </SettingsFormRow>
+        <SettingsFormRow label="Second" divider>
           <span>second control</span>
-        </SettingsField>
+        </SettingsFormRow>
       </>,
       { lobe: true },
     );

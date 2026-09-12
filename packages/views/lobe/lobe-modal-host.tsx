@@ -26,13 +26,17 @@
  * is. A single bridge — the common case, and everything in tests — behaves
  * exactly as if it rendered `<ModalHost />` directly.
  *
- * `ModalHost` comes from the `@lobehub/ui/base-ui` barrel — the shallowest
- * entry the package publishes for it, and the only one that does not drag in
- * the package root, which measures ~9.8s of module graph under Vitest against
- * ~1.3s for a single component entry.
+ * `ModalHost` is imported from its own entry rather than the `@lobehub/ui`
+ * package root. The root re-exports every component the package ships and
+ * costs ~9.8s of module graph under Vitest where a single component entry
+ * costs ~1.3s, and this module sits in every Lobe surface's graph. The package
+ * declares `"./es/*"` in its `exports` map, so this is a supported subpath, and
+ * it resolves to the same `Modal/imperative.mjs` instance the `base-ui` barrel
+ * re-exports — the same module-level modal stack, not a second one. The bridge
+ * deep-imports `ThemeProvider` and `MotionProvider` for the same reason.
  */
 
-import { ModalHost } from "@lobehub/ui/base-ui";
+import { ModalHost } from "@lobehub/ui/es/base-ui/Modal/imperative";
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 /** The bridge that currently renders the host, or `null` when none does. */

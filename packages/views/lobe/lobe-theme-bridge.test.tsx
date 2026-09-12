@@ -6,6 +6,8 @@
 // providers every animated component resolves out of context.
 
 import { Button, Form, confirmModal } from "@lobehub/ui/base-ui";
+import { ModalHost as BarrelModalHost } from "@lobehub/ui/base-ui";
+import { ModalHost as DeepModalHost } from "@lobehub/ui/es/base-ui/Modal/imperative";
 import { ChatItem } from "@lobehub/ui/chat";
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -87,6 +89,15 @@ describe("LobeThemeBridge", () => {
     );
 
     expect(screen.getByText("Bridged button")).toBeTruthy();
+  });
+
+  // The host is deep-imported while `confirmModal` comes from the `base-ui`
+  // barrel. That only works because both specifiers resolve to the same
+  // `Modal/imperative.mjs`, and therefore to one module-level modal stack: two
+  // instances would mean the host renders a stack nothing pushes onto, which is
+  // the silent no-op again, one layer down.
+  it("resolves the host to the same module the barrel exports", () => {
+    expect(DeepModalHost).toBe(BarrelModalHost);
   });
 
   // `confirmModal` is the settings page's replacement for every `AlertDialog`,
