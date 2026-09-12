@@ -315,7 +315,16 @@ function InstallationRow({
       }
       description={
         <>
-          <MessagingConnectionStatus installation={installation} compact />
+          {/* Not `compact`, and that is load-bearing. The compact branch is a
+              single `<Badge variant="outline">` whose dot is
+              `state === "connected" ? bg-success : bg-warning` — two colours
+              only, so an `error` install reads amber and is shaped exactly like
+              `disconnected` and `paused`. The full branch goes through
+              `badgeVariant(state)` and renders `error` as the destructive/red
+              pill. This row passed no `compact` before the migration and passes
+              none now; an earlier revision of this port added it, which turned
+              the one row that can report a revoked token into a neutral badge. */}
+          <MessagingConnectionStatus installation={installation} />
           <span className="block">
             {t(($) => $.slack.installed_at_label, {
               when: new Date(installation.installed_at).toLocaleString(locale),

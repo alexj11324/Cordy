@@ -224,9 +224,11 @@ function InstallationRow({
       }
       description={
         <>
-          {/* Not `compact`, unlike the Slack row: this one has always rendered
-              the full status (label + badge), and the migration is presentation
-              only — the detail is a product choice, not a layout accident. */}
+          {/* Not `compact`: this row has always rendered the full status
+              (label + badge). The full branch is the one that reports an
+              `error` install as the destructive/red pill — the compact branch
+              has two dot colours, so `error` would read amber and look exactly
+              like `disconnected`. See the Slack tab's row for the long form. */}
           <MessagingConnectionStatus installation={installation} />
           <span className="block">
             {t(($) => $.telegram.installed_at_label, {

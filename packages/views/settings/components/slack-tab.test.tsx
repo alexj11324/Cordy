@@ -294,7 +294,16 @@ describe("SlackTab", () => {
     };
     queryErrorRef.current = true;
     renderUI(<SlackTab />);
-    expect((await screen.findByRole("status", { name: "Connection status" })).textContent).toContain("Status unavailable");
+    const status = await screen.findByRole("status", { name: "Connection status" });
+    expect(status.textContent).toContain("Status unavailable");
+    // ...and the row must be on the **full** status branch, not the compact
+    // one. Only the full branch renders this label as text; the compact branch
+    // is a single outline `<Badge>` whose dot has two colours, so an `error`
+    // install would read amber and be indistinguishable from `disconnected`.
+    // The assertion above cannot tell them apart — both contain "Status
+    // unavailable" — which is why the review caught this regression and the
+    // suite did not. This half is the guard.
+    expect(status.textContent).toContain("Connection status");
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeTruthy();
   });
 
