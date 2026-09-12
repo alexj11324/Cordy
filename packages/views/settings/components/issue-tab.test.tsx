@@ -23,10 +23,15 @@ function resetStore() {
  * in both — so a document-wide `getByRole("switch", { name })` would be
  * ambiguous, and to a screen reader the two switches were literally
  * indistinguishable until `SettingsGroup` grew a `role="group"` wrapper named
- * by its own title. This is the handle the reference tells every tab to use,
- * and it also makes each query ~380× cheaper: a document-wide named role query
- * computes the accessible name of every candidate, which against the antd
- * stylesheet costs 3.4s where the scoped one costs 9ms.
+ * by its own title. This is the handle the reference tells every tab to use.
+ *
+ * Scope for that reason, not for speed. An earlier revision of this comment
+ * priced the pair at 3.4s and 9ms, "~380×"; neither figure was ever measured and
+ * the real difference is inside the noise — warm, five runs each, jsdom, against
+ * this suite: 6-9ms document-wide named against 4-10ms scoped (the scoped
+ * number taken on a name that exists in *both* groups, so a broken scope would
+ * throw as ambiguous rather than quietly time a document-wide query), and
+ * 30-60ms for the document-wide query *without* a name.
  */
 async function group(title: string) {
   return within(await screen.findByRole("group", { name: title }));

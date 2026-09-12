@@ -15,11 +15,21 @@
  *
  * `SettingsGroup` exists mostly to make one silent default impossible:
  * `Form.Group` derives collapsibility from the variant when `collapsible` is
- * left undefined (`collapsible === undefined ? !isBorderless : collapsible`),
- * so an outlined group grows a disclosure caret and every settings section
- * becomes an accordion — which also breaks the page's nav search, because that
- * matches on row content and a collapsed section matches nothing. Passing
+ * left undefined (`defaultCollapsible = isUndefined(collapsible) ? !isBorderless
+ * : collapsible`, `es/Form/components/FormGroup.mjs`), so an outlined group on
+ * the wide tree grows a disclosure caret: the section title becomes a
+ * disclosure toggle and a stray click hides every row beneath it. That is the
+ * desktop tree — when `useResponsive()` reports `mobile`, `FormGroup` returns
+ * before it builds the `Collapse`, so `collapsible` is read on the desktop path
+ * only and the narrow tree cannot produce an accordion. Passing
  * `collapsible={false}` here means no call site has to know that.
+ *
+ * An earlier revision of this note gave a second reason — that a collapsed
+ * section breaks the page's nav search, "because that matches on row content".
+ * It does not. The page's only search is `matches()` in `settings-page.tsx`,
+ * which filters rail tabs on their value, label and description; nothing on the
+ * page reads section bodies, so a collapsed section matches exactly what an
+ * expanded one does.
  *
  * Neither component takes a `name`. antd's `Form` is uncontrolled, and the
  * settings fields are not: toggles write straight to the store and drafts
@@ -80,14 +90,25 @@ export function SettingsGroup({
   // A group's title is the only thing that tells two same-named rows apart —
   // "Project", "Priority" and "Due date" each appear in both create-issue
   // groups — and nothing in the DOM said so until this. `Form.Group` renders a
-  // Collapse, and rc-collapse sets a role only when `accordion` is true, so
-  // there was no group role to name and the tests had to reach for the
+  // Collapse, and `@rc-component/collapse` sets the root's role only when
+  // `accordion` is true — which Lobe's `FormGroup` never passes — so there was
+  // no group role to name and the tests had to reach for the
   // `.ant-collapse-item` class instead.
   //
-  // `role="group"` therefore has to be added by a wrapper. It cannot be put on
-  // the Collapse root: antd spreads `omit(props, ["rootClassName"])` into
-  // rc-collapse, which renders `pickAttrs(props, { aria: true, data: true })` —
-  // a whitelist that lets `aria-*` through and drops `role` entirely.
+  // `role="group"` therefore has to be added by a wrapper — but not because the
+  // Collapse would filter it out, which is what an earlier revision of this note
+  // said. antd spreads `omit(props, ["rootClassName"])` into
+  // `@rc-component/collapse` (the package whose old name, `rc-collapse`, now
+  // survives only as a type-only import in Lobe's `Collapse/type.d.mts`), whose
+  // root renders `pickAttrs(props, { aria: true, data: true })`, and `pickAttrs`
+  // matches `role` under its aria branch (`key === "role" || match(key,
+  // ariaPrefix)`, `@rc-component/util/es/pickAttrs.js`) — then spreads the result
+  // *after* the root's own `role: accordion ? "tablist" : undefined`, so a role
+  // passed down would survive and win on the wide tree. The wrapper is for the
+  // narrow one: there `FormGroup` returns early with a `FlexBasic` that is given
+  // `className` and `children` and no `rest`, so nothing a caller passes through
+  // `rest` reaches the DOM below the breakpoint and the role would exist at one
+  // width only.
   //
   // The name comes from `aria-labelledby` pointing at the title element rather
   // than `aria-label` repeating the string: one copy of the text cannot drift

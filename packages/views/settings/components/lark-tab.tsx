@@ -39,12 +39,14 @@ import { cn } from "@orvilo/ui/lib/utils";
 // rendered from the **agent detail page**
 // (`packages/views/agents/components/tabs/integrations-tab.tsx`), and that
 // surface has no bridge: `packages/views/agents/**` contains no `@lobehub/ui`
-// import at all. Every Lobe primitive they would need (`Button`, `Modal`,
-// `ActionIcon`, `DropdownMenu`) calls `useMotionComponent()` and throws
-// `Please wrap your app with <ConfigProvider> (or <MotionProvider>)` without
-// one — measured, not assumed. So they keep the shadcn primitives until their
-// own surface gets a bridge; the alias below is what keeps the two apart at the
-// call sites.
+// import at all. The Lobe primitives they would need throw without one —
+// measured, not assumed: `Button` and `Modal` call `useMotionComponent()`
+// themselves and `ActionIcon` reaches it by rendering `Button`, so those three
+// raise `Please wrap your app with <ConfigProvider> (or <MotionProvider>)`.
+// `DropdownMenu` is not one of them — it builds no `Button` and calls no motion
+// hook, so it renders unbridged; the list is three, not four. So they keep the
+// shadcn primitives until their own surface gets a bridge; the alias below is
+// what keeps the two apart at the call sites.
 //
 // `LarkAgentBindButton` is also reachable from the settings hub
 // (`integrations-tab.tsx` renders it as the channel's install action), so one
