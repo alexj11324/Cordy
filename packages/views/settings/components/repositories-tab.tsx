@@ -487,7 +487,6 @@ export function RepositoriesTab() {
         footer={
           <Button
             disabled={!repositoryIdentity(remoteDraft)}
-            shape="round"
             type="primary"
             onClick={addRepository}
           >
@@ -521,13 +520,21 @@ export function RepositoriesTab() {
               })}
             </p>
             {/* `variant="ghost"` is Lobe's `type="text"`; the import button had
-                no `variant`, i.e. shadcn's solid primary. */}
-            <Button shape="round" type="text" onClick={closeGitHubPicker}>
+                no `variant`, i.e. shadcn's solid primary.
+
+                Neither takes `shape="round"`. The pill geometry belongs to
+                `SettingsPillButton` (reference:112), and every in-page pill in
+                this file came from one; the two `DialogFooter`s were plain
+                `Button`s, whose base carries `rounded-lg`. The add-remote
+                footer and the "load more" row are plain `Button`s for the same
+                reason. Measured: a `shape="round"` button is 999px, a plain one
+                is 6px — the host dialog's own footer button, on the same
+                screen, is 6px. */}
+            <Button type="text" onClick={closeGitHubPicker}>
               {t(($) => $.repositories.github_cancel)}
             </Button>
             <Button
               disabled={selectedRepositories.size === 0 || !allUrlsValid}
-              shape="round"
               type="primary"
               onClick={importGitHubRepositories}
             >
@@ -662,7 +669,6 @@ export function RepositoriesTab() {
                 {/* `variant="ghost"` maps to `type="text"`. */}
                 <Button
                   disabled={githubRepositoriesQuery.isFetchingNextPage}
-                  shape="round"
                   type="text"
                   onClick={() => githubRepositoriesQuery.fetchNextPage()}
                 >

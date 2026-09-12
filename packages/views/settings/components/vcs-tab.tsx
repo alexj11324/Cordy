@@ -172,14 +172,12 @@ export function VCSTab() {
                   bordered default at the default `middle` size. */}
               <Button
                 icon={<RefreshCw className="size-3.5" />}
-                shape="round"
                 onClick={() => openRotateConfirm(c.id)}
               >
                 {t(($) => $.vcs.regenerate_webhook)}
               </Button>
               <Button
                 icon={<Trash2 className="size-3.5" />}
-                shape="round"
                 onClick={() => openDeleteConfirm(c.id)}
               >
                 {t(($) => $.vcs.disconnect)}
@@ -279,7 +277,6 @@ export function VCSTab() {
                     Only the box height moves (28 -> 32), per the F5 ruling. */}
                 <Button
                   disabled={connecting || !instanceUrl.trim() || !token.trim()}
-                  shape="round"
                   type="primary"
                   onClick={handleConnect}
                 >
@@ -324,7 +321,6 @@ function CopyField({
         />
         <Button
           icon={<Copy className="size-3.5" />}
-          shape="round"
           title={copyLabel}
           onClick={() => onCopy(value)}
         />
