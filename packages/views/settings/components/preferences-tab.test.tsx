@@ -328,14 +328,14 @@ describe("PreferencesTab — Timezone section", () => {
   // token resolves to the wrong number, or if a future antd stops deriving the
   // box this way. The box is verified by reading computed heights in the
   // running renderer, which is the only place this defect was ever visible.
-  it("pins the trigger to the control-height token so the type scale cannot shrink the box", async () => {
+  it("pins the trigger to the select's own height token so the type scale cannot shrink the box", async () => {
     const tab = await renderTab();
 
     expect(
       tab
         .getByRole("combobox", { name: "Viewing Timezone" })
         .closest(".ant-select"),
-    ).toHaveAttribute("style", expect.stringContaining("--ant-control-height"));
+    ).toHaveAttribute("style", expect.stringContaining("--ant-select-height"));
   });
 
   it("renders the stored timezone in the trigger", async () => {

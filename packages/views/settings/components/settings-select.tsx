@@ -42,11 +42,12 @@
  * assert that an option exists but cannot click it. A ReactNode label leaves
  * `title` unset and takes that handle away. Styling that used to ride on the
  * option node therefore has to go through `typography` — see the next note for
- * why a class cannot carry it.
+ * why a utility class cannot carry it.
  *
- * **Type is `typography`, and it is inline style, because a class cannot win.**
- * This is the whole reason the prop is not called `className`. antd renamed the
- * old `popupClassName` to `classNames.popup.root` and warns on the old spelling
+ * **Type is `typography`, and it is inline style, because a Tailwind utility
+ * cannot win.** This is the whole reason the prop is not called `className`.
+ * antd renamed the old `popupClassName` to `classNames.popup.root` and warns on
+ * the old spelling
  * (`antd/es/select/index.js`, its `deprecatedProps` table), so the first version
  * of this wrapper translated the class to exactly that — and it did nothing:
  * `root` is the *container*, and each option is its own `div` in the virtualized
@@ -58,6 +59,18 @@
  * `:where()` contributes nothing — against the utility's 0-1-0. The trigger
  * loses the same way at a tie, since `:where(.css-x).ant-select` and
  * `.text-caption` are both 0-1-0 and antd's sheet is injected later.
+ *
+ * **The limit is on single-class utilities, not on our own CSS.** Tailwind emits
+ * `.text-caption` as one class, which is why it stalls at 0-1-0. A composed
+ * selector of ours would win both: `.orvilo-something.ant-select` is 0-2-0
+ * against the trigger's 0-1-0, and 0-3-0 takes the option's 0-2-0 —
+ * `packages/ui/styles/base.css` already resolves the settings row's
+ * `align-items` exactly that way, and its comment is the worked example. So
+ * "inline style is the only way" would be wrong, and a tab in tasks 5-9 facing
+ * a *different* antd property should reach for a composed rule. What inline
+ * style buys here is that the value travels with a call site's prop instead of
+ * having to be restated as a selector for each usage, which is what makes
+ * `typography` usable from a tab at all.
  *
  * Measured on the timezone list with the classes correctly present, before this
  * prop existed: options 14px "Geist Mono Variable" (`font-family` is uncontested
@@ -84,10 +97,16 @@
  * line-height, and the padding is a token antd derived from the *default* font
  * size, which an inline `font-size` cannot move. The timezone select came out
  * 30px tall beside two 36px siblings in the same card. `typography` therefore
- * also sets `min-height: var(--ant-control-height)` on the root, so a call site
- * changing the scale cannot silently change the control's height. A call site
- * that genuinely wants a shorter control can still say so, since its own
- * `minHeight` wins.
+ * also sets `min-height: var(--ant-select-height)` on the root, so a call site
+ * changing the scale **cannot shrink the control below the control height**.
+ * That is a floor, not a clamp, and the difference is worth stating: a *larger*
+ * scale still raises the box, because a 16px type on a 24px line box gives
+ * 6+24+6+2 = 38px beside 36px siblings. Nothing here keeps a taller control
+ * level with a shorter one; only the direction that was broken is guarded.
+ *
+ * A call site that wants a genuinely shorter control can still say so, since
+ * its own `minHeight` wins. See the `typography` prop for how that override is
+ * written.
  */
 
 import Select from "@lobehub/ui/es/Select/Select";
@@ -113,6 +132,18 @@ export interface SettingsSelectProps {
    * Type scale for the trigger and for every option row, as inline style.
    * Required to be style rather than a class: see the module note on the two
    * antd rules a utility cannot outrank.
+   *
+   * It also pins `min-height: var(--ant-select-height)` on the trigger, because
+   * a smaller scale would otherwise shrink the whole control — `.ant-select`
+   * has no height of its own. That is a floor; a larger scale still grows the
+   * box.
+   *
+   * Both are one inline-style object, so a call site can override the floor
+   * with `typography={{ minHeight: … }}` — the later key wins, no cascade
+   * involved. Note the shape of that idiom: it is a layout intent expressed
+   * through a prop named for type. That is a wart, and if the override path
+   * ever earns its keep the prop should grow a second, honestly-named key
+   * rather than staying reachable only this way.
    */
   typography?: CSSProperties;
 }
@@ -149,8 +180,20 @@ export function SettingsSelect({
               // unitless ratio (1.571…) meant to multiply the *default* size,
               // so applying it to 12px yields 33px — still wrong, and now
               // wrong by a number nobody can predict. Pinning the box to the
-              // control-height token leaves the type free.
-              root: { minHeight: "var(--ant-control-height)", ...typography },
+              // control height leaves the type free.
+              //
+              // `--ant-select-height`, not `--ant-control-height`, and the two
+              // differ exactly where it matters. Both are 36px at the default
+              // size, but the select's own token is *size-aware* — antd derives
+              // it from `controlHeight` for the base and switches it to
+              // `controlHeightSM` / `controlHeightLG` under `&-sm` / `&-lg`
+              // (`antd/es/select/style/select-input.js`), while
+              // `--ant-control-height` is a flat 36px. A `min-height` beats a
+              // plain `height`, so with the flat token a future small select
+              // would be pinned to 36px beside siblings at 24-28px — this
+              // round's misalignment returning from the other side, for a
+              // control that asked to be small.
+              root: { minHeight: "var(--ant-select-height)", ...typography },
               popup: { listItem: typography },
             }
           : undefined
