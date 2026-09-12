@@ -6,6 +6,17 @@ import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 
 // `lobe: true` mounts the theme bridge; the first query therefore has to be an
 // async one (`findBy`), because the bridge is loaded on demand.
+//
+// The shell deep-imports `Form` (`@lobehub/ui/es/Form/index`) where the rest of
+// the app reaches it through the package root, so the two have to resolve to one
+// module — two instances would mean two antd `Form` contexts and a `Form.Item`
+// that cannot see the `Form` around it. That was verified by execution rather
+// than kept as an assertion here: importing the root into this file to compare
+// them costs 18s (3.07s → 21.30s, `tests` alone 1.41s → 11.12s), which is the
+// fan-out cost this module exists to avoid, re-created inside a test. The
+// cheap equivalent already exists: `lobe/lobe-theme-bridge.test.tsx` asserts
+// `expect(DeepModalHost).toBe(BarrelModalHost)` in a suite that imports the
+// barrel anyway, covering the same deep-vs-barrel resolution for this package.
 
 describe("SettingsGroup", () => {
   it("renders the section header, its action and its rows", async () => {

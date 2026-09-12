@@ -27,11 +27,25 @@
  * `reference-lobe-tab-migration.md` on state ownership before giving a field a
  * `name`.
  *
- * `Form` is imported from its own entry rather than `@lobehub/ui`'s root. The
- * root re-exports every component the package ships; importing it costs ~9.8s
- * of module load under Vitest against ~1.3s for this entry, and the package
- * publishes `./es/*` in its exports map for exactly this. Every migrated
- * settings tab renders through this module.
+ * `Form` is imported from its own entry rather than `@lobehub/ui`'s root. What
+ * makes an import like this worth an exception is **fan-out, not layer**: a
+ * module's graph is paid once per test file that imports it, so the question is
+ * how many suites sit behind the import, not which layer the file belongs to.
+ * Every migrated tab renders through this module, so its cost multiplies by the
+ * whole tab group exactly the way the theme bridge's does. Measured warm, three
+ * runs each, in this worktree: the root entry costs 8.88s / 8.10s / 8.84s per
+ * file (7.6-8.4s of that import) against 1.30s / 1.28s / 1.27s for this one.
+ * The package declares `"./es/*"` in its exports map, so the deep path is a
+ * supported subpath, and it resolves to the same module the root re-exports —
+ * identity confirmed by execution, not assumed. That check is not kept here:
+ * importing the root to compare against costs 18s in the suite that renders
+ * this module, which is the fan-out cost re-created inside a test. The cheap
+ * equivalent lives in `lobe/lobe-theme-bridge.test.tsx`
+ * (`expect(DeepModalHost).toBe(BarrelModalHost)`), in a suite that imports the
+ * barrel regardless.
+ *
+ * The exception stops here. A tab importing a Lobe component directly uses the
+ * barrel — the point of this shell is that tabs mostly will not need to.
  */
 
 import Form from "@lobehub/ui/es/Form/index";
