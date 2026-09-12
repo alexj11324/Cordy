@@ -83,9 +83,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         {
           ios: {
             buildReactNativeFromSource: true,
+            deploymentTarget: "18.0",
           },
         },
       ],
+      "./plugins/with-ios-scene-lifecycle",
     ],
     extra: {
       APP_ENV: env,
