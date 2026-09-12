@@ -245,10 +245,22 @@ function McpServerRow({
   // control slot, which is what the old flex row already expressed — plus the
   // antd geometry (`base.css`) the settings rows share.
   //
-  // The two pill buttons keep their own `aria-label`, which is also what keeps
-  // them out of the `label`-renames-a-button trap: `dom-accessibility-api` takes
-  // a control's name from its `aria-label` before it ever looks at an enclosing
-  // `<label>`. They are not inside the label element here either.
+  // **A button under a row label is renamed by one of exactly two routes, and
+  // this row is on neither.** The first is being *inside* the label's subtree:
+  // `dom-accessibility-api`'s `getControlOfLabel` falls back to
+  // `findLabelableElement(label)` — the first labelable descendant — and
+  // `isLabelableElement` counts a `button` as labelable. These two sit in the
+  // control column, a sibling of the label. The second is a `for=`
+  // association, which this row cannot have because it passes no `htmlFor` —
+  // the prop `SettingsFormRow` exposes for naming a text field, and the reason
+  // a row that *does* pass it must not put a button in its control slot.
+  //
+  // Measured on the rendered row, not reasoned: `computeAccessibleName` is
+  // "Edit server", and both `insideLabelSubtree` and `namedByForLabel` are
+  // false. Each button also carries its own `aria-label`, which the name
+  // computation consults before any `<label>` (step 2C returns before 2D in
+  // `accessible-name-and-description.mjs`) — that is belt and braces here, not
+  // what the row depends on.
   return (
     <SettingsFormRow
       description={transportLabel(server.transport)}

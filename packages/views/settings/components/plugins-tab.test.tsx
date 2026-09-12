@@ -228,6 +228,48 @@ describe("PluginsTab", () => {
     }));
   });
 
+  // The one config-row shape no other case renders: a field whose control is a
+  // **button**. A row label hands its text to a control under it by exactly two
+  // routes — the control is inside the label's subtree, or the label is
+  // `for=`-associated with it — and a `<button>` counts as labelable, so this is
+  // where the boolean row could be renamed silently.
+  //
+  // **The assertion is the association, not the accessible name, and that is a
+  // measured choice rather than a preference.** `SettingsSwitch` hard-codes
+  // `aria-label`, and the name computation reads `aria-label` (step 2C) before
+  // any `<label>` (2D) — so adding the `for=` below leaves the switch's name
+  // unchanged, and a name assertion would pass either way. Verified by adding
+  // both the `htmlFor` and the matching `id`: only this assertion goes red.
+  it("keeps the boolean row's label off the for= route that would rename its switch", async () => {
+    data.installed.plugins = [{
+      ...INSTALLATION,
+      config_schema: [
+        { key: "flag", type: "bool", label: "Enable thing", required: false, options: [] },
+        { key: "mode", type: "enum", label: "Mode", required: false, options: ["a", "b"] },
+      ],
+      config: { flag: false, mode: "a" },
+    }];
+    const user = userEvent.setup();
+    await renderTab();
+
+    const toggle = screen.getByRole("switch", { name: "Enable thing" });
+    expect(screen.getByRole("combobox", { name: "Mode" })).toBeInTheDocument();
+
+    // Found by text rather than by an antd class, so the assertion does not
+    // depend on the row's markup.
+    const rowLabel = [...document.querySelectorAll("label")]
+      .find((label) => (label.textContent ?? "").includes("Enable thing"));
+    expect(rowLabel).toBeTruthy();
+    expect(rowLabel!.getAttribute("for")).toBeNull();
+
+    await user.click(toggle);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockConfigure).toHaveBeenCalledWith({
+      installationId: "installation-1",
+      values: { flag: true, mode: "a" },
+    }));
+  });
+
   it("disables and uninstalls an installed Plugin", async () => {
     data.installed.plugins = [INSTALLATION];
     const user = userEvent.setup();

@@ -235,9 +235,20 @@ function ConfigField({
   // `name`, and the state-ownership rule forbids one here. `minWidth={384}` is
   // the old `sm:w-96`.
   //
-  // The switch is deliberately not given an `htmlFor`: `SettingsSwitch` names
-  // itself with `aria-label`, and a `for` pointing at an id nothing carries
-  // would be a label that labels nothing.
+  // The switch is deliberately not given an `htmlFor`, and it is the row that
+  // makes the reason worth writing down. A `for=` association *renames* its
+  // control — `SettingsSwitch` renders a real `<button>`, which
+  // `isLabelableElement` counts — so associating the row with a switch would
+  // replace the switch's own name with the row's whole label text. The same is
+  // true of the nested route (`getControlOfLabel` falls back to the first
+  // labelable descendant), which this row is not on either: the switch sits in
+  // the control column, a sibling of the label, not inside it.
+  //
+  // Measured on the rendered row: the switch's `computeAccessibleName` is
+  // "Enable thing" (its own `aria-label`), `insideLabelSubtree` and
+  // `namedByForLabel` both false. The enum beside it *is* on the second route
+  // by design — `htmlFor` is what names a control that cannot name itself —
+  // and its name is the row's label.
   const controlId = `plugin-config-${field.key}`;
   const namedControl = field.type !== "bool";
 
