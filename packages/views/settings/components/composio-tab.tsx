@@ -5,9 +5,20 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle, Check, Loader2, Plug, RefreshCw, Trash2 } from "lucide-react";
 // Two design systems in one file, and here the split is by *element kind*
-// rather than by surface — every surface that renders this tab is inside
-// `LobeThemeBridge` (`settings-page.tsx` mounts it around the whole dialog
-// body), so nothing here is gated by a host. What stays on shadcn is the app
+// rather than by surface — `ComposioTab` is rendered from `./integrations-tab`'s
+// `content`, which **both** branches of its `standalone ? … : …` ternary render,
+// so its host set is exactly that component's two importers:
+//
+//   settings-page.tsx        — inside <LobeThemeBridge> at its root
+//   integrations/index.tsx   — WorkspaceIntegrationsPage, the Web
+//                              `/integrations` route; bridged since b8a78232,
+//                              and NOT before it
+//
+// Both are bridged, so nothing here is gated by a host. That was established by
+// resolving the **import specifier**, not the identifier: `grep
+// "<IntegrationsTab"` also matches `agents/components/tabs/integrations-tab.tsx`,
+// a different component sharing the name, which renders none of this family.
+// What stays on shadcn is the app
 // tile's `Card`: Lobe has no `Card` at all (verified against the installed
 // `@lobehub/ui@5.42.6`), and a tile is not one of the four things the family's
 // `Card` → `Form.Group` mapping covers — it is not a box around a list of rows,
@@ -199,11 +210,23 @@ export function ComposioTab() {
       {toolkitsQuery.isLoading ? (
         <SettingsEmptyState title={t(($) => $.composio.loading)} />
       ) : toolkitsQuery.isError ? (
-        // A load failure folds into the same placeholder as an empty catalog,
-        // the way the Telegram tab already does: there is no group to wrap it
-        // in here (the catalogue is not a section of rows), and `Form.Group`
-        // with no children would draw a header over an empty padded panel.
-        <SettingsEmptyState title={t(($) => $.composio.load_failed)} />
+        // Same placeholder as an empty catalog — there is no group to wrap it in
+        // here (the catalogue is not a section of rows), and a `Form.Group` with
+        // no children would draw a header over an empty padded panel — but with
+        // `tone="danger"`, because the base component rendered this sentence in
+        // `text-destructive` and a failed fetch must not read as "you have no
+        // apps". The card chrome is what changed; the tone is not ours to drop.
+        //
+        // This is NOT the Telegram tab's case, and an earlier version of this
+        // comment said it was. Telegram's load failure was already
+        // `text-muted-foreground`, so folding it into a neutral placeholder
+        // preserved its tone; composio's was `text-destructive`, so the same
+        // action lost it. Same shape, opposite effect — check the tone of the
+        // text you are folding, not whether a neighbour folds.
+        <SettingsEmptyState
+          title={t(($) => $.composio.load_failed)}
+          tone="danger"
+        />
       ) : toolkits.length === 0 ? (
         <SettingsEmptyState
           title={t(($) => $.composio.empty_title)}

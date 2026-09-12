@@ -10,9 +10,25 @@ import { ChevronRight, Trash2 } from "lucide-react";
 import { WecomMark } from "./wecom-mark";
 import { cn } from "@orvilo/ui/lib/utils";
 // Two design systems in one file, and the split is by *surface* rather than by
-// component. `WecomTab` lives only inside the settings Integrations dialog,
-// which mounts `LobeThemeBridge`, so it is Lobe. `WecomAgentBindButton` and its
-// two sub-components are rendered from the **agent detail page**
+// component. `WecomTab` is Lobe, and it is safe because **both** of its hosts
+// are bridged:
+//
+//   WecomTab ← `./integrations-tab`'s channel dialog (`managedContent`)
+//     └─ that component has exactly two importers, and only two:
+//          settings-page.tsx        — inside <LobeThemeBridge> at its root
+//          integrations/index.tsx   — WorkspaceIntegrationsPage, the Web
+//                                     `/integrations` route; bridged since
+//                                     b8a78232, and NOT before it
+//
+// Established by resolving the **import specifier**, not the identifier:
+// `grep "<IntegrationsTab"` also matches
+// `agents/components/tabs/integrations-tab.tsx` — a different component that
+// shares the name and renders none of these tabs. A host list built from the
+// name reports three hosts where there are two, which is why this comment names
+// the importers rather than the export.
+//
+// `WecomAgentBindButton` and its two sub-components are rendered from the
+// **agent detail page**
 // (`packages/views/agents/components/tabs/integrations-tab.tsx`), and that
 // surface has no bridge — `packages/views/agents/**` contains no `@lobehub/ui`
 // import at all. Every Lobe primitive they would need (`Button`, `Modal`,

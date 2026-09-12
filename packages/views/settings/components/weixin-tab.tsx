@@ -9,9 +9,24 @@ import { AlertCircle, RefreshCw, Trash2 } from "lucide-react";
 import { QRCode } from "react-qr-code";
 import { toast } from "sonner";
 // Two design systems in one file, and the split is by *surface* rather than by
-// component. `WeixinTab` lives only inside the settings Integrations dialog,
-// which mounts `LobeThemeBridge`, so it is Lobe. `WeixinAgentBindButton` is
-// rendered from the **agent detail page**
+// component. `WeixinTab` is Lobe, and it is safe because **both** of its hosts
+// are bridged:
+//
+//   WeixinTab ← `./integrations-tab`'s channel dialog (`managedContent`)
+//     └─ that component has exactly two importers, and only two:
+//          settings-page.tsx        — inside <LobeThemeBridge> at its root
+//          integrations/index.tsx   — WorkspaceIntegrationsPage, the Web
+//                                     `/integrations` route; bridged since
+//                                     b8a78232, and NOT before it
+//
+// Established by resolving the **import specifier**, not the identifier:
+// `grep "<IntegrationsTab"` also matches
+// `agents/components/tabs/integrations-tab.tsx` — a different component that
+// shares the name and renders none of these tabs. A host list built from the
+// name reports three hosts where there are two, which is why this comment names
+// the importers rather than the export.
+//
+// `WeixinAgentBindButton` is rendered from the **agent detail page**
 // (`packages/views/agents/components/tabs/integrations-tab.tsx`), and that
 // surface has no bridge — `packages/views/agents/**` contains no `@lobehub/ui`
 // import at all. Every Lobe primitive it would need (`Button`, `Modal`,
@@ -240,7 +255,15 @@ export function WeixinTab() {
                       </span>
                     }
                   >
+                    {/* `type="primary"`: the base control was a shadcn
+                        `<Button>` with no `variant`, which is `bg-primary
+                        text-primary-foreground` — the loudest control in this
+                        row, and the row's whole purpose. Lobe's default `type`
+                        is the outlined treatment, so omitting this silently
+                        demotes the CTA to a secondary button. The same action
+                        on the agent detail page is still solid primary. */}
                     <LobeButton
+                      type="primary"
                       onClick={() => setConnectAgent(agent)}
                       title={t(($) => $.weixin.connect_button_title, { agent: agent.name })}
                       data-testid={`weixin-connect-agent-${agent.id}`}

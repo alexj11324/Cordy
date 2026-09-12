@@ -22,6 +22,19 @@ import type { ReactNode } from "react";
 export interface SettingsEmptyStateProps {
   title: ReactNode;
   description?: ReactNode;
+  /**
+   * Semantic tone for the heading. `"danger"` exists because **a failed request
+   * and an empty collection are different states**, and folding one into the
+   * other makes them distinguishable only by reading the sentence.
+   *
+   * The tone is not invented here: Lobe's `Empty` forwards `titleProps` to its
+   * own `Text`, whose `type` is a semantic enum
+   * (`'secondary' | 'success' | 'warning' | 'danger' | 'info'`) — verified in
+   * the destructure list of `es/Text/Text.mjs`, not only in its type. This prop
+   * is the one thing a call site cannot get wrong by forgetting it, because the
+   * default is the neutral treatment every existing consumer already has.
+   */
+  tone?: "default" | "danger";
   className?: string;
 }
 
@@ -34,9 +47,15 @@ export interface SettingsEmptyStateProps {
 export function SettingsEmptyState({
   title,
   description,
+  tone = "default",
   className,
 }: SettingsEmptyStateProps) {
   return (
-    <Empty className={className} description={description} title={title} />
+    <Empty
+      className={className}
+      description={description}
+      title={title}
+      titleProps={tone === "danger" ? { type: "danger" } : undefined}
+    />
   );
 }
