@@ -449,3 +449,72 @@ html[data-dnd-dragging="true"] * {
 .orvilo-settings-row .ant-form-item-label > label {
   height: unset;
 }
+/* The control column keeps the width `minWidth` asked for, and the label column
+ * is the one that gives way. Measured in the running renderer, not reasoned
+ * about: `SettingsFormRow`'s `minWidth` becomes
+ * `.ant-form-item-control { width: var(--form-item-min-width) !important }`,
+ * and that declaration was documented as an *exact* width. It is not one.
+ *
+ * A flex item's `width` is only its base size; what it actually gets is the
+ * flex-resolved width, and Lobe leaves the control at `flex: 0 1 auto`
+ * (measured) so it shrinks. Lobe's own `flex: none` on the control — and
+ * `flex: 1` on the label — live under `responsive.sm`, which antd-style defines
+ * as `@media (max-width: 575.98px)`: a *downward* query, so those rules apply
+ * on a phone and never on the desktop settings dialog. The result was that a
+ * row whose label plus description was wide enough came out narrower than its
+ * neighbours' in the same card — the account tab's rows resolved to
+ * 384/327/271/375px instead of the one width they asked for, with the right
+ * edges aligned and the left edges ragged, which a Task 4 tab never showed
+ * because every label there is short.
+ *
+ * `flex: 1 1 0%` with `min-width: 0` on the label is the same pair Lobe applies
+ * on mobile, and the same geometry the old `SettingsRow` had (`min-w-0 flex-1`
+ * label next to a fixed-width control). Rows that pass no `minWidth` — a
+ * switch, an avatar — are unaffected: their control is content-sized either
+ * way.
+ *
+ * The `!important`s are the same story as `align-items` above, one step worse:
+ * the value to beat is `flex: unset` from
+ * `.acss-xxx.ant-form-item .ant-form-item-row > div`, which is 0-3-1 against a
+ * plain `.orvilo-settings-row .ant-form-item-control`'s 0-2-0 and is injected
+ * later in the document besides. */
+.orvilo-settings-row .ant-form-item-label {
+  flex: 1 1 0% !important;
+  min-width: 0;
+}
+.orvilo-settings-row .ant-form-item-control {
+  flex: 0 0 auto !important;
+}
+/* …and below the width at which a fixed control column plus its label no longer
+ * fit, the row stacks: label above, control across the full width. Measured at
+ * a 460px viewport, holding the control at its exact width overflows the card —
+ * the settings tab body is `viewport - 72px`, and a 384px control beside even
+ * a narrow label's min-content does not fit in 388px. The tab body's scroll
+ * content carries `min-width: fit-content`, so the overflow is not clipped
+ * politely: the whole panel widens and scrolls sideways.
+ *
+ * This is the same geometry the old `SettingsRow` had, and it switches at the
+ * same point — its control tiers were container queries at 34rem of the card,
+ * which is this viewport width once the dialog's own margins and `px-6` are
+ * taken off. `sm` is Tailwind's 640 and the account tab's footer already
+ * switches there.
+ *
+ * The width override has to go through the custom property rather than
+ * `width` directly: `minWidth` reaches the DOM as an *inline* style, and the
+ * rule that consumes it (`.acss-xxx.ant-form-item .ant-form-item-control`)
+ * outranks a plain stylesheet selector, so an `!important` declaration of the
+ * property itself is the one thing that moves it. */
+@media (max-width: 639.98px) {
+  .orvilo-settings-row {
+    --form-item-min-width: 100% !important;
+  }
+  .orvilo-settings-row .ant-form-item-row {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+  .orvilo-settings-row .ant-form-item-label,
+  .orvilo-settings-row .ant-form-item-control {
+    flex: 0 0 auto !important;
+    width: 100%;
+  }
+}
