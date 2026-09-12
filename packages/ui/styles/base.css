@@ -399,28 +399,30 @@ html[data-dnd-dragging="true"] * {
   color: var(--find-match-foreground);
 }
 
-/* Lobe's `Form` gives its rows their geometry from the `Form` component's own
- * stylesheet: `.ant-row { flex-wrap: nowrap }`, `.ant-form-item-label > label
- * { height: unset }`, `.ant-form-item { margin: 0 !important }`, and
- * `colon: false` so antd's label suffix disappears. The settings page never
- * mounts a `Form` — every control there commits through its own store or
- * through `useAutoSave`, so a `Form` around the tab panels would own values
- * nothing writes — and each of those rules is load-bearing:
+/* Lobe's `Form` stylesheet is not mounted, so these are the three rules that
+ * must be restated — one per thing that breaks without them:
  *
- *   - without `nowrap`, a row whose label and description are wide enough
- *     pushes its control onto a second line while its neighbours stay side by
- *     side (the timezone row, at 288px of control, did);
- *   - antd's horizontal label pins itself to the control's height and hides
- *     the overflow, so a two-line description loses its second line;
- *   - antd's own `margin-bottom: 24px` doubles up with the row's padding;
- *   - and antd's `label::after` colon renders, because `colon: false` lives on
- *     the `Form`, landing a stray ":" beside every label.
+ *   - `.ant-form-item-row { flex-wrap: nowrap }`: antd wraps the row by
+ *     default, so a label and description wide enough push the control onto a
+ *     second line while its neighbours stay side by side (the timezone row, at
+ *     288px of control, did);
+ *   - `.ant-form-item-label > label { height: unset }`: antd's horizontal label
+ *     pins itself to the control's height and hides the overflow, so a two-line
+ *     description loses its second line;
+ *   - `.ant-form-item { margin: 0 !important }`: Lobe zeroes antd's own
+ *     `margin-bottom: 24px`, which otherwise doubles up with the row's padding.
  *
- * Scoped to the rows that opt in rather than applied globally, so antd forms
- * elsewhere in the app keep their own geometry. Plain CSS rather than
- * utilities: three of the four rules have to reach antd's child elements, which
- * a class on the item itself cannot do, and this way none of them depends on
- * Tailwind emitting a candidate.
+ * The fourth difference is a prop, not a rule: with no `Form` the antd label
+ * colon renders, and `SettingsFormRow` suppresses it with `colon={false}` —
+ * see that component, not this block.
+ *
+ * The settings page mounts no `Form` on purpose: every control there commits
+ * through its own store or through `useAutoSave`, so a `Form` around the tab
+ * panels would own values nothing writes. Scoped to the rows that opt in rather
+ * than applied to `.ant-form-item-row` globally, so antd forms elsewhere in the
+ * app keep their own geometry, and written as plain CSS rather than utilities
+ * because each rule has to reach an antd *child* of the item — which a class on
+ * the item itself cannot do.
  *
  * If the settings tabs ever do mount a Lobe `Form`, this block should go: it
  * exists only to restate what that component would have applied. */

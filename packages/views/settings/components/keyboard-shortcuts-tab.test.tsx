@@ -15,17 +15,19 @@ import {
 import { renderWithI18n } from "../../test/i18n";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
 
-// This file needs far more than the repo's 20s default, and the reason is the
-// migration, not the assertions. It mounts 23 `Form.Item` rows and 22 Lobe
-// `Button`s; each button is a `motion` element, and jsdom gives every one of
-// them a real animation runtime. Measured on this machine: one mount is ~6s
-// against ~0.1-0.3s *per test* for the whole file before the tab was migrated,
-// and under full-suite parallelism each test lands between 12s and 25s. Raised
-// here rather than in `vitest.config.ts` because it is this tab's shape — a row
-// of actions per shortcut — that pays it. `hookTimeout` is raised with it
-// because unmounting those rows again in `afterEach` costs the same order of
-// magnitude, and the hook budget is separate from the test budget.
-vi.setConfig({ testTimeout: 120_000, hookTimeout: 60_000 });
+// This file needs more than the repo's 20s default, and the reason is the
+// migration rather than the assertions: it mounts 23 `Form.Item` rows and 22
+// Lobe `Button`s, each of which is a `motion` element, and jsdom gives every one
+// of them a real animation runtime. Measured on this machine, whole file: 3.55s
+// for the same 8 tests before the tab was migrated, 125-155s after; the slowest
+// single test is 17s here and 25s under full-suite parallelism against the 0.1-
+// 0.3s it used to cost. 60s is ~2.4x the worst observed, which is headroom for
+// a loaded runner rather than a number that hides the next slow suite.
+//
+// `hookTimeout` is raised with it because unmounting those rows again in
+// `afterEach` costs the same order of magnitude and has its own budget — under
+// load it was the hook, not the test, that first hit the ceiling.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 /**
  * `lobe: true` loads the theme bridge on demand, so the first query has to be

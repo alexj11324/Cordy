@@ -127,6 +127,28 @@ describe("SettingsFormRow", () => {
     expect(row?.style.getPropertyValue("--form-item-min-width")).toBe("384px");
   });
 
+  // antd turns the label colon ON by default and only suppresses it when it is
+  // told to: `computedColon = colon === true || (contextColon !== false && colon
+  // !== false)`, and with no enclosing `Form` every term of that is `undefined`.
+  // So omitting `colon` is what renders it, and `SettingsFormRow` passes
+  // `colon={false}`. This is the guard for that: the failure is silent, it
+  // reappears the moment anyone rebuilds the row, and the colon is generated
+  // content rather than text, so it can only be caught here by the state antd
+  // reports — `ant-form-item-no-colon` on the label — plus the label text.
+  it("suppresses antd's label colon", async () => {
+    const { container } = renderWithI18n(
+      <SettingsFormRow label="Theme" description="Applies to this device">
+        <span>control</span>
+      </SettingsFormRow>,
+      { lobe: true },
+    );
+
+    const label = (await screen.findByText("Theme")).closest("label");
+    expect(label?.className).toContain("ant-form-item-no-colon");
+    expect(label?.textContent ?? "").not.toMatch(/[:：]\s*$/);
+    expect(container.querySelector(".ant-form-item")).toBeTruthy();
+  });
+
   it("draws a separator above a row only when asked", async () => {
     renderWithI18n(
       <>
