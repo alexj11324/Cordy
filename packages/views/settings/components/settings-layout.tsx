@@ -14,8 +14,12 @@ import { Input } from "@orvilo/ui/components/ui/input";
 import { SelectTrigger } from "@orvilo/ui/components/ui/select";
 import { Textarea } from "@orvilo/ui/components/ui/textarea";
 import { cn } from "@orvilo/ui/lib/utils";
+import type { SettingsSaveStatus } from "./settings-save-status";
 
-export type SettingsSaveStatus = "idle" | "saving" | "saved" | "error";
+// Re-exported rather than defined here: `use-auto-save` owns this lifecycle and
+// has to be able to name it without importing this module's components. It
+// keeps flowing out of here for as long as the atom layer has consumers.
+export type { SettingsSaveStatus };
 
 /**
  * Transparent field chrome for stacked settings rows that edit in place.

@@ -9,7 +9,7 @@
  * systems meet: it reads those variables in the browser and hands antd the
  * matching token set.
  *
- * Four decisions worth knowing about:
+ * Five decisions worth knowing about:
  *
  * - `cssVar.key` is namespaced to Orvilo rather than reusing LobeHub's
  *   `lobe-vars`. The published packages reference their CSS variables only
@@ -36,6 +36,11 @@
  *   none }`). That is defensible for a full-page LobeHub app; it is not for a
  *   bridge mounted in a panel, a modal, or a dashboard route, where it would
  *   restyle and rescroll the page behind it.
+ *
+ * - `LobeModalHost` is mounted here, last, so `confirmModal` has something to
+ *   render into. It is a required ancestor in the same class as
+ *   `MotionProvider`, and it could not be left to call sites: see that module's
+ *   header for why exactly one bridge may own it.
  */
 
 import { StyleProvider } from "@ant-design/cssinjs";
@@ -52,6 +57,7 @@ import ThemeProvider from "@lobehub/ui/es/ThemeProvider/index";
 import { motion } from "motion/react";
 import { type ReactNode, useEffect, useState } from "react";
 
+import { LobeModalHost } from "./lobe-modal-host";
 import {
   buildAntdTokens,
   createStaticTokenReader,
@@ -166,6 +172,7 @@ export function LobeThemeBridge({ children }: LobeThemeBridgeProps) {
           }}
         >
           {children}
+          <LobeModalHost />
         </ThemeProvider>
       </StyleProvider>
     </MotionProvider>

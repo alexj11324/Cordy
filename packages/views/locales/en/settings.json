@@ -1,4 +1,8 @@
 {
+  "confirm": {
+    "cancel": "Cancel",
+    "confirm": "Confirm"
+  },
   "issue_statuses": {
     "title": "Issue Statuses",
     "description": "Define the workflow your issues move through. Each status inherits its behavior from its category.",
