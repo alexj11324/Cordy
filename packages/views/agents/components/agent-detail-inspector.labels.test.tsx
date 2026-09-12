@@ -28,12 +28,6 @@ vi.mock("./inspector/runtime-picker", () => ({
   RuntimePicker: () => <div data-testid="runtime-picker" />,
 }));
 
-vi.mock("./inspector/thinking-prop-row", () => ({
-  ThinkingSettingField: () => <div data-testid="thinking-field" />,
-}));
-
-
-
 const agent = {
   id: "agent-1",
   workspace_id: "workspace-1",
