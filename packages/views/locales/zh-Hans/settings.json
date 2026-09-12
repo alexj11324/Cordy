@@ -816,6 +816,7 @@
     "empty": "还没有已授权的客户端。",
     "load_failed": "无法加载 API token，请刷新页面重试。",
     "name_placeholder": "Token 名称（例如：我的 CLI）",
+    "expiry_label": "有效期",
     "expiry": {
       "30": "30 天",
       "90": "90 天",

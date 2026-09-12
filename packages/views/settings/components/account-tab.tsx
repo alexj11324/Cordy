@@ -8,69 +8,9 @@ import {
   useEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from "react";
-import { Badge } from "@orvilo/ui/components/reui/badge";
+import { Button, Input, InputOTP, Modal, Tag, TextArea } from "@lobehub/ui/base-ui";
 import { PhoneInput } from "@orvilo/ui/components/reui/phone-input";
-import { Button } from "@orvilo/ui/components/ui/button";
-import { Card, CardContent, CardFooter } from "@orvilo/ui/components/ui/card";
-import {
-  Combobox,
-  ComboboxCollection,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxGroup,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxLabel,
-  ComboboxList,
-} from "@orvilo/ui/components/ui/combobox";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@orvilo/ui/components/ui/field";
-import { Input } from "@orvilo/ui/components/ui/input";
-import { Textarea } from "@orvilo/ui/components/ui/textarea";
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from "@orvilo/ui/components/ui/input-otp";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-  InputGroupText,
-} from "@orvilo/ui/components/ui/input-group";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@orvilo/ui/components/ui/select";
-import { Separator } from "@orvilo/ui/components/ui/separator";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@orvilo/ui/components/ui/tooltip";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@orvilo/ui/components/ui/alert-dialog";
-import { InfoIcon } from "lucide-react";
 import { toast } from "sonner";
 import { useAuthStore } from "@orvilo/core/auth";
 import { api } from "@orvilo/core/api";
@@ -80,7 +20,42 @@ import type { User, UserProfileDetails } from "@orvilo/core/types";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useT } from "../../i18n";
 import { SettingsSaveState } from "./settings-layout";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
+import { SettingsSelect } from "./settings-select";
 import { useAutoSave } from "./use-auto-save";
+
+/**
+ * Account — the profile-3 block: avatar, identity fields, contact fields and
+ * regional preferences, all committed through `useAutoSave`.
+ *
+ * **Every control here is a draft, and the hook owns the commit.** The tab
+ * keeps its page-wide `useState<ProfileFormState>` and hands it to `useAutoSave`
+ * exactly as before the migration; nothing about the state model changed. What
+ * that buys is the whole reason this tab is the risky one: antd's `Form` is
+ * uncontrolled (`initialValues` is read once, and the only way back in is
+ * `setFieldsValue`, which clobbers whatever the user is typing), so letting a
+ * `Form` hold these drafts would have to solve two inverse problems at once —
+ * server data arriving late and never reaching the form, and a server value
+ * arriving mid-typing and overwriting the draft. `useAutoSave` already solves
+ * both: `savedValue` feeds `persistedRef` through `observedSavedRef` rather than
+ * through the draft, and the draft resets only on an identity change
+ * (`[user?.id]` below). So **no field here carries a `name`** and none of them
+ * live in a `Form` store; the shell's `Form.Group` / `Form.Item` pair is layout
+ * only. See the state-ownership rule in `reference-lobe-tab-migration.md`.
+ *
+ * The one control that is *not* a draft is the language select: it persists the
+ * locale cookie, PATCHes `/api/me` and reloads immediately, so it neither reads
+ * nor writes `form.language` on its way through — it only mirrors the value the
+ * server confirmed.
+ *
+ * `htmlFor` rather than `aria-label` on the text fields: the row's label is a
+ * real `<label>` element, and antd only gives it a `for` when the item has a
+ * `name`. See `SettingsFormRow`'s note on the prop.
+ *
+ * The title and description the old `SettingsTab` rendered are gone: the
+ * settings dialog's own header renders them from this tab's entry in
+ * `settings-page.tsx`.
+ */
 
 interface ProfileFormState {
   firstName: string;
@@ -100,30 +75,23 @@ interface ProfileFormState {
 interface SelectOption {
   value: string;
   label: string;
-  description?: string;
 }
 
-interface TimezoneGroup {
-  value: string;
-  items: Array<{ value: string; label: string }>;
-}
+/**
+ * The old `SettingsRow`'s width tiers, in pixels. `Form.Item` turns `minWidth`
+ * into an exact width for the control column
+ * (`.ant-form-item-control { width: var(--form-item-min-width) !important }`),
+ * so a row is either hugging its control or exactly this wide — which is why
+ * the text rows share one value and can never drift apart.
+ */
+const TEXT_MIN_WIDTH = 384;
+const SELECT_MIN_WIDTH = 192;
+const WIDE_SELECT_MIN_WIDTH = 288;
 
 const ROLE_OPTIONS: SelectOption[] = [
-  {
-    value: "product-ops",
-    label: "Product Operations",
-    description: "Owns launch, enablement, and process design.",
-  },
-  {
-    value: "growth-lead",
-    label: "Growth Lead",
-    description: "Shapes lifecycle messaging and experiment rollout.",
-  },
-  {
-    value: "customer-ops",
-    label: "Customer Operations",
-    description: "Handles escalations, handoff quality, and support workflows.",
-  },
+  { value: "product-ops", label: "Product Operations" },
+  { value: "growth-lead", label: "Growth Lead" },
+  { value: "customer-ops", label: "Customer Operations" },
 ];
 
 const LANGUAGE_OPTIONS: SelectOption[] = [
@@ -142,37 +110,28 @@ const TIME_FORMAT_OPTIONS: SelectOption[] = [
   { value: "12-hour", label: "12-hour" },
 ];
 
-const TIMEZONE_GROUPS: TimezoneGroup[] = [
-  {
-    value: "Americas",
-    items: [
-      { value: "America/Los_Angeles", label: "(GMT-8) Los Angeles" },
-      { value: "America/Denver", label: "(GMT-7) Denver" },
-      { value: "America/Chicago", label: "(GMT-6) Chicago" },
-      { value: "America/New_York", label: "(GMT-5) New York" },
-      { value: "America/Toronto", label: "(GMT-5) Toronto" },
-    ],
-  },
-  {
-    value: "Europe",
-    items: [
-      { value: "Europe/London", label: "(GMT+0) London" },
-      { value: "Europe/Berlin", label: "(GMT+1) Berlin" },
-      { value: "Europe/Paris", label: "(GMT+1) Paris" },
-      { value: "Europe/Amsterdam", label: "(GMT+1) Amsterdam" },
-      { value: "Europe/Athens", label: "(GMT+2) Athens" },
-    ],
-  },
-  {
-    value: "Asia Pacific",
-    items: [
-      { value: "Asia/Dubai", label: "(GMT+4) Dubai" },
-      { value: "Asia/Tashkent", label: "(GMT+5) Tashkent" },
-      { value: "Asia/Singapore", label: "(GMT+8) Singapore" },
-      { value: "Asia/Tokyo", label: "(GMT+9) Tokyo" },
-      { value: "Australia/Sydney", label: "(GMT+11) Sydney" },
-    ],
-  },
+/**
+ * The registry block's curated zones, flattened. The old combobox grouped them
+ * under "Americas" / "Europe" / "Asia Pacific" labels; `SettingsSelect` is a
+ * flat single-choice list, so the group names are gone and the labels — which
+ * carry the offset, and are what a user scans for — are not.
+ */
+const TIMEZONE_OPTIONS: SelectOption[] = [
+  { value: "America/Los_Angeles", label: "(GMT-8) Los Angeles" },
+  { value: "America/Denver", label: "(GMT-7) Denver" },
+  { value: "America/Chicago", label: "(GMT-6) Chicago" },
+  { value: "America/New_York", label: "(GMT-5) New York" },
+  { value: "America/Toronto", label: "(GMT-5) Toronto" },
+  { value: "Europe/London", label: "(GMT+0) London" },
+  { value: "Europe/Berlin", label: "(GMT+1) Berlin" },
+  { value: "Europe/Paris", label: "(GMT+1) Paris" },
+  { value: "Europe/Amsterdam", label: "(GMT+1) Amsterdam" },
+  { value: "Europe/Athens", label: "(GMT+2) Athens" },
+  { value: "Asia/Dubai", label: "(GMT+4) Dubai" },
+  { value: "Asia/Tashkent", label: "(GMT+5) Tashkent" },
+  { value: "Asia/Singapore", label: "(GMT+8) Singapore" },
+  { value: "Asia/Tokyo", label: "(GMT+9) Tokyo" },
+  { value: "Australia/Sydney", label: "(GMT+11) Sydney" },
 ];
 
 function profileDetailsOf(user: User | null | undefined): UserProfileDetails {
@@ -225,125 +184,6 @@ function profileFormsEqual(left: ProfileFormState, right: ProfileFormState) {
     left.startWeek === right.startWeek &&
     left.language === right.language &&
     left.timeFormat === right.timeFormat
-  );
-}
-
-function FieldLabelWithHint({
-  htmlFor,
-  label,
-  hint,
-  addon,
-}: {
-  htmlFor: string;
-  label: string;
-  hint?: string;
-  addon?: ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <FieldLabel htmlFor={htmlFor}>{label}</FieldLabel>
-      {hint ? (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground focus-visible:ring-ring focus-visible:ring-offset-background inline-flex rounded-sm p-0.5 transition-colors focus-visible:ring-2 focus-visible:ring-offset-2"
-                aria-label={`${label} info`}
-              />
-            }
-          >
-            <InfoIcon aria-hidden="true" className="size-4" />
-          </TooltipTrigger>
-          <TooltipContent side="top" className="max-w-xs p-3">
-            <p className="text-body leading-5">{hint}</p>
-          </TooltipContent>
-        </Tooltip>
-      ) : null}
-      {addon}
-    </div>
-  );
-}
-
-function CompactSelectField({
-  id,
-  value,
-  options,
-  onValueChange,
-}: {
-  id: string;
-  value: string;
-  options: SelectOption[];
-  onValueChange: (value: string) => void;
-}) {
-  return (
-    <Field className="w-full">
-      <Select
-        items={options}
-        value={value || null}
-        onValueChange={(next) => {
-          if (next) onValueChange(next);
-        }}
-      >
-        <SelectTrigger id={id} className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent className="w-(--anchor-width)">
-          <SelectGroup>
-            {options.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-    </Field>
-  );
-}
-
-function TimezoneComboboxField({
-  id,
-  value,
-  onValueChange,
-}: {
-  id: string;
-  value: string;
-  onValueChange: (value: string) => void;
-}) {
-  return (
-    <Field className="w-full">
-      <Combobox
-        items={TIMEZONE_GROUPS}
-        value={value || null}
-        onValueChange={(next: string | null) => {
-          if (next) onValueChange(next);
-        }}
-      >
-        <ComboboxInput
-          id={id}
-          placeholder="Select a timezone"
-          className="w-full"
-        />
-        <ComboboxContent className="w-(--anchor-width) min-w-(--anchor-width)">
-          <ComboboxEmpty>No timezones found.</ComboboxEmpty>
-          <ComboboxList>
-            {(group: TimezoneGroup) => (
-              <ComboboxGroup key={group.value} items={group.items}>
-                <ComboboxLabel>{group.value}</ComboboxLabel>
-                <ComboboxCollection>
-                  {(item: TimezoneGroup["items"][number]) => (
-                    <ComboboxItem key={item.value} value={item.value}>
-                      {item.label}
-                    </ComboboxItem>
-                  )}
-                </ComboboxCollection>
-              </ComboboxGroup>
-            )}
-          </ComboboxList>
-        </ComboboxContent>
-      </Combobox>
-    </Field>
   );
 }
 
@@ -502,419 +342,382 @@ export function AccountTab() {
     }
   };
 
+  // The dialog is dismissable only while no request is in flight: the whole
+  // flow is a two-step server conversation, and closing it mid-request would
+  // strand the code the server already sent. `Modal`'s X, Escape and backdrop
+  // all funnel through `onCancel`, so one guard covers all three.
+  const handleEmailDialogCancel = () => {
+    if (!emailBusy) setEmailDialogOpen(false);
+  };
+
   return (
-    <TooltipProvider delay={200}>
-      <div className="w-full max-w-4xl space-y-6">
-        <Card className="overflow-hidden p-0">
-          <CardContent className="px-6 py-7 sm:px-8">
-            <div>
-              <div className="space-y-4">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
-                  <AvatarUploadControl
-                    variant="user"
-                    value={user?.avatar_url ?? null}
-                    name={user?.name ?? ""}
-                    size={64}
-                    editBadge
-                    ariaLabel={t(($) => $.account.click_avatar_hint)}
-                    onUploaded={async (url) => {
-                      try {
-                        const updated = await api.updateMe({ avatar_url: url });
-                        setUser(updated);
-                        toast.success(
-                          t(($) => $.account.toast_avatar_updated),
-                          {
-                            id: "settings-auto-save",
-                          },
-                        );
-                      } catch (error) {
-                        toast.error(
-                          error instanceof Error
-                            ? error.message
-                            : t(($) => $.account.toast_avatar_failed),
-                        );
-                      }
-                    }}
-                  />
-                  <div className="flex min-w-0 flex-1 flex-col gap-2.5">
-                    <div className="min-w-0 space-y-px">
-                      <h2 className="text-title-sm font-semibold tracking-tight">
-                        {t(($) => $.account.avatar_label)}
-                      </h2>
-                      <p className="text-muted-foreground text-body">
-                        {t(($) => $.account.click_avatar_hint)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <Separator className="my-6" />
-
-              <div id="profile-3-basic-details" className="space-y-5">
-                <SectionHeading
-                  title="Basic Details"
-                  description="Keep your contact and identity fields current."
-                />
-
-                <FieldGroup className="grid gap-x-6 gap-y-6 md:grid-cols-2">
-                  <Field className="gap-2.5">
-                    <FieldLabel htmlFor="profile-3-first-name">
-                      First Name
-                    </FieldLabel>
-                    <Input
-                      id="profile-3-first-name"
-                      value={form.firstName}
-                      onChange={(event) =>
-                        updateField("firstName", event.target.value)
-                      }
-                      onBlur={() => void autoSave.flush()}
-                    />
-                  </Field>
-
-                  <Field className="gap-2.5">
-                    <FieldLabel htmlFor="profile-3-last-name">
-                      Last Name
-                    </FieldLabel>
-                    <Input
-                      id="profile-3-last-name"
-                      value={form.lastName}
-                      onChange={(event) =>
-                        updateField("lastName", event.target.value)
-                      }
-                      onBlur={() => void autoSave.flush()}
-                      placeholder="Optional"
-                    />
-                  </Field>
-
-                  <Field className="gap-2.5">
-                    <FieldLabelWithHint
-                      htmlFor="profile-3-email"
-                      label="Primary Email Address"
-                      hint="This stays tied to sign-in and recovery. Use the edit action if your account allows email changes."
-                      addon={
-                        user && !user.is_guest ? (
-                          <Badge variant="success-light" size="sm">
-                            Verified
-                          </Badge>
-                        ) : undefined
-                      }
-                    />
-                    <InputGroup className="w-full">
-                      <InputGroupInput
-                        id="profile-3-email"
-                        type="email"
-                        value={user?.email ?? ""}
-                        readOnly
-                      />
-                      <InputGroupAddon align="inline-end">
-                        <InputGroupButton
-                          type="button"
-                          variant="outline"
-                          onClick={handleOpenEmailChange}
-                        >
-                          Edit
-                        </InputGroupButton>
-                      </InputGroupAddon>
-                    </InputGroup>
-                    <FieldDescription>
-                      Used for sign-in, recovery, and workspace notices.
-                    </FieldDescription>
-                  </Field>
-
-                  <Field className="gap-2.5">
-                    <FieldLabelWithHint
-                      htmlFor="profile-3-preferred-name"
-                      label="Preferred Name"
-                      hint="Shown in compact comments, activity rows, and mention previews."
-                    />
-                    <Input
-                      id="profile-3-preferred-name"
-                      value={form.preferredName}
-                      onChange={(event) =>
-                        updateField("preferredName", event.target.value)
-                      }
-                      onBlur={() => void autoSave.flush()}
-                    />
-                  </Field>
-
-                  <Field className="gap-2.5">
-                    <FieldLabelWithHint
-                      htmlFor="profile-3-username"
-                      label="Username"
-                      hint="A unique profile handle saved with your account."
-                    />
-                    <InputGroup className="w-full">
-                      <InputGroupAddon align="inline-start">
-                        <InputGroupText>@</InputGroupText>
-                      </InputGroupAddon>
-                      <InputGroupInput
-                        id="profile-3-username"
-                        value={form.username}
-                        onChange={(event) =>
-                          updateField("username", event.target.value)
-                        }
-                        onBlur={() => void autoSave.flush()}
-                      />
-                    </InputGroup>
-                  </Field>
-
-                  <Field className="gap-2.5">
-                    <FieldLabel htmlFor="profile-3-role">Role</FieldLabel>
-                    <CompactSelectField
-                      id="profile-3-role"
-                      options={ROLE_OPTIONS}
-                      value={form.role}
-                      onValueChange={(value) => updateField("role", value)}
-                    />
-                  </Field>
-
-                  <Field className="gap-2.5 md:col-span-2">
-                    <FieldLabel htmlFor="profile-3-description">
-                      About You
-                    </FieldLabel>
-                    <Textarea
-                      id="profile-3-description"
-                      value={form.profileDescription}
-                      maxLength={2000}
-                      placeholder="Tell agents and teammates how you work."
-                      onChange={(event) =>
-                        updateField("profileDescription", event.target.value)
-                      }
-                      onBlur={() => void autoSave.flush()}
-                    />
-                    <FieldDescription>
-                      Shared with agents as durable requester context.
-                    </FieldDescription>
-                  </Field>
-
-                  <Field className="gap-2.5">
-                    <FieldLabel htmlFor="profile-3-phone">
-                      Phone Number
-                    </FieldLabel>
-                    <PhoneInput
-                      id="profile-3-phone"
-                      value={form.phone || undefined}
-                      onChange={(value) => updateField("phone", value || "")}
-                      defaultCountry="US"
-                    />
-                    <FieldDescription>
-                      Saved with your account profile.
-                    </FieldDescription>
-                  </Field>
-
-                  <Field className="gap-2.5">
-                    <FieldLabel htmlFor="profile-3-website">Website</FieldLabel>
-                    <InputGroup className="w-full">
-                      <InputGroupAddon align="inline-start">
-                        <InputGroupText>https://</InputGroupText>
-                      </InputGroupAddon>
-                      <InputGroupInput
-                        id="profile-3-website"
-                        value={form.website}
-                        onChange={(event) =>
-                          updateField("website", event.target.value)
-                        }
-                        onBlur={() => void autoSave.flush()}
-                      />
-                    </InputGroup>
-                  </Field>
-                </FieldGroup>
-              </div>
-
-              <Separator className="my-6" />
-
-              <div className="space-y-5">
-                <SectionHeading
-                  title="Regional Preferences"
-                  description="Choose how time and scheduling fields appear."
-                />
-
-                <FieldGroup className="grid gap-x-6 gap-y-6 md:grid-cols-2">
-                  <Field className="gap-2.5">
-                    <FieldLabelWithHint
-                      htmlFor="profile-3-timezone"
-                      label="Preferred Timezone"
-                      hint="Used for due times, reminder delivery, and schedule previews."
-                    />
-                    <TimezoneComboboxField
-                      id="profile-3-timezone"
-                      value={form.timezone}
-                      onValueChange={(value) => updateField("timezone", value)}
-                    />
-                  </Field>
-
-                  <Field className="gap-2.5">
-                    <FieldLabelWithHint
-                      htmlFor="profile-3-start-week"
-                      label="Start Week On"
-                      hint="Saved as your preferred first day of the week."
-                    />
-                    <CompactSelectField
-                      id="profile-3-start-week"
-                      options={START_WEEK_OPTIONS}
-                      value={form.startWeek}
-                      onValueChange={(value) => updateField("startWeek", value)}
-                    />
-                  </Field>
-
-                  <Field className="gap-2.5">
-                    <FieldLabel htmlFor="profile-3-language">
-                      Language
-                    </FieldLabel>
-                    <CompactSelectField
-                      id="profile-3-language"
-                      options={LANGUAGE_OPTIONS}
-                      value={form.language}
-                      onValueChange={(value) => void handleLanguageChange(value)}
-                    />
-                  </Field>
-
-                  <Field className="gap-2.5">
-                    <FieldLabel htmlFor="profile-3-time-format">
-                      Time Format
-                    </FieldLabel>
-                    <CompactSelectField
-                      id="profile-3-time-format"
-                      options={TIME_FORMAT_OPTIONS}
-                      value={form.timeFormat}
-                      onValueChange={(value) =>
-                        updateField("timeFormat", value)
-                      }
-                    />
-                  </Field>
-                </FieldGroup>
-              </div>
-            </div>
-          </CardContent>
-
-          <CardFooter className="border-t px-6 py-4 sm:px-8">
-            <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <p className="text-muted-foreground text-body">
-                  Save once to update your shared profile across every
-                  workspace.
-                </p>
-                <SettingsSaveState
-                  status={autoSave.status}
-                  savingLabel={t(($) => $.auto_save.saving)}
-                  savedLabel={t(($) => $.auto_save.saved)}
-                  errorLabel={t(($) => $.auto_save.failed)}
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button type="button" variant="outline" onClick={handleReset}>
-                  Reset
-                </Button>
-                <Button type="button" onClick={() => void handleSave()}>
-                  Save Changes
-                </Button>
-              </div>
-            </div>
-          </CardFooter>
-        </Card>
-
-        <AlertDialog
-          open={emailDialogOpen}
-          onOpenChange={(open) => {
-            if (!emailBusy) setEmailDialogOpen(open);
-          }}
+    <div className="w-full space-y-6">
+      <SettingsGroup
+        title="Basic Details"
+        description="Keep your contact and identity fields current."
+      >
+        <SettingsFormRow
+          label={t(($) => $.account.avatar_label)}
+          description={t(($) => $.account.click_avatar_hint)}
         >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Change email address</AlertDialogTitle>
-              <AlertDialogDescription>
-                {emailStep === "email"
-                  ? "We'll send a verification code to the new address."
-                  : `Enter the 6-digit code sent to ${emailDraft.trim()}.`}
-              </AlertDialogDescription>
-            </AlertDialogHeader>
+          <AvatarUploadControl
+            variant="user"
+            value={user?.avatar_url ?? null}
+            name={user?.name ?? ""}
+            size={64}
+            editBadge
+            ariaLabel={t(($) => $.account.click_avatar_hint)}
+            onUploaded={async (url) => {
+              try {
+                const updated = await api.updateMe({ avatar_url: url });
+                setUser(updated);
+                toast.success(
+                  t(($) => $.account.toast_avatar_updated),
+                  {
+                    id: "settings-auto-save",
+                  },
+                );
+              } catch (error) {
+                toast.error(
+                  error instanceof Error
+                    ? error.message
+                    : t(($) => $.account.toast_avatar_failed),
+                );
+              }
+            }}
+          />
+        </SettingsFormRow>
 
-            {emailStep === "email" ? (
-              <Field>
-                <FieldLabel htmlFor="profile-email-change">
-                  New email address
-                </FieldLabel>
-                <Input
-                  id="profile-email-change"
-                  type="email"
-                  autoComplete="email"
-                  value={emailDraft}
-                  onChange={(event) => setEmailDraft(event.target.value)}
-                  disabled={emailBusy}
-                />
-              </Field>
-            ) : (
-              <div className="flex justify-center">
-                <InputOTP
-                  autoFocus
-                  maxLength={6}
-                  value={emailCode}
-                  onChange={setEmailCode}
-                  disabled={emailBusy}
-                  aria-label="Verification code"
-                >
-                  <InputOTPGroup>
-                    <InputOTPSlot index={0} />
-                    <InputOTPSlot index={1} />
-                    <InputOTPSlot index={2} />
-                    <InputOTPSlot index={3} />
-                    <InputOTPSlot index={4} />
-                    <InputOTPSlot index={5} />
-                  </InputOTPGroup>
-                </InputOTP>
-              </div>
-            )}
+        <SettingsFormRow
+          label="First Name"
+          htmlFor="profile-3-first-name"
+          minWidth={TEXT_MIN_WIDTH}
+        >
+          <Input
+            id="profile-3-first-name"
+            value={form.firstName}
+            onChange={(event) =>
+              updateField("firstName", event.target.value)
+            }
+            onBlur={() => void autoSave.flush()}
+          />
+        </SettingsFormRow>
 
-            {emailError ? (
-              <p className="text-body text-destructive" role="alert">
-                {emailError}
-              </p>
-            ) : null}
+        <SettingsFormRow
+          label="Last Name"
+          htmlFor="profile-3-last-name"
+          minWidth={TEXT_MIN_WIDTH}
+        >
+          <Input
+            id="profile-3-last-name"
+            value={form.lastName}
+            placeholder="Optional"
+            onChange={(event) => updateField("lastName", event.target.value)}
+            onBlur={() => void autoSave.flush()}
+          />
+        </SettingsFormRow>
 
-            <AlertDialogFooter>
-              <AlertDialogCancel disabled={emailBusy}>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                disabled={emailBusy}
-                onClick={async (event) => {
-                  event.preventDefault();
-                  if (emailStep === "email") {
-                    await handleRequestEmailCode();
-                  } else {
-                    await handleConfirmEmailChange();
-                  }
-                }}
-              >
-                {emailBusy
-                  ? emailStep === "email"
-                    ? "Sending..."
-                    : "Verifying..."
-                  : emailStep === "email"
-                    ? "Send code"
-                    : "Verify email"}
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <SettingsFormRow
+          label={
+            <span className="inline-flex items-center gap-1.5">
+              Primary Email Address
+              {user && !user.is_guest ? (
+                <Tag color="success" size="small" variant="filled">
+                  Verified
+                </Tag>
+              ) : null}
+            </span>
+          }
+          description="This stays tied to sign-in and recovery. Use the edit action if your account allows email changes."
+          htmlFor="profile-3-email"
+          minWidth={TEXT_MIN_WIDTH}
+        >
+          <Input
+            id="profile-3-email"
+            readOnly
+            type="email"
+            value={user?.email ?? ""}
+            suffix={
+              <Button size="small" shape="round" type="fill" onClick={handleOpenEmailChange}>
+                Edit
+              </Button>
+            }
+          />
+        </SettingsFormRow>
+
+        <SettingsFormRow
+          label="Preferred Name"
+          description="Shown in compact comments, activity rows, and mention previews."
+          htmlFor="profile-3-preferred-name"
+          minWidth={TEXT_MIN_WIDTH}
+        >
+          <Input
+            id="profile-3-preferred-name"
+            value={form.preferredName}
+            onChange={(event) =>
+              updateField("preferredName", event.target.value)
+            }
+            onBlur={() => void autoSave.flush()}
+          />
+        </SettingsFormRow>
+
+        <SettingsFormRow
+          label="Username"
+          description="A unique profile handle saved with your account."
+          htmlFor="profile-3-username"
+          minWidth={TEXT_MIN_WIDTH}
+        >
+          <Input
+            id="profile-3-username"
+            prefix={<span className="text-muted-foreground">@</span>}
+            value={form.username}
+            onChange={(event) => updateField("username", event.target.value)}
+            onBlur={() => void autoSave.flush()}
+          />
+        </SettingsFormRow>
+
+        <SettingsFormRow label="Role" minWidth={SELECT_MIN_WIDTH}>
+          <SettingsSelect
+            className="w-full"
+            id="profile-3-role"
+            label="Role"
+            options={ROLE_OPTIONS}
+            value={form.role}
+            onValueChange={(value) => updateField("role", value)}
+          />
+        </SettingsFormRow>
+
+        <SettingsFormRow
+          label="About You"
+          description="Shared with agents as durable requester context."
+          htmlFor="profile-3-description"
+          minWidth={TEXT_MIN_WIDTH}
+        >
+          <TextArea
+            id="profile-3-description"
+            maxLength={2000}
+            placeholder="Tell agents and teammates how you work."
+            value={form.profileDescription}
+            onChange={(event) =>
+              updateField("profileDescription", event.target.value)
+            }
+            onBlur={() => void autoSave.flush()}
+          />
+        </SettingsFormRow>
+
+        <SettingsFormRow
+          label="Phone Number"
+          description="Saved with your account profile."
+          htmlFor="profile-3-phone"
+          minWidth={TEXT_MIN_WIDTH}
+        >
+          <PhoneInput
+            id="profile-3-phone"
+            value={form.phone || undefined}
+            onChange={(value) => updateField("phone", value || "")}
+            defaultCountry="US"
+          />
+        </SettingsFormRow>
+
+        <SettingsFormRow
+          label="Website"
+          htmlFor="profile-3-website"
+          minWidth={TEXT_MIN_WIDTH}
+        >
+          <Input
+            id="profile-3-website"
+            prefix={<span className="text-muted-foreground">https://</span>}
+            value={form.website}
+            onChange={(event) => updateField("website", event.target.value)}
+            onBlur={() => void autoSave.flush()}
+          />
+        </SettingsFormRow>
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Regional Preferences"
+        description="Choose how time and scheduling fields appear."
+      >
+        <SettingsFormRow
+          label="Preferred Timezone"
+          description="Used for due times, reminder delivery, and schedule previews."
+          minWidth={WIDE_SELECT_MIN_WIDTH}
+        >
+          <SettingsSelect
+            className="w-full"
+            id="profile-3-timezone"
+            label="Preferred Timezone"
+            options={TIMEZONE_OPTIONS}
+            value={form.timezone}
+            onValueChange={(value) => updateField("timezone", value)}
+          />
+        </SettingsFormRow>
+
+        <SettingsFormRow
+          label="Start Week On"
+          description="Saved as your preferred first day of the week."
+          minWidth={SELECT_MIN_WIDTH}
+        >
+          <SettingsSelect
+            className="w-full"
+            id="profile-3-start-week"
+            label="Start Week On"
+            options={START_WEEK_OPTIONS}
+            value={form.startWeek}
+            onValueChange={(value) => updateField("startWeek", value)}
+          />
+        </SettingsFormRow>
+
+        <SettingsFormRow label="Language" minWidth={SELECT_MIN_WIDTH}>
+          <SettingsSelect
+            className="w-full"
+            id="profile-3-language"
+            label="Language"
+            options={LANGUAGE_OPTIONS}
+            value={form.language}
+            onValueChange={(value) => void handleLanguageChange(value)}
+          />
+        </SettingsFormRow>
+
+        <SettingsFormRow label="Time Format" minWidth={SELECT_MIN_WIDTH}>
+          <SettingsSelect
+            className="w-full"
+            id="profile-3-time-format"
+            label="Time Format"
+            options={TIME_FORMAT_OPTIONS}
+            value={form.timeFormat}
+            onValueChange={(value) => updateField("timeFormat", value)}
+          />
+        </SettingsFormRow>
+      </SettingsGroup>
+
+      {/* No page-level save exists — the footer flushes the debounce that
+          `useAutoSave` already owns, which is why "Save Changes" is a real
+          action rather than a relabelled Close. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <p className="text-body text-muted-foreground">
+            Save once to update your shared profile across every workspace.
+          </p>
+          <SettingsSaveState
+            status={autoSave.status}
+            savingLabel={t(($) => $.auto_save.saving)}
+            savedLabel={t(($) => $.auto_save.saved)}
+            errorLabel={t(($) => $.auto_save.failed)}
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button shape="round" type="fill" onClick={handleReset}>
+            Reset
+          </Button>
+          <Button
+            shape="round"
+            type="primary"
+            onClick={() => void handleSave()}
+          >
+            Save Changes
+          </Button>
+        </div>
       </div>
-    </TooltipProvider>
-  );
-}
 
-function SectionHeading({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="space-y-1">
-      <h2 className="text-title-sm font-semibold tracking-tight">{title}</h2>
-      <p className="text-muted-foreground text-body leading-relaxed">
-        {description}
-      </p>
+      {/*
+        A self-contained dialog: its values exist only while it is open and no
+        server value can arrive late, which is the one place the reference says
+        an antd `Form` belongs. It is not one here because the flow has **two**
+        commit points, not one — "Send code" and "Verify email" are separate
+        requests with separate errors — so the state stays local and owned by
+        the component that runs them.
+      */}
+      <Modal
+        keyboard={!emailBusy}
+        maskClosable={!emailBusy}
+        open={emailDialogOpen}
+        title="Change email address"
+        width={420}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              disabled={emailBusy}
+              shape="round"
+              type="fill"
+              onClick={handleEmailDialogCancel}
+            >
+              Cancel
+            </Button>
+            <Button
+              loading={emailBusy}
+              shape="round"
+              type="primary"
+              onClick={() => {
+                if (emailStep === "email") void handleRequestEmailCode();
+                else void handleConfirmEmailChange();
+              }}
+            >
+              {emailBusy
+                ? emailStep === "email"
+                  ? "Sending..."
+                  : "Verifying..."
+                : emailStep === "email"
+                  ? "Send code"
+                  : "Verify email"}
+            </Button>
+          </div>
+        }
+        onCancel={handleEmailDialogCancel}
+      >
+        <div className="flex flex-col gap-4">
+          <p className="text-body text-muted-foreground">
+            {emailStep === "email"
+              ? "We'll send a verification code to the new address."
+              : `Enter the 6-digit code sent to ${emailDraft.trim()}.`}
+          </p>
+
+          {emailStep === "email" ? (
+            <div className="flex flex-col gap-1.5">
+              <label
+                className="text-body font-medium"
+                htmlFor="profile-email-change"
+              >
+                New email address
+              </label>
+              <Input
+                autoComplete="email"
+                disabled={emailBusy}
+                id="profile-email-change"
+                type="email"
+                value={emailDraft}
+                onChange={(event) => setEmailDraft(event.target.value)}
+              />
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              {/* The id belongs on the OTP root, not on a slot: base-ui derives
+                  every slot's id from it (`{id}-2`, `{id}-3`, …), so one
+                  `<label for>` labels the group by labelling its first cell. */}
+              <label
+                className="text-body font-medium"
+                htmlFor="profile-email-code"
+              >
+                Verification code
+              </label>
+              <InputOTP
+                disabled={emailBusy}
+                id="profile-email-code"
+                length={6}
+                value={emailCode}
+                onChange={setEmailCode}
+              />
+            </div>
+          )}
+
+          {emailError ? (
+            <p className="text-body text-destructive" role="alert">
+              {emailError}
+            </p>
+          ) : null}
+        </div>
+      </Modal>
     </div>
   );
 }

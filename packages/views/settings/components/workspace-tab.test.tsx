@@ -1,10 +1,6 @@
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@orvilo/core/i18n/react";
-import enCommon from "../../locales/en/common.json";
-import enSettings from "../../locales/en/settings.json";
 
 const mockUpdateWorkspace = vi.hoisted(() => vi.fn());
 const mockInvalidateQueries = vi.hoisted(() => vi.fn());
@@ -96,18 +92,28 @@ vi.mock("sonner", () => ({
   toast: { success: mockToastSuccess, error: vi.fn() },
 }));
 
+import { renderWithI18n } from "../../test/i18n";
 import { WorkspaceTab } from "./workspace-tab";
 
-const TEST_RESOURCES = {
-  en: { common: enCommon, settings: enSettings },
-};
+// Every mount here builds Lobe form rows and two ReUI frames. Under full-suite
+// parallelism that is seconds rather than milliseconds (the same reason
+// `vitest.config.ts` raises the global budget for antd).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
-function I18nWrapper({ children }: { children: ReactNode }) {
-  return (
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      {children}
-    </I18nProvider>
-  );
+/**
+ * `lobe: true` loads the theme bridge on demand — which is also what mounts
+ * the `ModalHost` the prefix confirmation renders into — so the first query in
+ * every test has to be an async one. This helper is that first query.
+ *
+ * The rows are reached through the `SettingsSaveState` status region's card —
+ * the tab renders no `SettingsGroup`, because its chrome is ReUI's `Frame` by
+ * decision 11 — so the scope here is the card that holds the name field rather
+ * than a named group.
+ */
+async function renderTab() {
+  renderWithI18n(<WorkspaceTab />, { lobe: true });
+  const nameField = await screen.findByLabelText("Name");
+  return within(nameField.closest('[data-slot="frame-panel"]') as HTMLElement);
 }
 
 describe("WorkspaceTab — automatic updates", () => {
@@ -143,39 +149,41 @@ describe("WorkspaceTab — automatic updates", () => {
     return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
   }
 
-  it("renders the current prefix in the shared input control", () => {
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-    const input = screen.getByPlaceholderText("TES") as HTMLInputElement;
+  it("renders the current prefix in the shared input control", async () => {
+    const card = await renderTab();
+    const input = card.getByPlaceholderText("TES") as HTMLInputElement;
     expect(input.value).toBe("TES");
   });
 
-  it("renders the real workspace URL in a shared read-only input control", () => {
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+  it("renders the real workspace URL in a shared read-only input control", async () => {
+    const card = await renderTab();
 
-    const input = screen.getByRole("textbox", { name: "URL" }) as HTMLInputElement;
+    const input = card.getByRole("textbox", {
+      name: "URL",
+    }) as HTMLInputElement;
     expect(input.value).toBe("https://app.example/test-workspace/issues");
     expect(input.readOnly).toBe(true);
   });
 
-  it("keeps only the supported workspace settings controls", () => {
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+  it("keeps only the supported workspace settings controls", async () => {
+    const card = await renderTab();
 
-    expect(screen.getByLabelText("Name")).toHaveAttribute("id", "workspace-name");
-    expect(screen.getByLabelText("URL")).toHaveAttribute("id", "workspace-url");
-    expect(screen.getByLabelText("Issue prefix")).toHaveAttribute(
+    expect(card.getByLabelText("Name")).toHaveAttribute("id", "workspace-name");
+    expect(card.getByLabelText("URL")).toHaveAttribute("id", "workspace-url");
+    expect(card.getByLabelText("Issue prefix")).toHaveAttribute(
       "id",
       "workspace-issue-prefix",
     );
-    expect(screen.queryByRole("textbox", { name: "Description" })).toBeNull();
-    expect(screen.queryByRole("textbox", { name: "Context" })).toBeNull();
-    expect(screen.queryByRole("textbox", { name: "Slug" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Leave workspace" })).toBeNull();
+    expect(card.queryByRole("textbox", { name: "Description" })).toBeNull();
+    expect(card.queryByRole("textbox", { name: "Context" })).toBeNull();
+    expect(card.queryByRole("textbox", { name: "Slug" })).toBeNull();
+    expect(card.queryByRole("button", { name: "Leave workspace" })).toBeNull();
   });
 
   it("uppercases and strips non-alphanumeric prefix input", async () => {
     const user = setupUser();
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-    const input = screen.getByPlaceholderText("TES") as HTMLInputElement;
+    const card = await renderTab();
+    const input = card.getByPlaceholderText("TES") as HTMLInputElement;
 
     await user.clear(input);
     await user.type(input, "ab-12!cd");
@@ -185,8 +193,8 @@ describe("WorkspaceTab — automatic updates", () => {
 
   it("auto-saves ordinary workspace fields without invalidating issue caches", async () => {
     const user = setupUser();
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-    const nameInput = screen.getByDisplayValue("Test Workspace");
+    const card = await renderTab();
+    const nameInput = card.getByDisplayValue("Test Workspace");
 
     await user.clear(nameInput);
     await user.type(nameInput, "Renamed Workspace");
@@ -206,14 +214,17 @@ describe("WorkspaceTab — automatic updates", () => {
 
   it("asks for confirmation on prefix blur and persists only after confirmation", async () => {
     const user = setupUser();
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-    const input = screen.getByPlaceholderText("TES") as HTMLInputElement;
+    const card = await renderTab();
+    const input = card.getByPlaceholderText("TES") as HTMLInputElement;
 
     await user.clear(input);
     await user.type(input, "NEW");
     await user.tab();
 
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
+    // The confirmation is `confirmModal`, which renders into the bridge's
+    // `ModalHost` — i.e. outside this tab's tree, so it is queried from the
+    // document rather than from `card`.
     await screen.findByText(/Change issue prefix/i);
     expect(screen.getByText(/TES-N/)).toBeTruthy();
     expect(screen.getByText(/NEW-N/)).toBeTruthy();
@@ -235,8 +246,8 @@ describe("WorkspaceTab — automatic updates", () => {
 
   it("does not persist a prefix when the confirmation is cancelled", async () => {
     const user = setupUser();
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-    const input = screen.getByPlaceholderText("TES") as HTMLInputElement;
+    const card = await renderTab();
+    const input = card.getByPlaceholderText("TES") as HTMLInputElement;
 
     await user.clear(input);
     await user.type(input, "NEW");
@@ -250,8 +261,8 @@ describe("WorkspaceTab — automatic updates", () => {
 
   it("marks an empty prefix invalid and does not persist it", async () => {
     const user = setupUser();
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-    const input = screen.getByPlaceholderText("TES") as HTMLInputElement;
+    const card = await renderTab();
+    const input = card.getByPlaceholderText("TES") as HTMLInputElement;
 
     await user.clear(input);
     await user.tab();
@@ -260,14 +271,11 @@ describe("WorkspaceTab — automatic updates", () => {
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
   });
 
-  it("disables editable workspace controls for regular members", () => {
+  it("disables editable workspace controls for regular members", async () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+    const card = await renderTab();
 
-    expect(screen.getByPlaceholderText("TES")).toBeDisabled();
-    expect(screen.getByDisplayValue("Test Workspace")).toBeDisabled();
-    expect(
-      screen.getByDisplayValue("Test Workspace").closest('[data-slot="field"]'),
-    ).toHaveAttribute("data-disabled", "true");
+    expect(card.getByPlaceholderText("TES")).toBeDisabled();
+    expect(card.getByDisplayValue("Test Workspace")).toBeDisabled();
   });
 });

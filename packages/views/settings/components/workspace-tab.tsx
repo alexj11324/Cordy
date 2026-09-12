@@ -1,23 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { LogOut } from "lucide-react";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from "@orvilo/ui/components/ui/alert-dialog";
+import { Button, Input } from "@lobehub/ui/base-ui";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "@orvilo/core/auth";
-import {
-  useDeleteWorkspace,
-} from "@orvilo/core/workspace/mutations";
+import { useDeleteWorkspace } from "@orvilo/core/workspace/mutations";
 import {
   memberListOptions,
   workspaceKeys,
@@ -37,11 +26,9 @@ import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useNavigation } from "../../navigation";
 import { DeleteWorkspaceDialog } from "./delete-workspace-dialog";
 import { useT } from "../../i18n";
-import {
-  SettingsSaveState,
-  SettingsTab,
-  type SettingsSaveStatus,
-} from "./settings-layout";
+import { SettingsSaveState, type SettingsSaveStatus } from "./settings-layout";
+import { SettingsFormRow } from "./settings-shell";
+import { useSettingsConfirm } from "./settings-confirm";
 import { useAutoSave } from "./use-auto-save";
 import {
   Frame,
@@ -49,15 +36,26 @@ import {
   FramePanel,
   FrameTitle,
 } from "@orvilo/ui/components/reui/frame";
-import {
-  Field,
-  FieldContent,
-  FieldGroup,
-  FieldLabel,
-} from "@orvilo/ui/components/ui/field";
-import { Input } from "@orvilo/ui/components/ui/input";
 import { Separator } from "@orvilo/ui/components/ui/separator";
-import { Button } from "@orvilo/ui/components/ui/button";
+
+/**
+ * Workspace — logo, name, URL and issue prefix, plus the owner-only danger
+ * zone.
+ *
+ * The `name` field is a `useAutoSave` draft and the issue prefix is a
+ * hand-rolled variant of the same idea (it confirms before it writes), so
+ * neither carries a `name` and the shell's rows are layout only. The logo and
+ * the URL are not drafts at all: the logo uploads and PATCHes on its own, and
+ * the URL is derived from the current route.
+ *
+ * `Frame`/`FramePanel` stay: this tab's card and its save-state header bar are
+ * ReUI chrome the migration does not replace (decision 11). What changed inside
+ * is the row layer — `Field`/`FieldLabel`/`FieldContent`/`Separator` became the
+ * shell's `SettingsFormRow`, and the inputs and buttons are Lobe's.
+ *
+ * `htmlFor` on the fields that have a control to label; the two enum-free rows
+ * below (the avatar) have none to point at.
+ */
 
 interface WorkspaceDetailsDraft {
   name: string;
@@ -69,6 +67,12 @@ function workspaceDetailsEqual(
 ) {
   return left.name === right.name;
 }
+
+/**
+ * The old `SettingsRow`'s `text` tier, in pixels — every text field in the card
+ * shares it so their edges line up.
+ */
+const TEXT_MIN_WIDTH = 384;
 
 export function WorkspaceTab() {
   const { t } = useT("settings");
@@ -89,6 +93,13 @@ export function WorkspaceTab() {
   const deleteWorkspace = useDeleteWorkspace();
   const navigation = useNavigation();
   const hasOnboarded = useHasOnboarded();
+  const confirm = useSettingsConfirm();
+  // The two cards' accessible names. `Role="group"` on the panel plus
+  // `aria-labelledby` on its own title is the same pairing `SettingsGroup`
+  // builds for the Frame-less tabs — see that component for why the label is
+  // an id reference rather than a repeated string.
+  const generalLabelId = useId();
+  const dangerLabelId = useId();
 
   /**
    * Send the user to a safe URL, computed from the current cached workspace
@@ -126,12 +137,6 @@ export function WorkspaceTab() {
   const [prefixSaveStatus, setPrefixSaveStatus] =
     useState<SettingsSaveStatus>("idle");
   const [actionId, setActionId] = useState<string | null>(null);
-  const [confirmAction, setConfirmAction] = useState<{
-    title: string;
-    description: string;
-    variant?: "destructive";
-    onConfirm: () => Promise<void>;
-  } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
   const currentMember = members.find((m) => m.user_id === user?.id) ?? null;
@@ -231,19 +236,26 @@ export function WorkspaceTab() {
           ? error.message
           : t(($) => $.workspace.toast_save_failed),
       );
+      // Let the rejection out: `useSettingsConfirm` keeps the dialog open only
+      // while its `onOk` promise is unsettled, and a prefix the server refused
+      // is exactly the case where dismissing would claim a rename that never
+      // happened. The status readout in the card header shows the failure once
+      // the user cancels.
+      throw error;
     }
   };
 
   const handlePrefixBlur = () => {
     if (!workspace || prefixInvalid || !prefixChanged) return;
     const nextPrefix = normalizedPrefix;
-    setConfirmAction({
+    confirm({
       title: t(($) => $.workspace.prefix_confirm_title),
       description: t(($) => $.workspace.prefix_confirm_description, {
         oldPrefix: workspace.issue_prefix,
         newPrefix: nextPrefix,
       }),
-      variant: "destructive",
+      confirmLabel: t(($) => $.workspace.confirm_action),
+      cancelLabel: t(($) => $.workspace.confirm_cancel),
       onConfirm: () => performPrefixSave(nextPrefix),
     });
   };
@@ -280,243 +292,183 @@ export function WorkspaceTab() {
   );
 
   return (
-    <SettingsTab
-      title={t(($) => $.page.tabs.general)}
-    >
-      <div className="flex flex-col gap-8">
-        <Frame variant="ghost" spacing="sm" className="bg-transparent p-0">
-          <FramePanel className="rounded-lg bg-muted/30 p-0 shadow-none">
-            <FrameHeader className="flex-row justify-end px-4 py-3">
-              <SettingsSaveState
-                status={
-                  prefixSaveStatus === "saving" || prefixSaveStatus === "error"
+    <div className="flex flex-col gap-8">
+      <Frame variant="ghost" spacing="sm" className="bg-transparent p-0">
+        <FramePanel
+          aria-labelledby={generalLabelId}
+          className="rounded-lg bg-muted/30 p-0 shadow-none"
+          role="group"
+        >
+          <FrameHeader className="flex-row items-center justify-between gap-3 px-4 py-3">
+            {/* The card had no heading before, and the rows inside it had no
+                group to belong to: `frame.tsx` renders `FrameTitle` as a plain
+                `<div>`, so a screen reader met a run of unnamed labels and the
+                save-state region with nothing tying them together. The copy is
+                the `section_general` string the old atom layer left unused. */}
+            <FrameTitle id={generalLabelId}>
+              {t(($) => $.workspace.section_general)}
+            </FrameTitle>
+            <SettingsSaveState
+              status={
+                prefixSaveStatus === "saving" || prefixSaveStatus === "error"
+                  ? prefixSaveStatus
+                  : detailsAutoSave.status === "idle"
                     ? prefixSaveStatus
-                    : detailsAutoSave.status === "idle"
-                      ? prefixSaveStatus
-                      : detailsAutoSave.status
-                }
-                savingLabel={t(($) => $.auto_save.saving)}
-                savedLabel={t(($) => $.auto_save.saved)}
-                errorLabel={t(($) => $.auto_save.failed)}
+                    : detailsAutoSave.status
+              }
+              savingLabel={t(($) => $.auto_save.saving)}
+              savedLabel={t(($) => $.auto_save.saved)}
+              errorLabel={t(($) => $.auto_save.failed)}
+            />
+          </FrameHeader>
+          <Separator />
+          <div className="px-4">
+            <SettingsFormRow label={t(($) => $.workspace.logo_label)}>
+              <AvatarUploadControl
+                variant="workspace"
+                value={workspace.avatar_url ?? null}
+                name={workspace.name}
+                size={64}
+                disabled={!canManageWorkspace}
+                ariaLabel={t(($) => $.workspace.change_logo_aria)}
+                onUploaded={async (url) => {
+                  try {
+                    const updated = await api.updateWorkspace(
+                      workspace.id,
+                      {
+                        avatar_url: url,
+                      },
+                    );
+                    qc.setQueryData(
+                      workspaceKeys.list(),
+                      (old: Workspace[] | undefined) =>
+                        old?.map((ws) =>
+                          ws.id === updated.id ? updated : ws,
+                        ),
+                    );
+                    toast.success(
+                      t(($) => $.workspace.toast_logo_updated),
+                      {
+                        id: "settings-auto-save",
+                      },
+                    );
+                  } catch (error) {
+                    toast.error(
+                      error instanceof Error
+                        ? error.message
+                        : t(($) => $.workspace.toast_logo_failed),
+                    );
+                  }
+                }}
               />
+            </SettingsFormRow>
+
+            <SettingsFormRow
+              divider
+              label={t(($) => $.workspace.name_label)}
+              htmlFor="workspace-name"
+              minWidth={TEXT_MIN_WIDTH}
+            >
+              <Input
+                className="w-full"
+                autoComplete="organization"
+                disabled={!canManageWorkspace}
+                id="workspace-name"
+                type="text"
+                value={name}
+                onBlur={detailsAutoSave.flush}
+                onChange={(event) => setName(event.target.value)}
+              />
+            </SettingsFormRow>
+
+            <SettingsFormRow
+              divider
+              label={t(($) => $.workspace.url_label)}
+              htmlFor="workspace-url"
+              minWidth={TEXT_MIN_WIDTH}
+            >
+              <Input
+                className="w-full"
+                id="workspace-url"
+                readOnly
+                type="url"
+                value={workspaceUrl}
+              />
+            </SettingsFormRow>
+
+            <SettingsFormRow
+              divider
+              label={t(($) => $.workspace.issue_prefix_label)}
+              htmlFor="workspace-issue-prefix"
+              minWidth={TEXT_MIN_WIDTH}
+            >
+              <Input
+                className="w-full"
+                aria-invalid={prefixInvalid}
+                autoCapitalize="characters"
+                autoComplete="off"
+                disabled={!canManageWorkspace}
+                id="workspace-issue-prefix"
+                maxLength={10}
+                placeholder={workspace.issue_prefix}
+                spellCheck={false}
+                type="text"
+                value={issuePrefix}
+                onBlur={handlePrefixBlur}
+                onChange={(event) => {
+                  setPrefixSaveStatus("idle");
+                  setIssuePrefix(normalizePrefix(event.target.value));
+                }}
+              />
+            </SettingsFormRow>
+          </div>
+        </FramePanel>
+      </Frame>
+
+      {/* Gate the owner-only Delete button on the member query settling. */}
+      {membersFetched && isOwner && (
+        <Frame variant="ghost" spacing="sm" className="bg-transparent p-0">
+          <FramePanel
+            aria-labelledby={dangerLabelId}
+            className="rounded-lg bg-muted/30 p-0 shadow-none"
+            role="group"
+          >
+            <FrameHeader className="px-4 py-3">
+              <FrameTitle className="flex items-center gap-2" id={dangerLabelId}>
+                <LogOut
+                  aria-hidden="true"
+                  className="size-4 text-muted-foreground"
+                />
+                {t(($) => $.workspace.danger_zone)}
+              </FrameTitle>
             </FrameHeader>
             <Separator />
-            <FieldGroup className="gap-0 px-4 py-1">
-              <Field
-                orientation="responsive"
-                data-disabled={!canManageWorkspace || undefined}
-                className="py-3 @md/field-group:gap-6"
+            <div className="px-4">
+              <SettingsFormRow
+                label={
+                  <span className="text-destructive">
+                    {t(($) => $.workspace.delete_title)}
+                  </span>
+                }
               >
-                <FieldContent className="@md/field-group:w-32 @md/field-group:flex-none">
-                  <FieldLabel>{t(($) => $.workspace.logo_label)}</FieldLabel>
-                </FieldContent>
-                <FieldContent className="min-w-0 @md/field-group:flex-1">
-                  <div className="flex justify-start @md/field-group:justify-end">
-                    <AvatarUploadControl
-                      variant="workspace"
-                      value={workspace.avatar_url ?? null}
-                      name={workspace.name}
-                      size={64}
-                      disabled={!canManageWorkspace}
-                      ariaLabel={t(($) => $.workspace.change_logo_aria)}
-                      onUploaded={async (url) => {
-                        try {
-                          const updated = await api.updateWorkspace(
-                            workspace.id,
-                            {
-                              avatar_url: url,
-                            },
-                          );
-                          qc.setQueryData(
-                            workspaceKeys.list(),
-                            (old: Workspace[] | undefined) =>
-                              old?.map((ws) =>
-                                ws.id === updated.id ? updated : ws,
-                              ),
-                          );
-                          toast.success(
-                            t(($) => $.workspace.toast_logo_updated),
-                            {
-                              id: "settings-auto-save",
-                            },
-                          );
-                        } catch (error) {
-                          toast.error(
-                            error instanceof Error
-                              ? error.message
-                              : t(($) => $.workspace.toast_logo_failed),
-                          );
-                        }
-                      }}
-                    />
-                  </div>
-                </FieldContent>
-              </Field>
-              <Separator />
-
-              <Field
-                orientation="responsive"
-                data-disabled={!canManageWorkspace || undefined}
-                className="py-3 @md/field-group:gap-6"
-              >
-                <FieldContent className="@md/field-group:w-32 @md/field-group:flex-none">
-                  <FieldLabel htmlFor="workspace-name">
-                    {t(($) => $.workspace.name_label)}
-                  </FieldLabel>
-                </FieldContent>
-                <FieldContent className="min-w-0 @md/field-group:flex-1">
-                  <Input
-                    id="workspace-name"
-                    type="text"
-                    name="workspace-name"
-                    autoComplete="organization"
-                    value={name}
-                    onChange={(event) => setName(event.target.value)}
-                    onBlur={detailsAutoSave.flush}
-                    disabled={!canManageWorkspace}
-                  />
-                </FieldContent>
-              </Field>
-              <Separator />
-
-              <Field
-                orientation="responsive"
-                className="py-3 @md/field-group:gap-6"
-              >
-                <FieldContent className="@md/field-group:w-32 @md/field-group:flex-none">
-                  <FieldLabel htmlFor="workspace-url">
-                    {t(($) => $.workspace.url_label)}
-                  </FieldLabel>
-                </FieldContent>
-                <FieldContent className="min-w-0 @md/field-group:flex-1">
-                  <Input
-                    id="workspace-url"
-                    type="url"
-                    name="workspace-url"
-                    value={workspaceUrl}
-                    readOnly
-                  />
-                </FieldContent>
-              </Field>
-              <Separator />
-
-              <Field
-                orientation="responsive"
-                data-disabled={!canManageWorkspace || undefined}
-                className="py-3 @md/field-group:gap-6"
-              >
-                <FieldContent className="@md/field-group:w-32 @md/field-group:flex-none">
-                  <FieldLabel htmlFor="workspace-issue-prefix">
-                    {t(($) => $.workspace.issue_prefix_label)}
-                  </FieldLabel>
-                </FieldContent>
-                <FieldContent className="min-w-0 @md/field-group:flex-1">
-                  <Input
-                    id="workspace-issue-prefix"
-                    type="text"
-                    name="workspace-issue-prefix"
-                    autoComplete="off"
-                    autoCapitalize="characters"
-                    spellCheck={false}
-                    value={issuePrefix}
-                    onChange={(event) => {
-                      setPrefixSaveStatus("idle");
-                      setIssuePrefix(normalizePrefix(event.target.value));
-                    }}
-                    onBlur={handlePrefixBlur}
-                    disabled={!canManageWorkspace}
-                    maxLength={10}
-                    aria-invalid={prefixInvalid}
-                    placeholder={workspace.issue_prefix}
-                  />
-                </FieldContent>
-              </Field>
-            </FieldGroup>
+                <Button
+                  danger
+                  disabled={actionId === "delete-workspace"}
+                  id="workspace-delete"
+                  shape="round"
+                  size="small"
+                  type="primary"
+                  onClick={() => setDeleteDialogOpen(true)}
+                >
+                  {actionId === "delete-workspace"
+                    ? t(($) => $.workspace.deleting)
+                    : t(($) => $.workspace.delete_button)}
+                </Button>
+              </SettingsFormRow>
+            </div>
           </FramePanel>
         </Frame>
-
-        {/* Gate the owner-only Delete button on the member query settling. */}
-        {membersFetched && isOwner && (
-          <Frame variant="ghost" spacing="sm" className="bg-transparent p-0">
-            <FramePanel className="rounded-lg bg-muted/30 p-0 shadow-none">
-              <FrameHeader className="px-4 py-3">
-                <FrameTitle className="flex items-center gap-2">
-                  <LogOut
-                    aria-hidden="true"
-                    className="size-4 text-muted-foreground"
-                  />
-                  {t(($) => $.workspace.danger_zone)}
-                </FrameTitle>
-              </FrameHeader>
-              <Separator />
-              <FieldGroup className="gap-0 px-4 py-1">
-                <Field
-                  orientation="responsive"
-                  data-disabled={actionId === "delete-workspace" || undefined}
-                  className="py-3 @md/field-group:gap-6"
-                >
-                  <FieldContent className="@md/field-group:w-32 @md/field-group:flex-none">
-                    <FieldLabel
-                      htmlFor="workspace-delete"
-                      className="text-destructive"
-                    >
-                      {t(($) => $.workspace.delete_title)}
-                    </FieldLabel>
-                  </FieldContent>
-                  <FieldContent className="min-w-0 @md/field-group:flex-1 @md/field-group:items-start">
-                    <Button
-                      id="workspace-delete"
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      onClick={() => setDeleteDialogOpen(true)}
-                      disabled={actionId === "delete-workspace"}
-                    >
-                      {actionId === "delete-workspace"
-                        ? t(($) => $.workspace.deleting)
-                        : t(($) => $.workspace.delete_button)}
-                    </Button>
-                  </FieldContent>
-                </Field>
-              </FieldGroup>
-            </FramePanel>
-          </Frame>
-        )}
-      </div>
-
-      <AlertDialog
-        open={!!confirmAction}
-        onOpenChange={(v) => {
-          if (!v) setConfirmAction(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{confirmAction?.title}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmAction?.description}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              {t(($) => $.workspace.confirm_cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant={
-                confirmAction?.variant === "destructive"
-                  ? "destructive"
-                  : "default"
-              }
-              onClick={async () => {
-                await confirmAction?.onConfirm();
-                setConfirmAction(null);
-              }}
-            >
-              {t(($) => $.workspace.confirm_action)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      )}
 
       <DeleteWorkspaceDialog
         workspaceName={workspace.name}
@@ -530,6 +482,6 @@ export function WorkspaceTab() {
         }}
         onConfirm={handleConfirmDelete}
       />
-    </SettingsTab>
+    </div>
   );
 }

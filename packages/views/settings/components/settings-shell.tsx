@@ -148,6 +148,23 @@ export interface SettingsFormRowProps {
   label?: ReactNode;
   description?: ReactNode;
   /**
+   * Id of the control this row labels — the old `SettingsRow`'s `htmlFor`.
+   *
+   * antd always renders the row's label as a real `<label>`, but it mints the
+   * `for` from the item's **field id**, which only exists for an item that has
+   * a `name` (`antd/es/form/FormItem/ItemHolder.js`: `htmlFor: fieldId`). The
+   * state-ownership rule forbids a `name` here — antd would then own the value
+   * nothing writes to — so without this the label is a `<label>` that points at
+   * nothing, and a bare `Input` in the control slot has no accessible name at
+   * all. The two controls that *can* name themselves (`SettingsSwitch`,
+   * `SettingsSelect`) carry their own `aria-label`; this is for the text fields
+   * that cannot.
+   *
+   * It is association only, not value ownership: passing `htmlFor` alongside an
+   * `id` on the control gives antd nothing to store.
+   */
+  htmlFor?: string;
+  /**
    * The control column's width, in pixels — an exact width, not a floor:
    * `Form.Item` turns it into
    * `.ant-form-item-control { width: var(--form-item-min-width) !important }`.
@@ -171,6 +188,7 @@ export interface SettingsFormRowProps {
 export function SettingsFormRow({
   label,
   description,
+  htmlFor,
   minWidth,
   align = "center",
   divider,
@@ -183,6 +201,7 @@ export function SettingsFormRow({
       colon={false}
       desc={description}
       divider={divider}
+      htmlFor={htmlFor}
       label={label}
       minWidth={minWidth}
     >
