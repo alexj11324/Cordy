@@ -295,9 +295,16 @@ describe("WorkspaceTab — automatic updates", () => {
     const logoRow = card
       .getByLabelText("Change workspace logo")
       .closest(".orvilo-settings-row");
+    expect(logoRow).not.toBeNull();
     expect(logoRow?.className).toContain("orvilo-settings-row-disabled");
-    expect(
-      marked(card.getByLabelText("URL") as HTMLElement),
-    ).not.toContain("orvilo-settings-row-disabled");
+    // `marked` returns "" when there is no row ancestor, and `expect("")
+    // .not.toContain(MARK)` passes — so the negative assertion is written to
+    // fail if the row was never found, rather than only if it was found
+    // unmarked. Without the `not.toBe("")` this case passed for the wrong
+    // reason: it kept passing when `getByLabelText("URL")` matched some
+    // element outside the row grid entirely.
+    const urlRow = marked(card.getByLabelText("URL") as HTMLElement);
+    expect(urlRow).not.toBe("");
+    expect(urlRow).not.toContain("orvilo-settings-row-disabled");
   });
 });

@@ -17,9 +17,18 @@
  * **A third path does exist and is deliberately not taken.** The trigger *atom*
  * (`SelectTrigger`) does forward `aria-label` and does produce a real
  * accessible name. What it costs is everything the `Select` component supplies
- * on top of the atoms — search, virtua virtualization, value rendering — which
- * the IANA timezone list needs — 418 zones plus the curated fallback in this
- * renderer, measured, where this comment used to say "~600". So the trade is not
+ * on top of the atoms — search, windowed rendering of a long list, value
+ * rendering — which the IANA timezone list needs. (This sentence used to say
+ * "virtua virtualization", naming a library that is not in this path at all:
+ * antd v6 does its own windowing in `.ant-select-dropdown-list-holder`.)
+ * Measured sizes, kept apart because they are
+ * three different numbers: `Intl.supportedValuesOf("timeZone")` returns 418 in
+ * this renderer's Chromium (the comment here once said "~600");
+ * `timezoneOptions()` unions that set with the curated fallback, the current
+ * zone and the browser's, so the preferences select holds **421** rows; and
+ * **9** of those are in the DOM at any moment, because antd v6 keeps the list in
+ * a plain scrolling holder and draws a window into it — so a node count is the
+ * window, and `scrollHeight / rowHeight` is the list. So the trade is not
  * "deprecated vs current": it is "a deprecated wrapper that can be named" against "atoms that
  * can be named but that we would have to re-implement". If a future surface
  * needs a nameable select over a *short* list, the atoms are the right answer
@@ -128,9 +137,14 @@ export interface SettingsSelectProps {
   disabled?: boolean;
   id?: string;
   /**
-   * Render a filter box in the popup. For long lists only — the IANA timezone
-   * timezone list is the case this exists for; a 2-to-5-item enum gets a search
-   * box that is pure noise.
+   * Make the trigger typeable so the option list narrows as you type. For long
+   * lists only — the IANA timezone list is the case this exists for; a
+   * 2-to-5-item enum gets a filter that is pure noise.
+   *
+   * There is **no input inside the popup**: rc-select puts the caret in the
+   * trigger itself, which already carries `role="combobox"`
+   * (`SelectInput/Input.js`). A reader looking for a second control in the
+   * dropdown will not find one.
    *
    * This prop is why the module note above chose the antd-backed root `Select`
    * over the base-ui atoms in the first place — "search, virtua virtualisation

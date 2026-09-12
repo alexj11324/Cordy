@@ -103,11 +103,22 @@ export function SettingsGroup({
   // `FormGroup`'s narrow tree is a different component in every respect, and it
   // drops `desc` outright: read `FormGroup.mjs` to the end and the `if (mobile)`
   // branch returns `mobileGroupHeader` + `mobileGroupBody` before `desc` is ever
-  // passed to the Collapse that would render it. So below antd-style's `xs`
-  // (479.98px) every group lost its description — which is the copy that says
-  // what the section is *for*, and on the account tab the only place two of them
-  // appear at all. Measured in the renderer at a 460px viewport: the title
-  // rendered, the description did not.
+  // passed to the Collapse that would render it. So on the narrow tree every
+  // group lost its description — which is the copy that says what the section is
+  // *for*, and on the account tab the only place two of them appear at all.
+  // Measured in the renderer at a 460px viewport: the title rendered, the
+  // description did not.
+  //
+  // **The switch is at 576px, not at antd-style's `xs` (479.98px), and the two
+  // numbers are different instruments.** `createStaticStyles/responsive.js` maps
+  // `xs` to `@media (max-width: 479.98px)` — that is the *CSS table*, and it
+  // governs Lobe's sheets. `useResponsive()` does not read it: it goes through
+  // antd's `Grid.useBreakpoint()`, whose `xs` query is
+  // `(max-width: screenXSMax)` with `screenXSMax = screenSM - 1 = 575`
+  // (`theme/util/alias.js`). A group between 480px and 575px is therefore on the
+  // narrow *component* tree while still matching the CSS table's desktop range;
+  // 576 is the boundary this branch actually flips at, and both were measured
+  // either side of it.
   //
   // Descriptions are therefore rendered here, inside the group's body and ahead
   // of the rows, on the narrow tree only; the wide tree still hands `desc` to

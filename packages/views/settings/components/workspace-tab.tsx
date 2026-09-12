@@ -417,6 +417,7 @@ export function WorkspaceTab() {
                 disabled={!canManageWorkspace}
                 id="workspace-issue-prefix"
                 maxLength={10}
+                name="workspace-issue-prefix"
                 placeholder={workspace.issue_prefix}
                 spellCheck={false}
                 type="text"

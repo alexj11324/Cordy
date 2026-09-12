@@ -198,9 +198,17 @@ function TimezoneRow() {
 
   // Full IANA list (from timezoneOptions in common/timezone-select) so a
   // user needing a non-curated zone isn't stuck with ~18 common ones.
-  // Memoized — timezoneOptions enumerates the whole IANA set per call (418 in
-  // the Electron renderer's Chromium, measured, not ~600 as an earlier comment
-  // claimed).
+  // Memoized — timezoneOptions walks the whole IANA set per call:
+  // `Intl.supportedValuesOf("timeZone")` measures 418 in the Electron renderer's
+  // Chromium (this comment used to say "~600"), and the helper unions that with
+  // the curated fallback, the current zone and the browser's. Measured on this
+  // select: **421 rows** — and only 9 of them in the DOM at a time, because antd
+  // v6 keeps the option list in a plain scrolling holder
+  // (`.ant-select-dropdown-list-holder`) and draws a window into it. The list
+  // length is that holder's `scrollHeight / rowHeight`; counting
+  // `.ant-select-item-option` nodes measures the window. An earlier version of
+  // this comment said "418-420 rows", which was the IANA set rather than the
+  // list this select actually holds.
   const options = useMemo(
     () => timezoneOptions(stored ?? browser),
     [stored, browser],
@@ -262,10 +270,11 @@ function TimezoneRow() {
             label: formatTZLabel(timezone),
           })),
         ]}
-        // The full IANA list is ~419 rows here; this is the list `settings-select.tsx`
+        // 421 rows on this select, measured; this is the list `settings-select.tsx`
         // names as the reason the wrapper chose the antd-backed `Select` over
         // the base-ui atoms in the first place. Filtering matches the value as
-        // well as the label, so "Asia/Shanghai" and "Shanghai" both land.
+        // well as the label, so "Asia/Shanghai" and "Shanghai" both land —
+        // measured: typing "shanghai" takes 421 rows to 1.
         search
         typography={TZ_TYPOGRAPHY}
         value={value}

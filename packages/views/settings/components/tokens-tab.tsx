@@ -156,11 +156,13 @@ export function TokensTab() {
           and, because `SettingsGroup` only emits `role="group"` when it has a
           name, the list had no section semantics either.
 
-          The title is `section_title`, not `title`: `tokens.title` is verbatim
-          the string the rail and the `DialogHeader` already show, and the two
-          sat about 100px apart. R4 governs the *page* title and R31 the
-          *section* name, so there is no conflict to resolve here — there was a
-          missing section label, which is what the other tabs have
+          The title is a new key rather than the one the page already has:
+          `page.tabs.tokens` is verbatim the string the rail and the
+          `DialogHeader` show, and a second copy of it sat about 100px below
+          them (`tokens.title`, since deleted — nothing read it once this card
+          stopped using it). R4 governs the *page* title and R31 the *section*
+          name, so there is no conflict to resolve here — there was a missing
+          section label, which is what the other tabs have
           (`notifications.title` is "Inbox Notifications" under a page called
           "Notifications"). */}
       <SettingsGroup

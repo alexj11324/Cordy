@@ -810,7 +810,6 @@
     }
   },
   "tokens": {
-    "title": "已授权客户端",
     "section_title": "个人访问 token",
     "description": "管理可以访问你账号的客户端。撤销授权后，该客户端将退出登录。",
     "security_note": "Token 拥有你账号的完整访问权限，请像密码一样妥善保管。",

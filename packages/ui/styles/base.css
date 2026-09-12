@@ -503,12 +503,19 @@ html[data-dnd-dragging="true"] * {
  * `outlined` treatment the shell's prop is named for — simply is not there. The
  * class is applied by `SettingsGroup` itself, because the branch is chosen
  * inside `FormGroup` and the only thing this component can reach is the wrapper
- * it already renders around it. The radius token matches the wide card's, and
- * `overflow: hidden` clips the inner bands to the corners the way the old
- * `SettingsCard` did. */
+ * it already renders around it.
+ *
+ * The radius is `var(--radius)`, not `--radius-lg` or `--radius-xl` because
+ * either would be "near enough": it is the token the theme bridge maps to
+ * Lobe's `borderRadius` (`lobe/lobe-tokens.ts` — `borderRadius:
+ * read.lengthPx("--radius")`), which is what the wide card's corner actually
+ * resolves to. Measured on both trees: 10px either side of the switch, where
+ * `--radius-xl` had given the narrow card 14px and the radius changed as the
+ * window crossed it. `overflow: hidden` clips the inner bands to the corners
+ * the way the old `SettingsCard` did. */
 .orvilo-settings-group-outlined {
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius);
   overflow: hidden;
 }
 /* …and below the width at which a fixed control column plus its label no longer
@@ -537,14 +544,32 @@ html[data-dnd-dragging="true"] * {
  *     one viewport today, but a split view, an inspector pane or an embedded
  *     settings surface would make the card narrower than the viewport and this
  *     rule would stop firing when it should.
- *   - **Below 575.98px Lobe outranks us.** `es/Form/style.mjs` sets
- *     `.ant-form-item-label { flex: 1 !important }` and
- *     `.ant-form-item-control { flex: none !important }` under
- *     `responsive.sm`, which is the same 0-3-x weight as our selectors and is
- *     injected later. It is harmless while the axis is `column` — `flex` means
- *     nothing on the cross axis — but if the stacking mechanism ever changes to
- *     something that keeps the row a row, these two rules will fight and Lobe
- *     wins.
+ *   - **Below 575.98px Lobe outranks us, and on specificity rather than on
+ *     order.** `es/Form/style.mjs` sets
+ *     `.${hash}.ant-form-item.ant-form-item-horizontal .ant-form-item-label
+ *     { flex: 1 !important }` and the matching `flex: none !important` on the
+ *     control, under `responsive.sm`. That selector is **0-4-0** — the
+ *     antd-style hash class, `.ant-form-item`, `.ant-form-item-horizontal` and
+ *     `.ant-form-item-label` — against our `.orvilo-settings-row
+ *     .ant-form-item-label` at **0-2-0**, so it wins on weight alone and the
+ *     injection order it also has never enters into it. (An earlier version of
+ *     this comment called them "the same 0-3-x weight… injected later"; that was
+ *     wrong about both halves.) It is harmless today because the axis is
+ *     `column` — `flex` means nothing on the cross axis — but if the stacking
+ *     mechanism ever changes to something that keeps the row a row, these two
+ *     rules will fight and Lobe wins.
+ *
+ * **640 here and 576 in `SettingsGroup` are two different switches, and they
+ * must not be harmonised.** They answer different questions with different
+ * instruments. 576 is a *JavaScript* decision — antd's `Grid.useBreakpoint()`
+ * through `useResponsive()`, which selects a different React tree
+ * (`FormGroup`'s mobile branch) and so cannot be expressed in a media query at
+ * all. 640 is a *CSS* decision — this rule, which only reflows the row that both
+ * trees render. They do not fire together: at 600px the rows have already
+ * stacked while the group is still the wide tree, and only below 576 are the two
+ * both on their narrow paths. That overlap is fine because the two rules touch
+ * different boxes — the group's border and the row's flex axis — but it is the
+ * reason a change to one is not a change to the other.
  *
  * The width override has to go through the custom property rather than
  * `width` directly: `minWidth` reaches the DOM as an *inline* style, and the
