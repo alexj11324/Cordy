@@ -129,10 +129,11 @@ function statusBadgeVariant(
  * dropped on this tab's only surface. The title belongs to `settings-page.tsx`'s
  * `DialogHeader`; the description does not — `tabDescription("billing")`
  * returns `""`, so the header renders the title alone and this sentence would
- * have been dropped rather than relocated. It stays with the panel, above the
- * groups, because it describes the panel rather than any one group. (Its
- * proper home is `tabDescription`, which owns that copy for the tabs whose
- * description is already there; that file is not this one.)
+ * have been dropped rather than relocated. It stays with the panel, above
+ * whatever the panel turns out to render — the groups, the loading placeholder,
+ * or the failure alert — because it describes the panel rather than any one
+ * group. (Its proper home is `tabDescription`, which owns that copy for the
+ * tabs whose description is already there; that file is not this one.)
  *
  * **The group titles must not be `workspace.title`.** That key resolves to
  * "Billing" / "账单与套餐" in both locales — the identical string
@@ -770,19 +771,40 @@ function BillingTabContent() {
     setSeatPreview(null);
   };
 
+  // The panel's own description, which `SettingsTab` used to render above the
+  // content of every branch below. The dialog's `DialogHeader` does not supply
+  // one (`tabDescription("billing")` is empty), so the tab keeps it, and it
+  // describes the panel rather than one group — which is why it sits above
+  // whatever the panel turns out to be, the loading and failure states
+  // included, exactly where `SettingsTab` put it.
+  //
+  // It is hoisted here because nothing asserted it outside the loaded panel:
+  // dropping it from the other two branches left every suite green, and only
+  // the renderer pass — run in an environment whose cloud runtime is
+  // unconfigured, so the failure branch is the one that renders — showed the
+  // description had gone missing.
+  const lede = (
+    <p className="text-body text-muted-foreground">
+      {t(($) => $.workspace.description)}
+    </p>
+  );
+
   if (summaryQuery.isPending) {
     return (
-      <SettingsGroup title={t(($) => $.workspace.loading)}>
-        <div
-          className="space-y-4 motion-reduce:[&_[data-slot=skeleton]]:animate-none"
-          role="status"
-          aria-label={t(($) => $.workspace.loading)}
-        >
-          <Skeleton className="h-5 w-40" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-4 w-2/3" />
-        </div>
-      </SettingsGroup>
+      <>
+        {lede}
+        <SettingsGroup title={t(($) => $.workspace.loading)}>
+          <div
+            className="space-y-4 motion-reduce:[&_[data-slot=skeleton]]:animate-none"
+            role="status"
+            aria-label={t(($) => $.workspace.loading)}
+          >
+            <Skeleton className="h-5 w-40" />
+            <Skeleton className="h-4 w-full" />
+            <Skeleton className="h-4 w-2/3" />
+          </div>
+        </SettingsGroup>
+      </>
     );
   }
 
@@ -792,21 +814,24 @@ function BillingTabContent() {
     // the page title (see the note above) and `load_failed.title` is already
     // the alert's own.
     return (
-      <Alert
-        type="error"
-        icon={AlertCircle}
-        title={t(($) => $.workspace.load_failed.title)}
-        description={t(($) => $.workspace.load_failed.description)}
-        action={
-          <Button
-            icon={RefreshCw}
-            type="fill"
-            onClick={() => void summaryQuery.refetch()}
-          >
-            {t(($) => $.workspace.actions.retry)}
-          </Button>
-        }
-      />
+      <>
+        {lede}
+        <Alert
+          type="error"
+          icon={AlertCircle}
+          title={t(($) => $.workspace.load_failed.title)}
+          description={t(($) => $.workspace.load_failed.description)}
+          action={
+            <Button
+              icon={RefreshCw}
+              type="fill"
+              onClick={() => void summaryQuery.refetch()}
+            >
+              {t(($) => $.workspace.actions.retry)}
+            </Button>
+          }
+        />
+      </>
     );
   }
 
@@ -881,12 +906,7 @@ function BillingTabContent() {
 
   return (
     <>
-      {/* The tab's own description, which `SettingsTab` dropped inside the
-          dialog and which `tabDescription("billing")` does not supply either.
-          It describes the panel, not one group, so it sits above them. */}
-      <p className="text-body text-muted-foreground">
-        {t(($) => $.workspace.description)}
-      </p>
+      {lede}
 
       {returnResult === "cancel" ? (
         <Alert

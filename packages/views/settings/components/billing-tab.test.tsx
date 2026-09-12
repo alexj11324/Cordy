@@ -1298,6 +1298,22 @@ describe("BillingTab", () => {
     expect(mocks.refetchUsage).toHaveBeenCalledOnce();
   });
 
+  it("keeps the panel description while the summary is loading", () => {
+    mocks.summaryPending = true;
+
+    renderTab();
+
+    expect(
+      screen.getByRole("status", { name: "Loading workspace billing" }),
+    ).toBeInTheDocument();
+    // See the note on the equivalent assertion in "fails closed" below.
+    expect(
+      screen.getByText(
+        "Manage this workspace's plan, limits, human seats, and Stripe billing.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it.each([
     ["request fails", true, false],
     ["response is malformed", false, true],
@@ -1312,6 +1328,17 @@ describe("BillingTab", () => {
       expect(screen.getByText("Billing is temporarily unavailable")).toBeInTheDocument();
       expect(screen.queryByText("Free")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+
+      // The panel description, which `SettingsTab` rendered in this branch
+      // before the migration. Asserted only on the loaded panel, so losing it
+      // here left every suite green; the renderer pass caught it, in an
+      // environment whose cloud runtime is unconfigured and where this is
+      // therefore the branch that renders. See `lede` in `billing-tab.tsx`.
+      expect(
+        screen.getByText(
+          "Manage this workspace's plan, limits, human seats, and Stripe billing.",
+        ),
+      ).toBeInTheDocument();
     },
   );
 
