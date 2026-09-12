@@ -478,6 +478,14 @@ export function IntegrationsTab({
           is gone. `destroyOnHidden` is deliberately absent: this is base-ui's
           `Modal`, which destructures a fixed prop list and drops it. */}
       <Modal
+        // `footer={null}` is a regression fix, not a preference. Lobe's `Modal`
+        // builds `cancelBtnNode + okBtnNode` whenever `footer` is left
+        // undefined (`es/base-ui/Modal/Modal.mjs`), and the OK button calls
+        // `onOk` — which this dialog does not pass, so the OK it rendered did
+        // nothing at all. The pre-migration dialog had `DialogContent` with no
+        // `DialogFooter` (`git show 28b76064:…/integrations-tab.tsx`), so the
+        // footer was added by this migration and half of it was dead.
+        footer={null}
         open={managedChannel !== null}
         title={
           managedChannel && installedRecord(listings[managedChannel].data)

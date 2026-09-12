@@ -2,8 +2,9 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, CalendarClock, Loader2, Trash2, Upload } from "lucide-react";
+import { AlertCircle, CalendarClock, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { Alert, Button, Input, Skeleton, TextArea } from "@lobehub/ui/base-ui";
 import { useCurrentMember } from "@orvilo/core/permissions";
 import {
   pluginInstallationsOptions,
@@ -23,23 +24,13 @@ import type {
   PluginPackage,
   PluginPreview,
 } from "@orvilo/core/types";
-import { Alert, AlertDescription, AlertTitle } from "@orvilo/ui/components/ui/alert";
 import { Badge } from "@orvilo/ui/components/ui/badge";
-import { Button } from "@orvilo/ui/components/ui/button";
-import { Input } from "@orvilo/ui/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@orvilo/ui/components/ui/select";
-import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
-import { Textarea } from "@orvilo/ui/components/ui/textarea";
-import { Switch } from "@orvilo/ui/components/ui/switch";
 import { mcpHooks, PluginHookActivity, PluginMCPApproval, PluginScheduleActivity } from "../../plugins";
 import { useLocale, useT } from "../../i18n";
-import { SettingsCard, SettingsPillButton, SettingsSection, SettingsTab } from "./settings-layout";
+import { SettingsEmptyState } from "./settings-empty";
+import { SettingsSelect } from "./settings-select";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
+import { SettingsSwitch } from "./settings-switch";
 
 /**
  * The scope list is the entire trust model: there is no signature, no
@@ -185,8 +176,11 @@ function ConfigForm({
     }
   };
 
+  // `px-4` is gone: this block is a child of an outlined `SettingsGroup`, whose
+  // panel already supplies `padding-inline: 16px`. The vertical padding and the
+  // top border are the old card's `divide-y` separator, kept.
   return (
-    <div className="space-y-4 border-t border-surface-border px-4 py-4">
+    <div className="space-y-4 border-t border-surface-border py-4">
       <div className="text-caption font-medium">{t(($) => $.plugins.config.title)}</div>
       {installation.config_schema.map((field) => (
         <ConfigField
@@ -201,8 +195,15 @@ function ConfigForm({
         />
       ))}
       <div className="flex justify-end">
-        <Button size="sm" disabled={!canManage || configureMutation.isPending} onClick={submit}>
-          {configureMutation.isPending ? <Loader2 className="animate-spin" /> : null}
+        {/* The baseline was a shadcn `<Button size="sm">` with no `variant` —
+            solid primary, which Lobe spells `type="primary"`. The pending
+            `<Loader2>` child is Lobe's own `loading` slot instead. */}
+        <Button
+          disabled={!canManage || configureMutation.isPending}
+          loading={configureMutation.isPending}
+          type="primary"
+          onClick={submit}
+        >
           {t(($) => $.plugins.config.save)}
         </Button>
       </div>
@@ -228,84 +229,93 @@ function ConfigField({
   onSecretChange: (value: string) => void;
 }) {
   const { t } = useT("settings");
-  const label = (
-    <div className="min-w-0">
-      <div className="text-caption font-medium">
-        {field.label}
-        {field.required ? <span className="ml-1 text-destructive">*</span> : null}
-      </div>
-      {field.description ? (
-        <p className="mt-0.5 text-caption text-muted-foreground">{field.description}</p>
-      ) : null}
-    </div>
-  );
+  // The baseline was a hand-written two-column flex row. `SettingsFormRow`
+  // carries the same split and adds `htmlFor`, which is how a bare Lobe `Input`
+  // gets an accessible name: antd mints a label's `for` only from a field
+  // `name`, and the state-ownership rule forbids one here. `minWidth={384}` is
+  // the old `sm:w-96`.
+  //
+  // The switch is deliberately not given an `htmlFor`: `SettingsSwitch` names
+  // itself with `aria-label`, and a `for` pointing at an id nothing carries
+  // would be a label that labels nothing.
+  const controlId = `plugin-config-${field.key}`;
+  const namedControl = field.type !== "bool";
 
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      {label}
-      <div className="w-full sm:w-96">
-        {field.type === "secret" ? (
-          <Input
-            type="password"
-            autoComplete="off"
-            disabled={disabled}
-            value={secretValue}
-            placeholder={secretConfigured
-              ? t(($) => $.plugins.config.secret_set)
-              : field.placeholder ?? ""}
-            onChange={(event) => onSecretChange(event.target.value)}
-          />
-        ) : field.type === "bool" ? (
-          <Switch
-            disabled={disabled}
-            checked={value === true}
-            onCheckedChange={(checked) => onValueChange(checked === true)}
-          />
-        ) : field.type === "enum" ? (
-          <Select
-            items={(field.options ?? []).map((option) => ({ value: option, label: option }))}
-            value={typeof value === "string" ? value : ""}
-            onValueChange={(next) => next && onValueChange(next)}
-          >
-            <SelectTrigger disabled={disabled}><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {(field.options ?? []).map((option) => (
-                <SelectItem key={option} value={option}>{option}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        ) : field.type === "number" ? (
-          <Input
-            type="number"
-            disabled={disabled}
-            value={typeof value === "number" ? String(value) : ""}
-            placeholder={field.placeholder ?? ""}
-            onChange={(event) => {
-              const parsed = Number(event.target.value);
-              onValueChange(event.target.value === "" || Number.isNaN(parsed) ? undefined : parsed);
-            }}
-          />
-        ) : field.multiline === true ? (
-          // A field whose value is a list of lines is unreadable in a
-          // single-line input — and the generated form is the one piece of
-          // plugin UI the host owns, so getting it wrong is our bug.
-          <Textarea
-            rows={4}
-            disabled={disabled}
-            value={typeof value === "string" ? value : ""}
-            placeholder={field.placeholder ?? ""}
-            onChange={(event) => onValueChange(event.target.value)}
-          />
-        ) : (
-          <Input
-            disabled={disabled}
-            value={typeof value === "string" ? value : ""}
-            placeholder={field.placeholder ?? ""}
-            onChange={(event) => onValueChange(event.target.value)}
-          />
-        )}
-      </div>
-    </div>
+    <SettingsFormRow
+      description={field.description}
+      htmlFor={namedControl ? controlId : undefined}
+      label={
+        <span className="text-caption font-medium">
+          {field.label}
+          {field.required ? <span className="ml-1 text-destructive">*</span> : null}
+        </span>
+      }
+      minWidth={384}
+    >
+      {field.type === "secret" ? (
+        <Input
+          autoComplete="off"
+          disabled={disabled}
+          id={controlId}
+          placeholder={secretConfigured
+            ? t(($) => $.plugins.config.secret_set)
+            : field.placeholder ?? ""}
+          type="password"
+          value={secretValue}
+          onChange={(event) => onSecretChange(event.target.value)}
+        />
+      ) : field.type === "bool" ? (
+        <SettingsSwitch
+          checked={value === true}
+          disabled={disabled}
+          label={field.label}
+          onCheckedChange={(checked) => onValueChange(checked === true)}
+        />
+      ) : field.type === "enum" ? (
+        <SettingsSelect
+          className="w-full"
+          disabled={disabled}
+          id={controlId}
+          label={field.label}
+          options={(field.options ?? []).map((option) => ({ value: option, label: option }))}
+          value={typeof value === "string" ? value : ""}
+          onValueChange={(next) => next && onValueChange(next)}
+        />
+      ) : field.type === "number" ? (
+        <Input
+          disabled={disabled}
+          id={controlId}
+          placeholder={field.placeholder ?? ""}
+          type="number"
+          value={typeof value === "number" ? String(value) : ""}
+          onChange={(event) => {
+            const parsed = Number(event.target.value);
+            onValueChange(event.target.value === "" || Number.isNaN(parsed) ? undefined : parsed);
+          }}
+        />
+      ) : field.multiline === true ? (
+        // A field whose value is a list of lines is unreadable in a
+        // single-line input — and the generated form is the one piece of
+        // plugin UI the host owns, so getting it wrong is our bug.
+        <TextArea
+          disabled={disabled}
+          id={controlId}
+          placeholder={field.placeholder ?? ""}
+          rows={4}
+          value={typeof value === "string" ? value : ""}
+          onChange={(event) => onValueChange(event.target.value)}
+        />
+      ) : (
+        <Input
+          disabled={disabled}
+          id={controlId}
+          placeholder={field.placeholder ?? ""}
+          value={typeof value === "string" ? value : ""}
+          onChange={(event) => onValueChange(event.target.value)}
+        />
+      )}
+    </SettingsFormRow>
   );
 }
 
@@ -373,106 +383,133 @@ function PublishAndInstall({ wsId, canManage }: { wsId: string; canManage: boole
   };
 
   return (
-    <SettingsSection title={t(($) => $.plugins.publish.title)} description={t(($) => $.plugins.publish.description)}>
-      <SettingsCard>
-        <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-caption text-muted-foreground">{t(($) => $.plugins.publish.hint)}</p>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".zip,application/zip"
-            className="sr-only"
-            aria-label={t(($) => $.plugins.publish.upload)}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void publish(file);
-            }}
-          />
-          <Button
-            disabled={!canManage || publishMutation.isPending}
-            onClick={() => fileRef.current?.click()}
-          >
-            {publishMutation.isPending ? <Loader2 className="animate-spin" /> : <Upload />}
-            {t(($) => $.plugins.publish.upload)}
-          </Button>
+    <SettingsGroup
+      // `desc` renders as a `<small>` in the group's header, so the scale the
+      // old section paragraph carried has to travel on the node itself.
+      description={
+        <span className="block max-w-3xl text-body leading-relaxed text-muted-foreground">
+          {t(($) => $.plugins.publish.description)}
+        </span>
+      }
+      title={t(($) => $.plugins.publish.title)}
+    >
+      <div className="flex flex-col gap-2 pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-caption text-muted-foreground">{t(($) => $.plugins.publish.hint)}</p>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".zip,application/zip"
+          className="sr-only"
+          aria-label={t(($) => $.plugins.publish.upload)}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void publish(file);
+          }}
+        />
+        {/* The baseline was a shadcn `<Button>` with no `variant` — solid
+            primary — and a `<Loader2>`/`<Upload>` swap while pending; Lobe
+            spells both with `type="primary"` and `icon` + `loading`. */}
+        <Button
+          disabled={!canManage || publishMutation.isPending}
+          icon={<Upload />}
+          loading={publishMutation.isPending}
+          type="primary"
+          onClick={() => fileRef.current?.click()}
+        >
+          {t(($) => $.plugins.publish.upload)}
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="border-t border-surface-border py-4">
+          <Skeleton height={64} aria-label={t(($) => $.plugins.loading)} />
         </div>
+      ) : packages.length === 0 ? (
+        <p className="border-t border-surface-border py-4 text-caption text-muted-foreground">
+          {t(($) => $.plugins.publish.empty)}
+        </p>
+      ) : (
+        packages.map((pluginPackage) => (
+          <PublishedPackage
+            key={pluginPackage.id}
+            pluginPackage={pluginPackage}
+            canManage={canManage}
+            busy={previewMutation.isPending || deleteMutation.isPending}
+            onReview={review}
+            onDelete={(packageId) => deleteMutation
+              .mutateAsync(packageId)
+              .then(() => toast.success(t(($) => $.plugins.publish.deleted)))
+              .catch(reportError)}
+          />
+        ))
+      )}
 
-        {isLoading ? (
-          <div className="border-t border-surface-border px-4 py-4">
-            <Skeleton className="h-16 w-full" aria-label={t(($) => $.plugins.loading)} />
+      {preview ? (
+        <div className="space-y-4 border-t border-surface-border py-4">
+          <div>
+            <div className="text-body font-semibold">{preview.manifest.name}</div>
+            <p className="text-caption text-muted-foreground">
+              {t(($) => $.plugins.byline, {
+                author: preview.manifest.author.name,
+                version: preview.version,
+              })}
+              {preview.installed
+                ? t(($) => $.plugins.consent.upgrade_from, { version: preview.installed_version ?? "" })
+                : ""}
+            </p>
+            {preview.manifest.description ? (
+              <p className="mt-2 text-caption">{preview.manifest.description}</p>
+            ) : null}
           </div>
-        ) : packages.length === 0 ? (
-          <p className="border-t border-surface-border px-4 py-6 text-caption text-muted-foreground">
-            {t(($) => $.plugins.publish.empty)}
-          </p>
-        ) : (
-          packages.map((pluginPackage) => (
-            <PublishedPackage
-              key={pluginPackage.id}
-              pluginPackage={pluginPackage}
-              canManage={canManage}
-              busy={previewMutation.isPending || deleteMutation.isPending}
-              onReview={review}
-              onDelete={(packageId) => deleteMutation
-                .mutateAsync(packageId)
-                .then(() => toast.success(t(($) => $.plugins.publish.deleted)))
-                .catch(reportError)}
-            />
-          ))
-        )}
 
-        {preview ? (
-          <div className="space-y-4 border-t border-surface-border px-4 py-4">
-            <div>
-              <div className="text-body font-semibold">{preview.manifest.name}</div>
-              <p className="text-caption text-muted-foreground">
-                {t(($) => $.plugins.byline, {
-                  author: preview.manifest.author.name,
-                  version: preview.version,
-                })}
-                {preview.installed
-                  ? t(($) => $.plugins.consent.upgrade_from, { version: preview.installed_version ?? "" })
-                  : ""}
-              </p>
-              {preview.manifest.description ? (
-                <p className="mt-2 text-caption">{preview.manifest.description}</p>
-              ) : null}
-            </div>
+          {/* The two consent notices were shadcn's *default* `Alert` — a
+              neutral card-coloured box — so they stay on Lobe's neutral
+              `secondary` tone rather than being promoted to `warning`, which
+              would be a treatment change this migration did not authorize. The
+              icons are the baseline ones. */}
+          <Alert
+            description={t(($) => $.plugins.consent.description)}
+            icon={AlertCircle}
+            title={t(($) => $.plugins.consent.title)}
+            type="secondary"
+          />
 
-            <Alert>
-              <AlertCircle />
-              <AlertTitle>{t(($) => $.plugins.consent.title)}</AlertTitle>
-              <AlertDescription>{t(($) => $.plugins.consent.description)}</AlertDescription>
-            </Alert>
+          <ScopeList scopes={preview.scopes} highlighted={preview.added_scopes} />
 
-            <ScopeList scopes={preview.scopes} highlighted={preview.added_scopes} />
-
-            {scheduledHooks.length > 0 ? (
-              <Alert>
-                <CalendarClock />
-                <AlertTitle>{t(($) => $.plugins.schedule.consent_title)}</AlertTitle>
-                <AlertDescription>
+          {scheduledHooks.length > 0 ? (
+            <Alert
+              description={
+                <>
                   {t(($) => $.plugins.schedule.consent_description)}
                   <ScheduleList hooks={scheduledHooks} />
-                </AlertDescription>
-              </Alert>
-            ) : null}
+                </>
+              }
+              icon={CalendarClock}
+              title={t(($) => $.plugins.schedule.consent_title)}
+              type="secondary"
+            />
+          ) : null}
 
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setPreview(null)}>
-                {t(($) => $.plugins.consent.cancel)}
-              </Button>
-              <Button disabled={!canManage || installMutation.isPending} onClick={confirmInstall}>
-                {installMutation.isPending ? <Loader2 className="animate-spin" /> : null}
-                {preview.installed
-                  ? t(($) => $.plugins.consent.confirm_upgrade)
-                  : t(($) => $.plugins.consent.confirm)}
-              </Button>
-            </div>
+          <div className="flex justify-end gap-2">
+            {/* `variant="ghost"` is `type="text"`, the row this file's mapping
+                table carries for the ghost treatment. */}
+            <Button type="text" onClick={() => setPreview(null)}>
+              {t(($) => $.plugins.consent.cancel)}
+            </Button>
+            <Button
+              disabled={!canManage || installMutation.isPending}
+              loading={installMutation.isPending}
+              type="primary"
+              onClick={confirmInstall}
+            >
+              {preview.installed
+                ? t(($) => $.plugins.consent.confirm_upgrade)
+                : t(($) => $.plugins.consent.confirm)}
+            </Button>
           </div>
-        ) : null}
-      </SettingsCard>
-    </SettingsSection>
+        </div>
+      ) : null}
+    </SettingsGroup>
   );
 }
 
@@ -496,21 +533,21 @@ function PublishedPackage({
   const installed = pluginPackage.versions.find((version) => version.installed === true);
 
   return (
-    <div className="space-y-3 border-t border-surface-border px-4 py-4">
+    <div className="space-y-3 border-t border-surface-border py-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-body font-medium">{pluginPackage.name}</div>
           <p className="text-caption text-muted-foreground">{pluginPackage.plugin_key}</p>
         </div>
+        {/* `variant="ghost" size="icon"` is Lobe's `type="text"` with the icon
+            as the only child, which selects its icon-only geometry. */}
         <Button
-          size="icon"
-          variant="ghost"
           aria-label={t(($) => $.plugins.publish.delete)}
           disabled={!canManage || busy}
+          icon={<Trash2 />}
+          type="text"
           onClick={() => onDelete(pluginPackage.id)}
-        >
-          <Trash2 />
-        </Button>
+        />
       </div>
 
       <ul className="space-y-1.5">
@@ -526,10 +563,9 @@ function PublishedPackage({
             </span>
             {version.installed === true ? null : (
               <Button
-                size="sm"
-                variant="ghost"
                 className="ml-auto"
                 disabled={!canManage || busy}
+                type="text"
                 onClick={() => onReview(version.id)}
               >
                 {installed ? t(($) => $.plugins.publish.review_upgrade) : t(($) => $.plugins.publish.review_install)}
@@ -575,48 +611,68 @@ function InstalledPlugin({
     ...installation.resources.map((resource) => `${resource.key} (${resource.type})`),
   ];
 
+  // The card became the group, and its two `divide-y` children are the group's
+  // body: the identity block moved into the header (`title` / `description` /
+  // `extra`) and the configuration form keeps its top border as the separator.
+  //
+  // A group with no `title` still renders its header, so the plugin's name has
+  // to live there rather than in the body — the alternative is a dead band
+  // inside the panel. The switch and the uninstall pill go to `extra`, which
+  // renders on both of `FormGroup`'s trees, unlike `desc`.
+  const versionBadge = <Badge variant="secondary">{t(($) => $.plugins.version, { version: installation.version })}</Badge>;
+  const disabledBadge = <Badge variant="outline">{t(($) => $.plugins.states.disabled)}</Badge>;
+
   return (
-    <SettingsCard>
-      <div className="space-y-4 px-4 py-4">
-        {hasHooks ? <PluginHookActivity wsId={wsId} installationId={installation.id} /> : null}
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-body font-semibold">{installation.name}</span>
-              <Badge variant="secondary">{t(($) => $.plugins.version, { version: installation.version })}</Badge>
-              {!installation.enabled ? (
-                <Badge variant="outline">{t(($) => $.plugins.states.disabled)}</Badge>
-              ) : null}
-            </div>
-            <p className="text-caption text-muted-foreground">{installation.plugin_key}</p>
-            {installation.description ? (
-              <p className="mt-2 max-w-2xl text-caption">{installation.description}</p>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
-            <Switch
-              aria-label={t(($) => $.plugins.enabled_label)}
-              disabled={!canManage || isMutating}
-              checked={installation.enabled}
-              onCheckedChange={(checked) => enabledMutation
-                .mutateAsync({ installationId: installation.id, enabled: checked === true })
-                .then(() => toast.success(checked
-                  ? t(($) => $.plugins.enabled)
-                  : t(($) => $.plugins.disabled)))
-                .catch(reportError)}
-            />
-            <SettingsPillButton
-              tone="destructive"
-              aria-label={t(($) => $.plugins.uninstall)}
-              disabled={!canManage || isMutating}
-              onClick={() => uninstallMutation.mutateAsync(installation.id)
-                .then(() => toast.success(t(($) => $.plugins.uninstalled)))
-                .catch(reportError)}
-            >
-              {uninstallMutation.isPending ? <Loader2 className="size-4 animate-spin" /> : t(($) => $.plugins.uninstall)}
-            </SettingsPillButton>
-          </div>
+    <SettingsGroup
+      description={<span className="text-caption">{installation.plugin_key}</span>}
+      extra={
+        <div className="flex items-center gap-2">
+          {/* Lobe's `Switch` component destructures a fixed prop list with no
+              rest spread, so it drops `aria-label` and `onCheckedChange` and
+              the toggle freezes with no error. `SettingsSwitch` is built on the
+              atom that spreads both. */}
+          <SettingsSwitch
+            checked={installation.enabled}
+            disabled={!canManage || isMutating}
+            label={t(($) => $.plugins.enabled_label)}
+            onCheckedChange={(checked) => enabledMutation
+              .mutateAsync({ installationId: installation.id, enabled: checked === true })
+              .then(() => toast.success(checked
+                ? t(($) => $.plugins.enabled)
+                : t(($) => $.plugins.disabled)))
+              .catch(reportError)}
+          />
+          {/* `SettingsPillButton tone="destructive"` was `type="fill"` +
+              `danger` on a transparent border, not a solid primary-danger. */}
+          <Button
+            aria-label={t(($) => $.plugins.uninstall)}
+            danger
+            disabled={!canManage || isMutating}
+            loading={uninstallMutation.isPending}
+            shape="round"
+            type="fill"
+            onClick={() => uninstallMutation.mutateAsync(installation.id)
+              .then(() => toast.success(t(($) => $.plugins.uninstalled)))
+              .catch(reportError)}
+          >
+            {t(($) => $.plugins.uninstall)}
+          </Button>
         </div>
+      }
+      title={
+        <span className="inline-flex flex-wrap items-center gap-2">
+          {installation.name}
+          {versionBadge}
+          {installation.enabled ? null : disabledBadge}
+        </span>
+      }
+    >
+      <div className="space-y-4 py-4">
+        {hasHooks ? <PluginHookActivity wsId={wsId} installationId={installation.id} /> : null}
+
+        {installation.description ? (
+          <p className="max-w-2xl text-caption">{installation.description}</p>
+        ) : null}
 
         <div className="space-y-2">
           <div className="text-caption font-medium">{t(($) => $.plugins.granted_scopes)}</div>
@@ -659,14 +715,38 @@ function InstalledPlugin({
             <p className="text-caption text-muted-foreground">{contributions.join(" · ")}</p>
           </div>
         ) : null}
-
       </div>
 
       <ConfigForm installation={installation} canManage={canManage} wsId={wsId} />
-    </SettingsCard>
+    </SettingsGroup>
   );
 }
 
+/**
+ * The workspace's plugin screen.
+ *
+ * **`SettingsTab` is gone, and with it the page heading.** Inside the settings
+ * dialog it returned `children` and nothing else (`settings-layout.tsx`), so its
+ * `title`, `description` and `action` were all dropped there. The title belongs
+ * to `settings-page.tsx`'s `DialogHeader`, which already renders
+ * `page.tabs.plugins` — and `plugins.title` resolves to the *same* string
+ * ("Plugins" / "Plugins"), so it must not come back as a group title. The
+ * description does not have that home — `tabDescription("plugins")` returns
+ * `""` — so it stays with the panel as the lede above the groups, the same
+ * placement `billing-tab` gave its own. Its proper home is `tabDescription`,
+ * which owns this copy for the tabs that already have it.
+ *
+ * **`action`: this tab had none, and that is a measurement.** `SettingsTab` was
+ * passed only `title` and `description`. The add/publish controls are group
+ * content, not a page-level action.
+ *
+ * **The root container is `space-y-8`.** `SettingsTab`'s nested branch wrapped
+ * its children in `space-y-12`, and the tab body sets `gap: 0`, so dropping the
+ * wrapper would leave the lede, the read-only notice, the publish group and the
+ * installed group with no separation at all. `space-y-8` is the family value
+ * (billing, github, repositories, lark, wecom, telegram, slack, weixin,
+ * dingtalk, integrations).
+ */
 export function PluginsTab() {
   const { t } = useT("settings");
   const workspace = useCurrentWorkspace();
@@ -678,30 +758,36 @@ export function PluginsTab() {
   const installations = useMemo(() => data?.plugins ?? [], [data]);
 
   return (
-    <SettingsTab title={t(($) => $.plugins.title)} description={t(($) => $.plugins.description)}>
+    <div className="space-y-8">
+      <p className="text-body text-muted-foreground">{t(($) => $.plugins.description)}</p>
+
       {!canManage ? (
-        <Alert>
-          <AlertCircle />
-          <AlertTitle>{t(($) => $.plugins.read_only)}</AlertTitle>
-          <AlertDescription>{t(($) => $.plugins.read_only_description)}</AlertDescription>
-        </Alert>
+        <Alert
+          description={t(($) => $.plugins.read_only_description)}
+          icon={AlertCircle}
+          title={t(($) => $.plugins.read_only)}
+          type="secondary"
+        />
       ) : null}
 
       {canManage ? <PublishAndInstall wsId={wsId} canManage={canManage} /> : null}
 
-      <SettingsSection title={t(($) => $.plugins.installed.title)}>
+      {/* `SettingsSection` without a `SettingsCard` is a *bare* section, and a
+          bare `Form.Group` is `borderless` — Lobe's own default. The outlined
+          variant here would put every plugin's own outlined panel inside a
+          second bordered one. */}
+      <SettingsGroup title={t(($) => $.plugins.installed.title)} variant="borderless">
         {isLoading ? (
-          <Skeleton className="h-24 w-full" aria-label={t(($) => $.plugins.loading)} />
+          <Skeleton height={96} aria-label={t(($) => $.plugins.loading)} />
         ) : isError ? (
-          <Alert variant="destructive">
-            <AlertCircle />
-            <AlertTitle>{t(($) => $.plugins.load_failed)}</AlertTitle>
-            <AlertDescription>{t(($) => $.plugins.load_failed_description)}</AlertDescription>
-          </Alert>
+          <Alert
+            description={t(($) => $.plugins.load_failed_description)}
+            icon={AlertCircle}
+            title={t(($) => $.plugins.load_failed)}
+            type="error"
+          />
         ) : installations.length === 0 ? (
-          <SettingsCard>
-            <p className="px-4 py-6 text-caption text-muted-foreground">{t(($) => $.plugins.empty)}</p>
-          </SettingsCard>
+          <SettingsEmptyState title={t(($) => $.plugins.empty)} />
         ) : (
           <div className="space-y-4">
             {installations.map((installation) => (
@@ -714,7 +800,7 @@ export function PluginsTab() {
             ))}
           </div>
         )}
-      </SettingsSection>
-    </SettingsTab>
+      </SettingsGroup>
+    </div>
   );
 }
