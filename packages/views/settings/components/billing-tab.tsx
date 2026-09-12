@@ -30,47 +30,17 @@ import type {
   WorkspaceSeatPurchasePreview,
   WorkspaceSubscriptionInterval,
 } from "@orvilo/core/types";
-import {
-  Alert,
-  AlertDescription,
-  AlertTitle,
-} from "@orvilo/ui/components/ui/alert";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@orvilo/ui/components/ui/alert-dialog";
+import { Alert, Button, Input, Modal, Skeleton } from "@lobehub/ui/base-ui";
 import { Badge } from "@orvilo/ui/components/ui/badge";
-import { Button } from "@orvilo/ui/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@orvilo/ui/components/ui/dialog";
-import { Input } from "@orvilo/ui/components/ui/input";
 import {
   Progress,
   ProgressLabel,
   ProgressValue,
 } from "@orvilo/ui/components/ui/progress";
-import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { useLocale, useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 import { openExternal } from "../../platform";
-import {
-  SettingsCard,
-  SettingsRow,
-  SettingsSection,
-  SettingsTab,
-} from "./settings-layout";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 import {
   hasActiveWorkspaceSeatCapacity,
   resolveAutomationUsage,
@@ -150,6 +120,50 @@ function statusBadgeVariant(
 }
 
 /**
+ * Workspace billing — plan, limits, seats, and the two Stripe flows.
+ *
+ * **`SettingsTab` is gone, and with it the page heading.** It returned
+ * `children` and nothing else inside the settings dialog
+ * (`settings-layout.tsx`), so its `title` and `description` were already
+ * dropped on this tab's only surface. The title belongs to `settings-page.tsx`'s
+ * `DialogHeader`; the description does not — `tabDescription("billing")`
+ * returns `""`, so the header renders the title alone and this sentence would
+ * have been dropped rather than relocated. It stays with the panel, above the
+ * groups, because it describes the panel rather than any one group. (Its
+ * proper home is `tabDescription`, which owns that copy for the tabs whose
+ * description is already there; that file is not this one.)
+ *
+ * **The group titles must not be `workspace.title`.** That key resolves to
+ * "Billing" / "账单与套餐" in both locales — the identical string
+ * `page.tabs.billing` puts in the `DialogTitle` above — so a group carrying it
+ * would print the page title a second time. That is the defect Task 6 shipped
+ * in `labels-tab` and had to fix; the check is on the two i18n keys, not on how
+ * the two sentences read. The five group titles here (`current`, `upgrade`,
+ * `management`, `limits`, `seats`) are all section names, and the two
+ * single-state branches use `workspace.loading` / `workspace.load_failed.title`
+ * for the same reason.
+ *
+ * **`action`: this tab had none, and that is a measurement.**
+ * `billing-tab.tsx` passed only `title` and `description` to `SettingsTab`, so
+ * there was no page-level control for the nested branch to swallow. (The two
+ * this file does own render in the `extra`-less body: the upgrade CTA and the
+ * seat-purchase CTA are group content, not a section `action`.)
+ *
+ * **The two dialogs are `Modal`, including the confirmation.** The seat
+ * purchase is a form in a dialog. The checkout confirmation is an `AlertDialog`
+ * with a *cancel* — and that cancel is product behaviour, not decoration:
+ * `handleCheckoutConfirmOpenChange` releases the idempotency intent so the next
+ * attempt is a new Stripe session, after an ambiguous failure deliberately
+ * keeps the key. `useSettingsConfirm` has no `onCancel` hook, so routing this
+ * dialog through it would silently drop that release (and with it a passing
+ * assertion). A controlled `Modal` keeps the cancel path, the AlertDialog's
+ * no-outside-dismiss semantics (`maskClosable={false}`) and its missing close
+ * affordance (`closable={false}`).
+ *
+ * `Badge` and `Progress` stay shadcn: the migration reference records that Lobe
+ * has no equivalent for either (decision 7 for `Progress`), and `Tag` is a
+ * different component rather than a rename of `Badge`.
+ *
  * A second gate inside the tab keeps direct/test mounts fail-closed. The
  * Settings shell also omits this component and its navigation entry while the
  * flag is absent, so no subscription request is issued in either path.
@@ -730,46 +744,41 @@ function BillingTabContent() {
 
   if (summaryQuery.isPending) {
     return (
-      <SettingsTab
-        title={t(($) => $.workspace.title)}
-        description={t(($) => $.workspace.description)}
-      >
-        <SettingsCard>
-          <div
-            className="space-y-4 p-4 motion-reduce:[&_[data-slot=skeleton]]:animate-none"
-            aria-label={t(($) => $.workspace.loading)}
-          >
-            <Skeleton className="h-5 w-40" />
-            <Skeleton className="h-4 w-full" />
-            <Skeleton className="h-4 w-2/3" />
-          </div>
-        </SettingsCard>
-      </SettingsTab>
+      <SettingsGroup title={t(($) => $.workspace.loading)}>
+        <div
+          className="space-y-4 motion-reduce:[&_[data-slot=skeleton]]:animate-none"
+          role="status"
+          aria-label={t(($) => $.workspace.loading)}
+        >
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
+      </SettingsGroup>
     );
   }
 
   if (summaryQuery.isError || !entitlements) {
+    // No group and no card: the failure is the whole panel, and a card header
+    // would need a title this namespace does not have — `workspace.title` is
+    // the page title (see the note above) and `load_failed.title` is already
+    // the alert's own.
     return (
-      <SettingsTab
-        title={t(($) => $.workspace.title)}
-        description={t(($) => $.workspace.description)}
-      >
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>{t(($) => $.workspace.load_failed.title)}</AlertTitle>
-          <AlertDescription>
-            <p>{t(($) => $.workspace.load_failed.description)}</p>
-            <Button
-              className="mt-3 h-11"
-              variant="outline"
-              onClick={() => void summaryQuery.refetch()}
-            >
-              <RefreshCw />
-              {t(($) => $.workspace.actions.retry)}
-            </Button>
-          </AlertDescription>
-        </Alert>
-      </SettingsTab>
+      <Alert
+        type="error"
+        icon={AlertCircle}
+        title={t(($) => $.workspace.load_failed.title)}
+        description={t(($) => $.workspace.load_failed.description)}
+        action={
+          <Button
+            icon={RefreshCw}
+            type="fill"
+            onClick={() => void summaryQuery.refetch()}
+          >
+            {t(($) => $.workspace.actions.retry)}
+          </Button>
+        }
+      />
     );
   }
 
@@ -843,532 +852,515 @@ function BillingTabContent() {
     : null;
 
   return (
-    <SettingsTab
-      title={t(($) => $.workspace.title)}
-      description={t(($) => $.workspace.description)}
-    >
+    <>
+      {/* The tab's own description, which `SettingsTab` dropped inside the
+          dialog and which `tabDescription("billing")` does not supply either.
+          It describes the panel, not one group, so it sits above them. */}
+      <p className="text-body text-muted-foreground">
+        {t(($) => $.workspace.description)}
+      </p>
+
       {returnResult === "cancel" ? (
-        <Alert>
-          <AlertCircle />
-          <AlertTitle>{t(($) => $.workspace.return.cancel_title)}</AlertTitle>
-          <AlertDescription>
-            {t(($) => $.workspace.return.cancel_description)}
-          </AlertDescription>
-        </Alert>
+        <Alert
+          type="secondary"
+          icon={AlertCircle}
+          title={t(($) => $.workspace.return.cancel_title)}
+          description={t(($) => $.workspace.return.cancel_description)}
+        />
       ) : null}
 
       {returnResult === "portal" ? (
-        <Alert>
-          <CheckCircle2 />
-          <AlertTitle>{t(($) => $.workspace.return.portal_title)}</AlertTitle>
-          <AlertDescription>
-            {t(($) => $.workspace.return.portal_description)}
-          </AlertDescription>
-        </Alert>
+        <Alert
+          type="success"
+          icon={CheckCircle2}
+          title={t(($) => $.workspace.return.portal_title)}
+          description={t(($) => $.workspace.return.portal_description)}
+        />
       ) : null}
 
       {returnResult === "success" ? (
-        <Alert>
-          {isCheckoutConfirmed ? (
-            <CheckCircle2 />
-          ) : (
-            <Loader2
-              className={
-                isSyncingCheckout
-                  ? "animate-spin motion-reduce:animate-none"
-                  : undefined
-              }
-            />
-          )}
-          <AlertTitle>
-            {isCheckoutConfirmed
+        <Alert
+          type={isCheckoutConfirmed ? "success" : "info"}
+          icon={isCheckoutConfirmed ? CheckCircle2 : Loader2}
+          // `Icon` is a component prop, so the spinner animation cannot ride on
+          // the node the way it did when the icon was a child. `classNames.icon`
+          // wraps it, and Lobe marks that span `aria-hidden`, so the rotation
+          // costs the alert no accessible name.
+          classNames={{
+            icon: isSyncingCheckout
+              ? "animate-spin motion-reduce:animate-none"
+              : undefined,
+          }}
+          title={
+            isCheckoutConfirmed
               ? t(($) => $.workspace.return.active_title)
-              : t(($) => $.workspace.return.syncing_title)}
-          </AlertTitle>
-          <AlertDescription>
-            {isCheckoutConfirmed
+              : t(($) => $.workspace.return.syncing_title)
+          }
+          description={
+            isCheckoutConfirmed
               ? t(($) => $.workspace.return.active_description)
               : syncTimedOut
                 ? t(($) => $.workspace.return.timeout_description)
-                : t(($) => $.workspace.return.syncing_description)}
-          </AlertDescription>
-        </Alert>
+                : t(($) => $.workspace.return.syncing_description)
+          }
+        />
       ) : null}
 
       {summaryQuery.data?.cancelAtPeriodEnd ? (
-        <Alert>
-          <AlertCircle />
-          <AlertTitle>
-            {t(($) => $.workspace.subscription_notice.canceling_title)}
-          </AlertTitle>
-          <AlertDescription>
-            {summaryPeriodEnd
+        <Alert
+          type="secondary"
+          icon={AlertCircle}
+          title={t(($) => $.workspace.subscription_notice.canceling_title)}
+          description={
+            summaryPeriodEnd
               ? t(
-                  ($) =>
-                    $.workspace.subscription_notice.canceling_description,
+                  ($) => $.workspace.subscription_notice.canceling_description,
                   { date: summaryPeriodEnd },
                 )
               : t(
                   ($) =>
                     $.workspace.subscription_notice
                       .canceling_description_without_date,
-                )}
-          </AlertDescription>
-        </Alert>
+                )
+          }
+        />
       ) : null}
 
       {entitlements.status === "past_due" ? (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>{t(($) => $.workspace.past_due.title)}</AlertTitle>
-          <AlertDescription>
-            {graceUntil
+        <Alert
+          type="error"
+          icon={AlertCircle}
+          title={t(($) => $.workspace.past_due.title)}
+          description={
+            graceUntil
               ? t(($) => $.workspace.past_due.grace_description, {
                   date: graceUntil,
                 })
-              : t(($) => $.workspace.past_due.description)}
-          </AlertDescription>
-        </Alert>
+              : t(($) => $.workspace.past_due.description)
+          }
+        />
       ) : null}
 
       {entitlements.status === "incomplete" ? (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>
-            {t(($) => $.workspace.subscription_notice.incomplete_title)}
-          </AlertTitle>
-          <AlertDescription>
-            {t(($) => $.workspace.subscription_notice.incomplete_description)}
-          </AlertDescription>
-        </Alert>
+        <Alert
+          type="error"
+          icon={AlertCircle}
+          title={t(($) => $.workspace.subscription_notice.incomplete_title)}
+          description={t(
+            ($) => $.workspace.subscription_notice.incomplete_description,
+          )}
+        />
       ) : null}
 
       {entitlements.status === "incomplete_expired" ? (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>
-            {t(
-              ($) => $.workspace.subscription_notice.incomplete_expired_title,
-            )}
-          </AlertTitle>
-          <AlertDescription>
-            {t(
-              ($) =>
-                $.workspace.subscription_notice
-                  .incomplete_expired_description,
-            )}
-          </AlertDescription>
-        </Alert>
+        <Alert
+          type="error"
+          icon={AlertCircle}
+          title={t(
+            ($) => $.workspace.subscription_notice.incomplete_expired_title,
+          )}
+          description={t(
+            ($) =>
+              $.workspace.subscription_notice.incomplete_expired_description,
+          )}
+        />
       ) : null}
 
       {entitlements.status === "paused" ? (
-        <Alert>
-          <AlertCircle />
-          <AlertTitle>
-            {t(($) => $.workspace.subscription_notice.paused_title)}
-          </AlertTitle>
-          <AlertDescription>
-            {t(($) => $.workspace.subscription_notice.paused_description)}
-          </AlertDescription>
-        </Alert>
+        <Alert
+          type="secondary"
+          icon={AlertCircle}
+          title={t(($) => $.workspace.subscription_notice.paused_title)}
+          description={t(
+            ($) => $.workspace.subscription_notice.paused_description,
+          )}
+        />
       ) : null}
 
       {entitlements.status === "unpaid" ? (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>
-            {t(($) => $.workspace.subscription_notice.unpaid_title)}
-          </AlertTitle>
-          <AlertDescription>
-            {t(($) => $.workspace.subscription_notice.unpaid_description)}
-          </AlertDescription>
-        </Alert>
+        <Alert
+          type="error"
+          icon={AlertCircle}
+          title={t(($) => $.workspace.subscription_notice.unpaid_title)}
+          description={t(
+            ($) => $.workspace.subscription_notice.unpaid_description,
+          )}
+        />
       ) : null}
 
       {entitlements.status === "canceled" ? (
-        <Alert>
-          <AlertCircle />
-          <AlertTitle>
-            {t(($) => $.workspace.subscription_notice.canceled_title)}
-          </AlertTitle>
-          <AlertDescription>
-            {t(($) => $.workspace.subscription_notice.canceled_description)}
-          </AlertDescription>
-        </Alert>
+        <Alert
+          type="secondary"
+          icon={AlertCircle}
+          title={t(($) => $.workspace.subscription_notice.canceled_title)}
+          description={t(
+            ($) => $.workspace.subscription_notice.canceled_description,
+          )}
+        />
       ) : null}
 
       {actionError ? (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertTitle>{t(($) => $.workspace.errors.action_title)}</AlertTitle>
-          <AlertDescription>{actionError}</AlertDescription>
-        </Alert>
+        <Alert
+          type="error"
+          icon={AlertCircle}
+          title={t(($) => $.workspace.errors.action_title)}
+          description={actionError}
+        />
       ) : null}
 
-      <SettingsSection title={t(($) => $.workspace.current.title)}>
-        <SettingsCard>
-          <SettingsRow
-            label={t(($) => $.workspace.current.plan)}
-            description={t(($) => $.workspace.current.plan_description)}
+      <SettingsGroup title={t(($) => $.workspace.current.title)}>
+        <SettingsFormRow
+          label={t(($) => $.workspace.current.plan)}
+          description={t(($) => $.workspace.current.plan_description)}
+        >
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            <Badge variant={planBadgeVariant(entitlements.plan)}>
+              {planLabel(entitlements.plan)}
+            </Badge>
+            <Badge variant={statusBadgeVariant(entitlements.status)}>
+              {statusLabel(entitlements.status)}
+            </Badge>
+          </div>
+        </SettingsFormRow>
+        <SettingsFormRow
+          divider
+          label={t(($) => $.workspace.current.members)}
+          description={t(($) => $.workspace.current.members_description)}
+        >
+          <span className="tabular-nums">
+            {t(($) => $.workspace.current.member_count, {
+              count: actualSeats,
+            })}
+          </span>
+        </SettingsFormRow>
+        {summaryQuery.data?.billingInterval ? (
+          <SettingsFormRow
+            divider
+            label={t(($) => $.workspace.current.billing_interval)}
+            description={t(
+              ($) => $.workspace.current.billing_interval_description,
+            )}
           >
-            <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-              <Badge variant={planBadgeVariant(entitlements.plan)}>
-                {planLabel(entitlements.plan)}
-              </Badge>
-              <Badge variant={statusBadgeVariant(entitlements.status)}>
-                {statusLabel(entitlements.status)}
-              </Badge>
-            </div>
-          </SettingsRow>
-          <SettingsRow
-            label={t(($) => $.workspace.current.members)}
-            description={t(($) => $.workspace.current.members_description)}
-          >
-            <span className="tabular-nums">
-              {t(($) => $.workspace.current.member_count, {
-                count: actualSeats,
-              })}
+            <span>
+              {summaryQuery.data.billingInterval === "month"
+                ? t(($) => $.workspace.upgrade.monthly)
+                : t(($) => $.workspace.upgrade.yearly)}
             </span>
-          </SettingsRow>
-          {summaryQuery.data?.billingInterval ? (
-            <SettingsRow
-              label={t(($) => $.workspace.current.billing_interval)}
-              description={t(
-                ($) => $.workspace.current.billing_interval_description,
-              )}
-            >
-              <span>
-                {summaryQuery.data.billingInterval === "month"
-                  ? t(($) => $.workspace.upgrade.monthly)
-                  : t(($) => $.workspace.upgrade.yearly)}
-              </span>
-            </SettingsRow>
-          ) : null}
-          {summaryPeriodEnd ? (
-            <SettingsRow
-              label={t(($) => $.workspace.current.period_end)}
-              description={t(($) => $.workspace.current.period_end_description)}
-            >
-              <span className="tabular-nums">{summaryPeriodEnd}</span>
-            </SettingsRow>
-          ) : null}
-        </SettingsCard>
-      </SettingsSection>
+          </SettingsFormRow>
+        ) : null}
+        {summaryPeriodEnd ? (
+          <SettingsFormRow
+            divider
+            label={t(($) => $.workspace.current.period_end)}
+            description={t(($) => $.workspace.current.period_end_description)}
+          >
+            <span className="tabular-nums">{summaryPeriodEnd}</span>
+          </SettingsFormRow>
+        ) : null}
+      </SettingsGroup>
 
       {canUpgrade ? (
-        <SettingsSection
+        <SettingsGroup
           title={t(($) => $.workspace.upgrade.title)}
           description={t(($) => $.workspace.upgrade.description)}
         >
-          <SettingsCard>
-            <div className="space-y-5 p-4 sm:p-5">
-              <div
-                className="inline-flex w-full rounded-lg border border-surface-border p-1 sm:w-auto"
-                role="group"
-                aria-label={t(($) => $.workspace.upgrade.interval_label)}
-              >
-                {(["month", "year"] as const).map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    aria-pressed={interval === value}
-                    className="min-h-11 flex-1 rounded-md px-4 text-body font-medium text-muted-foreground transition-[color,background-color,box-shadow] hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-pressed:bg-surface-selected aria-pressed:text-surface-selected-foreground aria-pressed:shadow-sm sm:min-w-32"
-                    onClick={() => {
-                      setInterval(value);
-                      checkoutIntentRef.current = null;
-                    }}
-                  >
-                    {value === "month"
-                      ? t(($) => $.workspace.upgrade.monthly)
-                      : t(($) => $.workspace.upgrade.yearly)}
-                  </button>
-                ))}
-              </div>
-              <div className="space-y-2">
-                <p className="text-body font-medium">
-                  {t(($) => $.workspace.upgrade.pro_for_team, {
-                    count: actualSeats,
-                  })}
-                </p>
-                {pricesQuery.isLoading ? (
-                  <div
-                    className="space-y-2 motion-reduce:[&_[data-slot=skeleton]]:animate-none"
-                    role="status"
-                    aria-label={t(($) => $.workspace.upgrade.price_loading)}
-                  >
-                    <Skeleton className="h-5 w-48" />
-                    <Skeleton className="h-4 w-64 max-w-full" />
-                  </div>
-                ) : hasDisplayableUnitPrice ? (
-                  <div className="space-y-1">
-                    <p className="text-body font-semibold tabular-nums">
-                      {t(($) => $.workspace.upgrade.unit_price, {
-                        price: formattedUnitPrice,
-                      })}
-                    </p>
-                  </div>
-                ) : null}
-                <p className="max-w-[65ch] text-caption leading-5 text-muted-foreground">
-                  {t(($) => $.workspace.upgrade.price_at_checkout)}
-                </p>
-                {canRetryPrice ? (
-                  <>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      aria-busy={pricesQuery.isFetching}
-                      disabled={pricesQuery.isFetching}
-                      onClick={() => void pricesQuery.refetch()}
-                    >
-                      {pricesQuery.isFetching ? (
-                        <Loader2 className="animate-spin" />
-                      ) : (
-                        <RefreshCw />
-                      )}
-                      {t(($) => $.workspace.actions.retry)}
-                    </Button>
-                    {pricesQuery.isFetching ? (
-                      <span
-                        className="sr-only"
-                        role="status"
-                        aria-label={t(
-                          ($) => $.workspace.upgrade.price_loading,
-                        )}
-                      >
-                        {t(($) => $.workspace.upgrade.price_loading)}
-                      </span>
-                    ) : null}
-                  </>
-                ) : null}
-              </div>
-              <Button
-                className="h-11 w-full sm:w-auto"
-                disabled={isMutating}
-                onClick={() => setCheckoutConfirmOpen(true)}
-              >
-                <CreditCard />
-                {t(($) => $.workspace.actions.upgrade)}
-              </Button>
+          {/* No `p-4 sm:p-5`: `Form.Group`'s body already carries `12px 16px`,
+              which is the inset the rows beside it use. */}
+          <div className="space-y-5">
+            <div
+              className="inline-flex w-full rounded-lg border border-surface-border p-1 sm:w-auto"
+              role="group"
+              aria-label={t(($) => $.workspace.upgrade.interval_label)}
+            >
+              {(["month", "year"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={interval === value}
+                  className="min-h-11 flex-1 rounded-md px-4 text-body font-medium text-muted-foreground transition-[color,background-color,box-shadow] hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-pressed:bg-surface-selected aria-pressed:text-surface-selected-foreground aria-pressed:shadow-sm sm:min-w-32"
+                  onClick={() => {
+                    setInterval(value);
+                    checkoutIntentRef.current = null;
+                  }}
+                >
+                  {value === "month"
+                    ? t(($) => $.workspace.upgrade.monthly)
+                    : t(($) => $.workspace.upgrade.yearly)}
+                </button>
+              ))}
             </div>
-          </SettingsCard>
-        </SettingsSection>
+            <div className="space-y-2">
+              <p className="text-body font-medium">
+                {t(($) => $.workspace.upgrade.pro_for_team, {
+                  count: actualSeats,
+                })}
+              </p>
+              {pricesQuery.isLoading ? (
+                <div
+                  className="space-y-2 motion-reduce:[&_[data-slot=skeleton]]:animate-none"
+                  role="status"
+                  aria-label={t(($) => $.workspace.upgrade.price_loading)}
+                >
+                  <Skeleton className="h-5 w-48" />
+                  <Skeleton className="h-4 w-64 max-w-full" />
+                </div>
+              ) : hasDisplayableUnitPrice ? (
+                <div className="space-y-1">
+                  <p className="text-body font-semibold tabular-nums">
+                    {t(($) => $.workspace.upgrade.unit_price, {
+                      price: formattedUnitPrice,
+                    })}
+                  </p>
+                </div>
+              ) : null}
+              <p className="max-w-[65ch] text-caption leading-5 text-muted-foreground">
+                {t(($) => $.workspace.upgrade.price_at_checkout)}
+              </p>
+              {canRetryPrice ? (
+                <>
+                  {/* `loading` swaps the refresh icon for Lobe's spinner, and
+                        `disabled` is still set by hand: a Lobe button that is
+                        only `loading` keeps the native `disabled` attribute off
+                        and guards the click in JS instead. */}
+                  <Button
+                    icon={RefreshCw}
+                    type="fill"
+                    size="small"
+                    loading={pricesQuery.isFetching}
+                    disabled={pricesQuery.isFetching}
+                    onClick={() => void pricesQuery.refetch()}
+                  >
+                    {t(($) => $.workspace.actions.retry)}
+                  </Button>
+                  {pricesQuery.isFetching ? (
+                    <span
+                      className="sr-only"
+                      role="status"
+                      aria-label={t(($) => $.workspace.upgrade.price_loading)}
+                    >
+                      {t(($) => $.workspace.upgrade.price_loading)}
+                    </span>
+                  ) : null}
+                </>
+              ) : null}
+            </div>
+            <Button
+              className="w-full sm:w-auto"
+              size="large"
+              type="primary"
+              icon={CreditCard}
+              disabled={isMutating}
+              onClick={() => setCheckoutConfirmOpen(true)}
+            >
+              {t(($) => $.workspace.actions.upgrade)}
+            </Button>
+          </div>
+        </SettingsGroup>
       ) : null}
 
       {summaryQuery.data?.availableActions.portal === true ? (
-        <SettingsSection
+        <SettingsGroup
           title={t(($) => $.workspace.management.title)}
           description={t(($) => $.workspace.management.description)}
         >
-          <SettingsCard>
-            <SettingsRow
-              label={t(($) => $.workspace.management.portal)}
-              description={
-                portalUnavailable
-                  ? t(($) => $.workspace.management.portal_unavailable)
-                  : t(($) => $.workspace.management.portal_description)
-              }
-            >
-              {!portalUnavailable ? (
-                <Button
-                  className="h-11 w-full sm:w-auto"
-                  disabled={isMutating}
-                  onClick={() => void handlePortal()}
-                >
-                  {portalMutation.isPending ? (
-                    <Loader2 className="animate-spin motion-reduce:animate-none" />
-                  ) : (
-                    <ExternalLink />
-                  )}
-                  {t(($) => $.workspace.actions.manage)}
-                </Button>
-              ) : null}
-            </SettingsRow>
-          </SettingsCard>
-        </SettingsSection>
+          <SettingsFormRow
+            label={t(($) => $.workspace.management.portal)}
+            description={
+              portalUnavailable
+                ? t(($) => $.workspace.management.portal_unavailable)
+                : t(($) => $.workspace.management.portal_description)
+            }
+          >
+            {!portalUnavailable ? (
+              <Button
+                className="w-full sm:w-auto"
+                size="large"
+                type="primary"
+                icon={ExternalLink}
+                loading={portalMutation.isPending}
+                disabled={isMutating}
+                onClick={() => void handlePortal()}
+              >
+                {t(($) => $.workspace.actions.manage)}
+              </Button>
+            ) : null}
+          </SettingsFormRow>
+        </SettingsGroup>
       ) : null}
 
-      <SettingsSection
+      <SettingsGroup
         title={t(($) => $.workspace.limits.title)}
         description={t(($) => $.workspace.limits.description)}
       >
-        <SettingsCard>
-          <SettingsRow
-            label={t(($) => $.workspace.limits.issues)}
-            description={t(($) => $.workspace.limits.issues_description)}
-          >
-            <span className="tabular-nums">{issueLimitValue}</span>
-          </SettingsRow>
-          <SettingsRow
-            label={t(($) => $.workspace.limits.automations)}
-            description={t(($) => $.workspace.limits.automations_description)}
-          >
-            {quotaUsage.kind === "unlimited" ? (
-              <span className="tabular-nums">
-                {t(($) => $.workspace.limits.unlimited)}
-              </span>
-            ) : quotaUsageQuery.isPending ? (
-              <div
-                className="w-full max-w-72 space-y-2 motion-reduce:[&_[data-slot=skeleton]]:animate-none"
-                role="status"
-                aria-label={t(($) => $.workspace.limits.usage_loading)}
+        <SettingsFormRow
+          label={t(($) => $.workspace.limits.issues)}
+          description={t(($) => $.workspace.limits.issues_description)}
+        >
+          <span className="tabular-nums">{issueLimitValue}</span>
+        </SettingsFormRow>
+        <SettingsFormRow
+          divider
+          label={t(($) => $.workspace.limits.automations)}
+          description={t(($) => $.workspace.limits.automations_description)}
+        >
+          {quotaUsage.kind === "unlimited" ? (
+            <span className="tabular-nums">
+              {t(($) => $.workspace.limits.unlimited)}
+            </span>
+          ) : quotaUsageQuery.isPending ? (
+            <div
+              className="w-full max-w-72 space-y-2 motion-reduce:[&_[data-slot=skeleton]]:animate-none"
+              role="status"
+              aria-label={t(($) => $.workspace.limits.usage_loading)}
+            >
+              <Skeleton className="h-5 w-full" />
+              <Skeleton className="h-4 w-2/3" />
+            </div>
+          ) : quotaUsage.kind === "metered" ? (
+            <div className="w-full max-w-72 space-y-2">
+              <Progress
+                value={quotaUsage.progress}
+                aria-label={t(($) => $.workspace.limits.usage_label)}
               >
-                <Skeleton className="h-5 w-full" />
-                <Skeleton className="h-4 w-2/3" />
-              </div>
-            ) : quotaUsage.kind === "metered" ? (
-              <div className="w-full max-w-72 space-y-2">
-                <Progress
-                  value={quotaUsage.progress}
-                  aria-label={t(($) => $.workspace.limits.usage_label)}
-                >
-                  <ProgressLabel>
-                    {quotaUsage.reached
-                      ? t(($) => $.workspace.limits.reached)
-                      : t(($) => $.workspace.limits.current_usage)}
-                  </ProgressLabel>
-                  <ProgressValue>
-                    {() =>
-                      t(($) => $.workspace.limits.usage_total, {
-                        total: numberFormatter.format(quotaUsage.total),
-                        limit: numberFormatter.format(quotaUsage.limit),
-                      })
-                    }
-                  </ProgressValue>
-                </Progress>
+                <ProgressLabel>
+                  {quotaUsage.reached
+                    ? t(($) => $.workspace.limits.reached)
+                    : t(($) => $.workspace.limits.current_usage)}
+                </ProgressLabel>
+                <ProgressValue>
+                  {() =>
+                    t(($) => $.workspace.limits.usage_total, {
+                      total: numberFormatter.format(quotaUsage.total),
+                      limit: numberFormatter.format(quotaUsage.limit),
+                    })
+                  }
+                </ProgressValue>
+              </Progress>
+              <p className="text-caption text-muted-foreground tabular-nums">
+                {t(($) => $.workspace.limits.usage_breakdown, {
+                  used: numberFormatter.format(quotaUsage.used),
+                  reserved: numberFormatter.format(quotaUsage.reserved),
+                })}
+              </p>
+              {quotaResetAt ? (
                 <p className="text-caption text-muted-foreground tabular-nums">
-                  {t(($) => $.workspace.limits.usage_breakdown, {
-                    used: numberFormatter.format(quotaUsage.used),
-                    reserved: numberFormatter.format(quotaUsage.reserved),
+                  {t(($) => $.workspace.limits.resets_at, {
+                    date: quotaResetAt,
                   })}
                 </p>
-                {quotaResetAt ? (
-                  <p className="text-caption text-muted-foreground tabular-nums">
-                    {t(($) => $.workspace.limits.resets_at, {
-                      date: quotaResetAt,
-                    })}
-                  </p>
-                ) : null}
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2 sm:items-end">
-                {entitlements.limits.automationRuns.mode === "limited" &&
-                entitlements.limits.automationRuns.limit !== null ? (
-                  <span className="tabular-nums">
-                    {t(($) => $.workspace.limits.per_month, {
-                      count: entitlements.limits.automationRuns.limit,
-                    })}
-                  </span>
-                ) : null}
-                <span className="text-caption text-muted-foreground">
-                  {t(($) => $.workspace.limits.usage_unavailable)}
+              ) : null}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2 sm:items-end">
+              {entitlements.limits.automationRuns.mode === "limited" &&
+              entitlements.limits.automationRuns.limit !== null ? (
+                <span className="tabular-nums">
+                  {t(($) => $.workspace.limits.per_month, {
+                    count: entitlements.limits.automationRuns.limit,
+                  })}
                 </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-label={t(($) => $.workspace.actions.retry_automations)}
-                  aria-busy={quotaUsageQuery.isFetching}
-                  disabled={quotaUsageQuery.isFetching}
-                  onClick={() => void quotaUsageQuery.refetch()}
-                >
-                  {quotaUsageQuery.isFetching ? (
-                    <Loader2 className="animate-spin motion-reduce:animate-none" />
-                  ) : (
-                    <RefreshCw />
-                  )}
-                  {t(($) => $.workspace.actions.retry)}
-                </Button>
-              </div>
-            )}
-          </SettingsRow>
-        </SettingsCard>
-      </SettingsSection>
+              ) : null}
+              <span className="text-caption text-muted-foreground">
+                {t(($) => $.workspace.limits.usage_unavailable)}
+              </span>
+              <Button
+                type="fill"
+                size="small"
+                icon={RefreshCw}
+                aria-label={t(($) => $.workspace.actions.retry_automations)}
+                loading={quotaUsageQuery.isFetching}
+                disabled={quotaUsageQuery.isFetching}
+                onClick={() => void quotaUsageQuery.refetch()}
+              >
+                {t(($) => $.workspace.actions.retry)}
+              </Button>
+            </div>
+          )}
+        </SettingsFormRow>
+      </SettingsGroup>
 
       {hasSeatCapacity || summaryUnavailable ? (
-        <SettingsSection
+        <SettingsGroup
           title={t(($) => $.workspace.seats.title)}
           description={t(($) => $.workspace.seats.description)}
         >
           {summaryUnavailable ? (
-            <Alert className="mb-3">
-              <AlertCircle />
-              <AlertTitle>
-                {t(($) => $.workspace.seats.summary_unavailable_title)}
-              </AlertTitle>
-              <AlertDescription>
-                <p>
-                  {t(($) => $.workspace.seats.summary_unavailable_description)}
-                </p>
+            <Alert
+              className="mb-3"
+              type="secondary"
+              icon={AlertCircle}
+              title={t(($) => $.workspace.seats.summary_unavailable_title)}
+              description={t(
+                ($) => $.workspace.seats.summary_unavailable_description,
+              )}
+              action={
                 <Button
-                  className="mt-3"
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  aria-busy={summaryQuery.isFetching}
+                  type="fill"
+                  size="small"
+                  icon={RefreshCw}
+                  loading={summaryQuery.isFetching}
                   disabled={summaryQuery.isFetching}
                   onClick={() => void summaryQuery.refetch()}
                 >
-                  {summaryQuery.isFetching ? (
-                    <Loader2 className="animate-spin motion-reduce:animate-none" />
-                  ) : (
-                    <RefreshCw />
-                  )}
                   {t(($) => $.workspace.actions.retry)}
                 </Button>
-              </AlertDescription>
-            </Alert>
+              }
+            />
           ) : null}
           {seatPurchaseMessage ? (
-            <Alert className="mb-3">
-              <CheckCircle2 />
-              <AlertTitle>{t(($) => $.workspace.seats.updated)}</AlertTitle>
-              <AlertDescription>{seatPurchaseMessage}</AlertDescription>
-            </Alert>
+            <Alert
+              className="mb-3"
+              type="success"
+              icon={CheckCircle2}
+              title={t(($) => $.workspace.seats.updated)}
+              description={seatPurchaseMessage}
+            />
           ) : null}
           {membersExceedPurchasedSeats ? (
-            <Alert className="mb-3">
-              <AlertCircle />
-              <AlertTitle>
-                {t(($) => $.workspace.seats.members_over_capacity_title)}
-              </AlertTitle>
-              <AlertDescription>
-                <p>
-                  {t(($) => $.workspace.seats.members_over_capacity_description, {
-                    actual: actualSeats,
-                    purchased: billedSeats,
-                  })}
-                </p>
-                {canAddSeats ? (
+            <Alert
+              className="mb-3"
+              type="secondary"
+              icon={AlertCircle}
+              title={t(($) => $.workspace.seats.members_over_capacity_title)}
+              description={t(
+                ($) => $.workspace.seats.members_over_capacity_description,
+                {
+                  actual: actualSeats,
+                  purchased: billedSeats,
+                },
+              )}
+              action={
+                canAddSeats ? (
                   <Button
-                    className="mt-3"
-                    type="button"
-                    variant="outline"
-                    size="sm"
+                    type="fill"
+                    size="small"
+                    icon={Plus}
                     disabled={isMutating}
                     onClick={() => handleSeatPurchaseOpenChange(true)}
                   >
-                    <Plus />
                     {t(($) => $.workspace.actions.add_seats)}
                   </Button>
-                ) : null}
-              </AlertDescription>
-            </Alert>
+                ) : null
+              }
+            />
           ) : null}
           {activeSeatPurchase ? (
-            <Alert className="mb-3">
-              {seatPurchasePollingTimedOut ? (
-                <AlertCircle />
-              ) : (
-                <Loader2 className="animate-spin motion-reduce:animate-none" />
-              )}
-              <AlertTitle>
-                {seatPurchasePollingTimedOut
+            <Alert
+              className="mb-3"
+              type={seatPurchasePollingTimedOut ? "warning" : "info"}
+              icon={seatPurchasePollingTimedOut ? AlertCircle : Loader2}
+              classNames={{
+                icon: seatPurchasePollingTimedOut
+                  ? undefined
+                  : "animate-spin motion-reduce:animate-none",
+              }}
+              title={
+                seatPurchasePollingTimedOut
                   ? t(($) => $.workspace.seat_purchase.delayed_title)
-                  : t(($) => $.workspace.seat_purchase.pending_title)}
-              </AlertTitle>
-              <AlertDescription>
-                {seatPurchasePollingTimedOut
+                  : t(($) => $.workspace.seat_purchase.pending_title)
+              }
+              description={
+                seatPurchasePollingTimedOut
                   ? activeSeatPurchaseExpiry
                     ? t(
                         ($) =>
@@ -1379,152 +1371,183 @@ function BillingTabContent() {
                     : t(($) => $.workspace.seat_purchase.delayed_description)
                   : t(($) => $.workspace.seat_purchase.pending_description, {
                       count: activeSeatPurchase.targetSeats,
-                    })}
-              </AlertDescription>
-            </Alert>
+                    })
+              }
+            />
           ) : null}
-          <SettingsCard>
-            <SettingsRow
-              label={t(($) => $.workspace.seats.human_members)}
-              description={t(($) => $.workspace.seats.human_members_description)}
-            >
+          <SettingsFormRow
+            label={t(($) => $.workspace.seats.human_members)}
+            description={t(($) => $.workspace.seats.human_members_description)}
+          >
+            <span className="tabular-nums">
+              {t(($) => $.workspace.seats.seat_count, {
+                count: usedSeats,
+              })}
+            </span>
+          </SettingsFormRow>
+          <SettingsFormRow
+            divider
+            label={t(($) => $.workspace.seats.billed)}
+            description={t(($) => $.workspace.seats.billed_description)}
+          >
+            {summaryQuery.isPending ? (
+              <Skeleton
+                className="h-5 w-20 motion-reduce:animate-none"
+                aria-label={t(($) => $.workspace.seats.summary_loading)}
+              />
+            ) : summaryUnavailable ? (
+              <span className="text-muted-foreground">
+                {t(($) => $.workspace.seats.unavailable)}
+              </span>
+            ) : billedSeats === null ? (
+              <span className="text-muted-foreground">
+                {t(($) => $.workspace.seats.not_subscribed)}
+              </span>
+            ) : (
+              <div className="flex flex-col gap-2 sm:items-end">
+                <span className="tabular-nums">
+                  {t(($) => $.workspace.seats.seat_count, {
+                    count: billedSeats,
+                  })}
+                </span>
+                {canAddSeats ? (
+                  <Button
+                    className="w-full sm:w-auto"
+                    size="large"
+                    type="primary"
+                    icon={Plus}
+                    disabled={isMutating}
+                    onClick={() => handleSeatPurchaseOpenChange(true)}
+                  >
+                    {t(($) => $.workspace.actions.add_seats)}
+                  </Button>
+                ) : null}
+              </div>
+            )}
+          </SettingsFormRow>
+          <SettingsFormRow
+            divider
+            label={t(($) => $.workspace.seats.pending_invitations)}
+            description={t(
+              ($) => $.workspace.seats.pending_invitations_description,
+            )}
+          >
+            {summaryQuery.isPending ? (
+              <Skeleton
+                className="h-5 w-20 motion-reduce:animate-none"
+                aria-label={t(($) => $.workspace.seats.summary_loading)}
+              />
+            ) : summaryUnavailable ? (
+              <span className="text-muted-foreground">
+                {t(($) => $.workspace.seats.unavailable)}
+              </span>
+            ) : (
               <span className="tabular-nums">
                 {t(($) => $.workspace.seats.seat_count, {
-                  count: usedSeats,
+                  count: reservedSeats,
                 })}
               </span>
-            </SettingsRow>
-            <SettingsRow
-              label={t(($) => $.workspace.seats.billed)}
-              description={t(($) => $.workspace.seats.billed_description)}
-            >
-              {summaryQuery.isPending ? (
-                <Skeleton
-                  className="h-5 w-20 motion-reduce:animate-none"
-                  aria-label={t(($) => $.workspace.seats.summary_loading)}
-                />
-              ) : summaryUnavailable ? (
-                <span className="text-muted-foreground">
-                  {t(($) => $.workspace.seats.unavailable)}
-                </span>
-              ) : billedSeats === null ? (
-                <span className="text-muted-foreground">
-                  {t(($) => $.workspace.seats.not_subscribed)}
-                </span>
-              ) : (
-                <div className="flex flex-col gap-2 sm:items-end">
-                  <span className="tabular-nums">
-                    {t(($) => $.workspace.seats.seat_count, {
-                      count: billedSeats,
-                    })}
-                  </span>
-                  {canAddSeats ? (
-                    <Button
-                      className="h-11 w-full sm:w-auto"
-                      type="button"
-                      disabled={isMutating}
-                      onClick={() => handleSeatPurchaseOpenChange(true)}
-                    >
-                      <Plus />
-                      {t(($) => $.workspace.actions.add_seats)}
-                    </Button>
-                  ) : null}
-                </div>
-              )}
-            </SettingsRow>
-            <SettingsRow
-              label={t(($) => $.workspace.seats.pending_invitations)}
-              description={t(
-                ($) => $.workspace.seats.pending_invitations_description,
-              )}
-            >
-              {summaryQuery.isPending ? (
-                <Skeleton
-                  className="h-5 w-20 motion-reduce:animate-none"
-                  aria-label={t(($) => $.workspace.seats.summary_loading)}
-                />
-              ) : summaryUnavailable ? (
-                <span className="text-muted-foreground">
-                  {t(($) => $.workspace.seats.unavailable)}
-                </span>
-              ) : (
-                <span className="tabular-nums">
-                  {t(($) => $.workspace.seats.seat_count, {
-                    count: reservedSeats,
-                  })}
-                </span>
-              )}
-            </SettingsRow>
-            <SettingsRow
-              label={t(($) => $.workspace.seats.available)}
-              description={t(($) => $.workspace.seats.available_description)}
-            >
-              {summaryQuery.isPending ? (
-                <Skeleton
-                  className="h-5 w-20 motion-reduce:animate-none"
-                  aria-label={t(($) => $.workspace.seats.summary_loading)}
-                />
-              ) : summaryUnavailable || availableSeats === null ? (
-                <span className="text-muted-foreground">
-                  {t(($) => $.workspace.seats.unavailable)}
-                </span>
-              ) : (
-                <span className="tabular-nums">
-                  {t(($) => $.workspace.seats.seat_count, {
-                    count: availableSeats,
-                  })}
-                </span>
-              )}
-            </SettingsRow>
-            <SettingsRow
-              label={t(($) => $.workspace.seats.pending)}
-              description={t(($) => $.workspace.seats.pending_description)}
-            >
-              {summaryQuery.isPending ? (
-                <Skeleton
-                  className="h-5 w-28 motion-reduce:animate-none"
-                  aria-label={t(($) => $.workspace.seats.summary_loading)}
-                />
-              ) : summaryUnavailable ? (
-                <span className="text-muted-foreground">
-                  {t(($) => $.workspace.seats.unavailable)}
-                </span>
-              ) : pendingSeatQuantity === null ? (
-                <span className="text-muted-foreground">
-                  {t(($) => $.workspace.seats.none_pending)}
-                </span>
-              ) : summaryPeriodEnd ? (
-                <span className="tabular-nums">
-                  {t(($) => $.workspace.seats.pending_with_date, {
-                    count: pendingSeatQuantity,
-                    date: summaryPeriodEnd,
-                  })}
-                </span>
-              ) : (
-                <span className="tabular-nums">
-                  {t(($) => $.workspace.seats.seat_count, {
-                    count: pendingSeatQuantity,
-                  })}
-                </span>
-              )}
-            </SettingsRow>
-          </SettingsCard>
-        </SettingsSection>
+            )}
+          </SettingsFormRow>
+          <SettingsFormRow
+            divider
+            label={t(($) => $.workspace.seats.available)}
+            description={t(($) => $.workspace.seats.available_description)}
+          >
+            {summaryQuery.isPending ? (
+              <Skeleton
+                className="h-5 w-20 motion-reduce:animate-none"
+                aria-label={t(($) => $.workspace.seats.summary_loading)}
+              />
+            ) : summaryUnavailable || availableSeats === null ? (
+              <span className="text-muted-foreground">
+                {t(($) => $.workspace.seats.unavailable)}
+              </span>
+            ) : (
+              <span className="tabular-nums">
+                {t(($) => $.workspace.seats.seat_count, {
+                  count: availableSeats,
+                })}
+              </span>
+            )}
+          </SettingsFormRow>
+          <SettingsFormRow
+            divider
+            label={t(($) => $.workspace.seats.pending)}
+            description={t(($) => $.workspace.seats.pending_description)}
+          >
+            {summaryQuery.isPending ? (
+              <Skeleton
+                className="h-5 w-28 motion-reduce:animate-none"
+                aria-label={t(($) => $.workspace.seats.summary_loading)}
+              />
+            ) : summaryUnavailable ? (
+              <span className="text-muted-foreground">
+                {t(($) => $.workspace.seats.unavailable)}
+              </span>
+            ) : pendingSeatQuantity === null ? (
+              <span className="text-muted-foreground">
+                {t(($) => $.workspace.seats.none_pending)}
+              </span>
+            ) : summaryPeriodEnd ? (
+              <span className="tabular-nums">
+                {t(($) => $.workspace.seats.pending_with_date, {
+                  count: pendingSeatQuantity,
+                  date: summaryPeriodEnd,
+                })}
+              </span>
+            ) : (
+              <span className="tabular-nums">
+                {t(($) => $.workspace.seats.seat_count, {
+                  count: pendingSeatQuantity,
+                })}
+              </span>
+            )}
+          </SettingsFormRow>
+        </SettingsGroup>
       ) : null}
 
-      <Dialog
+      <Modal
         open={seatPurchaseOpen}
-        onOpenChange={handleSeatPurchaseOpenChange}
+        title={t(($) => $.workspace.seat_purchase.title)}
+        width={512}
+        onCancel={() => handleSeatPurchaseOpenChange(false)}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="fill"
+              disabled={purchaseSeatsMutation.isPending}
+              onClick={() => handleSeatPurchaseOpenChange(false)}
+            >
+              {t(($) => $.workspace.actions.cancel)}
+            </Button>
+            <Button
+              type="primary"
+              icon={Plus}
+              loading={purchaseSeatsMutation.isPending}
+              disabled={
+                !seatPreview ||
+                formattedSeatProration === null ||
+                formattedNextSeatInvoice === null ||
+                previewSeatPurchaseMutation.isPending ||
+                seatPreviewRefreshing ||
+                purchaseSeatsMutation.isPending
+              }
+              onClick={() => void handleSeatPurchase()}
+            >
+              {seatPreview
+                ? t(($) => $.workspace.seat_purchase.confirm, {
+                    count: seatPreview.additionalSeats,
+                  })
+                : t(($) => $.workspace.actions.add_seats)}
+            </Button>
+          </div>
+        }
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {t(($) => $.workspace.seat_purchase.title)}
-            </DialogTitle>
-            <DialogDescription>
-              {t(($) => $.workspace.seat_purchase.description)}
-            </DialogDescription>
-          </DialogHeader>
+        <div className="flex flex-col gap-5">
+          <p className="text-body text-muted-foreground">
+            {t(($) => $.workspace.seat_purchase.description)}
+          </p>
           <div className="space-y-4">
             <div className="space-y-2">
               <label
@@ -1535,7 +1558,6 @@ function BillingTabContent() {
               </label>
               <Input
                 id="workspace-additional-seats"
-                className="h-11"
                 type="number"
                 inputMode="numeric"
                 min={1}
@@ -1553,8 +1575,7 @@ function BillingTabContent() {
                 {t(($) => $.workspace.seat_purchase.additional_hint)}
               </p>
             </div>
-            {previewSeatPurchaseMutation.isPending ||
-            seatPreviewRefreshing ? (
+            {previewSeatPurchaseMutation.isPending || seatPreviewRefreshing ? (
               <div
                 className="flex items-center gap-2 text-body text-muted-foreground"
                 role="status"
@@ -1564,13 +1585,12 @@ function BillingTabContent() {
               </div>
             ) : null}
             {seatPurchaseError ? (
-              <Alert variant="destructive">
-                <AlertCircle />
-                <AlertTitle>
-                  {t(($) => $.workspace.seat_purchase.error_title)}
-                </AlertTitle>
-                <AlertDescription>{seatPurchaseError}</AlertDescription>
-              </Alert>
+              <Alert
+                type="error"
+                icon={AlertCircle}
+                title={t(($) => $.workspace.seat_purchase.error_title)}
+                description={seatPurchaseError}
+              />
             ) : null}
             {seatPreview &&
             formattedSeatProration !== null &&
@@ -1608,85 +1628,55 @@ function BillingTabContent() {
               </div>
             ) : null}
           </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              className="h-11"
-              disabled={purchaseSeatsMutation.isPending}
-              onClick={() => handleSeatPurchaseOpenChange(false)}
-            >
-              {t(($) => $.workspace.actions.cancel)}
-            </Button>
-            <Button
-              type="button"
-              className="h-11"
-              disabled={
-                !seatPreview ||
-                formattedSeatProration === null ||
-                formattedNextSeatInvoice === null ||
-                previewSeatPurchaseMutation.isPending ||
-                seatPreviewRefreshing ||
-                purchaseSeatsMutation.isPending
-              }
-              onClick={() => void handleSeatPurchase()}
-            >
-              {purchaseSeatsMutation.isPending ? (
-                <Loader2 className="animate-spin motion-reduce:animate-none" />
-              ) : (
-                <Plus />
-              )}
-              {seatPreview
-                ? t(($) => $.workspace.seat_purchase.confirm, {
-                    count: seatPreview.additionalSeats,
-                  })
-                : t(($) => $.workspace.actions.add_seats)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+      </Modal>
 
-      <AlertDialog
+      <Modal
         open={checkoutConfirmOpen}
-        onOpenChange={handleCheckoutConfirmOpenChange}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t(($) => $.workspace.confirm.title)}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.workspace.confirm.description, {
-                interval:
-                  interval === "month"
-                    ? t(($) => $.workspace.upgrade.monthly)
-                    : t(($) => $.workspace.upgrade.yearly),
-                count: actualSeats,
-              })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel
-              className="h-11"
+        title={t(($) => $.workspace.confirm.title)}
+        width={512}
+        // The `AlertDialog` this replaces dismissed on Cancel and on Escape and
+        // on nothing else, and it released the Checkout intent on the way out
+        // (`handleCheckoutConfirmOpenChange`) so a deliberately abandoned
+        // attempt does not reuse the previous idempotency key. `onCancel` is
+        // the only hook that release has, which is why this is a controlled
+        // `Modal` rather than `useSettingsConfirm` — the wrapper has no
+        // `onCancel`. `maskClosable={false}` keeps the outside click inert the
+        // way the alert dialog's was; Escape still closes.
+        closable={false}
+        maskClosable={false}
+        onCancel={() => handleCheckoutConfirmOpenChange(false)}
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="fill"
               disabled={checkoutMutation.isPending}
+              onClick={() => handleCheckoutConfirmOpenChange(false)}
             >
               {t(($) => $.workspace.actions.cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              className="h-11"
+            </Button>
+            <Button
+              type="primary"
+              icon={ExternalLink}
+              loading={checkoutMutation.isPending}
               disabled={checkoutMutation.isPending}
               onClick={() => void handleCheckout()}
             >
-              {checkoutMutation.isPending ? (
-                <Loader2 className="animate-spin motion-reduce:animate-none" />
-              ) : (
-                <ExternalLink />
-              )}
               {t(($) => $.workspace.actions.continue_to_stripe)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </SettingsTab>
+            </Button>
+          </div>
+        }
+      >
+        <p className="text-body text-muted-foreground">
+          {t(($) => $.workspace.confirm.description, {
+            interval:
+              interval === "month"
+                ? t(($) => $.workspace.upgrade.monthly)
+                : t(($) => $.workspace.upgrade.yearly),
+            count: actualSeats,
+          })}
+        </p>
+      </Modal>
+    </>
   );
 }
