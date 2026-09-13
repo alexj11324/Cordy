@@ -98,7 +98,9 @@ export function ManualCreateAgentPage() {
     // mode. Mounted at the route root rather than inside the panel: the
     // bridge renders `display: contents`, so the flex column below is still
     // the box this page's parent lays out.
-    <LobeThemeBridge>
+        // `skin="lobe"`: the create panels are the settings design system, so they
+    // wear the same skin as the settings dialog.
+    <LobeThemeBridge skin="lobe">
       <div className="flex min-h-0 flex-1 flex-col bg-background">
         <BreadcrumbHeader
           segments={[{ href: paths.agents(), label: t(($) => $.page.title) }]}

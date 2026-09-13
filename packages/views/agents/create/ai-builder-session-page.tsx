@@ -56,7 +56,9 @@ export function AiBuilderSessionPage({ sessionId }: { sessionId: string }) {
     // dark mode. Mounted at the route root rather than inside the panel: the
     // bridge renders `display: contents`, so `AgentCreateShell` below is
     // still the box this page's parent lays out.
-    <LobeThemeBridge>
+        // `skin="lobe"`: the create panels are the settings design system, so they
+    // wear the same skin as the settings dialog.
+    <LobeThemeBridge skin="lobe">
       <AgentCreateShell
         title={
           teamId

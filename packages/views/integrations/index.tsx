@@ -30,7 +30,10 @@ import { IntegrationsTab } from "../settings/components/integrations-tab";
  */
 export function WorkspaceIntegrationsPage() {
   return (
-    <LobeThemeBridge>
+    // `skin="lobe"`: this page renders `IntegrationsTab` standalone, i.e. the
+    // settings design system without the settings dialog. Same skin as the
+    // dialog so the two do not diverge.
+    <LobeThemeBridge skin="lobe">
       <IntegrationsTab standalone />
     </LobeThemeBridge>
   );

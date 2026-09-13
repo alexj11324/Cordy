@@ -128,9 +128,29 @@ function readBridgeTheme(): BridgeTheme {
 
 export interface LobeThemeBridgeProps {
   children: ReactNode;
+  /**
+   * Which skin the Lobe components wear.
+   *
+   * `"orvilo"` (the default) feeds Orvilo's design tokens into antd, so Lobe
+   * renders the same greys, brand colour, radii and font as the Tailwind
+   * surface around it. `"lobe"` passes no token override at all, so
+   * `@lobehub/ui` falls back to the theme it ships in
+   * `styles/theme/token/{light,dark}.mjs` plus antd's defaults — LobeHub's own
+   * palette, radii, link colours and shadow tokens.
+   *
+   * The two are mutually exclusive because they answer different questions:
+   * `"orvilo"` asks "how does this panel blend into Orvilo", `"lobe"` asks "how
+   * does this panel look like LobeHub". A surface cannot do both, and mixing
+   * them inside one subtree is the one thing that looks wrong either way.
+   *
+   * Only the Lobe components follow this. The Tailwind chrome around them reads
+   * Orvilo's CSS variables directly, so a `"lobe"` surface also has to remap
+   * those variables at its root — see `settings/components/settings-page.tsx`.
+   */
+  skin?: "orvilo" | "lobe";
 }
 
-export function LobeThemeBridge({ children }: LobeThemeBridgeProps) {
+export function LobeThemeBridge({ children, skin = "orvilo" }: LobeThemeBridgeProps) {
   // Seeded from the static reader so the server render and the first client
   // paint agree; the effect below replaces it with the real values.
   const [theme, setTheme] = useState<BridgeTheme>(() => ({
@@ -168,7 +188,10 @@ export function LobeThemeBridge({ children }: LobeThemeBridgeProps) {
           className="contents"
           theme={{
             cssVar: { key: CSS_VAR_KEY },
-            token: { ...theme.tokens.seed, ...theme.tokens.map },
+            // Omitted entirely on the `"lobe"` skin: passing even a partial
+            // `token` still merges over antd's, so an override that intends to
+            // keep "Lobe's look" has to pass nothing at all.
+            ...(skin === "lobe" ? {} : { token: { ...theme.tokens.seed, ...theme.tokens.map } }),
           }}
         >
           {children}

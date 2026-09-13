@@ -320,7 +320,10 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     // dark mode. Mounted at the route root rather than inside the panel: the
     // bridge renders `display: contents`, so the flex column below is still
     // the box this page's parent lays out, and one bridge covers the surface.
-    <LobeThemeBridge>
+    // `skin="lobe"`: see `settings-page.tsx`. This surface renders the settings
+    // design system, so it wears the same skin; the Tailwind boxes around it
+    // still read Orvilo's variables until those are remapped.
+    <LobeThemeBridge skin="lobe">
       <div className="flex min-h-0 flex-1 flex-col bg-background text-foreground">
         <AgentIdentityCard
           breadcrumbHref={paths.agents()}

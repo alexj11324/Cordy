@@ -266,18 +266,36 @@ export function SettingsPage({
     >
       <DialogContent
         data-settings-variant={variant}
-        className="flex h-[min(88svh,48rem)] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 **:data-[slot=dialog-close]:top-4! **:data-[slot=dialog-close]:right-4! sm:max-w-4xl lg:max-w-[60rem]"
+        className="orvilo-lobe-surface flex h-[min(88svh,48rem)] max-w-[calc(100vw-1.5rem)] flex-col gap-0 overflow-hidden p-0 **:data-[slot=dialog-close]:top-4! **:data-[slot=dialog-close]:right-4! sm:max-w-4xl lg:max-w-[60rem]"
       >
         {/* Renders no box of its own (`display: contents`), so `TabsRoot` is
             still the flex child `DialogContent` was laid out around. */}
-        <LobeThemeBridge>
+        {/* `skin="lobe"`: this surface renders in `@lobehub/ui`'s own theme
+            rather than a mapping of Orvilo's, so the settings dialog looks like
+            LobeHub instead of like Orvilo.
+
+            The `orvilo-lobe-surface` class on `DialogContent` above is the other
+            half of that. Lobe's components wear Lobe's palette on their own, but
+            the chrome around them — this box, the rail, the title — is Tailwind
+            over Orvilo's variables, so the two skins met at the dialog's edge.
+            That class restates Orvilo's names in Lobe's measured values. It has
+            to be here rather than on the bridge because antd declares its
+            `--ant-*` variables on the provider element *inside* the bridge and a
+            custom property only inherits downward — and the bridge cannot move
+            out to wrap this box, because `DialogContent` portals into
+            `document.body`. See `packages/ui/styles/base.css`. */}
+        <LobeThemeBridge skin="lobe">
           <TabsRoot
             value={activeTab}
             onValueChange={handleTabChange}
             orientation={isMobile ? "horizontal" : "vertical"}
             className="flex min-h-0 flex-1 flex-col gap-0 lg:flex-row lg:items-stretch"
           >
-            <aside className="bg-muted/20 flex shrink-0 flex-col border-b py-3 pr-12 pl-5 lg:min-h-0 lg:w-56 lg:self-stretch lg:overflow-y-auto lg:border-r lg:border-b-0 lg:py-4 lg:pr-5">
+            {/* `bg-[var(--settings-rail)]`, not `bg-muted`: `--muted` is what
+                every code chip reads *and* what the selected tab is marked
+                with (`bg-muted!` below), so mapping the rail onto it made the
+                two identical and hid the selection. See `base.css`. */}
+            <aside className="bg-[var(--settings-rail)] flex shrink-0 flex-col border-b py-3 pr-12 pl-5 lg:min-h-0 lg:w-56 lg:self-stretch lg:overflow-y-auto lg:border-r lg:border-b-0 lg:py-4 lg:pr-5">
               <SettingsSearch
                 value={settingsSearch}
                 onValueChange={setSettingsSearch}
