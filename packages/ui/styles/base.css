@@ -666,6 +666,39 @@ html[data-dnd-dragging="true"] * {
  * visible; found by dyeing the variable, not by reading the class lists (the
  * `bg-muted!` is appended at the call site, not in `SETTINGS_NAV_TAB_BASE`).
  * ========================================================================== */
+/* The typography half of the same skin.
+ *
+ * LobeHub's type comes from `ThemeProvider/GlobalStyle/global`, which our bridge
+ * turns off wholesale (`enableGlobalStyle={false}`) because it also declares
+ * `body { overflow: hidden auto; margin: 0; line-height: 1; background-color:
+ * colorBgLayout }` and `html { overscroll-behavior: none }` — document-wide
+ * rules that would restyle and rescroll the page behind a dialog. So the
+ * *typographic* half is restated here, and the layout half stays out.
+ *
+ * What each one buys:
+ *  - `font-feature-settings: 'cv01','tnum','kern'` — `cv01` is Geist's
+ *    character-variant feature and only does anything because Geist is loaded;
+ *    `tnum` gives digits one width, which is what stops counts from jittering.
+ *  - `font-size-adjust: from-font` — normalizes the CJK fallback to the primary
+ *    face's x-height. This is the one that changes mixed Chinese/Latin copy most:
+ *    without it the two scripts drift apart at the same `font-size`.
+ *  - `font-variant-ligatures` / `font-variant-numeric` — the rest of Lobe's set.
+ *
+ * The family is Lobe's `fontFamily` token, which antd components inside the
+ * bridge already carry on themselves. Restating it here is what stops the
+ * chrome — the dialog title, the rail, the footers — from inheriting Orvilo's
+ * `Inter`/`PingFang SC` stack while the content beside it renders in
+ * `Geist`/`HarmonyOS Sans SC`. Copied from
+ * `styles/theme/token/base.mjs`.
+ *
+ * Lobe's stack also carries three quoted marker entries that label its sections
+ * — one before the CJK families, one before the generic fallbacks, one before
+ * the emoji families. They resolve to nothing and are kept verbatim anyway. They
+ * cannot be spelled out here: each one ends with the two characters that close
+ * a CSS comment, and writing them in this comment is what broke the light rule
+ * the first time it was written — the comment ended early, the rest parsed as
+ * garbage, and the parser's recovery swallowed the rule that followed. The dark
+ * rule survived only because a clean `}` sat in front of it. */
 .orvilo-lobe-surface {
   --background: #ffffff;
   --card: #ffffff;
@@ -685,6 +718,35 @@ html[data-dnd-dragging="true"] * {
   --surface-border: #eeeeee;
   --input: #e3e3e3;
   --radius: 8px;
+
+  --font-sans:
+    Geist, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display",
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, "HarmonyOS Sans SC",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Source Han Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui,
+    sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+    "Noto Color Emoji";
+  --font-mono:
+    Geist Mono, ui-monospace, SFMono-Regular, SF Mono, Menlo, "Cascadia Code",
+    Consolas, "Liberation Mono", monospace;
+  /* `font-heading` and `font-sans` are utilities, not inherited declarations:
+     a `DialogTitle` carries `font-heading`, which resolves through
+     `--font-sans`, so setting `font-family` alone left the title in Orvilo's
+     stack while everything around it was Geist. Mapping the tokens is what
+     makes both the inheritance and the utilities agree. */
+  --font-heading: var(--font-sans);
+  font-family: var(--font-sans);
+  font-feature-settings: "cv01", "tnum", "kern";
+  font-variation-settings: "opsz" auto, tabular-nums;
+  font-optical-sizing: auto;
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures contextual;
+  font-variant-numeric: tabular-nums;
+  font-size-adjust: from-font;
+  text-rendering: optimizelegibility;
+  text-wrap: pretty;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 .dark .orvilo-lobe-surface {
   --background: #0d0d0d;
