@@ -71,10 +71,27 @@ export interface SettingsGroupProps {
   /** Trailing slot on the header row — the old `SettingsSection`'s `action`. */
   extra?: ReactNode;
   /**
-   * `outlined` draws the bordered card `SettingsCard` used to be; `borderless`
-   * is a plain section for rows that supply their own chrome.
+   * `filled` is LobeHub's own default and the one to reach for: it draws the
+   * tinted section band with an inset white card under it, border and shadow
+   * included. `outlined` is the flat bordered card the old `SettingsCard` was,
+   * kept for the groups that read as a plain section rather than a card;
+   * `borderless` is a bare section for rows that supply their own chrome.
+   *
+   * The default is `filled` because that is what `lobehub/lobehub` uses — 49
+   * `variant=` sites in `src/features/Settings/` against 5 `outlined` — and the
+   * difference is not cosmetic. `filled` routes `FormGroup`'s `Collapse` into
+   * its `filledLight` / `filledDark` compound variant, which paints
+   * `colorFillQuaternary` behind the item and gives the panel `margin-inline:
+   * 3px`, a border, and `staticStylish.shadow` — four stacked `box-shadow`
+   * layers tinted with the border tokens. `outlined` is
+   * `variantOutlinedWithoutHover` and nothing else, so it has no shadow at all.
+   * That single omitted shadow is what a reader comparing the two settings
+   * screens notices first.
+   *
+   * See `reference-lobehub-settings-parity.md` for the source lines and the
+   * screenshot measurement that pins each of those values.
    */
-  variant?: "outlined" | "borderless";
+  variant?: "filled" | "outlined" | "borderless";
   children: ReactNode;
   className?: string;
 }
@@ -83,7 +100,7 @@ export function SettingsGroup({
   title,
   description,
   extra,
-  variant = "outlined",
+  variant = "filled",
   children,
   className,
 }: SettingsGroupProps) {
@@ -156,7 +173,7 @@ export function SettingsGroup({
     <div
       aria-labelledby={labelled ? labelId : undefined}
       className={cn(
-        mobile && variant === "outlined" && "orvilo-settings-group-outlined",
+        mobile && variant !== "borderless" && "orvilo-settings-group-card",
       )}
       role={labelled ? "group" : undefined}
     >

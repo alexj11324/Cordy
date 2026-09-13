@@ -122,7 +122,7 @@ describe("SettingsGroup", () => {
   // with the same props, because the variant only shows up in antd-style's
   // hashed class names — a comparison between our own two variants would pass
   // just as well with the default flipped to `borderless`.
-  it("defaults to the outlined variant and forwards borderless", async () => {
+  it("defaults to the filled variant and forwards borderless", async () => {
     // Compares the collapse root's class list, not its subtree: `SettingsGroup`
     // wraps the title in a `<span>` to carry the group's `aria-labelledby`, so
     // our tree differs from a raw `Form.Group`'s in a way this test is not
@@ -141,7 +141,7 @@ describe("SettingsGroup", () => {
     }
 
     const children = <div>Row body</div>;
-    const outlined = await groupHtml(
+    const filled = await groupHtml(
       <SettingsGroup title="Appearance">{children}</SettingsGroup>,
     );
     const borderless = await groupHtml(
@@ -149,15 +149,15 @@ describe("SettingsGroup", () => {
         {children}
       </SettingsGroup>,
     );
-    const rawOutlined = await groupHtml(
-      <Form.Group collapsible={false} title="Appearance" variant="outlined">
+    const rawFilled = await groupHtml(
+      <Form.Group collapsible={false} title="Appearance" variant="filled">
         {children}
       </Form.Group>,
     );
 
-    expect(outlined).not.toBe("");
-    expect(outlined).not.toBe(borderless);
-    expect(outlined).toBe(rawOutlined);
+    expect(filled).not.toBe("");
+    expect(filled).not.toBe(borderless);
+    expect(filled).toBe(rawFilled);
   });
 });
 

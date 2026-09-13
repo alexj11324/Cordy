@@ -496,14 +496,26 @@ html[data-dnd-dragging="true"] * {
 .orvilo-settings-row-disabled .ant-form-item-label {
   opacity: 0.5;
 }
-/* `SettingsGroup variant="outlined"` below Lobe's mobile breakpoint.
+/* `SettingsGroup`'s card, below Lobe's mobile breakpoint. Applied for `filled`
+ * (the shell's default) and `outlined`; not for `borderless`.
  *
  * `FormGroup`'s narrow branch renders a header band over a body and reads
- * `variant` nowhere, so the card the wide tree draws — border, radius, the
- * `outlined` treatment the shell's prop is named for — simply is not there. The
- * class is applied by `SettingsGroup` itself, because the branch is chosen
- * inside `FormGroup` and the only thing this component can reach is the wrapper
- * it already renders around it.
+ * `variant` nowhere, so the card the wide tree draws — border, radius, inset
+ * panel — simply is not there. The class is applied by `SettingsGroup` itself,
+ * because the branch is chosen inside `FormGroup` and the only thing this
+ * component can reach is the wrapper it already renders around it.
+ *
+ * **The wide card's shadow is not reproduced here, and that is a known gap.**
+ * Lobe's `filled` panel gets `staticStylish.shadow`, four stacked layers tinted
+ * with `colorBorder` / `colorBorderSecondary`. Those are antd *tokens*: the
+ * running renderer emits them as literal `rgb()` inside hashed class names, not
+ * as custom properties — measured, `--orvilo-lobe-color-border` resolves to the
+ * empty string — so a global stylesheet has no variable to read. The two
+ * candidates it does have are wrong rather than approximate: Orvilo's
+ * `--surface-shadow` is a different shadow, and `--border` under `skin="lobe"`
+ * is still Orvilo's palette. Closing this needs the bridge to publish Lobe's
+ * resolved tokens as custom properties on its root; until then the narrow tree
+ * keeps the border and loses only the shadow.
  *
  * The radius is `var(--radius)`, not `--radius-lg` or `--radius-xl` because
  * either would be "near enough": it is the token the theme bridge maps to
@@ -515,11 +527,11 @@ html[data-dnd-dragging="true"] * {
  * the way the old `SettingsCard` did.
  *
  * **That equality is coupling, not identity** — the two corners match because
- * Lobe's outlined `Form.Group` reads `cssVar.borderRadius` today. If Lobe
- * switches its card to `borderRadiusLG`, this rule keeps painting 10px and the
- * two corners part company silently; the fix is then to follow the card's token,
- * not to add a second hard-coded number here. */
-.orvilo-settings-group-outlined {
+ * Lobe's `Form.Group` reads `cssVar.borderRadius` today. If Lobe switches its
+ * card to `borderRadiusLG`, this rule keeps painting 10px and the two corners
+ * part company silently; the fix is then to follow the card's token, not to add
+ * a second hard-coded number here. */
+.orvilo-settings-group-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
