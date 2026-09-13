@@ -271,14 +271,16 @@ describe("RepositoriesTab — automatic updates", () => {
   //
   // The GitHub tab's disconnect (and every `useSettingsConfirm` call site that
   // goes through `mutateAsync`) can hold its dialog open on failure, because the
-  // call site returns a promise that rejects. Removal here does not talk to the
-  // server at all: it replaces local state and hands the new list to
-  // `useAutoSave.saveNow`, which is **fire-and-forget** (`void runSave(next)`,
-  // returning `undefined`) — so the promise `onConfirm` returns is already
-  // resolved by the time the dialog tests it, exactly as the old
-  // `AlertDialogAction` closed synchronously on click. A failure therefore shows
-  // up as the autosave readout flipping to its error state in this group's
-  // header, plus the toast, not as a dialog that stays open.
+  // call site returns a promise that rejects. Removal here reaches the server by
+  // a different channel than this dialog: it replaces local state and hands the
+  // new list to `useAutoSave.saveNow`, whose `onSave` is `saveRepositories` —
+  // an `api.updateWorkspace` PATCH. What is fire-and-forget is the *promise*,
+  // not the request (`void runSave(next)`, returning `undefined`), so the
+  // promise `onConfirm` returns is already resolved by the time the dialog
+  // tests it, exactly as the old `AlertDialogAction` closed synchronously on
+  // click. A failure therefore shows up as the autosave readout flipping to its
+  // error state in this group's header, plus the toast, not as a dialog that
+  // stays open.
   //
   // Making it await would take a change to `use-auto-save.ts` — `flush()` saves
   // `latestValueRef.current`, which at that instant is still the pre-removal

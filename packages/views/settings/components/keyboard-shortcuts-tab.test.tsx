@@ -67,8 +67,12 @@ async function renderTab() {
  * `screen`, and that is not style: `getByRole(role, { name })` computes the
  * accessible name of every candidate in the document, so scoping the query to
  * the group that owns the row skips that work — the cost is the name
- * computation, not the role walk. It is also what makes the query unambiguous:
- * the tab's groups carry same-named rows.
+ * computation, not the role walk.
+ *
+ * Not for disambiguation: the tab's groups carry disjoint labels (the action
+ * labels versus the fixed ones), so a document-wide named query resolves to one
+ * node. An earlier version of this comment claimed the groups carry same-named
+ * rows; it was wrong.
  *
  * The group carries `role="group"` with its title as the accessible name.
  * `SettingsGroup` adds that wrapper because Lobe's `FormGroup` returns a

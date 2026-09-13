@@ -100,11 +100,14 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
  * test has to be an async one. This helper is that first query.
  *
  * It returns the two groups and every row query below goes through them. The
- * group is the handle that says *which* row is meant — both groups carry
- * same-named rows, so a document-wide `getByRole(role, { name })` for one of
- * them is ambiguous and throws — and scoping the query that way also skips
- * computing the accessible name of every other candidate in the document,
- * which is where the cost of a named role query sits.
+ * group is the handle that says *which* row is meant, and scoping the query
+ * that way skips computing the accessible name of every other candidate in the
+ * document, which is where the cost of a named role query sits.
+ *
+ * Not because a document-wide query would be ambiguous: Basic Details and
+ * Regional Preferences carry disjoint row labels, so `getByRole(role, { name })`
+ * resolves to one node. An earlier version of this comment claimed the two
+ * groups carry same-named rows; it was wrong.
  */
 async function renderTab() {
   renderWithI18n(<AccountTab />, { lobe: true });

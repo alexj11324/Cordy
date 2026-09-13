@@ -51,9 +51,15 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 /**
  * `lobe: true` loads the theme bridge on demand, so the first query is async.
  * The two groups are returned by name; every switch query goes through them,
- * because the group is the handle the reference tells every tab to use — and
- * because it is the unambiguous one: both groups carry same-named switches, so
- * a document-wide named query for a single one of them throws.
+ * because the group is the handle the reference tells every tab to use, and
+ * because scoping the query to it skips computing the accessible name of every
+ * other candidate in the document — the cost of a named role query is the name
+ * computation, not the role walk.
+ *
+ * Not because of ambiguity: the two groups' switches carry disjoint names
+ * (the Inbox group's six group labels versus "Show system notifications"), so a
+ * document-wide named query would resolve, not throw. An earlier version of this
+ * comment claimed otherwise; it was wrong.
  */
 async function renderTab() {
   renderWithI18n(<NotificationsTab />, { lobe: true });

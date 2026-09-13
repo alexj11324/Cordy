@@ -85,11 +85,17 @@ import { useCommentComposerStore } from "@orvilo/core/issues/stores";
  * query, so no test has to remember the rule twice.
  *
  * It returns the tab's single group, and every row query below goes through it.
- * The group is the unambiguous handle for a named row — the same rows appear in
- * more than one of these tabs' groups, and a document-wide
- * `getByRole(role, { name })` for one of them throws rather than choosing — and
- * scoping the query to its group is also what skips computing the accessible
- * name of every other candidate in the document.
+ * Scoping the query to its group skips computing the accessible name of every
+ * other candidate in the document, which is where the cost of a named role
+ * query sits.
+ *
+ * Not for disambiguation, and the earlier version of this paragraph was
+ * self-contradictory where it tried to say so: it returned "the tab's single
+ * group" and then justified the scope by rows appearing "in more than one of
+ * these tabs' groups". A single group means this document holds one of each
+ * name, so a document-wide query resolves. (The tabs that genuinely do need the
+ * scope for ambiguity — `issue-tab`, whose two create modes really do repeat
+ * Priority / Project / Due date — say so on their own.)
  */
 async function renderTab() {
   renderWithI18n(<PreferencesTab />, { lobe: true });
