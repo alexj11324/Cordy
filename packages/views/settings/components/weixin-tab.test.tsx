@@ -345,7 +345,18 @@ describe("WeixinTab", () => {
       queryKey: ["weixin", "workspace-1", "installations"],
     }));
     expect(mockToastSuccess).toHaveBeenCalled();
-  }, 7000);
+    // No per-test timeout here, deliberately. It used to carry `, 7000`, and
+    // that override was the whole of its flakiness: once this tab rendered
+    // through Lobe (`{ lobe: true }` above), its cost rose to where the rest of
+    // the file sits -- measured in isolation, this test 5.6-7.0s and its
+    // sibling "keeps the confirmation up" 6.7s, against the suite's 20s budget.
+    // The sibling passes because it inherits that budget; this one was pinned to
+    // 7s and sat at ~99% of it, so a CI runner crossed it. The suite's 20s is
+    // itself the repository's answer to antd's CSS-in-JS cost under jsdom (see
+    // the `testTimeout` comment in `packages/views/vitest.config.ts`), so
+    // inheriting is the consistent value -- and the 7s was never an assertion
+    // about bounded time, only a safety net. Do not re-add it.
+  });
 
   it("revokes an installed installation only after confirmation", async () => {
     installationsRef.current = {
