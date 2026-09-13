@@ -77,7 +77,7 @@
     "@lobehub/editor": "4.27.3",
     "@lobehub/fluent-emoji": "4.1.1",
     "@lobehub/icons": "5.18.0",
-    "@lobehub/ui": "5.42.6",
+    "@lobehub/ui": "catalog:",
     "@orvilo/core": "workspace:*",
     "@orvilo/ui": "workspace:*",
     "@tanstack/react-virtual": "catalog:",
