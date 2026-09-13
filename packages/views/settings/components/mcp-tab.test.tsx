@@ -1,17 +1,33 @@
 // @vitest-environment jsdom
 
-import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@orvilo/core/i18n/react";
-import enCommon from "../../locales/en/common.json";
+import { renderWithI18n } from "../../test/i18n";
 import enSettings from "../../locales/en/settings.json";
-import enAgents from "../../locales/en/agents.json";
 
 const mockCreate = vi.hoisted(() => vi.fn());
 const mockUpdate = vi.hoisted(() => vi.fn());
 const mockDelete = vi.hoisted(() => vi.fn());
+const mockToastError = vi.hoisted(() => vi.fn());
+
+// The wrapper hands `confirmModal` a config this suite can read, and delegates
+// to the real one so the dialog is still driven through the UI. That is what
+// makes the promise contract assertable at all: whether `onOk` rejects is not a
+// DOM question.
+const mockConfirmModal = vi.hoisted(() => vi.fn());
+const actualConfirmModal = vi.hoisted(
+  () => ({ current: null as null | ((config: never) => unknown) }),
+);
+const capturedConfirm = vi.hoisted(
+  () => ({ current: null as null | { onOk: () => Promise<unknown> } }),
+);
+
+vi.mock("@lobehub/ui/base-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@lobehub/ui/base-ui")>();
+  actualConfirmModal.current = actual.confirmModal as never;
+  return { ...actual, confirmModal: mockConfirmModal };
+});
 
 const server = (over: Record<string, unknown>) => ({
   id: "srv-1",
@@ -51,25 +67,58 @@ vi.mock("@orvilo/core/permissions", () => ({
   useCurrentMember: () => ({ role: data.role, isLoading: false }),
 }));
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
+vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: mockToastError } }));
 
 import { McpTab } from "./mcp-tab";
 
-const TEST_RESOURCES = {
-  en: { common: enCommon, settings: enSettings, agents: enAgents },
-};
-
-function Wrapper({ children }: { children: ReactNode }) {
-  return (
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      {children}
-    </I18nProvider>
-  );
+// `{ lobe: true }` is required, not decoration: this suite used a bare `render`
+// with its own `I18nProvider` and never reached `LobeThemeBridge`, while the
+// tab is Lobe now — and the imperative confirm needs the bridge's `ModalHost`
+// mounted, or `confirmModal` pushes onto a stack nothing renders.
+//
+// Async because the bridge is lazy: until its module resolves the tree is a
+// `Suspense` fallback of `null`. The tab's lede renders on every path.
+async function renderTab() {
+  const result = renderWithI18n(<McpTab />, { lobe: true });
+  await screen.findByText(enSettings.mcp.description);
+  return result;
 }
+
+/**
+ * Whether the confirmation leaves the document within `timeout`. Polls,
+ * because a check that samples at a fixed moment cannot tell an open dialog
+ * from a closing one.
+ *
+ * The timeout is a parameter because the two callers want opposite things from
+ * it: the success path passes a budget (polling returns the instant the node
+ * goes, so a generous one is free), the failure path a fixed window (spent in
+ * full, and only the one that would catch a mutated build).
+ */
+async function dialogLeavesWithin(timeout: number): Promise<boolean> {
+  try {
+    await waitFor(
+      () => expect(screen.queryByText(enSettings.mcp.delete_title)).toBeNull(),
+      { timeout },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A dismissal window: long enough for a close, short enough to be an assertion. */
+const CLOSE_WINDOW_MS = 1_200;
+/** A budget, not a window: the success path must not fail a loaded runner. */
+const CLOSE_BUDGET_MS = 8_000;
 
 describe("McpTab", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    capturedConfirm.current = null;
+    mockConfirmModal.mockImplementation((config: never) => {
+      capturedConfirm.current = config as { onOk: () => Promise<unknown> };
+      return actualConfirmModal.current?.(config);
+    });
     data.role = "owner";
     data.isLoading = false;
     data.servers = [
@@ -81,8 +130,8 @@ describe("McpTab", () => {
     mockDelete.mockResolvedValue({});
   });
 
-  it("lists the library servers with their transport", () => {
-    render(<McpTab />, { wrapper: Wrapper });
+  it("lists the library servers with their transport", async () => {
+    await renderTab();
 
     expect(screen.getByText("linear")).toBeInTheDocument();
     expect(screen.getByText("HTTP")).toBeInTheDocument();
@@ -92,7 +141,7 @@ describe("McpTab", () => {
 
   it("adds a server to the library", async () => {
     const user = userEvent.setup();
-    render(<McpTab />, { wrapper: Wrapper });
+    await renderTab();
 
     await user.click(screen.getByRole("button", { name: /Add server/ }));
     await user.type(screen.getByLabelText("Name"), "github");
@@ -115,7 +164,7 @@ describe("McpTab", () => {
   // the name field stays editable and the update targets the opened entry.
   it("edits a library server by id, so a rename keeps its assignments", async () => {
     const user = userEvent.setup();
-    render(<McpTab />, { wrapper: Wrapper });
+    await renderTab();
 
     await user.click(screen.getAllByRole("button", { name: "Edit server" })[0]!);
 
@@ -141,7 +190,7 @@ describe("McpTab", () => {
   // defaulting a stdio server to HTTP.
   it("opens the edit form on the server's own transport", async () => {
     const user = userEvent.setup();
-    render(<McpTab />, { wrapper: Wrapper });
+    await renderTab();
 
     // Row 1 is the stdio server.
     await user.click(screen.getAllByRole("button", { name: "Edit server" })[1]!);
@@ -162,7 +211,7 @@ describe("McpTab", () => {
     async (transport) => {
       const user = userEvent.setup();
       data.servers = [server({ name: "streamy", transport })];
-      render(<McpTab />, { wrapper: Wrapper });
+      await renderTab();
 
       await user.click(screen.getByRole("button", { name: "Edit server" }));
 
@@ -179,19 +228,70 @@ describe("McpTab", () => {
     },
   );
 
-  it("removes a server after confirmation", async () => {
+  /**
+   * The caller's half of the `confirmModal` contract.
+   *
+   * `confirmModal` closes on the line after `onOk` unless `onOk` returns a
+   * promise, and stays open when that promise rejects — so a removal that fails
+   * must leave the confirmation up rather than dismiss as though the server
+   * were gone. The first case shows the success path *does* close, which is
+   * what gives the second one's negative its meaning; the third reads the
+   * contract off the config the wrapper handed the library, where it is not a
+   * DOM question at all.
+   */
+  it("removes a server only after the confirmation, and the dialog closes when it succeeds", async () => {
     const user = userEvent.setup();
-    render(<McpTab />, { wrapper: Wrapper });
+    await renderTab();
 
     await user.click(screen.getAllByRole("button", { name: "Remove server" })[0]!);
+    expect(mockDelete).not.toHaveBeenCalled();
+
+    await screen.findByText(enSettings.mcp.delete_title);
     await user.click(screen.getByRole("button", { name: "Remove" }));
 
     await waitFor(() => expect(mockDelete).toHaveBeenCalledWith("srv-1"));
+    expect(await dialogLeavesWithin(CLOSE_BUDGET_MS)).toBe(true);
   });
 
-  it("hides every write affordance from a plain member", () => {
+  it("keeps the confirmation up when the removal request fails", async () => {
+    mockDelete.mockRejectedValue(new Error("network failed"));
+    const user = userEvent.setup();
+    await renderTab();
+
+    await user.click(screen.getAllByRole("button", { name: "Remove server" })[0]!);
+    await screen.findByText(enSettings.mcp.delete_title);
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+
+    await waitFor(() => expect(mockToastError).toHaveBeenCalledWith("network failed"));
+    expect(await dialogLeavesWithin(CLOSE_WINDOW_MS)).toBe(false);
+
+    // It is deliberately still open, and the confirm stack is module state that
+    // outlives this case — an open dialog would land on the next one in this
+    // file and read exactly like a flake. Close it and wait for it to go.
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(await dialogLeavesWithin(CLOSE_BUDGET_MS)).toBe(true);
+  });
+
+  it("hands confirmModal an onOk that rejects when the removal fails", async () => {
+    mockDelete.mockRejectedValue(new Error("network failed"));
+    const user = userEvent.setup();
+    await renderTab();
+
+    await user.click(screen.getAllByRole("button", { name: "Remove server" })[0]!);
+    expect(capturedConfirm.current).not.toBeNull();
+
+    await expect(capturedConfirm.current!.onOk()).rejects.toThrow("network failed");
+    expect(mockToastError).toHaveBeenCalledWith("network failed");
+
+    // Same reason as the case above: this one read the config directly, so the
+    // dialog it opened is still on the stack and has to be taken off it.
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(await dialogLeavesWithin(CLOSE_BUDGET_MS)).toBe(true);
+  });
+
+  it("hides every write affordance from a plain member", async () => {
     data.role = "member";
-    render(<McpTab />, { wrapper: Wrapper });
+    await renderTab();
 
     // The inventory itself stays visible — it carries no credential material.
     expect(screen.getByText("linear")).toBeInTheDocument();
@@ -203,26 +303,26 @@ describe("McpTab", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders an empty state when the library is empty", () => {
+  it("renders an empty state when the library is empty", async () => {
     data.servers = [];
-    render(<McpTab />, { wrapper: Wrapper });
+    await renderTab();
 
     expect(screen.getByText("No shared MCP servers")).toBeInTheDocument();
   });
 
   // The document is write-only, so the screen must never imply it is showing
   // a saved configuration: it says an edit replaces the entry.
-  it("states that saved configurations are write-only", () => {
-    render(<McpTab />, { wrapper: Wrapper });
+  it("states that saved configurations are write-only", async () => {
+    await renderTab();
 
     expect(screen.getByText(/write-only/)).toBeInTheDocument();
   });
 
-  it("survives a payload that is not an array", () => {
+  it("survives a payload that is not an array", async () => {
     // Backend drift: the schema defaults the list to [], but the component
     // must not crash if it ever arrives undefined.
     data.servers = undefined as unknown as typeof data.servers;
-    render(<McpTab />, { wrapper: Wrapper });
+    await renderTab();
 
     expect(screen.getByText("No shared MCP servers")).toBeInTheDocument();
   });

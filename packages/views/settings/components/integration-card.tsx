@@ -1,3 +1,26 @@
+/**
+ * One integration channel row: identity, title, description, status, action.
+ *
+ * **This is the one file of Task 8b's three shared `integration-*` components
+ * that has nothing to convert, and the reason is checkable rather than a
+ * judgement call.** R88 converts the family, and the reference's mapping table
+ * keeps its body: `ReUI Frame / PhoneInput / Item` → **keep** (decision 11).
+ * The body here is exactly that `Item` — the ReUI settings-4 row this file's
+ * own comment cites — plus `IntegrationChannelIcon`, which is a local SVG. No
+ * Lobe primitive replaces either, so the conversion is a no-op: there is no
+ * Lobe element to mount and this component needs no bridge of its own. What it
+ * *hosts* changes instead — its `status` and `action` slots receive
+ * `ConnectionDotBadge` (a shadcn `Badge`, also exempt) and `IntegrationRowMenu`
+ * (Lobe since this task) — and those live on the callers' side of the boundary.
+ *
+ * R88's cost note anticipated `IntegrationCard` becoming a `Form.Group`. That
+ * would be a redesign of the row, not a primitive swap, and it would take
+ * `integrations-tab.test.tsx`'s `[data-slot=item-title]` assertions with it —
+ * which R88's own table, listing exactly one red assertion (`ol > li` in the
+ * setup guide), does not predict. Flagged in the task-8b report rather than
+ * decided here.
+ */
+
 import type { ReactNode } from "react";
 import {
   Item,

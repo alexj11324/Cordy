@@ -7,6 +7,7 @@ import { useWorkspaceId } from "@orvilo/core/hooks";
 import { useWorkspacePaths } from "@orvilo/core/paths";
 import { useBackOrReplace, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
+import { LobeThemeBridge } from "../../lobe";
 import { BuilderWorkspace } from "./builder-workspace";
 import { AgentCreateChip, AgentCreateShell } from "./create-shell";
 import { withTeamParam } from "./team-param";
@@ -49,39 +50,47 @@ export function AiBuilderSessionPage({ sessionId }: { sessionId: string }) {
   );
 
   return (
-    <AgentCreateShell
-      title={
-        teamId
-          ? t(($) => $.creation_studio.team_title)
-          : t(($) => $.creation_studio.title)
-      }
-      step={t(($) => $.creation_studio.step_ai)}
-      onBack={() => backOrReplace(paths.newAgent())}
-      chips={
-        <>
-          <AgentCreateChip>
-            {t(($) => $.creation_studio.modes.ai.title)}
-          </AgentCreateChip>
-          {runtimeLabel ? (
-            <AgentCreateChip>{runtimeLabel}</AgentCreateChip>
-          ) : null}
-        </>
-      }
-    >
-      <BuilderWorkspace
-        // Switching conversations remounts everything below: the draft, the
-        // applied-message marker and the composer all belong to one
-        // conversation, and a remount is the only reset that cannot forget a
-        // field.
-        key={sessionId}
-        sessionId={sessionId}
-        teamId={teamId}
-        session={session}
-        sessionSettled={sessionSettled}
-        fallbackRuntimeId={startedRuntimeId}
-        onDiscarded={leave}
-        onRuntimeLabel={setRuntimeLabel}
-      />
-    </AgentCreateShell>
+    // `BuilderWorkspace` renders `AgentConfigurationPanel`, which is built
+    // from Lobe's `Form.Group` / `Form.Item` — antd CSS variables, seeded
+    // only by `LobeThemeBridge`. Without one the panel drew a white card in
+    // dark mode. Mounted at the route root rather than inside the panel: the
+    // bridge renders `display: contents`, so `AgentCreateShell` below is
+    // still the box this page's parent lays out.
+    <LobeThemeBridge>
+      <AgentCreateShell
+        title={
+          teamId
+            ? t(($) => $.creation_studio.team_title)
+            : t(($) => $.creation_studio.title)
+        }
+        step={t(($) => $.creation_studio.step_ai)}
+        onBack={() => backOrReplace(paths.newAgent())}
+        chips={
+          <>
+            <AgentCreateChip>
+              {t(($) => $.creation_studio.modes.ai.title)}
+            </AgentCreateChip>
+            {runtimeLabel ? (
+              <AgentCreateChip>{runtimeLabel}</AgentCreateChip>
+            ) : null}
+          </>
+        }
+      >
+        <BuilderWorkspace
+          // Switching conversations remounts everything below: the draft, the
+          // applied-message marker and the composer all belong to one
+          // conversation, and a remount is the only reset that cannot forget a
+          // field.
+          key={sessionId}
+          sessionId={sessionId}
+          teamId={teamId}
+          session={session}
+          sessionSettled={sessionSettled}
+          fallbackRuntimeId={startedRuntimeId}
+          onDiscarded={leave}
+          onRuntimeLabel={setRuntimeLabel}
+        />
+      </AgentCreateShell>
+    </LobeThemeBridge>
   );
 }

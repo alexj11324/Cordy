@@ -1,14 +1,11 @@
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@orvilo/core/i18n/react";
-import enCommon from "../../locales/en/common.json";
-import enSettings from "../../locales/en/settings.json";
 
 const mockUpdateWorkspace = vi.hoisted(() => vi.fn());
 const mockInvalidateQueries = vi.hoisted(() => vi.fn());
 const mockToastSuccess = vi.hoisted(() => vi.fn());
+const mockToastError = vi.hoisted(() => vi.fn());
 const workspaceRef = vi.hoisted(() => ({
   current: {
     id: "workspace-1",
@@ -93,26 +90,63 @@ vi.mock("./delete-workspace-dialog", () => ({
 }));
 
 vi.mock("sonner", () => ({
-  toast: { success: mockToastSuccess, error: vi.fn() },
+  toast: { success: mockToastSuccess, error: mockToastError },
 }));
 
+// The prefix confirmation's rethrow contract lives in the promise `onOk`
+// returns, not in the DOM — see the test that reads it. Captured here and
+// delegated to the real `confirmModal`, because the tests above also drive the
+// dialog through the UI.
+const capturedConfirm = vi.hoisted(() => ({
+  current: null as { onOk: () => Promise<unknown> } | null,
+}));
+const mockConfirmModal = vi.hoisted(() => vi.fn());
+const actualConfirmModal = vi.hoisted(() => ({
+  current: null as null | ((config: never) => unknown),
+}));
+
+vi.mock("@lobehub/ui/base-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@lobehub/ui/base-ui")>();
+  actualConfirmModal.current = actual.confirmModal as never;
+  return { ...actual, confirmModal: mockConfirmModal };
+});
+
+import { renderWithI18n } from "../../test/i18n";
 import { WorkspaceTab } from "./workspace-tab";
 
-const TEST_RESOURCES = {
-  en: { common: enCommon, settings: enSettings },
-};
+// Every mount here builds Lobe form rows and two ReUI frames. Under full-suite
+// parallelism that is seconds rather than milliseconds (the same reason
+// `vitest.config.ts` raises the global budget for antd).
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
-function I18nWrapper({ children }: { children: ReactNode }) {
-  return (
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      {children}
-    </I18nProvider>
+/**
+ * `lobe: true` loads the theme bridge on demand — which is also what mounts
+ * the `ModalHost` the prefix confirmation renders into — so the first query in
+ * every test has to be an async one. This helper is that first query.
+ *
+ * The rows are reached through the name field's card, and the handle is that
+ * card's own accessible name. The tab renders no `SettingsGroup` — its chrome
+ * is ReUI's `Frame` by decision 11 — but it builds the same pairing by hand:
+ * `role="group"` plus `aria-labelledby` pointing at its `FrameTitle`
+ * (`workspace-tab.tsx`), so "Workspace details" names the same node a
+ * `data-slot` selector would have found, without reaching into a slot name the
+ * five other suites do not use.
+ */
+async function renderTab() {
+  renderWithI18n(<WorkspaceTab />, { lobe: true });
+  return within(
+    await screen.findByRole("group", { name: "Workspace details" }),
   );
 }
 
 describe("WorkspaceTab — automatic updates", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    capturedConfirm.current = null;
+    mockConfirmModal.mockImplementation((config: never) => {
+      capturedConfirm.current = config as { onOk: () => Promise<unknown> };
+      return actualConfirmModal.current?.(config);
+    });
     vi.useFakeTimers({ shouldAdvanceTime: true });
     workspaceRef.current = {
       id: "workspace-1",
@@ -143,39 +177,41 @@ describe("WorkspaceTab — automatic updates", () => {
     return userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
   }
 
-  it("renders the current prefix in the shared input control", () => {
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-    const input = screen.getByPlaceholderText("TES") as HTMLInputElement;
+  it("renders the current prefix in the shared input control", async () => {
+    const card = await renderTab();
+    const input = card.getByPlaceholderText("TES") as HTMLInputElement;
     expect(input.value).toBe("TES");
   });
 
-  it("renders the real workspace URL in a shared read-only input control", () => {
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+  it("renders the real workspace URL in a shared read-only input control", async () => {
+    const card = await renderTab();
 
-    const input = screen.getByRole("textbox", { name: "URL" }) as HTMLInputElement;
+    const input = card.getByRole("textbox", {
+      name: "URL",
+    }) as HTMLInputElement;
     expect(input.value).toBe("https://app.example/test-workspace/issues");
     expect(input.readOnly).toBe(true);
   });
 
-  it("keeps only the supported workspace settings controls", () => {
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+  it("keeps only the supported workspace settings controls", async () => {
+    const card = await renderTab();
 
-    expect(screen.getByLabelText("Name")).toHaveAttribute("id", "workspace-name");
-    expect(screen.getByLabelText("URL")).toHaveAttribute("id", "workspace-url");
-    expect(screen.getByLabelText("Issue prefix")).toHaveAttribute(
+    expect(card.getByLabelText("Name")).toHaveAttribute("id", "workspace-name");
+    expect(card.getByLabelText("URL")).toHaveAttribute("id", "workspace-url");
+    expect(card.getByLabelText("Issue prefix")).toHaveAttribute(
       "id",
       "workspace-issue-prefix",
     );
-    expect(screen.queryByRole("textbox", { name: "Description" })).toBeNull();
-    expect(screen.queryByRole("textbox", { name: "Context" })).toBeNull();
-    expect(screen.queryByRole("textbox", { name: "Slug" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Leave workspace" })).toBeNull();
+    expect(card.queryByRole("textbox", { name: "Description" })).toBeNull();
+    expect(card.queryByRole("textbox", { name: "Context" })).toBeNull();
+    expect(card.queryByRole("textbox", { name: "Slug" })).toBeNull();
+    expect(card.queryByRole("button", { name: "Leave workspace" })).toBeNull();
   });
 
   it("uppercases and strips non-alphanumeric prefix input", async () => {
     const user = setupUser();
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-    const input = screen.getByPlaceholderText("TES") as HTMLInputElement;
+    const card = await renderTab();
+    const input = card.getByPlaceholderText("TES") as HTMLInputElement;
 
     await user.clear(input);
     await user.type(input, "ab-12!cd");
@@ -185,8 +221,8 @@ describe("WorkspaceTab — automatic updates", () => {
 
   it("auto-saves ordinary workspace fields without invalidating issue caches", async () => {
     const user = setupUser();
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-    const nameInput = screen.getByDisplayValue("Test Workspace");
+    const card = await renderTab();
+    const nameInput = card.getByDisplayValue("Test Workspace");
 
     await user.clear(nameInput);
     await user.type(nameInput, "Renamed Workspace");
@@ -206,14 +242,17 @@ describe("WorkspaceTab — automatic updates", () => {
 
   it("asks for confirmation on prefix blur and persists only after confirmation", async () => {
     const user = setupUser();
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-    const input = screen.getByPlaceholderText("TES") as HTMLInputElement;
+    const card = await renderTab();
+    const input = card.getByPlaceholderText("TES") as HTMLInputElement;
 
     await user.clear(input);
     await user.type(input, "NEW");
     await user.tab();
 
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
+    // The confirmation is `confirmModal`, which renders into the bridge's
+    // `ModalHost` — i.e. outside this tab's tree, so it is queried from the
+    // document rather than from `card`.
     await screen.findByText(/Change issue prefix/i);
     expect(screen.getByText(/TES-N/)).toBeTruthy();
     expect(screen.getByText(/NEW-N/)).toBeTruthy();
@@ -233,10 +272,47 @@ describe("WorkspaceTab — automatic updates", () => {
     });
   });
 
+  /**
+   * The same rethrow contract as the tokens tab's, and it had no test at all —
+   * which is the same hole one step further out. `performPrefixSave` rethrows
+   * on purpose so `useSettingsConfirm`'s `onOk` returns a rejecting promise and
+   * the dialog stays up; nothing asserted it, so replacing that `throw` with a
+   * `return` would have gone unnoticed.
+   *
+   * Asserted at the promise rather than in the DOM, because the promise is
+   * what the contract is about and it needs no timing. A "the title is still in
+   * the document" spelling is vacuous *as an instant check* — read immediately
+   * after the failure, the closing dialog is still there, so the assertion's
+   * subject exists in both states. (Measured in `tokens-tab.test.tsx`, which
+   * carries the DOM spelling too: with a wait, the node does leave, so the
+   * window is what was missing, not the node.) The tokens tab asserts this
+   * contract twice, at both layers; here the promise alone is enough, because
+   * `settings-confirm.test.tsx` already owns the library-side half.
+   */
+  it("hands confirmModal an onOk that rejects when the prefix save fails", async () => {
+    const user = setupUser();
+    const card = await renderTab();
+    mockUpdateWorkspace.mockRejectedValue(new Error("prefix refused"));
+    const input = card.getByPlaceholderText("TES") as HTMLInputElement;
+
+    await user.clear(input);
+    await user.type(input, "NEW");
+    await user.tab();
+
+    await screen.findByText(/Change issue prefix/i);
+    expect(capturedConfirm.current).not.toBeNull();
+
+    await act(async () => {
+      await expect(capturedConfirm.current?.onOk()).rejects.toThrow(
+        "prefix refused",
+      );
+    });
+  });
+
   it("does not persist a prefix when the confirmation is cancelled", async () => {
     const user = setupUser();
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-    const input = screen.getByPlaceholderText("TES") as HTMLInputElement;
+    const card = await renderTab();
+    const input = card.getByPlaceholderText("TES") as HTMLInputElement;
 
     await user.clear(input);
     await user.type(input, "NEW");
@@ -250,8 +326,8 @@ describe("WorkspaceTab — automatic updates", () => {
 
   it("marks an empty prefix invalid and does not persist it", async () => {
     const user = setupUser();
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
-    const input = screen.getByPlaceholderText("TES") as HTMLInputElement;
+    const card = await renderTab();
+    const input = card.getByPlaceholderText("TES") as HTMLInputElement;
 
     await user.clear(input);
     await user.tab();
@@ -260,14 +336,40 @@ describe("WorkspaceTab — automatic updates", () => {
     expect(mockUpdateWorkspace).not.toHaveBeenCalled();
   });
 
-  it("disables editable workspace controls for regular members", () => {
+  /**
+   * The three rows a regular member may not edit are dimmed as well as
+   * disabled, and the URL row is not — it is read-only for everyone and never
+   * dimmed. The dimming itself is a rule in `base.css` and is measured in the
+   * renderer; what this file owns is which rows carry the marker.
+   */
+  it("disables editable workspace controls for regular members", async () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
-    render(<WorkspaceTab />, { wrapper: I18nWrapper });
+    const card = await renderTab();
 
-    expect(screen.getByPlaceholderText("TES")).toBeDisabled();
-    expect(screen.getByDisplayValue("Test Workspace")).toBeDisabled();
-    expect(
-      screen.getByDisplayValue("Test Workspace").closest('[data-slot="field"]'),
-    ).toHaveAttribute("data-disabled", "true");
+    const prefix = card.getByPlaceholderText("TES");
+    const name = card.getByDisplayValue("Test Workspace");
+    expect(prefix).toBeDisabled();
+    expect(name).toBeDisabled();
+
+    const marked = (el: HTMLElement) =>
+      el.closest(".orvilo-settings-row")?.className ?? "";
+    expect(marked(prefix)).toContain("orvilo-settings-row-disabled");
+    expect(marked(name)).toContain("orvilo-settings-row-disabled");
+    // The logo row has no labelled control, so it is reached through the
+    // upload control's own accessible name.
+    const logoRow = card
+      .getByLabelText("Change workspace logo")
+      .closest(".orvilo-settings-row");
+    expect(logoRow).not.toBeNull();
+    expect(logoRow?.className).toContain("orvilo-settings-row-disabled");
+    // `marked` returns "" when there is no row ancestor, and `expect("")
+    // .not.toContain(MARK)` passes — so the negative assertion is written to
+    // fail if the row was never found, rather than only if it was found
+    // unmarked. Without the `not.toBe("")` this case passed for the wrong
+    // reason: it kept passing when `getByLabelText("URL")` matched some
+    // element outside the row grid entirely.
+    const urlRow = marked(card.getByLabelText("URL") as HTMLElement);
+    expect(urlRow).not.toBe("");
+    expect(urlRow).not.toContain("orvilo-settings-row-disabled");
   });
 });

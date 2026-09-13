@@ -2,13 +2,18 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
+// One design system in this file: `DingTalkGroupRoutes` has exactly one host —
+// `DingTalkTab` (`./dingtalk-tab`), which is rendered only from
+// `./integrations-tab`'s channel dialog, and that component's two hosts
+// (`settings-page.tsx`, `integrations/index.tsx`) both mount `LobeThemeBridge`.
+// Nothing here is reachable from the agent detail page.
+import { Button as LobeButton, Skeleton } from "@lobehub/ui/base-ui";
 import { dingtalkGroupRoutesOptions, useUpdateDingTalkGroupRoute } from "@orvilo/core/dingtalk";
 import { agentListOptions } from "@orvilo/core/workspace/queries";
 import type { DingTalkGroupRoute, DingTalkInstallation } from "@orvilo/core/types";
-import { Button } from "@orvilo/ui/components/ui/button";
-import { Card, CardContent } from "@orvilo/ui/components/ui/card";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@orvilo/ui/components/ui/select";
-import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
+import { SettingsEmptyState } from "./settings-empty";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
+import { SettingsSelect } from "./settings-select";
 import { useT } from "../../i18n";
 
 export function DingTalkGroupRoutes({
@@ -45,93 +50,104 @@ export function DingTalkGroupRoutes({
   }
 
   return (
-    <section className="space-y-4">
-      <div className="space-y-1.5">
-        <h2 className="text-body font-semibold">{t(($) => $.dingtalk.group_routes_title)}</h2>
-        <p className="max-w-3xl text-caption leading-relaxed text-muted-foreground">
+    /* The `<section><h2>` heading and the description above it are one group's
+       header now — that is where a section heading goes, and the rows'
+       `divider` is where the card's `divide-y` went. */
+    <SettingsGroup
+      variant="outlined"
+      title={t(($) => $.dingtalk.group_routes_title)}
+      description={
+        <span className="block max-w-3xl text-caption leading-relaxed text-muted-foreground">
           {t(($) => $.dingtalk.group_routes_description)}
-        </p>
-      </div>
-      <Card>
-        <CardContent className="space-y-4">
-          {routesQuery.isLoading ? (
-            <div aria-busy="true" aria-label={t(($) => $.dingtalk.groups_loading)} className="space-y-3">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
-            </div>
-          ) : routesQuery.isError ? (
+        </span>
+      }
+    >
+      {routesQuery.isLoading ? (
+        <div aria-busy="true" aria-label={t(($) => $.dingtalk.groups_loading)} className="space-y-3">
+          <Skeleton height={40} width="100%" />
+          <Skeleton height={40} width="100%" />
+        </div>
+      ) : routesQuery.isError ? (
+        <div role="alert" className="space-y-2">
+          <p className="text-body font-medium">{t(($) => $.dingtalk.group_routes_error_title)}</p>
+          <p className="text-caption text-muted-foreground">{t(($) => $.dingtalk.group_routes_error_description)}</p>
+          <LobeButton disabled={routesQuery.isFetching} onClick={() => void routesQuery.refetch()}>
+            {t(($) => $.dingtalk.group_routes_retry)}
+          </LobeButton>
+        </div>
+      ) : routes.length === 0 ? (
+        <SettingsEmptyState
+          title={t(($) => $.dingtalk.group_routes_empty_title)}
+          description={t(($) => $.dingtalk.group_routes_empty_description)}
+        />
+      ) : (
+        <>
+          {canManage && agentsQuery.isError ? (
             <div role="alert" className="space-y-2">
-              <p className="text-body font-medium">{t(($) => $.dingtalk.group_routes_error_title)}</p>
-              <p className="text-caption text-muted-foreground">{t(($) => $.dingtalk.group_routes_error_description)}</p>
-              <Button variant="outline" size="sm" disabled={routesQuery.isFetching} onClick={() => void routesQuery.refetch()}>
-                {t(($) => $.dingtalk.group_routes_retry)}
-              </Button>
+              <p className="text-body font-medium">{t(($) => $.dingtalk.group_routes_agents_error_title)}</p>
+              <p className="text-caption text-muted-foreground">{t(($) => $.dingtalk.group_routes_agents_error_description)}</p>
+              <LobeButton disabled={agentsQuery.isFetching} onClick={() => void agentsQuery.refetch()}>
+                {t(($) => $.dingtalk.group_routes_agents_retry)}
+              </LobeButton>
             </div>
-          ) : routes.length === 0 ? (
+          ) : canManage && agentsQuery.isLoading ? (
+            <p role="status" className="text-caption text-muted-foreground">{t(($) => $.dingtalk.group_routes_agents_loading)}</p>
+          ) : canManage && eligibleAgents.length === 0 ? (
             <div className="space-y-2">
-              <p className="text-body font-medium">{t(($) => $.dingtalk.group_routes_empty_title)}</p>
-              <p className="text-caption text-muted-foreground">{t(($) => $.dingtalk.group_routes_empty_description)}</p>
+              <p className="text-body font-medium">{t(($) => $.dingtalk.group_routes_agents_empty_title)}</p>
+              <p className="text-caption text-muted-foreground">{t(($) => $.dingtalk.group_routes_agents_empty_description)}</p>
             </div>
-          ) : (
-            <>
-              {canManage && agentsQuery.isError ? (
-                <div role="alert" className="space-y-2">
-                  <p className="text-body font-medium">{t(($) => $.dingtalk.group_routes_agents_error_title)}</p>
-                  <p className="text-caption text-muted-foreground">{t(($) => $.dingtalk.group_routes_agents_error_description)}</p>
-                  <Button variant="outline" size="sm" disabled={agentsQuery.isFetching} onClick={() => void agentsQuery.refetch()}>
-                    {t(($) => $.dingtalk.group_routes_agents_retry)}
-                  </Button>
-                </div>
-              ) : canManage && agentsQuery.isLoading ? (
-                <p role="status" className="text-caption text-muted-foreground">{t(($) => $.dingtalk.group_routes_agents_loading)}</p>
-              ) : canManage && eligibleAgents.length === 0 ? (
-                <div className="space-y-2">
-                  <p className="text-body font-medium">{t(($) => $.dingtalk.group_routes_agents_empty_title)}</p>
-                  <p className="text-caption text-muted-foreground">{t(($) => $.dingtalk.group_routes_agents_empty_description)}</p>
-                </div>
-              ) : null}
-              <ul className="divide-y divide-border/70">
-                {routes.map((route) => {
-                  const title = route.conversation_title || route.conversation_id;
-                  const selectedLabel = agents.find((agent) => agent.id === route.agent_id)?.name
-                    || t(($) => $.dingtalk.group_routes_unknown_agent);
-                  return (
-                    <li key={route.id} className="flex min-w-0 flex-col gap-3 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0 flex-1 space-y-1">
-                        <p className="truncate text-body font-medium" title={title}>{title}</p>
-                        <p className="truncate font-mono text-micro text-muted-foreground" title={route.conversation_id}>
-                          {route.conversation_id}
-                        </p>
-                      </div>
-                      {canManage ? (
-                        <Select
-                          items={eligibleAgents.map((agent) => ({ value: agent.id, label: agent.name }))}
-                          value={route.agent_id}
-                          disabled={!canSelect}
-                          onValueChange={(agentId) => { if (agentId) void reassign(route, agentId); }}
-                        >
-                          <SelectTrigger className="w-full shrink-0 sm:w-56" aria-label={t(($) => $.dingtalk.group_routes_agent_label, { group: title })}>
-                            <SelectValue><span className="truncate">{selectedLabel}</span></SelectValue>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              {eligibleAgents.map((agent) => (
-                                <SelectItem key={agent.id} value={agent.id}>{agent.name}</SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <p className="min-w-0 truncate text-caption text-muted-foreground sm:max-w-56">{selectedLabel}</p>
-                      )}
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
-        </CardContent>
-      </Card>
-    </section>
+          ) : null}
+          {routes.map((route, index) => {
+            const title = route.conversation_title || route.conversation_id;
+            const assignedName = agents.find((agent) => agent.id === route.agent_id)?.name;
+            const selectedLabel = assignedName || t(($) => $.dingtalk.group_routes_unknown_agent);
+            const options = eligibleAgents.map((agent) => ({ value: agent.id, label: agent.name }));
+            // antd renders an option's *label*, and falls back to the raw value
+            // when the value is not among the options — so a route still
+            // assigned to an agent that has since been archived would show its
+            // UUID. The eligible list is the assignable set, not the displayable
+            // one; the current value is added back so the trigger keeps showing
+            // the name. Re-picking it is a no-op (`reassign` returns early on an
+            // unchanged id), so this widens nothing. The shadcn `Select` this
+            // replaced did not need it: it rendered `SelectValue`'s children
+            // rather than looking the value up.
+            const selectOptions = eligibleAgents.some((agent) => agent.id === route.agent_id)
+              ? options
+              : [...options, { value: route.agent_id, label: selectedLabel }];
+            return (
+              <SettingsFormRow
+                key={route.id}
+                divider={index > 0}
+                label={
+                  <span className="block min-w-0 space-y-1">
+                    <span className="block truncate text-body font-medium" title={title}>{title}</span>
+                    <span
+                      className="block truncate font-mono text-micro text-muted-foreground"
+                      title={route.conversation_id}
+                    >
+                      {route.conversation_id}
+                    </span>
+                  </span>
+                }
+              >
+                {canManage ? (
+                  <SettingsSelect
+                    className="w-full shrink-0 sm:w-56"
+                    disabled={!canSelect}
+                    label={t(($) => $.dingtalk.group_routes_agent_label, { group: title })}
+                    onValueChange={(agentId) => { if (agentId) void reassign(route, agentId); }}
+                    options={selectOptions}
+                    value={route.agent_id}
+                  />
+                ) : (
+                  <span className="block min-w-0 truncate text-caption text-muted-foreground sm:max-w-56">{selectedLabel}</span>
+                )}
+              </SettingsFormRow>
+            );
+          })}
+        </>
+      )}
+    </SettingsGroup>
   );
 }

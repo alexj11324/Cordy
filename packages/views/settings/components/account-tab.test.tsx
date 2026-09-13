@@ -1,12 +1,6 @@
-// @vitest-environment jsdom
-
-import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider, LocaleAdapterProvider } from "@orvilo/core/i18n/react";
-import enCommon from "../../locales/en/common.json";
-import enSettings from "../../locales/en/settings.json";
 
 const mockUpdateMe = vi.hoisted(() => vi.fn());
 const mockRequestEmailChange = vi.hoisted(() => vi.fn());
@@ -14,6 +8,8 @@ const mockConfirmEmailChange = vi.hoisted(() => vi.fn());
 const mockSetUser = vi.hoisted(() => vi.fn());
 const mockToastSuccess = vi.hoisted(() => vi.fn());
 const mockToastError = vi.hoisted(() => vi.fn());
+const mockPersistLocale = vi.hoisted(() => vi.fn());
+const mockReload = vi.hoisted(() => vi.fn());
 const userRef = vi.hoisted(() => ({
   current: {
     id: "user-1",
@@ -49,6 +45,21 @@ vi.mock("sonner", () => ({
   toast: { success: mockToastSuccess, error: mockToastError },
 }));
 
+vi.mock("@orvilo/core/i18n/react", async () => {
+  const actual =
+    await vi.importActual<typeof import("@orvilo/core/i18n/react")>(
+      "@orvilo/core/i18n/react",
+    );
+  return {
+    ...actual,
+    useLocaleAdapter: () => ({
+      persist: mockPersistLocale,
+      getUserChoice: () => "en",
+      getSystemPreferences: () => ["en"],
+    }),
+  };
+});
+
 vi.mock("@orvilo/core/auth", async () => {
   const actual =
     await vi.importActual<typeof import("@orvilo/core/auth")>(
@@ -75,26 +86,38 @@ vi.mock("../../common/avatar-upload-control", () => ({
   AvatarUploadControl: () => <div data-testid="profile-avatar" />,
 }));
 
+import { renderWithI18n } from "../../test/i18n";
 import { AccountTab } from "./account-tab";
 
-const TEST_RESOURCES = {
-  en: { common: enCommon, settings: enSettings },
-};
+// The whole suite mounts two Lobe `Form.Group`s and a modal's worth of
+// motion-backed controls. Under full-suite parallelism a mount is seconds
+// rather than milliseconds (the same reason `vitest.config.ts` raises the
+// global budget for antd), so the hooks that unmount them get their own.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 
-function I18nWrapper({ children }: { children: ReactNode }) {
-  return (
-    <LocaleAdapterProvider
-      adapter={{
-        getUserChoice: () => "en",
-        getSystemPreferences: () => ["en"],
-        persist: vi.fn(),
-      }}
-    >
-      <I18nProvider locale="en" resources={TEST_RESOURCES}>
-        {children}
-      </I18nProvider>
-    </LocaleAdapterProvider>
+/**
+ * `lobe: true` loads the theme bridge on demand, so the first query in every
+ * test has to be an async one. This helper is that first query.
+ *
+ * It returns the two groups and every row query below goes through them. The
+ * group is the handle that says *which* row is meant, and scoping the query
+ * that way skips computing the accessible name of every other candidate in the
+ * document, which is where the cost of a named role query sits.
+ *
+ * Not because a document-wide query would be ambiguous: Basic Details and
+ * Regional Preferences carry disjoint row labels, so `getByRole(role, { name })`
+ * resolves to one node. An earlier version of this comment claimed the two
+ * groups carry same-named rows; it was wrong.
+ */
+async function renderTab() {
+  renderWithI18n(<AccountTab />, { lobe: true });
+  const basic = within(
+    await screen.findByRole("group", { name: "Basic Details" }),
   );
+  const regional = within(
+    await screen.findByRole("group", { name: "Regional Preferences" }),
+  );
+  return { basic, regional };
 }
 
 describe("AccountTab", () => {
@@ -133,45 +156,58 @@ describe("AccountTab", () => {
     cleanup();
   });
 
-  it("renders the profile3 card with the real account fields", () => {
-    render(<AccountTab />, { wrapper: I18nWrapper });
+  it("renders the profile3 card with the real account fields", async () => {
+    const { basic, regional } = await renderTab();
 
     expect(screen.getByTestId("profile-avatar")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Profile" })).not.toBeInTheDocument();
-    expect(screen.queryByText("Profile updates are shared")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("First Name")).toHaveValue("Ada");
-    expect(screen.getByLabelText("Last Name")).toHaveValue("Lovelace");
-    expect(screen.getByLabelText("Primary Email Address")).toHaveValue(
+    // Both section titles are present, and neither is a heading. The migrated
+    // shell puts a group's title inside `Form.Group`'s header, which is a
+    // `<div>` carrying the disclosure role rather than an `<h*>`, so the
+    // section names are reachable as group names and nowhere else. That is what
+    // an assertion about a heading by that name has to say to have a subject.
+    expect(screen.getByRole("group", { name: "Basic Details" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("group", { name: "Regional Preferences" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Basic Details" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Regional Preferences" }),
+    ).not.toBeInTheDocument();
+    expect(basic.getByLabelText(/First Name/)).toHaveValue("Ada");
+    expect(basic.getByLabelText(/Last Name/)).toHaveValue("Lovelace");
+    expect(basic.getByLabelText(/Primary Email Address/)).toHaveValue(
       "ada@example.com",
     );
-    expect(screen.getByLabelText("Preferred Name")).toHaveValue("Ada");
-    expect(screen.getByLabelText("About You")).toHaveValue("Builds compilers");
-    expect(screen.getByLabelText("Username")).toHaveValue("ada");
-    expect(screen.getByLabelText("Phone Number")).toHaveValue(
-      "+1 206 555 1243",
-    );
-    expect(screen.getByLabelText("Website")).toHaveValue("ada.example.com");
-    expect(screen.getByRole("combobox", { name: "Role" })).toBeInTheDocument();
+    expect(basic.getByLabelText(/Preferred Name/)).toHaveValue("Ada");
+    expect(basic.getByLabelText(/About You/)).toHaveValue("Builds compilers");
+    expect(basic.getByLabelText(/Username/)).toHaveValue("ada");
+    expect(basic.getByLabelText(/Phone Number/)).toHaveValue("+1 206 555 1243");
+    expect(basic.getByLabelText(/Website/)).toHaveValue("ada.example.com");
     expect(
-      screen.getByRole("combobox", { name: "Preferred Timezone" }),
+      basic.getByRole("combobox", { name: "Role" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("combobox", { name: "Start Week On" }),
+      regional.getByRole("combobox", { name: "Preferred Timezone" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("combobox", { name: "Language" }),
+      regional.getByRole("combobox", { name: "Start Week On" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("combobox", { name: "Time Format" }),
+      regional.getByRole("combobox", { name: "Language" }),
+    ).toBeInTheDocument();
+    expect(
+      regional.getByRole("combobox", { name: "Time Format" }),
     ).toBeInTheDocument();
   });
 
   it("changes email through the request and verification flow", async () => {
     const user = userEvent.setup();
-    render(<AccountTab />, { wrapper: I18nWrapper });
+    const { basic } = await renderTab();
 
-    await user.click(screen.getByRole("button", { name: "Edit" }));
-    const email = screen.getByLabelText("New email address");
+    await user.click(basic.getByRole("button", { name: "Edit" }));
+    const email = await screen.findByLabelText("New email address");
     await user.clear(email);
     await user.type(email, "new@example.com");
     await user.click(screen.getByRole("button", { name: "Send code" }));
@@ -180,7 +216,16 @@ describe("AccountTab", () => {
       expect(mockRequestEmailChange).toHaveBeenCalledWith("new@example.com");
     });
 
-    await user.type(screen.getByLabelText("Verification code"), "123456");
+    // The OTP is queried as a named `group`, not by label text: base-ui
+    // resolves the `<label for>` to the field and then hangs its own
+    // `aria-labelledby` on the root *and* on each of the six slots, so a label
+    // query matches seven elements. The slots are the textboxes inside the
+    // group — the field's eighth input is the `aria-hidden` value carrier
+    // base-ui submits.
+    const otp = await screen.findByRole("group", { name: "Verification code" });
+    const firstSlot = within(otp).getAllByRole("textbox")[0]!;
+    await user.click(firstSlot);
+    await user.keyboard("123456");
     await user.click(screen.getByRole("button", { name: "Verify email" }));
 
     await waitFor(() => {
@@ -189,23 +234,23 @@ describe("AccountTab", () => {
         "123456",
       );
       expect(
-        screen.queryByRole("heading", { name: "Change email address" }),
+        screen.queryByText("Change email address"),
       ).not.toBeInTheDocument();
     });
   });
 
-  it("does not mark a guest email as verified", () => {
+  it("does not mark a guest email as verified", async () => {
     userRef.current = { ...userRef.current, is_guest: true };
-    render(<AccountTab />, { wrapper: I18nWrapper });
+    const { basic } = await renderTab();
 
-    expect(screen.queryByText("Verified")).not.toBeInTheDocument();
+    expect(basic.queryByText("Verified")).not.toBeInTheDocument();
   });
 
   it("auto-saves the complete controlled profile draft", async () => {
     const user = userEvent.setup();
-    render(<AccountTab />, { wrapper: I18nWrapper });
+    const { basic } = await renderTab();
 
-    const firstName = screen.getByLabelText("First Name");
+    const firstName = basic.getByLabelText(/First Name/);
     await user.clear(firstName);
     await user.type(firstName, "Augusta");
     firstName.blur();
@@ -232,9 +277,9 @@ describe("AccountTab", () => {
 
   it("flushes the latest draft from the footer Save Changes action", async () => {
     const user = userEvent.setup();
-    render(<AccountTab />, { wrapper: I18nWrapper });
+    const { basic } = await renderTab();
 
-    const firstName = screen.getByLabelText("First Name");
+    const firstName = basic.getByLabelText(/First Name/);
     await user.clear(firstName);
     await user.type(firstName, "Augusta");
     await user.click(screen.getByRole("button", { name: "Save Changes" }));
@@ -245,6 +290,51 @@ describe("AccountTab", () => {
           profile_details: expect.objectContaining({ first_name: "Augusta" }),
         }),
       );
+    });
+  });
+
+  /**
+   * The one control on this tab that is not a draft. `handleLanguageChange`
+   * persists the locale cookie, PATCHes `/api/me` and reloads, so the assertion
+   * that matters is that the PATCH happens on the *change* rather than through
+   * `useAutoSave` 650ms later — and that no draft write goes with it.
+   *
+   * `window.location` is replaced because the change schedules a real
+   * `reload()`, which jsdom cannot perform (this file and
+   * `preferences-tab.test.tsx` stub it the same way, for the same reason).
+   */
+  describe("language", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      Object.defineProperty(window, "location", {
+        writable: true,
+        configurable: true,
+        value: { reload: mockReload },
+      });
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("writes the language change straight to the server rather than the draft", async () => {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const { regional } = await renderTab();
+
+      await user.click(regional.getByRole("combobox", { name: "Language" }));
+      // The popup is reached through `[role=listbox]` — antd renders a clipped
+      // mirror of the options for assistive technology, and the items a pointer
+      // reaches carry no role. The click lands on the item next to the mirror.
+      const mirror = await screen.findByRole("listbox");
+      await user.click(
+        within(mirror.parentElement as HTMLElement).getByTitle("简体中文"),
+      );
+
+      await waitFor(() => {
+        expect(mockPersistLocale).toHaveBeenCalledWith("zh-Hans");
+      });
+      expect(mockUpdateMe).toHaveBeenCalledWith({ language: "zh-Hans" });
+      expect(mockUpdateMe).toHaveBeenCalledTimes(1);
     });
   });
 });

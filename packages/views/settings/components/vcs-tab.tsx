@@ -1,35 +1,46 @@
 "use client";
 
+/**
+ * Self-hosted Git providers (Forgejo / Gitea / GitLab).
+ *
+ * **This tab had no test file at all** until Task 8b added
+ * `vcs-tab.test.tsx`, which is why both traps below were first answered by
+ * reading the source rather than by a red suite. That suite now guards the two
+ * of them — the accessible names of the connect-form controls, and the absence
+ * of the shadcn props Lobe would have silently forwarded to the DOM.
+ *
+ * 1. The three connect-form fields were `<Label htmlFor>` + a control carrying
+ *    the matching `id`. The mapping deletes `Label`, and deleting it without
+ *    moving the association would have left all three controls unnamed with no
+ *    test to notice. They are `SettingsFormRow`s with `htmlFor` now, which is
+ *    the prop the shell exists to offer for exactly this: antd mints a label's
+ *    `for` only from a field `name`, and the state-ownership rule forbids one.
+ * 2. The row buttons were `<Button variant="outline" size="sm">`. Lobe's
+ *    `Button` has no `variant` and its `size` union has no `"sm"`, and
+ *    `Button.mjs` spreads `...rest` onto the DOM, so `variant` would have
+ *    reached the DOM as an invalid attribute with no error at all. `outline` is
+ *    Lobe's default treatment (nothing to pass) and `size` keeps the default
+ *    `middle` per the F5 ruling.
+ *
+ * The outer `SettingsGroup` is owned by `integrations-tab.tsx`, which renders
+ * this tab as the body of the "Git providers (self-hosted)" section — so the
+ * three baseline `Card`s became rows and prose inside that one group rather
+ * than three more groups.
+ */
+
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, GitBranch, RefreshCw, Trash2 } from "lucide-react";
-import { Button } from "@orvilo/ui/components/ui/button";
-import { Card, CardContent } from "@orvilo/ui/components/ui/card";
-import { Input } from "@orvilo/ui/components/ui/input";
-import { Label } from "@orvilo/ui/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@orvilo/ui/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@orvilo/ui/components/ui/alert-dialog";
+import { Button, Input } from "@lobehub/ui/base-ui";
 import { useWorkspaceId } from "@orvilo/core/hooks";
 import { vcsConnectionsOptions } from "@orvilo/core/vcs";
 import { api } from "@orvilo/core/api";
 import type { ConnectVCSResponse, VCSProvider } from "@orvilo/core/types";
 import { useT } from "../../i18n";
+import { useSettingsConfirm } from "./settings-confirm";
+import { SettingsSelect } from "./settings-select";
+import { SettingsFormRow } from "./settings-shell";
 
 const PROVIDERS: VCSProvider[] = ["forgejo", "gitea", "gitlab"];
 const PROVIDER_LABELS: Record<VCSProvider, string> = {
@@ -42,11 +53,15 @@ const PROVIDER_OPTIONS = PROVIDERS.map((p) => ({
   label: PROVIDER_LABELS[p],
 }));
 
-
 export function VCSTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
+  // The `rotateTarget` / `rotating` and `deleteTarget` / `deleting` pairs of
+  // `useState`s are gone with the two `AlertDialog`s: the imperative confirm
+  // owns the open state and the in-flight spinner, so the rows hand their
+  // connection id straight through.
+  const confirm = useSettingsConfirm();
 
   const { data } = useQuery(vcsConnectionsOptions(wsId));
   const connections = data?.connections ?? [];
@@ -58,10 +73,6 @@ export function VCSTab() {
   const [token, setToken] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [justConnected, setJustConnected] = useState<ConnectVCSResponse | null>(null);
-  const [rotateTarget, setRotateTarget] = useState<string | null>(null);
-  const [rotating, setRotating] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   async function handleConnect() {
     if (connecting || !instanceUrl.trim() || !token.trim()) return;
@@ -84,37 +95,50 @@ export function VCSTab() {
     }
   }
 
-  async function handleRotateWebhook() {
-    if (!rotateTarget || rotating) return;
-    setRotating(true);
+  // Both handlers return their promise and rethrow on failure — the caller half
+  // of `confirmModal`'s contract, which is what keeps the dialog open when the
+  // request fails instead of closing on a row that never changed.
+  async function handleRotateWebhook(connectionId: string) {
     try {
-      const resp = await api.rotateVCSWebhook(wsId, rotateTarget);
+      const resp = await api.rotateVCSWebhook(wsId, connectionId);
       await qc.invalidateQueries({ queryKey: ["vcs", wsId] });
       setJustConnected(resp);
-      setRotateTarget(null);
       toast.success(t(($) => $.vcs.toast_rotated));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t(($) => $.vcs.toast_rotate_failed));
-    } finally {
-      setRotating(false);
+      throw e;
     }
   }
 
-  async function handleDelete() {
-    if (!deleteTarget || deleting) return;
-    setDeleting(true);
+  async function handleDelete(connectionId: string) {
     try {
-      await api.deleteVCSConnection(wsId, deleteTarget);
+      await api.deleteVCSConnection(wsId, connectionId);
       await qc.invalidateQueries({ queryKey: ["vcs", wsId] });
-      if (justConnected?.id === deleteTarget) setJustConnected(null);
+      if (justConnected?.id === connectionId) setJustConnected(null);
       toast.success(t(($) => $.vcs.toast_disconnected));
-      setDeleteTarget(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t(($) => $.vcs.toast_disconnect_failed));
-    } finally {
-      setDeleting(false);
+      throw e;
     }
   }
+
+  const openRotateConfirm = (connectionId: string) =>
+    confirm({
+      title: t(($) => $.vcs.rotate_confirm_title),
+      description: t(($) => $.vcs.rotate_confirm_description),
+      confirmLabel: t(($) => $.vcs.rotate_confirm_action),
+      cancelLabel: t(($) => $.vcs.rotate_confirm_cancel),
+      onConfirm: () => handleRotateWebhook(connectionId),
+    });
+
+  const openDeleteConfirm = (connectionId: string) =>
+    confirm({
+      title: t(($) => $.vcs.disconnect_confirm_title),
+      description: t(($) => $.vcs.disconnect_confirm_description),
+      confirmLabel: t(($) => $.vcs.disconnect_confirm_action),
+      cancelLabel: t(($) => $.vcs.disconnect_confirm_cancel),
+      onConfirm: () => handleDelete(connectionId),
+    });
 
   async function copy(value: string) {
     try {
@@ -129,207 +153,157 @@ export function VCSTab() {
     <div className="space-y-6">
       <p className="text-body text-muted-foreground">{t(($) => $.vcs.page_description)}</p>
 
-      {connections.length > 0 && (
-        <div className="space-y-3">
-          {connections.map((c) => (
-            <Card key={c.id}>
-              <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                <div className="flex min-w-0 items-start gap-3">
-                  <div className="rounded-md border bg-muted/50 p-2 text-muted-foreground shrink-0">
-                    <GitBranch className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 space-y-0.5">
-                    <p className="text-body font-medium break-all">
-                      {(PROVIDER_LABELS[c.provider] ?? c.provider) + " · " + c.instance_url}
-                    </p>
-                    <p className="text-caption text-muted-foreground break-all">
-                      {t(($) => $.vcs.connected_as, { login: c.account_login })}
-                    </p>
-                  </div>
-                </div>
-                {canManage && (
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setRotateTarget(c.id)}
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      {t(($) => $.vcs.regenerate_webhook)}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setDeleteTarget(c.id)}>
-                      <Trash2 className="h-3 w-3" />
-                      {t(($) => $.vcs.disconnect)}
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {justConnected && (
-        <Card className="border-primary/40">
-          <CardContent className="space-y-3">
-            <div className="space-y-1">
-              <p className="text-body font-medium">{t(($) => $.vcs.webhook_setup_title)}</p>
-              <p className="text-caption text-muted-foreground">
-                {t(($) => $.vcs.webhook_setup_description)}
-              </p>
+      {connections.map((c, index) => (
+        <SettingsFormRow
+          key={c.id}
+          align="start"
+          divider={index > 0}
+          label={
+            <span className="inline-flex min-w-0 items-center gap-2 break-all">
+              <GitBranch className="size-4 shrink-0 text-muted-foreground" />
+              {(PROVIDER_LABELS[c.provider] ?? c.provider) + " · " + c.instance_url}
+            </span>
+          }
+          description={t(($) => $.vcs.connected_as, { login: c.account_login })}
+        >
+          {canManage ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Both were `<Button variant="outline" size="sm">` — Lobe's
+                  bordered default at the default `middle` size. */}
+              <Button
+                icon={<RefreshCw className="size-3.5" />}
+                onClick={() => openRotateConfirm(c.id)}
+              >
+                {t(($) => $.vcs.regenerate_webhook)}
+              </Button>
+              <Button
+                icon={<Trash2 className="size-3.5" />}
+                onClick={() => openDeleteConfirm(c.id)}
+              >
+                {t(($) => $.vcs.disconnect)}
+              </Button>
             </div>
-            <CopyField
-              label={t(($) => $.vcs.webhook_url_label)}
-              value={justConnected.webhook_url || justConnected.webhook_path}
-              onCopy={copy}
-              copyLabel={t(($) => $.vcs.copy)}
-            />
-            <CopyField
-              label={t(($) => $.vcs.webhook_secret_label)}
-              value={justConnected.webhook_secret}
-              onCopy={copy}
-              copyLabel={t(($) => $.vcs.copy)}
-              mono
-            />
-            <p className="text-caption text-amber-600 dark:text-amber-500">
-              {t(($) => $.vcs.webhook_secret_warning)}
-            </p>
-          </CardContent>
-        </Card>
-      )}
+          ) : null}
+        </SettingsFormRow>
+      ))}
 
-      {canManage && (
-        <Card>
-          <CardContent className="space-y-4">
-            <p className="text-body font-medium">{t(($) => $.vcs.connect_title)}</p>
-            {!configured ? (
-              <p className="text-caption text-muted-foreground">
-                {t(($) => $.vcs.not_configured)}{" "}
-                <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                  ORVILO_VCS_SECRET_KEY
-                </code>
-                .
-              </p>
-            ) : (
-              <>
-                <div className="space-y-1.5">
-                  <Label htmlFor="vcs-provider">{t(($) => $.vcs.form_provider_label)}</Label>
-                  <Select
-                    items={PROVIDER_OPTIONS}
-                    value={provider}
-                    onValueChange={(v) => setProvider(v as VCSProvider)}
-                  >
-                    <SelectTrigger id="vcs-provider" disabled={connecting}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PROVIDERS.map((p) => (
-                        <SelectItem key={p} value={p}>
-                          {PROVIDER_LABELS[p]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="vcs-url">{t(($) => $.vcs.form_instance_url_label)}</Label>
-                  <Input
-                    id="vcs-url"
-                    placeholder="https://forgejo.example.com"
-                    value={instanceUrl}
-                    onChange={(e) => setInstanceUrl(e.target.value)}
-                    disabled={connecting}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="vcs-token">{t(($) => $.vcs.form_token_label)}</Label>
-                  <Input
-                    id="vcs-token"
-                    type="password"
-                    placeholder={t(($) => $.vcs.form_token_placeholder)}
-                    value={token}
-                    onChange={(e) => setToken(e.target.value)}
-                    disabled={connecting}
-                  />
-                  <p className="text-caption text-muted-foreground">{t(($) => $.vcs.form_token_hint)}</p>
-                </div>
-                <div className="flex justify-end">
-                  <Button
-                    size="sm"
-                    onClick={handleConnect}
-                    disabled={connecting || !instanceUrl.trim() || !token.trim()}
-                  >
-                    {connecting ? t(($) => $.vcs.connecting) : t(($) => $.vcs.connect)}
-                  </Button>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      {justConnected ? (
+        <div className="space-y-4 border-t border-border pt-4">
+          <div className="space-y-1">
+            <p className="text-body font-medium">{t(($) => $.vcs.webhook_setup_title)}</p>
+            <p className="text-caption text-muted-foreground">
+              {t(($) => $.vcs.webhook_setup_description)}
+            </p>
+          </div>
+          <CopyField
+            id="vcs-webhook-url"
+            label={t(($) => $.vcs.webhook_url_label)}
+            value={justConnected.webhook_url || justConnected.webhook_path}
+            onCopy={copy}
+            copyLabel={t(($) => $.vcs.copy)}
+          />
+          <CopyField
+            id="vcs-webhook-secret"
+            label={t(($) => $.vcs.webhook_secret_label)}
+            value={justConnected.webhook_secret}
+            onCopy={copy}
+            copyLabel={t(($) => $.vcs.copy)}
+            mono
+          />
+          <p className="text-caption text-amber-600 dark:text-amber-500">
+            {t(($) => $.vcs.webhook_secret_warning)}
+          </p>
+        </div>
+      ) : null}
+
+      {canManage ? (
+        <div className="space-y-4 border-t border-border pt-4">
+          <p className="text-body font-medium">{t(($) => $.vcs.connect_title)}</p>
+          {!configured ? (
+            <p className="text-caption text-muted-foreground">
+              {t(($) => $.vcs.not_configured)}{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-micro">
+                ORVILO_VCS_SECRET_KEY
+              </code>
+              .
+            </p>
+          ) : (
+            <>
+              {/* `htmlFor` + the control's `id` is what keeps the accessible
+                  name the deleted `<Label htmlFor>` used to provide. */}
+              <SettingsFormRow
+                htmlFor="vcs-provider"
+                label={t(($) => $.vcs.form_provider_label)}
+              >
+                <SettingsSelect
+                  className="w-full"
+                  disabled={connecting}
+                  id="vcs-provider"
+                  label={t(($) => $.vcs.form_provider_label)}
+                  options={PROVIDER_OPTIONS}
+                  value={provider}
+                  onValueChange={(v) => setProvider(v as VCSProvider)}
+                />
+              </SettingsFormRow>
+              <SettingsFormRow
+                htmlFor="vcs-url"
+                label={t(($) => $.vcs.form_instance_url_label)}
+              >
+                <Input
+                  disabled={connecting}
+                  id="vcs-url"
+                  placeholder="https://forgejo.example.com"
+                  value={instanceUrl}
+                  onChange={(e) => setInstanceUrl(e.target.value)}
+                />
+              </SettingsFormRow>
+              <SettingsFormRow
+                htmlFor="vcs-token"
+                label={t(($) => $.vcs.form_token_label)}
+                description={t(($) => $.vcs.form_token_hint)}
+              >
+                <Input
+                  disabled={connecting}
+                  id="vcs-token"
+                  placeholder={t(($) => $.vcs.form_token_placeholder)}
+                  type="password"
+                  value={token}
+                  onChange={(e) => setToken(e.target.value)}
+                />
+              </SettingsFormRow>
+              <div className="flex justify-end">
+                {/* The baseline was `<Button size="sm">` with no `variant` —
+                    shadcn's solid primary, which is Lobe's `type="primary"`.
+                    Only the box height moves (28 -> 32), per the F5 ruling. */}
+                <Button
+                  disabled={connecting || !instanceUrl.trim() || !token.trim()}
+                  type="primary"
+                  onClick={handleConnect}
+                >
+                  {connecting ? t(($) => $.vcs.connecting) : t(($) => $.vcs.connect)}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
 
       {!canManage && connections.length === 0 && (
         <p className="text-caption text-muted-foreground">{t(($) => $.vcs.contact_admin)}</p>
       )}
-
-      <AlertDialog
-        open={!!rotateTarget}
-        onOpenChange={(v) => {
-          if (!v && !rotating) setRotateTarget(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t(($) => $.vcs.rotate_confirm_title)}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.vcs.rotate_confirm_description)}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={rotating}>
-              {t(($) => $.vcs.rotate_confirm_cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleRotateWebhook} disabled={rotating}>
-              {rotating ? t(($) => $.vcs.rotating) : t(($) => $.vcs.rotate_confirm_action)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={!!deleteTarget}
-        onOpenChange={(v) => {
-          if (!v && !deleting) setDeleteTarget(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t(($) => $.vcs.disconnect_confirm_title)}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.vcs.disconnect_confirm_description)}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleting}>
-              {t(($) => $.vcs.disconnect_confirm_cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} disabled={deleting}>
-              {deleting ? t(($) => $.vcs.disconnecting) : t(($) => $.vcs.disconnect_confirm_action)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
 
 function CopyField({
+  id,
   label,
   value,
   onCopy,
   copyLabel,
   mono,
 }: {
+  id: string;
   label: string;
   value: string;
   onCopy: (v: string) => void;
@@ -337,24 +311,20 @@ function CopyField({
   mono?: boolean;
 }) {
   return (
-    <div className="space-y-1.5">
-      <Label className="text-caption">{label}</Label>
+    <SettingsFormRow align="start" htmlFor={id} label={label}>
       <div className="flex items-center gap-2">
         <Input
           readOnly
+          id={id}
           value={value}
-          className={mono ? "min-w-0 font-mono text-caption" : "min-w-0 text-caption"}
+          className={mono ? "min-w-0 font-mono" : "min-w-0"}
         />
         <Button
-          variant="outline"
-          size="sm"
-          className="shrink-0"
-          onClick={() => onCopy(value)}
+          icon={<Copy className="size-3.5" />}
           title={copyLabel}
-        >
-          <Copy className="h-3 w-3" />
-        </Button>
+          onClick={() => onCopy(value)}
+        />
       </div>
-    </div>
+    </SettingsFormRow>
   );
 }

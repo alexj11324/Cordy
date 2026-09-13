@@ -1,11 +1,31 @@
 "use client";
 
 import { ExternalLink } from "lucide-react";
-import { Button } from "@orvilo/ui/components/ui/button";
+import { Button } from "@lobehub/ui/base-ui";
 import { openExternal } from "../../platform";
 import { useT } from "../../i18n";
 import type { IntegrationChannel } from "./integration-channel-icon";
 import { slackDocsUrl } from "./slack-docs-url";
+
+/**
+ * The prerequisites + steps callout shown inside a channel's setup dialog.
+ *
+ * Two of the three surfaces that mount this component are test files, and both
+ * used a bare `render` with their own `I18nProvider`, so neither reached
+ * `LobeThemeBridge`: `integration-setup-guide.test.tsx` and
+ * `integrations-tab.test.tsx` (which renders it for real at four call sites).
+ * Converting the two buttons here therefore moved both suites onto
+ * `renderWithI18n(..., { lobe: true })` — a test file is a host surface, and it
+ * is the one that shows up in no screenshot.
+ *
+ * What did **not** convert, and why: the `<section>` chrome, the two `<h3>`
+ * headings and the `<ol>/<li>` step list are plain elements. Lobe has no
+ * ordered-list primitive, `Card` has no Lobe equivalent at all, and rewriting
+ * correct ordered-list markup into a stack of flex rows would drop the
+ * `list-decimal` semantics a three-step procedure is exactly what `<ol>` is
+ * for. The `data-testid` and the `space-y-*` spacing are product-authored and
+ * preserved.
+ */
 
 const providerConsoleUrls: Partial<Record<Exclude<IntegrationChannel, "linear">, string>> = {
   slack: "https://api.slack.com/apps",
@@ -115,24 +135,24 @@ export function IntegrationSetupGuide({
       </div>
       <div className="flex flex-wrap gap-2">
         {instructionsUrl ? (
+          // Both of these were `<Button variant="outline" size="sm">`. `outline`
+          // is Lobe's default treatment, so nothing replaces it; the size does
+          // move, 28px -> 32px, and that is the F5 ruling — the default
+          // `middle` matches the sibling controls on this page
+          // (`settings-select` pins `var(--ant-select-height)` = 32px) where a
+          // 24px `small` would sit 8px out of step inside one row.
           <Button
-            type="button"
-            variant="outline"
-            size="sm"
+            icon={<ExternalLink className="size-3.5" />}
             onClick={() => openExternal(instructionsUrl)}
           >
-            <ExternalLink className="size-3.5" />
             {t(($) => $.slack.setup_manifest_open)}
           </Button>
         ) : null}
         {consoleUrl ? (
           <Button
-            type="button"
-            variant="outline"
-            size="sm"
+            icon={<ExternalLink className="size-3.5" />}
             onClick={() => openExternal(consoleUrl)}
           >
-            <ExternalLink className="size-3.5" />
             {copy.open}
           </Button>
         ) : null}

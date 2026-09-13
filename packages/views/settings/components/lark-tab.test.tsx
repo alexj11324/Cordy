@@ -1,11 +1,8 @@
 import { StrictMode, type ReactNode } from "react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@orvilo/core/i18n/react";
 import { configStore } from "@orvilo/core/config";
-import enCommon from "../../locales/en/common.json";
-import enSettings from "../../locales/en/settings.json";
 
 // ApiError is re-exported from @orvilo/core/api; we mock the api module
 // itself but still need a real ApiError class so `e instanceof ApiError`
@@ -30,6 +27,26 @@ const mockBeginInstall = vi.hoisted(() => vi.fn());
 const mockGetStatus = vi.hoisted(() => vi.fn());
 const mockDeleteInstallation = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
+
+/**
+ * `confirmModal` is imperative and module-level, so the config the wrapper
+ * hands it — and therefore the promise `onOk` returns — is the only place the
+ * rethrow contract is observable. Recorded here and delegated to the real one,
+ * because the tests below also drive the dialog through the UI.
+ */
+const capturedConfirm = vi.hoisted(() => ({
+  current: null as { onOk: () => Promise<unknown> } | null,
+}));
+const mockConfirmModal = vi.hoisted(() => vi.fn());
+const actualConfirmModal = vi.hoisted(() => ({
+  current: null as null | ((config: never) => unknown),
+}));
+
+vi.mock("@lobehub/ui/base-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@lobehub/ui/base-ui")>();
+  actualConfirmModal.current = actual.confirmModal as never;
+  return { ...actual, confirmModal: mockConfirmModal };
+});
 
 type MemberRole = "owner" | "admin" | "member" | "guest";
 
@@ -146,40 +163,64 @@ vi.mock("react-qr-code", () => {
   return { QRCode: QrStub, default: QrStub };
 });
 
+import { renderWithI18n } from "../../test/i18n";
 import { LarkAgentBindButton, LarkTab } from "./lark-tab";
 import { toast } from "sonner";
 
-const TEST_RESOURCES = {
-  en: { common: enCommon, settings: enSettings },
-};
-
-function I18nWrapper({ children }: { children: ReactNode }) {
-  return (
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      {children}
-    </I18nProvider>
-  );
+/**
+ * `lobe: true` mounts the theme bridge on demand, so everything after a
+ * bridged render must start with an async query — until the bridge's module
+ * resolves the tree is a `Suspense` fallback of `null` and a synchronous
+ * `getBy*` would fail.
+ *
+ * The flag defaults to **off** here rather than on, which is the opposite of
+ * the Slack/Telegram suite's helper, and deliberately so: most of this file
+ * renders `LarkAgentBindButton` and its sub-components, which render no Lobe
+ * element at all. A bridged render would make the three "renders nothing"
+ * assertions below pass *vacuously* — the container is empty while the bridge
+ * module resolves — which is the "guard that cannot fail" shape the reference
+ * names. Renders that can reach a migrated component pass `lobe: true`
+ * explicitly, and a render that reaches one without the bridge throws loudly
+ * rather than failing silently.
+ */
+function renderUI(children: ReactNode, { lobe = false }: { lobe?: boolean } = {}) {
+  return renderWithI18n(<>{children}</>, { lobe });
 }
 
-// StrictMode wrapper used to reproduce the dev-mode mount → unmount →
-// remount cycle. React 19 dev runs this on every component, which
-// surfaces effect cleanup bugs that don't show in production builds.
-function StrictModeWrapper({ children }: { children: ReactNode }) {
-  return (
-    <StrictMode>
-      <I18nProvider locale="en" resources={TEST_RESOURCES}>
-        {children}
-      </I18nProvider>
-    </StrictMode>
-  );
+/**
+ * Whether the confirm dialog leaves the document within `timeout`. Polls —
+ * `waitFor` re-runs the callback until it stops throwing — because a check that
+ * samples at a fixed moment cannot tell an open dialog from a closing one.
+ *
+ * The timeout is a parameter because the two callers want opposite things from
+ * it: the **success** path passes a generous budget (polling stops the moment
+ * the node goes, so a slow close cannot fail it), and the **failure** path
+ * passes a fixed window it spends in full (no correct run ever closes, so the
+ * only question is whether a mutated build that closes would be caught).
+ */
+async function dialogLeavesWithin(timeout: number): Promise<boolean> {
+  try {
+    await waitFor(
+      () => expect(screen.queryByText("Disconnect this Lark bot?")).toBeNull(),
+      { timeout },
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
+
+/** A dismissal window: long enough for a close, short enough to be an assertion. */
+const CLOSE_WINDOW_MS = 1_200;
+/** A budget, not a window: the success path must not fail a loaded runner. */
+const CLOSE_BUDGET_MS = 8_000;
 
 describe("Lark deployment setup policy", () => {
   beforeEach(resetFixtures);
 
-  it.each(["server_configured", "disabled"] as const)("keeps %s credential lifecycle read-only", (mode) => {
+  it.each(["server_configured", "disabled"] as const)("keeps %s credential lifecycle read-only", async (mode) => {
     configStore.getState().setMessagingConfig({ mode, setupWritable: true, platforms: [] });
-    const entry = render(<LarkAgentBindButton agentId="agent-1" />, { wrapper: I18nWrapper });
+    const entry = renderUI(<LarkAgentBindButton agentId="agent-1" />, { lobe: false });
     expect(screen.queryByTestId("lark-agent-bind-feishu")).toBeNull();
     expect(mockBeginInstall).not.toHaveBeenCalled();
     entry.unmount();
@@ -193,8 +234,8 @@ describe("Lark deployment setup policy", () => {
         app_id: "app-1", team_id: "team-1", bot_id: "bot-1",
       }],
     };
-    render(<><LarkAgentBindButton agentId="agent-1" /><LarkTab /></>, { wrapper: I18nWrapper });
-    expect(screen.getAllByRole("status", { name: "Connection status" })).toHaveLength(2);
+    renderUI(<><LarkAgentBindButton agentId="agent-1" /><LarkTab /></>, { lobe: true });
+    expect(await screen.findAllByRole("status", { name: "Connection status" })).toHaveLength(2);
     expect(screen.queryByRole("button", { name: /disconnect/i })).toBeNull();
     expect(mockDeleteInstallation).not.toHaveBeenCalled();
   });
@@ -203,6 +244,11 @@ describe("Lark deployment setup policy", () => {
 function resetFixtures() {
   configStore.getState().setMessagingConfig({ mode: "managed", setupWritable: true, platforms: [] });
   vi.clearAllMocks();
+  capturedConfirm.current = null;
+  mockConfirmModal.mockImplementation((config: never) => {
+    capturedConfirm.current = config as { onOk: () => Promise<unknown> };
+    return actualConfirmModal.current?.(config);
+  });
   membersRef.current = [{ user_id: "user-1", role: "owner" }];
   installationsRef.current = {
     installations: [],
@@ -219,27 +265,22 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     // Mainland Feishu binding stays available; the Lark (international)
     // entry is temporarily hidden via LARK_INTL_CONNECT_ENABLED while its
     // install→inbound pipeline is stabilized (MUL-3083).
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: I18nWrapper,
-    });
+    renderUI(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />);
     expect(screen.getByRole("button", { name: /Bind to Feishu/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Bind to Lark/i })).toBeNull();
   });
 
   it("shows the Feishu bind CTA but hides the Lark CTA for an admin (MUL-3083)", () => {
     membersRef.current = [{ user_id: "user-1", role: "admin" }];
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: I18nWrapper,
-    });
+    renderUI(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />);
     expect(screen.getByRole("button", { name: /Bind to Feishu/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Bind to Lark/i })).toBeNull();
   });
 
   it("hides both bind CTAs for a plain member when no agentOwnerId is supplied (stays admin-only)", () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
-    const { container } = render(
+    const { container } = renderUI(
       <LarkAgentBindButton agentId="agent-1" agentName="Bot" />,
-      { wrapper: I18nWrapper },
     );
     expect(container.querySelector("button")).toBeNull();
   });
@@ -249,13 +290,12 @@ describe("LarkAgentBindButton (CTA gate)", () => {
     // they are only a plain workspace member, so the CTA must render for
     // them once the caller threads the agent's owner_id.
     membersRef.current = [{ user_id: "user-1", role: "member" }];
-    render(
+    renderUI(
       <LarkAgentBindButton
         agentId="agent-1"
         agentName="Bot"
         agentOwnerId="user-1"
       />,
-      { wrapper: I18nWrapper },
     );
     expect(screen.getByRole("button", { name: /Bind to Feishu/i })).toBeTruthy();
   });
@@ -263,22 +303,20 @@ describe("LarkAgentBindButton (CTA gate)", () => {
   it("still hides the CTAs for a non-admin member who is NOT the agent owner", () => {
     // agentOwnerId belongs to someone else, so a plain member gets nothing.
     membersRef.current = [{ user_id: "user-1", role: "member" }];
-    const { container } = render(
+    const { container } = renderUI(
       <LarkAgentBindButton
         agentId="agent-1"
         agentName="Bot"
         agentOwnerId="user-2"
       />,
-      { wrapper: I18nWrapper },
     );
     expect(container.querySelector("button")).toBeNull();
   });
 
   it("hides both bind CTAs when the device-flow install path is not wired on the server", () => {
     installationsRef.current.install_supported = false;
-    const { container } = render(
+    const { container } = renderUI(
       <LarkAgentBindButton agentId="agent-1" agentName="Bot" />,
-      { wrapper: I18nWrapper },
     );
     expect(container.querySelector("button")).toBeNull();
   });
@@ -298,9 +336,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
       poll_interval_seconds: 2,
     });
     mockGetStatus.mockResolvedValue({ status: "pending" });
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: I18nWrapper,
-    });
+    renderUI(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />);
     await user.click(screen.getByRole("button", { name: /Bind to Feishu/i }));
     await waitFor(() => {
       expect(mockBeginInstall).toHaveBeenCalledTimes(1);
@@ -339,9 +375,8 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         updated_at: "2026-06-03T00:00:00Z",
       },
     ];
-    render(
+    renderUI(
       <LarkAgentBindButton agentId="agent-1" agentName="Bot" />,
-      { wrapper: I18nWrapper },
     );
     // Both Bind CTAs must be gone — re-scanning would orphan the
     // PersonalAgent (see badge comment in lark-tab.tsx).
@@ -383,9 +418,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         updated_at: "2026-06-03T00:00:00Z",
       },
     ];
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: I18nWrapper,
-    });
+    renderUI(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />);
     expect(screen.getByRole("status", { name: "Connection status" }).textContent).toBe("Status unavailable");
     expect(screen.getByText("Lark", { exact: true })).toBeTruthy();
     const link = screen.getByRole("link", { name: /Manage in Lark/i }) as HTMLAnchorElement;
@@ -407,9 +440,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         updated_at: "2026-06-03T00:00:00Z",
       },
     ];
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: I18nWrapper,
-    });
+    renderUI(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />);
     expect(screen.getByRole("button", { name: /Bind to Feishu/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Bind to Lark/i })).toBeNull();
   });
@@ -435,9 +466,8 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         updated_at: "2026-06-03T00:00:00Z",
       },
     ];
-    render(
+    renderUI(
       <LarkAgentBindButton agentId="agent-1" agentName="Bot" />,
-      { wrapper: I18nWrapper },
     );
     // Both Bind CTAs must be gone even when install_supported=false,
     // since the existing-installation check runs first.
@@ -468,9 +498,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         updated_at: "2026-06-03T00:00:00Z",
       },
     ];
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: I18nWrapper,
-    });
+    renderUI(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />);
     expect(screen.getByRole("button", { name: /Bind to Feishu/i })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Bind to Lark/i })).toBeNull();
   });
@@ -502,9 +530,7 @@ describe("LarkAgentBotInstalledControls (Unbind / Disconnect)", () => {
   });
 
   it("renders a Disconnect affordance alongside the Manage link when the agent is bound", () => {
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: I18nWrapper,
-    });
+    renderUI(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />);
     // The badge surfaces three siblings: the green-dot status pill,
     // the Manage link, and the Unbind action. We assert by test-id so
     // we don't trip over /Disconnect/i copy that also appears in the
@@ -516,9 +542,7 @@ describe("LarkAgentBotInstalledControls (Unbind / Disconnect)", () => {
 
   it("opens the confirm dialog and does NOT call the API until the user confirms", async () => {
     const user = userEvent.setup();
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: I18nWrapper,
-    });
+    renderUI(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />);
     await user.click(screen.getByTestId("lark-agent-bot-disconnect"));
     // Confirm dialog must mount with the correct copy.
     await waitFor(() => {
@@ -534,9 +558,7 @@ describe("LarkAgentBotInstalledControls (Unbind / Disconnect)", () => {
   it("calls deleteLarkInstallation with (workspaceId, installationId), invalidates the cache, and toasts on confirm", async () => {
     mockDeleteInstallation.mockResolvedValue(undefined);
     const user = userEvent.setup();
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: I18nWrapper,
-    });
+    renderUI(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />);
     await user.click(screen.getByTestId("lark-agent-bot-disconnect"));
     // Wait for the dialog to mount, then click the destructive action
     // (the AlertDialogAction's accessible name is the same "Disconnect"
@@ -564,9 +586,7 @@ describe("LarkAgentBotInstalledControls (Unbind / Disconnect)", () => {
       new Error("upstream 500"),
     );
     const user = userEvent.setup();
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: I18nWrapper,
-    });
+    renderUI(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />);
     await user.click(screen.getByTestId("lark-agent-bot-disconnect"));
     const confirmButton = await screen.findByRole("button", {
       name: /^Disconnect$/i,
@@ -593,9 +613,7 @@ describe("LarkAgentBotInstalledControls (Unbind / Disconnect)", () => {
         }),
     );
     const user = userEvent.setup();
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: I18nWrapper,
-    });
+    renderUI(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />);
     await user.click(screen.getByTestId("lark-agent-bot-disconnect"));
     const confirmButton = await screen.findByRole("button", {
       name: /^Disconnect$/i,
@@ -636,9 +654,7 @@ describe("LarkInstallDialog (polling terminal errors)", () => {
 
   async function openDialog() {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: I18nWrapper,
-    });
+    renderUI(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />);
     // The Lark CTA is hidden (MUL-3083); open the dialog via the Feishu CTA
     // — the polling-error behavior under test is region-agnostic.
     await user.click(screen.getByRole("button", { name: /Bind to Feishu/i }));
@@ -712,9 +728,11 @@ describe("LarkInstallDialog (polling terminal errors)", () => {
   // every mount.
   it("renders the QR after a React StrictMode double-mount (regression for empty dialog body)", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    render(<LarkAgentBindButton agentId="agent-1" agentName="Bot" />, {
-      wrapper: StrictModeWrapper,
-    });
+    renderUI(
+      <StrictMode>
+        <LarkAgentBindButton agentId="agent-1" agentName="Bot" />
+      </StrictMode>,
+    );
     // The Lark CTA is hidden (MUL-3083); the StrictMode regression is about
     // the dialog mount cycle, so open it via the Feishu CTA.
     await user.click(screen.getByRole("button", { name: /Bind to Feishu/i }));
@@ -746,7 +764,7 @@ describe("LarkInstallDialog (polling terminal errors)", () => {
 describe("LarkTab installation list (agent identity rendering)", () => {
   beforeEach(resetFixtures);
 
-  it("renders the Orvilo agent's name and avatar instead of the raw Lark app_id / bot_open_id", () => {
+  it("renders the Orvilo agent's name and avatar instead of the raw Lark app_id / bot_open_id", async () => {
     agentNameByIdRef.current = new Map([["agent-1", "Bohan's Helper"]]);
     installationsRef.current.installations = [
       {
@@ -763,10 +781,10 @@ describe("LarkTab installation list (agent identity rendering)", () => {
       },
     ];
 
-    render(<LarkTab />, { wrapper: I18nWrapper });
+    renderUI(<LarkTab />, { lobe: true });
 
     // The agent's display name is the primary identifier.
-    expect(screen.getByText("Bohan's Helper")).toBeTruthy();
+    expect(await screen.findByText("Bohan's Helper")).toBeTruthy();
 
     // The ActorAvatar stub records the actor it was asked to render —
     // confirms we joined on agent_id (and didn't accidentally pass the
@@ -781,7 +799,7 @@ describe("LarkTab installation list (agent identity rendering)", () => {
     expect(screen.queryByText(/ou_abc123/)).toBeNull();
   });
 
-  it("falls back to a stable placeholder when the agent has been deleted (so the row is still actionable for cleanup)", () => {
+  it("falls back to a stable placeholder when the agent has been deleted (so the row is still actionable for cleanup)", async () => {
     // Empty map → useActorName.getAgentName returns "Unknown Agent".
     // The row must still render so admins can hit Disconnect.
     installationsRef.current.installations = [
@@ -799,10 +817,117 @@ describe("LarkTab installation list (agent identity rendering)", () => {
       },
     ];
 
-    render(<LarkTab />, { wrapper: I18nWrapper });
+    renderUI(<LarkTab />, { lobe: true });
 
-    expect(screen.getByText(/Unknown Agent/)).toBeTruthy();
+    expect(await screen.findByText(/Unknown Agent/)).toBeTruthy();
     // Disconnect stays reachable so the orphan row can be cleaned up.
     expect(screen.getByRole("button", { name: /Disconnect/i })).toBeTruthy();
+  });
+
+  /**
+   * The rethrow contract, asserted twice and at two layers, because the
+   * DOM-level-only version of this test could not fail.
+   *
+   * `confirmModal` closes on the line after `onOk` unless `onOk` returns a
+   * promise, and stays open when that promise rejects — so a disconnect that
+   * fails must leave the confirmation up rather than dismiss as though the bot
+   * were gone. The first test below keeps the DOM spelling where it can, but
+   * waits a window in which the success path is shown to close; without that
+   * demonstration "the title is still in the document" could be true because
+   * nothing ever leaves it. The second drops the DOM entirely: the contract
+   * lives in the promise `onOk` returns, and that is directly readable off the
+   * config the wrapper handed the library.
+   *
+   * The subject-exists-in-both-states trap applies here in a second form: a row
+   * assertion after a failed disconnect would be satisfied by the row, which is
+   * rendered whether the request succeeded or not. Only the dialog's own
+   * presence separates the two outcomes.
+   */
+  it("disconnects only after the confirmation, and the dialog closes when it succeeds", async () => {
+    mockDeleteInstallation.mockResolvedValue(undefined);
+    installationsRef.current.installations = [
+      {
+        id: "inst-1",
+        workspace_id: "ws-1",
+        agent_id: "agent-1",
+        app_id: "cli_existing_app",
+        bot_open_id: "ou_existing_bot",
+        installer_user_id: "user-1",
+        status: "installed",
+        installed_at: "2026-06-03T00:00:00Z",
+        created_at: "2026-06-03T00:00:00Z",
+        updated_at: "2026-06-03T00:00:00Z",
+      },
+    ];
+
+    renderUI(<LarkTab />, { lobe: true });
+    await userEvent.click(await screen.findByRole("button", { name: /^Disconnect$/i }));
+    expect(mockDeleteInstallation).not.toHaveBeenCalled();
+
+    await screen.findByText("Disconnect this Lark bot?");
+    // Two buttons carry this name — the row's and the dialog's — and the
+    // dialog's is the last in document order (it is portalled to the end of
+    // `<body>`), so `.at(-1)` is the one that runs the request.
+    const confirmButtons = await screen.findAllByRole("button", { name: /^Disconnect$/i });
+    await userEvent.click(confirmButtons.at(-1)!);
+    await waitFor(() => {
+      expect(mockDeleteInstallation).toHaveBeenCalledWith("workspace-1", "inst-1");
+    });
+    expect(mockInvalidate).toHaveBeenCalledWith({
+      queryKey: ["lark", "installations", "workspace-1"],
+    });
+    expect(await dialogLeavesWithin(CLOSE_BUDGET_MS)).toBe(true);
+  });
+
+  it("keeps the confirmation up when the disconnect request fails", async () => {
+    mockDeleteInstallation.mockRejectedValue(new Error("network failed"));
+    installationsRef.current.installations = [
+      {
+        id: "inst-1",
+        workspace_id: "ws-1",
+        agent_id: "agent-1",
+        app_id: "cli_existing_app",
+        bot_open_id: "ou_existing_bot",
+        installer_user_id: "user-1",
+        status: "installed",
+        installed_at: "2026-06-03T00:00:00Z",
+        created_at: "2026-06-03T00:00:00Z",
+        updated_at: "2026-06-03T00:00:00Z",
+      },
+    ];
+
+    renderUI(<LarkTab />, { lobe: true });
+    await userEvent.click(await screen.findByRole("button", { name: /^Disconnect$/i }));
+    await screen.findByText("Disconnect this Lark bot?");
+    const confirmButtons = await screen.findAllByRole("button", { name: /^Disconnect$/i });
+    await userEvent.click(confirmButtons.at(-1)!);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("network failed"));
+    expect(await dialogLeavesWithin(CLOSE_WINDOW_MS)).toBe(false);
+  });
+
+  it("hands confirmModal an onOk that rejects when the disconnect fails", async () => {
+    mockDeleteInstallation.mockRejectedValue(new Error("network failed"));
+    installationsRef.current.installations = [
+      {
+        id: "inst-1",
+        workspace_id: "ws-1",
+        agent_id: "agent-1",
+        app_id: "cli_existing_app",
+        bot_open_id: "ou_existing_bot",
+        installer_user_id: "user-1",
+        status: "installed",
+        installed_at: "2026-06-03T00:00:00Z",
+        created_at: "2026-06-03T00:00:00Z",
+        updated_at: "2026-06-03T00:00:00Z",
+      },
+    ];
+
+    renderUI(<LarkTab />, { lobe: true });
+    await userEvent.click(await screen.findByRole("button", { name: /^Disconnect$/i }));
+    expect(capturedConfirm.current).not.toBeNull();
+
+    await expect(capturedConfirm.current?.onOk()).rejects.toThrow("network failed");
+    expect(toast.error).toHaveBeenCalledWith("network failed");
   });
 });

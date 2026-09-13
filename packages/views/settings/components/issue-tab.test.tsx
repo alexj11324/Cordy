@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import {
   DEFAULT_MANUAL_CREATE_FIELDS,
@@ -16,6 +16,33 @@ function resetStore() {
   });
 }
 
+/**
+ * One create mode's group, by its name.
+ *
+ * Field names repeat across the two groups — Priority, Project and Due date are
+ * in both — so a document-wide `getByRole("switch", { name })` would be
+ * ambiguous, and to a screen reader the two switches were literally
+ * indistinguishable until `SettingsGroup` grew a `role="group"` wrapper named
+ * by its own title. This is the handle the reference tells every tab to use.
+ *
+ * Scope for that reason, not for speed. An earlier revision of this comment
+ * priced the pair at 3.4s and 9ms, "~380×"; neither figure was ever measured and
+ * the real difference is inside the noise — warm, five runs each, jsdom, against
+ * this suite: 6-9ms document-wide named against 4-10ms scoped (the scoped
+ * number taken on a name that exists in *both* groups, so a broken scope would
+ * throw as ambiguous rather than quietly time a document-wide query), and
+ * 30-60ms for the document-wide query *without* a name.
+ */
+async function group(title: string) {
+  return within(await screen.findByRole("group", { name: title }));
+}
+
+/** `lobe: true` loads the theme bridge on demand, so the first query is async. */
+async function renderTab() {
+  renderWithI18n(<IssueTab />, { lobe: true });
+  await screen.findByRole("switch", { name: "Status" });
+}
+
 describe("IssueTab", () => {
   beforeEach(resetStore);
 
@@ -24,38 +51,36 @@ describe("IssueTab", () => {
     resetStore();
   });
 
-  it("renders a switch per field with the persisted selection", () => {
-    renderWithI18n(<IssueTab />);
+  it("renders a switch per field with the persisted selection", async () => {
+    await renderTab();
 
     // 3 quick create fields + 9 manual create fields.
-    const switches = screen.getAllByRole("switch");
-    expect(switches).toHaveLength(12);
+    expect(screen.getAllByRole("switch")).toHaveLength(12);
 
-    // Quick create defaults to project only.
-    const [quickProject, quickPriority, quickDueDate] = switches;
-    expect(quickProject).toBeChecked();
-    expect(quickPriority).not.toBeChecked();
-    expect(quickDueDate).not.toBeChecked();
+    const quick = await group("Create with agent");
+    expect(quick.getByRole("switch", { name: "Project" })).toBeChecked();
+    expect(quick.getByRole("switch", { name: "Priority" })).not.toBeChecked();
+    expect(quick.getByRole("switch", { name: "Due date" })).not.toBeChecked();
 
     // Manual create defaults to status, priority, executor, labels, project.
-    const manual = switches.slice(3);
-    expect(manual[0]).toBeChecked();
-    expect(manual[1]).toBeChecked();
-    expect(manual[2]).not.toBeChecked();
-    expect(manual[3]).toBeChecked();
-    expect(manual[4]).not.toBeChecked();
-    expect(manual[5]).toBeChecked();
-    expect(manual[6]).toBeChecked();
-    expect(manual[7]).not.toBeChecked();
-    expect(manual[8]).not.toBeChecked();
+    const manual = await group("Create manually");
+    for (const field of ["Status", "Priority", "Executor", "Labels", "Project"]) {
+      expect(manual.getByRole("switch", { name: field })).toBeChecked();
+    }
+    for (const field of ["Owner", "Reviewer", "Due date", "Start date"]) {
+      expect(manual.getByRole("switch", { name: field })).not.toBeChecked();
+    }
   });
 
   it("persists enabling a quick create field", async () => {
     const user = userEvent.setup();
-    renderWithI18n(<IssueTab />);
+    await renderTab();
 
-    const [, quickPriority] = screen.getAllByRole("switch");
-    await user.click(quickPriority!);
+    await user.click(
+      (await group("Create with agent")).getByRole("switch", {
+        name: "Priority",
+      }),
+    );
 
     expect(useIssueCreateSettingsStore.getState().quickCreateFields).toEqual([
       "project",
@@ -65,11 +90,11 @@ describe("IssueTab", () => {
 
   it("persists hiding a manual create field without touching quick create", async () => {
     const user = userEvent.setup();
-    renderWithI18n(<IssueTab />);
+    await renderTab();
 
-    // Manual section starts at index 3; labels is its 6th row (index 8 overall).
-    const manualLabels = screen.getAllByRole("switch")[8];
-    await user.click(manualLabels!);
+    await user.click(
+      (await group("Create manually")).getByRole("switch", { name: "Labels" }),
+    );
 
     expect(useIssueCreateSettingsStore.getState().manualCreateFields).toEqual([
       "status",

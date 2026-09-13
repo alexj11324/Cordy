@@ -1,15 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { toast } from "sonner";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@orvilo/ui/components/ui/select";
-import { Switch } from "@orvilo/ui/components/ui/switch";
 import { useTheme } from "@orvilo/ui/components/common/theme-provider";
 import {
   DEFAULT_LOCALE,
@@ -21,10 +13,34 @@ import { useAuthStore } from "@orvilo/core/auth";
 import { useCommentComposerStore } from "@orvilo/core/issues/stores";
 import { api } from "@orvilo/core/api";
 import { browserTimezone, timezoneOptions } from "../../common/timezone-select";
-import { FieldGroup } from "@orvilo/ui/components/ui/field";
 import { useT } from "../../i18n";
-import { SettingsTab } from "./settings-layout";
-import { SETTINGS_FIELD_GROUP_CLASS, SettingRow } from "./settings-template";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
+import { SettingsSelect } from "./settings-select";
+import { SettingsSwitch } from "./settings-switch";
+
+/**
+ * Preferences — theme, language, timezone and the sticky comment bar.
+ *
+ * Every control here is **immediate-effect**: its value *is* the persisted
+ * value, so none of them carries a `name` and nothing about them lives in an
+ * antd `Form` store. The theme select writes the theme provider, the language
+ * select persists a cookie and PATCHes `/api/me`, the timezone select PATCHes
+ * and pushes the response into the auth store, and the sticky bar toggles a
+ * Zustand store. The `Form` surrounding them is the shell's `Form.Group` /
+ * `Form.Item` pair used purely for layout — see the state-ownership rule in
+ * `reference-lobe-tab-migration.md`.
+ *
+ * The title and the page description that used to sit on `SettingsTab` are gone
+ * on purpose: the settings dialog's own header renders them from the tab's
+ * entry in `settings-page.tsx`, and the standalone suites render this component
+ * without the dialog, so a title here would be the second copy of the same
+ * sentence.
+ */
+
+/** The old `SettingsRow`'s `select` tier, in pixels. */
+const COMPACT_SELECT_MIN_WIDTH = 192;
+/** The old `SettingsRow`'s `select-wide` tier, for the IANA timezone list. */
+const WIDE_SELECT_MIN_WIDTH = 288;
 
 export function PreferencesTab() {
   const { theme, setTheme } = useTheme();
@@ -34,7 +50,7 @@ export function PreferencesTab() {
 
   // i18next.language can be a region-tagged BCP-47 string (e.g. "en-US",
   // "zh-Hans-CN") returned by intl-localematcher. Normalize to a supported
-  // locale before comparing — otherwise the radio shows neither option active.
+  // locale before comparing — otherwise the select shows neither option active.
   const currentLocale: SupportedLocale = SUPPORTED_LOCALES.includes(
     i18n.language as SupportedLocale,
   )
@@ -46,6 +62,11 @@ export function PreferencesTab() {
     { value: "dark" as const, label: t(($) => $.preferences.theme.dark) },
     { value: "system" as const, label: t(($) => $.preferences.theme.system) },
   ];
+
+  // `next-themes` reports `undefined` until it has read the stored preference
+  // on the client. The select needs a value to render, and "system" is what the
+  // provider itself falls back to, so the two agree either way.
+  const currentTheme = theme ?? "system";
 
   const languageOptions: { value: SupportedLocale; label: string }[] = [
     { value: "en", label: t(($) => $.preferences.language.english) },
@@ -88,82 +109,49 @@ export function PreferencesTab() {
   };
 
   return (
-    <SettingsTab
-      title={t(($) => $.page.tabs.preferences)}
-      description={t(($) => $.preferences.page_description)}
-    >
-      <FieldGroup className={SETTINGS_FIELD_GROUP_CLASS}>
-        <SettingRow
-          title={t(($) => $.preferences.theme.title)}
-          description={t(($) => $.preferences.theme.description)}
-          labelFor="profile-theme"
-        >
-          <Select
-            items={themeOptions}
-            value={theme}
-            onValueChange={(next) => {
-              if (!next || next === theme) return;
-              setTheme(next as (typeof themeOptions)[number]["value"]);
-              toast.success(t(($) => $.auto_save.toast_saved), {
-                id: "settings-auto-save",
-              });
-            }}
-          >
-            <SelectTrigger
-              id="profile-theme"
-              aria-label={t(($) => $.preferences.theme.title)}
-              className="border-input text-foreground w-full gap-2 border px-4 py-2 text-body font-normal shadow-none"
-            >
-              <SelectValue>
-                {themeOptions.find((option) => option.value === theme)?.label}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent align="start">
-              {themeOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </SettingRow>
+    <SettingsGroup title={t(($) => $.preferences.general_title)}>
+      <SettingsFormRow
+        label={t(($) => $.preferences.theme.title)}
+        description={t(($) => $.preferences.theme.description)}
+        minWidth={COMPACT_SELECT_MIN_WIDTH}
+      >
+        <SettingsSelect
+          className="w-full"
+          id="profile-theme"
+          label={t(($) => $.preferences.theme.title)}
+          options={themeOptions}
+          value={currentTheme}
+          onValueChange={(next) => {
+            if (next === currentTheme) return;
+            setTheme(next as (typeof themeOptions)[number]["value"]);
+            toast.success(t(($) => $.auto_save.toast_saved), {
+              id: "settings-auto-save",
+            });
+          }}
+        />
+      </SettingsFormRow>
 
-        <SettingRow
-          title={t(($) => $.preferences.language.title)}
-          description={t(($) => $.preferences.language.description)}
-          labelFor="profile-language"
-        >
-          <Select
-            items={languageOptions}
-            value={currentLocale}
-            onValueChange={(next) => {
-              if (next) void handleLanguageChange(next as SupportedLocale);
-            }}
-          >
-            <SelectTrigger
-              id="profile-language"
-              aria-label={t(($) => $.preferences.language.title)}
-              className="border-input text-foreground w-full gap-2 border px-4 py-2 text-body font-normal shadow-none"
-            >
-              <SelectValue>
-                {languageOptions.find((option) => option.value === currentLocale)?.label}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent align="start">
-              {languageOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </SettingRow>
+      <SettingsFormRow
+        label={t(($) => $.preferences.language.title)}
+        description={t(($) => $.preferences.language.description)}
+        minWidth={COMPACT_SELECT_MIN_WIDTH}
+      >
+        <SettingsSelect
+          className="w-full"
+          id="profile-language"
+          label={t(($) => $.preferences.language.title)}
+          options={languageOptions}
+          value={currentLocale}
+          onValueChange={(next) => {
+            void handleLanguageChange(next as SupportedLocale);
+          }}
+        />
+      </SettingsFormRow>
 
-        <TimezoneRow />
+      <TimezoneRow />
 
-        <StickyCommentBarRow />
-      </FieldGroup>
-    </SettingsTab>
+      <StickyCommentBarRow />
+    </SettingsGroup>
   );
 }
 
@@ -171,16 +159,16 @@ function StickyCommentBarRow() {
   const { t } = useT("settings");
   const sticky = useCommentComposerStore((s) => s.sticky);
   const toggleSticky = useCommentComposerStore((s) => s.toggleSticky);
+  const label = t(($) => $.preferences.sticky_comment_bar.title);
 
   return (
-    <SettingRow
-      title={t(($) => $.preferences.sticky_comment_bar.title)}
+    <SettingsFormRow
+      label={label}
       description={t(($) => $.preferences.sticky_comment_bar.hint)}
-      labelFor="profile-sticky-comment-bar"
     >
-      <Switch
+      <SettingsSwitch
         id="profile-sticky-comment-bar"
-        size="sm"
+        label={label}
         checked={sticky}
         onCheckedChange={() => {
           toggleSticky();
@@ -188,14 +176,16 @@ function StickyCommentBarRow() {
             id: "settings-auto-save",
           });
         }}
-        aria-label={t(($) => $.preferences.sticky_comment_bar.title)}
       />
-    </SettingRow>
+    </SettingsFormRow>
   );
 }
 
-// Base UI rejects "" as a SelectItem value, so route the "no preference"
-// state through this sentinel and translate at the wire boundary.
+// The "follow the browser" option is not a timezone, and its wire payload is
+// the empty string the backend translates to NULL. An empty option *value*
+// would be indistinguishable from "nothing selected" to the select itself, so
+// the state gets its own sentinel and the translation happens at the wire
+// boundary.
 const BROWSER_TZ_VALUE = "__browser__";
 
 function TimezoneRow() {
@@ -208,7 +198,17 @@ function TimezoneRow() {
 
   // Full IANA list (from timezoneOptions in common/timezone-select) so a
   // user needing a non-curated zone isn't stuck with ~18 common ones.
-  // Memoized — timezoneOptions enumerates ~600 IANA zones per call.
+  // Memoized — timezoneOptions walks the whole IANA set per call:
+  // `Intl.supportedValuesOf("timeZone")` measures 418 in the Electron renderer's
+  // Chromium (this comment used to say "~600"), and the helper unions that with
+  // the curated fallback, the current zone and the browser's. Measured on this
+  // select: **421 rows** — and only 9 of them in the DOM at a time, because antd
+  // v6 keeps the option list in a plain scrolling holder
+  // (`.ant-select-dropdown-list-holder`) and draws a window into it. The list
+  // length is that holder's `scrollHeight / rowHeight`; counting
+  // `.ant-select-item-option` nodes measures the window. An earlier version of
+  // this comment said "418-420 rows", which was the IANA set rather than the
+  // list this select actually holds.
   const options = useMemo(
     () => timezoneOptions(stored ?? browser),
     [stored, browser],
@@ -232,50 +232,56 @@ function TimezoneRow() {
     }
   };
 
-  const formatTZLabel = (tz: string) => {
-    if (tz === BROWSER_TZ_VALUE) {
-      return `${browser}${t(($) => $.preferences.timezone.browser_suffix)}`;
-    }
-    return tz;
+  // The IANA list is long and mostly punctuation; the monospace face is what
+  // makes "Asia/Shanghai" scannable against its neighbours. It reaches the
+  // trigger and each option as inline style rather than a class, because antd
+  // sets `font-size` on both elements itself and its selectors outrank a
+  // utility — the full reasoning is in `settings-select.tsx`. The values are
+  // still the tokens, so this is the design scale and not a pixel count.
+  //
+  // It has to be a style on each option rather than a wrapper node around each
+  // option's text, because an option's label has to stay a plain string for the
+  // select to give it a `title` (see `settings-select.tsx`), and the old
+  // per-option `SelectItem className` is gone for the same reason.
+  const TZ_TYPOGRAPHY: CSSProperties = {
+    fontSize: "var(--text-caption)",
+    lineHeight: "var(--text-caption--line-height)",
+    fontFamily: "var(--font-mono)",
   };
+  const formatTZLabel = (tz: string) =>
+    tz === BROWSER_TZ_VALUE
+      ? `${browser}${t(($) => $.preferences.timezone.browser_suffix)}`
+      : tz;
 
   return (
-    <SettingRow
-      title={t(($) => $.preferences.timezone.title)}
+    <SettingsFormRow
+      label={t(($) => $.preferences.timezone.title)}
       description={t(($) => $.preferences.timezone.hint)}
-      labelFor="preferences-timezone"
+      minWidth={WIDE_SELECT_MIN_WIDTH}
     >
-      <Select
-        items={[
+      <SettingsSelect
+        className="w-full"
+        id="preferences-timezone"
+        label={t(($) => $.preferences.timezone.title)}
+        options={[
           { value: BROWSER_TZ_VALUE, label: formatTZLabel(BROWSER_TZ_VALUE) },
           ...options.map((timezone) => ({
             value: timezone,
             label: formatTZLabel(timezone),
           })),
         ]}
+        // 421 rows on this select, measured; this is the list `settings-select.tsx`
+        // names as the reason the wrapper chose the antd-backed `Select` over
+        // the base-ui atoms in the first place. Filtering matches the value as
+        // well as the label, so "Asia/Shanghai" and "Shanghai" both land —
+        // measured: typing "shanghai" takes 421 rows to 1.
+        search
+        typography={TZ_TYPOGRAPHY}
         value={value}
         onValueChange={(next) => {
-          if (next) void handleChange(next);
+          void handleChange(next);
         }}
-      >
-        <SelectTrigger
-          id="preferences-timezone"
-          className="border-input text-foreground w-full gap-2 border px-4 py-2 font-mono text-caption font-normal shadow-none"
-          aria-label={t(($) => $.preferences.timezone.title)}
-        >
-          <SelectValue>{formatTZLabel(value)}</SelectValue>
-        </SelectTrigger>
-        <SelectContent align="start" className="max-h-72">
-          <SelectItem value={BROWSER_TZ_VALUE} className="font-mono text-caption">
-            {formatTZLabel(BROWSER_TZ_VALUE)}
-          </SelectItem>
-          {options.map((timezone) => (
-            <SelectItem key={timezone} value={timezone} className="font-mono text-caption">
-              {formatTZLabel(timezone)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </SettingRow>
+      />
+    </SettingsFormRow>
   );
 }

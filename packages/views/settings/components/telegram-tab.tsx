@@ -7,10 +7,24 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
+// Two design systems in one file, on purpose, and the split is by *surface*
+// rather than by component: `TelegramTab` lives only inside the settings
+// dialog, which mounts `LobeThemeBridge`, so it is Lobe.
+// `TelegramAgentBindButton` and its two sub-components are rendered from the
+// **agent detail page**
+// (`packages/views/agents/components/tabs/integrations-tab.tsx`), so they keep
+// the shadcn primitives. That is not a *capability* boundary: the agent surface
+// mounts its own `LobeThemeBridge`
+// (`agents/components/agent-detail-page.tsx:323`), so the Lobe primitives they
+// would need do render there. They stay shadcn because converting a control is
+// a visual change — it needs its own decision and its own screenshot
+// acceptance, and this round migrated the surface, not every control on it. The
+// alias below is what keeps the two apart at the call sites. The Slack tab's
+// header carries the long form of this note.
+import { Button as LobeButton } from "@lobehub/ui/base-ui";
 import { TelegramMark } from "./telegram-mark";
 import { cn } from "@orvilo/ui/lib/utils";
 import { Button } from "@orvilo/ui/components/ui/button";
-import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -28,6 +42,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@orvilo/ui/components/ui/alert-dialog";
+import { SettingsEmptyState } from "./settings-empty";
+import { useSettingsConfirm } from "./settings-confirm";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 import { useAuthStore } from "@orvilo/core/auth";
 import { useWorkspaceId } from "@orvilo/core/hooks";
 import { memberListOptions } from "@orvilo/core/workspace/queries";
@@ -64,128 +81,112 @@ export function TelegramTab() {
   const installations = data?.installations ?? [];
   const configured = data?.configured === true;
 
-  const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
-  const [disconnecting, setDisconnecting] = useState(false);
+  const confirm = useSettingsConfirm();
 
-  async function handleDisconnect() {
-    if (!setupWritable || !disconnectTarget || disconnecting) return;
-    setDisconnecting(true);
+  /**
+   * Await the server before touching cache/UI (repo rule: no optimistic removal
+   * on flows that confirm/destroy), and reject on failure on purpose:
+   * `useSettingsConfirm`'s `onOk` keeps the dialog open only while its promise
+   * is unsettled, so swallowing the error here would dismiss the confirmation
+   * exactly when the bot is still installed.
+   */
+  async function handleDisconnect(installationId: string) {
+    if (!setupWritable) return;
     try {
-      // Await the server before touching cache/UI (repo rule: no optimistic
-      // removal on flows that confirm/destroy).
-      await api.deleteTelegramInstallation(wsId, disconnectTarget);
+      await api.deleteTelegramInstallation(wsId, installationId);
       await qc.invalidateQueries({ queryKey: telegramKeys.installations(wsId) });
       toast.success(t(($) => $.telegram.toast_disconnected));
-      setDisconnectTarget(null);
     } catch (e) {
       toast.error(
         e instanceof Error ? e.message : t(($) => $.telegram.toast_disconnect_failed),
       );
-    } finally {
-      setDisconnecting(false);
+      throw e;
     }
   }
+
+  const openDisconnectConfirm = (installationId: string) =>
+    confirm({
+      title: t(($) => $.telegram.disconnect_confirm_title),
+      description: t(($) => $.telegram.disconnect_confirm_description),
+      confirmLabel: t(($) => $.telegram.disconnect),
+      cancelLabel: t(($) => $.telegram.disconnect_confirm_cancel),
+      onConfirm: () => handleDisconnect(installationId),
+    });
 
   return (
     <div className="space-y-8">
       {!setupWritable && <MessagingSetupNotice />}
+      {/* The loading and load-failure cards were two branches of "there is
+          nothing to list"; both are the same empty state, and `SettingsEmptyState`
+          is where an empty state lives. */}
       {isError ? (
-        <Card>
-          <CardContent>
-            <p className="text-body text-muted-foreground">
-              {t(($) => $.telegram.load_failed)}
-            </p>
-          </CardContent>
-        </Card>
+        <SettingsGroup variant="outlined" title={t(($) => $.telegram.installed_bots)}>
+          <SettingsEmptyState title={t(($) => $.telegram.load_failed)} />
+        </SettingsGroup>
       ) : isLoading ? (
-        <Card>
-          <CardContent>
-            <p className="text-body text-muted-foreground">{t(($) => $.telegram.loading)}</p>
-          </CardContent>
-        </Card>
+        <SettingsGroup variant="outlined" title={t(($) => $.telegram.installed_bots)}>
+          <SettingsEmptyState title={t(($) => $.telegram.loading)} />
+        </SettingsGroup>
       ) : !configured && installations.length === 0 ? (
-        <Card>
-          <CardContent className="space-y-2">
-            <p className="text-body font-medium">{t(($) => $.telegram.not_enabled_title)}</p>
-            <p className="text-caption text-muted-foreground">
-              {t(($) => $.telegram.not_enabled_description_prefix)}{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                ORVILO_TELEGRAM_SECRET_KEY
-              </code>{" "}
-              {t(($) => $.telegram.not_enabled_description_suffix)}{" "}
-              {t(($) => $.telegram.not_enabled_self_host_hint)}
-            </p>
-          </CardContent>
-        </Card>
+        // A notice, not a settings group: there are no rows behind it, so the
+        // paragraph is the group's *body*. `description` would render it in the
+        // header, beside the title, where it reads as a subtitle.
+        <SettingsGroup
+          variant="outlined"
+          title={t(($) => $.telegram.not_enabled_title)}
+        >
+          <p className="text-body text-muted-foreground">
+            {t(($) => $.telegram.not_enabled_description_prefix)}{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-micro">
+              ORVILO_TELEGRAM_SECRET_KEY
+            </code>{" "}
+            {t(($) => $.telegram.not_enabled_description_suffix)}{" "}
+            {t(($) => $.telegram.not_enabled_self_host_hint)}
+          </p>
+        </SettingsGroup>
       ) : (
-        <section className="space-y-3">
-          <h2 className="text-body font-semibold">{t(($) => $.telegram.installed_bots)}</h2>
+        <SettingsGroup
+          variant="outlined"
+          title={t(($) => $.telegram.installed_bots)}
+        >
           {installations.length === 0 ? (
-            <Card>
-              <CardContent className="space-y-2">
-                <p className="text-body font-medium">{t(($) => $.telegram.empty_title)}</p>
-                <p className="text-caption text-muted-foreground">
+            <SettingsEmptyState
+              title={t(($) => $.telegram.empty_title)}
+              description={
+                <>
                   {t(($) => $.telegram.empty_description_prefix)}{" "}
                   <strong>{t(($) => $.telegram.empty_description_cta)}</strong>{" "}
                   {t(($) => $.telegram.empty_description_suffix)}
-                </p>
-              </CardContent>
-            </Card>
+                </>
+              }
+            />
           ) : (
-            <Card>
-              <CardContent className="divide-y">
-                {installations.map((inst) => (
-                  <InstallationRow
-                    key={inst.id}
-                    installation={inst}
-                    canManage={canManage && setupWritable}
-                    onDisconnect={() => setDisconnectTarget(inst.id)}
-                  />
-                ))}
-              </CardContent>
-            </Card>
+            installations.map((inst, index) => (
+              <InstallationRow
+                key={inst.id}
+                divider={index > 0}
+                installation={inst}
+                canManage={canManage && setupWritable}
+                onDisconnect={() => openDisconnectConfirm(inst.id)}
+              />
+            ))
           )}
-        </section>
+        </SettingsGroup>
       )}
-
-      <AlertDialog
-        open={setupWritable && !!disconnectTarget}
-        onOpenChange={(v) => {
-          if (!v && !disconnecting) setDisconnectTarget(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t(($) => $.telegram.disconnect_confirm_title)}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.telegram.disconnect_confirm_description)}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={disconnecting}>
-              {t(($) => $.telegram.disconnect_confirm_cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction onClick={handleDisconnect} disabled={disconnecting}>
-              {disconnecting
-                ? t(($) => $.telegram.disconnecting)
-                : t(($) => $.telegram.disconnect)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }
 
+/** One installation, as a `SettingsFormRow` — see the Slack tab's twin. */
 function InstallationRow({
   installation,
   canManage,
+  divider,
   onDisconnect,
 }: {
   installation: TelegramInstallation;
   canManage: boolean;
+  divider: boolean;
   onDisconnect: () => void;
 }) {
   const { t } = useT("settings");
@@ -196,44 +197,55 @@ function InstallationRow({
     ? getAgentName(installation.agent_id)
     : t(($) => $.page.integrations_workspace_connection);
   return (
-    <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
-      <div className="flex items-start gap-3">
-        {installation.agent_id && <ActorAvatar
-          actorType="agent"
-          actorId={installation.agent_id}
-          size="lg"
-          enableHoverCard
-          profileLink
-        />}
-        <div className="space-y-1">
+    <SettingsFormRow
+      divider={divider}
+      label={
+        <span className="inline-flex min-w-0 items-center gap-2">
+          {installation.agent_id ? (
+            <ActorAvatar
+              actorType="agent"
+              actorId={installation.agent_id}
+              size="lg"
+              enableHoverCard
+              profileLink
+            />
+          ) : null}
+          <span className="min-w-0 truncate">{agentName}</span>
+          {installation.bot_username ? (
+            <span className="shrink-0 text-caption text-muted-foreground">
+              @{installation.bot_username}
+            </span>
+          ) : null}
+          {!isInstalled ? (
+            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
+              {t(($) => $.telegram.revoked_badge)}
+            </span>
+          ) : null}
+        </span>
+      }
+      description={
+        <>
+          {/* Not `compact`: this row has always rendered the full status
+              (label + badge). The full branch is the one that reports an
+              `error` install as the destructive/red pill — the compact branch
+              has two dot colours, so `error` would read amber and look exactly
+              like `disconnected`. See the Slack tab's row for the long form. */}
           <MessagingConnectionStatus installation={installation} />
-          <p className="text-body font-medium">
-            {agentName}
-            {installation.bot_username ? (
-              <span className="ml-2 text-caption text-muted-foreground">
-                @{installation.bot_username}
-              </span>
-            ) : null}
-            {!isInstalled && (
-              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
-                {t(($) => $.telegram.revoked_badge)}
-              </span>
-            )}
-          </p>
-          <p className="text-micro text-muted-foreground">
+          <span className="block">
             {t(($) => $.telegram.installed_at_label, {
               when: new Date(installation.installed_at).toLocaleString(locale),
             })}
-          </p>
-        </div>
-      </div>
-      {canManage && isInstalled && (
-        <Button variant="outline" size="sm" onClick={onDisconnect}>
+          </span>
+        </>
+      }
+    >
+      {canManage && isInstalled ? (
+        <LobeButton onClick={onDisconnect}>
           <Trash2 className="h-3 w-3" />
           {t(($) => $.telegram.disconnect)}
-        </Button>
-      )}
-    </div>
+        </LobeButton>
+      ) : null}
+    </SettingsFormRow>
   );
 }
 
@@ -362,6 +374,9 @@ export function TelegramAgentBindButton({
         {t(($) => $.telegram.bind_button)}
       </Button>
 
+      {/* shadcn `Dialog`, not Lobe `Modal`: this component renders on the agent
+          detail page. That surface is bridged, so this is a conversion this
+          round did not take rather than one it could not. See the import note. */}
       <Dialog
         open={dialogOpen}
         onOpenChange={(v) => (v ? setDialogOpen(true) : closeDialog())}
@@ -547,6 +562,7 @@ function TelegramAgentBotInstalledControls({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
     </div>
   );
 }

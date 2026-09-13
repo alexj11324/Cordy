@@ -2,7 +2,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { renderWithI18n } from "../../test/i18n";
 import { ApiError } from "@orvilo/core/api";
 import { configStore } from "@orvilo/core/config";
 import {
@@ -10,9 +11,6 @@ import {
   COMPOSIO_MCP_APPS_FLAG,
   LINEAR_INSTALLATION_FOUNDATION_FLAG,
 } from "@orvilo/core/feature-flags";
-import { I18nProvider } from "@orvilo/core/i18n/react";
-import enCommon from "../../locales/en/common.json";
-import enSettings from "../../locales/en/settings.json";
 
 const composioErrorRef = vi.hoisted(() => ({
   current: null as Error | null,
@@ -160,12 +158,21 @@ import { IntegrationsTab } from "./integrations-tab";
 
 afterEach(cleanup);
 
-function renderTab() {
-  return render(
-    <I18nProvider locale="en" resources={{ en: { common: enCommon, settings: enSettings } }}>
-      <IntegrationsTab />
-    </I18nProvider>,
-  );
+// `{ lobe: true }` is required, not decoration. This suite used a bare `render`
+// with its own `I18nProvider` — it did not merely omit the option, it bypassed
+// the bridge-aware helper entirely — while rendering `IntegrationSetupGuide`
+// for real at four call sites and `IntegrationRowMenu` for the channel actions.
+// Both components are Lobe now, and Lobe's `Button` throws
+// `Please wrap your app with <ConfigProvider> (or <MotionProvider>)` from
+// `useMotionComponent` without the bridge. A test file is a host surface.
+// Async because the bridge is lazy: until its module resolves the tree is a
+// `Suspense` fallback of `null`, so a synchronous first query sees an empty
+// `<body>`. The channel card is rendered unconditionally, which makes it the
+// one handle every case in this file can wait on.
+async function renderTab() {
+  const result = renderWithI18n(<IntegrationsTab />, { lobe: true });
+  await screen.findByTestId("integration-channel-card-lark");
+  return result;
 }
 
 function openChannelAction(card: HTMLElement, label: string) {
@@ -203,8 +210,8 @@ describe("Settings IntegrationsTab", () => {
     });
   });
 
-  it("renders messaging integrations as workspace cards instead of expanded forms", () => {
-    renderTab();
+  it("renders messaging integrations as workspace cards instead of expanded forms", async () => {
+    await renderTab();
 
     for (const channel of ["lark", "slack", "dingtalk", "wecom", "telegram", "weixin"]) {
       expect(screen.getByTestId(`integration-channel-card-${channel}`)).toBeInTheDocument();
@@ -212,21 +219,21 @@ describe("Settings IntegrationsTab", () => {
     }
   });
 
-  it("shows used plus reserved hosted Agent turns", () => {
+  it("shows used plus reserved hosted Agent turns", async () => {
     messagingQuotaRef.current = { mode: "managed", used: 7, reserved: 2, limit: 100 };
-    renderTab();
+    await renderTab();
     expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
       "9 of 100 Agent turns used this period",
     );
   });
 
-  it("treats disabled hosted-turn policy as unlimited", () => {
+  it("treats disabled hosted-turn policy as unlimited", async () => {
     messagingQuotaRef.current = { mode: "disabled", used: null, reserved: null, limit: null };
-    renderTab();
+    await renderTab();
     expect(screen.getByTestId("messaging-quota")).toHaveTextContent("Unlimited");
   });
 
-  it("shows hosted installation and owned-workspace capacity", () => {
+  it("shows hosted installation and owned-workspace capacity", async () => {
     configStore.getState().setFeatureFlags({
       [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
       [COMPOSIO_MCP_APPS_FLAG]: true,
@@ -246,7 +253,7 @@ describe("Settings IntegrationsTab", () => {
       ],
     };
 
-    renderTab();
+    await renderTab();
 
     expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
       "Hosted installations: 1 of 3 installed",
@@ -256,7 +263,7 @@ describe("Settings IntegrationsTab", () => {
     );
   });
 
-  it("shows a runtime-confirmed workspace installation as connected", () => {
+  it("shows a runtime-confirmed workspace installation as connected", async () => {
     authUserRef.current = { id: "admin-user" };
     membersRef.current = [{ user_id: "admin-user", role: "owner" }];
     channelInstallationsRef.current.slack = {
@@ -274,14 +281,14 @@ describe("Settings IntegrationsTab", () => {
       }],
     };
 
-    renderTab();
+    await renderTab();
 
     const card = screen.getByTestId("integration-channel-card-slack");
     expect(within(card).getByText("Connected")).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: "Manage" })).toBeInTheDocument();
   });
 
-  it("opens server setup guidance without exposing credential actions", () => {
+  it("opens server setup guidance without exposing credential actions", async () => {
     authUserRef.current = { id: "admin-user" };
     membersRef.current = [{ user_id: "admin-user", role: "owner" }];
     configStore.getState().setMessagingConfig({
@@ -290,7 +297,7 @@ describe("Settings IntegrationsTab", () => {
       platforms: [],
     });
 
-    renderTab();
+    await renderTab();
 
     expect(screen.getAllByRole("button", { name: "View setup" })).toHaveLength(6);
     openChannelAction(screen.getByTestId("integration-channel-card-dingtalk"), "View setup");
@@ -299,7 +306,7 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.queryByTestId("integration-setup-guide-dingtalk")).toBeNull();
   });
 
-  it("keeps existing self-hosted connections readable for workspace members", () => {
+  it("keeps existing self-hosted connections readable for workspace members", async () => {
     authUserRef.current = { id: "member-user" };
     membersRef.current = [{ user_id: "member-user", role: "member" }];
     configStore.getState().setMessagingConfig({ mode: "server_configured", setupWritable: false, platforms: [] });
@@ -307,59 +314,59 @@ describe("Settings IntegrationsTab", () => {
       configured: true, install_supported: true,
       installations: [{ id: "existing-slack", agent_id: null, status: "installed" }],
     };
-    renderTab();
+    await renderTab();
     openChannelAction(screen.getByTestId("integration-channel-card-slack"), "View details");
     expect(screen.getByTestId("slack-tab")).toBeInTheDocument();
     expect(screen.queryByTestId("slack-hub-install")).toBeNull();
   });
 
-  it("offers Slack token setup when hosted OAuth is unavailable", () => {
+  it("offers Slack token setup when hosted OAuth is unavailable", async () => {
     authUserRef.current = { id: "admin-user" };
     membersRef.current = [{ user_id: "admin-user", role: "owner" }];
     channelInstallationsRef.current.slack = {
       configured: true, install_supported: true, managed_supported: false, installations: [],
     };
-    renderTab();
+    await renderTab();
     openChannelAction(screen.getByTestId("integration-channel-card-slack"), "Configure");
     expect(screen.getByTestId("slack-hub-install")).toBeInTheDocument();
     expect(screen.queryByTestId("slack-tab")).toBeNull();
     expect(screen.getByTestId("integration-setup-guide-slack")).toHaveTextContent("xoxb-");
   });
 
-  it("uses Slack OAuth only when the server advertises managed support", () => {
+  it("uses Slack OAuth only when the server advertises managed support", async () => {
     authUserRef.current = { id: "admin-user" };
     membersRef.current = [{ user_id: "admin-user", role: "owner" }];
     channelInstallationsRef.current.slack = {
       configured: true, install_supported: true, managed_supported: true, installations: [],
     };
-    renderTab();
+    await renderTab();
     openChannelAction(screen.getByTestId("integration-channel-card-slack"), "Configure");
     expect(screen.getByTestId("slack-tab")).toBeInTheDocument();
     expect(screen.queryByTestId("slack-hub-install")).toBeNull();
     expect(screen.getByTestId("integration-setup-guide-slack")).not.toHaveTextContent("xoxb-");
   });
 
-  it("keeps workspace setup reachable beside an existing Agent connection", () => {
+  it("keeps workspace setup reachable beside an existing Agent connection", async () => {
     authUserRef.current = { id: "admin-user" };
     membersRef.current = [{ user_id: "admin-user", role: "owner" }];
     channelInstallationsRef.current.telegram = {
       configured: true, install_supported: true,
       installations: [{ id: "agent-telegram", agent_id: "agent-1", status: "installed" }],
     };
-    renderTab();
+    await renderTab();
     openChannelAction(screen.getByTestId("integration-channel-card-telegram"), "Manage");
     expect(screen.getByTestId("telegram-tab")).toBeInTheDocument();
     expect(screen.getByTestId("telegram-hub-install")).toBeInTheDocument();
   });
 
-  it("opens the platform setup guide without exposing deployment variables", () => {
+  it("opens the platform setup guide without exposing deployment variables", async () => {
     authUserRef.current = { id: "admin-user" };
     membersRef.current = [{ user_id: "admin-user", role: "owner" }];
     channelInstallationsRef.current.dingtalk = {
       configured: true, install_supported: true, installations: [],
     };
 
-    renderTab();
+    await renderTab();
     openChannelAction(screen.getByTestId("integration-channel-card-dingtalk"), "Configure");
 
     expect(screen.getByTestId("integration-setup-guide-dingtalk")).toBeInTheDocument();
@@ -367,9 +374,9 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.queryByText("ORVILO_DINGTALK_SECRET_KEY")).toBeNull();
   });
 
-  it("hides Composio and disables the toolkits query when the feature flag is off", () => {    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: false });
+  it("hides Composio and disables the toolkits query when the feature flag is off", async () => {    configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: false });
 
-    renderTab();
+    await renderTab();
 
     expect(screen.queryByTestId("composio-tab")).toBeNull();
     const composioQuery = queryCallsRef.current.find(
@@ -378,8 +385,8 @@ describe("Settings IntegrationsTab", () => {
     expect(composioQuery?.enabled).toBe(false);
   });
 
-  it("shows Composio when the feature flag is on and the integration is configured", () => {
-    renderTab();
+  it("shows Composio when the feature flag is on and the integration is configured", async () => {
+    await renderTab();
 
     expect(screen.getByTestId("composio-tab")).toBeInTheDocument();
     const composioQuery = queryCallsRef.current.find(
@@ -388,14 +395,14 @@ describe("Settings IntegrationsTab", () => {
     expect(composioQuery?.enabled).toBe(true);
   });
 
-  it("shows Linear by default when the server has not supplied a release flag", () => {
+  it("shows Linear by default when the server has not supplied a release flag", async () => {
     configStore.getState().setFeatureFlags({});
-    renderTab();
+    await renderTab();
     expect(screen.getByTestId("integration-channel-card-linear")).toBeInTheDocument();
   });
 
-  it("shows Linear only when its installation feature is enabled", () => {
-    renderTab();
+  it("shows Linear only when its installation feature is enabled", async () => {
+    await renderTab();
     expect(screen.queryByTestId("integration-channel-card-linear")).toBeNull();
 
     cleanup();
@@ -403,12 +410,12 @@ describe("Settings IntegrationsTab", () => {
       [COMPOSIO_MCP_APPS_FLAG]: true,
       [LINEAR_INSTALLATION_FOUNDATION_FLAG]: true,
     });
-    renderTab();
+    await renderTab();
     expect(screen.getByTestId("integration-channel-card-linear")).toBeInTheDocument();
   });
 
-  it("shows each channel description beside its title", () => {
-    renderTab();
+  it("shows each channel description beside its title", async () => {
+    await renderTab();
 
     for (const channel of ["lark", "slack", "dingtalk", "wecom", "weixin", "telegram"]) {
       const card = screen.getByTestId(`integration-channel-card-${channel}`);
@@ -424,8 +431,8 @@ describe("Settings IntegrationsTab", () => {
   // one speech bubble, with nothing on the row saying which platform it was
   // (#6585). Requiring five distinct shapes is the cheap guard against a
   // regression to that.
-  it("gives every channel its own brand mark", () => {
-    renderTab();
+  it("gives every channel its own brand mark", async () => {
+    await renderTab();
 
     const shapes = ["lark", "slack", "dingtalk", "wecom", "weixin", "telegram"].map(
       (channel) => screen.getByTestId(`integration-channel-icon-${channel}`).innerHTML,
@@ -434,37 +441,37 @@ describe("Settings IntegrationsTab", () => {
     expect(new Set(shapes).size).toBe(shapes.length);
   });
 
-  it("hides Composio when the feature flag is on but the server reports 503", () => {
+  it("hides Composio when the feature flag is on but the server reports 503", async () => {
     composioErrorRef.current = new ApiError("unavailable", 503, "Service Unavailable");
 
-    renderTab();
+    await renderTab();
 
     expect(screen.queryByTestId("composio-tab")).toBeNull();
   });
 
-  it("hides the Git providers section when the deployment reports it unavailable", () => {
+  it("hides the Git providers section when the deployment reports it unavailable", async () => {
     // Default (managed cloud / older server): vcsIntegrationAvailable is false.
-    renderTab();
+    await renderTab();
 
     expect(screen.queryByTestId("vcs-tab")).toBeNull();
   });
 
-  it("shows the Git providers section on a self-hosted deployment that enables it", () => {
+  it("shows the Git providers section on a self-hosted deployment that enables it", async () => {
     configStore.getState().setAuthConfig({ allowSignup: true, vcsIntegrationAvailable: true });
 
-    renderTab();
+    await renderTab();
 
     expect(screen.getByTestId("vcs-tab")).toBeInTheDocument();
   });
 
-  it("renders the centered page chrome in standalone route mode", () => {
-    render(
-      <I18nProvider locale="en" resources={{ en: { common: enCommon, settings: enSettings } }}>
-        <IntegrationsTab standalone />
-      </I18nProvider>,
-    );
+  it("renders the centered page chrome in standalone route mode", async () => {
+    renderWithI18n(<IntegrationsTab standalone />, { lobe: true });
 
-    expect(screen.getByRole("heading", { name: "IM" })).toBeInTheDocument();
+    // The heading is the tab's own again: `SettingsTab`'s non-nested branch
+    // used to render it, and that component is gone (inside the dialog the
+    // shell's `DialogHeader` owns the title, which is why dropping it there is
+    // correct). The standalone Web route has no shell, so it keeps one.
+    expect(await screen.findByRole("heading", { name: "IM" })).toBeInTheDocument();
     expect(screen.getByTestId("integration-channel-card-lark")).toBeInTheDocument();
   });
 });

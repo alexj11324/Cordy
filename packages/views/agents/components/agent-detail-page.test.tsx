@@ -12,6 +12,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ApiError } from "@orvilo/core/api";
 import type { Agent } from "@orvilo/core/types";
 import { I18nProvider } from "@orvilo/core/i18n/react";
+import { Button } from "@lobehub/ui/base-ui";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
@@ -37,6 +38,18 @@ vi.mock("./agent-overview-pane", () => ({
     >
       update model
     </button>
+    {/*
+      A real Lobe primitive, deliberately — the same technique
+      `integrations/index.test.tsx` uses. `AgentDetailPage` mounts
+      `LobeThemeBridge` at its route root, and the reason is this pane:
+      `AgentAccessSettings` renders Lobe's `Form.Group`, whose colour tokens are
+      antd CSS variables the bridge seeds. A stub that rendered nothing Lobe
+      made the bridge unobservable from here, so removing it left every test in
+      this file green. A Lobe `Button` calls `useMotionComponent()` and throws
+      `Please wrap your app with <ConfigProvider> (or <MotionProvider>)`
+      without one, so reaching any assertion below now proves it is mounted.
+    */}
+    <Button>Lobe probe</Button>
     </>
   ),
 }));
@@ -373,6 +386,21 @@ describe("AgentDetailPage direct-detail fallback", () => {
     expect(
       queryClient.getQueryData<Agent>(["agents", "ws-1", "detail", "agent-1"]),
     ).toMatchObject({ model: "new-model" });
+  });
+});
+
+describe("AgentDetailPage Lobe bridge", () => {
+  it("mounts the theme bridge the overview pane's Lobe content needs", async () => {
+    renderPage();
+
+    // The pane stub renders a real Lobe `Button`, so this only resolves when
+    // `LobeThemeBridge` is mounted at the route root. Deleting that bridge from
+    // `agent-detail-page.tsx` is what turns this red — which is the point: the
+    // earlier version of this file stubbed the pane with no Lobe element at all
+    // and could not tell the difference.
+    expect(
+      await screen.findByRole("button", { name: "Lobe probe" }),
+    ).toBeInTheDocument();
   });
 });
 

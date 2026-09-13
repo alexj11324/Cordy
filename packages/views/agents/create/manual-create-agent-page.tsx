@@ -7,6 +7,7 @@ import { useWorkspacePaths } from "@orvilo/core/paths";
 import { agentListOptions } from "@orvilo/core/workspace/queries";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
+import { LobeThemeBridge } from "../../lobe";
 import { AgentConfigurationPanel } from "./agent-configuration-panel";
 import { CreateAgentFooter } from "./create-agent-footer";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
@@ -91,58 +92,66 @@ export function ManualCreateAgentPage() {
     form.draft.name.trim().length > 0 && form.draftReady && !submit.creating;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-background">
-      <BreadcrumbHeader
-        segments={[{ href: paths.agents(), label: t(($) => $.page.title) }]}
-        leaf={
-          <span className="truncate font-medium text-foreground">
-            {duplicateAgent
-              ? t(($) => $.creation_studio.duplicate_title, {
-                  name: duplicateAgent.name,
-                })
-              : teamId
-                ? t(($) => $.creation_studio.team_title)
-                : t(($) => $.creation_studio.title)}
-          </span>
-        }
-      />
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-4xl px-5 py-8 sm:px-8">
-            {duplicateAgent && (
-              <div className="mb-5 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-body">
-                {t(($) => $.creation_studio.duplicate_env_notice)}
-              </div>
-            )}
-            {duplicateRuntimeReset && (
-              <div className="mb-5 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-body">
-                {t(($) => $.creation_studio.duplicate_runtime_reset_notice)}
-              </div>
-            )}
-            <AgentConfigurationPanel
-              showConversationStarters={false}
-              draft={form.draft}
-              onChange={form.setDraft}
-              runtimes={form.runtimes}
-              runtimesLoading={form.runtimesLoading}
-              members={form.members}
-              currentUserId={form.currentUserId}
-              nameError={submit.nameError}
-              onNameChange={(name) => {
-                submit.clearNameError();
-                form.setDraft((current) => ({ ...current, name }));
-              }}
-            />
-          </div>
-        </div>
-        <CreateAgentFooter
-          canCreate={canCreate}
-          creating={submit.creating}
-          team={!!teamId}
-          error={submit.formError}
-          onCreate={() => void submit.create()}
+    // `AgentConfigurationPanel` renders Lobe's `Form.Group` / `Form.Item`,
+    // whose colour tokens are antd CSS variables — seeded only by
+    // `LobeThemeBridge`. Without one the panel drew a white card in dark
+    // mode. Mounted at the route root rather than inside the panel: the
+    // bridge renders `display: contents`, so the flex column below is still
+    // the box this page's parent lays out.
+    <LobeThemeBridge>
+      <div className="flex min-h-0 flex-1 flex-col bg-background">
+        <BreadcrumbHeader
+          segments={[{ href: paths.agents(), label: t(($) => $.page.title) }]}
+          leaf={
+            <span className="truncate font-medium text-foreground">
+              {duplicateAgent
+                ? t(($) => $.creation_studio.duplicate_title, {
+                    name: duplicateAgent.name,
+                  })
+                : teamId
+                  ? t(($) => $.creation_studio.team_title)
+                  : t(($) => $.creation_studio.title)}
+            </span>
+          }
         />
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto w-full max-w-4xl px-5 py-8 sm:px-8">
+              {duplicateAgent && (
+                <div className="mb-5 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-body">
+                  {t(($) => $.creation_studio.duplicate_env_notice)}
+                </div>
+              )}
+              {duplicateRuntimeReset && (
+                <div className="mb-5 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-body">
+                  {t(($) => $.creation_studio.duplicate_runtime_reset_notice)}
+                </div>
+              )}
+              <AgentConfigurationPanel
+                showConversationStarters={false}
+                draft={form.draft}
+                onChange={form.setDraft}
+                runtimes={form.runtimes}
+                runtimesLoading={form.runtimesLoading}
+                members={form.members}
+                currentUserId={form.currentUserId}
+                nameError={submit.nameError}
+                onNameChange={(name) => {
+                  submit.clearNameError();
+                  form.setDraft((current) => ({ ...current, name }));
+                }}
+              />
+            </div>
+          </div>
+          <CreateAgentFooter
+            canCreate={canCreate}
+            creating={submit.creating}
+            team={!!teamId}
+            error={submit.formError}
+            onCreate={() => void submit.create()}
+          />
+        </div>
       </div>
-    </div>
+    </LobeThemeBridge>
   );
 }

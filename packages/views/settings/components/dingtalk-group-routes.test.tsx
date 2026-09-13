@@ -1,12 +1,10 @@
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@orvilo/core/i18n/react";
 import { dingtalkKeys } from "@orvilo/core/dingtalk";
 import { toast } from "sonner";
-import enCommon from "../../locales/en/common.json";
-import enSettings from "../../locales/en/settings.json";
+import { renderWithI18n } from "../../test/i18n";
 
 const mocks = vi.hoisted(() => ({
   listMembers: vi.fn(), listAgents: vi.fn(), listDingTalkInstallations: vi.fn(),
@@ -64,20 +62,56 @@ afterEach(() => {
   clients.splice(0).forEach((client) => client.clear());
 });
 
+/**
+ * `lobe: true` because `DingTalkTab` is Lobe now; every assertion after this
+ * render must therefore start with an async query — until the bridge's module
+ * resolves the tree is a `Suspense` fallback of `null`.
+ */
 function renderSettings() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   clients.push(client);
-  render(<QueryClientProvider client={client}>
-    <I18nProvider locale="en" resources={{ en: { common: enCommon, settings: enSettings } }}>
+  renderWithI18n(
+    <QueryClientProvider client={client}>
       <DingTalkTab />
-    </I18nProvider>
-  </QueryClientProvider>);
+    </QueryClientProvider>,
+    { lobe: true },
+  );
   return client;
 }
 
-async function selectReleaseAgent() {
+/** The select's trigger, by the accessible name the row gives it. */
+function agentSelect() {
+  return screen.getByRole("combobox", { name: "Agent for Release team" });
+}
+
+/**
+ * The popup is reached through `[role=listbox]`, which antd renders as a
+ * clipped mirror of the options for assistive technology; the items a pointer
+ * reaches are plain `div`s beside it that carry no role, so they are addressed
+ * by their `title`. Same idiom as `preferences-tab.test.tsx`.
+ */
+async function openAgentMenu() {
+  // `findBy`: this is the first query after a bridged render, and until the
+  // bridge's module resolves the tree is a `Suspense` fallback of `null`.
   await userEvent.click(await screen.findByRole("combobox", { name: "Agent for Release team" }));
-  await userEvent.click(await screen.findByRole("option", { name: "Release agent" }));
+  const mirror = await screen.findByRole("listbox");
+  return mirror.parentElement as HTMLElement;
+}
+
+async function pickAgent(optionTitle: string) {
+  const menu = await openAgentMenu();
+  await userEvent.click(within(menu).getByTitle(optionTitle));
+}
+
+/**
+ * The selected label is asserted on the select's own root, not on the
+ * combobox: that is a bare `<input>` whose text content is empty by
+ * construction, and the label is a sibling node. It is scoped to `.ant-select`
+ * because the popup's option nodes carry the same `title`, so a document-wide
+ * query matches the trigger and the option both.
+ */
+function expectAssignedTo(agentName: string) {
+  expect(agentSelect().closest(".ant-select")).toHaveTextContent(agentName);
 }
 
 describe("DingTalk group routing in Settings", () => {
@@ -85,14 +119,13 @@ describe("DingTalk group routing in Settings", () => {
     let accept!: (value: typeof originalRoute) => void;
     mocks.updateDingTalkGroupRoute.mockImplementationOnce(() => new Promise((resolve) => { accept = resolve; }));
     const client = renderSettings();
-    await selectReleaseAgent();
+    await pickAgent("Release agent");
     expect(mocks.updateDingTalkGroupRoute).toHaveBeenCalledWith("workspace-1", "route-1", { agent_id: "agent-2" });
-    const selector = screen.getByRole("combobox", { name: "Agent for Release team" });
-    expect(selector).toBeDisabled();
-    expect(selector).toHaveTextContent("Default agent");
+    expect(agentSelect()).toBeDisabled();
+    expectAssignedTo("Default agent");
     currentRoute = { ...originalRoute, agent_id: "agent-2" };
     await act(async () => accept(currentRoute));
-    await waitFor(() => expect(selector).toHaveTextContent("Release agent"));
+    await waitFor(() => expectAssignedTo("Release agent"));
     expect(client.getQueryData(dingtalkKeys.groupRoutes("workspace-1"))).toEqual({ routes: [currentRoute] });
     expect(toast.success).toHaveBeenCalled();
   });
@@ -100,21 +133,21 @@ describe("DingTalk group routing in Settings", () => {
   it("keeps the previous assignment after failure and lets the admin retry", async () => {
     mocks.updateDingTalkGroupRoute.mockRejectedValueOnce(new Error("temporarily unavailable"));
     renderSettings();
-    await selectReleaseAgent();
+    await pickAgent("Release agent");
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
-    expect(screen.getByRole("combobox", { name: "Agent for Release team" })).toHaveTextContent("Default agent");
-    await selectReleaseAgent();
-    await waitFor(() => expect(screen.getByRole("combobox", { name: "Agent for Release team" })).toHaveTextContent("Release agent"));
+    expectAssignedTo("Default agent");
+    await pickAgent("Release agent");
+    await waitFor(() => expectAssignedTo("Release agent"));
     expect(mocks.updateDingTalkGroupRoute).toHaveBeenCalledTimes(2);
   });
 
   it("does not announce success for a malformed update response", async () => {
     mocks.updateDingTalkGroupRoute.mockResolvedValueOnce({ id: "", agent_id: "" });
     renderSettings();
-    await selectReleaseAgent();
+    await pickAgent("Release agent");
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
     expect(toast.success).not.toHaveBeenCalled();
-    expect(screen.getByRole("combobox", { name: "Agent for Release team" })).toHaveTextContent("Default agent");
+    expectAssignedTo("Default agent");
   });
 
   it("shows a route-loading error with retry, not a false empty state", async () => {
@@ -139,7 +172,10 @@ describe("DingTalk group routing in Settings", () => {
   it("allows members to read group assignments without mutation controls", async () => {
     mocks.listMembers.mockResolvedValue([{ user_id: "user-1", role: "member" }]);
     renderSettings();
-    expect(await screen.findByRole("heading", { name: "Group routing" })).toBeInTheDocument();
+    // The section heading is the group's title now, so it is the group that
+    // carries the name — `Form.Group` renders its label as a bare div with no
+    // heading role, which is why `SettingsGroup` adds the wrapper.
+    expect(await screen.findByRole("group", { name: "Group routing" })).toBeInTheDocument();
     expect(await screen.findByText("Release team")).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(mocks.updateDingTalkGroupRoute).not.toHaveBeenCalled();
@@ -147,10 +183,10 @@ describe("DingTalk group routing in Settings", () => {
 
   it("excludes archived agents but keeps product-defined user agents eligible", async () => {
     renderSettings();
-    await userEvent.click(await screen.findByRole("combobox", { name: "Agent for Release team" }));
-    expect(await screen.findByRole("option", { name: "Release agent" })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "Archived agent" })).not.toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Patrick" })).toBeInTheDocument();
+    const menu = await openAgentMenu();
+    expect(within(menu).getByTitle("Release agent")).toBeInTheDocument();
+    expect(within(menu).queryByTitle("Archived agent")).not.toBeInTheDocument();
+    expect(within(menu).getByTitle("Patrick")).toBeInTheDocument();
   });
 
   it("does not query routes when the backend does not support them", async () => {
@@ -159,7 +195,7 @@ describe("DingTalk group routing in Settings", () => {
     });
     renderSettings();
     await screen.findByText("Default agent");
-    expect(screen.queryByRole("heading", { name: "Group routing" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Group routing" })).not.toBeInTheDocument();
     expect(mocks.listDingTalkGroupRoutes).not.toHaveBeenCalled();
   });
 

@@ -32,7 +32,21 @@
  */
 
 import { useCallback, useState, type RefObject } from "react";
-import type { ContentEditorRef } from "./content-editor";
+
+/**
+ * The one thing the gate needs from an editor.
+ *
+ * Declared here, at the consumer, rather than imported from the editor in use
+ * today. This hook never touches text or attachments directly — it asks a
+ * single yes/no question — so binding it to the full `ContentEditorRef` would
+ * make it unusable by any editor that answers that question differently, which
+ * is exactly what a kernel swap looks like. `ContentEditorRef` still satisfies
+ * this structurally, so existing callers needed no change when it was narrowed.
+ */
+export interface UploadGateEditor {
+  /** True while any attachment in this editor is mid-upload. */
+  hasActiveUploads: () => boolean;
+}
 
 interface UploadGate {
   /** True while any attachment in this editor is mid-upload. Render state. */
@@ -49,7 +63,7 @@ interface UploadGate {
  * The returned `isBlocked` reads the editor ref rather than `uploading` on
  * purpose — see the module docstring.
  */
-function useUploadGate(editorRef: RefObject<ContentEditorRef | null>): UploadGate {
+function useUploadGate(editorRef: RefObject<UploadGateEditor | null>): UploadGate {
   const [uploading, setUploading] = useState(false);
   const isBlocked = useCallback(
     () => editorRef.current?.hasActiveUploads() === true,

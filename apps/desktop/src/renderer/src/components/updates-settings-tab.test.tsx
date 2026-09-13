@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { LobeThemeBridge } from "@orvilo/views/lobe";
 
 const mocks = vi.hoisted(() => ({
   getPreferences: vi.fn(),
@@ -14,6 +15,7 @@ const translations = {
   desktop: {
     updates: {
       title: "Updates",
+      section_title: "Version and updates",
       description: "Update preferences",
       current_version: "Current version",
       automatic_updates_title: "Automatic background updates",
@@ -53,6 +55,19 @@ vi.mock("sonner", () => ({
 
 import { UpdatesSettingsTab } from "./updates-settings-tab";
 
+/**
+ * Mounting the Lobe tree is the expensive part of this suite, and it is the
+ * *mount* rather than the module import: `LobeThemeBridge` brings up antd's
+ * cssinjs runtime, which computes the whole component stylesheet on first
+ * render. Isolated, the one test here finishes in about a second; inside a full
+ * `vitest run` of the app it has been measured at **9.3s**, so the 5s default
+ * fails a correct build. Widened rather than trimmed: the assertion polls for a
+ * settled promise, so a generous budget costs nothing when it passes early, and
+ * a failure here would be indistinguishable from a hang.
+ */
+const LOBE_MOUNT_TIMEOUT_MS = 20_000;
+vi.setConfig({ testTimeout: LOBE_MOUNT_TIMEOUT_MS });
+
 describe("UpdatesSettingsTab", () => {
   beforeEach(() => {
     mocks.getPreferences.mockReset().mockResolvedValue({
@@ -80,15 +95,29 @@ describe("UpdatesSettingsTab", () => {
   it("loads the persisted preference and saves changes from the switch", async () => {
     mocks.getPreferences.mockResolvedValue({ automaticUpdates: false });
     mocks.setAutomaticUpdates.mockResolvedValue({ automaticUpdates: true });
-    render(<UpdatesSettingsTab />);
+    // Mounted inside `LobeThemeBridge` because the tab is on the Lobe shell
+    // now: its group, its rows and its switch all call `useMotionComponent()`,
+    // which throws without a `MotionProvider`. The bridge is the same one
+    // `SettingsPage` mounts at runtime (`settings-page.tsx`, inside
+    // `DialogContent`), so this suite renders the tree the app does.
+    render(
+      <LobeThemeBridge>
+        <UpdatesSettingsTab />
+      </LobeThemeBridge>,
+    );
 
     const toggle = screen.getByRole("switch", {
       name: "Automatic background updates",
     });
-    // The switch renders as <span role="switch">, so jest-dom's toBeEnabled()
-    // treats it as always enabled and does not actually wait for getPreferences
-    // to resolve. Wait on the persisted value being reflected instead, which
-    // deterministically holds until the loaded preference (false) is applied.
+    // The accessible name comes from `SettingsSwitch`'s required `label`, not
+    // from the row: antd's `Form.Item` label is a `<label>` with no `for`,
+    // because a field with no `name` never mints one.
+    //
+    // This used to read "the switch renders as a `<span role="switch">`, so
+    // `toBeEnabled()` treats it as always enabled". That is no longer true —
+    // the atom renders a real `<button role="switch" disabled>` — but the
+    // assertion still waits on the persisted value rather than on the disabled
+    // attribute, because the value is what this test is about.
     await waitFor(() => expect(toggle).not.toBeChecked());
 
     fireEvent.click(toggle);

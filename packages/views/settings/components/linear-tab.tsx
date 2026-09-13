@@ -25,28 +25,26 @@ import type {
   MemberWithUser,
   SaveLinearProjectBindingRequest,
 } from "@orvilo/core/types";
+// One design system in this file: `LinearIntegrationCard` has exactly one host
+// — `./integrations-tab` (`:419`), which renders it from `content`, and that
+// component's two importers (`settings-page.tsx`, `integrations/index.tsx`) both
+// mount `LobeThemeBridge`. Nothing here is reachable from the agent detail page.
+//
+// Two shadcn imports stay, and neither is a leftover:
+//   - `Badge` — Lobe has no `Badge`; `Tag` is a different component, not a
+//     rename (the recorded exemption).
+//   - `FieldGroup` + `ConnectionSelectField` — `credential-field-form.tsx` is
+//     shared with the BYO dialogs of every messaging tab, including the
+//     agent-pane half, so it cannot be converted for one host alone: the
+//     conversion would change the controls on both. That half is bridged now
+//     (`agents/components/agent-detail-page.tsx:323`), so this is a conversion
+//     not yet taken, not one that is blocked — see `weixin-tab`'s header for the
+//     same call.
+import { Button as LobeButton, Input as LobeInput, Modal } from "@lobehub/ui/base-ui";
 import { Badge } from "@orvilo/ui/components/ui/badge";
-import { Button } from "@orvilo/ui/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@orvilo/ui/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@orvilo/ui/components/ui/dialog";
 import { FieldGroup } from "@orvilo/ui/components/ui/field";
 import { ConnectionSelectField } from "./credential-field-form";
+import { useSettingsConfirm } from "./settings-confirm";
 import { useT } from "../../i18n";
 import { IntegrationCard } from "./integration-card";
 import {
@@ -128,12 +126,10 @@ function formatConflictValue(value: unknown) {
 function ConflictCenter({
   canManage,
   conflicts,
-  onClose,
   workspaceId,
 }: {
   canManage: boolean;
   conflicts: LinearSyncConflict[];
-  onClose: () => void;
   workspaceId: string;
 }) {
   const { t } = useT("settings");
@@ -197,11 +193,10 @@ function ConflictCenter({
   }
 
   return (
-    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-      <DialogHeader>
-        <DialogTitle>{t(($) => $.page.linear.conflict_center)}</DialogTitle>
-        <DialogDescription>{t(($) => $.page.linear.conflict_center_description)}</DialogDescription>
-      </DialogHeader>
+    <>
+      {/* The title lives on the `Modal`; this is its description, in the body
+          where the content it introduces is. */}
+      <p className="text-body text-muted-foreground">{t(($) => $.page.linear.conflict_center_description)}</p>
       {conflicts.length === 0 ? (
         <p className="text-body text-muted-foreground">{t(($) => $.page.linear.no_conflicts)}</p>
       ) : (
@@ -231,25 +226,21 @@ function ConflictCenter({
               </div>
               {canManage ? (
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button
+                  <LobeButton
                     disabled={pendingId === conflict.id}
                     onClick={() => void resolve(conflict, "local")}
-                    size="sm"
-                    variant="outline"
                   >
                     {t(($) => $.page.linear.conflict_use_local)}
-                  </Button>
-                  <Button
+                  </LobeButton>
+                  <LobeButton
                     disabled={pendingId === conflict.id}
                     onClick={() => void resolve(conflict, "remote")}
-                    size="sm"
-                    variant="outline"
                   >
                     {t(($) => $.page.linear.conflict_use_remote)}
-                  </Button>
-                  <input
+                  </LobeButton>
+                  <LobeInput
                     aria-label={t(($) => $.page.linear.conflict_manual)}
-                    className="h-9 min-w-48 flex-1 rounded-md border border-input bg-background px-3 text-body"
+                    className="min-w-48 flex-1"
                     onChange={(event) =>
                       setManualValues((current) => ({
                         ...current,
@@ -259,18 +250,16 @@ function ConflictCenter({
                     placeholder={t(($) => $.page.linear.conflict_manual_placeholder)}
                     value={manualValues[conflict.id] ?? ""}
                   />
-                  <Button
+                  <LobeButton
                     disabled={
                       pendingId === conflict.id ||
                       (!(manualValues[conflict.id] ?? "").trim() &&
                         !["description", "due_date", "owner_id"].includes(conflict.field))
                     }
                     onClick={() => void resolve(conflict, "manual")}
-                    size="sm"
-                    variant="outline"
                   >
                     {t(($) => $.page.linear.conflict_use_manual)}
-                  </Button>
+                  </LobeButton>
                 </div>
               ) : (
                 <p className="text-micro text-muted-foreground">
@@ -281,10 +270,7 @@ function ConflictCenter({
           ))}
         </div>
       )}
-      <DialogFooter>
-        <Button onClick={onClose} variant="outline">{t(($) => $.page.linear.conflict_close)}</Button>
-      </DialogFooter>
-    </DialogContent>
+    </>
   );
 }
 
@@ -581,11 +567,12 @@ function BindingWizard({
   }
 
   return (
-    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
-      <DialogHeader>
-        <DialogTitle>{t(($) => $.page.linear.wizard_title)}</DialogTitle>
-        <DialogDescription>{t(($) => $.page.linear.wizard_description)}</DialogDescription>
-      </DialogHeader>
+    /* The wizard's own body. Its title is the `Modal`'s and the description is
+       the first line here; `space-y-4` is what the old `DialogContent`'s
+       `grid gap-4` supplied between the progress rail, the active step and the
+       action row. */
+    <div className="space-y-4">
+      <p className="text-body text-muted-foreground">{t(($) => $.page.linear.wizard_description)}</p>
       <WizardProgress step={step} />
 
       {step === 1 ? (
@@ -849,24 +836,32 @@ function BindingWizard({
         </div>
       ) : null}
 
-      <DialogFooter className="gap-2 sm:justify-between">
-        <Button disabled={step === 1 || saving} onClick={goBack} variant="ghost">
+      {/* The action row stays in the body rather than in the `Modal`'s footer:
+          which buttons exist — and whether they are enabled — depends on the
+          step, the dry run and the import retry, all of which live in this
+          component. The modal is rendered with `footer={null}` so there is no
+          second, empty band under it. */}
+      <div className="flex flex-wrap items-center gap-2 sm:justify-between">
+        <LobeButton
+          disabled={step === 1 || saving}
+          onClick={goBack}
+          type="text"
+        >
           {t(($) => $.page.linear.back)}
-        </Button>
+        </LobeButton>
         {importRetryBindingId ? (
-          <Button
+          <LobeButton
             disabled={retryingImport}
             onClick={() => void retryInitialImport()}
-            variant="outline"
           >
             {retryingImport ? <Loader2 className="animate-spin" /> : null}
             {t(($) => $.page.linear.retry_import)}
-          </Button>
+          </LobeButton>
         ) : null}
         {step < 6 ? (
-          <Button onClick={goNext}>{t(($) => $.page.linear.next)}</Button>
+          <LobeButton onClick={goNext} type="primary">{t(($) => $.page.linear.next)}</LobeButton>
         ) : (
-          <Button
+          <LobeButton
             disabled={
               saving ||
               importRetryBindingId !== null ||
@@ -876,13 +871,14 @@ function BindingWizard({
               dryRun.remote_issue_count_truncated
             }
             onClick={() => void saveBinding()}
+            type="primary"
           >
             {saving ? <Loader2 className="animate-spin" /> : null}
             {t(($) => $.page.linear.activate)}
-          </Button>
+          </LobeButton>
         )}
-      </DialogFooter>
-    </DialogContent>
+      </div>
+    </div>
   );
 }
 
@@ -894,8 +890,10 @@ export function LinearIntegrationCard({
   const { t } = useT("settings");
   const qc = useQueryClient();
   const [wizardOpen, setWizardOpen] = useState(false);
-  const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
+  // The `disconnectOpen` state is gone with the `AlertDialog`: the imperative
+  // confirm owns the open state and the in-flight spinner.
+  const confirm = useSettingsConfirm();
   const connectionQuery = useQuery(linearConnectionOptions(workspaceId));
   const bindingsQuery = useQuery(linearBindingsOptions(workspaceId));
   const membersQuery = useQuery(memberListOptions(workspaceId));
@@ -936,16 +934,31 @@ export function LinearIntegrationCard({
     }
   }
 
+  /**
+   * Rejects on failure on purpose: `useSettingsConfirm`'s `onOk` keeps the
+   * dialog open only while its promise is unsettled, so swallowing the error
+   * here would dismiss the confirmation exactly when the connection is still
+   * live. The toast is what the user reads; the rethrow holds the dialog.
+   */
   async function disconnect() {
     try {
       await api.disconnectLinear(workspaceId);
       await qc.invalidateQueries({ queryKey: linearKeys.all(workspaceId) });
       toast.success(t(($) => $.page.linear.disconnected_toast));
-      setDisconnectOpen(false);
-    } catch {
+    } catch (e) {
       toast.error(t(($) => $.page.linear.disconnect_failed));
+      throw e;
     }
   }
+
+  const openDisconnectConfirm = () =>
+    confirm({
+      title: t(($) => $.page.linear.disconnect_title),
+      description: t(($) => $.page.linear.disconnect_description),
+      confirmLabel: t(($) => $.page.linear.disconnect),
+      cancelLabel: t(($) => $.page.linear.cancel),
+      onConfirm: () => disconnect(),
+    });
 
   const status = connectionQuery.isLoading ? (
     <Badge variant="outline">
@@ -1007,7 +1020,7 @@ export function LinearIntegrationCard({
     menuItems.push({
       label: t(($) => $.page.linear.disconnect),
       icon: Trash2,
-      onSelect: () => setDisconnectOpen(true),
+      onSelect: () => openDisconnectConfirm(),
       variant: "destructive" as const,
     });
   }
@@ -1064,58 +1077,66 @@ export function LinearIntegrationCard({
         status={status}
         title={t(($) => $.page.linear.title)}
       />
-      {wizardOpen ? (
-        <Dialog open onOpenChange={setWizardOpen}>
-          {catalogQuery.data ? (
-            <BindingWizard
-              bindings={bindings}
-              catalog={catalogQuery.data}
-              connectionId={connection?.id ?? ""}
-              memberBindings={memberBindingsQuery.data?.bindings ?? []}
-              members={membersQuery.data ?? []}
-              pullImportEnabled={connectionQuery.data?.pull_import_enabled ?? false}
-              onClose={() => setWizardOpen(false)}
-              onSaved={() => void qc.invalidateQueries({ queryKey: linearKeys.connection(workspaceId) })}
-              projects={projectsQuery.data ?? []}
-              workspaceId={workspaceId}
-            />
-          ) : (
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{t(($) => $.page.linear.loading_catalog)}</DialogTitle>
-                <DialogDescription>
-                  {catalogQuery.isError
-                    ? t(($) => $.page.linear.catalog_failed)
-                    : t(($) => $.page.linear.loading_catalog_description)}
-                </DialogDescription>
-              </DialogHeader>
-              {catalogQuery.isLoading ? <Loader2 className="mx-auto animate-spin" /> : null}
-            </DialogContent>
-          )}
-        </Dialog>
-      ) : null}
-      <Dialog open={conflictOpen} onOpenChange={setConflictOpen}>
+      {/* `sm:max-w-3xl` was 768px, and the Modal owns its own max-height and
+          scrolling, so the old `max-h-[90vh] overflow-y-auto` is gone.
+          `footer={null}` on the wizard: its action row depends on wizard state,
+          so it stays in the body. `destroyOnHidden` is deliberately absent —
+          this is base-ui's `Modal`, which destructures a fixed prop list with no
+          rest spread and drops it. */}
+      <Modal
+        footer={null}
+        onCancel={() => setWizardOpen(false)}
+        open={wizardOpen}
+        title={
+          catalogQuery.data
+            ? t(($) => $.page.linear.wizard_title)
+            : t(($) => $.page.linear.loading_catalog)
+        }
+        width={768}
+      >
+        {catalogQuery.data ? (
+          <BindingWizard
+            bindings={bindings}
+            catalog={catalogQuery.data}
+            connectionId={connection?.id ?? ""}
+            memberBindings={memberBindingsQuery.data?.bindings ?? []}
+            members={membersQuery.data ?? []}
+            pullImportEnabled={connectionQuery.data?.pull_import_enabled ?? false}
+            onClose={() => setWizardOpen(false)}
+            onSaved={() => void qc.invalidateQueries({ queryKey: linearKeys.connection(workspaceId) })}
+            projects={projectsQuery.data ?? []}
+            workspaceId={workspaceId}
+          />
+        ) : (
+          <div className="space-y-3">
+            <p className="text-body text-muted-foreground">
+              {catalogQuery.isError
+                ? t(($) => $.page.linear.catalog_failed)
+                : t(($) => $.page.linear.loading_catalog_description)}
+            </p>
+            {catalogQuery.isLoading ? <Loader2 className="mx-auto animate-spin" /> : null}
+          </div>
+        )}
+      </Modal>
+      <Modal
+        footer={
+          <LobeButton onClick={() => setConflictOpen(false)}>
+            {t(($) => $.page.linear.conflict_close)}
+          </LobeButton>
+        }
+        onCancel={() => setConflictOpen(false)}
+        open={conflictOpen}
+        title={t(($) => $.page.linear.conflict_center)}
+        width={768}
+      >
         {conflictOpen ? (
           <ConflictCenter
             canManage={canManage}
             conflicts={openConflicts}
-            onClose={() => setConflictOpen(false)}
             workspaceId={workspaceId}
           />
         ) : null}
-      </Dialog>
-      <AlertDialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t(($) => $.page.linear.disconnect_title)}</AlertDialogTitle>
-            <AlertDialogDescription>{t(($) => $.page.linear.disconnect_description)}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t(($) => $.page.linear.cancel)}</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void disconnect()}>{t(($) => $.page.linear.disconnect)}</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      </Modal>
     </>
   );
 }

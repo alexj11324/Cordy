@@ -1,10 +1,8 @@
-import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@orvilo/core/i18n/react";
-import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
+import { renderWithI18n } from "../../test/i18n";
 
 const mockPreview = vi.hoisted(() => vi.fn());
 const mockInstall = vi.hoisted(() => vi.fn());
@@ -54,10 +52,18 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { PluginsTab } from "./plugins-tab";
 
-const TEST_RESOURCES = { en: { common: enCommon, settings: enSettings } };
-
-function Wrapper({ children }: { children: ReactNode }) {
-  return <I18nProvider locale="en" resources={TEST_RESOURCES}>{children}</I18nProvider>;
+// `{ lobe: true }` is required, not decoration: this suite used a bare `render`
+// with its own `I18nProvider`, so it never reached `LobeThemeBridge` while the
+// tab was on shadcn. Every control on it is Lobe now. A test file is a host
+// surface, and it is the one that appears in no screenshot.
+//
+// Async because the bridge is lazy — until its module resolves the tree is a
+// `Suspense` fallback of `null`. The lede renders on every path, so it is the
+// handle each case waits on.
+async function renderTab() {
+  const result = renderWithI18n(<PluginsTab />, { lobe: true });
+  await screen.findByText(enSettings.plugins.description);
+  return result;
 }
 
 const INSTALLATION = {
@@ -143,7 +149,7 @@ describe("PluginsTab", () => {
   it("shows the scope consent screen before anything is installed", async () => {
     data.packages.packages = [{ ...PACKAGE, versions: [{ ...PACKAGE.versions[0] }] }];
     const user = userEvent.setup();
-    render(<PluginsTab />, { wrapper: Wrapper });
+    await renderTab();
 
     await user.click(screen.getByRole("button", { name: "Review and install" }));
 
@@ -169,7 +175,7 @@ describe("PluginsTab", () => {
     // A publish does not move an installed workspace, so "which one am I on"
     // has to be answerable on this screen or the guarantee is invisible.
     const user = userEvent.setup();
-    render(<PluginsTab />, { wrapper: Wrapper });
+    await renderTab();
 
     expect(screen.getByText("1.0.0")).toBeInTheDocument();
     expect(screen.getByText("2.0.0")).toBeInTheDocument();
@@ -186,7 +192,7 @@ describe("PluginsTab", () => {
   it("publishes an uploaded package", async () => {
     const user = userEvent.setup();
     mockPublish.mockResolvedValue({ ...PACKAGE, versions: [PACKAGE.versions[0]] });
-    render(<PluginsTab />, { wrapper: Wrapper });
+    await renderTab();
 
     const bundle = new File(["zip bytes"], "plugin.zip", { type: "application/zip" });
     await user.upload(screen.getByLabelText("Upload package"), bundle);
@@ -196,7 +202,7 @@ describe("PluginsTab", () => {
   it("renders the configuration form from the manifest and never shows a stored secret", async () => {
     data.installed.plugins = [INSTALLATION];
     const user = userEvent.setup();
-    render(<PluginsTab />, { wrapper: Wrapper });
+    await renderTab();
 
     const repo = screen.getByDisplayValue("orvilo-ai/orvilo");
     expect(repo).toBeInTheDocument();
@@ -222,10 +228,52 @@ describe("PluginsTab", () => {
     }));
   });
 
+  // The one config-row shape no other case renders: a field whose control is a
+  // **button**. A row label hands its text to a control under it by exactly two
+  // routes — the control is inside the label's subtree, or the label is
+  // `for=`-associated with it — and a `<button>` counts as labelable, so this is
+  // where the boolean row could be renamed silently.
+  //
+  // **The assertion is the association, not the accessible name, and that is a
+  // measured choice rather than a preference.** `SettingsSwitch` hard-codes
+  // `aria-label`, and the name computation reads `aria-label` (step 2C) before
+  // any `<label>` (2D) — so adding the `for=` below leaves the switch's name
+  // unchanged, and a name assertion would pass either way. Verified by adding
+  // both the `htmlFor` and the matching `id`: only this assertion goes red.
+  it("keeps the boolean row's label off the for= route that would rename its switch", async () => {
+    data.installed.plugins = [{
+      ...INSTALLATION,
+      config_schema: [
+        { key: "flag", type: "bool", label: "Enable thing", required: false, options: [] },
+        { key: "mode", type: "enum", label: "Mode", required: false, options: ["a", "b"] },
+      ],
+      config: { flag: false, mode: "a" },
+    }];
+    const user = userEvent.setup();
+    await renderTab();
+
+    const toggle = screen.getByRole("switch", { name: "Enable thing" });
+    expect(screen.getByRole("combobox", { name: "Mode" })).toBeInTheDocument();
+
+    // Found by text rather than by an antd class, so the assertion does not
+    // depend on the row's markup.
+    const rowLabel = [...document.querySelectorAll("label")]
+      .find((label) => (label.textContent ?? "").includes("Enable thing"));
+    expect(rowLabel).toBeTruthy();
+    expect(rowLabel!.getAttribute("for")).toBeNull();
+
+    await user.click(toggle);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(mockConfigure).toHaveBeenCalledWith({
+      installationId: "installation-1",
+      values: { flag: true, mode: "a" },
+    }));
+  });
+
   it("disables and uninstalls an installed Plugin", async () => {
     data.installed.plugins = [INSTALLATION];
     const user = userEvent.setup();
-    render(<PluginsTab />, { wrapper: Wrapper });
+    await renderTab();
 
     await user.click(screen.getByRole("switch", { name: "Enable Plugin" }));
     await waitFor(() => expect(mockSetEnabled).toHaveBeenCalledWith({
@@ -237,18 +285,21 @@ describe("PluginsTab", () => {
     await waitFor(() => expect(mockUninstall).toHaveBeenCalledWith("installation-1"));
   });
 
-  it("blocks management for a non-admin member", () => {
+  it("blocks management for a non-admin member", async () => {
     data.role = "member";
     data.installed.plugins = [INSTALLATION];
-    render(<PluginsTab />, { wrapper: Wrapper });
+    await renderTab();
 
     expect(screen.getByText("Read-only access")).toBeInTheDocument();
     // The whole publish-and-install section is admin-only.
     expect(screen.queryByRole("button", { name: "Upload package" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Review and install" })).not.toBeInTheDocument();
-    // Base UI's Switch marks the disabled state with aria-disabled rather than
-    // the native attribute, so assert what a screen reader actually sees.
-    expect(screen.getByRole("switch", { name: "Enable Plugin" })).toHaveAttribute("aria-disabled", "true");
+    // `SettingsSwitch` renders base-ui's `Switch.Root` **with `nativeButton`**,
+    // so the switch is a real `<button>` carrying the native `disabled`
+    // attribute — where the shadcn `Switch` this replaced rendered a `<span>`
+    // and could only say `aria-disabled`. Still announced as disabled; the
+    // assertion follows the element that is actually there.
+    expect(screen.getByRole("switch", { name: "Enable Plugin" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Uninstall" })).toBeDisabled();
   });
 });

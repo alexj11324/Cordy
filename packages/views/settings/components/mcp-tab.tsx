@@ -4,16 +4,7 @@ import { useMemo, useState } from "react";
 import { Loader2, Plus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@orvilo/ui/components/ui/alert-dialog";
+import { Button } from "@lobehub/ui/base-ui";
 import { Badge } from "@orvilo/ui/components/ui/badge";
 import { useCurrentWorkspace } from "@orvilo/core/paths";
 import { useCurrentMember } from "@orvilo/core/permissions";
@@ -27,14 +18,9 @@ import type { WorkspaceMcpServer } from "@orvilo/core/types";
 import { McpServerDialog } from "../../agents/components/tabs/mcp-server-dialog";
 import type { ManagedMcpServer } from "../../agents/components/tabs/mcp-config-model";
 import { useT } from "../../i18n";
-import {
-  SettingsCard,
-  SettingsEmpty,
-  SettingsListRow,
-  SettingsPillButton,
-  SettingsSection,
-  SettingsTab,
-} from "./settings-layout";
+import { useSettingsConfirm } from "./settings-confirm";
+import { SettingsEmptyState } from "./settings-empty";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 
 /**
  * The workspace MCP server library (GH #6062).
@@ -49,6 +35,15 @@ import {
  *    "current value" to prefill and editing a server means supplying its
  *    configuration again. The UI says so rather than pretending the empty form
  *    is the saved state.
+ *
+ * **`McpServerDialog` stays shadcn this round, and that is a decision rather
+ * than an oversight.** It is also rendered by
+ * `agents/components/tabs/mcp-config-tab.tsx` on the agent surface, so a
+ * conversion has to land on both surfaces at once. The agent surface mounts
+ * `LobeThemeBridge` now (`agents/components/agent-detail-page.tsx`), so a
+ * converted dialog would render there rather than break — but converting a
+ * shared dialog is a visual change that needs its own decision and its own
+ * screenshot acceptance. This tab migrated; the dialog it renders did not.
  */
 export function McpTab() {
   const { t } = useT("settings");
@@ -62,6 +57,10 @@ export function McpTab() {
   const createServer = useCreateWorkspaceMcpServer(wsId);
   const updateServer = useUpdateWorkspaceMcpServer(wsId);
   const deleteServer = useDeleteWorkspaceMcpServer(wsId);
+  // The `deletingServer` state and its `AlertDialog` are gone: the imperative
+  // confirm owns the open state and the in-flight spinner, so the row hands the
+  // server straight through.
+  const confirm = useSettingsConfirm();
 
   const servers = serversQuery.data ?? [];
   const existingNames = useMemo(
@@ -71,9 +70,6 @@ export function McpTab() {
 
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingServer, setEditingServer] = useState<WorkspaceMcpServer | null>(
-    null,
-  );
-  const [deletingServer, setDeletingServer] = useState<WorkspaceMcpServer | null>(
     null,
   );
 
@@ -120,75 +116,107 @@ export function McpTab() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!deletingServer) return;
+  // Returns its promise and rethrows on failure — the caller half of the
+  // `confirmModal` contract, which is what keeps the confirmation open when the
+  // request fails instead of dismissing as though the row were gone. Swallowing
+  // the rejection here would close the dialog on a server that still exists.
+  const handleDelete = async (server: WorkspaceMcpServer) => {
     try {
-      await deleteServer.mutateAsync(deletingServer.id);
+      await deleteServer.mutateAsync(server.id);
       toast.success(t(($) => $.mcp.removed_toast));
-      setDeletingServer(null);
     } catch (error) {
       toast.error(
         error instanceof Error && error.message
           ? error.message
           : t(($) => $.mcp.remove_failed_toast),
       );
+      throw error;
     }
   };
 
+  const openDeleteConfirm = (server: WorkspaceMcpServer) =>
+    confirm({
+      title: t(($) => $.mcp.delete_title),
+      description: t(($) => $.mcp.delete_description, { name: server.name }),
+      confirmLabel: t(($) => $.mcp.delete_confirm),
+      cancelLabel: t(($) => $.mcp.cancel),
+      onConfirm: () => handleDelete(server),
+    });
+
+  // `SettingsTab` is gone, and with it the page heading. Its `title` was already
+  // dropped inside the settings dialog — `settings-page.tsx`'s `DialogHeader`
+  // renders `page.tabs.mcp`, and `mcp.title` resolves to the same string, so it
+  // must not come back as a group title. Its `description` has no such home
+  // (`tabDescription("mcp")` returns `""`), so it stays with the panel as the
+  // lede, the placement `billing-tab` and `vcs-tab` gave theirs.
+  //
+  // `action`: this tab has no page-level action. `mcp-tab.tsx:146`'s old
+  // `action=` was passed to `SettingsSection`, which does not read the dialog
+  // context — so it was never dropped, and it moves to the group's `extra`
+  // because that is the mapping, not because anything was lost.
   return (
-    <SettingsTab
-      title={t(($) => $.mcp.title)}
-      description={t(($) => $.mcp.description)}
-    >
-      <SettingsSection
-        title={t(($) => $.mcp.servers_title)}
-        description={t(($) => $.mcp.write_only_note)}
-        action={
+    <div className="space-y-8">
+      <p className="text-body text-muted-foreground">{t(($) => $.mcp.description)}</p>
+
+      <SettingsGroup
+        // `desc` renders as a `<small>` in the group's header, so the scale the
+        // old section paragraph carried has to travel on the node itself.
+        description={
+          <span className="block max-w-3xl text-body leading-relaxed text-muted-foreground">
+            {t(($) => $.mcp.write_only_note)}
+          </span>
+        }
+        extra={
           canManage ? (
-            <SettingsPillButton
-              icon={Plus}
-              active
+            // `SettingsPillButton active` resolved its tone to `primary`, which
+            // is Lobe's `type="primary"`; `shape="round"` is the pill geometry.
+            <Button
+              icon={<Plus className="size-4" />}
+              shape="round"
+              type="primary"
               onClick={() => {
                 setEditingServer(null);
                 setEditorOpen(true);
               }}
             >
               {t(($) => $.mcp.add_server)}
-            </SettingsPillButton>
-          ) : null
+            </Button>
+          ) : undefined
         }
+        title={t(($) => $.mcp.servers_title)}
       >
-        <SettingsCard>
-          {serversQuery.isLoading ? (
-            <div className="flex items-center justify-center py-8 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-            </div>
-          ) : servers.length === 0 ? (
-            <SettingsEmpty
-              title={t(($) => $.mcp.empty_title)}
-              description={t(($) => $.mcp.empty_description)}
+        {serversQuery.isLoading ? (
+          <div className="flex items-center justify-center py-8 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </div>
+        ) : servers.length === 0 ? (
+          <SettingsEmptyState
+            description={t(($) => $.mcp.empty_description)}
+            title={t(($) => $.mcp.empty_title)}
+          />
+        ) : (
+          servers.map((server, index) => (
+            <McpServerRow
+              key={server.name}
+              canManage={canManage}
+              // The old `SettingsCard` drew its `divide-y` between rows; the
+              // group's rows draw their own.
+              divider={index > 0}
+              server={server}
+              onDelete={() => openDeleteConfirm(server)}
+              onEdit={() => {
+                setEditingServer(server);
+                setEditorOpen(true);
+              }}
             />
-          ) : (
-            servers.map((server) => (
-              <McpServerRow
-                key={server.name}
-                server={server}
-                canManage={canManage}
-                onEdit={() => {
-                  setEditingServer(server);
-                  setEditorOpen(true);
-                }}
-                onDelete={() => setDeletingServer(server)}
-              />
-            ))
-          )}
-        </SettingsCard>
+          ))
+        )}
         {!canManage && !currentMember.isLoading ? (
-          <p className="px-0.5 text-caption text-muted-foreground">
+          <p className="pt-3 text-caption text-muted-foreground">
             {t(($) => $.mcp.admin_only_note)}
           </p>
         ) : null}
-      </SettingsSection>
+      </SettingsGroup>
 
       <McpServerDialog
         open={editorOpen}
@@ -197,86 +225,84 @@ export function McpTab() {
         onOpenChange={setEditorOpen}
         onSave={handleSaveServer}
       />
-
-      <AlertDialog
-        open={deletingServer !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeletingServer(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t(($) => $.mcp.delete_title)}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.mcp.delete_description, { name: deletingServer?.name ?? "" })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteServer.isPending}>
-              {t(($) => $.mcp.cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(event) => {
-                event.preventDefault();
-                void handleDelete();
-              }}
-              disabled={deleteServer.isPending}
-            >
-              {deleteServer.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : null}
-              {t(($) => $.mcp.delete_confirm)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </SettingsTab>
+    </div>
   );
 }
 
 function McpServerRow({
   server,
   canManage,
+  divider,
   onEdit,
   onDelete,
 }: {
   server: WorkspaceMcpServer;
   canManage: boolean;
+  divider: boolean;
   onEdit: () => void;
   onDelete: () => void;
 }) {
   const { t } = useT("settings");
+  // The baseline was `SettingsListRow`, and it is inlined rather than re-homed:
+  // a row of `Form.Item` gives the name a `<label>` slot and the actions a
+  // control slot, which is what the old flex row already expressed — plus the
+  // antd geometry (`base.css`) the settings rows share.
+  //
+  // **A button under a row label is renamed by one of exactly two routes, and
+  // this row is on neither.** The first is being *inside* the label's subtree:
+  // `dom-accessibility-api`'s `getControlOfLabel` falls back to
+  // `findLabelableElement(label)` — the first labelable descendant — and
+  // `isLabelableElement` counts a `button` as labelable. These two sit in the
+  // control column, a sibling of the label. The second is a `for=`
+  // association, which this row cannot have because it passes no `htmlFor` —
+  // the prop `SettingsFormRow` exposes for naming a text field, and the reason
+  // a row that *does* pass it must not put a button in its control slot.
+  //
+  // Measured on the rendered row, not reasoned: `computeAccessibleName` is
+  // "Edit server", and both `insideLabelSubtree` and `namedByForLabel` are
+  // false. Each button also carries its own `aria-label`, which the name
+  // computation consults before any `<label>` (step 2C returns before 2D in
+  // `accessible-name-and-description.mjs`) — that is belt and braces here, not
+  // what the row depends on.
   return (
-    <SettingsListRow>
-      <div className="min-w-0 flex-1">
-        <div className="flex min-w-0 items-center gap-2">
+    <SettingsFormRow
+      description={transportLabel(server.transport)}
+      divider={divider}
+      label={
+        <span className="inline-flex min-w-0 items-center gap-2">
           <span className="truncate text-body font-medium">{server.name}</span>
           {server.enabled === false ? (
             <Badge variant="secondary">{t(($) => $.mcp.disabled_badge)}</Badge>
           ) : null}
-        </div>
-        <p className="mt-0.5 text-caption text-muted-foreground">
-          {transportLabel(server.transport)}
-        </p>
-      </div>
+        </span>
+      }
+    >
       {canManage ? (
         <div className="flex shrink-0 items-center gap-1.5">
-          <SettingsPillButton
-            onClick={onEdit}
+          {/* `SettingsPillButton` with no `tone` was the `muted` pill —
+              `bg-muted` on a transparent border, which is Lobe's `fill`. */}
+          <Button
             aria-label={t(($) => $.mcp.edit_server)}
+            shape="round"
+            type="fill"
+            onClick={onEdit}
           >
             {t(($) => $.mcp.edit_server)}
-          </SettingsPillButton>
-          <SettingsPillButton
-            tone="destructive"
-            onClick={onDelete}
+          </Button>
+          {/* `tone="destructive"` — `type="fill"` + `danger`, the destructive
+              fill rather than the solid red a primary-danger button gives. */}
+          <Button
             aria-label={t(($) => $.mcp.remove_server)}
+            danger
+            shape="round"
+            type="fill"
+            onClick={onDelete}
           >
             {t(($) => $.mcp.remove_server)}
-          </SettingsPillButton>
+          </Button>
         </div>
       ) : null}
-    </SettingsListRow>
+    </SettingsFormRow>
   );
 }
 

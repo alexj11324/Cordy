@@ -1,6 +1,6 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@orvilo/core/api";
 import { configStore } from "@orvilo/core/config";
 import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@orvilo/core/feature-flags";
@@ -175,6 +175,66 @@ vi.mock("../../navigation", () => ({
 vi.mock("../../platform", () => ({ openExternal: mocks.openExternal }));
 
 import { BillingTab, formatStripeMinorAmount } from "./billing-tab";
+
+/**
+ * The tab is Lobe now, so every render needs the theme bridge, and
+ * `renderWithI18n` loads it through `React.lazy`: the file's first opted-in
+ * render resolves through a `Suspense` fallback of `null`, which is why the
+ * convention elsewhere is "the first query in a `lobe: true` suite must be
+ * async".
+ *
+ * That convention is not available to this file. Several cases here freeze the
+ * clock with `vi.useFakeTimers()` *before* rendering — they set the system time
+ * the checkout-sync assertions are read against — and
+ * `@testing-library/dom` only advances a fake clock when a real `jest` global
+ * exists (`helpers.js#jestFakeTimersAreEnabled`), which Vitest does not
+ * provide. A `findBy*` that had to wait for a module import on a frozen clock
+ * would never settle, so the first query in those tests would hang instead of
+ * failing.
+ *
+ * So the bridge is warmed once, here, on the real clock: after this render the
+ * `lazy` payload is resolved for the rest of the file, and `renderTab()` below
+ * commits synchronously — `beforeEach` and the tests keep their synchronous
+ * queries. The warm-up is a bare `span` rather than the tab, so it needs none
+ * of this file's mocks and cannot be affected by what they return.
+ */
+beforeAll(async () => {
+  renderWithI18n(<span data-testid="lobe-bridge-warmup" />, { lobe: true });
+  await screen.findByTestId("lobe-bridge-warmup");
+  cleanup();
+});
+
+/** Every render in this file mounts Lobe components; see `beforeAll` above. */
+function renderTab() {
+  return renderWithI18n(<BillingTab />, { lobe: true });
+}
+
+// The bridged suite pays antd's CSS-in-JS on every mount, and several cases
+// here chain debounced previews (800ms) behind confirm dialogs whose exit
+// animation keeps the panel inert. `tokens-tab` raises the same ceiling for the
+// same reason; the default 20s is a budget for a plain jsdom suite.
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
+
+/**
+ * Waits for a just-closed modal to leave the document.
+ *
+ * Lobe's `Modal` is base-ui's dialog: while it is mounted it marks everything
+ * outside the popup `aria-hidden`, and it stays mounted through its exit
+ * animation — so for a couple of hundred milliseconds after `open` goes false
+ * the accessible tree is the dialog and nothing else. `getByRole` returns
+ * nothing for the panel behind it, while `getByText` keeps working, because
+ * only the role queries consult the accessible tree. That asymmetry is why a
+ * suite can go on asserting the panel's copy and still fail to *click* it.
+ *
+ * The budget is the file's `asyncUtilTimeout` (10s, set by `renderWithI18n`
+ * for bridged renders): this waits for something to happen, it is not an
+ * assertion about how long it takes.
+ */
+async function waitForModalToLeave(name: string) {
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name })).not.toBeInTheDocument(),
+  );
+}
 
 function setSeatCapacity({
   humanMembers = 4,
@@ -375,7 +435,7 @@ describe("BillingTab", () => {
   it("renders nothing and issues no query when the feature flag is absent", () => {
     configStore.getState().setFeatureFlags({});
 
-    const { container } = renderWithI18n(<BillingTab />);
+    const { container } = renderWithI18n(<BillingTab />, { lobe: false });
 
     expect(container).toBeEmptyDOMElement();
     expect(mocks.useQuery).not.toHaveBeenCalled();
@@ -383,9 +443,18 @@ describe("BillingTab", () => {
 
   it("shows server prices and keeps the selected interval in sync", async () => {
     const user = userEvent.setup();
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
-    expect(screen.getByRole("heading", { name: "Billing" })).toBeInTheDocument();
+    // The tab no longer renders a page heading — `SettingsTab` is gone and the
+    // `DialogHeader` in `settings-page.tsx` owns that title. This suite mounts
+    // the tab alone, so what it can assert is the panel description the tab
+    // used to hand to `SettingsTab`: `tabDescription("billing")` is empty, so
+    // the header does not show it and it has to live here.
+    expect(
+      screen.getByText(
+        "Manage this workspace's plan, limits, human seats, and Stripe billing.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("11 / 17")).toBeInTheDocument();
     expect(screen.getByText("5 / 7")).toBeInTheDocument();
     expect(screen.getByText("3 completed · 2 in progress")).toBeInTheDocument();
@@ -422,7 +491,7 @@ describe("BillingTab", () => {
     mocks.prices = null;
     mocks.pricesLoading = true;
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(
       screen.getByRole("status", { name: "Loading subscription prices" }),
@@ -436,7 +505,7 @@ describe("BillingTab", () => {
     mocks.prices = null;
     mocks.pricesFetching = true;
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(screen.getByRole("button", { name: "Retry" })).toBeDisabled();
     expect(
@@ -457,7 +526,7 @@ describe("BillingTab", () => {
       mocks.prices = null;
       mocks.pricesError = isError;
 
-      renderWithI18n(<BillingTab />);
+      renderTab();
 
       expect(
         screen.getByText(
@@ -479,7 +548,7 @@ describe("BillingTab", () => {
   );
 
   it("uses workspace-scoped price query keys after a workspace switch", () => {
-    const { rerender } = renderWithI18n(<BillingTab />);
+    const { rerender } = renderTab();
 
     mocks.workspaceId = "workspace-2";
     rerender(<BillingTab />);
@@ -505,7 +574,7 @@ describe("BillingTab", () => {
     mocks.entitlements.seats = 0;
     mocks.summary.humanMembers = 0;
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(screen.getByText("$10.00 per human seat")).toBeInTheDocument();
     expect(screen.queryByText(/Estimated monthly total/)).not.toBeInTheDocument();
@@ -514,7 +583,7 @@ describe("BillingTab", () => {
 
   it("creates Checkout with a client idempotency key and opens Stripe externally", async () => {
     const user = userEvent.setup();
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
     await user.click(screen.getByRole("button", { name: "Continue to Stripe" }));
@@ -544,11 +613,14 @@ describe("BillingTab", () => {
         sessionId: "cs_test_1",
         url: "https://checkout.stripe.com/test-session",
       });
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
     await user.click(screen.getByRole("button", { name: "Continue to Stripe" }));
     await screen.findByText("Billing action failed");
+    // A failed Checkout closes the confirm dialog; the page behind it is inert
+    // until it has finished leaving.
+    await waitForModalToLeave("Continue to Stripe Checkout?");
 
     await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
     await user.click(screen.getByRole("button", { name: "Continue to Stripe" }));
@@ -568,14 +640,57 @@ describe("BillingTab", () => {
         sessionId: "cs_test_2",
         url: "https://checkout.stripe.com/test-session-2",
       });
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
     await user.click(screen.getByRole("button", { name: "Continue to Stripe" }));
     await screen.findByText("Billing action failed");
+    await waitForModalToLeave("Continue to Stripe Checkout?");
 
     await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    // The click that follows is on the panel behind this dialog, which is inert
+    // until the dialog has left.
+    await waitForModalToLeave("Continue to Stripe Checkout?");
+    await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
+    await user.click(screen.getByRole("button", { name: "Continue to Stripe" }));
+
+    await waitFor(() => expect(mocks.checkout).toHaveBeenCalledTimes(2));
+    expect(mocks.checkout.mock.calls[1]?.[0].idempotencyKey).not.toBe(
+      mocks.checkout.mock.calls[0]?.[0].idempotencyKey,
+    );
+  });
+
+  it("starts a new Checkout intent after the confirmation is dismissed with Escape", async () => {
+    const user = userEvent.setup();
+    mocks.checkout
+      .mockRejectedValueOnce(new Error("network lost after submit"))
+      .mockResolvedValueOnce({
+        requestId: "request-3",
+        sessionId: "cs_test_3",
+        url: "https://checkout.stripe.com/test-session-3",
+      });
+    renderTab();
+
+    await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
+    await user.click(screen.getByRole("button", { name: "Continue to Stripe" }));
+    await screen.findByText("Billing action failed");
+    // The failed attempt closed the dialog but kept the intent, so the Escape
+    // below is the only thing that can release it.
+    await waitForModalToLeave("Continue to Stripe Checkout?");
+
+    // Escape lands in this dialog's `onCancel` exactly as the Cancel button
+    // does: it is a controlled `Modal`, and Lobe's `Modal` routes every close
+    // that is not a masked outside press through `handleOpenChange`, which calls
+    // `onCancel?.(...)` (`es/base-ui/Modal/Modal.mjs`). That is the opposite of
+    // the shared `confirmModal`, where Escape bypasses `config.onCancel` — the
+    // reason this dialog is not on that channel. Either way the release has to
+    // happen, or the next Upgrade replays the Stripe Session the user walked
+    // away from.
+    await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
+    await user.keyboard("{Escape}");
+    await waitForModalToLeave("Continue to Stripe Checkout?");
+
     await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
     await user.click(screen.getByRole("button", { name: "Continue to Stripe" }));
 
@@ -596,7 +711,7 @@ describe("BillingTab", () => {
     mocks.checkout.mockRejectedValue(
       new ApiError("request failed", status, "Request Failed"),
     );
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
     await user.click(screen.getByRole("button", { name: "Continue to Stripe" }));
@@ -608,7 +723,7 @@ describe("BillingTab", () => {
     navigationState.search =
       "tab=billing&result=cancel&session_id=cs_test_1&source=email";
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(screen.getByText("Checkout canceled")).toBeInTheDocument();
     expect(navigationState.replace).toHaveBeenCalledOnce();
@@ -621,7 +736,7 @@ describe("BillingTab", () => {
     vi.useFakeTimers();
     navigationState.search = "tab=billing&result=success&session_id=cs_test_1";
     try {
-      renderWithI18n(<BillingTab />);
+      renderTab();
 
       expect(
         screen.getByText("Activating your subscription"),
@@ -663,7 +778,7 @@ describe("BillingTab", () => {
     mocks.summaryDataUpdatedAt = Date.now() - 1;
     mocks.summaryFetchedAfterMount = true;
     try {
-      renderWithI18n(<BillingTab />);
+      renderTab();
 
       expect(
         screen.getByText("Activating your subscription"),
@@ -702,7 +817,7 @@ describe("BillingTab", () => {
     mocks.summaryDataUpdatedAt = Date.now() + 1;
     mocks.summaryFetchedAfterMount = true;
     try {
-      renderWithI18n(<BillingTab />);
+      renderTab();
 
       expect(screen.getByText("Pro is active")).toBeInTheDocument();
       expect(screen.getAllByText("Unlimited")).toHaveLength(2);
@@ -719,7 +834,7 @@ describe("BillingTab", () => {
       purchaseSeats: false,
     });
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(screen.getAllByText("3 members")).toHaveLength(1);
     expect(screen.queryByText("Purchased seats")).not.toBeInTheDocument();
@@ -755,7 +870,7 @@ describe("BillingTab", () => {
       pendingQuantity: 4,
     });
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(screen.getByText("Monthly")).toBeInTheDocument();
     expect(screen.getByText("5 seats")).toBeInTheDocument();
@@ -798,7 +913,7 @@ describe("BillingTab", () => {
       status: "submitted",
     });
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
     await user.click(screen.getByRole("button", { name: "Add seats" }));
 
     await waitFor(() =>
@@ -868,7 +983,7 @@ describe("BillingTab", () => {
         quotedAt: "2030-01-01T00:00:00Z",
       });
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
     await user.click(screen.getByRole("button", { name: "Add seats" }));
 
     await waitFor(() => expect(mocks.refetchSummary).toHaveBeenCalledTimes(1));
@@ -908,7 +1023,7 @@ describe("BillingTab", () => {
       }),
     );
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
     await user.click(screen.getByRole("button", { name: "Add seats" }));
 
     expect(
@@ -940,7 +1055,7 @@ describe("BillingTab", () => {
       }),
     );
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
     await user.click(screen.getByRole("button", { name: "Add seats" }));
 
     expect(
@@ -977,7 +1092,7 @@ describe("BillingTab", () => {
       }),
     );
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
     await user.click(screen.getByRole("button", { name: "Add seats" }));
 
     expect(
@@ -1012,7 +1127,7 @@ describe("BillingTab", () => {
       new ApiError("conflict", 409, "Conflict", { code }),
     );
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
     await user.click(screen.getByRole("button", { name: "Add seats" }));
     await screen.findByRole("button", { name: "Add 1 seat" });
     await user.click(screen.getByRole("button", { name: "Add 1 seat" }));
@@ -1035,7 +1150,7 @@ describe("BillingTab", () => {
     mocks.summary.hasStripeCustomer = true;
     setSeatCapacity();
 
-    const { rerender } = renderWithI18n(<BillingTab />);
+    const { rerender } = renderTab();
     await user.click(screen.getByRole("button", { name: "Add seats" }));
     await screen.findByRole("button", { name: "Add 1 seat" });
 
@@ -1062,7 +1177,7 @@ describe("BillingTab", () => {
     setSeatCapacity();
     mocks.purchaseSeats.mockResolvedValue(null);
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
     await user.click(screen.getByRole("button", { name: "Add seats" }));
     await screen.findByRole("button", { name: "Add 1 seat" });
     await user.click(screen.getByRole("button", { name: "Add 1 seat" }));
@@ -1074,6 +1189,7 @@ describe("BillingTab", () => {
     const firstKey = mocks.purchaseSeats.mock.calls[0]?.[0].idempotencyKey;
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await waitForModalToLeave("Add seats");
     await user.click(screen.getByRole("button", { name: "Add seats" }));
     await user.click(
       await screen.findByRole("button", { name: "Add 1 seat" }),
@@ -1098,7 +1214,7 @@ describe("BillingTab", () => {
       }),
     );
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
     await user.click(screen.getByRole("button", { name: "Add seats" }));
     await user.click(
       await screen.findByRole("button", { name: "Add 1 seat" }),
@@ -1123,7 +1239,7 @@ describe("BillingTab", () => {
       },
     });
     try {
-      renderWithI18n(<BillingTab />);
+      renderTab();
       expect(screen.getByText("Seat purchase processing")).toBeInTheDocument();
 
       act(() => vi.advanceTimersByTime(2 * 60_000));
@@ -1167,7 +1283,7 @@ describe("BillingTab", () => {
       },
     });
     try {
-      renderWithI18n(<BillingTab />);
+      renderTab();
       act(() => vi.advanceTimersByTime(2 * 60_000));
 
       expect(
@@ -1189,7 +1305,7 @@ describe("BillingTab", () => {
       reached: true,
     });
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(screen.getByText("Limit reached")).toBeInTheDocument();
     expect(screen.getByText("7 / 7")).toBeInTheDocument();
@@ -1206,7 +1322,7 @@ describe("BillingTab", () => {
       reset_at: null,
     });
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(
       screen.getByText("Usage is temporarily unavailable"),
@@ -1221,6 +1337,22 @@ describe("BillingTab", () => {
     expect(mocks.refetchUsage).toHaveBeenCalledOnce();
   });
 
+  it("keeps the panel description while the summary is loading", () => {
+    mocks.summaryPending = true;
+
+    renderTab();
+
+    expect(
+      screen.getByRole("status", { name: "Loading workspace billing" }),
+    ).toBeInTheDocument();
+    // See the note on the equivalent assertion in "fails closed" below.
+    expect(
+      screen.getByText(
+        "Manage this workspace's plan, limits, human seats, and Stripe billing.",
+      ),
+    ).toBeInTheDocument();
+  });
+
   it.each([
     ["request fails", true, false],
     ["response is malformed", false, true],
@@ -1230,11 +1362,22 @@ describe("BillingTab", () => {
       mocks.summaryError = isError;
       mocks.summaryMalformed = isMalformed;
 
-      renderWithI18n(<BillingTab />);
+      renderTab();
 
       expect(screen.getByText("Billing is temporarily unavailable")).toBeInTheDocument();
       expect(screen.queryByText("Free")).not.toBeInTheDocument();
       expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+
+      // The panel description, which `SettingsTab` rendered in this branch
+      // before the migration. Asserted only on the loaded panel, so losing it
+      // here left every suite green; the renderer pass caught it, in an
+      // environment whose cloud runtime is unconfigured and where this is
+      // therefore the branch that renders. See `lede` in `billing-tab.tsx`.
+      expect(
+        screen.getByText(
+          "Manage this workspace's plan, limits, human seats, and Stripe billing.",
+        ),
+      ).toBeInTheDocument();
     },
   );
 
@@ -1247,7 +1390,7 @@ describe("BillingTab", () => {
   ])("renders a recovery notice for %s", (status, title) => {
     mocks.entitlements.status = status;
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(screen.getByText(title)).toBeInTheDocument();
   });
@@ -1266,7 +1409,7 @@ describe("BillingTab", () => {
     });
     setSeatCapacity();
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(
       screen.getByText(/Update your payment method by Feb 15, 2030/),
@@ -1291,7 +1434,7 @@ describe("BillingTab", () => {
       },
     });
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(screen.queryByText("Unlimited")).not.toBeInTheDocument();
     expect(screen.getByText("11 / 17")).toBeInTheDocument();
@@ -1320,7 +1463,7 @@ describe("BillingTab", () => {
     });
     setSeatCapacity({ pendingQuantity: 4 });
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(
       screen.getByText(/subscription is scheduled to cancel on Apr 1, 2030/),
@@ -1348,7 +1491,7 @@ describe("BillingTab", () => {
     mocks.summary.hasStripeCustomer = true;
     setSeatCapacity({ humanMembers: 3, purchased: 3 });
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(
       screen.getByRole("button", { name: "Manage billing" }),
@@ -1374,7 +1517,7 @@ describe("BillingTab", () => {
     });
     setSeatCapacity({ humanMembers: 5, purchased: 4, used: 5 });
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(screen.getByText("Members exceed purchased seats")).toBeInTheDocument();
     expect(
@@ -1392,7 +1535,7 @@ describe("BillingTab", () => {
     });
     setSeatCapacity({ humanMembers: 5, purchased: 5, used: 5 });
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(
       screen.queryByText("Members exceed purchased seats"),
@@ -1418,7 +1561,7 @@ describe("BillingTab", () => {
         },
       });
 
-      renderWithI18n(<BillingTab />);
+      renderTab();
 
       expect(
         screen.getByRole("button", { name: "Manage billing" }),
@@ -1453,7 +1596,7 @@ describe("BillingTab", () => {
       },
     });
 
-    renderWithI18n(<BillingTab />);
+    renderTab();
 
     expect(screen.getByText("Payment needs attention")).toBeInTheDocument();
     expect(

@@ -17,9 +17,9 @@
  * until the server accepts the submission, then clears. A slow send never
  * looks like "posted but the box is still full", and a rejected send keeps the
  * draft for retry instead of silently dropping it. The editor itself stays
- * interactive (Tiptap cannot toggle editable post-mount), so callers' accepted
- * handlers guard on a submit-time snapshot: success clears ONLY the draft it
- * submitted, and anything typed during the request survives.
+ * interactive throughout, so callers' accepted handlers guard on a
+ * submit-time snapshot: success clears ONLY the draft it submitted, and
+ * anything typed during the request survives.
  *
  * It also owns the post-send FOCUS decision (`afterAccepted`). Where the caret
  * lands after a send is a per-surface product call — a reply box the user keeps
@@ -30,8 +30,28 @@
  */
 
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
-import type { ContentEditorRef } from "./content-editor";
 import type { UploadGate } from "./use-upload-gate";
+
+/**
+ * The minimum an editor must offer to satisfy the send contract: read the
+ * text, and move the caret.
+ *
+ * Declared here, at the consumer, rather than imported from the editor that
+ * happens to be in use today. This hook never touches attachment state — the
+ * upload gate is a separate object on purpose — so binding its parameter to
+ * the full `ContentEditorRef` would make it un-reusable by any composer that
+ * models attachments differently, which is exactly what a kernel swap looks
+ * like. `ContentEditorRef` still satisfies this interface structurally, so the
+ * existing callers needed no change when it was narrowed.
+ */
+export interface ComposerEditorRef {
+  /** Drop the caret, so the composer stops reading as "still writing". */
+  blur: () => void;
+  /** Put the caret back in the composer. */
+  focus: () => void;
+  /** Current document, as markdown. */
+  getMarkdown: () => string;
+}
 
 /**
  * What happens to keyboard focus after an accepted submit.
@@ -43,7 +63,7 @@ import type { UploadGate } from "./use-upload-gate";
 export type ComposerAfterAccepted = "refocus" | "blur" | "none";
 
 export interface ComposerSubmitOptions {
-  editorRef: RefObject<ContentEditorRef | null>;
+  editorRef: RefObject<ComposerEditorRef | null>;
   uploadGate: UploadGate;
   /**
    * Perform the send. Resolve `true` when the server accepted the submission

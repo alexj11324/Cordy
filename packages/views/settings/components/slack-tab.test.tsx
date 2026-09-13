@@ -1,13 +1,10 @@
 // @vitest-environment jsdom
 
 import { type ReactNode } from "react";
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@orvilo/core/i18n/react";
 import { configStore } from "@orvilo/core/config";
-import enCommon from "../../locales/en/common.json";
-import enSettings from "../../locales/en/settings.json";
 
 type MemberRole = "owner" | "admin" | "member" | "guest";
 
@@ -32,7 +29,28 @@ const mockBeginManaged = vi.hoisted(() => vi.fn());
 const mockDeleteInstallation = vi.hoisted(() => vi.fn());
 const mockOpenExternal = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
+const mockToastError = vi.hoisted(() => vi.fn());
 const queryErrorRef = vi.hoisted(() => ({ current: false }));
+
+/**
+ * `confirmModal` is imperative and module-level, so the config the wrapper
+ * hands it — and therefore the promise `onOk` returns — is the only place the
+ * rethrow contract is observable. Recorded here and delegated to the real one,
+ * because the tests below also drive the dialog through the UI.
+ */
+const capturedConfirm = vi.hoisted(() => ({
+  current: null as { onOk: () => Promise<unknown> } | null,
+}));
+const mockConfirmModal = vi.hoisted(() => vi.fn());
+const actualConfirmModal = vi.hoisted(() => ({
+  current: null as null | ((config: never) => unknown),
+}));
+
+vi.mock("@lobehub/ui/base-ui", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@lobehub/ui/base-ui")>();
+  actualConfirmModal.current = actual.confirmModal as never;
+  return { ...actual, confirmModal: mockConfirmModal };
+});
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
@@ -95,29 +113,66 @@ vi.mock("@orvilo/core/auth", () => {
 });
 
 vi.mock("sonner", () => ({
-  toast: { success: vi.fn(), error: vi.fn(), message: vi.fn() },
+  toast: { success: vi.fn(), error: mockToastError, message: vi.fn() },
 }));
 
 vi.mock("../../platform", () => ({ openExternal: mockOpenExternal }));
 
+import { renderWithI18n } from "../../test/i18n";
 import { SlackAgentBindButton, SlackTab } from "./slack-tab";
 
-const TEST_RESOURCES = { en: { common: enCommon, settings: enSettings } };
-
-function renderUI(children: ReactNode) {
-  return render(
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      {children}
-    </I18nProvider>,
-  );
+/**
+ * `lobe: true` mounts the theme bridge on demand, so everything after a
+ * bridged render must start with an async query — until the bridge's module
+ * resolves, the tree is a `Suspense` fallback of `null` and a synchronous
+ * `getBy*` would fail. The one case that passes `lobe: false` is a render that
+ * produces no Lobe element at all; see the note on those tests.
+ */
+function renderUI(children: ReactNode, { lobe = true }: { lobe?: boolean } = {}) {
+  return renderWithI18n(<>{children}</>, { lobe });
 }
+
+/**
+ * Whether the confirm dialog leaves the document within `timeout`. Polls —
+ * `waitFor` re-runs the callback until it stops throwing — because a check that
+ * samples at a fixed moment cannot tell an open dialog from a closing one.
+ *
+ * The timeout is a parameter because the two callers want opposite things from
+ * it, and the failure directions are not symmetric:
+ *
+ *   - the **success** path passes a generous budget. Polling stops the moment
+ *     the node goes, so a fast close costs nothing, and a slow one cannot fail
+ *     it — the expensive direction is a correct build failing under load.
+ *   - the **failure** path passes a fixed window. It spends that whole window
+ *     waiting, and a longer one is not better: no correct run ever closes, so
+ *     the only question is whether a mutated build that closes would be caught.
+ */
+async function dialogLeavesWithin(timeout: number): Promise<boolean> {
+  try {
+    await waitFor(
+      () => expect(screen.queryByText("Disconnect this Slack bot?")).toBeNull(),
+      { timeout },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** A dismissal window: long enough for a close, short enough to be an assertion. */
+const CLOSE_WINDOW_MS = 1_200;
+/** A budget, not a window: the success path must not fail a loaded runner. */
+const CLOSE_BUDGET_MS = 8_000;
 
 describe("Slack deployment setup policy", () => {
   beforeEach(resetFixtures);
 
-  it.each(["server_configured", "disabled"] as const)("keeps %s credential lifecycle read-only", (mode) => {
+  it.each(["server_configured", "disabled"] as const)("keeps %s credential lifecycle read-only", async (mode) => {
     configStore.getState().setMessagingConfig({ mode, setupWritable: true, platforms: [] });
-    const entry = renderUI(<SlackAgentBindButton agentId="agent-1" />);
+    // No bridge: on this path the component returns `MessagingSetupNotice`
+    // (shadcn) or `null`, so no Lobe element renders and the negative assertion
+    // below is decided by the component rather than by a pending module load.
+    const entry = renderUI(<SlackAgentBindButton agentId="agent-1" />, { lobe: false });
     expect(screen.queryByTestId("slack-agent-connect")).toBeNull();
     expect(mockRegisterBYO).not.toHaveBeenCalled();
     entry.unmount();
@@ -132,7 +187,7 @@ describe("Slack deployment setup policy", () => {
       }],
     };
     renderUI(<><SlackAgentBindButton agentId="agent-1" /><SlackTab /></>);
-    expect(screen.getAllByRole("status", { name: "Connection status" })).toHaveLength(2);
+    expect(await screen.findAllByRole("status", { name: "Connection status" })).toHaveLength(2);
     expect(screen.queryByRole("button", { name: /disconnect/i })).toBeNull();
     expect(mockDeleteInstallation).not.toHaveBeenCalled();
   });
@@ -142,9 +197,16 @@ function resetFixtures() {
   configStore.getState().setMessagingConfig({ mode: "managed", setupWritable: true, platforms: [] });
   vi.clearAllMocks();
   queryErrorRef.current = false;
+  capturedConfirm.current = null;
+  mockConfirmModal.mockImplementation((config: never) => {
+    capturedConfirm.current = config as { onOk: () => Promise<unknown> };
+    return actualConfirmModal.current?.(config);
+  });
   membersRef.current = [{ user_id: "user-1", role: "owner" }];
   installationsRef.current = { installations: [], configured: true, install_supported: true };
 }
+
+afterEach(cleanup);
 
 describe("SlackAgentBindButton", () => {
   beforeEach(resetFixtures);
@@ -152,7 +214,7 @@ describe("SlackAgentBindButton", () => {
   it("opens the BYO dialog and submits the pasted bot + app tokens", async () => {
     mockRegisterBYO.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "installed" });
     renderUI(<SlackAgentBindButton agentId="agent-1" agentName="Bot" />);
-    await userEvent.click(screen.getByTestId("slack-agent-connect"));
+    await userEvent.click(await screen.findByTestId("slack-agent-connect"));
     const botInput = await screen.findByTestId("slack-byo-bot-token");
     await userEvent.type(botInput, "xoxb-bot");
     await userEvent.type(screen.getByTestId("slack-byo-app-token"), "xapp-1-A0X-1-secret");
@@ -167,14 +229,18 @@ describe("SlackAgentBindButton", () => {
     expect(mockOpenExternal).not.toHaveBeenCalled();
   });
 
-  it("keeps an unobserved installation manageable without claiming it is connected", () => {
+  it("keeps an unobserved installation manageable without claiming it is connected", async () => {
     installationsRef.current = {
       installations: [{ id: "i1", agent_id: "agent-1", status: "installed", team_id: "T1" }],
       configured: true,
       install_supported: true,
     };
     renderUI(<SlackAgentBindButton agentId="agent-1" />);
-    expect(screen.getByTestId("slack-agent-bot-installed")).toBeTruthy();
+    // The agent-detail half of this file keeps the shadcn primitives — a
+    // conversion this round did not take, not a missing bridge — so the only
+    // thing awaiting the bridge here is the render itself: this first query is
+    // what proves it landed.
+    expect(await screen.findByTestId("slack-agent-bot-installed")).toBeTruthy();
     expect(screen.getByTestId("slack-agent-bot-disconnect")).toBeTruthy();
     expect(screen.getByRole("status", { name: "Connection status" }).textContent).toBe("Status unavailable");
     expect(screen.queryByTestId("slack-agent-connect")).toBeNull();
@@ -182,7 +248,13 @@ describe("SlackAgentBindButton", () => {
 
   it("renders nothing for a non-manager", () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
-    const { container } = renderUI(<SlackAgentBindButton agentId="agent-1" />);
+    // `lobe: false` on purpose. The component returns `null` on this path, so
+    // no Lobe element renders and no bridge is needed — and the emptiness
+    // assertion stays meaningful, which it would not be under a bridge:
+    // `ThemeProvider` renders a real `<div class="contents">`, so the container
+    // would stop being empty for a reason that has nothing to do with the
+    // component's behaviour.
+    const { container } = renderUI(<SlackAgentBindButton agentId="agent-1" />, { lobe: false });
     expect(container).toBeEmptyDOMElement();
   });
 
@@ -191,21 +263,22 @@ describe("SlackAgentBindButton", () => {
     ["offline", "Disconnected"],
     ["starting", "Connecting"],
     ["future_state", "Status unavailable"],
-  ])("renders %s from the server while preserving the management action", (state, label) => {
+  ])("renders %s from the server while preserving the management action", async (state, label) => {
     installationsRef.current = {
       installations: [{ id: "i1", agent_id: "agent-1", status: "installed", team_id: "T1",
         runtime: { state, observedAt: "2026-09-03T12:00:00Z", errorCode: null } }],
       configured: true, install_supported: true,
     };
     renderUI(<SlackAgentBindButton agentId="agent-1" />);
-    expect(screen.getByRole("status", { name: "Connection status" }).textContent).toBe(label);
+    expect((await screen.findByRole("status", { name: "Connection status" })).textContent).toBe(label);
     expect(screen.getByTestId("slack-agent-bot-disconnect")).toBeTruthy();
     expect(screen.queryByTestId("slack-agent-connect")).toBeNull();
   });
 
   it("renders nothing when install is unavailable and the agent is unbound", () => {
     installationsRef.current = { installations: [], configured: true, install_supported: false };
-    const { container } = renderUI(<SlackAgentBindButton agentId="agent-1" />);
+    // `lobe: false` for the same reason as the non-manager case above.
+    const { container } = renderUI(<SlackAgentBindButton agentId="agent-1" />, { lobe: false });
     expect(container).toBeEmptyDOMElement();
   });
 });
@@ -213,7 +286,7 @@ describe("SlackAgentBindButton", () => {
 describe("SlackTab", () => {
   beforeEach(resetFixtures);
 
-  it("does not reuse a cached connection confirmation after the status query fails", () => {
+  it("does not reuse a cached connection confirmation after the status query fails", async () => {
     installationsRef.current = {
       installations: [{ id: "i1", agent_id: "agent-1", status: "installed", team_id: "T1",
         installed_at: "2026-09-03T12:00:00Z",
@@ -222,33 +295,42 @@ describe("SlackTab", () => {
     };
     queryErrorRef.current = true;
     renderUI(<SlackTab />);
-    expect(screen.getByRole("status", { name: "Connection status" }).textContent).toContain("Status unavailable");
+    const status = await screen.findByRole("status", { name: "Connection status" });
+    expect(status.textContent).toContain("Status unavailable");
+    // ...and the row must be on the **full** status branch, not the compact
+    // one. Only the full branch renders this label as text; the compact branch
+    // is a single outline `<Badge>` whose dot has two colours, so an `error`
+    // install would read amber and be indistinguishable from `disconnected`.
+    // The assertion above cannot tell them apart — both contain "Status
+    // unavailable" — which is why the review caught this regression and the
+    // suite did not. This half is the guard.
+    expect(status.textContent).toContain("Connection status");
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeTruthy();
   });
 
-  it("surfaces the not-enabled notice when the deployment has no Slack key", () => {
+  it("surfaces the not-enabled notice when the deployment has no Slack key", async () => {
     installationsRef.current = { installations: [], configured: false, install_supported: false };
     renderUI(<SlackTab />);
-    expect(screen.getByText(/Slack integration not enabled/i)).toBeTruthy();
+    expect(await screen.findByText(/Slack integration not enabled/i)).toBeTruthy();
   });
 
-  it("shows the empty state when configured but nothing is connected", () => {
+  it("shows the empty state when configured but nothing is connected", async () => {
     renderUI(<SlackTab />);
-    expect(screen.getByText(/No bots installed yet/i)).toBeTruthy();
+    expect(await screen.findByText(/No bots installed yet/i)).toBeTruthy();
   });
 
-  it("lists a connected installation with its agent name and a disconnect control", () => {
+  it("lists a connected installation with its agent name and a disconnect control", async () => {
     installationsRef.current = {
       installations: [{ id: "i1", agent_id: "agent-7", status: "installed", team_id: "T1" }],
       configured: true,
       install_supported: true,
     };
     renderUI(<SlackTab />);
-    expect(screen.getByText("Agent agent-7")).toBeTruthy();
+    expect(await screen.findByText("Agent agent-7")).toBeTruthy();
     expect(screen.getByText(/Disconnect/i)).toBeTruthy();
   });
 
-  it("shows the managed connect button only when the hosted path is supported", () => {
+  it("shows the managed connect button only when the hosted path is supported", async () => {
     installationsRef.current = {
       installations: [],
       configured: true,
@@ -256,10 +338,10 @@ describe("SlackTab", () => {
       managed_supported: true,
     };
     renderUI(<SlackTab />);
-    expect(screen.getByTestId("slack-managed-connect")).toBeTruthy();
+    expect(await screen.findByTestId("slack-managed-connect")).toBeTruthy();
   });
 
-  it("hides the managed connect button without hosted credentials", () => {
+  it("hides the managed connect button without hosted credentials", async () => {
     installationsRef.current = {
       installations: [],
       configured: true,
@@ -267,6 +349,7 @@ describe("SlackTab", () => {
       managed_supported: false,
     };
     renderUI(<SlackTab />);
+    await screen.findByText(/No bots installed yet/i);
     expect(screen.queryByTestId("slack-managed-connect")).toBeNull();
   });
 
@@ -283,7 +366,7 @@ describe("SlackTab", () => {
       managed_supported: true,
     };
     renderUI(<SlackTab />);
-    await userEvent.click(screen.getByTestId("slack-managed-connect"));
+    await userEvent.click(await screen.findByTestId("slack-managed-connect"));
     await waitFor(() => {
       expect(mockBeginManaged).toHaveBeenCalledWith("workspace-1", expect.any(String));
     });
@@ -299,13 +382,13 @@ describe("SlackTab", () => {
       managed_supported: true,
     };
     renderUI(<SlackTab />);
-    await userEvent.click(screen.getByTestId("slack-managed-connect"));
+    await userEvent.click(await screen.findByTestId("slack-managed-connect"));
     await waitFor(() => {
       expect(toast.error).toHaveBeenCalled();
     });
   });
 
-  it("renders a workspace-level install under its Slack team, not an agent", () => {
+  it("renders a workspace-level install under its Slack team, not an agent", async () => {
     installationsRef.current = {
       installations: [
         {
@@ -321,9 +404,81 @@ describe("SlackTab", () => {
       managed_supported: true,
     };
     renderUI(<SlackTab />);
-    expect(screen.getByText("Slack workspace T1")).toBeTruthy();
+    expect(await screen.findByText("Slack workspace T1")).toBeTruthy();
     expect(screen.queryByTestId("actor-avatar")).toBeNull();
     // An installed managed bot replaces the connect button.
     expect(screen.queryByTestId("slack-managed-connect")).toBeNull();
+  });
+
+  /**
+   * The rethrow contract, asserted twice and at two layers, because the
+   * DOM-level-only version of this test could not fail.
+   *
+   * `confirmModal` closes on the line after `onOk` unless `onOk` returns a
+   * promise, and stays open when that promise rejects — so a disconnect that
+   * fails must leave the confirmation up rather than dismiss as though the bot
+   * were gone.
+   *
+   * The first test below keeps the DOM spelling but waits a window in which the
+   * success path is shown to close; without that demonstration "the title is
+   * still in the document" could be true because nothing ever leaves it. The
+   * second drops the DOM entirely: the contract lives in the promise `onOk`
+   * returns, and that is directly readable off the config the wrapper handed
+   * the library.
+   */
+  it("disconnects only after the confirmation, and the dialog closes when it succeeds", async () => {
+    mockDeleteInstallation.mockResolvedValue(undefined);
+    installationsRef.current = {
+      installations: [{ id: "i1", agent_id: "agent-7", status: "installed", team_id: "T1" }],
+      configured: true,
+      install_supported: true,
+    };
+    renderUI(<SlackTab />);
+    await userEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+    expect(mockDeleteInstallation).not.toHaveBeenCalled();
+
+    await screen.findByText("Disconnect this Slack bot?");
+    // Two buttons now carry this name — the row's and the dialog's — and the
+    // dialog's is the last in document order (it is portalled to the end of
+    // `<body>`), so `.at(-1)` is the one that runs the request.
+    const confirmButtons = await screen.findAllByRole("button", { name: /^Disconnect$/ });
+    await userEvent.click(confirmButtons.at(-1)!);
+    await waitFor(() => {
+      expect(mockDeleteInstallation).toHaveBeenCalledWith("workspace-1", "i1");
+    });
+    expect(mockInvalidate).toHaveBeenCalled();
+    expect(await dialogLeavesWithin(CLOSE_BUDGET_MS)).toBe(true);
+  });
+
+  it("keeps the confirmation up when the disconnect request fails", async () => {
+    mockDeleteInstallation.mockRejectedValue(new Error("network failed"));
+    installationsRef.current = {
+      installations: [{ id: "i1", agent_id: "agent-7", status: "installed", team_id: "T1" }],
+      configured: true,
+      install_supported: true,
+    };
+    renderUI(<SlackTab />);
+    await userEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+    await screen.findByText("Disconnect this Slack bot?");
+    const confirmButtons = await screen.findAllByRole("button", { name: /^Disconnect$/ });
+    await userEvent.click(confirmButtons.at(-1)!);
+
+    await waitFor(() => expect(mockToastError).toHaveBeenCalledWith("network failed"));
+    expect(await dialogLeavesWithin(CLOSE_WINDOW_MS)).toBe(false);
+  });
+
+  it("hands confirmModal an onOk that rejects when the disconnect fails", async () => {
+    mockDeleteInstallation.mockRejectedValue(new Error("network failed"));
+    installationsRef.current = {
+      installations: [{ id: "i1", agent_id: "agent-7", status: "installed", team_id: "T1" }],
+      configured: true,
+      install_supported: true,
+    };
+    renderUI(<SlackTab />);
+    await userEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+    expect(capturedConfirm.current).not.toBeNull();
+
+    await expect(capturedConfirm.current?.onOk()).rejects.toThrow("network failed");
+    expect(mockToastError).toHaveBeenCalledWith("network failed");
   });
 });

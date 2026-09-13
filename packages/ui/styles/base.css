@@ -398,3 +398,201 @@ html[data-dnd-dragging="true"] * {
   background-color: var(--find-match-active);
   color: var(--find-match-foreground);
 }
+
+/* Lobe's `Form` stylesheet is not mounted, so these are the four rules that
+ * must be restated — one per thing that breaks without them:
+ *
+ *   - `.ant-form-item-row { flex-wrap: nowrap }`: antd wraps the row by
+ *     default, so a label and description wide enough push the control onto a
+ *     second line while its neighbours stay side by side (the timezone row, at
+ *     288px of control, did);
+ *   - `.ant-form-item-label > label { height: unset }`: antd's horizontal label
+ *     pins itself to the control's height and hides the overflow, so a two-line
+ *     description loses its second line;
+ *   - `.ant-form-item { margin: 0 !important }`: Lobe zeroes antd's own
+ *     `margin-bottom: 24px`, which otherwise doubles up with the row's padding;
+ *   - `.ant-form-item-row { align-items: center }`: without it Lobe's own cva
+ *     default (`layout: "vertical"` → `align-items: stretch`) wins and every
+ *     row is silently top-aligned, where the old `SettingsRow` centred by
+ *     default. `.orvilo-settings-row-start` restores the top alignment for the
+ *     rows that used to ask for it.
+ *
+ * The colon is one more difference, and it is a prop rather than a rule: with
+ * no `Form` the antd label colon renders, and `SettingsFormRow` suppresses it
+ * with `colon={false}` — see that component, not this block.
+ *
+ * The settings page mounts no `Form` on purpose: every control there commits
+ * through its own store or through `useAutoSave`, so a `Form` around the tab
+ * panels would own values nothing writes. Scoped to the rows that opt in rather
+ * than applied to `.ant-form-item-row` globally, so antd forms elsewhere in the
+ * app keep their own geometry, and written as plain CSS rather than utilities
+ * because each rule has to reach an antd *child* of the item — which a class on
+ * the item itself cannot do.
+ *
+ * If the settings tabs ever do mount a Lobe `Form`, this block should go: it
+ * exists only to restate what that component would have applied. */
+.orvilo-settings-row {
+  margin-bottom: 0 !important;
+}
+.orvilo-settings-row .ant-form-item-row {
+  flex-wrap: nowrap;
+  /* `!important` because Lobe's own cva sets `align-items: stretch` on the same
+   * element through a class of equal specificity that antd-style injects later
+   * in the document — measured: without it the computed value stays `stretch`.
+   * `flex-wrap` above needs no such thing: it is overridden from antd's own
+   * stylesheet, which is one step less specific. */
+  align-items: center !important;
+}
+.orvilo-settings-row-start .ant-form-item-row {
+  align-items: flex-start !important;
+}
+.orvilo-settings-row .ant-form-item-label > label {
+  height: unset;
+}
+/* The control column keeps the width `minWidth` asked for, and the label column
+ * is the one that gives way. Measured in the running renderer, not reasoned
+ * about: `SettingsFormRow`'s `minWidth` becomes
+ * `.ant-form-item-control { width: var(--form-item-min-width) !important }`,
+ * and that declaration was documented as an *exact* width. It is not one.
+ *
+ * A flex item's `width` is only its base size; what it actually gets is the
+ * flex-resolved width, and Lobe leaves the control at `flex: 0 1 auto`
+ * (measured) so it shrinks. Lobe's own `flex: none` on the control — and
+ * `flex: 1` on the label — live under `responsive.sm`, which antd-style defines
+ * as `@media (max-width: 575.98px)`: a *downward* query, so those rules apply
+ * on a phone and never on the desktop settings dialog. The result was that a
+ * row whose label plus description was wide enough came out narrower than its
+ * neighbours' in the same card — the account tab's rows resolved to
+ * 384/327/271/375px instead of the one width they asked for, with the right
+ * edges aligned and the left edges ragged, which a Task 4 tab never showed
+ * because every label there is short.
+ *
+ * `flex: 1 1 0%` with `min-width: 0` on the label is the same pair Lobe applies
+ * on mobile, and the same geometry the old `SettingsRow` had (`min-w-0 flex-1`
+ * label next to a fixed-width control). Rows that pass no `minWidth` — a
+ * switch, an avatar — are unaffected: their control is content-sized either
+ * way.
+ *
+ * The `!important`s are the same story as `align-items` above, one step worse:
+ * the value to beat is `flex: unset` from
+ * `.acss-xxx.ant-form-item .ant-form-item-row > div`, which is 0-3-1 against a
+ * plain `.orvilo-settings-row .ant-form-item-control`'s 0-2-0 and is injected
+ * later in the document besides. */
+.orvilo-settings-row .ant-form-item-label {
+  flex: 1 1 0% !important;
+  min-width: 0;
+}
+.orvilo-settings-row .ant-form-item-control {
+  flex: 0 0 auto !important;
+}
+/* `SettingsFormRow disabled` — the row's control is one the viewer may not
+ * edit, so its label dims with it. The old rows got this from a base-ui
+ * `Field`'s `data-disabled`, whose `FieldLabel` carries
+ * `group-data-[disabled=true]/field:opacity-50` (`components/ui/field.tsx`);
+ * these rows are antd's, with no `Field` and no `[data-slot=field-label]` for
+ * that variant to reach, so the marker and the rule both had to move. Only the
+ * label dims, which is what the old variant did — the input carries its own
+ * disabled treatment. */
+.orvilo-settings-row-disabled .ant-form-item-label {
+  opacity: 0.5;
+}
+/* `SettingsGroup variant="outlined"` below Lobe's mobile breakpoint.
+ *
+ * `FormGroup`'s narrow branch renders a header band over a body and reads
+ * `variant` nowhere, so the card the wide tree draws — border, radius, the
+ * `outlined` treatment the shell's prop is named for — simply is not there. The
+ * class is applied by `SettingsGroup` itself, because the branch is chosen
+ * inside `FormGroup` and the only thing this component can reach is the wrapper
+ * it already renders around it.
+ *
+ * The radius is `var(--radius)`, not `--radius-lg` or `--radius-xl` because
+ * either would be "near enough": it is the token the theme bridge maps to
+ * Lobe's `borderRadius` (`lobe/lobe-tokens.ts` — `borderRadius:
+ * read.lengthPx("--radius")`), which is what the wide card's corner actually
+ * resolves to. Measured on both trees: 10px either side of the switch, where
+ * `--radius-xl` had given the narrow card 14px and the radius changed as the
+ * window crossed it. `overflow: hidden` clips the inner bands to the corners
+ * the way the old `SettingsCard` did.
+ *
+ * **That equality is coupling, not identity** — the two corners match because
+ * Lobe's outlined `Form.Group` reads `cssVar.borderRadius` today. If Lobe
+ * switches its card to `borderRadiusLG`, this rule keeps painting 10px and the
+ * two corners part company silently; the fix is then to follow the card's token,
+ * not to add a second hard-coded number here. */
+.orvilo-settings-group-outlined {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+/* …and below the width at which a fixed control column plus its label no longer
+ * fit, the row stacks: label above, control across the full width. Measured at
+ * a 460px viewport, holding the control at its exact width overflows the card —
+ * the settings tab body is `viewport - 72px`, and a 384px control beside even
+ * a narrow label's min-content does not fit in 388px. The tab body's scroll
+ * content carries `min-width: fit-content`, so the overflow is not clipped
+ * politely: the whole panel widens and scrolls sideways.
+ *
+ * This is the same geometry the old `SettingsRow` had, but not quite the same
+ * threshold, and the difference is worth stating because the arithmetic is how
+ * 640 was chosen. The old tiers were *container* queries at 34rem of the
+ * `SettingsCard` — 544px of card, which is 616px of viewport once the dialog's
+ * own margins and the tab body's `px-6` are added back. Measured here, the
+ * first width that actually overflowed was a 460px viewport, so the true
+ * failure point is somewhere between. 640 is kept because it is Tailwind's
+ * `sm`, because the account tab's footer already switches there, and because a
+ * breakpoint three pixels above a computed bound is a coincidence nobody would
+ * maintain.
+ *
+ * Two things about this rule that are true today and would stop being true:
+ *
+ *   - **It is a viewport query, not a container query.** That is what the old
+ *     row used, and it is the more correct instrument: the settings dialog is
+ *     one viewport today, but a split view, an inspector pane or an embedded
+ *     settings surface would make the card narrower than the viewport and this
+ *     rule would stop firing when it should.
+ *   - **Below 575.98px Lobe outranks us, and on specificity rather than on
+ *     order.** `es/Form/style.mjs` sets
+ *     `.${hash}.ant-form-item.ant-form-item-horizontal .ant-form-item-label
+ *     { flex: 1 !important }` and the matching `flex: none !important` on the
+ *     control, under `responsive.sm`. That selector is **0-4-0** — the
+ *     antd-style hash class, `.ant-form-item`, `.ant-form-item-horizontal` and
+ *     `.ant-form-item-label` — against our `.orvilo-settings-row
+ *     .ant-form-item-label` at **0-2-0**, so it wins on weight alone and the
+ *     injection order it also has never enters into it. (An earlier version of
+ *     this comment called them "the same 0-3-x weight… injected later"; that was
+ *     wrong about both halves.) It is harmless today because the axis is
+ *     `column` — `flex` means nothing on the cross axis — but if the stacking
+ *     mechanism ever changes to something that keeps the row a row, these two
+ *     rules will fight and Lobe wins.
+ *
+ * **640 here and 576 in `SettingsGroup` are two different switches, and they
+ * must not be harmonised.** They answer different questions with different
+ * instruments. 576 is a *JavaScript* decision — antd's `Grid.useBreakpoint()`
+ * through `useResponsive()`, which selects a different React tree
+ * (`FormGroup`'s mobile branch) and so cannot be expressed in a media query at
+ * all. 640 is a *CSS* decision — this rule, which only reflows the row that both
+ * trees render. They do not fire together: at 600px the rows have already
+ * stacked while the group is still the wide tree, and only below 576 are the two
+ * both on their narrow paths. That overlap is fine because the two rules touch
+ * different boxes — the group's border and the row's flex axis — but it is the
+ * reason a change to one is not a change to the other.
+ *
+ * The width override has to go through the custom property rather than
+ * `width` directly: `minWidth` reaches the DOM as an *inline* style, and the
+ * rule that consumes it (`.acss-xxx.ant-form-item .ant-form-item-control`)
+ * outranks a plain stylesheet selector, so an `!important` declaration of the
+ * property itself is the one thing that moves it. */
+@media (max-width: 639.98px) {
+  .orvilo-settings-row {
+    --form-item-min-width: 100% !important;
+  }
+  .orvilo-settings-row .ant-form-item-row {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+  .orvilo-settings-row .ant-form-item-label,
+  .orvilo-settings-row .ant-form-item-control {
+    flex: 0 0 auto !important;
+    width: 100%;
+  }
+}

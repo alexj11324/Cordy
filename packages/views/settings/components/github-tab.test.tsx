@@ -1,10 +1,7 @@
-import type { ReactNode } from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@orvilo/core/i18n/react";
-import enCommon from "../../locales/en/common.json";
-import enSettings from "../../locales/en/settings.json";
+import { renderWithI18n } from "../../test/i18n";
 
 const mockUpdateWorkspace = vi.hoisted(() => vi.fn());
 const mockDeleteInstallation = vi.hoisted(() => vi.fn());
@@ -116,16 +113,20 @@ vi.mock("sonner", () => ({
 
 import { GitHubTab } from "./github-tab";
 
-const TEST_RESOURCES = {
-  en: { common: enCommon, settings: enSettings },
-};
-
-function I18nWrapper({ children }: { children: ReactNode }) {
-  return (
-    <I18nProvider locale="en" resources={TEST_RESOURCES}>
-      {children}
-    </I18nProvider>
-  );
+// `{ lobe: true }` is required, not decoration: this suite used a bare `render`
+// with its own `I18nProvider`, so it never reached `LobeThemeBridge` while the
+// tab was on shadcn. Every control on it is Lobe now, and Lobe's `Button` and
+// `Modal` throw `Please wrap your app with <ConfigProvider> (or
+// <MotionProvider>)` from `useMotionComponent` without the bridge.
+//
+// The first query after a bridged render must be async — until the lazily
+// imported bridge resolves the tree is a `Suspense` fallback of `null`.
+async function renderTab() {
+  const result = renderWithI18n(<GitHubTab />, { lobe: true });
+  // The master switch renders on every path this tab has, so it is the handle
+  // each case can wait on for the lazy bridge to resolve.
+  await screen.findByRole("switch", { name: /enable github features/i });
+  return result;
 }
 
 function resetFixtures() {
@@ -144,22 +145,22 @@ function resetFixtures() {
 describe("GitHubTab", () => {
   beforeEach(resetFixtures);
 
-  it("folds the non-dev hint into the master switch description (no separate callout)", () => {
-    render(<GitHubTab />, { wrapper: I18nWrapper });
+  it("folds the non-dev hint into the master switch description (no separate callout)", async () => {
+    await renderTab();
     expect(screen.getByText(/Not a development team\? Just turn it off here\./)).toBeTruthy();
     // The old standalone callout (title + dedicated "Turn GitHub off" button) is gone.
     expect(screen.queryByRole("button", { name: /^Turn GitHub off$/ })).toBeNull();
   });
 
-  it("does not show the hint once the master switch is off", () => {
+  it("does not show the hint once the master switch is off", async () => {
     workspaceRef.current.settings = { github_enabled: false };
-    render(<GitHubTab />, { wrapper: I18nWrapper });
+    await renderTab();
     expect(screen.queryByText(/Not a development team\?/)).toBeNull();
   });
 
-  it("disables every feature switch when the master switch is off", () => {
+  it("disables every feature switch when the master switch is off", async () => {
     workspaceRef.current.settings = { github_enabled: false };
-    render(<GitHubTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     const master = screen.getByRole("switch", { name: /enable github features/i });
     expect(master.getAttribute("aria-checked")).toBe("false");
@@ -183,7 +184,7 @@ describe("GitHubTab", () => {
       settings: { co_authored_by_enabled: true, github_enabled: false },
     });
 
-    render(<GitHubTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     await user.click(screen.getByRole("switch", { name: /enable github features/i }));
 
@@ -197,50 +198,97 @@ describe("GitHubTab", () => {
     });
   });
 
-  it("clicking Disconnect opens the confirmation and only fires on confirm", async () => {
-    const user = userEvent.setup();
+  // The two tolerances are deliberately different, and they are not
+  // interchangeable. A positive assertion's budget is free — polling returns the
+  // instant the node goes — so it can be generous. A negative assertion's window
+  // is spent in full when it matters, and can only ever under-report.
+  /** Success path: a budget. Polling returns early, so it costs nothing. */
+  const CONFIRM_CLOSE_BUDGET_MS = 8_000;
+  /** Failure path: a window, spent in full. */
+  const CONFIRM_OPEN_WINDOW_MS = 1_200;
+
+  async function disconnect(user: ReturnType<typeof userEvent.setup>) {
     installationsRef.current = {
       configured: true,
       can_manage: true,
       installations: [{ id: "inst-42", account_login: "acme", installation_id: 42 }],
     };
-    mockDeleteInstallation.mockResolvedValue(undefined);
-
-    render(<GitHubTab />, { wrapper: I18nWrapper });
-
+    await renderTab();
     await user.click(screen.getByRole("button", { name: /^Disconnect$/ }));
-    expect(screen.getByText(/Orvilo will stop receiving webhooks/i)).toBeTruthy();
+    expect(await screen.findByText(/Orvilo will stop receiving webhooks/i)).toBeTruthy();
+    // The row button and the dialog's OK button carry the same string
+    // (`github.disconnect` / `github.disconnect_confirm_action` are both
+    // "Disconnect"), so the confirm has to be scoped to the dialog.
+    const dialog = await screen.findByRole("dialog");
+    return within(dialog).getByRole("button", { name: /^Disconnect$/ });
+  }
+
+  it("clicking Disconnect opens the confirmation and only fires on confirm", async () => {
+    mockDeleteInstallation.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    const confirmButton = await disconnect(user);
+
+    // Clicking the row's button opened a dialog and did not call the server.
     expect(mockDeleteInstallation).not.toHaveBeenCalled();
 
-    const dialogConfirm = screen
-      .getAllByRole("button", { name: /^Disconnect$/ })
-      .find((b) => b.getAttribute("data-slot")?.includes("alert-dialog"));
-    await user.click(dialogConfirm ?? screen.getAllByRole("button", { name: /^Disconnect$/ })[1]!);
+    await user.click(confirmButton);
 
-    await waitFor(() => {
-      expect(mockDeleteInstallation).toHaveBeenCalledWith("workspace-1", "inst-42");
+    await waitFor(
+      () => expect(mockDeleteInstallation).toHaveBeenCalledWith("workspace-1", "inst-42"),
+      { timeout: CONFIRM_CLOSE_BUDGET_MS },
+    );
+    // ...and the dialog leaves on success. This is what gives the negative
+    // assertion below its meaning.
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull(), {
+      timeout: CONFIRM_CLOSE_BUDGET_MS,
     });
   });
 
-  it("Disconnect button is still visible when the master switch is off", () => {
+  // The caller half of `confirmModal`'s contract: the dialog stays open when the
+  // request rejects, because `handleDisconnect` rethrows instead of swallowing.
+  // Without this, a build that closes on failure passes every other assertion in
+  // this file — the row exists in both states.
+  it("keeps the confirmation open when the disconnect request fails", async () => {
+    mockDeleteInstallation.mockRejectedValue(new Error("boom"));
+    const user = userEvent.setup();
+    const confirmButton = await disconnect(user);
+
+    await user.click(confirmButton);
+    await waitFor(() => expect(mockDeleteInstallation).toHaveBeenCalled());
+
+    await new Promise((resolve) => setTimeout(resolve, CONFIRM_OPEN_WINDOW_MS));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText(/Orvilo will stop receiving webhooks/i)).toBeTruthy();
+
+    // Close it before the test ends. `confirmModal` pushes onto a module-level
+    // stack and the popup leaves through a motion exit, so a dialog still open
+    // when the tree unmounts keeps `role="dialog"` in the document long enough
+    // to make the *next* test's background inert — which showed up as the
+    // following case failing to find its own Disconnect button. Waiting for the
+    // departure here is what keeps this case from poisoning its neighbours.
+    await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("Disconnect button is still visible when the master switch is off", async () => {
     workspaceRef.current.settings = { github_enabled: false };
     installationsRef.current = {
       configured: true,
       can_manage: true,
       installations: [{ id: "inst-1", account_login: "acme", installation_id: 1 }],
     };
-    render(<GitHubTab />, { wrapper: I18nWrapper });
+    await renderTab();
     expect(screen.getByRole("button", { name: /^Disconnect$/ })).toBeTruthy();
   });
 
-  it("non-admin sees the existing connection but no Connect/Disconnect controls", () => {
+  it("non-admin sees the existing connection but no Connect/Disconnect controls", async () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     installationsRef.current = {
       configured: true,
       can_manage: false,
       installations: [{ id: "inst-1", account_login: "acme" }],
     };
-    render(<GitHubTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     expect(screen.getByText(/Connected to acme/i)).toBeTruthy();
     expect(screen.getByText(/Read-only view\./i)).toBeTruthy();
@@ -248,20 +296,20 @@ describe("GitHubTab", () => {
     expect(screen.queryByRole("button", { name: /^Disconnect$/ })).toBeNull();
   });
 
-  it("non-admin with no connection sees the contact-admin hint", () => {
+  it("non-admin with no connection sees the contact-admin hint", async () => {
     membersRef.current = [{ user_id: "user-1", role: "member" }];
     installationsRef.current = {
       configured: true,
       can_manage: false,
       installations: [],
     };
-    render(<GitHubTab />, { wrapper: I18nWrapper });
+    await renderTab();
 
     expect(screen.getByText(/Ask an admin or owner/i)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^Connect GitHub$/ })).toBeNull();
   });
 
-  it("renders the connected_by line when the backend provides it", () => {
+  it("renders the connected_by line when the backend provides it", async () => {
     installationsRef.current = {
       configured: true,
       can_manage: true,
@@ -274,13 +322,13 @@ describe("GitHubTab", () => {
         },
       ],
     };
-    render(<GitHubTab />, { wrapper: I18nWrapper });
+    await renderTab();
     expect(screen.getByText(/Connected by Jiayuan/)).toBeTruthy();
   });
 
   it("repositories shortcut navigates to the repositories tab", async () => {
     const user = userEvent.setup();
-    render(<GitHubTab />, { wrapper: I18nWrapper });
+    await renderTab();
     await user.click(screen.getByRole("button", { name: /Manage repositories/ }));
     expect(mockNavPush).toHaveBeenCalledWith("/acme/settings?tab=repositories");
   });

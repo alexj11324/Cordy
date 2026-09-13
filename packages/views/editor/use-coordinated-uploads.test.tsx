@@ -12,6 +12,7 @@ import { markPastedTextFile, PASTED_TEXT_FILENAME } from "./extensions/file-uplo
 import type { ContentEditorRef } from "./content-editor";
 import type { UploadGate } from "./use-upload-gate";
 import {
+  attachmentMarkdown,
   useCoordinatedUploads,
   __liveEditorRegistryKeysForTest,
   type UploadDraftBinding,
@@ -200,5 +201,40 @@ describe("useCoordinatedUploads paste-as-file recovery", () => {
     // user can never recover.
     expect(state.body).toContain(pastedText);
     expect(state.uploads).toHaveLength(0);
+  });
+});
+
+describe("attachmentMarkdown", () => {
+  // The module is imported under jsdom because its graph pulls in the API
+  // singleton and `sonner`, which this file mocks above; the assertions
+  // themselves need no DOM.
+  function makeAttachment(overrides: Partial<Attachment> = {}): Attachment {
+    return {
+      id: "att-1",
+      filename: "a]b.pdf",
+      content_type: "application/pdf",
+      url: "https://storage.example/raw",
+      markdown_url: "https://cdn.example/durable",
+      ...overrides,
+    } as Attachment;
+  }
+
+  it("escapes an unbalanced bracket in both branches", () => {
+    // Unbalanced brackets are what break the parse-back: a stray `]` collapses
+    // the construct to plain text with no link, and an unclosed `[` truncates
+    // the label and invents a link. BALANCED pairs are legal in CommonMark link
+    // text and survive raw, so a `report[final].pdf` sample would pass with or
+    // without the escaping. This function's string is handed to BOTH the
+    // in-editor settle and the persisted body (`deliverFinishedUpload`), and the
+    // editor's own writers escape — so without this, one upload persists a
+    // different spelling than the document shows.
+    expect(attachmentMarkdown(makeAttachment())).toBe(
+      "[a\\]b.pdf](https://cdn.example/durable)",
+    );
+    expect(
+      attachmentMarkdown(
+        makeAttachment({ filename: "report[final.pdf", content_type: "image/png" }),
+      ),
+    ).toBe("![report\\[final.pdf](https://cdn.example/durable)");
   });
 });

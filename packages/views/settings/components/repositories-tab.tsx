@@ -2,33 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FolderOpen, FolderGit, LoaderCircle, Plus } from "lucide-react";
+import { Button, Checkbox, Input, Modal } from "@lobehub/ui/base-ui";
 import { Badge } from "@orvilo/ui/components/ui/badge";
-import { Button } from "@orvilo/ui/components/ui/button";
-import { Checkbox } from "@orvilo/ui/components/ui/checkbox";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@orvilo/ui/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectValue,
-} from "@orvilo/ui/components/ui/select";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@orvilo/ui/components/ui/alert-dialog";
 import { toast } from "sonner";
 import {
   useInfiniteQuery,
@@ -57,18 +32,12 @@ import { githubShortLabel, repositoryIdentity } from "../../common/github-url";
 export { repositoryIdentity } from "../../common/github-url";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
-import {
-  SettingsCard,
-  SettingsEmpty,
-  SettingsField,
-  SettingsListRow,
-  SettingsPillButton,
-  SettingsSaveState,
-  SettingsSearchField,
-  SettingsSection,
-  SettingsSelectTrigger,
-  SettingsTab,
-} from "./settings-layout";
+import { SettingsSaveState } from "./settings-save-state";
+import { useSettingsConfirm } from "./settings-confirm";
+import { SettingsEmptyState } from "./settings-empty";
+import { SettingsSearchBar } from "./settings-search";
+import { SettingsSelect } from "./settings-select";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 import { useAutoSave } from "./use-auto-save";
 import { GitHubMark } from "./github-mark";
 
@@ -97,7 +66,9 @@ export function RepositoriesTab() {
   const [repositories, setRepositories] = useState<WorkspaceRepo[]>(
     workspace?.repos ?? EMPTY_REPOSITORIES,
   );
-  const [pendingRemovalIndex, setPendingRemovalIndex] = useState<number | null>(null);
+  // The removal `AlertDialog` is gone: the imperative confirm owns its open
+  // state, so the row passes the index straight through.
+  const confirm = useSettingsConfirm();
   const [connectingGitHub, setConnectingGitHub] = useState(false);
   const [githubPickerOpen, setGitHubPickerOpen] = useState(false);
   const [selectedInstallationID, setSelectedInstallationID] = useState("");
@@ -330,191 +301,277 @@ export function RepositoriesTab() {
     closeGitHubPicker();
   };
 
-  const removeRepository = (index: number) => {
+  // `async` for the caller's benefit only. `saveNow` is typed `(value: T) =>
+  // void` and fires `void runSave(next)` (`use-auto-save.ts:22`, `:132`), so
+  // this promise is already resolved by the time `useSettingsConfirm` tests it
+  // and the dialog closes on the next tick — the same close the old
+  // `AlertDialogAction` performed synchronously.
+  //
+  // Removal *is* persisted — `saveRepositories` (`:202`) is the autosave's
+  // `onSave` and issues `api.updateWorkspace(workspace.id, { repos: next })`
+  // (`:189`) — but the dialog cannot be hinged on that round trip, because the
+  // promise it awaits settles before the request is sent. The failure path
+  // exists and is surfaced elsewhere: the autosave readout flips to its error
+  // state in this group's header, plus the toast. Not as a dialog held open.
+  // `repositories-tab.test.tsx` states the same contract, and the absence of a
+  // failure-path case there, from the test side.
+  const removeRepository = async (index: number) => {
     const next = repositories.filter((_, repoIndex) => repoIndex !== index);
     setRepositories(next);
-    autoSave.saveNow(next);
+    await autoSave.saveNow(next);
   };
+
+  const openRemoveConfirm = (index: number) =>
+    confirm({
+      title: t(($) => $.repositories.delete_confirm_title),
+      description: t(($) => $.repositories.delete_confirm_description),
+      confirmLabel: t(($) => $.repositories.delete_confirm_action),
+      cancelLabel: t(($) => $.repositories.delete_confirm_cancel),
+      onConfirm: () => removeRepository(index),
+    });
 
   if (!workspace) return null;
 
   return (
-    <SettingsTab
-      title={t(($) => $.page.tabs.repositories)}
-      action={
-        <SettingsSaveState
-          status={autoSave.status}
-          savingLabel={t(($) => $.auto_save.saving)}
-          savedLabel={t(($) => $.auto_save.saved)}
-          errorLabel={t(($) => $.auto_save.failed)}
-        />
-      }
-    >
-      <SettingsSection
-        title={t(($) => $.repositories.local_projects_title)}
-        action={
+    <div className="space-y-8">
+      <SettingsGroup
+        extra={
           isDesktopShell() ? (
-            <SettingsPillButton
-              icon={FolderOpen}
+            // `SettingsPillButton` with no `tone` — the `muted` pill, which is
+            // Lobe's `fill` on a transparent border, not the bordered default.
+            <Button
+              icon={<FolderOpen className="size-4" />}
+              shape="round"
+              type="fill"
               onClick={() => useModalStore.getState().open("create-project")}
             >
               {t(($) => $.repositories.choose_local_project)}
-            </SettingsPillButton>
+            </Button>
           ) : undefined
         }
+        title={t(($) => $.repositories.local_projects_title)}
       >
-        <SettingsCard>
-          {projects.length === 0 ? (
-            <SettingsEmpty title={t(($) => $.repositories.local_projects_empty)} />
-          ) : (
-            projects.map((project) => (
-              <div key={project.id} className="border-b last:border-b-0">
-                <SettingsListRow>
-                  <span className="text-body font-medium">{project.title}</span>
-                </SettingsListRow>
-                <div className="px-4 pb-3">
-                  <ProjectResourcesSection
-                    projectId={project.id}
-                    deferUntilExpanded
-                  />
-                </div>
-              </div>
-            ))
-          )}
-        </SettingsCard>
-      </SettingsSection>
-
-      <SettingsSection title={t(($) => $.repositories.remote_projects_title)}>
-        <SettingsCard>
-          {repositories.length === 0 ? (
-            <SettingsEmpty title={t(($) => $.repositories.empty)} />
-          ) : null}
-
-          {repositories.map((repository, index) => (
-            <SettingsListRow
-              key={index}
-              className="flex-col items-stretch gap-2 sm:flex-row sm:items-center"
+        {projects.length === 0 ? (
+          <SettingsEmptyState title={t(($) => $.repositories.local_projects_empty)} />
+        ) : (
+          projects.map((project, index) => (
+            // A project is a title with its resources under it, not a
+            // label/control pair, so there is no `Form.Item` here — the retired
+            // `SettingsListRow` is inlined instead of re-homed. The group panel
+            // already supplies the `px-4` the old card row carried.
+            <div
+              key={project.id}
+              className={index > 0 ? "border-t border-border pt-3" : undefined}
             >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 text-body font-medium"><FolderGit className="size-4 shrink-0" />{githubShortLabel(repository.url)}</div>
-                <details className="mt-1 text-caption text-muted-foreground">
-                  <summary className="cursor-pointer">{t(($) => $.repositories.remote_details)}</summary>
-                  <p className="break-all font-mono">{repository.url}</p>
-                  {repository.description?.trim() ? <p className="mt-1">{repository.description}</p> : null}
-                </details>
+              <div className="flex min-h-16 items-center gap-4 text-body font-medium">
+                {project.title}
               </div>
-              {canManageWorkspace ? (
-                <SettingsPillButton
-                  tone="destructive"
-                  aria-label={t(($) => $.repositories.delete_aria)}
-                  onClick={() => setPendingRemovalIndex(index)}
-                >
-                  {t(($) => $.repositories.delete_aria)}
-                </SettingsPillButton>
-              ) : null}
-            </SettingsListRow>
-          ))}
+              <div className="pb-3">
+                <ProjectResourcesSection
+                  projectId={project.id}
+                  deferUntilExpanded
+                />
+              </div>
+            </div>
+          ))
+        )}
+      </SettingsGroup>
 
-          {canManageWorkspace ? (
-            <SettingsListRow className="flex-wrap justify-between">
-              <div className="flex flex-wrap items-center gap-2">
-                <SettingsPillButton icon={Plus} onClick={() => setRemoteDialogOpen(true)}>
-                  {t(($) => $.repositories.add)}
-                </SettingsPillButton>
-                <SettingsPillButton
-                  active
-                  onClick={handleGitHubAction}
-                  disabled={
-                    connectingGitHub ||
-                    !githubBrowseConfigured ||
-                    (!githubConnectConfigured &&
-                      githubInstallations.length === 0)
-                  }
-                  title={
-                    !githubBrowseConfigured
-                      ? t(($) => $.repositories.github_browse_not_configured)
-                      : undefined
-                  }
-                >
-                  {connectingGitHub ? (
+      {/* The autosave readout was `SettingsTab`'s `action`, which the nested
+          branch returned before reading — so it rendered in the standalone unit
+          tests and never in the dialog, where the tab is always mounted. It
+          lives on this group's `extra` now, which renders on both branches.
+          The readout tracks `workspace.repos`, so it belongs to this section
+          rather than to the tab. `SettingsSaveState` renders `null` while idle,
+          so the header carries nothing extra at rest.
+
+          The other `action` in this file went to the *first* group's `extra`:
+          `SettingsSection`'s `action` is read unconditionally, so that one was
+          never lost and only had to be carried across. */}
+      <SettingsGroup
+        extra={
+          <SettingsSaveState
+            status={autoSave.status}
+            savingLabel={t(($) => $.auto_save.saving)}
+            savedLabel={t(($) => $.auto_save.saved)}
+            errorLabel={t(($) => $.auto_save.failed)}
+          />
+        }
+        title={t(($) => $.repositories.remote_projects_title)}
+      >
+        {repositories.length === 0 ? (
+          <SettingsEmptyState title={t(($) => $.repositories.empty)} />
+        ) : null}
+
+        {repositories.map((repository, index) => (
+          <SettingsFormRow
+            key={index}
+            align="start"
+            divider={index > 0}
+            label={
+              <span className="flex items-center gap-2 break-all">
+                <FolderGit className="size-4 shrink-0" />
+                {githubShortLabel(repository.url)}
+              </span>
+            }
+            description={
+              <details className="mt-1 text-caption text-muted-foreground">
+                <summary className="cursor-pointer">{t(($) => $.repositories.remote_details)}</summary>
+                <p className="break-all font-mono">{repository.url}</p>
+                {repository.description?.trim() ? <p className="mt-1">{repository.description}</p> : null}
+              </details>
+            }
+          >
+            {canManageWorkspace ? (
+              // `SettingsPillButton tone="destructive"` — the mapping's
+              // `type="fill"` + `danger`, which is the destructive fill rather
+              // than the solid red a primary-danger button would give.
+              <Button
+                aria-label={t(($) => $.repositories.delete_aria)}
+                danger
+                shape="round"
+                type="fill"
+                onClick={() => openRemoveConfirm(index)}
+              >
+                {t(($) => $.repositories.delete_aria)}
+              </Button>
+            ) : null}
+          </SettingsFormRow>
+        ))}
+
+        {canManageWorkspace ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                icon={<Plus className="size-4" />}
+                shape="round"
+                type="fill"
+                onClick={() => setRemoteDialogOpen(true)}
+              >
+                {t(($) => $.repositories.add)}
+              </Button>
+              <Button
+                disabled={
+                  connectingGitHub ||
+                  !githubBrowseConfigured ||
+                  (!githubConnectConfigured &&
+                    githubInstallations.length === 0)
+                }
+                icon={
+                  connectingGitHub ? (
                     <LoaderCircle className="size-3.5 animate-spin" />
                   ) : (
                     <GitHubMark className="size-3.5" />
-                  )}
-                  {githubInstallations.length > 0
-                    ? t(($) => $.repositories.choose_from_github)
-                    : t(($) => $.repositories.connect_github)}
-                </SettingsPillButton>
-              </div>
-              {!allUrlsValid ? (
-                <span className="text-caption text-muted-foreground">
-                  {t(($) => $.repositories.url_empty)}
-                </span>
-              ) : null}
-            </SettingsListRow>
-          ) : (
-            <div className="px-4 py-3 text-caption text-muted-foreground">
-              {t(($) => $.repositories.manage_hint)}
+                  )
+                }
+                shape="round"
+                title={
+                  !githubBrowseConfigured
+                    ? t(($) => $.repositories.github_browse_not_configured)
+                    : undefined
+                }
+                type="primary"
+                onClick={handleGitHubAction}
+              >
+                {githubInstallations.length > 0
+                  ? t(($) => $.repositories.choose_from_github)
+                  : t(($) => $.repositories.connect_github)}
+              </Button>
             </div>
-          )}
-        </SettingsCard>
-      </SettingsSection>
+            {!allUrlsValid ? (
+              <span className="text-caption text-muted-foreground">
+                {t(($) => $.repositories.url_empty)}
+              </span>
+            ) : null}
+          </div>
+        ) : (
+          <div className="py-3 text-caption text-muted-foreground">
+            {t(($) => $.repositories.manage_hint)}
+          </div>
+        )}
+      </SettingsGroup>
 
-      <Dialog open={remoteDialogOpen} onOpenChange={setRemoteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t(($) => $.repositories.add)}</DialogTitle>
-            <DialogDescription>{t(($) => $.repositories.remote_entry_hint)}</DialogDescription>
-          </DialogHeader>
-          <SettingsField aria-label={t(($) => $.repositories.url_placeholder)} placeholder={t(($) => $.repositories.url_placeholder)} value={remoteDraft} onChange={event => setRemoteDraft(event.target.value)} />
-          <DialogFooter><Button disabled={!repositoryIdentity(remoteDraft)} onClick={addRepository}>{t(($) => $.repositories.add)}</Button></DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={githubPickerOpen}
-        onOpenChange={(open) => {
-          if (!open) closeGitHubPicker();
-        }}
+      <Modal
+        open={remoteDialogOpen}
+        title={t(($) => $.repositories.add)}
+        width={512}
+        footer={
+          <Button
+            disabled={!repositoryIdentity(remoteDraft)}
+            type="primary"
+            onClick={addRepository}
+          >
+            {t(($) => $.repositories.add)}
+          </Button>
+        }
+        onCancel={() => setRemoteDialogOpen(false)}
       >
-        <DialogContent className="flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-2xl">
-          <DialogHeader className="border-b px-6 py-5">
-            <DialogTitle>
-              {t(($) => $.repositories.github_picker_title)}
-            </DialogTitle>
-            <DialogDescription>
-              {t(($) => $.repositories.github_picker_description)}
-            </DialogDescription>
-          </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <p className="text-caption text-muted-foreground">
+            {t(($) => $.repositories.remote_entry_hint)}
+          </p>
+          <Input
+            aria-label={t(($) => $.repositories.url_placeholder)}
+            placeholder={t(($) => $.repositories.url_placeholder)}
+            value={remoteDraft}
+            onChange={(event) => setRemoteDraft(event.target.value)}
+          />
+        </div>
+      </Modal>
 
-          <div className="space-y-3 px-6 py-4">
+      <Modal
+        open={githubPickerOpen}
+        title={t(($) => $.repositories.github_picker_title)}
+        width={672}
+        footer={
+          <div className="flex w-full items-center gap-2">
+            <p className="mr-auto text-caption text-muted-foreground">
+              {t(($) => $.repositories.github_selected_count, {
+                count: selectedRepositories.size,
+              })}
+            </p>
+            {/* `variant="ghost"` is Lobe's `type="text"`; the import button had
+                no `variant`, i.e. shadcn's solid primary.
+
+                Neither takes `shape="round"`. The pill geometry belongs to
+                `SettingsPillButton` (reference:112), and every in-page pill in
+                this file came from one; the two `DialogFooter`s were plain
+                `Button`s, whose base carries `rounded-lg`. The add-remote
+                footer and the "load more" row are plain `Button`s for the same
+                reason. Measured: a `shape="round"` button is 999px, a plain one
+                is 6px — the host dialog's own footer button, on the same
+                screen, is 6px. */}
+            <Button type="text" onClick={closeGitHubPicker}>
+              {t(($) => $.repositories.github_cancel)}
+            </Button>
+            <Button
+              disabled={selectedRepositories.size === 0 || !allUrlsValid}
+              type="primary"
+              onClick={importGitHubRepositories}
+            >
+              {t(($) => $.repositories.github_import)}
+            </Button>
+          </div>
+        }
+        onCancel={closeGitHubPicker}
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-caption text-muted-foreground">
+            {t(($) => $.repositories.github_picker_description)}
+          </p>
+
+          <div className="space-y-3">
             {githubInstallations.length > 1 ? (
-              <Select
-                items={githubInstallations.map((installation) => ({
+              <SettingsSelect
+                className="w-full"
+                label={t(($) => $.repositories.github_account)}
+                options={githubInstallations.map((installation) => ({
                   value: installation.id,
                   label: installation.account_login,
                 }))}
                 value={selectedInstallationID}
-                onValueChange={(value) =>
-                  setSelectedInstallationID(value ?? "")
-                }
-              >
-                <SettingsSelectTrigger
-                  aria-label={t(($) => $.repositories.github_account)}
-                >
-                  <SelectValue />
-                </SettingsSelectTrigger>
-                <SelectContent>
-                  {githubInstallations.map((installation) => (
-                    <SelectItem
-                      key={installation.id}
-                      value={installation.id}
-                    >
-                      {installation.account_login}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                onValueChange={(value) => setSelectedInstallationID(value ?? "")}
+              />
             ) : githubInstallations[0] ? (
               <p className="text-caption text-muted-foreground">
                 {t(($) => $.repositories.github_account)}:{" "}
@@ -524,16 +581,16 @@ export function RepositoriesTab() {
               </p>
             ) : null}
 
-            <SettingsSearchField
+            <SettingsSearchBar
+              className="w-full"
+              label={t(($) => $.repositories.github_search_placeholder)}
+              placeholder={t(($) => $.repositories.github_search_placeholder)}
               value={repositorySearch}
               onValueChange={setRepositorySearch}
-              placeholder={t(
-                ($) => $.repositories.github_search_placeholder,
-              )}
             />
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto border-y">
+          <div className="max-h-[45vh] min-h-0 overflow-y-auto border-y">
             {githubRepositoriesQuery.isPending ? (
               <div className="flex items-center justify-center gap-2 px-6 py-12 text-body text-muted-foreground">
                 <LoaderCircle className="size-4 animate-spin" />
@@ -562,20 +619,28 @@ export function RepositoriesTab() {
                       htmlFor={`github-repository-${repository.id}`}
                       className="flex items-start gap-3 px-6 py-3.5"
                     >
+                      {/* `onChange`, not `onCheckedChange`. This is the
+                          mirror image of the `Switch` trap in the same
+                          component family: `Switch` **accepts**
+                          `onCheckedChange` in its type and drops it at
+                          runtime; `Checkbox` **rejects** it in its type
+                          (`CheckboxProps` omits the base prop and declares
+                          `onChange?: (checked: boolean) => void`) while its
+                          runtime destructure maps `onChange` onto
+                          `onCheckedChange`. Neither name tells you which
+                          behaviour you are getting — only the destructure and
+                          the type of the component you imported do. */}
                       <Checkbox
-                        id={`github-repository-${repository.id}`}
+                        className="mt-0.5"
                         checked={
                           alreadyAdded ||
                           selectedRepositories.has(repository.id)
                         }
                         disabled={disabled}
-                        onCheckedChange={(checked) =>
-                          toggleGitHubRepository(
-                            repository,
-                            checked === true,
-                          )
+                        id={`github-repository-${repository.id}`}
+                        onChange={(checked) =>
+                          toggleGitHubRepository(repository, checked)
                         }
-                        className="mt-0.5"
                       />
                       <span className="min-w-0 flex-1 space-y-1">
                         <span className="flex flex-wrap items-center gap-2">
@@ -612,11 +677,11 @@ export function RepositoriesTab() {
 
             {githubRepositoriesQuery.hasNextPage ? (
               <div className="flex justify-center border-t p-3">
+                {/* `variant="ghost"` maps to `type="text"`. */}
                 <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => githubRepositoriesQuery.fetchNextPage()}
                   disabled={githubRepositoriesQuery.isFetchingNextPage}
+                  type="text"
+                  onClick={() => githubRepositoriesQuery.fetchNextPage()}
                 >
                   {githubRepositoriesQuery.isFetchingNextPage
                     ? t(($) => $.repositories.github_loading)
@@ -625,59 +690,8 @@ export function RepositoriesTab() {
               </div>
             ) : null}
           </div>
-
-          <DialogFooter className="m-0 border-t bg-muted/30 px-6 py-4">
-            <p className="mr-auto text-caption text-muted-foreground">
-              {t(($) => $.repositories.github_selected_count, {
-                count: selectedRepositories.size,
-              })}
-            </p>
-            <Button variant="ghost" onClick={closeGitHubPicker}>
-              {t(($) => $.repositories.github_cancel)}
-            </Button>
-            <Button
-              onClick={importGitHubRepositories}
-              disabled={selectedRepositories.size === 0 || !allUrlsValid}
-            >
-              {t(($) => $.repositories.github_import)}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog
-        open={pendingRemovalIndex !== null}
-        onOpenChange={(open) => {
-          if (!open) setPendingRemovalIndex(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t(($) => $.repositories.delete_confirm_title)}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t(($) => $.repositories.delete_confirm_description)}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>
-              {t(($) => $.repositories.delete_confirm_cancel)}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={() => {
-                if (pendingRemovalIndex !== null) {
-                  removeRepository(pendingRemovalIndex);
-                }
-                setPendingRemovalIndex(null);
-              }}
-            >
-              {t(($) => $.repositories.delete_confirm_action)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </SettingsTab>
+        </div>
+      </Modal>
+    </div>
   );
 }

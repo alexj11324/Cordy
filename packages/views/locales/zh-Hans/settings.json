@@ -1,4 +1,8 @@
 {
+  "confirm": {
+    "cancel": "取消",
+    "confirm": "确认"
+  },
   "issue_statuses": {
     "title": "任务状态",
     "description": "定义任务流转的工作流。每个状态的行为由它所属的分类决定。",
@@ -462,6 +466,7 @@
     "title": "设置",
     "dialog_cancel": "取消",
     "dialog_save": "保存更改",
+    "dialog_done": "完成",
     "my_account": "我的账号",
     "workspace_fallback": "工作区",
     "tabs": {
@@ -692,6 +697,7 @@
   },
   "labels": {
     "title": "标签",
+    "section_title": "标签分类",
     "description": "分别管理工作区中用于整理任务和 skill 的标签。两类标签相互独立。",
     "scopes": {
       "issue": "任务",
@@ -805,12 +811,13 @@
     }
   },
   "tokens": {
-    "title": "已授权客户端",
+    "section_title": "个人访问 token",
     "description": "管理可以访问你账号的客户端。撤销授权后，该客户端将退出登录。",
     "security_note": "Token 拥有你账号的完整访问权限，请像密码一样妥善保管。",
     "empty": "还没有已授权的客户端。",
     "load_failed": "无法加载 API token，请刷新页面重试。",
     "name_placeholder": "Token 名称（例如：我的 CLI）",
+    "expiry_label": "有效期",
     "expiry": {
       "30": "30 天",
       "90": "90 天",
@@ -1452,6 +1459,7 @@
     },
     "updates": {
       "title": "更新",
+      "section_title": "版本与更新",
       "description": "控制后台自动更新，或手动检查新版本。",
       "current_version": "当前版本",
       "automatic_updates_title": "后台自动更新",
@@ -1466,6 +1474,7 @@
     },
     "daemon": {
       "title": "守护进程",
+      "section_title": "启动与 CLI",
       "description": "配置本地智能体守护进程与桌面应用协同工作的方式。",
       "settings_saved": "守护进程设置已保存",
       "settings_save_failed": "保存守护进程设置失败",

@@ -29,6 +29,7 @@ import { CapabilityBanner } from "@orvilo/ui/components/common/capability-banner
 import { Skeleton } from "@orvilo/ui/components/ui/skeleton";
 import { AppLink } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
+import { LobeThemeBridge } from "../../lobe";
 import { AgentOverviewPane, type DetailTab } from "./agent-overview-pane";
 import { AgentIdentityCard } from "./agent-identity-card";
 import { useT } from "../../i18n";
@@ -313,81 +314,89 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     }
   };
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-background text-foreground">
-      <AgentIdentityCard
-        breadcrumbHref={paths.agents()}
-        agent={agent}
-        runtime={runtime}
-        owner={owner}
-        presence={presence}
-        canEdit={canEdit.allowed}
-        dmPending={permissionsLoading}
-        dmHref={`${paths.chat()}?agent=${agent.id}`}
-        onDm={handleDm}
-        onUpdate={handleUpdate}
-      />
+    // `AgentAccessSettings` renders Lobe's `Form.Group`, whose colour tokens
+    // are antd CSS variables — seeded only by `LobeThemeBridge`. Without one
+    // the panel fell back to antd's light defaults and drew a white card in
+    // dark mode. Mounted at the route root rather than inside the panel: the
+    // bridge renders `display: contents`, so the flex column below is still
+    // the box this page's parent lays out, and one bridge covers the surface.
+    <LobeThemeBridge>
+      <div className="flex min-h-0 flex-1 flex-col bg-background text-foreground">
+        <AgentIdentityCard
+          breadcrumbHref={paths.agents()}
+          agent={agent}
+          runtime={runtime}
+          owner={owner}
+          presence={presence}
+          canEdit={canEdit.allowed}
+          dmPending={permissionsLoading}
+          dmHref={`${paths.chat()}?agent=${agent.id}`}
+          onDm={handleDm}
+          onUpdate={handleUpdate}
+        />
 
-      {!canEdit.allowed && (
-        <div className="px-6 pt-3">
-          <CapabilityBanner
-            reason={canEdit.reason}
-            resource="agent"
-            ownerName={owner?.name}
-          />
+        {!canEdit.allowed && (
+          <div className="px-6 pt-3">
+            <CapabilityBanner
+              reason={canEdit.reason}
+              resource="agent"
+              ownerName={owner?.name}
+            />
+          </div>
+        )}
+
+        {isArchived && (
+          <div className="flex shrink-0 items-center gap-2 border-b bg-muted/50 px-6 py-2 text-caption text-muted-foreground">
+            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1">{t(($) => $.detail.archived_banner)}</span>
+            {canEdit.allowed && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-caption"
+                onClick={() => handleRestore(agent.id)}
+              >
+                {t(($) => $.detail.restore)}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {!isArchived && !runtimeBound && (
+          <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-caption text-amber-900 dark:text-amber-100">
+            <Server className="h-3.5 w-3.5 shrink-0" />
+            <span className="flex-1">
+              {t(($) => $.detail.runtime_required_banner)}
+            </span>
+            {canEdit.allowed && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 border-amber-500/40 bg-background/70 text-caption"
+                onClick={() => setTabNavIntent("general")}
+              >
+                {t(($) => $.detail.bind_runtime)}
+              </Button>
+            )}
+          </div>
+        )}
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+            <AgentOverviewPane
+              agent={agent}
+              runtime={runtime}
+              owner={owner}
+              runtimes={runtimes}
+              members={members}
+              onUpdate={handleUpdate}
+              currentUserId={currentUser?.id ?? null}
+              canEdit={canEdit.allowed}
+              navIntent={tabNavIntent}
+              onNavIntentHandled={() => setTabNavIntent(null)}
+            />
         </div>
-      )}
-
-      {isArchived && (
-        <div className="flex shrink-0 items-center gap-2 border-b bg-muted/50 px-6 py-2 text-caption text-muted-foreground">
-          <AlertCircle className="h-3.5 w-3.5 shrink-0" />
-          <span className="flex-1">{t(($) => $.detail.archived_banner)}</span>
-          {canEdit.allowed && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 text-caption"
-              onClick={() => handleRestore(agent.id)}
-            >
-              {t(($) => $.detail.restore)}
-            </Button>
-          )}
-        </div>
-      )}
-
-      {!isArchived && !runtimeBound && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-6 py-2 text-caption text-amber-900 dark:text-amber-100">
-          <Server className="h-3.5 w-3.5 shrink-0" />
-          <span className="flex-1">
-            {t(($) => $.detail.runtime_required_banner)}
-          </span>
-          {canEdit.allowed && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-6 border-amber-500/40 bg-background/70 text-caption"
-              onClick={() => setTabNavIntent("general")}
-            >
-              {t(($) => $.detail.bind_runtime)}
-            </Button>
-          )}
-        </div>
-      )}
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <AgentOverviewPane
-            agent={agent}
-            runtime={runtime}
-            owner={owner}
-            runtimes={runtimes}
-            members={members}
-            onUpdate={handleUpdate}
-            currentUserId={currentUser?.id ?? null}
-            canEdit={canEdit.allowed}
-            navIntent={tabNavIntent}
-            onNavIntentHandled={() => setTabNavIntent(null)}
-          />
       </div>
-    </div>
+    </LobeThemeBridge>
   );
 }
 

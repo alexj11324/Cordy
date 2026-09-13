@@ -5,6 +5,8 @@ packages:
 catalog:
   '@playwright/test': ^1.58.2
   '@formatjs/intl-localematcher': ^0.8.4
+  '@lexical/utils': 0.42.0
+  '@lobehub/ui': 5.42.6
   '@tailwindcss/postcss': ^4
   '@tailwindcss/vite': ^4
   '@tanstack/react-query': ^5.96.2
@@ -23,6 +25,7 @@ catalog:
   i18next: ^26.0.8
   jsdom: ^29.0.1
   katex: ^0.16.45
+  lexical: 0.42.0
   lucide-react: ^1.0.1
   mermaid: ^11.14.0
   postcss: ^8
@@ -42,3 +45,33 @@ catalog:
   yaml: ^2.6.0
   zod: ^4.1.5
   zustand: ^5.0.0
+
+# pnpm 10 no longer reads the `pnpm` field in package.json, so build scripts
+# must be allowlisted here. @lobehub/editor's postinstall applies a version-
+# pinned, hash-checked patch to lexical@0.42.0 and @lexical/yjs@0.42.0; the
+# editor misbehaves without it.
+#
+# Allowlisting here is necessary but NOT sufficient. It has been observed
+# present and correctly placed while an install still listed @lobehub/editor
+# under "Ignored build scripts" and left lexical unpatched. The cause is not
+# confirmed, and this comment deliberately states none - so do not trust this
+# list. After ANY install, verify the eight patched files - four in `lexical`
+# and four in `@lexical/yjs` - against the sha256 values hardcoded in the
+# package's own scripts/postinstall-lexical-patch.cjs, and re-run that script
+# if they differ: it is idempotent and store-safe (it writes a temp file, then
+# renames), so re-running it is always the right repair. The failure is
+# otherwise silent - one warning line, and an editor whose misbehaviour is hard
+# to trace back. Verify all eight: stopping at the four `lexical` ones leaves
+# the collab copy unpatched while looking clean.
+# See tasks/lessons.md, "pnpm 10 no longer reads package.json's `pnpm` field".
+#
+# The `lexical` and `@lexical/utils` catalog entries above are pinned to that
+# same exact 0.42.0, and must neither be bumped nor declared anywhere else.
+# @lobehub/editor depends on the whole @lexical/* family at exactly 0.42.0, so
+# that pin is what keeps a single deduped `lexical` in the graph — the copy the
+# patch has already been applied to. Any other range makes pnpm install a second
+# instance beside the patched one, and Lexical's `DecoratorNode` /
+# `$applyNodeReplacement` identity does not survive across two instances: nodes
+# silently stop being recognised, far from the cause.
+onlyBuiltDependencies:
+  - '@lobehub/editor'

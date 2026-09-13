@@ -8,9 +8,41 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertCircle, RefreshCw, Trash2 } from "lucide-react";
 import { QRCode } from "react-qr-code";
 import { toast } from "sonner";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@orvilo/ui/components/ui/alert-dialog";
+// Two design systems in one file, and the split is by *surface* rather than by
+// component. `WeixinTab` is Lobe, and it is safe because **both** of its hosts
+// are bridged:
+//
+//   WeixinTab ← `./integrations-tab`'s channel dialog (`managedContent`)
+//     └─ that component has exactly two importers, and only two:
+//          settings-page.tsx        — inside <LobeThemeBridge> at its root
+//          integrations/index.tsx   — WorkspaceIntegrationsPage, the Web
+//                                     `/integrations` route; bridged since
+//                                     b8a78232, and NOT before it
+//
+// Established by resolving the **import specifier**, not the identifier:
+// `grep "<IntegrationsTab"` also matches
+// `agents/components/tabs/integrations-tab.tsx` — a different component that
+// shares the name and renders none of these tabs. A host list built from the
+// name reports three hosts where there are two, which is why this comment names
+// the importers rather than the export.
+//
+// `WeixinAgentBindButton` is rendered from the **agent detail page**
+// (`packages/views/agents/components/tabs/integrations-tab.tsx`), so it keeps
+// the shadcn primitives. That is not a *capability* boundary: the agent surface
+// mounts its own `LobeThemeBridge`
+// (`agents/components/agent-detail-page.tsx:323`), so the Lobe primitives it
+// would need do render there. It stays shadcn because converting a control is a
+// visual change — it needs its own decision and its own screenshot acceptance,
+// and this round migrated the surface, not every control on it. The alias below
+// is what keeps the two apart at the call sites.
+//
+// `WeixinInstallDialog` is the one component in this file that **straddles the
+// boundary**: `WeixinTab` opens it and so does `WeixinAgentBindButton`, so it
+// cannot be converted for one host alone — the conversion would change the
+// controls on both. It stays on shadcn, reachable from the settings half as
+// well, and that is the accepted intermediate state, not an oversight.
+import { Button as LobeButton } from "@lobehub/ui/base-ui";
 import { Button } from "@orvilo/ui/components/ui/button";
-import { Card, CardContent } from "@orvilo/ui/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@orvilo/ui/components/ui/dialog";
 import { Input } from "@orvilo/ui/components/ui/input";
 import {
@@ -28,6 +60,9 @@ import { agentListOptions, memberListOptions } from "@orvilo/core/workspace/quer
 import { weixinInstallationsOptions, weixinKeys } from "@orvilo/core/weixin";
 import type { Agent, WeixinInstallation, WeixinInstallStatus } from "@orvilo/core/types";
 import { useT } from "../../i18n";
+import { useSettingsConfirm } from "./settings-confirm";
+import { SettingsEmptyState } from "./settings-empty";
+import { SettingsFormRow, SettingsGroup } from "./settings-shell";
 import { WeixinMark } from "./weixin-mark";
 
 type FlowStatus = WeixinInstallStatus | "error";
@@ -95,43 +130,61 @@ export function WeixinTab() {
       !installedBotAgentIds.has(agent.id),
   );
 
-  const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
   const [connectAgent, setConnectAgent] = useState<Agent | null>(null);
-  const [disconnecting, setDisconnecting] = useState(false);
+  // The `disconnectTarget` / `disconnecting` pair of `useState`s is gone with
+  // the `AlertDialog`: the imperative confirm owns both the open state and the
+  // in-flight spinner, so the row hands its installation id straight through.
+  const confirm = useSettingsConfirm();
 
-  async function handleDisconnect() {
-    if (!setupWritable || !disconnectTarget || disconnecting) return;
-    setDisconnecting(true);
+  /**
+   * Rejects on failure on purpose: `useSettingsConfirm`'s `onOk` keeps the
+   * dialog open only while its promise is unsettled, so swallowing the error
+   * here would dismiss the confirmation exactly when the account is still
+   * connected. The toast is what the user reads; the rethrow is what holds the
+   * dialog.
+   */
+  async function handleDisconnect(installationId: string) {
+    if (!setupWritable) return;
     try {
-      await api.deleteWeixinInstallation(wsId, disconnectTarget);
+      await api.deleteWeixinInstallation(wsId, installationId);
       await qc.invalidateQueries({ queryKey: weixinKeys.installations(wsId) });
       toast.success(t(($) => $.weixin.toast_disconnected));
-      setDisconnectTarget(null);
-    } catch {
+    } catch (e) {
       toast.error(t(($) => $.weixin.toast_disconnect_failed));
-    } finally {
-      setDisconnecting(false);
+      throw e;
     }
   }
 
+  const openDisconnectConfirm = (installationId: string) =>
+    confirm({
+      title: t(($) => $.weixin.disconnect_confirm_title),
+      description: t(($) => $.weixin.disconnect_confirm_description),
+      confirmLabel: t(($) => $.weixin.disconnect),
+      cancelLabel: t(($) => $.weixin.disconnect_confirm_cancel),
+      onConfirm: () => handleDisconnect(installationId),
+    });
+
   if (installationsLoading) {
+    // The group's title is the state's name, not the page's: `installed_bots`
+    // is "Weixin account installation records" in both locales, distinct from
+    // the dialog's own title ("Manage" / "管理").
     return (
-      <Card>
-        <CardContent>
-          <p className="text-body text-muted-foreground">{t(($) => $.weixin.loading)}</p>
-        </CardContent>
-      </Card>
+      <SettingsGroup variant="outlined" title={t(($) => $.weixin.installed_bots)}>
+        <SettingsEmptyState title={t(($) => $.weixin.loading)} />
+      </SettingsGroup>
     );
   }
 
   if (isError) {
+    // The `Card` was only chrome around a notice, and there is no section
+    // heading here to merge it with: an outlined group titled with this same
+    // sentence would print it twice, and a group whose title is empty draws a
+    // header band over its body.
     return (
-      <Card>
-        <CardContent className="flex items-start gap-2">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
-          <p className="text-body text-muted-foreground">{t(($) => $.weixin.load_failed)}</p>
-        </CardContent>
-      </Card>
+      <div className="flex items-start gap-2">
+        <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
+        <p className="text-body text-muted-foreground">{t(($) => $.weixin.load_failed)}</p>
+      </div>
     );
   }
 
@@ -142,116 +195,95 @@ export function WeixinTab() {
     <div className="space-y-8">
       {!setupWritable && <MessagingSetupNotice />}
       {!configured && installations.length === 0 ? (
-        <Card>
-          <CardContent className="space-y-2">
-            <p className="text-body font-medium">{t(($) => $.weixin.not_enabled_title)}</p>
-            <p className="text-caption text-muted-foreground">
-              {t(($) => $.weixin.not_enabled_description_prefix)}{" "}
-              <code className="rounded bg-muted px-1 py-0.5 text-micro" translate="no">
-                ORVILO_WEIXIN_SECRET_KEY
-              </code>{" "}
-              {t(($) => $.weixin.not_enabled_description_suffix)}{" "}
-              {t(($) => $.weixin.not_enabled_self_host_hint)}
-            </p>
-          </CardContent>
-        </Card>
+        <SettingsGroup variant="outlined" title={t(($) => $.weixin.not_enabled_title)}>
+          <p className="text-body text-muted-foreground">
+            {t(($) => $.weixin.not_enabled_description_prefix)}{" "}
+            <code className="rounded bg-muted px-1 py-0.5 text-micro" translate="no">
+              ORVILO_WEIXIN_SECRET_KEY
+            </code>{" "}
+            {t(($) => $.weixin.not_enabled_description_suffix)}{" "}
+            {t(($) => $.weixin.not_enabled_self_host_hint)}
+          </p>
+        </SettingsGroup>
       ) : (
         <>
-          <section className="space-y-3">
-            <h2 className="text-body font-semibold">{t(($) => $.weixin.installed_bots)}</h2>
+          {/* The `<section><h2>` heading and the `divide-y` card under it were
+              two elements describing one section; a group's title is where a
+              section heading goes, and the rows' `divider` is where the
+              `divide-y` went. */}
+          <SettingsGroup variant="outlined" title={t(($) => $.weixin.installed_bots)}>
             {installations.length === 0 ? (
-              <Card>
-                <CardContent className="space-y-2">
-                  <p className="text-body font-medium">{t(($) => $.weixin.empty_title)}</p>
-                  <p className="text-caption text-muted-foreground">{t(($) => $.weixin.empty_description)}</p>
-                </CardContent>
-              </Card>
+              <SettingsEmptyState
+                title={t(($) => $.weixin.empty_title)}
+                description={t(($) => $.weixin.empty_description)}
+              />
             ) : (
-              <Card>
-                <CardContent className="divide-y">
-                  {installations.map((installation) => (
-                    <InstallationRow
-                      key={installation.id}
-                      installation={installation}
-                      agentName={installation.agent_id
-                        ? agentsById.get(installation.agent_id)?.name ?? t(($) => $.weixin.unknown_agent)
-                        : t(($) => $.page.integrations_workspace_connection)}
-                      canManage={canManageInstallation(installation) && setupWritable}
-                      onDisconnect={() => setDisconnectTarget(installation.id)}
-                    />
-                  ))}
-                </CardContent>
-              </Card>
+              installations.map((installation, index) => (
+                <InstallationRow
+                  key={installation.id}
+                  divider={index > 0}
+                  installation={installation}
+                  agentName={installation.agent_id
+                    ? agentsById.get(installation.agent_id)?.name ?? t(($) => $.weixin.unknown_agent)
+                    : t(($) => $.page.integrations_workspace_connection)}
+                  canManage={canManageInstallation(installation) && setupWritable}
+                  onDisconnect={() => openDisconnectConfirm(installation.id)}
+                />
+              ))
             )}
-          </section>
+          </SettingsGroup>
 
           {installSupported && setupWritable ? (
-            <section className="space-y-3">
-              <h2 className="text-body font-semibold">{t(($) => $.weixin.available_agents)}</h2>
-              <p className="text-caption text-muted-foreground">
-                {t(($) => $.weixin.available_agents_description)}
-              </p>
+            <SettingsGroup
+              variant="outlined"
+              title={t(($) => $.weixin.available_agents)}
+              description={t(($) => $.weixin.available_agents_description)}
+            >
               {agentsLoading ? (
-                <p className="text-body text-muted-foreground">{t(($) => $.weixin.loading)}</p>
+                <SettingsEmptyState title={t(($) => $.weixin.loading)} />
               ) : availableAgents.length === 0 ? (
-                <Card>
-                  <CardContent>
-                    <p className="text-caption text-muted-foreground">{t(($) => $.weixin.no_available_agents)}</p>
-                  </CardContent>
-                </Card>
+                <SettingsEmptyState title={t(($) => $.weixin.no_available_agents)} />
               ) : (
-                <Card>
-                  <CardContent className="divide-y">
-                    {availableAgents.map((agent) => (
-                      <div key={agent.id} className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0">
-                        <div className="flex min-w-0 items-center gap-3">
-                          <WeixinMark className="h-5 w-5 shrink-0 text-muted-foreground" />
-                          <p className="min-w-0 truncate text-body font-medium">{agent.name}</p>
-                        </div>
-                        <Button
-                          onClick={() => setConnectAgent(agent)}
-                          title={t(($) => $.weixin.connect_button_title, { agent: agent.name })}
-                          data-testid={`weixin-connect-agent-${agent.id}`}
-                        >
-                          <WeixinMark className="h-3 w-3" />
-                          {t(($) => $.weixin.connect_button)}
-                        </Button>
-                      </div>
-                    ))}
-                  </CardContent>
-                </Card>
+                availableAgents.map((agent, index) => (
+                  <SettingsFormRow
+                    key={agent.id}
+                    divider={index > 0}
+                    label={
+                      <span className="inline-flex min-w-0 items-center gap-2">
+                        <WeixinMark className="h-5 w-5 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 truncate">{agent.name}</span>
+                      </span>
+                    }
+                  >
+                    {/* `type="primary"`: the base control was a shadcn
+                        `<Button>` with no `variant`, which is `bg-primary
+                        text-primary-foreground` — the loudest control in this
+                        row, and the row's whole purpose. Lobe's default `type`
+                        is the outlined treatment, so omitting this silently
+                        demotes the CTA to a secondary button. The same action
+                        on the agent detail page is still solid primary. */}
+                    <LobeButton
+                      type="primary"
+                      onClick={() => setConnectAgent(agent)}
+                      title={t(($) => $.weixin.connect_button_title, { agent: agent.name })}
+                      data-testid={`weixin-connect-agent-${agent.id}`}
+                    >
+                      <WeixinMark className="h-3 w-3" />
+                      {t(($) => $.weixin.connect_button)}
+                    </LobeButton>
+                  </SettingsFormRow>
+                ))
               )}
-            </section>
+            </SettingsGroup>
           ) : installations.length === 0 ? (
-            <Card>
-              <CardContent className="space-y-2">
-                <p className="text-body font-medium">{t(($) => $.weixin.preview_title)}</p>
-                <p className="text-caption text-muted-foreground">{t(($) => $.weixin.preview_description)}</p>
-              </CardContent>
-            </Card>
+            <SettingsGroup variant="outlined" title={t(($) => $.weixin.preview_title)}>
+              <p className="text-body text-muted-foreground">
+                {t(($) => $.weixin.preview_description)}
+              </p>
+            </SettingsGroup>
           ) : null}
         </>
       )}
-
-      <AlertDialog
-        open={setupWritable && !!disconnectTarget}
-        onOpenChange={(open) => {
-          if (!open && !disconnecting) setDisconnectTarget(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t(($) => $.weixin.disconnect_confirm_title)}</AlertDialogTitle>
-            <AlertDialogDescription>{t(($) => $.weixin.disconnect_confirm_description)}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={disconnecting}>{t(($) => $.weixin.disconnect_confirm_cancel)}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDisconnect} disabled={disconnecting}>
-              {disconnecting ? t(($) => $.weixin.disconnecting) : t(($) => $.weixin.disconnect)}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {connectAgent && setupWritable ? (
         <WeixinInstallDialog
@@ -315,46 +347,59 @@ export function WeixinAgentBindButton({
   );
 }
 
+/**
+ * One installation, as a `SettingsFormRow`: the identity is the row's label,
+ * the connection state and bot id are its description, and the destructive
+ * action is the control column. `divider` replaces the old `divide-y` on the
+ * card that used to hold these rows. `MessagingConnectionStatus` keeps the
+ * full (non-compact) form this tab already rendered.
+ */
 function InstallationRow({
   installation,
   agentName,
   canManage,
+  divider,
   onDisconnect,
 }: {
   installation: WeixinInstallation;
   agentName: string;
   canManage: boolean;
+  divider: boolean;
   onDisconnect: () => void;
 }) {
   const { t } = useT("settings");
   const isInstalled = installation.status === "installed";
   return (
-    <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
-      <div className="flex min-w-0 items-start gap-3">
-        <WeixinMark className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 space-y-1">
+    <SettingsFormRow
+      divider={divider}
+      label={
+        <span className="inline-flex min-w-0 items-center gap-2">
+          <WeixinMark className="h-5 w-5 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 truncate">{agentName}</span>
+          {!isInstalled ? (
+            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
+              {t(($) => $.weixin.revoked_badge)}
+            </span>
+          ) : null}
+        </span>
+      }
+      description={
+        <>
           <MessagingConnectionStatus installation={installation} />
-          <p className="truncate text-body font-medium">
-            {agentName}
-            {!isInstalled && (
-              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
-                {t(($) => $.weixin.revoked_badge)}
-              </span>
-            )}
-          </p>
-          <p className="truncate text-micro text-muted-foreground">
+          <span className="block truncate text-micro text-muted-foreground">
             {t(($) => $.weixin.bot_id_label)}{" "}
             <code translate="no">{installation.bot_id || t(($) => $.weixin.unknown_bot)}</code>
-          </p>
-        </div>
-      </div>
+          </span>
+        </>
+      }
+    >
       {canManage && isInstalled ? (
-        <Button variant="outline" size="sm" onClick={onDisconnect}>
+        <LobeButton onClick={onDisconnect}>
           <Trash2 className="h-3 w-3" />
           {t(($) => $.weixin.disconnect)}
-        </Button>
+        </LobeButton>
       ) : null}
-    </div>
+    </SettingsFormRow>
   );
 }
 

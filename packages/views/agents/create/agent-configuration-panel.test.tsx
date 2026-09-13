@@ -35,9 +35,21 @@ const RUNTIME: RuntimeDevice = {
   updated_at: "2026-04-01T00:00:00Z",
 };
 
-function renderPanel(startersSupported = false, showConversationStarters = true) {
+/**
+ * `{ lobe: true }` is required, not decoration: the panel is built from Lobe's
+ * `Form.Group` / `Form.Item`, and every route that mounts it
+ * (`manual-create-agent-page.tsx`, `ai-builder-session-page.tsx`) wraps it in
+ * `LobeThemeBridge`. Rendering it bare would exercise antd's default light
+ * tokens — a composition no route produces.
+ *
+ * `renderWithI18n` loads the bridge through `React.lazy`, so the file's first
+ * opted-in render resolves through a `Suspense` fallback of `null`. The render
+ * therefore waits on the identity group, which is unconditional and is the same
+ * handle `vcs-tab.test.tsx` uses.
+ */
+async function renderPanel(startersSupported = false, showConversationStarters = true) {
   configStore.getState().setAgentConversationStartersSupported(startersSupported);
-  return renderWithI18n(
+  const result = renderWithI18n(
     <AgentConfigurationPanel
       showConversationStarters={showConversationStarters}
       draft={{ ...EMPTY_AGENT_DRAFT, name: "Draft agent", runtimeId: RUNTIME.id }}
@@ -49,7 +61,10 @@ function renderPanel(startersSupported = false, showConversationStarters = true)
       nameError={null}
       onNameChange={vi.fn()}
     />,
+    { lobe: true },
   );
+  await screen.findByText(enAgents.creation_studio.sections.identity);
+  return result;
 }
 
 describe("AgentConfigurationPanel", () => {
@@ -62,8 +77,8 @@ describe("AgentConfigurationPanel", () => {
     configStore.getState().setAgentConversationStartersSupported(false);
   });
 
-  it("keeps identity, execution, and access, and drops description, instructions, and skills", () => {
-    renderPanel();
+  it("keeps identity, execution, and access, and drops description, instructions, and skills", async () => {
+    await renderPanel();
 
     expect(screen.getByText(enAgents.creation_studio.sections.identity)).toBeInTheDocument();
     expect(screen.getByText(enAgents.creation_studio.sections.execution)).toBeInTheDocument();
@@ -84,15 +99,15 @@ describe("AgentConfigurationPanel", () => {
     ).toBeNull();
   });
 
-  it("does not add prompt fields to creation when conversation starters are supported", () => {
-    renderPanel(true, false);
+  it("does not add prompt fields to creation when conversation starters are supported", async () => {
+    await renderPanel(true, false);
 
     expect(screen.queryByText(enAgents.conversation_starters.label)).not.toBeInTheDocument();
     expect(screen.queryByText(enAgents.creation_studio.sections.behavior)).toBeNull();
   });
 
-  it("preserves conversation starter editing for existing builder sessions", () => {
-    renderPanel(true);
+  it("preserves conversation starter editing for existing builder sessions", async () => {
+    await renderPanel(true);
     expect(screen.getByText(enAgents.conversation_starters.label)).toBeInTheDocument();
   });
 });
