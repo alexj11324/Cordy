@@ -36,11 +36,14 @@ import { SettingsFormRow, SettingsGroup } from "./settings-shell";
  *    configuration again. The UI says so rather than pretending the empty form
  *    is the saved state.
  *
- * **`McpServerDialog` stays shadcn, and that is a boundary rather than an
- * oversight.** It is also rendered by `agents/components/tabs/mcp-config-tab.tsx`
- * on the agent surface, which mounts no `LobeThemeBridge` — so converting it
- * here would break that page. It converts with the whole agent surface in
- * Task 10. This tab migrates; the dialog it renders does not.
+ * **`McpServerDialog` stays shadcn this round, and that is a decision rather
+ * than an oversight.** It is also rendered by
+ * `agents/components/tabs/mcp-config-tab.tsx` on the agent surface, so a
+ * conversion has to land on both surfaces at once. The agent surface mounts
+ * `LobeThemeBridge` now (`agents/components/agent-detail-page.tsx`), so a
+ * converted dialog would render there rather than break — but converting a
+ * shared dialog is a visual change that needs its own decision and its own
+ * screenshot acceptance. This tab migrated; the dialog it renders did not.
  */
 export function McpTab() {
   const { t } = useT("settings");

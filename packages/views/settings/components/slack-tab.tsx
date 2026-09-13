@@ -11,16 +11,14 @@ import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
 // rather than by component: `SlackTab` lives only inside the settings dialog,
 // which mounts `LobeThemeBridge`, so it is Lobe. `SlackAgentBindButton` and its
 // two sub-components are rendered from the **agent detail page**
-// (`packages/views/agents/components/tabs/integrations-tab.tsx`), and that
-// surface has no bridge — `packages/views/agents/**` contains no
-// `@lobehub/ui` import at all. The Lobe primitives they would need throw
-// without one — measured, not assumed: `Button` and `Modal` call
-// `useMotionComponent()` themselves and `ActionIcon` reaches it by rendering
-// `Button`, so those three raise `Please wrap your app with <ConfigProvider>
-// (or <MotionProvider>)`. `DropdownMenu` is not one of them — it builds no
-// `Button` and calls no motion hook, so it renders unbridged; the list is three,
-// not four. So they keep the shadcn primitives until their own surface gets a
-// bridge; the alias below is what keeps the two apart at the call sites.
+// (`packages/views/agents/components/tabs/integrations-tab.tsx`), so they keep
+// the shadcn primitives. That is no longer a *capability* boundary: the agent
+// surface mounts its own `LobeThemeBridge` now
+// (`agents/components/agent-detail-page.tsx`), so the Lobe primitives these
+// three would need do render there. They stay shadcn because converting a
+// control is a visual change — it needs its own decision and its own screenshot
+// acceptance, and this round migrated the surface, not every control on it. The
+// alias below is what keeps the two apart at the call sites.
 import { Button as LobeButton } from "@lobehub/ui/base-ui";
 import { SlackMark } from "./slack-mark";
 import { cn } from "@orvilo/ui/lib/utils";

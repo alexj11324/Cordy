@@ -105,7 +105,6 @@ import { PluginsTab } from "./plugins-tab";
 import { McpTab } from "./mcp-tab";
 import { SkillsTab } from "./skills-tab";
 import { BillingTab } from "./billing-tab";
-import { SettingsDialogBody } from "./settings-layout";
 import { useT } from "../../i18n";
 import type { TFunction } from "i18next";
 
@@ -331,21 +330,18 @@ export function SettingsPage({
                 className="flex min-h-0 flex-1 flex-col overflow-hidden"
                 data-slot="settings-content-surface"
               >
-                {/* `SettingsDialogBody` renders no DOM: it is a context that
-                    tells a not-yet-migrated tab's `SettingsTab` to drop the
-                    page heading the `DialogHeader` above already owns. It
-                    stays until Task 10 removes the import along with
-                    `settings-layout.tsx`, by which point tasks 4-9 have removed
-                    the last `SettingsTab` (R21). Drop it earlier and every
-                    un-migrated tab grows a second title and description above
-                    its body. */}
-                <SettingsDialogBody>
-                  <SettingsTabPanels
-                    billingEnabled={billingEnabled}
-                    extraAccountTabs={extraAccountTabs}
-                    pluginsEnabled={pluginsEnabled}
-                  />
-                </SettingsDialogBody>
+                {/* No `SettingsDialogBody` wrapper here any more. It was a
+                    context telling a not-yet-migrated tab's `SettingsTab` to
+                    drop the page heading the `DialogHeader` above already
+                    owns, and it went with `settings-layout.tsx` once the last
+                    `SettingsTab` was migrated. A tab that wants the
+                    `DialogHeader` to be the only title now simply renders no
+                    title of its own. */}
+                <SettingsTabPanels
+                  billingEnabled={billingEnabled}
+                  extraAccountTabs={extraAccountTabs}
+                  pluginsEnabled={pluginsEnabled}
+                />
               </div>
 
               <DialogFooter className="m-0 border-0 bg-transparent! px-6 py-0">

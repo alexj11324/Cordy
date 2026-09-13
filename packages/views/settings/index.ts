@@ -1,31 +1,14 @@
 export { SettingsPage } from "./components";
 export type { ExtraSettingsTab } from "./components";
-export {
-  SETTINGS_CONTROL_CLASS,
-  SETTINGS_INLINE_FIELD_CLASS,
-  SETTINGS_TEXTAREA_CLASS,
-  SettingsCard,
-  SettingsEmpty,
-  SettingsField,
-  SettingsIconButton,
-  SettingsListRow,
-  SettingsPillButton,
-  SettingsRow,
-  SettingsSearchField,
-  SettingsSection,
-  SettingsSelectTrigger,
-  SettingsTab,
-  SettingsTextarea,
-} from "./components/settings-layout";
-export type { SettingsControlSize } from "./components/settings-layout";
-// Moved out of `settings-layout` ahead of its deletion: three live tabs still
-// render the save-state atom, and the status contract never belonged there.
+// The save-state atom, rendered by three live tabs. It moved out of the atom
+// layer before that layer was deleted; the status contract it reads never
+// belonged to a layout module.
 export { SettingsSaveState } from "./components/settings-save-state";
 export type { SettingsSaveStatus } from "./components/settings-save-status";
 // The Lobe replacements, published here because the tab migrations live inside
 // this package but the desktop tabs reach them through this barrel. The shell's
-// row is `SettingsFormRow`, not `SettingsField`/`SettingsRow`: those names still
-// belong to `settings-layout` until its last consumer is migrated.
+// row is `SettingsFormRow`; the atom layer's `SettingsRow` and `SettingsField`
+// went with `settings-layout.tsx`.
 export { SettingsGroup, SettingsFormRow } from "./components/settings-shell";
 export type {
   SettingsFormRowProps,
