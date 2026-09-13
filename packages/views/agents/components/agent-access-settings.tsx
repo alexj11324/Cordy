@@ -41,8 +41,10 @@ export function AgentAccessSettings({
           The `sm:` half was not dead code, and this wrapper is not the only
           `px-4`/`px-6` pair in play. Two blocks inside the picker carry a wider
           inset at the same breakpoint — `inspector/access-picker.tsx:270`
-          (`px-4 py-5 sm:px-6`, the member list) and `:321` (`px-4 py-4
-          sm:px-6`, its empty state). Cancelling 24px here while those children
+          (`px-4 py-5 sm:px-6`, the member list, whose empty state sits inside
+          it at `:274`) and `:321` (`px-4 py-4 sm:px-6`, the Composio allowlist
+          hint, which renders only when the allowlist is non-empty). Cancelling
+          24px here while those children
           inset 24px left the rows, which inset only 16px, 8px to the left.
           Dropping the `sm:` half aligns the rows with the title (measured at
           1291px: title 305, rows 305) and returns those two blocks to the 24px
