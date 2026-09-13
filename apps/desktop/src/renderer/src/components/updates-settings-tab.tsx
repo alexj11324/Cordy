@@ -27,7 +27,7 @@ type CheckState =
  *   renders `title` / `description` / `action`, so inside the settings dialog
  *   this tab never showed a page title — the standalone header owns it. The
  *   card becomes one outlined `SettingsGroup`, and the top-level wrapper is
- *   `space-y-8`, the width the seven previously migrated tabs use.
+ *   `space-y-8`, the vertical rhythm the seven previously migrated tabs use.
  *
  * - **The section title is new copy, and deliberately not the tab's own.** The
  *   dialog header and the rail print `extraAccountTabs[].label`, which resolves

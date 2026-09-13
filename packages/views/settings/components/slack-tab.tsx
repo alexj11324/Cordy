@@ -495,7 +495,8 @@ export function SlackAgentBindButton({
       </Button>
 
       {/* shadcn `Dialog`, not Lobe `Modal`: this component renders on the agent
-          detail page, which has no `LobeThemeBridge`. See the import note. */}
+          detail page. That surface is bridged, so this is a conversion this
+          round did not take rather than one it could not. See the import note. */}
       <Dialog
         open={dialogOpen}
         onOpenChange={(v) => (v ? setDialogOpen(true) : closeDialog())}

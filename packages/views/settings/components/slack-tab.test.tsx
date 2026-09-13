@@ -236,9 +236,10 @@ describe("SlackAgentBindButton", () => {
       install_supported: true,
     };
     renderUI(<SlackAgentBindButton agentId="agent-1" />);
-    // The agent-detail half of this file keeps the shadcn primitives (its host
-    // surface mounts no Lobe bridge), so the only thing awaiting the bridge here
-    // is the render itself — this first query is what proves it landed.
+    // The agent-detail half of this file keeps the shadcn primitives — a
+    // conversion this round did not take, not a missing bridge — so the only
+    // thing awaiting the bridge here is the render itself: this first query is
+    // what proves it landed.
     expect(await screen.findByTestId("slack-agent-bot-installed")).toBeTruthy();
     expect(screen.getByTestId("slack-agent-bot-disconnect")).toBeTruthy();
     expect(screen.getByRole("status", { name: "Connection status" }).textContent).toBe("Status unavailable");

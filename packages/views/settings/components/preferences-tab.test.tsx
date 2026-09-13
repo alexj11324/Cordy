@@ -85,10 +85,11 @@ import { useCommentComposerStore } from "@orvilo/core/issues/stores";
  * query, so no test has to remember the rule twice.
  *
  * It returns the tab's single group, and every row query below goes through it.
- * A document-wide `getByRole(role, { name })` computes the accessible name of
- * every candidate in the document, which against the antd stylesheet the bridge
- * injects costs ~3.4s where the same query scoped to its group costs ~9ms —
- * per call, per file, and Tasks 5-9 copy whatever this file does.
+ * The group is the unambiguous handle for a named row — the same rows appear in
+ * more than one of these tabs' groups, and a document-wide
+ * `getByRole(role, { name })` for one of them throws rather than choosing — and
+ * scoping the query to its group is also what skips computing the accessible
+ * name of every other candidate in the document.
  */
 async function renderTab() {
   renderWithI18n(<PreferencesTab />, { lobe: true });

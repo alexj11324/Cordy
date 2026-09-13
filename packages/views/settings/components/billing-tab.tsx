@@ -159,7 +159,7 @@ function statusBadgeVariant(
  * every exit — its `onCancel`, and the wrapper's, fire for the Cancel button
  * alone, and Escape goes through `StackItem`'s `handleOpenChange`, which never
  * reads that config — so routing this dialog through the shared channel
- * narrowed a four-path release to one and made the next Upgrade replay the
+ * narrowed a two-path release to one and made the next Upgrade replay the
  * abandoned Stripe Session. See `handleCheckoutConfirmOpenChange`. The
  * seat-purchase dialog above is also a `Modal`, for the ordinary reason: it
  * collects input.
@@ -635,15 +635,20 @@ function BillingTabContent() {
    * reason the first one was wrong is worth keeping.
    *
    * The `AlertDialog` this replaces released the idempotency intent on *every*
-   * dismissal — `onOpenChange` fires for the Cancel button, Escape, the X and a
-   * backdrop press alike — so an attempt the user deliberately abandoned is not
-   * replayed by the next one. `confirmModal` cannot express that, and it cannot
+   * dismissal it had, so an attempt the user deliberately abandoned was not
+   * replayed by the next one. It had exactly two: Cancel and Escape both reach
+   * its `onOpenChange`. There was no third — Base UI disables the outside press
+   * for an alert dialog outright (`disablePointerDismissal = isAlertDialog ||
+   * disablePointerDismissalProp`, `@base-ui/react/dialog/root/useRenderDialogRoot.mjs`),
+   * and `AlertDialogContent` renders no close control
+   * (`packages/ui/components/ui/alert-dialog.tsx`). `confirmModal` cannot
+   * express that, and it cannot
    * be extended to: `ModalConfirmConfig` has no `onOpenChange` field, and the
    * three non-button exits go through `StackItem.handleOpenChange`, which closes
    * the stack entry without ever reading `config.onCancel`. The wrapper's
    * `onCancel` — and `confirmModal`'s own — fire for the **Cancel button
    * alone**. Routing this dialog through the shared channel narrowed a
-   * four-path release to one: pressing Escape, then Upgrade again, replayed the
+   * two-path release to one: pressing Escape, then Upgrade again, replayed the
    * abandoned Stripe Session.
    *
    * So the one-channel rule loses here, by name rather than silently. A

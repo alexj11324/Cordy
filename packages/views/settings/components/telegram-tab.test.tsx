@@ -251,9 +251,10 @@ describe("TelegramAgentBindButton", () => {
       install_supported: true,
     };
     renderUI(<TelegramAgentBindButton agentId="agent-1" />);
-    // The agent-detail half of this file keeps the shadcn primitives (its host
-    // surface mounts no Lobe bridge), so the only thing awaiting the bridge here
-    // is the render itself — this first query is what proves it landed.
+    // The agent-detail half of this file keeps the shadcn primitives — a
+    // conversion this round did not take, not a missing bridge — so the only
+    // thing awaiting the bridge here is the render itself: this first query is
+    // what proves it landed.
     expect(await screen.findByTestId("telegram-agent-bot-installed")).toBeTruthy();
     expect(screen.getByTestId("telegram-agent-bot-disconnect")).toBeTruthy();
     expect(screen.queryByTestId("telegram-agent-connect")).toBeNull();

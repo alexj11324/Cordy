@@ -35,6 +35,22 @@ describe("parseOklch", () => {
     expect(parseOklch("oklch(0.55 0.16 255 / 50%)")?.hue).toBe(255);
   });
 
+  it("keeps the alpha channel rather than only tolerating it", () => {
+    // The dark theme's `--surface-border` / `--border` / `--input` are all
+    // `oklch(1 0 0 / N%)`. Matching those literals without capturing the alpha
+    // made every one of them an opaque white, which the assertion below pins:
+    // `alpha` is absent for an opaque literal, so a caller cannot mistake
+    // "no alpha spelled" for "alpha of 1 that was read".
+    expect(parseOklch("oklch(1 0 0 / 10%)")?.alpha).toBeCloseTo(0.1);
+    expect(parseOklch("oklch(1 0 0 / 15%)")?.alpha).toBeCloseTo(0.15);
+    expect(parseOklch("oklch(1 0 0)")?.alpha).toBeUndefined();
+  });
+
+  it("clamps an out-of-range alpha the way CSS does instead of rejecting the literal", () => {
+    expect(parseOklch("oklch(1 0 0 / 250%)")?.alpha).toBe(1);
+    expect(parseOklch("oklch(1 0 0 / 0%)")?.alpha).toBe(0);
+  });
+
   it("tolerates surrounding whitespace", () => {
     expect(parseOklch("  oklch(0.5 0.1 200)  ")?.hue).toBe(200);
   });
@@ -84,6 +100,15 @@ describe("oklchToHex", () => {
     const hex = oklchToHex({ lightness: 0.6, chroma: 0.9, hue: 140 });
     expect(hex).toMatch(/^#[0-9a-f]{6}$/);
   });
+
+  it("appends the alpha pair when the colour is translucent", () => {
+    expect(oklchToHex({ lightness: 1, chroma: 0, hue: 0, alpha: 0.1 })).toBe("#ffffff1a");
+    expect(oklchToHex({ lightness: 0, chroma: 0, hue: 0, alpha: 0.5 })).toBe("#00000080");
+    // Alpha of exactly 1 is the opaque form: the pair is omitted, not written
+    // as `ff`, so a fully opaque token keeps the six-digit shape antd's own
+    // tests and every other consumer of this function expect.
+    expect(oklchToHex({ lightness: 1, chroma: 0, hue: 0, alpha: 1 })).toBe("#ffffff");
+  });
 });
 
 describe("toAntdColor", () => {
@@ -95,6 +120,13 @@ describe("toAntdColor", () => {
     expect(toAntdColor("#3b82f6")).toBe("#3b82f6");
     expect(toAntdColor("#ffffff")).toBe("#ffffff");
     expect(toAntdColor("transparent")).toBe("transparent");
+  });
+
+  it("keeps a translucent token translucent", () => {
+    // The whole point of the alpha channel surviving `parseOklch`: this is the
+    // exact literal behind the dark theme's `--border`, and the value it
+    // produces is what antd hands Lobe's `Button` as `colorBorder`.
+    expect(toAntdColor("oklch(1 0 0 / 10%)")).toBe("#ffffff1a");
   });
 
   it("passes an unresolved reference through rather than turning it black", () => {

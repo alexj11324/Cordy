@@ -67,6 +67,28 @@ describe("buildAntdTokens", () => {
     }
   });
 
+  it("carries alpha through for the translucent tokens the dark theme is built from", () => {
+    // The matrix above feeds opaque literals only, and its `/^#[0-9a-f]{6}$/`
+    // check is satisfied by `#ffffff` — which is exactly the wrong answer for
+    // `oklch(1 0 0 / 10%)`. These are the literals `.dark` actually declares
+    // (`packages/ui/styles/tokens.css`), so this is the assertion that fails if
+    // the alpha channel is dropped again.
+    const tokens = buildAntdTokens(
+      readerFrom({
+        "--border": "oklch(1 0 0 / 10%)",
+        "--surface-border": "oklch(1 0 0 / 10%)",
+      }),
+    );
+
+    expect(tokens.map.colorBorder).toBe("#ffffff1a");
+    expect(tokens.map.colorBorderSecondary).toBe("#ffffff1a");
+    // And the light theme's opaque border stays six-digit: the alpha pair is
+    // appended for translucency, not for every token.
+    expect(
+      buildAntdTokens(readerFrom({ "--border": "oklch(0.922 0 0)" })).map.colorBorder,
+    ).toBe("#e5e5e5");
+  });
+
   it("maps the surface and text ramp onto Orvilo's own tokens", () => {
     const tokens = buildAntdTokens(
       readerFrom({

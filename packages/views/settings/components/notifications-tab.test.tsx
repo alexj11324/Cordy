@@ -51,9 +51,9 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
 /**
  * `lobe: true` loads the theme bridge on demand, so the first query is async.
  * The two groups are returned by name; every switch query goes through them,
- * because a document-wide named role query costs ~3.4s against a scoped one's
- * ~9ms (measured on this component family) and because the group is the handle
- * the reference tells every tab to use.
+ * because the group is the handle the reference tells every tab to use — and
+ * because it is the unambiguous one: both groups carry same-named switches, so
+ * a document-wide named query for a single one of them throws.
  */
 async function renderTab() {
   renderWithI18n(<NotificationsTab />, { lobe: true });

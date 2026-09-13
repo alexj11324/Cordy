@@ -192,8 +192,6 @@ export interface ExtraSettingsTab {
 interface SettingsPageProps {
   extraAccountTabs?: ExtraSettingsTab[];
   variant?: "embedded" | "standalone";
-  /** @deprecated The flux dialog uses Cancel / Save instead of a back row. */
-  navigationHeader?: React.ReactNode;
   onDismiss?: () => void;
 }
 

@@ -19,11 +19,14 @@ import { IntegrationsTab } from "../settings/components/integrations-tab";
  * roots, and a bridge *inside* a shared component would nest a `ThemeProvider`
  * whose semantics nobody has measured. One decision per surface, no nesting.
  *
- * The agent pane is the third host of an integrations view and is deliberately
- * NOT wrapped: it renders `packages/views/agents/components/tabs/integrations-tab.tsx`,
- * whose only integration UI is the `*AgentBindButton` family — kept on the
- * shadcn primitives precisely because that surface has no bridge. See
- * `reference-lobe-tab-migration.md`, "the bridge is a HOST-SURFACE constraint".
+ * The agent pane is the third host of an integrations view, and it is not this
+ * page's to wrap: it renders
+ * `packages/views/agents/components/tabs/integrations-tab.tsx`, and that
+ * surface mounts its own bridge at its own root
+ * (`agents/components/agent-detail-page.tsx:323`). Its `*AgentBindButton` family
+ * is still on the shadcn primitives, but that is a conversion this round did not
+ * take rather than a missing bridge. See `reference-lobe-tab-migration.md`,
+ * "the bridge is a HOST-SURFACE constraint".
  */
 export function WorkspaceIntegrationsPage() {
   return (

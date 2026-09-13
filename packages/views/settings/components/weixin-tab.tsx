@@ -27,23 +27,20 @@ import { toast } from "sonner";
 // the importers rather than the export.
 //
 // `WeixinAgentBindButton` is rendered from the **agent detail page**
-// (`packages/views/agents/components/tabs/integrations-tab.tsx`), and that
-// surface has no bridge — `packages/views/agents/**` contains no `@lobehub/ui`
-// import at all. The Lobe primitives it would need throw without one —
-// measured, not assumed: `Button` and `Modal` call `useMotionComponent()`
-// themselves and `ActionIcon` reaches it by rendering `Button`, so those three
-// raise `Please wrap your app with <ConfigProvider> (or <MotionProvider>)`.
-// `DropdownMenu` is not one of them — it builds no `Button` and calls no motion
-// hook, so it renders unbridged; the list is three, not four. So the agent half
-// keeps the shadcn primitives
-// until its own surface gets a bridge; the alias below is what keeps the two
-// apart at the call sites.
+// (`packages/views/agents/components/tabs/integrations-tab.tsx`), so it keeps
+// the shadcn primitives. That is not a *capability* boundary: the agent surface
+// mounts its own `LobeThemeBridge`
+// (`agents/components/agent-detail-page.tsx:323`), so the Lobe primitives it
+// would need do render there. It stays shadcn because converting a control is a
+// visual change — it needs its own decision and its own screenshot acceptance,
+// and this round migrated the surface, not every control on it. The alias below
+// is what keeps the two apart at the call sites.
 //
 // `WeixinInstallDialog` is the one component in this file that **straddles the
 // boundary**: `WeixinTab` opens it and so does `WeixinAgentBindButton`, so it
-// must satisfy the unbridged host and stays on shadcn. It is reachable from the
-// settings half as well, and that is the accepted intermediate state, not an
-// oversight.
+// cannot be converted for one host alone — the conversion would change the
+// controls on both. It stays on shadcn, reachable from the settings half as
+// well, and that is the accepted intermediate state, not an oversight.
 import { Button as LobeButton } from "@lobehub/ui/base-ui";
 import { Button } from "@orvilo/ui/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@orvilo/ui/components/ui/dialog";

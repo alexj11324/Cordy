@@ -175,8 +175,7 @@ import { toast } from "sonner";
  *
  * The flag defaults to **off** here rather than on, which is the opposite of
  * the Slack/Telegram suite's helper, and deliberately so: most of this file
- * renders `LarkAgentBindButton` and its sub-components, whose host surface (the
- * agent detail page) mounts no bridge and which therefore render no Lobe
+ * renders `LarkAgentBindButton` and its sub-components, which render no Lobe
  * element at all. A bridged render would make the three "renders nothing"
  * assertions below pass *vacuously* — the container is empty while the bridge
  * module resolves — which is the "guard that cannot fail" shape the reference

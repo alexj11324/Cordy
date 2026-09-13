@@ -29,8 +29,9 @@ describe("IntegrationSetupGuide", () => {
     // list, and a stack of flex rows would drop the `list-decimal` semantics a
     // three-step procedure is exactly what `<ol>` is for), so the count did not
     // go red on conversion; it is rewritten anyway because a bare length says
-    // nothing about which steps survived. This reads the steps themselves, in
-    // order, against the same resource the component resolves.
+    // nothing about which steps survived. What the three assertions below pin
+    // is exactly that and no more: there are three steps, none is blank, and no
+    // two are the same.
     const steps = [...guide.querySelectorAll("ol > li")].map((li) => li.textContent);
     expect(steps).toHaveLength(3);
     for (const step of steps) expect(step?.trim()).not.toBe("");

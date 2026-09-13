@@ -679,10 +679,14 @@ describe("BillingTab", () => {
     // below is the only thing that can release it.
     await waitForModalToLeave("Continue to Stripe Checkout?");
 
-    // Escape is the exit the shared confirm wrapper cannot see: it arrives
-    // through the modal's own `onOpenChange`, never through an `onCancel` prop.
-    // It has to release the intent exactly as Cancel does, or the next Upgrade
-    // replays the Stripe Session the user walked away from.
+    // Escape lands in this dialog's `onCancel` exactly as the Cancel button
+    // does: it is a controlled `Modal`, and Lobe's `Modal` routes every close
+    // that is not a masked outside press through `handleOpenChange`, which calls
+    // `onCancel?.(...)` (`es/base-ui/Modal/Modal.mjs`). That is the opposite of
+    // the shared `confirmModal`, where Escape bypasses `config.onCancel` — the
+    // reason this dialog is not on that channel. Either way the release has to
+    // happen, or the next Upgrade replays the Stripe Session the user walked
+    // away from.
     await user.click(screen.getByRole("button", { name: "Upgrade to Pro" }));
     await user.keyboard("{Escape}");
     await waitForModalToLeave("Continue to Stripe Checkout?");

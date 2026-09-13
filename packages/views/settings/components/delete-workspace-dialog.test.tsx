@@ -139,14 +139,17 @@ describe("DeleteWorkspaceDialog", () => {
   });
 
   it("resets the input when the workspace being deleted changes (e.g. rename mid-dialog)", async () => {
+    const user = userEvent.setup();
     const { rerender } = await renderDialog({
       workspaceName: "old-name",
       open: true,
     });
-    const input = screen.getByRole("textbox") as HTMLInputElement;
-    // Simulate user typing (set value directly since userEvent.type would
-    // lose focus across re-renders).
-    input.value = "old-name";
+    // Typed, not assigned: writing `input.value` directly skips React's state,
+    // so the reset below would have held even if the effect did nothing. Going
+    // through `userEvent` is what makes the re-render able to go wrong.
+    await user.type(screen.getByRole("textbox"), "old-name");
+    expect(screen.getByRole("button", { name: "Delete workspace" })).toBeEnabled();
+
     rerender(
       <DeleteWorkspaceDialog
         workspaceName="new-name"
@@ -156,6 +159,9 @@ describe("DeleteWorkspaceDialog", () => {
       />,
     );
     expect(screen.getByRole("textbox")).toHaveValue("");
+    // And the confirmation is re-armed for the new name rather than left armed
+    // by the old one: the button that was enabled a line ago is disabled again.
+    expect(screen.getByRole("button", { name: "Delete workspace" })).toBeDisabled();
   });
 
   it("clears the input when reopened so prior attempts don't leak", async () => {

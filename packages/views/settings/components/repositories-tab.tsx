@@ -301,9 +301,15 @@ export function RepositoriesTab() {
     closeGitHubPicker();
   };
 
-  // Synchronous store work, but the promise is what holds the dialog open until
-  // the row it confirms has actually gone — `useSettingsConfirm` refuses to
-  // close on a non-thenable return.
+  // `async` for the caller's benefit only. `saveNow` is typed `(value: T) =>
+  // void` and fires `void runSave(next)` (`use-auto-save.ts:22`, `:132`), so
+  // this promise is already resolved by the time `useSettingsConfirm` tests it
+  // and the dialog closes on the next tick — the same close the old
+  // `AlertDialogAction` performed synchronously. Removal never reaches the
+  // server, so that is the right behaviour: a failure surfaces as the autosave
+  // readout flipping to its error state in this group's header, plus the toast,
+  // not as a dialog held open. `repositories-tab.test.tsx` states the same
+  // contract, and the absence of a failure-path case there, from the test side.
   const removeRepository = async (index: number) => {
     const next = repositories.filter((_, repoIndex) => repoIndex !== index);
     setRepositories(next);

@@ -124,15 +124,19 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
  * the `ModalHost` the prefix confirmation renders into — so the first query in
  * every test has to be an async one. This helper is that first query.
  *
- * The rows are reached through the `SettingsSaveState` status region's card —
- * the tab renders no `SettingsGroup`, because its chrome is ReUI's `Frame` by
- * decision 11 — so the scope here is the card that holds the name field rather
- * than a named group.
+ * The rows are reached through the name field's card, and the handle is that
+ * card's own accessible name. The tab renders no `SettingsGroup` — its chrome
+ * is ReUI's `Frame` by decision 11 — but it builds the same pairing by hand:
+ * `role="group"` plus `aria-labelledby` pointing at its `FrameTitle`
+ * (`workspace-tab.tsx`), so "Workspace details" names the same node a
+ * `data-slot` selector would have found, without reaching into a slot name the
+ * five other suites do not use.
  */
 async function renderTab() {
   renderWithI18n(<WorkspaceTab />, { lobe: true });
-  const nameField = await screen.findByLabelText("Name");
-  return within(nameField.closest('[data-slot="frame-panel"]') as HTMLElement);
+  return within(
+    await screen.findByRole("group", { name: "Workspace details" }),
+  );
 }
 
 describe("WorkspaceTab — automatic updates", () => {

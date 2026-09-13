@@ -131,8 +131,7 @@ afterEach(cleanup);
  *
  * The flag defaults to **off** here rather than on, which is the opposite of
  * the Slack/Telegram suite's helper, and deliberately so: most of this file
- * renders `WecomAgentBindButton`, whose host surface (the agent detail page)
- * mounts no bridge and which therefore renders no Lobe element at all. A
+ * renders `WecomAgentBindButton`, which renders no Lobe element at all. A
  * bridged render would make the two `toBeEmptyDOMElement()` assertions below
  * pass *vacuously* — the container is empty while the bridge module resolves —
  * which is the "guard that cannot fail" shape. Renders that can reach a

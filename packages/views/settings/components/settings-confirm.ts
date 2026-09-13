@@ -49,8 +49,10 @@ export interface SettingsConfirmOptions {
   confirmLabel?: ReactNode;
   cancelLabel?: ReactNode;
   /**
-   * Runs when the dialog is dismissed **by its Cancel button**, before it
-   * closes. Optional, and omitted by every call site that has nothing to undo.
+   * Runs when the dialog is dismissed **by its Cancel button**, after the
+   * dialog has already closed: the library's Cancel handler is
+   * `close(); onCancel?.()` (`Modal/imperative.mjs`, `ConfirmBody.handleCancel`).
+   * Optional, and omitted by every call site that has nothing to undo.
    *
    * **It fires for Cancel alone, and that is too narrow for most side effects.**
    * The library's other dismissal paths — the header's close control, Escape, a

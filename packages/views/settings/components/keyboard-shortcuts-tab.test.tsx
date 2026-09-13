@@ -65,15 +65,16 @@ async function renderTab() {
  *
  * Every role query in this suite goes through here rather than through
  * `screen`, and that is not style: `getByRole(role, { name })` computes the
- * accessible name of every candidate in the document, and against the antd
- * stylesheet the theme bridge injects that costs **3.4s** per call under jsdom
- * where the same query scoped to its group costs 9ms — measured on this
- * component, not guessed. An un-named `getAllByRole` is cheap (~70ms), so the
- * cost is the name computation, not the role walk.
+ * accessible name of every candidate in the document, so scoping the query to
+ * the group that owns the row skips that work — the cost is the name
+ * computation, not the role walk. It is also what makes the query unambiguous:
+ * the tab's groups carry same-named rows.
  *
- * The group carries `role="group"` with its title as the accessible name
- * (`SettingsGroup` adds the wrapper rc-collapse cannot: its root goes through
- * `pickAttrs`, which drops `role`). That is both the a11y handle and the cheap
+ * The group carries `role="group"` with its title as the accessible name.
+ * `SettingsGroup` adds that wrapper because Lobe's `FormGroup` returns a
+ * different, `rest`-less component on the narrow tree
+ * (`es/Form/components/FormGroup.mjs`), so a role passed through the wide tree
+ * would exist at one width only. That is both the a11y handle and the precise
  * query.
  */
 async function group(title: string) {

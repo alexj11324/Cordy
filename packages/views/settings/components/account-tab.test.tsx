@@ -99,11 +99,12 @@ vi.setConfig({ testTimeout: 60_000, hookTimeout: 30_000 });
  * `lobe: true` loads the theme bridge on demand, so the first query in every
  * test has to be an async one. This helper is that first query.
  *
- * It returns the two groups and every row query below goes through them: a
- * document-wide `getByRole(role, { name })` computes the accessible name of
- * every candidate in the document, which against the antd stylesheet the
- * bridge injects costs ~3.4s where the same query scoped to its own group
- * costs ~9ms.
+ * It returns the two groups and every row query below goes through them. The
+ * group is the handle that says *which* row is meant — both groups carry
+ * same-named rows, so a document-wide `getByRole(role, { name })` for one of
+ * them is ambiguous and throws — and scoping the query that way also skips
+ * computing the accessible name of every other candidate in the document,
+ * which is where the cost of a named role query sits.
  */
 async function renderTab() {
   renderWithI18n(<AccountTab />, { lobe: true });
@@ -156,11 +157,20 @@ describe("AccountTab", () => {
     const { basic, regional } = await renderTab();
 
     expect(screen.getByTestId("profile-avatar")).toBeInTheDocument();
+    // Both section titles are present, and neither is a heading. The migrated
+    // shell puts a group's title inside `Form.Group`'s header, which is a
+    // `<div>` carrying the disclosure role rather than an `<h*>`, so the
+    // section names are reachable as group names and nowhere else. That is what
+    // an assertion about a heading by that name has to say to have a subject.
+    expect(screen.getByRole("group", { name: "Basic Details" })).toBeInTheDocument();
     expect(
-      screen.queryByRole("heading", { name: "Profile" }),
+      screen.getByRole("group", { name: "Regional Preferences" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: "Basic Details" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByText("Profile updates are shared"),
+      screen.queryByRole("heading", { name: "Regional Preferences" }),
     ).not.toBeInTheDocument();
     expect(basic.getByLabelText(/First Name/)).toHaveValue("Ada");
     expect(basic.getByLabelText(/Last Name/)).toHaveValue("Lovelace");

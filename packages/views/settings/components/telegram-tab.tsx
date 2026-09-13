@@ -12,12 +12,13 @@ import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
 // dialog, which mounts `LobeThemeBridge`, so it is Lobe.
 // `TelegramAgentBindButton` and its two sub-components are rendered from the
 // **agent detail page**
-// (`packages/views/agents/components/tabs/integrations-tab.tsx`), and that
-// surface has no bridge — `packages/views/agents/**` contains no
-// `@lobehub/ui` import at all. Every Lobe primitive they would need (`Button`,
-// `Modal`) calls `useMotionComponent()` and throws `Please wrap your app with
-// <ConfigProvider> (or <MotionProvider>)` without one — measured, not assumed.
-// So they keep the shadcn primitives until their own surface gets a bridge; the
+// (`packages/views/agents/components/tabs/integrations-tab.tsx`), so they keep
+// the shadcn primitives. That is not a *capability* boundary: the agent surface
+// mounts its own `LobeThemeBridge`
+// (`agents/components/agent-detail-page.tsx:323`), so the Lobe primitives they
+// would need do render there. They stay shadcn because converting a control is
+// a visual change — it needs its own decision and its own screenshot
+// acceptance, and this round migrated the surface, not every control on it. The
 // alias below is what keeps the two apart at the call sites. The Slack tab's
 // header carries the long form of this note.
 import { Button as LobeButton } from "@lobehub/ui/base-ui";
@@ -374,7 +375,8 @@ export function TelegramAgentBindButton({
       </Button>
 
       {/* shadcn `Dialog`, not Lobe `Modal`: this component renders on the agent
-          detail page, which has no `LobeThemeBridge`. See the import note. */}
+          detail page. That surface is bridged, so this is a conversion this
+          round did not take rather than one it could not. See the import note. */}
       <Dialog
         open={dialogOpen}
         onOpenChange={(v) => (v ? setDialogOpen(true) : closeDialog())}

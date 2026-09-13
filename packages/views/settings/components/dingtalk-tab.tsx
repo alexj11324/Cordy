@@ -16,21 +16,25 @@ import { cn } from "@orvilo/ui/lib/utils";
 // Both are bridged, so every surface that can reach `DingTalkTab` is.
 //
 // Everything else this file exports is reachable from the **agent detail
-// page**, which has no bridge: `packages/views/agents/**` contains no
-// `@lobehub/ui` import at all. `agents/components/tabs/integrations-tab.tsx`
-// renders `DingTalkAgentBindButton` (:352), `DingTalkBotGroups` (:201, :371),
+// page**. `agents/components/tabs/integrations-tab.tsx` renders
+// `DingTalkAgentBindButton` (:352), `DingTalkBotGroups` (:201, :371),
 // `DingTalkConnectionLabel` (:189, :333) and reads `getDingTalkBotIdentity`
-// (:137). Lobe's `Button` and `Modal` call `useMotionComponent()` and throw
-// `Please wrap your app with <ConfigProvider> (or <MotionProvider>)` without a
-// bridge — measured, not assumed — so those exports keep the shadcn primitives
-// until their own surface is bridged (Task 10). The alias below is what keeps
-// the two apart at the call sites.
+// (:137). Those exports keep the shadcn primitives, and that is a choice rather
+// than a *capability* boundary: the agent surface mounts its own
+// `LobeThemeBridge` (`agents/components/agent-detail-page.tsx:323`), so the Lobe
+// primitives they would need do render there. `packages/views/agents/**`
+// containing no `@lobehub/ui` import says where the bridge is not — it is a
+// local wrapper, `../../lobe` — not that the surface has none. Converting a
+// control is a visual change that needs its own decision and its own screenshot
+// acceptance, and this round migrated the surface, not every control on it. The
+// alias below is what keeps the two apart at the call sites.
 //
 // **`DingTalkBotGroups` straddles both**, and that is the one non-obvious call
-// in this file: the migrated `InstallationRow` renders it *and* the unbridged
-// agent pane does, so it can only satisfy the stronger host and stays shadcn.
-// The consequence is recorded rather than resolved: the migrated settings panel
-// contains one shadcn block, exactly as `weixin-tab`'s install dialog does.
+// in this file: the migrated `InstallationRow` renders it *and* the agent pane
+// does, so it cannot be converted for one host alone — the conversion would
+// change the other surface too. The consequence is recorded rather than
+// resolved: the migrated settings panel contains one shadcn block, exactly as
+// `weixin-tab`'s install dialog does.
 import { Button as LobeButton } from "@lobehub/ui/base-ui";
 import { Button } from "@orvilo/ui/components/ui/button";
 import {

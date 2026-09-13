@@ -8,7 +8,6 @@ const settingsPageProps = vi.hoisted(() => vi.fn());
 
 vi.mock("@orvilo/views/settings", () => ({
   SettingsPage: (props: {
-    navigationHeader?: ReactNode;
     variant?: "embedded" | "standalone";
     onDismiss?: () => void;
     extraAccountTabs?: Array<{

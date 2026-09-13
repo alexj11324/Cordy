@@ -34,8 +34,12 @@ import type {
 //   - `Badge` — Lobe has no `Badge`; `Tag` is a different component, not a
 //     rename (the recorded exemption).
 //   - `FieldGroup` + `ConnectionSelectField` — `credential-field-form.tsx` is
-//     shared with the BYO dialogs of every messaging tab, which the unbridged
-//     agent-pane half renders, so that file cannot move yet (Task 10).
+//     shared with the BYO dialogs of every messaging tab, including the
+//     agent-pane half, so it cannot be converted for one host alone: the
+//     conversion would change the controls on both. That half is bridged now
+//     (`agents/components/agent-detail-page.tsx:323`), so this is a conversion
+//     not yet taken, not one that is blocked — see `weixin-tab`'s header for the
+//     same call.
 import { Button as LobeButton, Input as LobeInput, Modal } from "@lobehub/ui/base-ui";
 import { Badge } from "@orvilo/ui/components/ui/badge";
 import { FieldGroup } from "@orvilo/ui/components/ui/field";

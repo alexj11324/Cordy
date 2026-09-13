@@ -456,8 +456,16 @@ export function IntegrationsTab({
           `action` to move to `extra`, so nothing was lost.
 
           The spacing the discarded branch supplied (`space-y-12`) is now this
-          container's, at the family convention of `space-y-8` — the same value
-          the standalone wrapper already used. */}
+          container's, at the family convention of `space-y-8`.
+
+          The heading is the exception, and `mb-12` below is why. The baseline
+          put the standalone title in a `<header className="mb-12 …">` — so
+          heading → body was 48px — and `space-y-8` alone renders 32. It is not
+          additive: `space-y-8` writes `margin-bottom` on the *earlier* sibling
+          (`:not(:last-child)`), so a `mb-*` on that heading replaces its 32
+          rather than stacking with it, and the value has to be the full 48.
+          The standalone wrapper's own `space-y-8` never supplied this spacing:
+          it held one child, so the rule was inert on it. */}
       <div
         className={
           standalone
@@ -466,7 +474,7 @@ export function IntegrationsTab({
         }
       >
         {standalone ? (
-          <h2 className="text-display-sm font-semibold tracking-tight">
+          <h2 className="text-display-sm font-semibold tracking-tight mb-12">
             {t(($) => $.page.integrations_title)}
           </h2>
         ) : null}
