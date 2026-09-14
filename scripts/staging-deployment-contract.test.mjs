@@ -62,6 +62,27 @@ test("staging is a separate GitHub Environment from production", () => {
   );
 });
 
+test("a missing staging deploy secret is reported by its GitHub secret name", () => {
+  const step = workflow.slice(workflow.indexOf("Configure restricted staging SSH identity"));
+  const body = step.slice(
+    step.indexOf("set -Eeuo pipefail"),
+    step.indexOf('install -d -m 0700 "$HOME/.ssh"'),
+  );
+  // The step reads four secrets into short shell variables. Naming the variable
+  // in the failure sends an operator looking for a secret that does not exist —
+  // `DEPLOY_KEY` is not configurable anywhere — so the message has to name what
+  // they actually have to create.
+  for (const secret of [
+    "STAGING_SSH_PRIVATE_KEY",
+    "STAGING_SSH_KNOWN_HOSTS",
+    "STAGING_SSH_HOST",
+    "STAGING_SSH_USER",
+  ]) {
+    assert.ok(body.includes(secret), `the pre-flight error must be able to name ${secret}`);
+  }
+  assert.doesNotMatch(body, /::error::[^\n]*\$name/u);
+});
+
 test("staging follows a successful production run and cannot gate it", () => {
   assert.match(workflow, /workflow_run:\n\s+workflows: \[Aspectlylabs production\]/u);
   assert.match(workflow, /branches: \[main\]/u);

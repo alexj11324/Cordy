@@ -150,6 +150,26 @@ test("deployment is serialized, protected, and Go-only", () => {
   assert.match(deployGateway, /record_runtime_diagnostics/u);
 });
 
+test("a missing production deploy secret is reported by its GitHub secret name", () => {
+  const step = workflow.slice(workflow.indexOf("Configure restricted production SSH identity"));
+  const body = step.slice(
+    step.indexOf("set -Eeuo pipefail"),
+    step.indexOf('install -d -m 0700 "$HOME/.ssh"'),
+  );
+  // Same hazard as staging: the step reads four secrets into short shell
+  // variables, and naming the variable in the failure points an operator at a
+  // secret that cannot be configured.
+  for (const secret of [
+    "PRODUCTION_SSH_PRIVATE_KEY",
+    "PRODUCTION_SSH_KNOWN_HOSTS",
+    "PRODUCTION_SSH_HOST",
+    "PRODUCTION_SSH_USER",
+  ]) {
+    assert.ok(body.includes(secret), `the pre-flight error must be able to name ${secret}`);
+  }
+  assert.doesNotMatch(body, /::error::[^\n]*\$name/u);
+});
+
 test("public routing uses the Aspectly Labs product domains", () => {
   for (const domain of [
     "api.aspectlylabs.com",

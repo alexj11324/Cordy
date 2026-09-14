@@ -307,9 +307,18 @@ jobs:
           DEPLOY_USER: ${{ secrets.PRODUCTION_SSH_USER }}
         run: |
           set -Eeuo pipefail
-          for name in DEPLOY_KEY KNOWN_HOSTS DEPLOY_HOST DEPLOY_USER; do
+          # `name` is the shell variable this step reads the value into; `secret`
+          # is what an operator has to create. Reporting the variable sends them
+          # looking for a GitHub secret that does not exist.
+          for pair in \
+            DEPLOY_KEY:PRODUCTION_SSH_PRIVATE_KEY \
+            KNOWN_HOSTS:PRODUCTION_SSH_KNOWN_HOSTS \
+            DEPLOY_HOST:PRODUCTION_SSH_HOST \
+            DEPLOY_USER:PRODUCTION_SSH_USER; do
+            name="${pair%%:*}"
+            secret="${pair#*:}"
             if [ -z "${!name:-}" ]; then
-              echo "::error::Missing production environment secret: $name"
+              echo "::error::Missing GitHub secret ${secret} in the production environment."
               exit 1
             fi
           done
