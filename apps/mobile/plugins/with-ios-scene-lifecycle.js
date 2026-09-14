@@ -1,6 +1,7 @@
 const {
   IOSConfig,
   withAppDelegate,
+  withEntitlementsPlist,
   withInfoPlist,
 } = require("expo/config-plugins");
 
@@ -67,7 +68,33 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 }
 `;
 
-module.exports = function withIOSSceneLifecycle(config) {
+const sceneLifecycleComment =
+  "// The scene delegate owns the window and starts React Native for iOS 27+.";
+const expoWindowStartup = `#if os(iOS) || os(tvOS)
+    window = UIWindow(frame: UIScreen.main.bounds)
+    factory.startReactNative(
+      withModuleName: "main",
+      in: window,
+      launchOptions: launchOptions)
+#endif`;
+
+function removeExpoWindowStartup(contents) {
+  if (contents.includes(sceneLifecycleComment)) return contents;
+  if (!contents.includes(expoWindowStartup)) {
+    throw new Error(
+      "Expected Expo AppDelegate startup block was not found while enabling UIScene lifecycle.",
+    );
+  }
+  return contents.replace(expoWindowStartup, sceneLifecycleComment);
+}
+
+function removeAppleSignInEntitlement(entitlements) {
+  const next = { ...entitlements };
+  delete next["com.apple.developer.applesignin"];
+  return next;
+}
+
+function withIOSSceneLifecycle(config) {
   config = withInfoPlist(config, (config) => {
     config.modResults.UIApplicationSceneManifest = {
       UIApplicationSupportsMultipleScenes: false,
@@ -83,25 +110,16 @@ module.exports = function withIOSSceneLifecycle(config) {
     return config;
   });
 
+  // @clerk/expo is configured with appleSignIn: false. Remove the key if an
+  // older incremental prebuild left it behind in the generated project.
+  config = withEntitlementsPlist(config, (config) => {
+    config.modResults = removeAppleSignInEntitlement(config.modResults);
+    return config;
+  });
+
   config = withAppDelegate(config, (config) => {
-    const contents = config.modResults.contents;
-    const startup = `#if os(iOS) || os(tvOS)
-    window = UIWindow(frame: UIScreen.main.bounds)
-    factory.startReactNative(
-      withModuleName: "main",
-      in: window,
-      launchOptions: launchOptions)
-#endif`;
-
-    if (!contents.includes(startup)) {
-      throw new Error(
-        "Expected Expo AppDelegate startup block was not found while enabling UIScene lifecycle."
-      );
-    }
-
-    config.modResults.contents = contents.replace(
-      startup,
-      `// The scene delegate owns the window and starts React Native for iOS 27+.`
+    config.modResults.contents = removeExpoWindowStartup(
+      config.modResults.contents,
     );
     return config;
   });
@@ -111,4 +129,8 @@ module.exports = function withIOSSceneLifecycle(config) {
     contents: sceneDelegate,
     overwrite: true,
   });
-};
+}
+
+module.exports = withIOSSceneLifecycle;
+module.exports.removeAppleSignInEntitlement = removeAppleSignInEntitlement;
+module.exports.removeExpoWindowStartup = removeExpoWindowStartup;

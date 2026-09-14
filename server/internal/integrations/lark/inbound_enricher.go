@@ -33,7 +33,7 @@ const defaultMaxForwardChildren = 100
 // parent are filtered out of the result, so the <recent_context> block
 // usually renders one or two fewer lines. 10 keeps the agent's prompt
 // meaningfully contextual without bloating it or straining the inbound
-// ACK budget (one list call, page_size 10).
+// inbound dispatch path (one list call, page_size 10).
 const DefaultRecentContextSize = 10
 
 const (

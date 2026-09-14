@@ -63,6 +63,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     plugins: [
       "expo-router",
       "expo-secure-store",
+      ["@clerk/expo", { appleSignIn: false }],
       "@react-native-community/datetimepicker",
       "react-native-enriched-markdown",
       [
