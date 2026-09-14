@@ -125,11 +125,30 @@
  * That is what keeps the scale from drifting again: "what is this text for"
  * has an answer a reader can check, "is this sm or base" does not.
  *
- * Six of the ten steps match Tailwind's default size/line-height pairs
- * (`text-sm` and `text-body` are both 14/20). That is a coincidence for chrome
- * we author, not a mandate to rewrite ReUI `text-sm` onto `text-body`. Only the
- * steps that fill old gaps — micro (11), label (13), body-lg (15) — are new
- * sizes. Every step carries its own line-height so leading cannot fragment the
+ * These steps are for chrome we author; they are not a mandate to rewrite ReUI's
+ * `text-sm` / `text-xs` onto them. One of them has since left Tailwind's pair of
+ * the same size: `text-body` is 14/22 where `text-sm` is 14/20.
+ *
+ * `body` carries antd's line-height rather than one chosen here: 22px, where
+ * Tailwind's `text-sm` — the size it replaces — pairs 14 with 20. `@lobehub/ui`
+ * renders every antd component out of that token set (`fontSize` with
+ * `lineHeight = (size + 8) / size`), so a Lobe panel's rows and this app's
+ * chrome lead the same way instead of the chrome running 2px tighter than the
+ * Lobe content beside it. Measured in the running app: the settings rail (Lobe)
+ * renders 1.571 and this app's sidebar rendered 1.429 until this changed.
+ *
+ * Only this one step moves, and the guard's "line-height never drops going up"
+ * rule is why. `@lobehub/ui`'s ladder is 12/20, 14/22, 16/24, 20/28, 24/32 —
+ * `caption` would be next at 12/20 — but our steps below `body` are 11 and 13,
+ * which antd has no token for. Taking 12/20 would force `label` up to 20 as well
+ * and leave 11px at 15, so the small end of the scale would stop being one
+ * scale. The rest of the ladder (micro 11, label 13, body-lg 15, title 18,
+ * display 36) keeps the leading chosen here: there is nothing upstream to match,
+ * and LobeHub sets those sizes per component rather than from a scale — measured
+ * off its own settings surface, its desc line runs 1.44em, its rail 1.571, its
+ * group title 1.75 and its dialog title 1.333, which is not one rule.
+ *
+ * Every step carries its own line-height so leading cannot fragment the
  * way size did; a `leading-*` utility still wins where a specific block needs
  * to override it.
  *
@@ -147,7 +166,8 @@
     --text-label--line-height: 18px;
     /* UI body, the workhorse — was text-sm */
     --text-body: 14px;
-    --text-body--line-height: 20px;
+    /* antd's fontSize line-height, not Tailwind's 20 */
+    --text-body--line-height: 22px;
     /* roomier body: dialog copy, onboarding prose */
     --text-body-lg: 15px;
     --text-body-lg--line-height: 22px;

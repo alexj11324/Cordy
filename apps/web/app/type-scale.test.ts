@@ -36,7 +36,9 @@ const SCALE = [
   ["micro", 11, 15],
   ["caption", 12, 16],
   ["label", 13, 18],
-  ["body", 14, 20],
+  // 22, not Tailwind's 20 for `text-sm`: antd's `fontSize` token, which is what
+  // every Lobe component renders from. See the note in tokens.css.
+  ["body", 14, 22],
   ["body-lg", 15, 22],
   ["title-sm", 16, 24],
   ["title", 18, 28],
