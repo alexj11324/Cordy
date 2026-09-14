@@ -312,7 +312,11 @@ export function DesktopShell() {
               } as React.CSSProperties
             }
             className={cn(
-              "flex-1 [--sidebar-width:260px] [--sidebar:var(--color-background)] [--sidebar-accent:color-mix(in_oklab,var(--color-primary)_5%,transparent)] [--sidebar-accent-foreground:var(--color-primary)]",
+              // See `dashboard-layout.tsx` for why the `--sidebar*` rebind this
+              // used to carry is gone: it made the app rail read
+              // `--color-background` while the portaled settings rail read
+              // `--sidebar`, which is the seam this change removes.
+              "flex-1 [--sidebar-width:260px]",
               "bg-app-shell",
             )}
           >

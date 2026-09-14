@@ -144,22 +144,35 @@ describe("ReUI global setup", () => {
       "--chart-4": "oklch(0.371 0 0)",
       "--chart-5": "oklch(0.269 0 0)",
       // Lobe paints the chrome with `colorBgLayout` and the content with
-      // `colorBgContainer`; the shells' own `[--sidebar:var(--color-background)]`
-      // rebind does not apply inside the settings dialog, which portals out of
-      // the dashboard, so this token is the one that rail reads.
+      // `colorBgContainer`. This is the token both rails read: the shells no
+      // longer rebind it, so the app rail and the portaled settings rail agree.
     })
   })
 
-  it("applies Pulse Help Desk's sidebar rebind on web and desktop shells", () => {
-    const web = read("packages/views/layout/dashboard-layout.tsx")
-    const desktop = read(
-      "apps/desktop/src/renderer/src/components/desktop-layout.tsx"
-    )
-    const rebind =
-      "[--sidebar:var(--color-background)] [--sidebar-accent:color-mix(in_oklab,var(--color-primary)_5%,transparent)] [--sidebar-accent-foreground:var(--color-primary)]"
+  /**
+   * The shells used to rebind `--sidebar` to `--color-background`, plus the two
+   * accents, to Pulse Help Desk's values — the rail painted the canvas colour on
+   * purpose. That is no longer one skin: `tokens.css` carries LobeHub's palette
+   * for these tokens app-wide, and the settings dialog portals out of the shell,
+   * so a rebind here left the rail behind the dialog and the dialog's own rail
+   * reading two different values. Measured before removing it: the app rail
+   * painted `--color-background` (#ffffff) while the settings rail painted
+   * `--sidebar` (#f8f8f8).
+   *
+   * This is a guard, not a description: re-adding the rebind re-opens the seam
+   * silently, because each rail still looks internally consistent on its own.
+   */
+  it("leaves --sidebar to tokens.css in both shells, so the two rails agree", () => {
+    const shells = {
+      web: read("packages/views/layout/dashboard-layout.tsx"),
+      desktop: read("apps/desktop/src/renderer/src/components/desktop-layout.tsx"),
+    }
 
-    expect(web).toContain(rebind)
-    expect(desktop).toContain(rebind)
+    for (const [name, source] of Object.entries(shells)) {
+      expect(source, `${name} shell must not rebind --sidebar`).not.toMatch(
+        /\[--sidebar:/,
+      )
+    }
   })
 })
 

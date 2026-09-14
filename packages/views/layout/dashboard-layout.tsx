@@ -49,7 +49,17 @@ export function DashboardLayout({
       <SidebarProvider
         hasExternalTrigger
         className={cn(
-          "h-svh [--sidebar-width:260px] [--sidebar:var(--color-background)] [--sidebar-accent:color-mix(in_oklab,var(--color-primary)_5%,transparent)] [--sidebar-accent-foreground:var(--color-primary)]",
+          // `--sidebar-width` only. The shell used to rebind `--sidebar`,
+          // `--sidebar-accent` and `--sidebar-accent-foreground` here, to
+          // Pulse Help Desk's values: the rail took `--background` and the
+          // accents took a 5% primary wash. `tokens.css` carries LobeHub's
+          // palette for those tokens app-wide now, and the settings dialog
+          // portals out of this subtree, so a rebind here made the rail behind
+          // the dialog and the dialog's own rail read two different values —
+          // the seam this change exists to remove. Measured before removing:
+          // the app rail painted `--color-background` (white) while the
+          // settings rail painted `--sidebar` (#f8f8f8).
+          "h-svh [--sidebar-width:260px]",
         )}
       >
         <ShellHeaderProvider>
