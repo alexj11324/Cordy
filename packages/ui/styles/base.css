@@ -610,70 +610,26 @@ html[data-dnd-dragging="true"] * {
 }
 
 /* =============================================================================
- * The LobeHub skin, for the surfaces that mount `LobeThemeBridge skin="lobe"`.
+ * The LobeHub skin's typography, for the surfaces mounted under
+ * `LobeThemeBridge skin="lobe"`.
  *
- * Lobe's components already wear Lobe's own palette — the bridge passes them no
- * token override — but the Tailwind chrome *around* them (the dialog box, the
- * settings rail, the text) reads Orvilo's variables, so the two skins meet at
- * the dialog's edge. This class closes that seam by restating Orvilo's names in
- * Lobe's values.
+ * **Why the colours are no longer here.** They used to be, as a literal table,
+ * because antd declares its `--ant-*` variables on the provider element inside
+ * the bridge and a custom property inherits only downward — so the dialog box,
+ * that element's parent, could not read them. That table has since become the
+ * app's own palette: `tokens.css` carries Lobe's measured values in `:root` and
+ * `.dark`, so the app sidebar, the page canvas and the settings dialog all read
+ * one skin. Patching colours surface by surface is what left the app looking
+ * like two skins meeting at a seam, and a token cannot do that.
  *
- * **Why the values are written out.** They cannot be aliased to Lobe's tokens.
- * antd declares its `--ant-*` variables on the provider element inside the
- * bridge, and a CSS custom property inherits *down*, so the dialog box — the
- * provider's parent — cannot read them; measured, `--ant-color-bg-container`
- * resolves on the provider element and on nothing above it. Nor can the bridge
- * move outward: `DialogContent` portals into `document.body`, so a bridge
- * wrapping it would be an ancestor in the React tree only. Both directions are
- * closed, which is why this is a literal table rather than an alias.
+ * What is left here is the half a token cannot express.
  *
- * **Where each value comes from**, measured in the running renderer by reading
- * `--ant-*` off a Lobe element in each appearance (`lobe-token-table.mjs` in the
- * settings SDD workspace re-derives the whole table in one run):
- *
- *   Lobe token                      light             dark
- *   color-bg-container              #ffffff           #0d0d0d
- *   color-bg-layout                 #f8f8f8           #000000
- *   color-bg-elevated               #ffffff           #1a1a1a
- *   color-border                    #e3e3e3           #202020
- *   color-border-secondary          #eeeeee           #1a1a1a
- *   color-text                      #080808           #ffffff
- *   color-text-description          #999999           #6f6f6f
- *   color-fill-secondary            rgba(0,0,0,.06)   rgba(255,255,255,.10)
- *   borderRadius                    8px               8px
- *
- * `color-bg-container-secondary` is deliberately absent from that table: it is a
- * Lobe *custom* token and antd never emits it as a variable, so there is nothing
- * to measure it from.
- *
- * **`--radius` is here for a second reason.** Lobe's card corner is
- * `borderRadius` (8px, measured), while `SettingsGroup`'s narrow card paints
- * `var(--radius)` from Orvilo (0.625rem = 10px) — so under `skin="lobe"` the two
- * trees drew different corners and the note above `.orvilo-settings-group-card`
- * claimed they matched. Mapping the token is what makes that claim true.
- *
- * **Not mapped: `--brand`.** The rail's active tab reads it, and Lobe's
- * `colorPrimary` is a neutral (#222222 / #eeeeee) rather than Orvilo's blue, so
- * the two disagree on purpose until someone decides that separately. Naming it
- * here is the point: its absence is a decision, not an oversight.
- *
- * **`--settings-rail` exists because the rail and its active tab cannot share a
- * token.** The rail needs `colorBgLayout` (a panel that is a step away from the
- * page) and the active tab needs a fill that is a step away from *the rail* —
- * but the active tab is marked `bg-muted!` by `settings-page.tsx`, and `--muted`
- * is what every code chip and count badge in the tabs reads too. Mapping the
- * rail onto `--muted` put both at #f8f8f8 and the selected item stopped being
- * visible; found by dyeing the variable, not by reading the class lists (the
- * `bg-muted!` is appended at the call site, not in `SETTINGS_NAV_TAB_BASE`).
- * ========================================================================== */
-/* The typography half of the same skin.
- *
- * LobeHub's type comes from `ThemeProvider/GlobalStyle/global`, which our bridge
+ * LobeHub's type comes from `ThemeProvider/GlobalStyle/global`, which the bridge
  * turns off wholesale (`enableGlobalStyle={false}`) because it also declares
  * `body { overflow: hidden auto; margin: 0; line-height: 1; background-color:
  * colorBgLayout }` and `html { overscroll-behavior: none }` — document-wide
  * rules that would restyle and rescroll the page behind a dialog. So the
- * *typographic* half is restated here, and the layout half stays out.
+ * typographic half is restated here and the layout half stays out.
  *
  * What each one buys:
  *  - `font-feature-settings: 'cv01','tnum','kern'` — `cv01` is Geist's
@@ -687,38 +643,30 @@ html[data-dnd-dragging="true"] * {
  * The family is Lobe's `fontFamily` token, which antd components inside the
  * bridge already carry on themselves. Restating it here is what stops the
  * chrome — the dialog title, the rail, the footers — from inheriting Orvilo's
- * `Inter`/`PingFang SC` stack while the content beside it renders in
- * `Geist`/`HarmonyOS Sans SC`. Copied from
- * `styles/theme/token/base.mjs`.
+ * `PingFang SC` stack while the content beside it renders in
+ * `Geist` / `HarmonyOS Sans SC`. Copied from `styles/theme/token/base.mjs`.
  *
  * Lobe's stack also carries three quoted marker entries that label its sections
  * — one before the CJK families, one before the generic fallbacks, one before
  * the emoji families. They resolve to nothing and are kept verbatim anyway. They
  * cannot be spelled out here: each one ends with the two characters that close
- * a CSS comment, and writing them in this comment is what broke the light rule
+ * a CSS comment, and writing them in this comment is what broke the rule below
  * the first time it was written — the comment ended early, the rest parsed as
- * garbage, and the parser's recovery swallowed the rule that followed. The dark
- * rule survived only because a clean `}` sat in front of it. */
+ * garbage, and the parser's recovery swallowed the rule that followed.
+ *
+ * The tokens are mapped rather than the declaration alone, because
+ * `font-heading` and `font-sans` are utilities: a `DialogTitle` carries
+ * `font-heading`, which resolves through `--font-sans`, so setting
+ * `font-family` by itself left the title in the old stack while everything
+ * around it was Geist.
+ *
+ * **This is still per-surface, and the app's own font is still Inter.** Making
+ * the font app-wide means loading Lobe's three webfonts outside the bridge —
+ * today they arrive only when a bridge mounts, because `FontLoader` appends
+ * them from a CDN. That is a separate decision (self-host the packages, or take
+ * the CDN dependency), not something this rule can decide.
+ * ========================================================================== */
 .orvilo-lobe-surface {
-  --background: #ffffff;
-  --card: #ffffff;
-  --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --popover: #ffffff;
-  --surface-foreground: #080808;
-  --foreground: #080808;
-  --card-foreground: #080808;
-  --popover-foreground: #080808;
-  --settings-rail: #f8f8f8;
-  --muted: rgba(0, 0, 0, 0.06);
-  --muted-foreground: #999999;
-  --accent: rgba(0, 0, 0, 0.06);
-  --accent-foreground: #080808;
-  --border: #eeeeee;
-  --surface-border: #eeeeee;
-  --input: #e3e3e3;
-  --radius: 8px;
-
   --font-sans:
     Geist, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display",
     "Segoe UI", Roboto, "Helvetica Neue", Arial, "HarmonyOS Sans SC",
@@ -729,11 +677,6 @@ html[data-dnd-dragging="true"] * {
   --font-mono:
     Geist Mono, ui-monospace, SFMono-Regular, SF Mono, Menlo, "Cascadia Code",
     Consolas, "Liberation Mono", monospace;
-  /* `font-heading` and `font-sans` are utilities, not inherited declarations:
-     a `DialogTitle` carries `font-heading`, which resolves through
-     `--font-sans`, so setting `font-family` alone left the title in Orvilo's
-     stack while everything around it was Geist. Mapping the tokens is what
-     makes both the inheritance and the utilities agree. */
   --font-heading: var(--font-sans);
   font-family: var(--font-sans);
   font-feature-settings: "cv01", "tnum", "kern";
@@ -747,23 +690,4 @@ html[data-dnd-dragging="true"] * {
   text-wrap: pretty;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-.dark .orvilo-lobe-surface {
-  --background: #0d0d0d;
-  --card: #0d0d0d;
-  --surface: #0d0d0d;
-  --surface-raised: #0d0d0d;
-  --popover: #1a1a1a;
-  --surface-foreground: #ffffff;
-  --foreground: #ffffff;
-  --card-foreground: #ffffff;
-  --popover-foreground: #ffffff;
-  --settings-rail: #000000;
-  --muted: rgba(255, 255, 255, 0.1);
-  --muted-foreground: #6f6f6f;
-  --accent: rgba(255, 255, 255, 0.1);
-  --accent-foreground: #ffffff;
-  --border: #1a1a1a;
-  --surface-border: #1a1a1a;
-  --input: #202020;
 }

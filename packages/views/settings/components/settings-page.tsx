@@ -291,11 +291,12 @@ export function SettingsPage({
             orientation={isMobile ? "horizontal" : "vertical"}
             className="flex min-h-0 flex-1 flex-col gap-0 lg:flex-row lg:items-stretch"
           >
-            {/* `bg-[var(--settings-rail)]`, not `bg-muted`: `--muted` is what
-                every code chip reads *and* what the selected tab is marked
-                with (`bg-muted!` below), so mapping the rail onto it made the
-                two identical and hid the selection. See `base.css`. */}
-            <aside className="bg-[var(--settings-rail)] flex shrink-0 flex-col border-b py-3 pr-12 pl-5 lg:min-h-0 lg:w-56 lg:self-stretch lg:overflow-y-auto lg:border-r lg:border-b-0 lg:py-4 lg:pr-5">
+            {/* `bg-sidebar`, not `bg-muted`: `--muted` is what every code chip
+                reads *and* what the selected tab is marked with (`bg-muted!`
+                below), so pointing the rail at it made the two identical and
+                hid the selection. `--sidebar` is the app's own left-rail token,
+                which is why this rail and the one behind the dialog now match. */}
+            <aside className="bg-sidebar flex shrink-0 flex-col border-b py-3 pr-12 pl-5 lg:min-h-0 lg:w-56 lg:self-stretch lg:overflow-y-auto lg:border-r lg:border-b-0 lg:py-4 lg:pr-5">
               <SettingsSearch
                 value={settingsSearch}
                 onValueChange={setSettingsSearch}

@@ -144,18 +144,25 @@
 
 :root {
     color-scheme: light;
-    /* Surface system, values from ReUI Pulse (base-nova + neutral).
-       Light chrome follows Pulse --sidebar (0.985) over --background (1).
-       Dark chrome follows Pulse Help Desk's layout rebind: nav = --background. */
-    --app-shell: oklch(0.985 0 0);
-    --page-canvas: oklch(1 0 0);
-    --surface: oklch(1 0 0);
-    --surface-foreground: oklch(0.145 0 0);
-    --surface-raised: oklch(1 0 0);
-    --surface-hover: oklch(0.97 0 0);
-    --surface-selected: oklch(0.95 0 0);
-    --surface-selected-foreground: oklch(0.145 0 0);
-    --surface-border: oklch(0.922 0 0);
+    /* Surface system. The palette is LobeHub's, not Pulse's.
+
+       Every neutral below is the value `@lobehub/ui` resolves for the matching
+       token in this appearance, measured off a Lobe element in the running
+       renderer rather than read from a swatch — see `.orvilo-lobe-surface` in
+       `base.css` for the measurement table. `colorBgLayout` paints the chrome
+       (#f8f8f8) and `colorBgContainer` paints the content (#ffffff); that
+       two-tone is what the reference settings screen shows, and giving both the
+       app sidebar and the settings rail the same `--sidebar` token is what
+       stops the app from being half one skin and half the other. */
+    --app-shell: #f8f8f8;
+    --page-canvas: #ffffff;
+    --surface: #ffffff;
+    --surface-foreground: #080808;
+    --surface-raised: #ffffff;
+    --surface-hover: rgba(0, 0, 0, 0.03);
+    --surface-selected: rgba(0, 0, 0, 0.06);
+    --surface-selected-foreground: #080808;
+    --surface-border: #eeeeee;
     --surface-shadow: 0 1px 2px rgb(15 23 42 / 0.04), 0 1px 1px rgb(15 23 42 / 0.03);
     --floating-shadow: 0 16px 40px rgb(15 23 42 / 0.14), 0 3px 10px rgb(15 23 42 / 0.08);
 
@@ -175,19 +182,24 @@
        sheets), which keep --floating-shadow. */
     --menu-shadow: 0 8px 24px rgb(15 23 42 / 0.08), 0 2px 6px rgb(15 23 42 / 0.05);
     --background: var(--page-canvas);
-    --foreground: oklch(0.145 0 0);
+    --foreground: #080808;
     --card: var(--surface);
-    --card-foreground: oklch(0.145 0 0);
+    --card-foreground: #080808;
     --popover: var(--surface-raised);
-    --popover-foreground: oklch(0.145 0 0);
+    --popover-foreground: #080808;
     --primary: oklch(0.205 0 0);
     --primary-foreground: oklch(0.985 0 0);
     --secondary: oklch(0.97 0 0);
     --secondary-foreground: oklch(0.205 0 0);
-    --muted: oklch(0.97 0 0);
-    /* Pulse / shadcn is 0.556, which is 4.35:1 on --surface-hover (0.97)
-       and 4.27:1 on --surface-selected (0.95) — both miss WCAG AA 4.5:1.
-       0.53 is the lightest step that still clears 4.5:1 on 0.95. */
+    --muted: rgba(0, 0, 0, 0.03);
+    /* **The one value deliberately NOT taken from Lobe**, for contrast rather
+       than taste: Lobe's `colorTextDescription` is #999999, 2.85:1 on white,
+       below WCAG AA's 4.5:1 for text — and Lobe uses it for exactly this role,
+       including the `desc` under a form row. 0.53 is the lightest step that
+       still clears 4.5:1 on the darkest surface it lands on (--surface-selected
+       = rgba(0,0,0,.06) over white). Adopting Lobe's value makes secondary text
+       lighter and less legible, which is a product call, so it stays where the
+       product put it. */
     --muted-foreground: oklch(0.53 0 0);
     /* The quiet step below muted, for marks that are not text: disclosure
        chevrons, separator glyphs, the em dash standing in for an empty cell,
@@ -195,14 +207,14 @@
        people reached for was alpha — 152 call sites of
        text-muted-foreground/30..80 — and alpha on light surfaces lands
        between 1.5:1 and 3.8:1, which fails even the 3:1 floor for non-text.
-       0.606 still clears 3:1 (WCAG 1.4.11) on every Pulse surface; worst
-       case is --surface-selected. Deliberately NOT valid for text. */
+       0.606 still clears 3:1 (WCAG 1.4.11) on every surface; worst case is
+       --surface-selected. Deliberately NOT valid for text. */
     --faint-foreground: oklch(0.606 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
+    --accent: rgba(0, 0, 0, 0.06);
+    --accent-foreground: #080808;
     --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
+    --border: #eeeeee;
+    --input: #e3e3e3;
     --ring: oklch(0.708 0 0);
     /* Pulse Help Desk charts are chroma-0. --brand stays product blue. */
     --chart-1: oklch(0.87 0 0);
@@ -210,14 +222,14 @@
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
+    --radius: 0.5rem;
+    --sidebar: #f8f8f8;
+    --sidebar-foreground: #080808;
     --sidebar-primary: oklch(0.205 0 0);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
+    --sidebar-accent: rgba(0, 0, 0, 0.06);
+    --sidebar-accent-foreground: #080808;
+    --sidebar-border: #eeeeee;
     --sidebar-ring: oklch(0.708 0 0);
     /* Sidebar semantic ramp. Hover is 6% of the theme foreground and active
        is 3%. Because the foreground flips with the theme, the same tokens
@@ -262,56 +274,56 @@
 
 .dark {
     color-scheme: dark;
-    /* Pulse Help Desk paints the nav with --background, not the theme table's
-       --sidebar. Their shell is `[--sidebar:var(--color-background)]`; the 0.205
-       sidebar token is only for raised cards. Mapping chrome to 0.205 was what
-       turned the left rail gray. */
-    --app-shell: oklch(0.145 0 0);
-    --page-canvas: oklch(0.145 0 0);
-    --surface: oklch(0.205 0 0);
-    --surface-foreground: oklch(0.985 0 0);
-    --surface-raised: oklch(0.205 0 0);
-    --surface-hover: oklch(0.269 0 0);
-    --surface-selected: oklch(0.3 0 0);
-    --surface-selected-foreground: oklch(0.985 0 0);
-    --surface-border: oklch(1 0 0 / 10%);
+    /* The same palette in dark, where it diverges from Orvilo's old one most:
+       Lobe's chrome is `colorBgLayout` = #000000 and its content is
+       `colorBgContainer` = #0d0d0d. The previous block sat at
+       oklch(0.145..0.269), a full step lighter, which is why dark mode read as
+       grey here and near-black in the reference. */
+    --app-shell: #000000;
+    --page-canvas: #0d0d0d;
+    --surface: #0d0d0d;
+    --surface-foreground: #ffffff;
+    --surface-raised: #0d0d0d;
+    --surface-hover: rgba(255, 255, 255, 0.06);
+    --surface-selected: rgba(255, 255, 255, 0.1);
+    --surface-selected-foreground: #ffffff;
+    --surface-border: #1a1a1a;
     --surface-shadow: 0 1px 2px rgb(0 0 0 / 0.2), 0 1px 1px rgb(0 0 0 / 0.16);
     --floating-shadow: 0 20px 48px rgb(0 0 0 / 0.46), 0 4px 12px rgb(0 0 0 / 0.28);
     --menu-shadow: 0 10px 28px rgb(0 0 0 / 0.3), 0 2px 8px rgb(0 0 0 / 0.18);
     --background: var(--page-canvas);
-    --foreground: oklch(0.985 0 0);
+    --foreground: #ffffff;
     --card: var(--surface);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: var(--surface);
-    --popover-foreground: oklch(0.985 0 0);
+    --card-foreground: #ffffff;
+    --popover: #1a1a1a;
+    --popover-foreground: #ffffff;
     --primary: oklch(0.922 0 0);
     --primary-foreground: oklch(0.205 0 0);
     --secondary: oklch(0.269 0 0);
     --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
+    --muted: rgba(255, 255, 255, 0.06);
     --muted-foreground: oklch(0.708 0 0);
     /* Same role as light mode, mirrored: fainter means darker here. 0.60
-       still clears 3:1 on every dark Pulse surface, worst case
-       --surface-selected. */
+       still clears 3:1 on every dark surface, worst case --surface-selected. */
     --faint-foreground: oklch(0.60 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
+    --accent: rgba(255, 255, 255, 0.1);
+    --accent-foreground: #ffffff;
     --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
+    --border: #1a1a1a;
+    --input: #202020;
     --ring: oklch(0.556 0 0);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.145 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar: #000000;
+    --sidebar-foreground: #ffffff;
     --sidebar-primary: oklch(0.488 0.243 264.376);
     --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-accent: rgba(255, 255, 255, 0.1);
+    --sidebar-accent-foreground: #ffffff;
+    --sidebar-border: #1a1a1a;
     --sidebar-ring: oklch(0.556 0 0);
     --brand: oklch(0.65 0.16 255);
     --brand-foreground: oklch(0.985 0 0);
