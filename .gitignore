@@ -79,3 +79,16 @@ data/
 # Python (agent tooling)
 __pycache__/
 *.pyc
+
+# Machine-local agent scratch. `.omo/run-continuation` holds per-session resume
+# state and `.workbuddy-ai` holds per-run artifacts and memory; both are written
+# by local tooling, differ per machine, and nothing in the build reads them.
+.omo/
+.workbuddy-ai/
+
+# `vendor/reui-atlas` is a local checkout of the ReUI reference app, kept for
+# reading component sources while adopting ReUI blocks. Nothing imports it and
+# no build step reads it, so it stays out of the repository until someone
+# decides it should ship — `packages/views/**` tests already skip `vendor/reui-*`
+# in the type-scale guard, so tracking it later needs no other change.
+vendor/

@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
     setToken: vi.fn(),
     sendCode: vi.fn(),
     verifyCode: vi.fn(),
+    clerkLogin: vi.fn(),
     logout: vi.fn(),
   },
   secureStore: {
@@ -93,6 +94,20 @@ describe("mobile auth state", () => {
     expect(mocks.secureStore.clearLegacyGuestCredentials).toHaveBeenCalledOnce();
     expect(mocks.workspaceStore.clear).toHaveBeenCalledOnce();
     expect(mocks.api.setToken).toHaveBeenCalledWith(null);
+  });
+
+  it("exchanges a Clerk session for the persisted Orvilo session", async () => {
+    const user = { id: "user-1", email: "user@example.com" };
+    mocks.api.clerkLogin.mockResolvedValue({ token: "orvilo-token", user });
+
+    await expect(
+      useAuthStore.getState().signInWithClerkToken("clerk-session-token"),
+    ).resolves.toEqual(user);
+
+    expect(mocks.api.clerkLogin).toHaveBeenCalledWith("clerk-session-token");
+    expect(mocks.secureStore.setToken).toHaveBeenCalledWith("orvilo-token");
+    expect(mocks.api.setToken).toHaveBeenCalledWith("orvilo-token");
+    expect(useAuthStore.getState().user).toEqual(user);
   });
 
   it("still finishes local logout when cleanup fails", async () => {
