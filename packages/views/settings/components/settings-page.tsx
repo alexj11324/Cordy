@@ -270,18 +270,25 @@ export function SettingsPage({
       >
         {/* Renders no box of its own (`display: contents`), so `TabsRoot` is
             still the flex child `DialogContent` was laid out around. */}
-        {/* `skin="lobe"`: this surface renders in `@lobehub/ui`'s own theme
-            rather than a mapping of Orvilo's, so the settings dialog looks like
-            LobeHub instead of like Orvilo.
+        {/* No `skin`: the bridge feeds this surface the app's own tokens, which
+            are LobeHub's — `tokens.css` carries Lobe's measured values for the
+            whole app, so there is no second skin left to select.
 
-            The palette around it is no longer a per-surface override. It used
-            to be — a literal table on this box — because antd declares its
+            This used to be `skin="lobe"`, which handed antd no token override
+            at all and let Lobe's own theme through. That put every `desc` here
+            on Lobe's `colorTextDescription` — #999999 on white, 2.85:1,
+            measured in this dialog — bypassing the accessible
+            `--muted-foreground` this app keeps for exactly that role and fails
+            WCAG AA for the explanatory text under most form rows.
+
+            The palette around it is no longer a per-surface override either. It
+            used to be — a literal table on this box — because antd declares its
             `--ant-*` variables on the provider element *inside* the bridge and
             a custom property only inherits downward, so this box could not read
             them. That table is now `tokens.css`: the whole app wears Lobe's
             measured values, so the app's own rail and this dialog's rail read
             the same `--sidebar` and cannot drift apart. */}
-        <LobeThemeBridge skin="lobe">
+        <LobeThemeBridge>
           <TabsRoot
             value={activeTab}
             onValueChange={handleTabChange}

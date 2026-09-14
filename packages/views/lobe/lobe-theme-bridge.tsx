@@ -126,31 +126,29 @@ function readBridgeTheme(): BridgeTheme {
   };
 }
 
+/**
+ * There is no `skin` prop. There used to be: `"orvilo"` fed this app's tokens to
+ * antd and `"lobe"` passed none, so a Lobe surface could wear LobeHub's own
+ * theme. The app wears LobeHub's palette everywhere now — `tokens.css` carries
+ * Lobe's measured values in `:root` and `.dark` — so the two skins had converged
+ * and the second one only did harm.
+ *
+ * It bypassed this file's token mapping, which is what put every form `desc` on
+ * Lobe's `colorTextDescription` (#999999 on white, 2.85:1, measured in the
+ * settings dialog) instead of the accessible `--muted-foreground` that
+ * `lobe-tokens.ts` now pins for that role. Keeping the prop also kept two
+ * differently-skinned bridges possible, and those collide: they share
+ * `cssVar.key`, so the token block injected last can apply to both roots, and
+ * they share the `LobeModalHost` singleton, so a `confirmModal` renders under
+ * whichever bridge claimed it first rather than under the one that asked.
+ *
+ * One bridge, one token set, one key.
+ */
 export interface LobeThemeBridgeProps {
   children: ReactNode;
-  /**
-   * Which skin the Lobe components wear.
-   *
-   * `"orvilo"` (the default) feeds Orvilo's design tokens into antd, so Lobe
-   * renders the same greys, brand colour, radii and font as the Tailwind
-   * surface around it. `"lobe"` passes no token override at all, so
-   * `@lobehub/ui` falls back to the theme it ships in
-   * `styles/theme/token/{light,dark}.mjs` plus antd's defaults — LobeHub's own
-   * palette, radii, link colours and shadow tokens.
-   *
-   * The two are mutually exclusive because they answer different questions:
-   * `"orvilo"` asks "how does this panel blend into Orvilo", `"lobe"` asks "how
-   * does this panel look like LobeHub". A surface cannot do both, and mixing
-   * them inside one subtree is the one thing that looks wrong either way.
-   *
-   * Only the Lobe components follow this. The Tailwind chrome around them reads
-   * Orvilo's CSS variables directly, so a `"lobe"` surface also has to remap
-   * those variables at its root — see `settings/components/settings-page.tsx`.
-   */
-  skin?: "orvilo" | "lobe";
 }
 
-export function LobeThemeBridge({ children, skin = "orvilo" }: LobeThemeBridgeProps) {
+export function LobeThemeBridge({ children }: LobeThemeBridgeProps) {
   // Seeded from the static reader so the server render and the first client
   // paint agree; the effect below replaces it with the real values.
   const [theme, setTheme] = useState<BridgeTheme>(() => ({
@@ -197,10 +195,7 @@ export function LobeThemeBridge({ children, skin = "orvilo" }: LobeThemeBridgePr
           className="contents"
           theme={{
             cssVar: { key: CSS_VAR_KEY },
-            // Omitted entirely on the `"lobe"` skin: passing even a partial
-            // `token` still merges over antd's, so an override that intends to
-            // keep "Lobe's look" has to pass nothing at all.
-            ...(skin === "lobe" ? {} : { token: { ...theme.tokens.seed, ...theme.tokens.map } }),
+            token: { ...theme.tokens.seed, ...theme.tokens.map },
           }}
         >
           {children}
