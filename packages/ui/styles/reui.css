@@ -62,6 +62,8 @@
     --color-warning-foreground: var(--warning-foreground);
     --color-invert: var(--invert);
     --color-invert-foreground: var(--invert-foreground);
+    --color-focus: var(--focus);
+    --color-focus-foreground: var(--focus-foreground);
     --radius-sm: calc(var(--radius) * 0.6);
     --radius-md: calc(var(--radius) * 0.8);
     --radius-lg: var(--radius);
