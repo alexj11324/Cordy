@@ -610,75 +610,31 @@ html[data-dnd-dragging="true"] * {
 }
 
 /* =============================================================================
- * The LobeHub skin's typography, for the surfaces mounted under
- * `LobeThemeBridge skin="lobe"`.
+ * LobeHub's type settings, for the whole app.
  *
- * **Why the colours are no longer here.** They used to be, as a literal table,
- * because antd declares its `--ant-*` variables on the provider element inside
- * the bridge and a custom property inherits only downward — so the dialog box,
- * that element's parent, could not read them. That table has since become the
- * app's own palette: `tokens.css` carries Lobe's measured values in `:root` and
- * `.dark`, so the app sidebar, the page canvas and the settings dialog all read
- * one skin. Patching colours surface by surface is what left the app looking
- * like two skins meeting at a seam, and a token cannot do that.
- *
- * What is left here is the half a token cannot express.
- *
- * LobeHub's type comes from `ThemeProvider/GlobalStyle/global`, which the bridge
- * turns off wholesale (`enableGlobalStyle={false}`) because it also declares
- * `body { overflow: hidden auto; margin: 0; line-height: 1; background-color:
- * colorBgLayout }` and `html { overscroll-behavior: none }` — document-wide
- * rules that would restyle and rescroll the page behind a dialog. So the
- * typographic half is restated here and the layout half stays out.
+ * These come from `ThemeProvider/GlobalStyle/global`, which the bridge turns off
+ * wholesale because it *also* declares `body { overflow: hidden auto; margin: 0;
+ * line-height: 1; background-color: colorBgLayout }` and `html
+ * { overscroll-behavior: none }` — document-wide rules that would restyle and
+ * rescroll the page behind a dialog. The typographic half belongs to the app as
+ * much as to the dialog, so it lives here; the layout half stays out.
  *
  * What each one buys:
  *  - `font-feature-settings: 'cv01','tnum','kern'` — `cv01` is Geist's
- *    character-variant feature and only does anything because Geist is loaded;
- *    `tnum` gives digits one width, which is what stops counts from jittering.
+ *    character-variant feature and only does anything because Geist is the
+ *    first family in `--font-sans`; `tnum` gives digits one width, which is
+ *    what stops counts from jittering as they change.
  *  - `font-size-adjust: from-font` — normalizes the CJK fallback to the primary
- *    face's x-height. This is the one that changes mixed Chinese/Latin copy most:
- *    without it the two scripts drift apart at the same `font-size`.
+ *    face's x-height. This is the one that changes mixed Chinese/Latin copy
+ *    most: without it the two scripts drift apart at the same `font-size`.
  *  - `font-variant-ligatures` / `font-variant-numeric` — the rest of Lobe's set.
  *
- * The family is Lobe's `fontFamily` token, which antd components inside the
- * bridge already carry on themselves. Restating it here is what stops the
- * chrome — the dialog title, the rail, the footers — from inheriting Orvilo's
- * `PingFang SC` stack while the content beside it renders in
- * `Geist` / `HarmonyOS Sans SC`. Copied from `styles/theme/token/base.mjs`.
- *
- * Lobe's stack also carries three quoted marker entries that label its sections
- * — one before the CJK families, one before the generic fallbacks, one before
- * the emoji families. They resolve to nothing and are kept verbatim anyway. They
- * cannot be spelled out here: each one ends with the two characters that close
- * a CSS comment, and writing them in this comment is what broke the rule below
- * the first time it was written — the comment ended early, the rest parsed as
- * garbage, and the parser's recovery swallowed the rule that followed.
- *
- * The tokens are mapped rather than the declaration alone, because
- * `font-heading` and `font-sans` are utilities: a `DialogTitle` carries
- * `font-heading`, which resolves through `--font-sans`, so setting
- * `font-family` by itself left the title in the old stack while everything
- * around it was Geist.
- *
- * **This is still per-surface, and the app's own font is still Inter.** Making
- * the font app-wide means loading Lobe's three webfonts outside the bridge —
- * today they arrive only when a bridge mounts, because `FontLoader` appends
- * them from a CDN. That is a separate decision (self-host the packages, or take
- * the CDN dependency), not something this rule can decide.
+ * The font *stacks* are not here. `--font-sans` is composed per app in
+ * `apps/web/app/globals.css` and `apps/desktop/src/renderer/src/globals.css`,
+ * because web needs a locale-aware CJK tail that desktop does not; the font
+ * *files* are imported by `tokens.css`, which is what makes them shared.
  * ========================================================================== */
-.orvilo-lobe-surface {
-  --font-sans:
-    Geist, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display",
-    "Segoe UI", Roboto, "Helvetica Neue", Arial, "HarmonyOS Sans SC",
-    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
-    "Source Han Sans SC", "Noto Sans CJK SC", ui-sans-serif, system-ui,
-    sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
-    "Noto Color Emoji";
-  --font-mono:
-    Geist Mono, ui-monospace, SFMono-Regular, SF Mono, Menlo, "Cascadia Code",
-    Consolas, "Liberation Mono", monospace;
-  --font-heading: var(--font-sans);
-  font-family: var(--font-sans);
+body {
   font-feature-settings: "cv01", "tnum", "kern";
   font-variation-settings: "opsz" auto, tabular-nums;
   font-optical-sizing: auto;

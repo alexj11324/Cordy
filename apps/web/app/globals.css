@@ -12,28 +12,45 @@
 @source "../../../packages/core/**/*.{ts,tsx}";
 @source "../../../packages/views/**/*.{ts,tsx}";
 
-/* Font stack. `--font-inter` is the next/font Inter family (+ its synthetic
-   size-adjusted fallback), set on <html> by inter.variable in app/layout.tsx.
-   We compose `--font-sans` here in static CSS — rather than baking the CJK tail
-   into next/font's `fallback` — so it can be overridden per `<html lang>` and
-   stays CSP-safe (no inline <style>). Tailwind's `font-sans` utility resolves
-   `var(--font-sans)` (see packages/ui/styles/tokens.css `@theme inline`).
+/* Font stack: LobeHub's, verbatim — `@lobehub/ui`'s own `fontFamily` token
+   (`es/styles/theme/token/base.mjs`), i.e. `[FONT_EN, FONT_CN, FALLBACK,
+   FONT_EMOJI].flat()`, plus a Japanese/Korean tail that is ours.
 
-   Latin chars render with Inter; CJK chars fall through to the platform Chinese
-   fonts, then Japanese, then Korean. Chinese MUST stay first so zh users never
-   get Korean Hanja or Japanese Kanji glyph shapes for shared ideographs.
+   We compose it in static CSS rather than baking it into a next/font `fallback`
+   so it stays CSP-safe (no inline <style>) and identical to the desktop app's.
+   Tailwind's `font-sans` utility resolves `var(--font-sans)`; see
+   packages/ui/styles/tokens.css `@theme inline`.
 
-   The UI ships only English and Chinese, but members still write Japanese and
-   Korean into issues, comments, and agent output. Kana and Hangul occupy their
-   own Unicode blocks, so those render natively from the tail of this stack.
-   Shared Han ideographs resolve to the Chinese font first — the same tradeoff
-   already accepted for Korean Hanja. Kept in sync with
-   apps/desktop/src/renderer/src/globals.css. */
+   The order is the whole point, and it is order-sensitive in a way that is easy
+   to break silently. Font matching walks this list per character, so nothing
+   that can render CJK — and no generic family — may appear before
+   "HarmonyOS Sans SC". Whatever sits earlier wins for Chinese and the rest of
+   the chain becomes dead code. No error, no warning; only a pixel comparison
+   shows it.
+
+   That is exactly how a `var(--font-inter)` splice used to break this file. The
+   old `--font-inter` ended in `"PingFang SC" … sans-serif`, so at position 2 it
+   captured every Chinese glyph and Lobe's font was never reached. Measured in
+   the running renderer: deleting `"HarmonyOS Sans SC"` from the resolved
+   `--font-sans` changed not one pixel, and the same string rendered differently
+   under LobeHub's stack. The variable is gone; a Latin fallback re-added here
+   must be Latin-only.
+
+   `Geist` and `HarmonyOS Sans SC` ship from `packages/ui/styles/tokens.css`,
+   self-hosted, so the first family cannot fail to load and needs no local
+   fallback.
+
+   The Japanese and Korean tail is **ours, not Lobe's** — Lobe's stack stops
+   after the Chinese fallbacks. This app's members write Japanese and Korean
+   into issues and comments, so the tail stays. Chinese still comes first,
+   which is what keeps zh users off Korean Hanja and Japanese Kanji shapes.
+   Kept in sync with apps/desktop/src/renderer/src/globals.css. */
 :root {
-  /* Inter first (Pulse / ReUI). `ui-sans-serif, system-ui` is Pulse's Latin
-     fallback; CJK stays after that so zh users never get Korean Hanja. */
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, "Segoe UI",
-    "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Hiragino Sans",
+  --font-sans: Geist, -apple-system, BlinkMacSystemFont,
+    "Segoe UI Variable Display", "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "HarmonyOS Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI",
+    "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", "Hiragino Sans",
     "Yu Gothic", "Noto Sans CJK JP", "Apple SD Gothic Neo", "Malgun Gothic",
-    "Noto Sans CJK KR", sans-serif;
+    "Noto Sans CJK KR", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
+    "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
 }

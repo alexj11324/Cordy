@@ -64,92 +64,89 @@ describe("ReUI global setup", () => {
     expect(reuiCSS).not.toMatch(/--background:\s*oklch\(/)
     expect(reuiCSS).not.toMatch(/--app-shell:\s*var\(--sidebar\)/)
     expect(tokensCSS).toContain("--background: var(--page-canvas);")
-    expect(tokensCSS).toContain("--app-shell: oklch(0.985 0 0);")
+    expect(tokensCSS).toContain("--app-shell: oklch(0.979 0 0);")
     expect(tokensCSS).toContain("--page-canvas: oklch(1 0 0);")
-    expect(tokensCSS).toContain("--muted-foreground: oklch(0.53 0 0);")
-    expect(tokensCSS).toContain("--app-shell: oklch(0.145 0 0);")
-    expect(tokensCSS).toContain("--page-canvas: oklch(0.145 0 0);")
-    expect(tokensCSS).toContain("--sidebar: oklch(0.145 0 0);")
+    expect(tokensCSS).toContain("--muted-foreground: oklch(0.522 0 0);")
+    expect(tokensCSS).toContain("--app-shell: oklch(0 0 0);")
+    expect(tokensCSS).toContain("--page-canvas: oklch(0.159 0 0);")
+    expect(tokensCSS).toContain("--sidebar: oklch(0 0 0);")
   })
 
-  it("keeps the Pulse Help Desk color table (not layout) in tokens.css", () => {
+  it("keeps the LobeHub color table (not layout) in tokens.css", () => {
     const tokensCSS = read("packages/ui/styles/tokens.css")
     const light = readBlock(tokensCSS, ":root")
     const dark = readBlock(tokensCSS, ".dark")
 
-    // Live Pulse Help Desk :root / .dark from pulse-helpdesk.reui.io.
+    // The palette is LobeHub's, not Pulse's. Every neutral is the value
+    // `@lobehub/ui` resolves for the matching token in that appearance,
+    // measured off a Lobe element in the running renderer and expressed as
+    // oklch — Lobe's `colorFill*` overlays are composited onto the surface
+    // they sit on, because the file's contract (and the contrast guard in
+    // text-contrast.test.ts) is opaque oklch literals.
     // Aliases (--card: var(--surface)) resolve to the same literals.
     expectResolved(light, {
       "--background": "oklch(1 0 0)",
-      "--foreground": "oklch(0.145 0 0)",
+      "--foreground": "oklch(0.134 0 0)",
       "--card": "oklch(1 0 0)",
-      "--card-foreground": "oklch(0.145 0 0)",
+      "--card-foreground": "oklch(0.134 0 0)",
       "--popover": "oklch(1 0 0)",
-      "--popover-foreground": "oklch(0.145 0 0)",
+      "--popover-foreground": "oklch(0.134 0 0)",
       "--primary": "oklch(0.205 0 0)",
       "--primary-foreground": "oklch(0.985 0 0)",
       "--secondary": "oklch(0.97 0 0)",
       "--secondary-foreground": "oklch(0.205 0 0)",
-      "--muted": "oklch(0.97 0 0)",
-      // Pulse is 0.556; 0.53 is the WCAG AA floor on --surface-selected 0.95.
-      "--muted-foreground": "oklch(0.53 0 0)",
-      "--accent": "oklch(0.97 0 0)",
-      "--accent-foreground": "oklch(0.205 0 0)",
+      "--muted": "oklch(0.976 0 0)",
+      "--muted-foreground": "oklch(0.522 0 0)",
+      "--accent": "oklch(0.955 0 0)",
+      "--accent-foreground": "oklch(0.134 0 0)",
       "--destructive": "oklch(0.577 0.245 27.325)",
-      "--border": "oklch(0.922 0 0)",
-      "--input": "oklch(0.922 0 0)",
+      "--border": "oklch(0.949 0 0)",
+      "--input": "oklch(0.916 0 0)",
       "--ring": "oklch(0.708 0 0)",
       "--chart-1": "oklch(0.87 0 0)",
       "--chart-2": "oklch(0.556 0 0)",
       "--chart-3": "oklch(0.439 0 0)",
       "--chart-4": "oklch(0.371 0 0)",
       "--chart-5": "oklch(0.269 0 0)",
-      "--sidebar": "oklch(0.985 0 0)",
-      "--sidebar-foreground": "oklch(0.145 0 0)",
+      "--sidebar": "oklch(0.979 0 0)",
+      "--sidebar-foreground": "oklch(0.134 0 0)",
       "--sidebar-primary": "oklch(0.205 0 0)",
       "--sidebar-primary-foreground": "oklch(0.985 0 0)",
-      "--sidebar-accent": "oklch(0.97 0 0)",
-      "--sidebar-accent-foreground": "oklch(0.205 0 0)",
-      "--sidebar-border": "oklch(0.922 0 0)",
+      "--sidebar-accent": "oklch(0.934 0 0)",
+      "--sidebar-accent-foreground": "oklch(0.134 0 0)",
+      "--sidebar-border": "oklch(0.949 0 0)",
       "--sidebar-ring": "oklch(0.708 0 0)",
-      "--radius": "0.625rem",
+      "--radius": "0.5rem",
     })
 
     expectResolved(dark, {
-      "--background": "oklch(0.145 0 0)",
-      "--foreground": "oklch(0.985 0 0)",
-      "--card": "oklch(0.205 0 0)",
-      "--card-foreground": "oklch(0.985 0 0)",
-      "--popover": "oklch(0.205 0 0)",
-      "--popover-foreground": "oklch(0.985 0 0)",
+      "--background": "oklch(0.159 0 0)",
+      "--foreground": "oklch(1 0 0)",
+      "--card": "oklch(0.159 0 0)",
+      "--card-foreground": "oklch(1 0 0)",
+      "--popover": "oklch(0.218 0 0)",
+      "--popover-foreground": "oklch(1 0 0)",
       "--primary": "oklch(0.922 0 0)",
       "--primary-foreground": "oklch(0.205 0 0)",
       "--secondary": "oklch(0.269 0 0)",
       "--secondary-foreground": "oklch(0.985 0 0)",
-      "--muted": "oklch(0.269 0 0)",
+      "--muted": "oklch(0.226 0 0)",
       "--muted-foreground": "oklch(0.708 0 0)",
-      "--accent": "oklch(0.269 0 0)",
-      "--accent-foreground": "oklch(0.985 0 0)",
+      "--accent": "oklch(0.264 0 0)",
+      "--accent-foreground": "oklch(1 0 0)",
       "--destructive": "oklch(0.704 0.191 22.216)",
-      "--border": "oklch(1 0 0 / 10%)",
-      "--input": "oklch(1 0 0 / 15%)",
+      "--border": "oklch(0.218 0 0)",
+      "--input": "oklch(0.244 0 0)",
       "--ring": "oklch(0.556 0 0)",
       "--chart-1": "oklch(0.87 0 0)",
       "--chart-2": "oklch(0.556 0 0)",
       "--chart-3": "oklch(0.439 0 0)",
       "--chart-4": "oklch(0.371 0 0)",
       "--chart-5": "oklch(0.269 0 0)",
-      // Pulse's theme table sets --sidebar to 0.205, but the live shell
-      // rebinds it to --background. We store the painted value so chrome
-      // stays near-black even if the class override is dropped.
-      "--sidebar": "oklch(0.145 0 0)",
-      "--sidebar-foreground": "oklch(0.985 0 0)",
-      "--sidebar-primary": "oklch(0.488 0.243 264.376)",
-      "--sidebar-primary-foreground": "oklch(0.985 0 0)",
-      "--sidebar-accent": "oklch(0.269 0 0)",
-      "--sidebar-accent-foreground": "oklch(0.985 0 0)",
-      "--sidebar-border": "oklch(1 0 0 / 10%)",
-      "--sidebar-ring": "oklch(0.556 0 0)",
+      // Lobe paints the chrome with `colorBgLayout` and the content with
+      // `colorBgContainer`; the shells' own `[--sidebar:var(--color-background)]`
+      // rebind does not apply inside the settings dialog, which portals out of
+      // the dashboard, so this token is the one that rail reads.
     })
   })
 

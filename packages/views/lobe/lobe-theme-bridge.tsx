@@ -180,6 +180,15 @@ export function LobeThemeBridge({ children, skin = "orvilo" }: LobeThemeBridgePr
           // Document-wide body/html reset; see the header note on why a bridge
           // must not install one.
           enableGlobalStyle={false}
+          // Lobe would otherwise append four `<link>`s to `document.head` for
+          // Geist, Geist Mono, HarmonyOS Sans SC and KaTeX, fetched from
+          // `registry.npmmirror.com`. The first three are now npm packages that
+          // `packages/ui/styles/tokens.css` imports, and KaTeX has been imported
+          // from its own package by `packages/ui/markdown/Markdown.tsx` and two
+          // editors since before this change — so every one of those links
+          // duplicates something already in the bundle, and carries a runtime
+          // network dependency for type the app already has.
+          enableCustomFonts={false}
           // `ThemeProvider` renders a real <div>. Callers mount this bridge
           // inside flex columns (the message list sits between a scroll
           // container and the composer), where an extra box would take a share
