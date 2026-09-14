@@ -59,6 +59,7 @@ export interface AntdMapTokens {
   colorText: string;
   colorTextSecondary: string;
   colorTextTertiary: string;
+  colorTextDescription: string;
   colorBorder: string;
   colorBorderSecondary: string;
   borderRadiusLG: number;
@@ -96,6 +97,15 @@ export function buildAntdTokens(read: OrviloTokenReader): OrviloAntdTokens {
       colorText: toAntdColor(read.color("--foreground")),
       colorTextSecondary: toAntdColor(read.color("--muted-foreground")),
       colorTextTertiary: toAntdColor(read.color("--faint-foreground")),
+      // Pinned because Lobe's form descriptions read it directly —
+      // `@lobehub/ui/es/Form/style.mjs` colours `desc` with
+      // `cssVar.colorTextDescription`. Left unset, antd aliases it to
+      // `colorTextTertiary`, which is `--faint-foreground` above: a token
+      // documented in tokens.css as the quiet step for marks that are *not*
+      // text. The `desc` under a form row is text, and it measured 130,130,130
+      // on white (3.84:1) that way — below WCAG AA. `--muted-foreground` is the
+      // step this app keeps for exactly this role and clears 4.5:1.
+      colorTextDescription: toAntdColor(read.color("--muted-foreground")),
       colorBorder: toAntdColor(read.color("--border")),
       colorBorderSecondary: toAntdColor(read.color("--surface-border")),
       borderRadiusLG: read.lengthPx("--radius-lg"),

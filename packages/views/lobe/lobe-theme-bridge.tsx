@@ -126,6 +126,24 @@ function readBridgeTheme(): BridgeTheme {
   };
 }
 
+/**
+ * There is no `skin` prop. There used to be: `"orvilo"` fed this app's tokens to
+ * antd and `"lobe"` passed none, so a Lobe surface could wear LobeHub's own
+ * theme. The app wears LobeHub's palette everywhere now — `tokens.css` carries
+ * Lobe's measured values in `:root` and `.dark` — so the two skins had converged
+ * and the second one only did harm.
+ *
+ * It bypassed this file's token mapping, which is what put every form `desc` on
+ * Lobe's `colorTextDescription` (#999999 on white, 2.85:1, measured in the
+ * settings dialog) instead of the accessible `--muted-foreground` that
+ * `lobe-tokens.ts` now pins for that role. Keeping the prop also kept two
+ * differently-skinned bridges possible, and those collide: they share
+ * `cssVar.key`, so the token block injected last can apply to both roots, and
+ * they share the `LobeModalHost` singleton, so a `confirmModal` renders under
+ * whichever bridge claimed it first rather than under the one that asked.
+ *
+ * One bridge, one token set, one key.
+ */
 export interface LobeThemeBridgeProps {
   children: ReactNode;
 }
@@ -160,6 +178,15 @@ export function LobeThemeBridge({ children }: LobeThemeBridgeProps) {
           // Document-wide body/html reset; see the header note on why a bridge
           // must not install one.
           enableGlobalStyle={false}
+          // Lobe would otherwise append four `<link>`s to `document.head` for
+          // Geist, Geist Mono, HarmonyOS Sans SC and KaTeX, fetched from
+          // `registry.npmmirror.com`. The first three are now npm packages that
+          // `packages/ui/styles/tokens.css` imports, and KaTeX has been imported
+          // from its own package by `packages/ui/markdown/Markdown.tsx` and two
+          // editors since before this change — so every one of those links
+          // duplicates something already in the bundle, and carries a runtime
+          // network dependency for type the app already has.
+          enableCustomFonts={false}
           // `ThemeProvider` renders a real <div>. Callers mount this bridge
           // inside flex columns (the message list sits between a scroll
           // container and the composer), where an extra box would take a share

@@ -2,13 +2,11 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import { AppCrashBoundary } from "./components/app-crash-boundary";
 import { installWebDesktopBridge } from "./platform/web-bridge";
-// Inter variable font covers all weights (100-900) in a single file.
-// CJK is handled by system font fallback (see globals.css --font-sans chain).
-// Keep font stack in sync with apps/web/app/layout.tsx.
-// The italic axis ships as a separate file — without it the ~20 semantic italic
-// labels and every markdown <em>/blockquote render as synthesized oblique.
-import "@fontsource-variable/inter";
-import "@fontsource-variable/inter/wght-italic.css";
+// No Inter import: `--font-sans` is LobeHub's list now (see globals.css), and
+// Lobe's first family is Geist, which ships self-hosted from
+// packages/ui/styles/tokens.css. Latin italics come from Geist's own italic
+// faces there, so the ~20 semantic italic labels and every markdown <em> and
+// blockquote still get a real italic rather than synthesized oblique.
 // Editorial serif — matches web's next/font Source_Serif_4. Loaded app-wide so
 // onboarding headings and any future editorial surface can use `font-serif`
 // (see tokens.css @theme inline). Variable font = one file covers all weights.

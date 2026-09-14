@@ -15,6 +15,15 @@ catalogs:
     '@lobehub/ui':
       specifier: 5.42.6
       version: 5.42.6
+    '@lobehub/webfont-geist':
+      specifier: 1.0.0
+      version: 1.0.0
+    '@lobehub/webfont-geist-mono':
+      specifier: 1.0.0
+      version: 1.0.0
+    '@lobehub/webfont-harmony-sans-sc':
+      specifier: 1.0.0
+      version: 1.0.0
     '@playwright/test':
       specifier: ^1.58.2
       version: 1.58.2
@@ -229,9 +238,6 @@ importers:
       '@fontsource-variable/geist-mono':
         specifier: ^5.3.0
         version: 5.3.0
-      '@fontsource-variable/inter':
-        specifier: ^5.2.5
-        version: 5.2.8
       '@fontsource-variable/source-serif-4':
         specifier: ^5.2.9
         version: 5.2.9
@@ -812,6 +818,15 @@ importers:
       '@emoji-mart/data':
         specifier: ^1.2.1
         version: 1.2.1
+      '@lobehub/webfont-geist':
+        specifier: 'catalog:'
+        version: 1.0.0
+      '@lobehub/webfont-geist-mono':
+        specifier: 'catalog:'
+        version: 1.0.0
+      '@lobehub/webfont-harmony-sans-sc':
+        specifier: 'catalog:'
+        version: 1.0.0
       '@number-flow/react':
         specifier: ^0.6.1
         version: 0.6.1(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -2595,9 +2610,6 @@ packages:
   '@fontsource-variable/geist-mono@5.3.0':
     resolution: {integrity: sha512-vBbuwDEo9AkrqADMXOrlAR3DFcJi4/JxeuU43FoiQERnNwsfXNnvxvReZG02cQKmyk4DZkZdBZX3oTDvy2zBAw==}
 
-  '@fontsource-variable/inter@5.2.8':
-    resolution: {integrity: sha512-kOfP2D+ykbcX/P3IFnokOhVRNoTozo5/JxhAIVYLpea/UBmCQ/YWPBfWIDuBImXX/15KH+eKh4xpEUyS2sQQGQ==}
-
   '@fontsource-variable/source-serif-4@5.2.9':
     resolution: {integrity: sha512-PPcxjLFk/fS0WHg79pDM2YNvz61kC+oYZ5cWZZyCS0DHpJncmuYOuiZAsvj4tDxlWPBEvxxcRLQQNmSaRbPkqw==}
 
@@ -2991,6 +3003,15 @@ packages:
       motion: ^12.0.0
       react: ^19.0.0
       react-dom: ^19.0.0
+
+  '@lobehub/webfont-geist-mono@1.0.0':
+    resolution: {integrity: sha512-1mX/gf6qlyHsbXTrRTupYtYaimo88ijsk4GyoH136/RZLwlMQG1Sf9d0Pbd54y+R9OK0Ah9y6TPpGOn5j5jXQw==}
+
+  '@lobehub/webfont-geist@1.0.0':
+    resolution: {integrity: sha512-2iM14wkxNFZeV6vPP0tRvO+jgx6ZOysXq34/XFDOL7hwO7CNZR5XgQbV686RF9yNDlCcGs0kKRrQe987FDMGjA==}
+
+  '@lobehub/webfont-harmony-sans-sc@1.0.0':
+    resolution: {integrity: sha512-9WVr2nytwv2J5gVlZHjj716x+9+1U/jn2W+VpuszkTLDQQEQR8v5ElBmj8AkBFpR6z09gAvQYkiChCsB78tYHA==}
 
   '@malept/cross-spawn-promise@2.0.0':
     resolution: {integrity: sha512-1DpKU0Z5ThltBwjNySMC14g0CkbyhCaz9FkhxqNsZI6uAPJXFS8cMXlBKo26FJ8ZuW6S9GCMcR9IO5k2X5/9Fg==}
@@ -14495,8 +14516,6 @@ snapshots:
 
   '@fontsource-variable/geist-mono@5.3.0': {}
 
-  '@fontsource-variable/inter@5.2.8': {}
-
   '@fontsource-variable/source-serif-4@5.2.9': {}
 
   '@formatjs/fast-memoize@3.1.2': {}
@@ -15066,6 +15085,12 @@ snapshots:
       - supports-color
       - svelte
       - vue
+
+  '@lobehub/webfont-geist-mono@1.0.0': {}
+
+  '@lobehub/webfont-geist@1.0.0': {}
+
+  '@lobehub/webfont-harmony-sans-sc@1.0.0': {}
 
   '@malept/cross-spawn-promise@2.0.0':
     dependencies:

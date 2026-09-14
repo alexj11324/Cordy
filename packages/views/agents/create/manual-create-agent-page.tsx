@@ -98,6 +98,9 @@ export function ManualCreateAgentPage() {
     // mode. Mounted at the route root rather than inside the panel: the
     // bridge renders `display: contents`, so the flex column below is still
     // the box this page's parent lays out.
+    // No `skin`: see `settings-page.tsx`. The create panels are the settings
+    // design system, and there is one token set app-wide, so they cannot
+    // diverge from the dialog.
     <LobeThemeBridge>
       <div className="flex min-h-0 flex-1 flex-col bg-background">
         <BreadcrumbHeader

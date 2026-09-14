@@ -320,6 +320,9 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     // dark mode. Mounted at the route root rather than inside the panel: the
     // bridge renders `display: contents`, so the flex column below is still
     // the box this page's parent lays out, and one bridge covers the surface.
+    // No `skin`: see `settings-page.tsx`. There is one token set now — the app
+    // wears LobeHub's palette app-wide — so a Lobe surface and the Tailwind
+    // boxes around it read the same values without opting into anything.
     <LobeThemeBridge>
       <div className="flex min-h-0 flex-1 flex-col bg-background text-foreground">
         <AgentIdentityCard

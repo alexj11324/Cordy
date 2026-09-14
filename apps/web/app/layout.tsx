@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-import { Inter, Geist_Mono, Source_Serif_4 } from "next/font/google";
+import { Geist_Mono, Source_Serif_4 } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@orvilo/ui/components/ui/sonner";
 import { cn } from "@orvilo/ui/lib/utils";
@@ -16,28 +16,12 @@ import {
 import { ClerkProvider } from "@/components/clerk-provider";
 import "./globals.css";
 
-// Inter is the Latin UI face. next/font produces a hashed family (`__Inter_xxx`)
-// plus a synthetic size-adjusted fallback face to prevent FOUT layout shift —
-// both are exposed under the `--font-inter` CSS variable.
-//
-// The full `--font-sans` stack (Inter + the per-locale CJK fallback chain) is
-// assembled in static CSS in ./globals.css, not here: it must be overridable per
-// `<html lang>` (Japanese Kanji are Han ideographs and need a Japanese-first CJK
-// stack), and a hashed family name can only be referenced from CSS via a variable.
-// Keeping the CJK chain in CSS also keeps it CSP-safe and in sync with the desktop
-// app, which defines the same chain in apps/desktop/src/renderer/src/globals.css.
-//
-// Italic is loaded explicitly: `style` defaults to `["normal"]`, and without a real
-// italic face the ~20 semantic italic labels (chat empty states, model-picker's
-// "Managed by runtime", dashboard/team placeholders) plus every markdown <em> and
-// blockquote rendered as browser-synthesized oblique. Keep in sync with desktop's
-// `@fontsource-variable/inter/wght-italic.css` import.
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  style: ["normal", "italic"],
-  variable: "--font-inter",
-});
+// `--font-sans` is assembled in static CSS in ./globals.css, not here. It is
+// LobeHub's own font list — Geist for Latin, HarmonyOS Sans SC for Chinese —
+// and Geist ships self-hosted from packages/ui/styles/tokens.css rather than
+// through next/font, so there is no hashed family name to expose as a variable.
+// Keeping the stack in CSS also keeps it identical to the desktop app's, which
+// defines the same list in apps/desktop/src/renderer/src/globals.css.
 // Mono font has no explicit CJK fallback: CJK chars in code blocks are inherently
 // non-aligned with a mono grid (Chinese is proportional), so listing CJK fonts
 // here would falsely signal alignment guarantees. Browser default fallback handles
@@ -162,7 +146,6 @@ export default async function RootLayout({
       suppressHydrationWarning
       className={cn(
         "antialiased font-sans h-full",
-        inter.variable,
         geistMono.variable,
         sourceSerif.variable,
       )}

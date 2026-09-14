@@ -30,6 +30,9 @@ import { IntegrationsTab } from "../settings/components/integrations-tab";
  */
 export function WorkspaceIntegrationsPage() {
   return (
+    // No `skin`: this page renders `IntegrationsTab` standalone — the settings
+    // design system without the dialog. There is one token set app-wide, so it
+    // cannot diverge from the dialog.
     <LobeThemeBridge>
       <IntegrationsTab standalone />
     </LobeThemeBridge>
